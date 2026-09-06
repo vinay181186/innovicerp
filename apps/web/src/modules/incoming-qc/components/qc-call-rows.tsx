@@ -6,12 +6,15 @@
 
 import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { useQcUserOptions } from '@/modules/qc-users/api';
+import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { useSubmitIncomingQc } from '../api';
 
 function todayIso(): string {
@@ -37,7 +40,17 @@ export function IncomingPendingRow(props: {
   const [qcDate, setQcDate] = useState(todayIso());
   const [accept, setAccept] = useState('');
   const [reject, setReject] = useState('0');
+  // QC By is now picked from the people Access Control marks as QC, not typed.
+  // Both halves are kept: `qcBy` is the name that has always been saved on the
+  // record, `qcById` is the user it now links to. They only ever move together,
+  // in the picker's onChange below.
   const [qcBy, setQcBy] = useState(session?.fullName ?? session?.email ?? '');
+  const [qcById, setQcById] = useState<string | null>(null);
+  const qcUsers = useQcUserOptions();
+  const qcOptions = useMemo(
+    () => toQcSearchOptions(qcUsers.data?.options ?? []),
+    [qcUsers.data?.options],
+  );
   const [remarks, setRemarks] = useState('');
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);
@@ -70,6 +83,9 @@ export function IncomingPendingRow(props: {
           acceptedQty: acc,
           rejectedQty: rej,
           qcInspectedByName: qcBy.trim(),
+          // Only sent when the name came from the dropdown — a seeded or
+          // legacy name has no user behind it to link.
+          ...(qcById ? { qcInspectedByUserId: qcById } : {}),
           qcDate,
           ...(remarks.trim() ? { qcRemarks: remarks.trim() } : {}),
           ...(qcReportPath ? { qcReportPath, ...(qcReportName ? { qcReportName } : {}) } : {}),
@@ -222,11 +238,22 @@ export function IncomingPendingRow(props: {
               <label className="form-label" style={{ fontSize: 10 }}>
                 👤 QC By ★
               </label>
-              <input
-                className="innovic-input"
-                value={qcBy}
-                onChange={(e) => setQcBy(e.target.value)}
-                placeholder="Inspector name"
+              {/* The whole QC list comes back in one small response, so the
+                  picker filters it in the browser and there is no ?search= to
+                  round-trip. */}
+              <SearchableSelect
+                value={qcById}
+                onChange={(id) => {
+                  setQcById(id);
+                  setQcBy(qcUsers.data?.options.find((u) => u.id === id)?.name ?? '');
+                }}
+                options={qcOptions}
+                onSearch={NO_SERVER_SEARCH}
+                loading={qcUsers.isFetching}
+                valueLabel={qcBy}
+                selectedLabel={qcSelectedLabel}
+                placeholder="🔍 Select QC person…"
+                emptyText="No QC users — set them up in Access Control"
               />
             </div>
             <div className="form-grp">

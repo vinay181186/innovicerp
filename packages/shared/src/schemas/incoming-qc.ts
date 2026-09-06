@@ -92,8 +92,21 @@ export const submitIncomingQcInputSchema = z
   .object({
     acceptedQty: z.number().int().nonnegative(),
     rejectedQty: z.number().int().nonnegative(),
-    /** Mandatory — who did the QC (typed name, may differ from the login). */
+    /** Mandatory — who did the QC. Kept as a NAME even now that the field is a
+     *  dropdown: a completed inspection is a record of who signed it off on the
+     *  day, and it must not change if that person is later renamed or removed. */
     qcInspectedByName: z.string().trim().min(1, 'QC inspector name is required').max(120),
+    /** The QC user the name was picked from, so the inspection is LINKED to a
+     *  person and not just labelled with a string. Written to
+     *  `goods_receipt_note_lines.qc_inspected_by`, which until now was stamped
+     *  with whoever pressed Submit — that recorded the typist, not the
+     *  inspector, and the two are routinely different people.
+     *
+     *  Optional so a caller that cannot resolve a user (an import, an inspector
+     *  who is not a system account) still records the name; the column then
+     *  falls back to the submitter exactly as before. The submitter stays
+     *  traceable either way through `updated_by`. */
+    qcInspectedByUserId: z.string().uuid().optional(),
     qcDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'qcDate must be YYYY-MM-DD')

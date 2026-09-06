@@ -15,6 +15,7 @@
 import {
   ACCESS_DEPTS,
   ACCESS_DEPT_KEYS,
+  ACCESS_TIER_KEYS,
   isAccessDeptKey,
   roleForAccess,
   ACCESS_FORM_KEYS,
@@ -26,6 +27,7 @@ import {
   normalizeDeptsMap,
   pruneDeptsMap,
   pruneFormsMap,
+  type QcUserOption,
   type SaveUserAccessInput,
   type UserAccess,
   type UserAccessListItem,
@@ -206,6 +208,96 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
     });
 
     return { items };
+  });
+}
+
+// ── QC user options ────────────────────────────────────────────
+// The lowest Quality tier that may sign off an inspection. L1 is view-only, so
+// an L1 QC grant means "may open Quality screens", not "may inspect" — naming
+// that person as the inspector would credit the work to someone who cannot do
+// it. Ranked through ACCESS_TIER_KEYS the same way `roleForAccess` ranks tiers,
+// so a new tier in the registry cannot leave this comparison behind.
+const QC_INSPECTOR_MIN_TIER = 'L2';
+
+// This person's Quality tier when it is high enough to inspect, else null.
+// `normalizeDeptsMap` reads the pre-0100 literal `true` as L1 — which is
+// exactly the view-only case being excluded, so legacy rows need no special
+// handling here.
+function qcInspectorTier(departments: unknown): string | null {
+  const tier = normalizeDeptsMap(asDeptsMap(departments))['qc'];
+  if (!tier) return null;
+  const order = ACCESS_TIER_KEYS as readonly string[];
+  return order.indexOf(tier) >= order.indexOf(QC_INSPECTOR_MIN_TIER) ? tier : null;
+}
+
+// The people Access Control actually lets do QC work — the source list behind
+// every "QC By" dropdown.
+//
+// Readable by ANY authenticated user in the company, deliberately NOT
+// admin-only: the QC clerk filling in an incoming inspection is the person who
+// opens this list, and `requireAdminRole` would break the one screen it exists
+// for. It returns names and emails only — never the permission maps — which is
+// no more than `/tasks/user-options` already exposes for every user.
+//
+// `users.role` is not the filter (see the schema comment in @innovic/shared):
+// the role is derived as the narrowest role covering everything someone was
+// granted, so a Quality lead who also writes Production derives as 'manager'
+// and would vanish from the list. The department tier is the honest answer.
+export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption[]> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        email: users.email,
+        acFullAccess: userAccess.fullAccess,
+        acMainDept: userAccess.mainDept,
+        acDepartments: userAccess.departments,
+      })
+      .from(users)
+      .leftJoin(
+        userAccess,
+        and(
+          eq(userAccess.userId, users.id),
+          eq(userAccess.companyId, companyId),
+          isNull(userAccess.deletedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(users.companyId, companyId),
+          eq(users.isActive, true),
+          isNull(users.deletedAt),
+        ),
+      );
+
+    const options: QcUserOption[] = rows.flatMap((r) => {
+      const fullAccess = r.acFullAccess ?? false;
+      const tier = qcInspectorTier(r.acDepartments);
+      // Full Access covers every department, Quality included, so those
+      // accounts qualify without a QC grant of their own — `tier` stays null
+      // and the UI can say why they are on the list.
+      if (!fullAccess && !tier) return [];
+      return [
+        {
+          id: r.id,
+          // A login with no name set would otherwise render as a blank row.
+          name: r.fullName?.trim() || r.email,
+          email: r.email,
+          tier,
+          isQcDept: r.acMainDept === 'qc',
+          fullAccess,
+        },
+      ];
+    });
+
+    // The actual QC team first, then everyone else who merely may do it, each
+    // group by name — so the dropdown opens on the people whose job this is
+    // instead of burying them under the admins.
+    return options.sort((a, b) =>
+      a.isQcDept === b.isQcDept ? a.name.localeCompare(b.name) : a.isQcDept ? -1 : 1,
+    );
   });
 }
 

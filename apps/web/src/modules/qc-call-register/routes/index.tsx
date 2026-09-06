@@ -17,7 +17,10 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
-import { useOperatorsList } from '@/modules/operators/api';
+import { SearchableSelect } from '@/components/shared/searchable-select';
+import type { SearchableOption } from '@/components/shared/searchable-select';
+import { useQcUserOptions } from '@/modules/qc-users/api';
+import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '@/modules/qc-history/api';
@@ -76,12 +79,14 @@ function QcCallRegisterPage(): React.JSX.Element {
   // Caller's effective access — drives the "Hide page" VIEW guard below.
   const { data: eff } = useMyAccess();
 
-  // Active operator names for the inline QC entry Inspector datalist
-  // (legacy L4164: db.operators filtered status==='Active').
-  const operatorsQuery = useOperatorsList({ isActive: true, limit: 200, offset: 0 });
-  const operatorNames = useMemo(
-    () => (operatorsQuery.data?.operators ?? []).map((op) => op.name),
-    [operatorsQuery.data?.operators],
+  // People for the inline QC entry "QC By" picker. Legacy L4164 filled this from
+  // db.operators (status==='Active'), which named the wrong crowd: operators are
+  // shop-floor machinists. It now comes from the QC people the user defines in
+  // Access Control, so an inspection can be linked to the person who signed it.
+  const qcUsers = useQcUserOptions();
+  const qcOptions = useMemo(
+    () => toQcSearchOptions(qcUsers.data?.options ?? []),
+    [qcUsers.data?.options],
   );
 
   const allPending = data?.pending ?? [];
@@ -311,7 +316,8 @@ function QcCallRegisterPage(): React.JSX.Element {
                   key={o.jcOpId}
                   o={o}
                   open={openId === o.jcOpId}
-                  operatorNames={operatorNames}
+                  qcOptions={qcOptions}
+                  qcLoading={qcUsers.isFetching}
                   onToggle={() => setOpenId(openId === o.jcOpId ? null : o.jcOpId)}
                   onDone={() => setOpenId(null)}
                 />
@@ -377,11 +383,12 @@ function QcCallRegisterPage(): React.JSX.Element {
 function PendingCall(props: {
   o: QcHistoryPendingRow;
   open: boolean;
-  operatorNames: string[];
+  qcOptions: SearchableOption[];
+  qcLoading: boolean;
   onToggle: () => void;
   onDone: () => void;
 }): React.JSX.Element {
-  const { o, open, operatorNames, onToggle, onDone } = props;
+  const { o, open, qcOptions, qcLoading, onToggle, onDone } = props;
   const submitQc = useSubmitQcLog();
   const session = useSession().data;
   const companyId = session?.companyId ?? null;
@@ -392,12 +399,16 @@ function PendingCall(props: {
   // the inspector name; only the form is gated.
   const { data: eff } = useMyAccess();
   const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
-  const inspectorListId = `qc-inspectors-${o.jcOpId}`;
   const [logDate, setLogDate] = useState(todayIso());
   const [shift, setShift] = useState<Shift>('day');
   const [accept, setAccept] = useState('');
   const [reject, setReject] = useState('0');
+  // Seeded with the signed-in person (the common case: the QC person on this
+  // screen is the one inspecting). `inspectorId` is the Access Control user
+  // behind that name once it is picked from the dropdown; the two are only ever
+  // set together.
   const [inspector, setInspector] = useState(session?.fullName ?? session?.email ?? '');
+  const [inspectorId, setInspectorId] = useState<string | null>(null);
   const [remarks, setRemarks] = useState('');
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);
@@ -596,17 +607,23 @@ function PendingCall(props: {
               <label className="form-label" style={{ fontSize: 10 }}>
                 👤 QC By ★
               </label>
-              <datalist id={inspectorListId}>
-                {operatorNames.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-              <input
-                className="innovic-input"
-                list={inspectorListId}
-                value={inspector}
-                onChange={(e) => setInspector(e.target.value)}
-                placeholder="🔍 Search operator..."
+              {/* The whole QC list comes back in one small response, so the
+                  picker filters it in the browser and there is no ?search= to
+                  round-trip. */}
+              <SearchableSelect
+                value={inspectorId}
+                onChange={(id) => {
+                  setInspectorId(id);
+                  const picked = qcOptions.find((u) => u.id === id);
+                  setInspector(picked ? qcSelectedLabel(picked) : '');
+                }}
+                options={qcOptions}
+                onSearch={NO_SERVER_SEARCH}
+                loading={qcLoading}
+                valueLabel={inspector}
+                selectedLabel={qcSelectedLabel}
+                placeholder="🔍 Select QC person…"
+                emptyText="No QC users — set them up in Access Control"
               />
             </div>
             <div className="form-grp form-full">

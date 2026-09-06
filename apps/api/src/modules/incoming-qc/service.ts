@@ -318,7 +318,13 @@ export async function submitIncomingQc(
         qcAcceptedQty: newAccepted,
         qcRejectedQty: newRejected,
         qcDate: input.qcDate ?? new Date().toISOString().slice(0, 10),
-        qcInspectedBy: user.id,
+        // WHO INSPECTED vs WHO TYPED IT IN — routinely two different people.
+        // `qc_inspected_by` is the inspector picked from the QC user list; it
+        // falls back to the submitter only when no user was picked (import, or
+        // an inspector with no login). The submitter stays traceable through
+        // `updated_by` below. The text stays a snapshot of the name signed off
+        // on the day, so it does not change if that person is later renamed.
+        qcInspectedBy: input.qcInspectedByUserId ?? user.id,
         qcInspectedByText: input.qcInspectedByName,
         // Keep prior remarks/report when this inspection doesn't supply new ones.
         ...(input.qcRemarks !== undefined ? { qcRemarks: input.qcRemarks } : {}),

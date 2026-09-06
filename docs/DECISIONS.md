@@ -7619,3 +7619,50 @@ The Inspector field on the TPI screen becomes the shared `<SearchableSelect>`, o
 - Negative: an inspector who genuinely changes firm needs a second master row; the two cannot be merged without rewriting history, which is the thing we refused to do.
 - Not changed here, deliberately: the QC Call Register's Inspector field and Incoming QC's "Inspector name" both stay as they are. Those name our OWN QC people (`qc_inspected_by_text`), already backed by the operator-name list, and are a different concept from a third-party inspector. Bringing them under a master is a separate decision.
 - Verification: typecheck + lint on all three packages, web build. The api suite hits the shared prod DB, so it is not runnable here. Migration 0114 applied 2026-09-06 and verified live: the table exists with RLS and all 3 indexes, 0 rows, and `op_log.tpi_inspector` is untouched and still `text` — the point of the decision above.
+
+## ADR-147: "QC By" comes from Access Control, and an inspection links to the person — not just their name
+**Date:** 2026-09-06
+**Status:** Accepted
+
+### Context
+Two QC screens ask who did the inspection, and both got it wrong in a different way.
+
+**Incoming QC** (`qc-call-rows.tsx`) took the inspector as free text. The service then wrote `goods_receipt_note_lines.qc_inspected_by = user.id` — **whoever pressed Submit** — alongside the typed name in `qc_inspected_by_text`. So the FK recorded the typist and the text recorded the inspector, and on a shop floor where a supervisor enters results for an inspector those are routinely two different people. The one column that could have linked an inspection to a person was pointing at someone else.
+
+**QC Call Register** offered a `<datalist>` of **operator** names (legacy `db.operators`, HTML L4164). Operators are shop-floor machinists. It was the wrong list, and being a datalist it was advisory anyway — anything typed was accepted.
+
+Meanwhile the user has already configured exactly who the QC people are, in Access Control, and said so: *"in access control qc entries to do. i already defined user. based on that."*
+
+Three facts from the live database decided the shape:
+- The API connects as `postgres` with `rolbypassrls = true`, so `user_access`'s admin-only read policy is documentation, not an obstacle (consistent with ADR-035). The **service-level gate** is the real control, so it had to be chosen deliberately rather than inherited.
+- 24 active users, of whom **18** carry some QC grant — but 5 of those are **L1** people whose main department is Production, Design or Purchase.
+- `users.role` cannot be the filter even though it has a `'qc'` value. It is derived as "the narrowest role covering everything they were given" (`roleForAccess`), so `kiran` at QC **L4** derives `manager` and would vanish from the list, while a QC L1 derives `viewer`.
+
+### Decision
+A new `GET /access-control/qc-users` returns the QC people as `{ id, name, email, tier, isQcDept, fullAccess }`, and every "QC By" field becomes the shared `<SearchableSelect>` over it.
+
+**Who qualifies:** Quality tier **L2 or above**, plus Full Access accounts. **L1 is excluded on purpose** — L1 is view-only, so an L1 grant means "may look at Quality screens", not "may sign off an inspection". Offering an L1 account would name someone who cannot do the job. The legacy `true` tier value counts as L1 and is excluded with them. Ordering puts people whose MAIN department is Quality first, so the actual QC team is at the top and not buried under admins.
+
+**The endpoint is readable by any authenticated user in the company, not admin-only.** A QC clerk doing an incoming inspection has to open this list; `requireAdminRole` would break the exact screen it exists for. It returns names and emails — which task assignment already exposes for every user — and deliberately never returns the permission maps.
+
+**The inspection now links to the inspector.** `submitIncomingQcInputSchema` gains an optional `qcInspectedByUserId`, and the service writes `qc_inspected_by: input.qcInspectedByUserId ?? user.id`. The submitter stays traceable through `updated_by`, which is where that fact belonged all along.
+
+**The NAME is still stored, and still stored as text.** `qc_inspected_by_text` keeps the snapshot taken on the day. A completed inspection is a record of who signed it off; it must not change when that person is renamed, moved between departments or removed. The FK says who it was; the text says what we recorded at the time, and they are allowed to diverge.
+
+### Alternatives Considered
+- **Filter on `users.role = 'qc'`** — rejected, and it is the tempting wrong answer. The role is derived narrowest-first, so it silently drops Quality leads who also write another department and silently includes nobody at L1. Verified against live rows before rejecting it.
+- **Offer everyone with any QC tick, L1 included** — rejected: 18 of 24 accounts, most of them Production and Design people with read-only Quality access. A dropdown that lists three-quarters of the company is not a dropdown.
+- **Make `qcInspectedByUserId` required** — rejected: an inspector who is not a system account, or an import, would then be unable to record a name at all. Optional keeps the old fallback and loses nothing, because the UI always sends it.
+- **Replace `qc_inspected_by_text` with a join to `users`** — rejected for the same reason ADR-146 refused to FK `op_log.tpi_inspector`: a signed-off inspection must not be rewritten by a later edit to the person record.
+- **Relax the RLS policy on `user_access` so the join is "legitimate"** — rejected: it would expose the whole permission matrix to every account to solve a problem that does not exist, since the connection bypasses RLS anyway. The narrow endpoint returning only names is the smaller surface.
+- **Keep the operator list on QC Call Register** — rejected: operators are machinists. That list was wrong before this change and would still be wrong after it.
+
+### Consequences
+- Positive: `qc_inspected_by` finally means what its name says, so "everything Shivani passed this month" becomes answerable.
+- Positive: one endpoint feeds both QC screens, so the two can no longer drift apart the way free text and a datalist did.
+- Positive: the user maintains the list where they already maintain it — granting someone Quality L2 in Access Control puts them in the dropdown, with nothing else to configure.
+- Negative: inspections recorded before this keep `qc_inspected_by` pointing at whoever submitted them. They are not retro-corrected; there is no honest way to work out who was meant.
+- Negative: Full Access accounts appear in the list because they genuinely may do the work. They are flagged rather than hidden, but a company with several admins will see them among the QC staff.
+- Negative: an inspector who is not a system account can no longer be typed in freely on these two screens. If that turns out to be a real case, the fix is a master like TPI Master (ADR-146), not a return to free text.
+- Not changed here: the GRN screen's own QC path (`goods-receipt-notes/service.ts`) still stamps `qcInspectedBy: user.id` on its completed transition. It is a different screen with a different flow and was not in the user's ask; it is the natural next adopter.
+- Verification: typecheck + lint (the api suite hits the shared prod DB, so it is not runnable here). No migration — both columns already existed.

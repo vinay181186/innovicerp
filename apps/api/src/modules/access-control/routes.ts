@@ -27,6 +27,15 @@ export async function accessControlRoutes(app: FastifyInstance): Promise<void> {
     return service.getUserAccess(userId, req.user);
   });
 
+  // Who may do QC work — any authenticated user in the company, not admins
+  // only: the QC clerk doing the inspection is who opens this list. Sits after
+  // the /users routes because 'qc-users' is its own literal segment and can
+  // never be matched by /users/:userId.
+  app.get('/access-control/qc-users', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return { options: await service.listQcUserOptions(req.user) };
+  });
+
   // Admin: save one user's matrix.
   app.put('/access-control/users/:userId', async (req) => {
     if (!req.user) throw new AuthenticationError();
