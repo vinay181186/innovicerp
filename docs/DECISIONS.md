@@ -7464,3 +7464,125 @@ sentence it did not write, so the two can never disagree about the same limit.
   not a message problem, and needs its own decision.
 - Verification: `pnpm -r typecheck` + eslint + prettier. The api suite is not
   runnable here (it seeds and deletes on the shared prod DB).
+
+## ADR-145: A Job Card operation card ends in its NEXT ACTION, gated on the screen that action opens
+
+**Date:** 2026-09-06
+**Status:** Accepted
+
+### Context
+
+The per-operation cards on the Job Card status page ended the OSP story in dead
+text. An op sitting at `pr_raised` printed "PR: IN-JWPR-00012" and stopped; one
+at `sent` printed "Sent". The next step was always a different screen the user
+had to remember, navigate to, and search in again — leave the job card, open
+Purchase Requests, find that PR, convert it.
+
+Two smaller gaps sat alongside it:
+
+- The card checked **no permission at all**. The existing ▶ Start, ✚ Log and
+  🔬 QC buttons were rendered for anyone who could open a Job Card; only the
+  API refused them, so the user met an error instead of a clean screen.
+- The Job Card's **Related Documents** card built eight sections and stopped at
+  the OSP Purchase Orders. The words `grn` / `goodsReceiptNotes` did not appear
+  anywhere in `job-cards/service.ts`, so the outward challans and the goods
+  receipts — both one join off the same `jc_ops.outsource_po_line_id` the OSP PO
+  section already used — were simply absent. IN-JC-26-00008 showed its PO
+  IN-PO-00004 and nothing of IN-DC-00002/6/7 or IN-GRN-00001.
+
+### Decision
+
+**1. Each status names its own next step, and links to the screen that performs it.**
+
+| `outsource_status` | reference kept | action added | destination |
+| --- | --- | --- | --- |
+| `pr_raised` | PR: … | 🧾 Gen PO | `/purchase-orders/from-pr?prId=` |
+| `po_created` | PO: … | 🚚 Gen DC | `/delivery-challans/new?poId=` |
+| `sent` | Sent | 📥 Receive `<dc>` | `/delivery-challans/$id/receive` |
+| `received` | Received | 🔬 Incoming QC | `/incoming-qc` |
+
+Plus 📋 TPI on a QC op whose name contains "TPI" (→ `/qc-call-register?tab=tpi`)
+and ⚠ NC on every op (→ `/nc-register/new`), because a fault can be found
+anywhere.
+
+`pending` gets no action: an outsource op never sits there. The OSP purchase
+request is raised **automatically** — on Job Card save (`job-cards/service.ts`,
+"Auto OSP PR on JC edit"), on Plan execute, and on the ADR-081 in-house→OSP
+switch — so an op is born at `pr_raised`. All 11 outsource ops in the live
+database carry a `outsource_pr_id`; none is `pending`.
+
+**2. No "Gen GRN" button.** Receiving the outward challan is what books the GRN,
+so one link covers both. `grn_create` also sits in the **Store** department while
+the rest of the chain is Purchase — a Gen GRN affordance on a production screen
+would be invisible to most of the people looking at it.
+
+**3. Every button is gated on the form key of the page it OPENS**, never on
+`jc_create`, the page it sits on:
+
+| button | form key | action |
+| --- | --- | --- |
+| ▶ Start, ✚ Log | `op_entry` | entry |
+| 🔬 QC | `qc_submit` | view |
+| 📋 TPI | `tpi_submit` **and** `qc_submit` | entry |
+| 🧾 Gen PO | `po_create` | entry |
+| 🚚 Gen DC, 📥 Receive | `ospdc_create` | entry |
+| 🔬 Incoming QC | `qc_incoming` | view |
+| ⚠ NC | `nc_dispose` | entry |
+
+Buttons hide, never disable — this codebase disables only for in-flight
+mutations. The reference text is not gated: it is information, and the route
+already gates the whole page on `jc_create.view`. **No Access Control change is
+needed**: every key above already exists, and the per-page OFF switches keep
+working untouched.
+
+**4. Related Documents gains two sections**, `osp-dc` ("OSP Delivery Challans",
+🚚) and `osp-grn` ("OSP Goods Receipts", 📥), both reached through the same
+`jc_ops.outsource_po_line_id` hop the OSP PO section already uses — no new
+relationship invented. Cancelled challans are **included**: this card is a
+document trail, not a quantity calculation, and the status column already says
+`cancelled`. `goods_receipt_notes` has no status column, so those rows carry
+`null`.
+
+**5. New read-only fields on the jc-ops board row** so the links can address
+their destinations: `outsourcePrId`, `outsourceOpenDcId`, `outsourceOpenDcCode`.
+The last two are the **oldest still-`issued`** challan on the op's PO line,
+picked by a `LATERAL … LIMIT 1` so the board stays one query at its 2000-row
+cap. Oldest first because material returns in the order it went out.
+
+### Alternatives considered
+
+- **Put the actions on the JC edit card too** — rejected for now: that screen
+  edits routing, and its layout has no room. The status card is where the
+  operation is being read, which is when the next step is wanted.
+- **Deep-link the TPI tab by changing the tab to URL state** — rejected. The
+  comment at `qc-call-register/routes/index.tsx` records that the tab
+  deliberately stays local. `?tab=` now only *seeds* the initial value; clicking
+  a tab still writes nothing to the URL.
+- **Redefine the OSP status enum to add an explicit `at_vendor`** — not needed;
+  `sent` already means exactly that, and `at_vendor` remains display-only.
+- **Gate the buttons on `jc_create`** (the page they sit on) — rejected as the
+  "button that only fails on click" pattern this codebase has already removed
+  elsewhere (`purchase-requests/routes/detail.tsx`).
+
+### Consequences
+
+- Positive: the OSP chain can be driven end to end from the job card, and each
+  screen it hands off to already pre-fills from the id it is given.
+- Positive: three previously ungated buttons (Start, Log, QC) are now gated, so
+  a user without op-entry rights no longer meets an API error where a button
+  should never have been.
+- Positive: `jc-op-card.tsx` came back under the 400-line rule (512 → 413) by
+  moving the whole footer and its gating into `jc-op-actions.tsx` — one file now
+  owns every permission decision on the card.
+- Negative: the card now issues an access-matrix read (`useMyAccess`,
+  `staleTime: 60_000`, shared across the page) it did not before.
+- Negative: ⚠ NC appears on every operation card, which is more chrome than the
+  card carried. It is last in the strip and styled quiet for that reason.
+- Not changed here, deliberately: the "Generate OSP PR" button in Op Entry
+  (`op-entry-form.tsx`) is now unreachable — the auto-raise always beats it, so
+  it permanently shows "An OSP purchase request already exists". It is also the
+  last place still gated on the old `role === 'admin' | 'manager'` check rather
+  than a form key. Deleting it is a separate change.
+- Verification: typecheck + eslint across shared, api and web; both new queries
+  run against the live database and their results checked row by row. The api
+  suite is not runnable here (it seeds and deletes on the shared prod DB).

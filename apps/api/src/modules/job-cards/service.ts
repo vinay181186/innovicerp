@@ -14,7 +14,11 @@
 
 import { and, count, desc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import {
+  deliveryChallanLines,
+  deliveryChallans,
   fileRegistry,
+  goodsReceiptNoteLines,
+  goodsReceiptNotes,
   items,
   jcOps,
   jobCards,
@@ -1911,6 +1915,10 @@ export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok
 //   - DISTINCT purchase_requests via this JC's jc_ops.outsource_pr_id    (OSP PRs)
 //   - DISTINCT purchase_orders via jc_ops.outsource_po_line_id
 //       → purchase_order_lines → purchase_order_id                       (OSP POs)
+//   - DISTINCT delivery_challans via jc_ops.outsource_po_line_id
+//       → delivery_challan_lines → delivery_challan_id                    (OSP DCs)
+//   - DISTINCT goods_receipt_notes via jc_ops.outsource_po_line_id
+//       → goods_receipt_note_lines → goods_receipt_note_id                (OSP GRNs)
 export async function getJobCardRelated(
   id: string,
   user: AuthContext,
@@ -2101,6 +2109,67 @@ export async function getJobCardRelated(
       )
       .orderBy(desc(purchaseOrders.poDate));
 
+    // ── Downstream: OSP delivery challans (material sent OUT to the vendor) ──
+    // Same hop as the OSP PO section above — jc_ops.outsource_po_line_id — so no
+    // new relationship is invented: the DC line points at the very PO line the
+    // op was outsourced on.
+    //
+    // Cancelled challans are INCLUDED on purpose. This card is a document trail,
+    // not a quantity calculation: a cancelled DC is a real document the user
+    // raised, and its status column already says `cancelled`. IN-JC-26-00008
+    // therefore shows all three of IN-DC-00002 (received), IN-DC-00006
+    // (cancelled) and IN-DC-00007 (issued). Only soft-deleted rows drop out.
+    const dcRows = await tx
+      .selectDistinct({
+        id: deliveryChallans.id,
+        code: deliveryChallans.code,
+        status: deliveryChallans.status,
+        date: deliveryChallans.dcDate,
+      })
+      .from(deliveryChallans)
+      .innerJoin(
+        deliveryChallanLines,
+        eq(deliveryChallanLines.deliveryChallanId, deliveryChallans.id),
+      )
+      .innerJoin(jcOps, eq(jcOps.outsourcePoLineId, deliveryChallanLines.purchaseOrderLineId))
+      .where(
+        and(
+          eq(jcOps.jobCardId, id),
+          isNull(jcOps.deletedAt),
+          isNull(deliveryChallanLines.deletedAt),
+          eq(deliveryChallans.companyId, companyId),
+          isNull(deliveryChallans.deletedAt),
+        ),
+      )
+      .orderBy(desc(deliveryChallans.dcDate));
+
+    // ── Downstream: OSP goods receipts (material coming BACK from the vendor) ──
+    // Reached the same way, via the GRN line's PO line. goods_receipt_notes has
+    // no status column at all, so these rows carry a null status
+    // (IN-GRN-00001 on IN-JC-26-00008, IN-GRN-00002 on IN-JC-26-00009).
+    const grnRows = await tx
+      .selectDistinct({
+        id: goodsReceiptNotes.id,
+        code: goodsReceiptNotes.code,
+        date: goodsReceiptNotes.grnDate,
+      })
+      .from(goodsReceiptNotes)
+      .innerJoin(
+        goodsReceiptNoteLines,
+        eq(goodsReceiptNoteLines.goodsReceiptNoteId, goodsReceiptNotes.id),
+      )
+      .innerJoin(jcOps, eq(jcOps.outsourcePoLineId, goodsReceiptNoteLines.purchaseOrderLineId))
+      .where(
+        and(
+          eq(jcOps.jobCardId, id),
+          isNull(jcOps.deletedAt),
+          isNull(goodsReceiptNoteLines.deletedAt),
+          eq(goodsReceiptNotes.companyId, companyId),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .orderBy(desc(goodsReceiptNotes.grnDate));
+
     // ── Upstream sections (what this JC was built FROM) ─────────────────────
     const itemSection = section(
       'item',
@@ -2160,9 +2229,32 @@ export async function getJobCardRelated(
       'purchase-order',
       poRows.map((r) => row(r.id, r.code, r.status, r.date)),
     );
+    const ospDcSection = section(
+      'osp-dc',
+      'OSP Delivery Challans',
+      '🚚',
+      'delivery-challan',
+      dcRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const ospGrnSection = section(
+      'osp-grn',
+      'OSP Goods Receipts',
+      '📥',
+      'grn',
+      grnRows.map((r) => row(r.id, r.code, null, r.date)),
+    );
 
     const upstream = [itemSection, soSection, jwSection, parentNcSection];
-    const downstream = [ncSection, plansSection, ospPrSection, ospPoSection];
+    // Document order, matching the real workflow: PR raised, PO issued, material
+    // sent out on a DC, material received back on a GRN.
+    const downstream = [
+      ncSection,
+      plansSection,
+      ospPrSection,
+      ospPoSection,
+      ospDcSection,
+      ospGrnSection,
+    ];
     return {
       self: { module: 'job-cards', code: header.code },
       upstream,
