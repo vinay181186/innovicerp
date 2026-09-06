@@ -7586,3 +7586,36 @@ cap. Oldest first because material returns in the order it went out.
 - Verification: typecheck + eslint across shared, api and web; both new queries
   run against the live database and their results checked row by row. The api
   suite is not runnable here (it seeds and deletes on the shared prod DB).
+
+## ADR-146: TPI Master — third-party inspectors become a picked list, but a TPI log still keeps its own name snapshot
+**Date:** 2026-09-06
+**Status:** Accepted
+
+### Context
+The TPI screen (`tpi-view.tsx`, mirroring legacy `renderTPI` L21381) took **Inspector Name ★** and **Organization ★** as free text. Two consequences, both live in the data today: the same person arrives spelled several ways across job cards, and there is no way to ask "everything Mr Sharma signed off this quarter" because nothing ties those strings together.
+
+The user asked for it plainly: *"in quality. master - add tpi master. add names must be link to inspector field. when click on inspector must show dropdown."*
+
+Two facts shaped the answer. First, there is already a QC master one screen away in the same menu — `qc_processes` / QC Process Master — with the exact shape this needs, including the rule that its name is permanent once created. Copying it costs nothing and keeps the Quality menu internally consistent. Second, `op_log.tpi_inspector` (migration 0037) is a text column on an **append-only** table, and the TPI Completed list reads it directly.
+
+### Decision
+Add `tpi_masters` (migration 0114) as a deliberate sibling of `qc_processes`: `code` holds the inspector's **name** — what the user types, reads and picks — unique per company and **permanent once created** (`updateTpiMasterInputSchema` omits it, the service never writes it). An inspector is retired with `is_active`, not renamed. Alongside it: `organization`, `contact_no`, `email`, `remarks`.
+
+The Inspector field on the TPI screen becomes the shared `<SearchableSelect>`, offering **active inspectors only**, rendering "Mr. Sharma — L&T QA Department" so the person is identified by who they inspect for. Picking one also fills Organization, left editable because a one-off site visit can legitimately differ.
+
+**The saved value does not change type.** The TPI submit still sends the inspector's NAME as text, and `op_log.tpi_inspector` stays a text column, not a foreign key. A QC log is a record of what was true on the day it was signed: retiring an inspector, correcting a spelling, or deleting a master row must never rewrite an inspection someone already put their name to. The master governs what you can pick *going forward*; it has no authority over what was already signed.
+
+### Alternatives Considered
+- **Make `op_log.tpi_inspector` an FK to `tpi_masters`** — rejected, and this is the load-bearing rejection. It would make historical TPI records mutable by editing a master row, on an append-only table whose whole point is that entries stand. It would also need a backfill that guesses which spelling meant which person.
+- **A free-text `<datalist>` of past inspector names** — rejected: no organisation, no active/retired state, no way to correct a misspelling for future entries, and it perpetuates the spelling drift instead of ending it. The repo already has a `searchable-field` skill saying not to hand-roll these.
+- **Reuse the operators master** — rejected: operators are our own shop-floor people. A TPI inspector is a third party from a client or an inspection agency. Merging them would put outsiders in every operator dropdown in the app.
+- **A separate `organizations` master with inspectors hanging off it** — rejected as premature. One firm per inspector covers what the TPI screen records; if an inspector genuinely moves firms, a second master row is honest, because the logs they signed under the old firm should keep saying so.
+- **Give the master a generated code (TPI-001) separate from the name** — rejected: the user asked to add *names*, and QC Process Master already establishes name-as-code in this exact menu. A second identifier the user never sees is friction with no payoff.
+
+### Consequences
+- Positive: TPI history becomes groupable by inspector going forward, and the spelling drift stops at the point of entry.
+- Positive: the module is a near-copy of QC Process Master, so it inherits its access-control shape (`tpimaster_create`), its permanent-code rule and its list/detail styling with no new patterns invented.
+- Negative: TPI logs written before this keep whatever text they were given. They are not retro-linked and deliberately never will be.
+- Negative: an inspector who genuinely changes firm needs a second master row; the two cannot be merged without rewriting history, which is the thing we refused to do.
+- Not changed here, deliberately: the QC Call Register's Inspector field and Incoming QC's "Inspector name" both stay as they are. Those name our OWN QC people (`qc_inspected_by_text`), already backed by the operator-name list, and are a different concept from a third-party inspector. Bringing them under a master is a separate decision.
+- Verification: typecheck + lint on all three packages, web build. The api suite hits the shared prod DB, so it is not runnable here. Migration 0114 applied 2026-09-06 and verified live: the table exists with RLS and all 3 indexes, 0 rows, and `op_log.tpi_inspector` is untouched and still `text` — the point of the decision above.

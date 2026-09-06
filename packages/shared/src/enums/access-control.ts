@@ -91,6 +91,7 @@ export const ACCESS_FORMS = [
   { key: 'capa_create', dept: 'qc', label: 'CAPA' },
   // — New React-only QC keys —
   { key: 'tpi_submit', dept: 'qc', label: 'TPI' },
+  { key: 'tpimaster_create', dept: 'qc', label: 'TPI Master' },
   { key: 'qcdocs_upload', dept: 'qc', label: 'QC Documents' },
   // Purchase
   { key: 'pr_create', dept: 'purchase', label: 'Purchase Requests' },

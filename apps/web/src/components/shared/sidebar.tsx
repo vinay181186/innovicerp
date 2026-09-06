@@ -208,7 +208,10 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Master',
-        items: [{ to: '/qc-processes', label: 'QC Process Master', icon: '⚙', formKey: 'qcprocess_create' }],
+        items: [
+          { to: '/qc-processes', label: 'QC Process Master', icon: '⚙', formKey: 'qcprocess_create' },
+          { to: '/tpi-masters', label: 'TPI Master', icon: '🔍', formKey: 'tpimaster_create' },
+        ],
       },
     ],
   },

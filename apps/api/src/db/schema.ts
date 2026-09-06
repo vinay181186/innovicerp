@@ -603,6 +603,66 @@ export const qcProcesses = pgTable(
   ],
 ).enableRLS();
 
+// ─── TPI Master (migration 0114) ──────────────────────────────────────────
+// The third-party inspectors this company works with. Before this, the TPI
+// entry screen took Inspector Name and Organization as free text, so one
+// person arrived spelled three ways and no TPI history could be grouped by
+// who actually signed it off.
+//
+// Deliberately shaped like its qc_processes sibling one screen away in the
+// Quality menu: `code` holds the name the user types and reads, is unique per
+// company, and is permanent once created — every TPI log snapshots it, so
+// renaming it would make the master disagree with inspections already signed.
+// Retire an inspector with is_active instead.
+//
+// op_log.tpi_inspector still stores the NAME as text, not an FK to this table:
+// a QC log records what was true on the day it was signed.
+export const tpiMasters = pgTable(
+  'tpi_masters',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    /** The inspector's name. Named `code` to match the master-table convention
+     *  used across this schema; labelled "Inspector Name" in the UI. */
+    code: text('code').notNull(),
+    organization: text('organization'),
+    contactNo: text('contact_no'),
+    email: text('email'),
+    remarks: text('remarks'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('tpi_masters_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('tpi_masters_company_active_idx')
+      .on(t.companyId, t.isActive)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('tpi_masters_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('tpi_masters_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Cost Center Master (CC-1, Phase A item 4) ────────────────────────────
 // Mirror of legacy renderCostCenters L17165. Sales orders already snapshot
 // the code via sales_orders.cost_center (L912) — promoting that to FK is a

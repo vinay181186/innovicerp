@@ -17,12 +17,14 @@ import {
   type TpiPendingRow,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
+import { useTpiMastersList } from '@/modules/tpi-masters/api';
 import { useTpi } from '../api';
 
 function todayIso(): string {
@@ -329,6 +331,28 @@ function PendingTpi(props: {
   const [qcReportName, setQcReportName] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Inspector now picks from TPI Master instead of being typed free-hand — the
+  // same person used to arrive as "Mr. Sharma", "Mr sharma" and "R. Sharma", so
+  // no TPI history could be grouped by inspector. Only ACTIVE inspectors are
+  // offered; a retired one stays readable on the records he already signed.
+  // Server-side search (limit 50) — never load the whole master into the page.
+  const [inspectorSearch, setInspectorSearch] = useState('');
+  const inspectorQuery = useTpiMastersList({
+    search: inspectorSearch || undefined,
+    isActive: true,
+    limit: 50,
+    offset: 0,
+  });
+  const inspectorOptions = useMemo(
+    () =>
+      (inspectorQuery.data?.items ?? []).map((r) => ({
+        id: r.id,
+        code: r.code,
+        name: r.organization ?? '',
+      })),
+    [inspectorQuery.data],
+  );
+
   async function send(): Promise<void> {
     setErr(null);
     const acc = Number(accept || '0');
@@ -532,12 +556,27 @@ function PendingTpi(props: {
                 <label className="form-label" style={{ fontSize: 10 }}>
                   Inspector Name ★
                 </label>
-                <input
-                  className="innovic-input"
-                  style={{ fontWeight: 700 }}
-                  value={inspector}
-                  onChange={(e) => setInspector(e.target.value)}
-                  placeholder="e.g. Mr. Sharma"
+                {/* What gets SAVED is unchanged: still the inspector's name as
+                    plain text (tpiInspector / operatorName), never an id — a TPI
+                    log is a record of what was true on the day and keeps its own
+                    name snapshot. Picking also fills Organization, which stays
+                    editable because a one-off site visit can differ from the
+                    inspector's usual firm. */}
+                <SearchableSelect
+                  id={`tpi-inspector-${o.jcOpId}`}
+                  value={inspectorOptions.find((op) => op.code === inspector)?.id ?? null}
+                  valueLabel={inspector || undefined}
+                  onChange={(id) => {
+                    const picked = inspectorOptions.find((op) => op.id === id);
+                    setInspector(picked?.code ?? '');
+                    if (picked?.name) setOrganization(picked.name);
+                  }}
+                  onSearch={setInspectorSearch}
+                  loading={inspectorQuery.isFetching}
+                  options={inspectorOptions}
+                  selectedLabel={(op) => op.code ?? op.name}
+                  placeholder="🔍 Click to browse or type a name…"
+                  emptyText="No inspector found — add them in TPI Master"
                 />
               </div>
               <div className="form-grp">

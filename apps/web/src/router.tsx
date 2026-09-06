@@ -15,6 +15,10 @@ import { qcProcessesListRoute } from './modules/qc-processes/routes/list';
 import { qcProcessDetailRoute } from './modules/qc-processes/routes/detail';
 import { qcProcessNewRoute } from './modules/qc-processes/routes/new';
 import { qcProcessEditRoute } from './modules/qc-processes/routes/edit';
+import { tpiMastersListRoute } from './modules/tpi-masters/routes/list';
+import { tpiMasterDetailRoute } from './modules/tpi-masters/routes/detail';
+import { tpiMasterNewRoute } from './modules/tpi-masters/routes/new';
+import { tpiMasterEditRoute } from './modules/tpi-masters/routes/edit';
 import { costCentersListRoute } from './modules/cost-centers/routes/list';
 import { costCenterDetailRoute } from './modules/cost-centers/routes/detail';
 import { costCenterNewRoute } from './modules/cost-centers/routes/new';
@@ -268,6 +272,13 @@ const routeTree = rootRoute.addChildren([
     qcProcessNewRoute,
     qcProcessDetailRoute,
     qcProcessEditRoute,
+    // TPI Master — sibling of QC Process Master in Quality → Master. Same
+    // ordering rule: `new` before `$id` so /tpi-masters/new isn't eaten by the
+    // detail param route.
+    tpiMastersListRoute,
+    tpiMasterNewRoute,
+    tpiMasterDetailRoute,
+    tpiMasterEditRoute,
     costCentersListRoute,
     costCenterNewRoute,
     costCenterDetailRoute,
