@@ -37,10 +37,14 @@
 -- updated_at is deliberately left alone: this corrects what the row always
 -- meant rather than recording a change the user made.
 --
--- The two UPDATEs are separated by a `--> statement-breakpoint` marker because
--- that -- not the semicolon -- is what src/db/apply-sql.ts splits on. Without
--- it the whole file is handed to the driver as a single string, which is how
--- the first attempt at this migration ran and changed nothing.
+-- The two UPDATEs are separated by the marker src/db/apply-sql.ts splits on --
+-- that marker, NOT the semicolon. Without it the whole file goes to the driver
+-- as one string, which is how the first attempt ran and changed nothing.
+--
+-- Do not write that marker's text anywhere else in this file, comments
+-- included: the applier splits on a plain regex, so a mention of it inside a
+-- sentence is cut as if it were the real separator. That is how the second
+-- attempt failed, with `syntax error at or near "`"`.
 -- ============================================================
 
 -- 1) Through the purchase request.
