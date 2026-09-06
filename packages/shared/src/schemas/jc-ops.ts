@@ -46,6 +46,28 @@ export const jcOpsBoardRowSchema = z.object({
   outsourcePoCode: z.string().nullable(),
   /** PO PK for the deep-link to /purchase-orders/$id (legacy viewPO, L11371). */
   outsourcePoId: z.string().uuid().nullable(),
+  /** PR PK, for the "Gen PO" next-action link on the JC op card
+   *  (/purchase-orders/from-pr?prId=). The code alone cannot address that
+   *  screen. Read straight off jc_ops.outsource_pr_id, which every outsource op
+   *  carries: the OSP purchase request is raised AUTOMATICALLY -- on Job Card
+   *  save (job-cards/service.ts, "Auto OSP PR on JC edit"), on Plan execute,
+   *  and on the ADR-081 in-house->OSP switch -- so an outsource op is born at
+   *  `pr_raised` and `pending` is never reached. */
+  outsourcePrId: z.string().uuid().nullable(),
+  /** The outward challan this op is WAITING TO RECEIVE BACK, if any: the oldest
+   *  still-`issued` DC raised against the op's PO line. Drives the "Receive"
+   *  next-action link (/delivery-challans/$id/receive), which is also what
+   *  books the GRN -- so the card never needs a separate "Gen GRN" affordance
+   *  (GRN sits in the Store department, which shop-floor users rarely hold).
+   *  Oldest-first because material goes out and comes back in the order it was
+   *  sent. Null once every challan is received or cancelled.
+   *
+   *  IN-JC-26-00008 op 8 is the case that shapes this: three challans on one op
+   *  -- IN-DC-00002 received, IN-DC-00006 cancelled, IN-DC-00007 issued -- and
+   *  only the last is receivable. */
+  outsourceOpenDcId: z.string().uuid().nullable(),
+  /** Code of `outsourceOpenDcId`, so the link can name the challan it opens. */
+  outsourceOpenDcCode: z.string().nullable(),
   sentQty: z.number().int().nonnegative(),
 });
 export type JcOpsBoardRow = z.infer<typeof jcOpsBoardRowSchema>;

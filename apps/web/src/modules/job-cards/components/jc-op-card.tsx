@@ -15,80 +15,28 @@
 //   Recent Logs              → collapsible RECENT LOGS strip
 //   Action                   → footer strip
 //
-// No logic, no calculation and no API call changed. The outsource vendor/PR/PO
-// lookups keep their original shape: the jc-ops board is fetched ONLY from
-// inside an outsource op's sub-components, so a JC with no outsource ops still
-// issues no board request (identical query key → TanStack Query dedupes).
+// No quantity, badge or calculation changed. The outsource vendor/PR/PO lookups
+// keep their original shape: the jc-ops board is fetched ONLY from inside an
+// outsource op's sub-components (now jc-op-actions.tsx), so a JC with no
+// outsource ops still issues no board request (identical query key → TanStack
+// Query dedupes).
+//
+// The footer strip is the one thing that has grown: it is the NEXT ACTION for
+// this operation, not a dead end — Gen PO / Gen DC / Receive / Incoming QC for
+// an OSP op, TPI for a third-party inspection, Report NC on every op — and
+// every button in it is permission-gated. That strip and its gating live in
+// jc-op-actions.tsx (JcOpFooter), so this file stays layout only.
 import type {
   JcOpEnriched,
-  JcOpsBoardRow,
   JobCardListItem,
   JobCardRmAvailable,
   OpLog,
-  OutsourceStatus,
 } from '@innovic/shared';
 import { useState } from 'react';
 import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
-import { useJcOpsBoard } from '@/modules/jc-ops/api';
-import { OP_STATUS, OUTSOURCE_STATUS_LABEL, opAccentColor } from '../lib/jc-op-labels';
+import { OP_STATUS, opAccentColor } from '../lib/jc-op-labels';
+import { JcOpFooter, OutsourceInfo } from './jc-op-actions';
 import { QtyTile, SetupChip, secLabel } from './jc-op-card-parts';
-
-// Outsource vendor/PR/PO details for a JC op. Wired from the existing jc-ops
-// board endpoint (useJcOpsBoard, jc-ops/api.ts:31), whose row already carries
-// outsourceVendorName / outsourcePrCode / outsourcePoCode (jc-ops.ts:39-41,
-// populated in jc-ops/service.ts:70-72) — fields the op-entry enriched op shape
-// omits. Legacy renders these at L11043 (vendor name) and L11070-74 (PR/PO).
-function useOutsourceRow(jcCode: string, jcOpId: string): JcOpsBoardRow | undefined {
-  const { data } = useJcOpsBoard({ jcCode, limit: 500, offset: 0 });
-  return data?.items.find((r) => r.jcOpId === jcOpId);
-}
-
-// OUTSOURCE block for an outsource op (was the Machine cell, legacy L11043):
-// label + resolved vendor name + status.
-function OutsourceInfo({
-  jcCode,
-  jcOpId,
-  status,
-}: {
-  jcCode: string;
-  jcOpId: string;
-  status: OutsourceStatus;
-}): React.JSX.Element {
-  const row = useOutsourceRow(jcCode, jcOpId);
-  return (
-    <>
-      <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>🏭 Outsource</div>
-      {row?.outsourceVendorName ? (
-        <div style={{ fontSize: 10, color: 'var(--text2)' }}>{row.outsourceVendorName}</div>
-      ) : null}
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{OUTSOURCE_STATUS_LABEL[status]}</div>
-    </>
-  );
-}
-
-// Footer refs for an outsource op (legacy L11070-74): PR ref when a PR is
-// raised, PO ref when a PO is created, otherwise the raw status. Legacy's
-// "Create PR" branch (L11070) is an OSP action that lives in Op Entry
-// (useGenerateOspPr), not on this read-oriented status page — so only the
-// resulting references are surfaced here.
-function OutsourceActionRefs({
-  jcCode,
-  jcOpId,
-  status,
-}: {
-  jcCode: string;
-  jcOpId: string;
-  status: OutsourceStatus;
-}): React.JSX.Element {
-  const row = useOutsourceRow(jcCode, jcOpId);
-  if (status === 'pr_raised' && row?.outsourcePrCode) {
-    return <span style={{ fontSize: 11, color: 'var(--blue)' }}>PR: {row.outsourcePrCode}</span>;
-  }
-  if (status === 'po_created' && row?.outsourcePoCode) {
-    return <span style={{ fontSize: 11, color: 'var(--cyan)' }}>PO: {row.outsourcePoCode}</span>;
-  }
-  return <span style={{ fontSize: 11, color: 'var(--purple)' }}>{OUTSOURCE_STATUS_LABEL[status]}</span>;
-}
 
 export function JcOpCard({
   jc,
@@ -148,18 +96,6 @@ export function JcOpCard({
       : '';
   const reworkOut = op.reworkRaisedQty > 0 && reworkOutTo !== '';
   const reworkOutTitle = `${op.reworkRaisedQty} piece(s) rejected here and sent back to Op${op.reworkRaisedToOps ?? ''} for rework. Clears when the NC is closed.`;
-
-  // Footer action ladder — the table's Action cell, condition-for-condition.
-  const showLog =
-    !isOut &&
-    !isQc &&
-    (op.computedStatus === 'in_progress' ||
-      op.computedStatus === 'running' ||
-      op.completedQty > 0);
-  const showStart =
-    !isQc && !isOut && (op.computedStatus === 'available' || op.computedStatus === 'waiting');
-  const showDone = !isOut && !isQc && op.computedStatus === 'complete';
-  const hasFooter = isOut || isQc || showDone || showLog || showStart;
 
   return (
     <div
@@ -461,51 +397,16 @@ export function JcOpCard({
           </div>
         ) : null}
 
-        {/* ── FOOTER: the table's Action cell, unchanged ── */}
-        {hasFooter ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              flexWrap: 'wrap',
-              marginTop: 10,
-              paddingTop: 8,
-              borderTop: '1px solid var(--border)',
-            }}
-          >
-            {isOut ? (
-              <OutsourceActionRefs
-                jcCode={jc.code}
-                jcOpId={op.id}
-                status={op.outsourceStatus ?? 'pending'}
-              />
-            ) : isQc ? (
-              op.qcPending > 0 ? (
-                <button type="button" className="btn btn-sm" style={{ color: 'var(--green)' }} onClick={onQc}>
-                  🔬 QC ({op.qcPending})
-                </button>
-              ) : op.computedStatus === 'complete' ? (
-                <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ QC Done</span>
-              ) : (
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Waiting</span>
-              )
-            ) : showDone ? (
-              <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Done</span>
-            ) : showLog ? (
-              /* T33: Log only once the op is started; otherwise the Start
-                 button below is the only action shown. */
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => onLog(op.id)}>
-                ✚ Log
-              </button>
-            ) : null}
-            {showStart ? (
-              <button type="button" className="btn btn-sm" onClick={() => onStart(op.id)}>
-                ▶ Start
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+        {/* ── FOOTER: the operation's NEXT ACTION. Lives in jc-op-actions.tsx
+            with the OSP ladder, because every button in it is permission-gated
+            on the screen it opens and that gating belongs in one place. ── */}
+        <JcOpFooter
+          jcCode={jc.code}
+          op={op}
+          onStart={onStart}
+          onLog={onLog}
+          onQc={onQc}
+        />
       </div>
     </div>
   );

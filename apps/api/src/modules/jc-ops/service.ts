@@ -72,9 +72,21 @@ export async function listJcOpsBoard(
         op.outsource_vendor_text AS "outsourceVendorCode",
         ven.name AS "outsourceVendorName",
         pr.code AS "outsourcePrCode",
+        op.outsource_pr_id AS "outsourcePrId",
         po.code AS "outsourcePoCode",
         po.id AS "outsourcePoId",
         op.outsource_sent_qty AS "sentQty",
+        -- The outward challan this op is still WAITING TO RECEIVE BACK: the
+        -- oldest challan on the op's PO line that is still 'issued'. Drives the
+        -- "Receive" next-action link on the op card. LATERAL + LIMIT 1 so the
+        -- board stays one query at 2000 rows, not one lookup per op.
+        --
+        -- One op can carry several challans, and only the 'issued' ones are
+        -- receivable: IN-JC-26-00008 op 8 has IN-DC-00002 (received),
+        -- IN-DC-00006 (cancelled) and IN-DC-00007 (issued) on a single PO line,
+        -- and only IN-DC-00007 may be received.
+        odc.id AS "outsourceOpenDcId",
+        odc.code AS "outsourceOpenDcCode",
         -- Who actually made the completed qty, per machine (0095 / ADR-126). The
         -- machine columns above are the op's CURRENT machine — where the
         -- REMAINING qty runs — so on a re-routed op they name a machine that
@@ -89,6 +101,19 @@ export async function listJcOpsBoard(
       LEFT JOIN public.purchase_order_lines pol ON pol.id = op.outsource_po_line_id AND pol.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
+      LEFT JOIN LATERAL (
+        SELECT dc.id, dc.code
+        FROM public.delivery_challan_lines dcl
+        JOIN public.delivery_challans dc ON dc.id = dcl.delivery_challan_id
+        WHERE dcl.purchase_order_line_id = op.outsource_po_line_id
+          AND dc.company_id = ${companyId}::uuid
+          AND dc.status = 'issued'
+          AND dc.deleted_at IS NULL
+          AND dcl.deleted_at IS NULL
+        -- Oldest first: material comes back in the order it went out.
+        ORDER BY dc.dc_date, dc.code
+        LIMIT 1
+      ) odc ON true
       LEFT JOIN LATERAL (
         SELECT json_agg(
                  json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
@@ -134,8 +159,11 @@ export async function listJcOpsBoard(
         outsourceVendorCode: (r['outsourceVendorCode'] as string | null) ?? null,
         outsourceVendorName: (r['outsourceVendorName'] as string | null) ?? null,
         outsourcePrCode: (r['outsourcePrCode'] as string | null) ?? null,
+        outsourcePrId: (r['outsourcePrId'] as string | null) ?? null,
         outsourcePoCode: (r['outsourcePoCode'] as string | null) ?? null,
         outsourcePoId: (r['outsourcePoId'] as string | null) ?? null,
+        outsourceOpenDcId: (r['outsourceOpenDcId'] as string | null) ?? null,
+        outsourceOpenDcCode: (r['outsourceOpenDcCode'] as string | null) ?? null,
         sentQty: num(r['sentQty']),
       }),
     );

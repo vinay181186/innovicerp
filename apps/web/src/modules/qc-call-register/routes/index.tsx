@@ -34,8 +34,14 @@ export const qcCallRegisterRoute = createRoute({
   path: 'qc-call-register',
   // ?line=<grnLineId> deep-opens that incoming-QC row (the Incoming QC page's
   // Inspect button lands here).
-  validateSearch: (search: Record<string, unknown>): { line?: string } =>
-    typeof search.line === 'string' ? { line: search.line } : {},
+  // ?tab=tpi opens straight on the TPI tab (the JC op card's 📋 TPI link). It
+  // SEEDS the tab only — see the tab state below, which stays local.
+  validateSearch: (search: Record<string, unknown>): { line?: string; tab?: 'qc' | 'tpi' } => {
+    const out: { line?: string; tab?: 'qc' | 'tpi' } = {};
+    if (typeof search.line === 'string') out.line = search.line;
+    if (search.tab === 'qc' || search.tab === 'tpi') out.tab = search.tab;
+    return out;
+  },
   component: QcCallRegisterPage,
 });
 
@@ -57,14 +63,16 @@ function QcCallRegisterPage(): React.JSX.Element {
   // Incoming-material QC (GRN lines) shown on the same approval screen. Optional
   // — if it fails to load we still render process QC rather than blocking.
   const incomingQuery = useIncomingQc();
-  const { line: lineParam } = qcCallRegisterRoute.useSearch();
+  const { line: lineParam, tab: tabParam } = qcCallRegisterRoute.useSearch();
   const [openId, setOpenId] = useState<string | null>(lineParam ? `inc:${lineParam}` : null);
   const [pendSearch, setPendSearch] = useState('');
   const [compSearch, setCompSearch] = useState('');
   // Screen-merge: TPI folded in as a tab (it used to be its own /tpi page, which
-  // stays registered). Tab choice is local — it deliberately does NOT go in the
-  // URL, so this route's own ?line= deep-link param is untouched.
-  const [tab, setTab] = useState<'qc' | 'tpi'>('qc');
+  // stays registered). Tab choice stays LOCAL state — clicking a tab
+  // deliberately does NOT write to the URL, so this route's own ?line=
+  // deep-link param is untouched. ?tab= only SEEDS the initial value, so an
+  // outside link (the JC op card's 📋 TPI button) can land on the TPI tab.
+  const [tab, setTab] = useState<'qc' | 'tpi'>(tabParam ?? 'qc');
   // Caller's effective access — drives the "Hide page" VIEW guard below.
   const { data: eff } = useMyAccess();
 
