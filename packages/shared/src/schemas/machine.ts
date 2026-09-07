@@ -7,7 +7,16 @@ export const machineSchema = z.object({
   companyId: z.string().uuid(),
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
+  /** Free-text Type, entered on the machine form. Kept as-is; the Machine
+   *  Group master (migration 0116) is a SEPARATE field alongside it, not a
+   *  replacement. Read by alerts AL-013, job-queue, machine-loading,
+   *  production-schedule and shop-floor. */
   machineType: z.string().max(64).nullable(),
+  /** FK to the Machine Group master. A SEPARATE field alongside machineType,
+   *  not a replacement — the Type field stays on the form. */
+  machineGroupId: z.string().uuid().nullable(),
+  /** The product this machine runs. Free text, entered on the machine form. */
+  productCode: z.string().max(64).nullable(),
   capacityPerShift: z.number().int().nullable(),
   shiftsPerDay: z.number().int().positive(),
   status: z.string().min(1).max(32),
@@ -29,6 +38,10 @@ export const createMachineInputSchema = z.object({
     .regex(codeRegex, 'code may contain only letters, digits, dot, underscore, hyphen'),
   name: z.string().min(1).max(255),
   machineType: z.string().max(64).optional(),
+  // .nullable() so the form can take a machine BACK to no group. Without it
+  // a mis-picked group could be swapped but never cleared.
+  machineGroupId: z.string().uuid().nullable().optional(),
+  productCode: z.string().max(64).optional(),
   capacityPerShift: z.coerce.number().int().nonnegative().optional(),
   shiftsPerDay: z.coerce.number().int().positive().default(1),
   status: z.string().min(1).max(32).default('Idle'),

@@ -1,6 +1,6 @@
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
-import { machines } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { machineGroups, machines } from '../../db/schema';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
@@ -20,6 +20,34 @@ function emptyToNull(s: string | undefined): string | null {
   if (s === undefined) return null;
   const trimmed = s.trim();
   return trimmed.length === 0 ? null : trimmed;
+}
+
+/**
+ * Check the chosen Machine Group exists before pointing a machine at it
+ * (migration 0116). Scoped to the caller's company and to live rows, so a
+ * machine can never be linked to another tenant's group or to a deleted one.
+ *
+ * The group is a SEPARATE field alongside the free-text Type — it does not feed
+ * `machine_type`, which the user still types on the form and which alerts
+ * AL-013, job-queue, machine-loading, production-schedule and shop-floor read.
+ */
+async function assertMachineGroupExists(
+  tx: DbTransaction,
+  companyId: string,
+  machineGroupId: string,
+): Promise<void> {
+  const rows = await tx
+    .select({ id: machineGroups.id })
+    .from(machineGroups)
+    .where(
+      and(
+        eq(machineGroups.id, machineGroupId),
+        eq(machineGroups.companyId, companyId),
+        isNull(machineGroups.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (rows.length === 0) throw new NotFoundError(`Machine group ${machineGroupId} not found`);
 }
 
 // numeric columns come back as strings from postgres.js — coerce hour_rate.
@@ -115,6 +143,9 @@ export async function createMachine(
       throw new ConflictError(`Machine code "${input.code}" already exists`);
     }
 
+    const groupId = input.machineGroupId ?? null;
+    if (groupId) await assertMachineGroupExists(tx, companyId, groupId);
+
     const inserted = await tx
       .insert(machines)
       .values({
@@ -122,6 +153,8 @@ export async function createMachine(
         code: input.code,
         name: input.name,
         machineType: emptyToNull(input.machineType),
+        machineGroupId: groupId,
+        productCode: emptyToNull(input.productCode),
         capacityPerShift: input.capacityPerShift ?? null,
         shiftsPerDay: input.shiftsPerDay,
         status: input.status,
@@ -145,7 +178,7 @@ export async function updateMachine(
 ): Promise<Machine> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
   await requireFormAccess(user, 'machine_create', 'edit');
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
       .select({ id: machines.id })
@@ -157,6 +190,15 @@ export async function updateMachine(
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name;
     if (input.machineType !== undefined) updates.machineType = emptyToNull(input.machineType);
+    // The group is validated but kept independent of the free-text Type above.
+    if (input.machineGroupId !== undefined) {
+      // null is a deliberate 'clear the group', not a lookup miss.
+      if (input.machineGroupId !== null) {
+        await assertMachineGroupExists(tx, companyId, input.machineGroupId);
+      }
+      updates.machineGroupId = input.machineGroupId;
+    }
+    if (input.productCode !== undefined) updates.productCode = emptyToNull(input.productCode);
     if (input.capacityPerShift !== undefined)
       updates.capacityPerShift = input.capacityPerShift ?? null;
     if (input.shiftsPerDay !== undefined) updates.shiftsPerDay = input.shiftsPerDay;

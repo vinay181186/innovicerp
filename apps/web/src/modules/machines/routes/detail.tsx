@@ -6,7 +6,7 @@ import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useMachine, useSoftDeleteMachine } from '../api';
+import { useMachine, useMachineGroupLookup, useSoftDeleteMachine } from '../api';
 
 export const machineDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -185,6 +185,12 @@ function MachineDetailPage(): React.JSX.Element {
 
 function DetailGrid(props: { machine: Machine }): React.JSX.Element {
   const { machine } = props;
+  // The whole group master in one cached fetch (shared with the list and the
+  // machine form) — the machine itself only stores the group's id.
+  const groupLookup = useMachineGroupLookup();
+  const groupCode = machine.machineGroupId
+    ? (groupLookup.get(machine.machineGroupId)?.code ?? null)
+    : null;
   return (
     <div className="form-grid">
       <Pair
@@ -193,7 +199,12 @@ function DetailGrid(props: { machine: Machine }): React.JSX.Element {
           <span className={`badge ${statusBadgeClass(machine.status)}`}>{machine.status}</span>
         }
       />
+      {/* Group first: it is the master-backed field. Type stays exactly as it
+          was — free text, alongside the group, not replaced by it. A machine
+          with no group (every row created before this change) reads '—'. */}
+      <Pair label="Machine group" value={groupCode ?? '—'} />
       <Pair label="Machine type" value={machine.machineType ?? '—'} />
+      <Pair label="Product code" value={machine.productCode || '—'} />
       <Pair
         label="Capacity / shift"
         value={machine.capacityPerShift !== null ? `${machine.capacityPerShift} h` : '—'}

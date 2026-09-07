@@ -359,6 +359,56 @@ export const vendors = pgTable(
   ],
 ).enableRLS();
 
+// Machine GROUP master (migration 0116) — the second tab of the Machine Master
+// screen. A controlled list a machine can be filed under, sitting ALONGSIDE the
+// existing free-text `machines.machine_type`, which is unchanged.
+//
+// Shaped as a deliberate sibling of material_grades / tpi_masters: `code` IS
+// the name the user types and reads ('VMC'), unique per company and permanent
+// once created, because machines and their screens quote it. Retire a group
+// with is_active rather than renaming it.
+export const machineGroups = pgTable(
+  'machine_groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    /** The group as written on the shop floor — 'VMC', 'CNC', 'Lathe'. */
+    code: text('code').notNull(),
+    description: text('description'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('machine_groups_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('machine_groups_company_active_idx')
+      .on(t.companyId, t.isActive)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('machine_groups_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('machine_groups_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export const machines = pgTable(
   'machines',
   {
@@ -368,7 +418,16 @@ export const machines = pgTable(
       .references(() => companies.id),
     code: text('code').notNull(),
     name: text('name').notNull(),
+    /** Free-text Type, typed on the machine form. Unchanged by migration 0116:
+     *  the Machine Group below is a SEPARATE field alongside it, not a
+     *  replacement. Read by alerts AL-013, job-queue, machine-loading,
+     *  production-schedule and shop-floor. */
     machineType: text('machine_type'),
+    /** FK to the Machine Group master (migration 0116). Independent of the
+     *  free-text machineType above. */
+    machineGroupId: uuid('machine_group_id').references(() => machineGroups.id),
+    /** The product this machine runs. Free text on the machine form. */
+    productCode: text('product_code'),
     capacityPerShift: integer('capacity_per_shift'),
     shiftsPerDay: integer('shifts_per_day').notNull().default(1),
     status: text('status').notNull().default('Idle'),
@@ -393,6 +452,9 @@ export const machines = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('machines_company_status_idx')
       .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('machines_machine_group_id_idx')
+      .on(t.machineGroupId)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('machines_company_read', {
       for: 'select',
