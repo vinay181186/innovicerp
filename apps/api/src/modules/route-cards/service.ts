@@ -48,6 +48,7 @@
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   items,
+  machineGroups,
   machines,
   materialGrades,
   materialSizes,
@@ -386,17 +387,22 @@ async function loadRouteCardDetail(
     .limit(1);
   const item = itemRows[0] ?? null;
 
-  // Ops with joined machine + vendor display.
+  // Ops with joined machine + machine group + vendor display.
   const opRows = await tx
     .select({
       op: routeCardOps,
       machineCode: machines.code,
       machineName: machines.name,
+      // Group the machine is filed under, for the Operation Sequence table.
+      // leftJoin twice over: an op with no machine, or a machine in no group,
+      // must still come back — those land as null.
+      machineGroupCode: machineGroups.code,
       ospVendorCode: vendors.code,
       ospVendorName: vendors.name,
     })
     .from(routeCardOps)
     .leftJoin(machines, eq(machines.id, routeCardOps.machineId))
+    .leftJoin(machineGroups, eq(machineGroups.id, machines.machineGroupId))
     .leftJoin(vendors, eq(vendors.id, routeCardOps.ospVendorId))
     .where(
       and(
@@ -460,6 +466,7 @@ async function loadRouteCardDetail(
         deletedAt: maybeTsLike(r.op.deletedAt),
         machineCode: r.machineCode,
         machineName: r.machineName,
+        machineGroupCode: r.machineGroupCode,
         ospVendorCode: r.ospVendorCode,
         ospVendorName: r.ospVendorName,
       }),

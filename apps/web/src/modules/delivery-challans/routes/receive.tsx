@@ -245,16 +245,16 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   <tr>
                     <th>#</th>
                     <th>Item</th>
-                    <th className="td-right">Sent</th>
-                    <th className="td-right">Already recv</th>
-                    <th className="td-right">Remaining</th>
+                    <th>Sent</th>
+                    <th>Already recv</th>
+                    <th>Remaining</th>
                     <th>Receive now</th>
                   </tr>
                 </thead>
                 <tbody>
                   {lineDrafts.map((d, idx) => (
                     <tr key={d.dcLineId}>
-                      <td className="td-ctr mono">{d.lineNo}</td>
+                      <td className="mono">{d.lineNo}</td>
                       <td>
                         <span className="mono">{d.itemCodeText}</span>
                         {d.itemNameText ? (
@@ -263,9 +263,9 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                           </div>
                         ) : null}
                       </td>
-                      <td className="td-right mono">{d.sentQty.toFixed(0)}</td>
-                      <td className="td-right mono">{d.alreadyReceived.toFixed(0)}</td>
-                      <td className="td-right mono fw-700">{d.remaining.toFixed(0)}</td>
+                      <td className="mono">{d.sentQty.toFixed(0)}</td>
+                      <td className="mono">{d.alreadyReceived.toFixed(0)}</td>
+                      <td className="mono fw-700">{d.remaining.toFixed(0)}</td>
                       <td>
                         <input
                           type="number"

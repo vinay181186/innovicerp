@@ -136,10 +136,10 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Process</th>
-                <th className="td-right">PO Qty</th>
-                <th className="td-right">Sent</th>
-                <th className="td-right">Returned</th>
-                <th className="td-right">Pending</th>
+                <th>PO Qty</th>
+                <th>Sent</th>
+                <th>Returned</th>
+                <th>Pending</th>
               </tr>
             </thead>
             <tbody>
@@ -160,15 +160,15 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                     <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                       {l.processText ?? '—'}
                     </td>
-                    <td className="td-ctr mono">{l.poQty}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="mono">{l.poQty}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {l.sentQty}
                     </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                    <td className="mono" style={{ color: 'var(--green)' }}>
                       {l.alreadyReturned}
                     </td>
                     <td
-                      className="td-ctr mono fw-700"
+                      className="mono fw-700"
                       style={{ color: l.pending > 0 ? 'var(--red)' : 'var(--green)' }}
                     >
                       {l.pending}

@@ -241,7 +241,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
           </span>
         </div>
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-ctr">
             <thead>
               <tr>
                 <th>#</th>
@@ -282,7 +282,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             <div className="panel-title">📅 Delivery Schedule ({detail.milestones.length})</div>
           </div>
           <div className="panel-body">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-ctr">
               <thead>
                 <tr>
                   <th>Lot #</th>

@@ -225,9 +225,9 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                 <th>Type</th>
                 <th>Item</th>
                 <th>SO</th>
-                <th className="td-right">Order Qty</th>
-                <th className="td-right">Plan Qty</th>
-                <th className="td-ctr">Ops</th>
+                <th>Order Qty</th>
+                <th>Plan Qty</th>
+                <th>Ops</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -266,9 +266,9 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                         {row.lineNo ? ` · L#${row.lineNo}` : ''}
                       </span>
                     </td>
-                    <td className="td-right">{row.orderQty}</td>
-                    <td className="td-right">{row.planQty}</td>
-                    <td className="td-ctr">{row.opsCount}</td>
+                    <td>{row.orderQty}</td>
+                    <td>{row.planQty}</td>
+                    <td>{row.opsCount}</td>
                     <td>
                       <span className={`badge ${status.cls}`}>{status.label}</span>
                     </td>

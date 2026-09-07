@@ -36,6 +36,7 @@ import { deliveryChallansRoutes } from './modules/delivery-challans/routes';
 import { itemsRoutes } from './modules/items/routes';
 import { jobCardsRoutes } from './modules/job-cards/routes';
 import { jobWorkOrdersRoutes } from './modules/job-work-orders/routes';
+import { machineGroupsRoutes } from './modules/machine-groups/routes';
 import { machinesRoutes } from './modules/machines/routes';
 import { materialGradesRoutes } from './modules/material-grades/routes';
 import { materialSizesRoutes } from './modules/material-sizes/routes';
@@ -158,6 +159,8 @@ await app.register(itemsRoutes);
 await app.register(clientsRoutes);
 await app.register(vendorsRoutes);
 await app.register(machinesRoutes);
+// Machine Master tab 2 — the Machine Group master behind the same form key.
+await app.register(machineGroupsRoutes);
 await app.register(machineLoadingRoutes);
 await app.register(productionDashboardRoutes);
 await app.register(operatorsRoutes);

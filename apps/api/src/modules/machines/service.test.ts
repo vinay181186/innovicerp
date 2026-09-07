@@ -1,7 +1,7 @@
 import { eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { machines, users } from '../../db/schema';
+import { machineGroups, machines, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, NotFoundError } from '../../lib/errors';
 import * as service from './service';
@@ -10,6 +10,7 @@ const TEST_PREFIX = 'T020-';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
 let admin: AuthContext;
+let testGroupId: string;
 
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -22,10 +23,25 @@ beforeAll(async () => {
     role: u.role,
     isActive: u.isActive,
   };
+
+  // Machine Group master (migration 0116) — a separate field alongside the
+  // free-text Type, so the machine tests need a group to point at.
+  const g = await db
+    .insert(machineGroups)
+    .values({
+      companyId: u.companyId,
+      code: `${TEST_PREFIX}VMC`,
+      createdBy: u.id,
+      updatedBy: u.id,
+    })
+    .returning();
+  testGroupId = g[0]!.id;
 });
 
 afterAll(async () => {
+  // Machines first: they hold the FK to the group.
   await db.delete(machines).where(like(machines.code, `${TEST_PREFIX}%`));
+  await db.delete(machineGroups).where(like(machineGroups.code, `${TEST_PREFIX}%`));
 });
 
 describe('machines service', () => {
@@ -49,23 +65,60 @@ describe('machines service', () => {
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
-  it('createMachine preserves capacityPerShift + machineType', async () => {
+  it('createMachine preserves capacityPerShift, machineType, group and productCode', async () => {
     const code = `${TEST_PREFIX}CAP`;
     const m = await service.createMachine(
       {
         code,
         name: 'CNC',
         machineType: 'CNC',
+        machineGroupId: testGroupId,
+        productCode: 'PRD-1',
         capacityPerShift: 8,
         shiftsPerDay: 2,
         status: 'Running',
       },
       admin,
     );
+    // Type stays free text; the group is a separate field alongside it.
     expect(m.machineType).toBe('CNC');
+    expect(m.machineGroupId).toBe(testGroupId);
+    expect(m.productCode).toBe('PRD-1');
     expect(m.capacityPerShift).toBe(8);
     expect(m.shiftsPerDay).toBe(2);
     expect(m.status).toBe('Running');
+  });
+
+  it('createMachine rejects an unknown machineGroupId', async () => {
+    await expect(
+      service.createMachine(
+        {
+          code: `${TEST_PREFIX}BADG`,
+          name: 'No such group',
+          machineGroupId: '00000000-0000-0000-0000-000000000000',
+          shiftsPerDay: 1,
+          status: 'Idle',
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('updateMachine sets the group without touching the free-text Type', async () => {
+    const created = await service.createMachine(
+      {
+        code: `${TEST_PREFIX}UG`,
+        name: 'Grouped',
+        machineType: 'Typed by hand',
+        shiftsPerDay: 1,
+        status: 'Idle',
+      },
+      admin,
+    );
+    expect(created.machineGroupId).toBeNull();
+    const updated = await service.updateMachine(created.id, { machineGroupId: testGroupId }, admin);
+    expect(updated.machineGroupId).toBe(testGroupId);
+    expect(updated.machineType).toBe('Typed by hand');
   });
 
   it('getMachine throws NotFoundError for unknown id', async () => {

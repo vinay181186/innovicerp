@@ -120,12 +120,12 @@ export function SoQcStatusView(): React.JSX.Element {
                     <th style={{ width: 40 }}>Line</th>
                     <th style={{ width: 100 }}>Item Code</th>
                     <th>Item Name</th>
-                    <th style={{ textAlign: 'center', width: 40 }}>Qty</th>
+                    <th style={{ width: 40 }}>Qty</th>
                     <th style={{ minWidth: 240 }}>QC Stages (in JC)</th>
-                    <th style={{ textAlign: 'center', width: 80 }}>Incoming QC</th>
-                    <th style={{ textAlign: 'center', width: 60 }}>TPI</th>
-                    <th style={{ textAlign: 'center', width: 60 }}>Docs</th>
-                    <th style={{ textAlign: 'center', width: 90 }}>Overall</th>
+                    <th style={{ width: 80 }}>Incoming QC</th>
+                    <th style={{ width: 60 }}>TPI</th>
+                    <th style={{ width: 60 }}>Docs</th>
+                    <th style={{ width: 90 }}>Overall</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -236,22 +236,22 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
         onClick={hasDetail ? () => setOpen((v) => !v) : undefined}
         style={{ cursor: hasDetail ? 'pointer' : 'default' }}
       >
-        <td className="td-ctr fw-700">{l.lineNo}</td>
+        <td className="fw-700">{l.lineNo}</td>
         <td className="td-code mono fw-700" style={{ color: 'var(--cyan)' }}>
           {l.itemCode ?? '—'}
         </td>
         <td>{l.partName ?? '—'}</td>
-        <td className="td-ctr mono fw-700">{l.orderQty}</td>
+        <td className="mono fw-700">{l.orderQty}</td>
 
         {!l.hasAnyQc ? (
           <>
             <td style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 11 }}>
               ⚠ No QC stage defined for this line
             </td>
-            <td className="td-ctr text3">—</td>
-            <td className="td-ctr text3">—</td>
-            <td className="td-ctr text3">—</td>
-            <td className="td-ctr">
+            <td className="text3">—</td>
+            <td className="text3">—</td>
+            <td className="text3">—</td>
+            <td>
               <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)' }}>— N/A</span>
             </td>
           </>
@@ -284,16 +284,16 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
                 ))
               )}
             </td>
-            <td className="td-ctr" style={{ verticalAlign: 'middle' }}>
+            <td style={{ verticalAlign: 'middle' }}>
               <StatusPill done={l.grnDone} total={l.grnTotal} />
             </td>
-            <td className="td-ctr" style={{ verticalAlign: 'middle' }}>
+            <td style={{ verticalAlign: 'middle' }}>
               <StatusPill done={l.tpiCount} total={l.tpiCount} />
             </td>
-            <td className="td-ctr" style={{ verticalAlign: 'middle' }}>
+            <td style={{ verticalAlign: 'middle' }}>
               <StatusPill done={l.docUploaded} total={l.docCount} />
             </td>
-            <td className="td-ctr" style={{ verticalAlign: 'middle' }}>
+            <td style={{ verticalAlign: 'middle' }}>
               <ProgressBar pct={l.overallPct} />
             </td>
           </>
@@ -342,12 +342,12 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>GRN No</th>
             <th>Item</th>
             <th>Vendor</th>
-            <th style={{ textAlign: 'center' }}>Received</th>
-            <th style={{ textAlign: 'center' }}>Accepted</th>
-            <th style={{ textAlign: 'center' }}>Rejected</th>
-            <th style={{ textAlign: 'center' }}>Pending</th>
-            <th style={{ textAlign: 'center' }}>Status</th>
-            <th style={{ textAlign: 'center' }}>Report</th>
+            <th>Received</th>
+            <th>Accepted</th>
+            <th>Rejected</th>
+            <th>Pending</th>
+            <th>Status</th>
+            <th>Report</th>
           </tr>
         </thead>
         <tbody>
@@ -358,28 +358,28 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>{g.itemCode ?? '—'}</td>
               <td>{g.vendorName ?? '—'}</td>
-              <td className="td-ctr mono">{g.receivedQty}</td>
-              <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+              <td className="mono">{g.receivedQty}</td>
+              <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                 {g.accepted}
               </td>
               <td
-                className="td-ctr mono"
+                className="mono"
                 style={g.rejected > 0 ? { color: 'var(--red)', fontWeight: 700 } : undefined}
               >
                 {g.rejected}
               </td>
               <td
-                className="td-ctr mono"
+                className="mono"
                 style={g.pending > 0 ? { color: 'var(--amber)', fontWeight: 700 } : undefined}
               >
                 {g.pending}
               </td>
-              <td className="td-ctr">
+              <td>
                 <span className={`badge ${g.status === 'done' ? 'b-green' : 'b-amber'}`}>
                   {g.status === 'done' ? '✅ Accepted' : '⏳ Pending'}
                 </span>
               </td>
-              <td className="td-ctr">
+              <td>
                 {g.qcReportPath ? (
                   <QcReportLink path={g.qcReportPath} name={g.qcReportName} label="View" />
                 ) : (
@@ -404,11 +404,11 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>JC No</th>
             <th>Organization</th>
             <th>Inspector</th>
-            <th style={{ textAlign: 'center' }}>Accepted</th>
-            <th style={{ textAlign: 'center' }}>Rejected</th>
-            <th style={{ textAlign: 'center' }}>Date</th>
-            <th style={{ textAlign: 'center' }}>Status</th>
-            <th style={{ textAlign: 'center' }}>Report</th>
+            <th>Accepted</th>
+            <th>Rejected</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Report</th>
           </tr>
         </thead>
         <tbody>
@@ -419,22 +419,22 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>{t.organization ?? '—'}</td>
               <td>{t.inspector ?? '—'}</td>
-              <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+              <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                 {t.accepted}
               </td>
               <td
-                className="td-ctr mono"
+                className="mono"
                 style={t.rejected > 0 ? { color: 'var(--red)', fontWeight: 700 } : undefined}
               >
                 {t.rejected}
               </td>
-              <td className="td-ctr">{t.date ?? '—'}</td>
-              <td className="td-ctr">
+              <td>{t.date ?? '—'}</td>
+              <td>
                 <span className={`badge ${t.status === 'passed' ? 'b-green' : 'b-amber'}`}>
                   {t.status === 'passed' ? '✅ Passed' : '⚠ Partial'}
                 </span>
               </td>
-              <td className="td-ctr">
+              <td>
                 {t.qcReportPath ? (
                   <QcReportLink path={t.qcReportPath} name={t.qcReportName} label="View" />
                 ) : (
@@ -459,7 +459,7 @@ function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>JC No</th>
             <th>Document Type</th>
             <th>File Name</th>
-            <th style={{ textAlign: 'center' }}>Status</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -472,7 +472,7 @@ function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               <td className="text3" style={{ fontSize: 10 }}>
                 {d.fileName ?? '—'}
               </td>
-              <td className="td-ctr">
+              <td>
                 <span className={`badge ${d.uploaded ? 'b-green' : 'b-red'}`}>
                   {d.uploaded ? '✅ Uploaded' : '❌ Missing'}
                 </span>
@@ -507,28 +507,28 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
 
   return (
     <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border2)' }}>
-      <td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--text2)' }}>
+      <td colSpan={4} style={{ fontSize: 11, color: 'var(--text2)' }}>
         TOTAL ({lines.length} lines)
       </td>
       <td style={{ fontSize: 11, color: 'var(--text2)' }}>
         {t.qcOps} QC stages across {t.jcCount} JCs
       </td>
-      <td className="td-ctr">
+      <td>
         <span className="mono" style={{ color: color(t.grnDone, t.grn) }}>
           {t.grnDone}/{t.grn}
         </span>
       </td>
-      <td className="td-ctr">
+      <td>
         <span className="mono" style={{ color: t.tpi > 0 ? 'var(--green)' : 'var(--text3)' }}>
           {t.tpi}/{t.tpi}
         </span>
       </td>
-      <td className="td-ctr">
+      <td>
         <span className="mono" style={{ color: color(t.docsUp, t.docs) }}>
           {t.docsUp}/{t.docs}
         </span>
       </td>
-      <td className="td-ctr">
+      <td>
         <ProgressBar pct={totPct} />
       </td>
     </tr>

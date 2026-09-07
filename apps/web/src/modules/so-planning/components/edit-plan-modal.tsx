@@ -27,7 +27,12 @@ import {
   MaterialSizePicker,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useCostCentersList } from '@/modules/cost-centers/api';
-import { useMachinesList } from '@/modules/machines/api';
+import {
+  MACHINE_GROUP_LIST_LIMIT,
+  useMachineGroupsList,
+  useMachinesList,
+} from '@/modules/machines/api';
+import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { useFinalizePlan, useUpdatePlan, useDefaultRouteOps } from '@/modules/plans/api';
 import { useQcProcessesList } from '@/modules/qc-processes/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -40,7 +45,15 @@ interface Props {
   onSaved: () => void;
 }
 
-type OpRow = PlanOpInput & { uid: string };
+// The routing row as this modal holds it: the saved shape plus two fields that
+// never leave the browser.
+//
+// `machineGroupId` is DISPLAY-ONLY. plan_ops has no machine_group_id column, so
+// the group is not a thing a plan can store — it exists here purely to narrow the
+// Machine picker down to one family of machines (VMC, CNC, Lathe…) before the
+// planner picks the machine itself. buildPayload() must never send it; if it is
+// ever added to the payload the server will reject the whole save.
+type OpRow = PlanOpInput & { uid: string; machineGroupId?: string | null };
 
 const DOC_PRESETS_FALLBACK = [
   'Dimensional Inspection Report',
@@ -150,29 +163,76 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const [machineSearch, setMachineSearch] = useState('');
   const machines = useMachinesList({
     ...(machineSearch.trim() ? { search: machineSearch.trim() } : {}),
-    limit: 50,
+    // 200 (the endpoint's documented cap) rather than 50: the Machine picker is
+    // now narrowed to the chosen Machine Group in the browser, over whatever
+    // rows this one hook returned. On 50 rows a group whose machines all sat on
+    // page 2 would look empty, which reads as "this group has no machines".
+    limit: 200,
     offset: 0,
   });
   const [vendorSearch, setVendorSearch] = useState('');
   const vendors = useVendorsList({
     ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
-    limit: 50,
+    // 200 (the endpoint's cap) rather than 50: the vendor master runs to several
+    // hundred rows, so browsing without typing showed a thin and arbitrary slice.
+    // Typing is still what finds a specific vendor — the search goes to the
+    // server — but a wider first page makes the list worth opening.
+    limit: 200,
     offset: 0,
   });
+  // The full machine rows, not just the three picker fields: the Machine Group
+  // narrowing and the group seeding both read `machineGroupId` off the master.
+  const machineRows = useMemo(() => machines.data?.machines ?? [], [machines.data]);
   const machineOpts = useMemo(
-    () => (machines.data?.machines ?? []).map((m) => ({ id: m.id, code: m.code, name: m.name })),
-    [machines.data],
+    () => machineRows.map((m) => ({ id: m.id, code: m.code, name: m.name })),
+    [machineRows],
   );
   const vendorOpts = useMemo(
     () => (vendors.data?.vendors ?? []).map((v) => ({ id: v.id, code: v.code, name: v.name })),
     [vendors.data],
   );
-  const machineById = useMemo(() => new Map(machineOpts.map((o) => [o.id, o])), [machineOpts]);
+  const machineById = useMemo(() => new Map(machineRows.map((m) => [m.id, m])), [machineRows]);
+  // A plan op stores the machine CODE snapshot and may carry a null machineId
+  // (older rows, and anything typed before the picker existed), so the machine
+  // has to be findable by either key.
+  const machineByCode = useMemo(() => new Map(machineRows.map((m) => [m.code, m])), [machineRows]);
   const vendorById = useMemo(() => new Map(vendorOpts.map((o) => [o.id, o])), [vendorOpts]);
-  const machineIdByCode = (code: string): string | null =>
-    machineOpts.find((m) => m.code === code)?.id ?? null;
+  const machineIdByCode = (code: string): string | null => machineByCode.get(code)?.id ?? null;
+
+  // The whole Machine Group master in one fetch — groups scroll, they do not
+  // paginate. This is only a NAME lookup: the picker shows the text it is handed
+  // until it is opened, so a group recovered from the machine master would sit in
+  // the box as an invisible id and the row would look ungrouped. Deliberately NOT
+  // filtered to active groups, so a machine still linked to a retired group keeps
+  // showing which group that was.
+  const machineGroups = useMachineGroupsList({
+    limit: MACHINE_GROUP_LIST_LIMIT,
+    offset: 0,
+  });
+  const machineGroupCodeById = useMemo(
+    () => new Map((machineGroups.data?.groups ?? []).map((g) => [g.id, g.code])),
+    [machineGroups.data],
+  );
   const vendorIdByCode = (code: string): string | null =>
     vendorOpts.find((v) => v.code === code)?.id ?? null;
+
+  // What a picked row reads as once the box is closed: "CODE — Name", the shape
+  // <SearchableSelect> uses in its own dropdown. These fields used to collapse to
+  // the bare code, which meant picking a vendor and then reading the row back
+  // gave you an identifier and no way to tell whether it was the right firm
+  // without opening the list again.
+  //
+  // Only the CODE is stored on the op, so the name has to be recovered from the
+  // master. When it cannot be — the row is not in the page this hook fetched —
+  // the code alone is shown, exactly as before. A missing name degrades the
+  // label; it never blanks the field.
+  const codeAndName = (o: { code?: string | null; name: string } | undefined): string | undefined =>
+    o ? (o.code ? `${o.code} — ${o.name}` : o.name) : undefined;
+
+  const vendorLabelOf = (o: OpRow): string | undefined => {
+    const id = o.outsourceVendorId ?? vendorIdByCode(o.outsourceVendorText ?? '');
+    return codeAndName(id ? vendorById.get(id) : undefined) ?? o.outsourceVendorText ?? undefined;
+  };
 
   // Heal a plan that carries only the vendor FK and no code snapshot. Plans
   // raised by the BOM planning modal before it sent the code arrive that way,
@@ -192,6 +252,54 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     // dpVendor/foVendor are deliberately not dependencies: this only ever fills
     // a BLANK one, and re-running on every keystroke would fight the user.
   }, [vendorById, plan.dpVendorId, plan.foVendorId, dpVendor, foVendor]);
+
+  // Which machine master row an op is pointing at, by id first and by the stored
+  // code snapshot second.
+  const machineOfOp = (o: OpRow) =>
+    (o.machineId ? machineById.get(o.machineId) : undefined) ??
+    (o.machineCodeText ? machineByCode.get(o.machineCodeText) : undefined);
+
+  // Defined after machineOfOp because it reads it. See codeAndName above for why
+  // these labels carry the name as well as the code.
+  const machineLabelOf = (o: OpRow): string | undefined =>
+    codeAndName(machineOfOp(o)) ?? o.machineCodeText ?? undefined;
+
+  // Fill in the Machine Group for ops that arrived with a machine already on
+  // them. The group is not stored on the plan, so the only way to show one on a
+  // saved op is to look its machine up in the machine master and read the group
+  // off there.
+  //
+  // Best-effort on purpose. A machine that is not in the page of rows this hook
+  // returned (the planner has typed a search term, or the master is larger than
+  // the 200 fetched) leaves the Group box blank and the op keeps its machine
+  // exactly as saved — a group we could not display must never cost the user
+  // the machine that IS on the op.
+  //
+  // `undefined` means "not resolved yet, try again when more rows arrive";
+  // `null` means "resolved, and this machine has no group" — or the planner
+  // cleared the box by hand. Only `undefined` rows are ever touched, so this
+  // cannot fight a choice the planner has made.
+  useEffect(() => {
+    if (machineById.size === 0) return;
+    setOps((prev) => {
+      let changed = false;
+      const next = prev.map((o) => {
+        // QC rows are skipped: they carry the literal 'QC' as their machine
+        // text, which is not a machine and has no group to find.
+        if (o.opType === 'qc' || o.machineGroupId !== undefined) return o;
+        const m = machineOfOp(o);
+        if (!m) return o;
+        changed = true;
+        return { ...o, machineGroupId: m.machineGroupId };
+      });
+      return changed ? next : prev;
+    });
+    // machineOfOp is derived from exactly these two maps, so they are the real
+    // dependencies; listing the function itself would re-run this on every render.
+    // Deliberately no eslint-disable directive here: the react-hooks plugin is
+    // not registered in this branch's config, so naming its rule is itself a
+    // lint ERROR ("Definition for rule ... was not found").
+  }, [machineById, machineByCode]);
 
   // Datalists
   const costCenters = useCostCentersList({ limit: 200, offset: 0 });
@@ -251,6 +359,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     foCostCenter: planType === 'full_outsource' ? foCostCenter || null : null,
     foRemarks: planType === 'full_outsource' ? foRemarks || null : null,
     requiredDocs,
+    // Field by field on purpose, never a spread of the row: `uid` and the new
+    // display-only `machineGroupId` live on OpRow and must not reach the server,
+    // which has no column for either and rejects unknown keys.
     ops:
       planType === 'manufacture' || planType === 'assembly'
         ? ops.map((o, i) => ({
@@ -319,6 +430,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         operation: '',
         opType: kind,
         machineCodeText: kind === 'qc' ? 'QC' : '',
+        // A hand-added op starts with NO group: null (resolved, empty) rather
+        // than undefined, so the seeding effect leaves the planner's blank box
+        // alone instead of treating it as "not looked up yet".
+        machineGroupId: null,
         cycleTimeMin: 0,
         qcRequired: kind === 'qc',
         outsourceVendorText: '',
@@ -333,6 +448,37 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
   const removeOp = (uidVal: string) => {
     setOps((prev) => prev.filter((o) => o.uid !== uidVal));
+  };
+
+  // The machines this row may offer. No group chosen = the whole list, because
+  // the group is a convenience and the planner is never forced through it.
+  // Narrowing happens in the browser over the rows the machines hook already
+  // returned — /machines has no machineGroupId filter and adding one would be an
+  // API + shared-contract change, which this UI task is not.
+  const machineOptsForGroup = (groupId: string | null | undefined) =>
+    groupId
+      ? machineRows.filter((m) => m.machineGroupId === groupId).map((m) => ({
+          id: m.id,
+          code: m.code,
+          name: m.name,
+        }))
+      : machineOpts;
+
+  // Picking a group re-scopes the Machine picker, so a machine that is not in
+  // the new group would sit in the box as a value the picker can no longer
+  // offer — an op that reads as "VMC group, running a lathe". It is cleared so
+  // the planner re-picks inside the group they just chose.
+  //
+  // Only cleared when we can PROVE the mismatch: a machine we cannot find in the
+  // loaded rows is left alone, because "not in this page of the master" is not
+  // the same as "not in this group" and guessing would blank a real machine.
+  const onGroupChange = (row: OpRow, groupId: string | null) => {
+    const current = machineOfOp(row);
+    const mismatch = groupId != null && current != null && current.machineGroupId !== groupId;
+    updateOp(row.uid, {
+      machineGroupId: groupId,
+      ...(mismatch ? { machineId: null, machineCodeText: '' } : {}),
+    });
   };
 
   const footer = (
@@ -401,6 +547,41 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       <div style={{ fontSize: 10, color: 'var(--text3)' }}>{help}</div>
     </label>
   );
+
+  // The two step pills — 🏭 OSP and 🔬 QC — now sit in the SAME Group column,
+  // one under the other, so they are drawn from one helper. When they lived in
+  // separate places a difference in padding or radius went unnoticed; stacked in
+  // one column any drift reads as a ragged edge.
+  //
+  // The tints stay the literal rgba they have always been: there is a --purple
+  // token (identical to the old hard-coded #7c3aed, so the text colour now uses
+  // it) but no token for these 12%/30% washes, and inventing one is not this
+  // task's job.
+  const stepBadge = (label: string, color: string, tint: string, edge: string) => (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '3px 8px',
+        background: tint,
+        border: `1px solid ${edge}`,
+        borderRadius: 4,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '.04em',
+        whiteSpace: 'nowrap',
+        color,
+      }}
+    >
+      {label}
+    </span>
+  );
+
+  // "Nothing to show here." Used by the QC row's OSP cell, which is deliberately
+  // left as a dash — the QC row's Machine / Vendor cell says NA instead, because
+  // there the field genuinely does not apply.
+  const naDash = <span style={{ color: 'var(--text3)', fontSize: 11 }}>—</span>;
 
   return (
     <Modal
@@ -690,8 +871,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 </div>
               ) : null}
             </div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>{ops.length} ops</span>
+            {/* The op count is a badge rather than loose grey text so it reads as
+                a value and not as part of the button row next to it. */}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="badge b-grey" style={{ whiteSpace: 'nowrap' }}>
+                {ops.length} {ops.length === 1 ? 'op' : 'ops'}
+              </span>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -704,7 +889,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 className="btn btn-sm"
                 style={{
                   background: 'rgba(124,58,237,0.08)',
-                  color: '#7c3aed',
+                  // --purple is exactly the #7c3aed that was hard-coded here.
+                  color: 'var(--purple)',
                   border: '1px solid rgba(124,58,237,0.25)',
                   fontSize: 11,
                 }}
@@ -728,20 +914,36 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             </div>
           </div>
           {ops.length === 0 ? (
-            <div className="empty-state" style={{ padding: 16 }}>
-              No operations. Click + Add Op.
+            <div className="empty-state" style={{ padding: 20, textAlign: 'center' }}>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>No operations yet.</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                Use <b>+ Add Op</b> for in-house work, <b>+ Add OSP Op</b> for vendor work,
+                or <b>+ Add QC Op</b> for an inspection step.
+              </div>
             </div>
           ) : (
-            <>
-              <table className="ops-routing">
+            // Seven columns is more than the 1320px modal has to spare on a small
+            // laptop, so the TABLE scrolls sideways inside its own box. Letting the
+            // modal body scroll instead would drag the Plan Qty header and the
+            // Save buttons off-screen with it.
+            //
+            // Both pickers draw their dropdown into a <body> portal and reposition
+            // on any capture-phase scroll, so this scroller cannot clip them.
+            <div style={{ overflowX: 'auto' }}>
+              <table className="ops-routing" style={{ minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 44, textAlign: 'center' }}>#</th>
-                    <th style={{ width: '34%' }}>Machine</th>
-                    <th style={{ width: '30%' }}>Operation</th>
-                    <th style={{ width: 110 }}>Cycle(h)</th>
-                    <th style={{ width: 190, color: 'var(--amber)' }}>Outsource</th>
-                    <th style={{ width: 56 }} />
+                    <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                    {/* The Group column leads because it is the first thing the
+                        planner decides — what KIND of step this is (a machine
+                        family, an OSP hand-off, or a QC check). Everything to the
+                        right of it is scoped by that answer. */}
+                    <th style={{ width: 190 }}>Group</th>
+                    <th style={{ width: 210 }}>Machine / Vendor</th>
+                    <th style={{ minWidth: 200 }}>Operation</th>
+                    <th style={{ width: 96 }}>Cycle (h)</th>
+                    <th style={{ width: 132, color: 'var(--amber)' }}>OSP</th>
+                    <th style={{ width: 48 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -760,22 +962,34 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
                             {i + 1}
                           </td>
+                          {/* A QC step has no machine group — the badge takes the
+                              Group cell so every row's leftmost data cell answers
+                              the same question: what kind of step is this. */}
                           <td>
+                            {stepBadge(
+                              '🔬 QC',
+                              'var(--green)',
+                              'rgba(34,197,94,0.12)',
+                              'rgba(34,197,94,0.3)',
+                            )}
+                          </td>
+                          {/* NA, not a dash: a QC step is never run on a machine
+                              and never sent to a vendor, so this field does not
+                              apply at all. A dash reads like a value somebody
+                              simply forgot to fill in, which invites a planner to
+                              go looking for the missing machine. Same look as the
+                              OSP row's "NA" cycle cell so both read as one idea. */}
+                          <td className="td-ctr">
                             <span
+                              className="mono fw-700"
                               style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                padding: '3px 8px',
-                                background: 'rgba(34,197,94,0.12)',
-                                border: '1px solid rgba(34,197,94,0.3)',
-                                borderRadius: 4,
-                                fontSize: 10,
-                                fontWeight: 700,
-                                color: 'var(--green)',
+                                color: 'var(--text3)',
+                                fontSize: 11,
+                                whiteSpace: 'nowrap',
                               }}
+                              title="A QC step is not done on a machine or by a vendor"
                             >
-                              🔬 QC
+                              NA
                             </span>
                           </td>
                           <td>
@@ -815,7 +1029,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               style={{ textAlign: 'center' }}
                             />
                           </td>
-                          <td style={{ color: 'var(--text3)', fontSize: 10 }}>—</td>
+                          <td className="td-ctr">{naDash}</td>
                           <td>
                             <button
                               type="button"
@@ -829,10 +1043,15 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       );
                     }
                     // Non-QC op row — process by default. Ticking the OUTSOURCE box
-                    // turns it into an outsourced (OSP) op: the Machine cell shows an
-                    // OSP badge (work leaves the shop, so no machine), the Cycle(h)
-                    // field is hidden (no in-house machine time), and the Outsource
-                    // cell reveals the vendor picker.
+                    // turns it into an outsourced (OSP) op, and the row re-reads
+                    // left to right without changing shape:
+                    //   Group   — the Machine Group picker becomes the OSP badge
+                    //             (work leaves the shop, so there is no group).
+                    //   Machine — the machine picker becomes the VENDOR picker;
+                    //   / Vendor  it is the same question, "who does this step".
+                    //   Cycle   — NA. An outsourced step has no in-house machine
+                    //             time to plan, so there is nothing to type here.
+                    //   OSP     — the tick box, plus the ₹/pc rate it unlocks.
                     return (
                       <tr
                         key={op.uid}
@@ -840,39 +1059,83 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       >
                         <td className="td-ctr mono fw-700">{i + 1}</td>
                         <td>
+                          {isOS
+                            ? stepBadge(
+                                '🏭 OSP',
+                                'var(--purple)',
+                                'rgba(124,58,237,0.12)',
+                                'rgba(124,58,237,0.3)',
+                              )
+                            : (
+                                <MachineGroupPicker
+                                  id={`plan-mgrp-${op.uid}`}
+                                  valueId={op.machineGroupId ?? null}
+                                  valueText={
+                                    op.machineGroupId
+                                      ? (machineGroupCodeById.get(op.machineGroupId) ?? null)
+                                      : null
+                                  }
+                                  onChange={(gid) => onGroupChange(op, gid)}
+                                />
+                              )}
+                        </td>
+                        <td>
                           {isOS ? (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                padding: '3px 8px',
-                                background: 'rgba(124,58,237,0.12)',
-                                border: '1px solid rgba(124,58,237,0.3)',
-                                borderRadius: 4,
-                                fontSize: 10,
-                                fontWeight: 700,
-                                color: '#7c3aed',
-                              }}
-                            >
-                              🏭 OSP
-                            </span>
+                            <SearchableSelect
+                              id={`plan-osp-vend-${op.uid}`}
+                              // The stored FK is the LINK to Vendor Master, so it
+                              // is what the picker is asked for first. Matching on
+                              // the code text was the fallback doing all the work,
+                              // and it could only ever match a vendor inside the
+                              // page of rows this hook had fetched — against a
+                              // vendor master of several hundred that is almost
+                              // never the saved one, so an op that plainly had a
+                              // vendor read as unlinked and reopening the list
+                              // risked clearing it. The text match stays as the
+                              // fallback for ops saved before the id was recorded.
+                              value={op.outsourceVendorId ?? vendorIdByCode(op.outsourceVendorText ?? '')}
+                              onChange={(id) =>
+                                updateOp(op.uid, {
+                                  outsourceVendorId: id,
+                                  outsourceVendorText: id ? (vendorById.get(id)?.code ?? '') : '',
+                                })
+                              }
+                              onSearch={setVendorSearch}
+                              loading={vendors.isFetching}
+                              options={vendorOpts}
+                              placeholder="🔍 Vendor"
+                              // No selectedLabel override: the component's own
+                              // default is "CODE — Name", which is what the user
+                              // asked for. valueLabel matches it so a saved row
+                              // reads the same as one just picked.
+                              valueLabel={vendorLabelOf(op)}
+                            />
                           ) : (
                             <SearchableSelect
                               id={`plan-mach-${op.uid}`}
                               value={machineIdByCode(op.machineCodeText ?? '')}
-                              onChange={(id) =>
+                              onChange={(id) => {
+                                const picked = id ? machineById.get(id) : undefined;
                                 updateOp(op.uid, {
                                   machineId: id,
-                                  machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
-                                })
-                              }
+                                  machineCodeText: picked?.code ?? '',
+                                  // Show the group the picked machine belongs to
+                                  // when the row had none. Reopening this plan
+                                  // would fill the same box from the same machine
+                                  // master, so filling it now keeps the row reading
+                                  // identically before and after a save.
+                                  ...(op.machineGroupId == null && picked?.machineGroupId
+                                    ? { machineGroupId: picked.machineGroupId }
+                                    : {}),
+                                });
+                              }}
                               onSearch={setMachineSearch}
                               loading={machines.isFetching}
-                              options={machineOpts}
+                              options={machineOptsForGroup(op.machineGroupId)}
                               placeholder="🔍 Machine"
-                              valueLabel={op.machineCodeText || undefined}
-                              selectedLabel={(o) => o.code ?? o.name}
+                              // Same as the vendor box beside it: code AND name,
+                              // both when picked and when read back from a save.
+                              valueLabel={machineLabelOf(op)}
                             />
                           )}
                         </td>
@@ -884,9 +1147,22 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             placeholder="Operation name"
                           />
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           {isOS ? (
-                            <span style={{ color: 'var(--text3)', fontSize: 10 }}>—</span>
+                            // NA, not a blank or a dash: an outsourced step has no
+                            // cycle time to enter, and saying so stops a planner
+                            // hunting for a field that is deliberately not there.
+                            <span
+                              className="mono fw-700"
+                              style={{
+                                color: 'var(--text3)',
+                                fontSize: 11,
+                                whiteSpace: 'nowrap',
+                              }}
+                              title="Outsourced work has no in-house cycle time"
+                            >
+                              NA
+                            </span>
                           ) : (
                             <input
                               className="innovic-input"
@@ -912,6 +1188,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               color: isOS ? 'var(--amber)' : 'var(--text3)',
                               cursor: 'pointer',
                               letterSpacing: '.04em',
+                              whiteSpace: 'nowrap',
                             }}
                           >
                             <input
@@ -932,42 +1209,20 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             />
                             OUTSOURCE
                           </label>
-                          {isOS ? (
-                            <div style={{ marginTop: 6 }}>
-                              <SearchableSelect
-                                id={`plan-osp-vend-${op.uid}`}
-                                value={vendorIdByCode(op.outsourceVendorText ?? '')}
-                                onChange={(id) =>
-                                  updateOp(op.uid, {
-                                    outsourceVendorId: id,
-                                    outsourceVendorText: id ? (vendorById.get(id)?.code ?? '') : '',
-                                  })
-                                }
-                                onSearch={setVendorSearch}
-                                loading={vendors.isFetching}
-                                options={vendorOpts}
-                                placeholder="🔍 Vendor"
-                                valueLabel={op.outsourceVendorText || undefined}
-                                selectedLabel={(o) => o.code ?? o.name}
-                              />
-                              {/* Legacy L9578 renders a ₹/pc cost input beside the
-                                  vendor picker on an outsourced op. It was missing
-                                  here, so plan_ops.outsource_cost could only ever be
-                                  saved as its 0 default. */}
-                              <input
-                                className="innovic-input"
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                value={op.outsourceCost}
-                                onChange={(e) =>
-                                  updateOp(op.uid, { outsourceCost: Number(e.target.value) })
-                                }
-                                placeholder="₹/pc"
-                                style={{ marginTop: 4 }}
-                              />
-                            </div>
-                          ) : null}
+                          {/* No ₹/pc rate here. Legacy L9578 put one on an
+                              outsourced op and it was added back in an earlier
+                              pass, but the user does not price the work on this
+                              screen — the rate is agreed on the purchase side,
+                              not while planning the route. Checked before
+                              removing it: outsource_cost is 0 on every plan_ops
+                              row in both databases, so no one has ever entered a
+                              figure here and nothing on screen was carrying
+                              information.
+
+                              The COLUMN stays: buildPayload still writes
+                              o.outsourceCost, which is whatever the plan was
+                              loaded with. Dropping the input hides the field, it
+                              does not blank a value already stored. */}
                         </td>
                         <td>
                           <button
@@ -983,7 +1238,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                   })}
                 </tbody>
               </table>
-            </>
+            </div>
           )}
         </div>
       )}

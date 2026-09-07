@@ -700,10 +700,10 @@ export function PlanForm({
                   <th>Operation</th>
                   <th>Type</th>
                   <th>Machine</th>
-                  <th className="td-right">Cycle (hrs)</th>
-                  <th className="td-ctr">QC?</th>
+                  <th>Cycle (hrs)</th>
+                  <th>QC?</th>
                   <th>OSP vendor</th>
-                  <th className="td-right">OSP cost</th>
+                  <th>OSP cost</th>
                   <th></th>
                 </tr>
               </thead>
@@ -784,7 +784,7 @@ export function PlanForm({
                           }
                         />
                       </td>
-                      <td className="td-right">
+                      <td>
                         <input
                           type="number"
                           step="0.1"
@@ -801,7 +801,7 @@ export function PlanForm({
                           }
                         />
                       </td>
-                      <td className="td-ctr">
+                      <td>
                         <input
                           type="checkbox"
                           checked={op.qcRequired}
@@ -836,7 +836,7 @@ export function PlanForm({
                           }
                         />
                       </td>
-                      <td className="td-right">
+                      <td>
                         <input
                           type="number"
                           step="0.01"

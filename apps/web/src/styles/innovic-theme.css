@@ -508,7 +508,9 @@
   letter-spacing: 0.08em;
   /* 9px 12px -> 6px 10px. Compounds over a 20-row list: ~120px recovered. */
   padding: 6px 10px;
-  text-align: left;
+  /* Table-alignment standard: the column name centres with its values so the
+     column reads as one line. See the block under `.td-ctr`. */
+  text-align: center;
   font-family: var(--mono);
   white-space: nowrap;
   border-bottom: 1px solid var(--border2);
@@ -544,6 +546,39 @@
   text-align: right;
 }
 .td-ctr {
+  text-align: center;
+}
+/* ── TABLE-ALIGNMENT STANDARD ────────────────────────────────────────────────
+   Every table in the app centres BOTH rows: the column name and the values
+   under it share one centre line. Headers left over centred data was tried on
+   SO Master (2026-09-07) and rejected -- it left every value about 50px right
+   of its own column name, so nothing lined up.
+
+   Applied here once rather than per table. `table.tbl-ctr` stays in the list
+   for the handful of tables that carry neither shared class; the class is a
+   no-op on tables that already match one of the selectors above it.
+
+   This does NOT reach an inline style={{ textAlign }} written onto a cell, and
+   it does not reach `.td-right` / `.td-ctr` either way -- at (0,1,1) it already
+   outranks those (0,1,0) helpers. Inline ones have to be deleted from the
+   markup; there is no specificity that beats them. */
+.innovic-table th,
+.innovic-table td,
+.ops-routing th,
+.ops-routing td,
+table.tbl-ctr th,
+table.tbl-ctr td {
+  text-align: center;
+}
+/* On form-style tables the value the user reads sits inside a full-width
+   <input>/<select> that fills the cell, so centring the cell alone moves
+   nothing on screen. An inline textAlign on the control still wins over this. */
+.innovic-table td .innovic-input,
+.innovic-table td .innovic-select,
+.ops-routing td .innovic-input,
+.ops-routing td .innovic-select,
+table.tbl-ctr td .innovic-input,
+table.tbl-ctr td .innovic-select {
   text-align: center;
 }
 
@@ -626,7 +661,7 @@
 }
 .ops-routing th {
   padding: 10px 14px;
-  text-align: left;
+  text-align: center;
   font-family: var(--mono);
   font-size: var(--fs-mono);
   text-transform: uppercase;
@@ -639,6 +674,11 @@
   padding: 12px 14px;
   vertical-align: middle;
   border-top: 1px solid var(--border);
+  text-align: center;
+}
+.ops-routing td .innovic-input,
+.ops-routing td .innovic-select {
+  text-align: center;
 }
 
 /* ═══ BADGES ═══ */

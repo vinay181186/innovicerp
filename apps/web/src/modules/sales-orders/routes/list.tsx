@@ -591,7 +591,8 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
       <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, marginBottom: 4 }}>
         ▸ BOM ITEMS — {data?.header.equipmentInfo?.bomNo ?? ''} × {data?.header.equipmentInfo?.equipmentQty ?? 0} sets
       </div>
-      <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
+      {/* tbl-ctr — the table-alignment standard: data centred, headers untouched. */}
+      <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
             <th style={{ width: 36 }}>#</th><th>Item Code</th><th>Item Name</th><th className="td-ctr">Qty/Set</th>
@@ -644,7 +645,8 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
           Open full detail →
         </Link>
       </div>
-      <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
+      {/* tbl-ctr — the table-alignment standard: data centred, headers untouched. */}
+      <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
             <th style={{ width: 36 }}>Ln</th><th style={{ color: 'var(--purple)' }}>CPO Ln</th><th>Item Code</th><th>Part Name</th>

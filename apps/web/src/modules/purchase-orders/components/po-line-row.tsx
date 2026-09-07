@@ -98,7 +98,7 @@ export function PoLineRow({
   return (
     <Fragment>
       <tr style={{ background: rowBg }}>
-        <td className="td-ctr mono fw-700 cyan" style={{ width: 32 }} rowSpan={2}>
+        <td className="mono fw-700 cyan" style={{ width: 32 }} rowSpan={2}>
           {idx + 1}
         </td>
         <td style={{ minWidth: 140 }}>
@@ -135,7 +135,7 @@ export function PoLineRow({
             type="number"
             min={1}
             className="innovic-input"
-            style={{ textAlign: 'center', fontWeight: 800, color: 'var(--cyan)' }}
+            style={{ fontWeight: 800, color: 'var(--cyan)' }}
             placeholder="Qty ★"
             {...register(`lines.${idx}.qty` as const, {
               valueAsNumber: true,
@@ -149,12 +149,11 @@ export function PoLineRow({
             step="0.01"
             min={0}
             className="innovic-input"
-            style={{ textAlign: 'right' }}
             placeholder="₹ Rate"
             {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
           />
         </td>
-        <td className="td-right" style={{ width: 85 }}>
+        <td style={{ width: 85 }}>
           <span
             className={lineAmt > 0 ? 'mono fw-700 green' : 'mono fw-700 text3'}
             style={{ fontSize: 13 }}
