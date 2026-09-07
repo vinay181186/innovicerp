@@ -216,6 +216,24 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const vendorIdByCode = (code: string): string | null =>
     vendorOpts.find((v) => v.code === code)?.id ?? null;
 
+  // What a picked row reads as once the box is closed: "CODE — Name", the shape
+  // <SearchableSelect> uses in its own dropdown. These fields used to collapse to
+  // the bare code, which meant picking a vendor and then reading the row back
+  // gave you an identifier and no way to tell whether it was the right firm
+  // without opening the list again.
+  //
+  // Only the CODE is stored on the op, so the name has to be recovered from the
+  // master. When it cannot be — the row is not in the page this hook fetched —
+  // the code alone is shown, exactly as before. A missing name degrades the
+  // label; it never blanks the field.
+  const codeAndName = (o: { code?: string | null; name: string } | undefined): string | undefined =>
+    o ? (o.code ? `${o.code} — ${o.name}` : o.name) : undefined;
+
+  const vendorLabelOf = (o: OpRow): string | undefined => {
+    const id = o.outsourceVendorId ?? vendorIdByCode(o.outsourceVendorText ?? '');
+    return codeAndName(id ? vendorById.get(id) : undefined) ?? o.outsourceVendorText ?? undefined;
+  };
+
   // Heal a plan that carries only the vendor FK and no code snapshot. Plans
   // raised by the BOM planning modal before it sent the code arrive that way,
   // and validate() reads the code — so the modal refused to save with
@@ -240,6 +258,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const machineOfOp = (o: OpRow) =>
     (o.machineId ? machineById.get(o.machineId) : undefined) ??
     (o.machineCodeText ? machineByCode.get(o.machineCodeText) : undefined);
+
+  // Defined after machineOfOp because it reads it. See codeAndName above for why
+  // these labels carry the name as well as the code.
+  const machineLabelOf = (o: OpRow): string | undefined =>
+    codeAndName(machineOfOp(o)) ?? o.machineCodeText ?? undefined;
 
   // Fill in the Machine Group for ops that arrived with a machine already on
   // them. The group is not stored on the plan, so the only way to show one on a
@@ -1081,8 +1104,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               loading={vendors.isFetching}
                               options={vendorOpts}
                               placeholder="🔍 Vendor"
-                              valueLabel={op.outsourceVendorText || undefined}
-                              selectedLabel={(o) => o.code ?? o.name}
+                              // No selectedLabel override: the component's own
+                              // default is "CODE — Name", which is what the user
+                              // asked for. valueLabel matches it so a saved row
+                              // reads the same as one just picked.
+                              valueLabel={vendorLabelOf(op)}
                             />
                           ) : (
                             <SearchableSelect
@@ -1107,8 +1133,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               loading={machines.isFetching}
                               options={machineOptsForGroup(op.machineGroupId)}
                               placeholder="🔍 Machine"
-                              valueLabel={op.machineCodeText || undefined}
-                              selectedLabel={(o) => o.code ?? o.name}
+                              // Same as the vendor box beside it: code AND name,
+                              // both when picked and when read back from a save.
+                              valueLabel={machineLabelOf(op)}
                             />
                           )}
                         </td>

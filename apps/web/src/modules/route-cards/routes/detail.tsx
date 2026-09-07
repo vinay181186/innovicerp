@@ -276,6 +276,28 @@ function RouteCardDetailPage(): React.JSX.Element {
                             verticalAlign: 'top',
                           }}
                         >
+                          {groupCode ? (
+                            // The GROUP leads the cell: it is the general answer
+                            // ("this is a VMC step") and the machine code under it
+                            // is the specific one. Reading down goes from the kind
+                            // of machine to the individual machine to its name.
+                            //
+                            // Set as a small spaced label rather than at the code's
+                            // own weight, so leading the cell does not mean
+                            // outshouting the machine it belongs to.
+                            <span
+                              style={{
+                                fontSize: 9,
+                                color: 'var(--text3)',
+                                fontWeight: 700,
+                                letterSpacing: '.08em',
+                                display: 'block',
+                              }}
+                              title={`Machine group: ${groupCode}`}
+                            >
+                              {groupCode}
+                            </span>
+                          ) : null}
                           <span style={{ fontWeight: 700, display: 'block' }}>{tagCode}</span>
                           {tagName ? (
                             <span
@@ -287,23 +309,6 @@ function RouteCardDetailPage(): React.JSX.Element {
                               }}
                             >
                               {tagName}
-                            </span>
-                          ) : null}
-                          {groupCode ? (
-                            // Smallest line in the chip, and muted, so the machine
-                            // code stays the thing the eye lands on first — the
-                            // group is context, not the identity of the step.
-                            <span
-                              style={{
-                                fontSize: 8,
-                                color: 'var(--text3)',
-                                fontWeight: 700,
-                                letterSpacing: '.08em',
-                                display: 'block',
-                              }}
-                              title={`Machine group: ${groupCode}`}
-                            >
-                              {groupCode}
                             </span>
                           ) : null}
                         </span>
