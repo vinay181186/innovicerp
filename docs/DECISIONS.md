@@ -7831,3 +7831,74 @@ An **absent** key means "the payload does not mention QC, leave it alone"; an ex
 - Not changed here: the NC record raised by a QC rejection still has no inspector link — `nc_register` has no column for one, only `reported_by_text` plus the standard created_by/updated_by, which correctly mean "who created this NC". Adding one is a separate decision with its own migration.
 - **Deploy ordering is not optional here, and the reason is wider than this feature.** `so-overview/service.ts` (x2) and `so-status/service.ts` each run a bare `.select().from(opLog)`, which Drizzle expands to every column declared in `schema.ts`. The moment `qcUserId` is declared there, those three queries ask Postgres for `qc_user_id` — so shipping the code before 0115 takes down **SO Overview and SO Status**, screens that never mention QC. Any future additive column on a table read by a bare select carries the same trap.
 - Verification: typecheck + lint on all three packages, web build. Migration 0115 applied 2026-09-06 and verified live — column and partial index present, all 50 existing op_log rows null, and `select *` over op_log succeeds, which is the check that matters for the ordering hazard above. The api suite hits the shared prod DB, so it is not runnable here.
+
+## ADR-150: The plan routing row leads with the Machine Group, and an OSP step stops pretending it has a cycle time
+
+**Date:** 2026-09-07
+**Status:** Accepted
+
+### Context
+
+The Edit Plan modal's Operations Routing table asked its questions in an order nobody works in. It opened onto a Machine box listing every machine in the works with nothing to narrow it — tolerable at 5 machines, useless as the master grows. An outsourced step scattered its answers: the OSP badge on the left, the vendor tucked into the far-right Outsource column beside a ₹/pc rate, and a blank dash where the cycle time went. A QC step showed the same blank dash under Machine.
+
+Migration 0116 had just delivered the Machine Group master (VMC, CNC, Lathe), which is the word the shop floor actually uses for a family of machines, so the narrowing device now existed.
+
+### Decision
+
+One column order for all three kinds of step:
+
+    #  |  GROUP  |  MACHINE / VENDOR  |  OPERATION  |  CYCLE (H)  |  OSP  |  x
+
+The leftmost data cell always answers "what kind of step is this" — a machine group, the OSP badge, or the QC badge. The cell beside it always answers "who does it" — a machine, or a vendor. That is why the vendor moved out of the Outsource column: it was the same question asked in a different place.
+
+`CYCLE (H)` reads **NA** on an outsourced step, and `MACHINE / VENDOR` reads NA on a QC step. A dash reads as a value nobody filled in; NA says the field does not apply.
+
+The group narrows the Machine picker but is never compulsory — blank still offers every machine.
+
+The ₹/pc rate is removed from the OSP column. Rates are agreed on the purchase side, not while planning a route.
+
+### Alternatives Considered
+
+- **Store the group on `plan_ops`** — rejected for now. It is a migration and a contract change to hold a value that is fully derivable from the machine. Recorded as a known consequence instead (below).
+- **Make the group compulsory before the machine unlocks** — rejected. It would force an answer on a planner who already knows the machine code they want.
+- **Filter the machines endpoint by group server-side** — rejected. `/machines` has no such filter and adding one is an API + shared-contract change for a list that is 200 rows at its cap; the browser narrows the rows the hook already returned.
+- **Drop the rate column as well as the box** — rejected. The column is harmless, `buildPayload` still carries whatever the plan was loaded with, and removing it would blank stored values for the sake of tidiness.
+
+### Consequences
+
+- Positive: the row is entered in the order a planner thinks — kind of step, who does it, what it is, how long.
+- Positive: the OSP vendor is now read back through its actual foreign key. It was matched on code text over a fetched page of 50 against a production master of **758 vendors**, so the saved vendor resolved perhaps one time in fifteen; the box showed the right words while the control underneath held null.
+- **Negative, and worth knowing:** the group is display-only. `plan_ops` has no `machine_group_id`, so it is recovered from the machine master each time the modal opens. Re-group a machine in Machine Master and old plans will show its new group. Storing it properly is a migration and its own decision.
+- Negative: a machine outside the fetched page leaves the Group box blank. Deliberate — the op keeps its machine, because a group we cannot display must never cost the user the machine that IS on the op. The same reasoning stops a group change clearing a machine it cannot prove is a mismatch.
+- Removing the rate box was checked against live data first: `outsource_cost` is 0 on **every** `plan_ops` row in both databases (68 production, 2 test), so nothing on screen was carrying information.
+- Not addressed: the Full Outsource and Direct Purchase vendor pickers in the same modal have the same code-text weakness. They store a code snapshot rather than an id, so the fix is a different shape.
+- Depends on migration 0116, applied to the test database. Shipped to the **test** stack only; production has neither the master nor these screens.
+
+## ADR-151: A route card operation names the machine group it runs on
+
+**Date:** 2026-09-07
+**Status:** Accepted
+
+### Context
+
+The Route Card detail screen's Operation Sequence table names the individual machine and nothing else, so reading a card means recognising codes. `CTM-01` and `VTIL-1` say nothing about what kind of step they are unless you already know the shop.
+
+### Decision
+
+`machineGroupCode` joins onto each operation and renders as a third, smallest line inside the existing machine chip. Smallest and muted on purpose — the machine code stays the thing the eye lands on; the group is context, not the identity of the step.
+
+Server side it is a second `leftJoin` on the ops query that already left-joins machines, selected straight off `machine_groups.code`, which IS the group master's one user-facing value.
+
+### Alternatives Considered
+
+- **Replace the machine name with the group** — rejected. Both are wanted; the name is what confirms you have the right machine.
+- **Resolve the group in the browser from the machines list** — rejected. The detail query already joins machines for this exact cell; a second join is cheaper and cannot go stale against a partially-fetched list.
+- **Add it to the ops read inside `replaceRouteCardOps`** — rejected. That path feeds the revision-history snapshot and the auto-written "what changed" note. Widening it would change what is stored in history and make old and new revision rows compare unequal, for no gain.
+
+### Consequences
+
+- Positive: a route card reads as a sequence of operations rather than a list of machine codes.
+- `leftJoin` twice over, never inner: an op with no machine, and a machine filed under no group, must both still come back. They land as null, which is what `routeCardOpSchema` declares, and null draws nothing at all — no dash, no empty line, no change in row height.
+- Shown on in-house operations only. The group hangs off the machine, so an OSP step (which carries a vendor) and a QC step (which carries neither) have none.
+- Negative: display only. The route card stores the machine; the group is whatever that machine belongs to now, so re-grouping a machine changes what old cards read. That is right here — a route card names a machine, not a family.
+- Added to the route card DETAIL projection only, the single place in the API that builds a `RouteCardOp`.
