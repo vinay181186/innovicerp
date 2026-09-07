@@ -8,6 +8,7 @@ import { type CreateJwInvoiceInput } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
@@ -26,15 +27,19 @@ export function JwInvoiceView(): React.JSX.Element {
   const { data, isLoading, isError, error } = useJwInvoicesList();
 
   const items = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    // Every text column this table prints, matched through the shared helper so
+    // this list agrees with every other one about what a search term means.
+    // Client-side is correct HERE and only here: the endpoint returns the whole
+    // list in one payload, so the browser already holds every row (a paginated
+    // list must widen its API query instead — see search-match.ts).
+    // The invoice DATE is included; money columns (rate, taxable, GST, total)
+    // are NOT — they are hidden from users without price rights, so making an
+    // amount findable would let them confirm a value by typing it.
+    const q = normalizeSearchTerm(search);
     const all = data?.items ?? [];
     if (!q) return all;
-    return all.filter(
-      (r) =>
-        r.code.toLowerCase().includes(q) ||
-        (r.jwCodeText ?? '').toLowerCase().includes(q) ||
-        (r.clientName ?? '').toLowerCase().includes(q) ||
-        (r.partName ?? '').toLowerCase().includes(q),
+    return all.filter((r) =>
+      matchesSearchTerm([r.code, r.invoiceDate, r.jwCodeText, r.clientName, r.partName], q),
     );
   }, [data, search]);
 
@@ -51,7 +56,7 @@ export function JwInvoiceView(): React.JSX.Element {
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search invoice, JWSO, client, part…"
+            placeholder="🔍 Search invoice, date, JWSO, client, part…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: 260, fontSize: 12 }}

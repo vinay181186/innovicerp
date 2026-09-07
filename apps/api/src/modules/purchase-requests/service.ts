@@ -246,6 +246,18 @@ function hidePrMoney<T extends { estCost: string | null }>(r: T): T {
   return { ...r, estCost: null, priceVisible: false };
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the PR search box gets a wildcard pattern
+ *  instead of a literal search — and a bare "%" returns every row. The SQL side
+ *  must pair it with an ESCAPE '\' clause on every ILIKE, or the escapes match
+ *  literally.
+ *  Deliberately a local copy of the sales-orders / purchase-orders helper rather
+ *  than an export across modules: it is three lines, and each list must be free
+ *  to change its own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listPurchaseRequests(
   input: ListPurchaseRequestsQuery,
   user: AuthContext,
@@ -253,9 +265,51 @@ export async function listPurchaseRequests(
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'pr_create');
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    // Search covers every field the PR card (purchase-requests/components/
+    // pr-card.tsx) actually shows: the identity band (PR code, item code and
+    // name, the resolved vendor name the card falls back from, the status badge
+    // and the PO code shown once a PO exists) and the meta line (PR date, the
+    // source SO / JC code, operation, required date, and the approved /
+    // PO-created stamps).
+    // Deliberately NOT searched:
+    //  - qty — a number; searching "5" would hit almost every PR.
+    //  - est_cost and every other money value: this module hides money behind
+    //    `canSeeFormPrice`, so a search that matched an amount would let a user
+    //    who may NOT see prices confirm a value by guessing it. Money must
+    //    never be searchable here.
+    //  - remarks — not on the card.
+    //  - the SO line no / JC op seq numbers on the source ref — numbers again.
+    //  - pr_type: the SVC / OSP badge cannot render on this list at all,
+    //    because the SELECT below never returns pr_type (toListItem falls back
+    //    to 'standard'). Nothing on screen to match, so nothing searched.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (pr.code ILIKE ${term} OR pr.operation ILIKE ${term} OR pr.item_name ILIKE ${term})`
+      ? sql`AND (
+          pr.code ILIKE ${term} ESCAPE '\\'
+          -- Item code is matched on BOTH the text the PR stored and the live
+          -- master row: the card renders itemCode ?? itemCodeText, and an item
+          -- renamed after the PR was raised keeps the old text on the PR.
+          OR pr.item_code_text ILIKE ${term} ESCAPE '\\'
+          OR i.code ILIKE ${term} ESCAPE '\\'
+          OR pr.item_name ILIKE ${term} ESCAPE '\\'
+          -- The card renders vendorName ?? vendorCodeText, and vendorName is
+          -- COALESCE(v.name, vt.name) — both vendor joins below are matched.
+          OR pr.vendor_code_text ILIKE ${term} ESCAPE '\\'
+          OR v.name ILIKE ${term} ESCAPE '\\'
+          OR vt.name ILIKE ${term} ESCAPE '\\'
+          OR pr.status::text ILIKE ${term} ESCAPE '\\'
+          OR pr.operation ILIKE ${term} ESCAPE '\\'
+          OR pr.pr_date::text ILIKE ${term} ESCAPE '\\'
+          OR pr.required_date::text ILIKE ${term} ESCAPE '\\'
+          -- The two stamps the meta line prints as a date (✔ approved,
+          -- 📝 PO created). Cast to text so a "2026-08" style search hits.
+          OR pr.approved_at::text ILIKE ${term} ESCAPE '\\'
+          OR pr.po_created_at::text ILIKE ${term} ESCAPE '\\'
+          -- Source ref + the PO link on the card, both already joined below.
+          OR so.code ILIKE ${term} ESCAPE '\\'
+          OR jc.code ILIKE ${term} ESCAPE '\\'
+          OR po.code ILIKE ${term} ESCAPE '\\'
+        )`
       : sql``;
     const statusFrag = input.status ? sql`AND pr.status = ${input.status}::pr_status` : sql``;
     // ADR-015 FK-or-text vendor: match the FK OR the free-text vendor code.

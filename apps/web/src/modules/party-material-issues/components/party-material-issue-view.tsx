@@ -10,6 +10,7 @@ import {
 } from '@innovic/shared';
 import { Loader2, Plus, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -37,15 +38,27 @@ export function PartyMaterialIssueView(): React.JSX.Element {
 
   const { data, isLoading, isError, error } = usePartyMaterialIssuesList();
 
+  // GET /party-material-issues returns the whole list in one fetch (no page or
+  // limit sent), so the match happens here across every text column the table
+  // shows — issue no, date, JWSO, Job Card, material code + name and remarks.
+  // Qty is deliberately out: "5" would match nearly every row.
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = normalizeSearchTerm(search);
     const items = data?.items ?? [];
     if (!q) return items;
-    return items.filter(
-      (it) =>
-        it.code.toLowerCase().includes(q) ||
-        (it.jwCodeText ?? '').toLowerCase().includes(q) ||
-        (it.partyMaterialCodeText ?? '').toLowerCase().includes(q),
+    return items.filter((it) =>
+      matchesSearchTerm(
+        [
+          it.code,
+          it.issueDate,
+          it.jwCodeText,
+          it.jcCodeText,
+          it.partyMaterialCodeText,
+          it.partyMaterialName,
+          it.remarks,
+        ],
+        q,
+      ),
     );
   }, [data?.items, search]);
 
@@ -67,7 +80,7 @@ export function PartyMaterialIssueView(): React.JSX.Element {
         <input
           type="text"
           className="innovic-input"
-          placeholder="🔍 Search Issue No., JWSO, material…"
+          placeholder="🔍 Search Issue No., date, JWSO, Job Card, material, remarks…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ width: 260, fontSize: 12 }}

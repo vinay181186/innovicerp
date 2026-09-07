@@ -23,6 +23,21 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the QC Process search box gets a wildcard
+ *  pattern instead of a literal search — a bare "%" returned every row.
+ *  This list is built with Drizzle's `ilike()` builder, which has no way to
+ *  emit an ESCAPE clause; it is left in that style rather than rewritten to raw
+ *  SQL. That is safe here because backslash is PostgreSQL's DEFAULT LIKE escape
+ *  character, so the escapes below take effect without the explicit clause the
+ *  raw-SQL lists (sales-orders, purchase-orders) spell out.
+ *  Deliberately a local copy of the sales-orders helper rather than an export
+ *  across modules: it is three lines, and each list must be free to change its
+ *  own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listQcProcesses(
   input: ListQcProcessesQuery,
   user: AuthContext,
@@ -31,10 +46,15 @@ export async function listQcProcesses(
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(qcProcesses.companyId, companyId), isNull(qcProcesses.deletedAt)];
     if (input.search) {
-      const s = or(
-        ilike(qcProcesses.code, `%${input.search}%`),
-        ilike(qcProcesses.description, `%${input.search}%`),
-      );
+      // The QC Process list table shows: # (a row counter), QC Process Name
+      // (code), Description, Std Time (min) and the Active/Inactive badge.
+      // Both text columns are searched. Std Time is excluded because it is a
+      // number — partial matching on it makes a short term useless. The
+      // Active/Inactive badge is excluded too: `is_active` is a boolean, whose
+      // text form is 'true'/'false' and would never match the words the badge
+      // prints, and the list already has a dedicated Active/Inactive filter.
+      const escaped = `%${escapeLikeTerm(input.search)}%`;
+      const s = or(ilike(qcProcesses.code, escaped), ilike(qcProcesses.description, escaped));
       if (s) conditions.push(s);
     }
     if (input.isActive !== undefined) conditions.push(eq(qcProcesses.isActive, input.isActive));

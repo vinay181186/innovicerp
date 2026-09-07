@@ -19,6 +19,7 @@ import type { CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
@@ -89,13 +90,32 @@ function CustomerDispatchListPage(): React.JSX.Element {
     () => (soFilter ? allRows.filter((r) => r.soNo === soFilter) : allRows),
     [allRows, soFilter],
   );
+  // Search covers every column the register puts on screen — the card band
+  // (dispatch no, status, date, SO, customer, dispatched by, remarks) AND the
+  // expanded line columns (JC no, CPO line, item code, item name, UOM). Not the
+  // qty / stock numbers: a bare "5" would match nearly every row.
   const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = normalizeSearchTerm(search);
     if (!q) return soRows;
     return soRows.filter((r) =>
-      [r.dispatchCode, r.jcNo, r.soNo, r.clientPoLineNo, r.itemCode, r.itemCodeText, r.itemName, r.customer, r.dispatchedBy, r.remarks]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q)),
+      matchesSearchTerm(
+        [
+          r.dispatchCode,
+          r.status,
+          r.date,
+          r.jcNo,
+          r.soNo,
+          r.clientPoLineNo,
+          r.itemCode,
+          r.itemCodeText,
+          r.itemName,
+          r.uom,
+          r.customer,
+          r.dispatchedBy,
+          r.remarks,
+        ],
+        q,
+      ),
     );
   }, [soRows, search]);
 
@@ -210,7 +230,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
             </select>
             <input
               className="innovic-input"
-              placeholder="Search item, customer…"
+              placeholder="Search dispatch no, SO, JC, item, customer, date…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ width: 200, fontSize: 12 }}

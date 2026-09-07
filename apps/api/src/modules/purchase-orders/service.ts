@@ -243,6 +243,17 @@ function hidePoLineMoney<T extends { rate: string | null }>(l: T): T {
   return { ...l, rate: null };
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the Purchase Order search box gets a wildcard
+ *  pattern instead of a literal search. The SQL side must pair it with an
+ *  ESCAPE '\' clause on every ILIKE, or the escapes match literally.
+ *  Deliberately a local copy of the sales-orders helper rather than an export
+ *  across modules: it is three lines, and the two lists must be free to change
+ *  their own search behaviour without dragging the other one with them. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listPurchaseOrders(
   input: ListPurchaseOrdersQuery,
   user: AuthContext,
@@ -250,9 +261,49 @@ export async function listPurchaseOrders(
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'po_create');
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    // Search covers every field the PO list card actually shows — the header
+    // cells (PO code, PR code, vendor code and the resolved vendor name the
+    // card falls back from), the PO date and the two badges (status, PO type).
+    // It also reaches the lines via EXISTS. The PO list card has no
+    // expand-to-lines, so item code / item name are NOT visible on this screen;
+    // they are searched anyway because users look an order up by the part it is
+    // for. One matching line surfaces its whole order.
+    // Deliberately NOT searched: remarks, approval remarks, rejection reason,
+    // due date — none are on the card. And no money or quantity column
+    // (subtotal, tax_amount, total_amount, rate, qty, received_qty): this
+    // module hides money behind `canSeeFormPrice`, so letting a search match on
+    // an amount would tell a user who may not see prices that a given value
+    // exists. Money must never be searchable here.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (po.code ILIKE ${term} OR po.pr_code_text ILIKE ${term} OR po.vendor_code_text ILIKE ${term})`
+      ? sql`AND (
+          po.code ILIKE ${term} ESCAPE '\\'
+          OR po.pr_code_text ILIKE ${term} ESCAPE '\\'
+          OR po.vendor_code_text ILIKE ${term} ESCAPE '\\'
+          -- The card renders vendorName ?? vendorCodeText; v is the vendors
+          -- join already in the SELECT below, so the name is matched too.
+          OR v.name ILIKE ${term} ESCAPE '\\'
+          OR po.status::text ILIKE ${term} ESCAPE '\\'
+          OR po.po_type::text ILIKE ${term} ESCAPE '\\'
+          OR po.po_date::text ILIKE ${term} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM public.purchase_order_lines pol
+            LEFT JOIN public.items it ON it.id = pol.item_id AND it.deleted_at IS NULL
+            WHERE pol.purchase_order_id = po.id
+              AND pol.deleted_at IS NULL
+              AND (
+                -- Item code and name are matched on BOTH the text the line
+                -- stored and the live master row: an item renamed after the PO
+                -- was raised keeps the old text on the line, and users search
+                -- either one.
+                pol.item_code_text ILIKE ${term} ESCAPE '\\'
+                OR it.code ILIKE ${term} ESCAPE '\\'
+                OR pol.item_name ILIKE ${term} ESCAPE '\\'
+                OR it.name ILIKE ${term} ESCAPE '\\'
+              )
+          )
+        )`
       : sql``;
     const statusFrag = input.status ? sql`AND po.status = ${input.status}::po_status` : sql``;
     const typeFrag = input.poType ? sql`AND po.po_type = ${input.poType}::po_type` : sql``;

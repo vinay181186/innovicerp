@@ -7,6 +7,7 @@
 import { type CreateJwReturnChallanInput } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -29,14 +30,28 @@ export function JwDispatchView(): React.JSX.Element {
     cancelMut.mutate(id);
   };
 
+  // GET /jw-returns returns the whole list in one fetch (no page/limit sent),
+  // so the match happens here across every text column the table shows —
+  // return no, date, JWSO, client, part, transport, vehicle and the status
+  // badge. Qty is deliberately out: "5" would match nearly every row.
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = normalizeSearchTerm(search);
     const items = data?.items ?? [];
     if (!q) return items;
     return items.filter((r) =>
-      [r.code, r.jwCodeText, r.clientName, r.partName, r.transport, r.vehicleNo]
-        .filter((v): v is string => Boolean(v))
-        .some((v) => v.toLowerCase().includes(q)),
+      matchesSearchTerm(
+        [
+          r.code,
+          r.returnDate,
+          r.jwCodeText,
+          r.clientName,
+          r.partName,
+          r.transport,
+          r.vehicleNo,
+          r.status,
+        ],
+        q,
+      ),
     );
   }, [data?.items, search]);
 
@@ -47,7 +62,7 @@ export function JwDispatchView(): React.JSX.Element {
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search return no., JWSO, client, part…"
+            placeholder="🔍 Search return no., date, JWSO, client, part, transport, status…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: 260, fontSize: 12 }}

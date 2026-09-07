@@ -21,6 +21,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -84,7 +85,9 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  IN-JW  00012 " and "IN-JW 00012" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -158,7 +161,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div className="section-hdr" style={{ marginBottom: 0 }}>JWSO Master — Job Work Sales Order (Material from Client)</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input className="innovic-input" placeholder="Search JWSO, client, item…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
+            <input className="innovic-input" placeholder="Search this list…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
             <select className="innovic-select" value={search.status ?? ''} onChange={(e) => { const v = e.target.value as SoStatus | ''; void navigate({ search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 130, fontSize: 12 }}>
               <option value="">All statuses</option>
               {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}

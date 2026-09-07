@@ -10,6 +10,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -82,7 +83,9 @@ function JobCardsListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  IN-JC  26 " and "IN-JC 26" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -221,7 +224,7 @@ function JobCardsListPage(): React.JSX.Element {
           >
             <input
               className="innovic-input"
-              placeholder="Search code, item, customer, SO/JWSO…"
+              placeholder="Search this list…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ width: 280, fontSize: 12 }}
