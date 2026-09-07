@@ -1,0 +1,77 @@
+name: Deploy Web (TEST) → innovic-erp.pages.dev
+
+# Auto-deploys the React web app to the TEST Cloudflare Pages project on every
+# push to the `test` branch. Mirrors deploy-web.yml, which does the same for
+# `main` → production. See docs/DOMAIN-CUTOVER.md.
+#
+# TEST stack (created 2026-09-06, completely separate from production):
+#   web  innovic-erp.pages.dev        Pages project `innovic-erp`
+#   api  api-test-production-19ca     Railway service `api-test` (watches `test`)
+#   db   uitsrhyulidubnddzcex         Supabase INNOVICERP-TEST (empty)
+#
+# The VITE_* values below are hard-coded rather than read from secrets: they are
+# all public-safe (they ship inside the browser bundle either way, exactly as the
+# production workflow notes for the anon key), and they point only at the test
+# stack, whose database holds no real data. Keeping them here means no extra
+# GitHub secrets to create or keep in sync.
+
+on:
+  push:
+    branches: [test]
+    paths:
+      - 'apps/web/**'
+      - 'packages/shared/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - '.github/workflows/deploy-web-test.yml'
+  workflow_dispatch: {} # manual "Run workflow" — redeploys current test regardless of paths
+
+concurrency:
+  group: deploy-web-test
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build + deploy web (test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Write build env (TEST stack)
+        run: |
+          cat > .env.production.local <<'ENVEOF'
+          VITE_API_URL=https://api-test-production-19ca.up.railway.app
+          VITE_SUPABASE_URL=https://uitsrhyulidubnddzcex.supabase.co
+          VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpdHNyaHl1bGlkdWJuZGR6Y2V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg2OTEzMzIsImV4cCI6MjEwNDI2NzMzMn0._zfxpvKVnHltrnnavl7C6w27bYxKA-VTMMGtRyiUVGY
+          ENVEOF
+
+      - name: Build web
+        run: pnpm --filter @innovic/web build
+
+      # Fail loudly rather than quietly shipping production config to the test
+      # site — or, far worse, the reverse.
+      - name: Guard — the bundle must not reference production
+        run: |
+          if grep -rq "ctbrlcdwfddhlscnoyos\|api-production-06c90" apps/web/dist/assets; then
+            echo "::error::PRODUCTION reference found in the TEST bundle - refusing to deploy"
+            exit 1
+          fi
+          echo "ok: no production reference in the test bundle"
+
+      - name: Deploy to Cloudflare Pages (TEST project)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: pnpm dlx wrangler@latest pages deploy apps/web/dist --project-name=innovic-erp --branch=main
