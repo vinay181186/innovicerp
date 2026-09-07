@@ -61,8 +61,8 @@ export function DcReceiptsPanel({
                 <thead>
                   <tr>
                     <th>Item</th>
-                    <th className="td-right">Received</th>
-                    <th className="td-right">Rejected</th>
+                    <th>Received</th>
+                    <th>Rejected</th>
                     <th>Reject reason</th>
                   </tr>
                 </thead>
@@ -82,10 +82,10 @@ export function DcReceiptsPanel({
                             </span>
                           ) : null}
                         </td>
-                        <td className="td-right mono" style={{ color: 'var(--green2)' }}>
+                        <td className="mono" style={{ color: 'var(--green2)' }}>
                           {Number(rl.receivedQty).toFixed(2)}
                         </td>
-                        <td className="td-right mono" style={{ color: 'var(--red2)' }}>
+                        <td className="mono" style={{ color: 'var(--red2)' }}>
                           {Number(rl.rejectedQty).toFixed(2)}
                         </td>
                         <td className="text3">{rl.rejectReason ?? '—'}</td>

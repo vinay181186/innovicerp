@@ -124,14 +124,14 @@ function PendingSoValuePage(): React.JSX.Element {
                       <th>Due Date</th>
                       {priceHidden ? null : (
                         <>
-                          <th style={{ textAlign: 'right' }}>Order Value</th>
-                          <th style={{ textAlign: 'right' }}>Dispatched</th>
-                          <th style={{ textAlign: 'right', color: 'var(--amber)' }}>
+                          <th>Order Value</th>
+                          <th>Dispatched</th>
+                          <th style={{ color: 'var(--amber)' }}>
                             Pending Value
                           </th>
-                          <th style={{ textAlign: 'right' }}>Invoiced</th>
-                          <th style={{ textAlign: 'right' }}>Received</th>
-                          <th style={{ textAlign: 'right' }}>Outstanding</th>
+                          <th>Invoiced</th>
+                          <th>Received</th>
+                          <th>Outstanding</th>
                         </>
                       )}
                       <th>Status</th>
@@ -285,11 +285,10 @@ function PsvRow({
         </Link>
       </td>
       <td>{row.customerName ?? '—'}</td>
-      <td className="td-ctr" style={{ fontSize: 11 }}>
+      <td style={{ fontSize: 11 }}>
         {row.soDate}
       </td>
       <td
-        className="td-ctr"
         style={{
           fontSize: 11,
           color: overdue ? 'var(--red)' : undefined,
@@ -301,24 +300,24 @@ function PsvRow({
       </td>
       {priceHidden ? null : (
         <>
-          <td className="td-right mono">{inr(row.orderValue)}</td>
-          <td className="td-right mono" style={{ color: 'var(--green)' }}>
+          <td className="mono">{inr(row.orderValue)}</td>
+          <td className="mono" style={{ color: 'var(--green)' }}>
             {inr(row.dispatchedValue)}
           </td>
           <td
-            className="td-right mono fw-700"
+            className="mono fw-700"
             style={{ color: pending > 0 ? 'var(--amber)' : 'var(--green)' }}
           >
             {inr(row.pendingValue)}
           </td>
-          <td className="td-right mono" style={{ color: TEAL }}>
+          <td className="mono" style={{ color: TEAL }}>
             {inr(row.invoicedValue)}
           </td>
-          <td className="td-right mono" style={{ color: 'var(--green)' }}>
+          <td className="mono" style={{ color: 'var(--green)' }}>
             {inr(row.receivedValue)}
           </td>
           <td
-            className="td-right mono"
+            className="mono"
             style={{ color: outstanding > 0 ? 'var(--red)' : 'var(--green)' }}
           >
             {inr(row.outstandingValue)}
@@ -346,27 +345,27 @@ function TotalsRow({
   const cell = { background: 'var(--bg4)' } as const;
   return (
     <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
-      <td colSpan={4} className="td-right text2" style={{ ...cell, fontSize: 12 }}>
+      <td colSpan={4} className="text2" style={{ ...cell, fontSize: 12 }}>
         TOTAL
       </td>
       {priceHidden ? null : (
         <>
-          <td className="td-right mono" style={cell}>
+          <td className="mono" style={cell}>
             {inr(totals.orderValue)}
           </td>
-          <td className="td-right mono" style={{ ...cell, color: 'var(--green)' }}>
+          <td className="mono" style={{ ...cell, color: 'var(--green)' }}>
             {inr(totals.dispatchedValue)}
           </td>
-          <td className="td-right mono" style={{ ...cell, color: 'var(--amber)' }}>
+          <td className="mono" style={{ ...cell, color: 'var(--amber)' }}>
             {inr(totals.pendingValue)}
           </td>
-          <td className="td-right mono" style={{ ...cell, color: TEAL }}>
+          <td className="mono" style={{ ...cell, color: TEAL }}>
             {inr(totals.invoicedValue)}
           </td>
-          <td className="td-right mono" style={{ ...cell, color: 'var(--green)' }}>
+          <td className="mono" style={{ ...cell, color: 'var(--green)' }}>
             {inr(totals.receivedValue)}
           </td>
-          <td className="td-right mono" style={{ ...cell, color: 'var(--red)' }}>
+          <td className="mono" style={{ ...cell, color: 'var(--red)' }}>
             {inr(totals.outstandingValue)}
           </td>
         </>

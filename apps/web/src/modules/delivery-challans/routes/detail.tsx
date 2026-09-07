@@ -324,7 +324,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               {dc.lines.length > 0 ? (
                 <tfoot>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <td colSpan={2} style={{ textAlign: 'left', fontWeight: 700 }}>
+                    <td colSpan={2} style={{ fontWeight: 700 }}>
                       Total
                     </td>
                     <td className="mono fw-700">{totals.ship.toFixed(2)}</td>

@@ -91,14 +91,14 @@ export function JwInvoiceView(): React.JSX.Element {
                   <th>JWSO</th>
                   <th>Client</th>
                   <th>Part</th>
-                  <th style={{ textAlign: 'right' }}>Qty</th>
+                  <th>Qty</th>
                   {priceHidden ? null : (
                     <>
-                      <th style={{ textAlign: 'right' }}>Rate</th>
-                      <th style={{ textAlign: 'right' }}>Taxable</th>
-                      <th style={{ textAlign: 'right' }}>GST%</th>
-                      <th style={{ textAlign: 'right' }}>GST Amt</th>
-                      <th style={{ textAlign: 'right', color: 'var(--green)' }}>Total</th>
+                      <th>Rate</th>
+                      <th>Taxable</th>
+                      <th>GST%</th>
+                      <th>GST Amt</th>
+                      <th style={{ color: 'var(--green)' }}>Total</th>
                     </>
                   )}
                 </tr>
@@ -131,26 +131,26 @@ export function JwInvoiceView(): React.JSX.Element {
                     <td className="text2" style={{ fontSize: 12 }}>
                       {r.partName ?? '—'}
                     </td>
-                    <td className="mono" style={{ textAlign: 'right' }}>
+                    <td className="mono">
                       {r.qty}
                     </td>
                     {priceHidden ? null : (
                       <>
-                        <td className="mono" style={{ textAlign: 'right' }}>
+                        <td className="mono">
                           {money(r.rate ?? 0)}
                         </td>
-                        <td className="mono" style={{ textAlign: 'right' }}>
+                        <td className="mono">
                           {money(r.taxableAmount ?? 0)}
                         </td>
-                        <td className="mono text3" style={{ textAlign: 'right', fontSize: 11 }}>
+                        <td className="mono text3" style={{ fontSize: 11 }}>
                           {r.gstPercent}%
                         </td>
-                        <td className="mono" style={{ textAlign: 'right' }}>
+                        <td className="mono">
                           {money(r.gstAmount ?? 0)}
                         </td>
                         <td
                           className="mono fw-700"
-                          style={{ textAlign: 'right', fontSize: 14, color: 'var(--green)' }}
+                          style={{ fontSize: 14, color: 'var(--green)' }}
                         >
                           {money(r.totalAmount ?? 0)}
                         </td>

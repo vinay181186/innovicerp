@@ -199,8 +199,8 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                     <th>SO</th>
                     <th>Item</th>
                     <th>Operation</th>
-                    <th style={{ textAlign: 'right' }}>Acc</th>
-                    <th style={{ textAlign: 'right' }}>Rej</th>
+                    <th>Acc</th>
+                    <th>Rej</th>
                     <th>Call Date</th>
                     <th>Attended</th>
                     <th>Response</th>
@@ -236,18 +236,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                           {l.itemCode ?? '—'}
                         </td>
                         <td style={{ fontSize: 11 }}>{l.operation}</td>
-                        <td
-                          className="mono fw-700"
-                          style={{ textAlign: 'right', color: 'var(--green)' }}
-                        >
+                        <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                           {l.accepted}
                         </td>
                         <td
                           className="mono fw-700"
-                          style={{
-                            textAlign: 'right',
-                            color: l.rejected > 0 ? 'var(--red)' : 'var(--text3)',
-                          }}
+                          style={{ color: l.rejected > 0 ? 'var(--red)' : 'var(--text3)' }}
                         >
                           {l.rejected}
                         </td>

@@ -479,16 +479,16 @@ function BomBody({
                   key={c.childItemCode}
                   style={{ background: hasSufficient ? 'rgba(34,197,94,0.04)' : 'var(--bg)' }}
                 >
-                  <td className="td-ctr mono fw-700">{i + 1}</td>
+                  <td className="mono fw-700">{i + 1}</td>
                   <td style={{ color: 'var(--purple)', fontWeight: 600 }}>{c.childItemCode}</td>
                   <td>{c.childItemName}</td>
-                  <td className="td-ctr">{c.qtyPerSet}</td>
-                  <td className="td-ctr fw-700">{c.totalNeed}</td>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                  <td>{c.qtyPerSet}</td>
+                  <td className="fw-700">{c.totalNeed}</td>
+                  <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                     {c.stockQty}
                   </td>
                   <td
-                    className="td-ctr mono fw-700"
+                    className="mono fw-700"
                     style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}
                   >
                     {c.shortfall}
@@ -539,7 +539,7 @@ function BomBody({
                       <span style={{ color: 'var(--text3)', fontSize: 11 }}>Not planned</span>
                     )}
                   </td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td>
                     <input
                       type="checkbox"
                       disabled={!!c.existingPlan}

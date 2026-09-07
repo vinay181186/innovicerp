@@ -274,9 +274,7 @@ function ResultsTable(props: {
           <thead>
             <tr>
               {columns.map((col) => (
-                <th key={col.key} style={{ textAlign: col.type === 'number' ? 'right' : undefined }}>
-                  {col.label}
-                </th>
+                <th key={col.key}>{col.label}</th>
               ))}
             </tr>
           </thead>
@@ -344,11 +342,9 @@ function cellStyle(col: ReportColumn, raw: unknown, ci: number): React.CSSProper
   const st: React.CSSProperties = {};
   const isNum = typeof raw === 'number';
   if (isNum) {
-    st.textAlign = 'right';
     st.fontFamily = 'var(--mono)';
     st.fontWeight = 600;
   } else if (col.type === 'number') {
-    st.textAlign = 'right';
     st.fontFamily = 'var(--mono)';
   }
   if (ci === 0) {

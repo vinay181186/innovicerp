@@ -1005,8 +1005,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                         <td><input className="innovic-input" autoComplete="off" readOnly value={ln?.revision ?? 0} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
-                        <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
-                        <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
+                        <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
+                        <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
                         <td><button type="button" className="btn btn-sm" style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', padding: '3px 8px' }} onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}>Del</button></td>
                       </tr>
@@ -1083,7 +1083,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       {/* Legacy prints the row index here; ours keeps the editable
                           Lot # the save reads (`lotNo`) — feature retained. */}
                       <td style={{ width: 80 }}><input type="number" min={1} className="innovic-input td-ctr mono fw-700" style={{ color: 'var(--purple)' }} {...register(`milestones.${idx}.lotNo` as const, { valueAsNumber: true })} /></td>
-                      <td><input type="number" min={0} placeholder="Qty" className="innovic-input" style={{ width: 80, textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--cyan)' }} {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} /></td>
+                      <td><input type="number" min={0} placeholder="Qty" className="innovic-input" style={{ width: 80, fontSize: 13, fontWeight: 700, color: 'var(--cyan)' }} {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} /></td>
                       <td><input type="date" className="innovic-input" style={{ fontSize: 11 }} {...register(`milestones.${idx}.dueDate` as const)} /></td>
                       <td><input className="innovic-input" autoComplete="off" placeholder="e.g. 1st lot" style={{ fontSize: 11 }} {...register(`milestones.${idx}.remarks` as const)} /></td>
                       <td><button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => removeMs(idx)} aria-label={`Remove lot ${idx + 1}`}><Trash2 size={12} /></button></td>

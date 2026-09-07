@@ -327,7 +327,7 @@ function MatrixView(): React.JSX.Element {
                 <th>Qty</th>
                 <th>JC No</th>
                 {cols.map((c) => (
-                  <th key={c} style={{ color: 'var(--green)', textAlign: 'center', minWidth: 90 }}>
+                  <th key={c} style={{ color: 'var(--green)', minWidth: 90 }}>
                     {c}
                   </th>
                 ))}
@@ -411,7 +411,7 @@ function MatrixView(): React.JSX.Element {
                     title={r.jobCardId ? 'Click to view/upload QC documents' : undefined}
                     onClick={() => r.jobCardId && setDetailJcId(r.jobCardId)}
                   >
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {r.lineNo}
                     </td>
                     <td
@@ -424,7 +424,7 @@ function MatrixView(): React.JSX.Element {
                       {r.itemCode ?? ''}
                     </td>
                     <td style={{ fontSize: 11 }}>{r.itemName ?? ''}</td>
-                    <td className="td-ctr mono fw-700">{r.orderQty}</td>
+                    <td className="mono fw-700">{r.orderQty}</td>
                     {r.jcCode ? (
                       <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                         {r.jcCode}
@@ -460,12 +460,12 @@ function MatrixView(): React.JSX.Element {
 
 function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
   if (!cell.applicable) {
-    return <td style={{ color: 'var(--text3)', fontSize: 10, textAlign: 'center' }}>—</td>;
+    return <td style={{ color: 'var(--text3)', fontSize: 10 }}>—</td>;
   }
   if (cell.done) {
     if (cell.hasDoc) {
       return (
-        <td style={{ textAlign: 'center' }}>
+        <td>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)' }}>✅ Done</div>
           <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
           <button
@@ -493,7 +493,7 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
       );
     }
     return (
-      <td style={{ textAlign: 'center' }}>
+      <td>
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)' }}>✅ Done</div>
         <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
         <div style={{ fontSize: 9, color: 'var(--amber)', fontStyle: 'italic' }}>Not uploaded</div>
@@ -502,7 +502,7 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
   }
   if (cell.pending) {
     return (
-      <td style={{ textAlign: 'center' }}>
+      <td>
         <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}>⏳ Pending</div>
         <div style={{ fontSize: 9, color: 'var(--amber)' }}>{cell.qcPending} pcs</div>
         {cell.accepted > 0 ? (
@@ -512,7 +512,7 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
     );
   }
   return (
-    <td style={{ textAlign: 'center' }}>
+    <td>
       <div style={{ fontSize: 10, color: 'var(--text3)' }}>Waiting</div>
     </td>
   );
@@ -535,14 +535,14 @@ function OverallTd({
   }
   if (overall === 'no_qc') {
     return (
-      <td className="td-ctr">
+      <td>
         <span style={{ color: 'var(--text3)', fontSize: 10 }}>No QC</span>
       </td>
     );
   }
   if (overall === 'complete') {
     return (
-      <td className="td-ctr">
+      <td>
         <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 11 }}>
           ✅ {done}/{total}
         </span>
@@ -550,7 +550,7 @@ function OverallTd({
     );
   }
   return (
-    <td className="td-ctr">
+    <td>
       <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 11 }}>
         {done}/{total}
       </span>
