@@ -548,15 +548,6 @@
 .td-ctr {
   text-align: center;
 }
-/* Table-alignment standard: DATA cells centre under their column, header cells
-   stay exactly as they are (`.innovic-table th` is text-align:left above, and at
-   (0,1,1) it already outranks a `.td-ctr` sitting on a <th>, so headers are left
-   today whatever class they carry).
-   Opt-in per table while the standard is rolled out one screen at a time — when
-   every list has been checked, this declaration moves onto `.innovic-table td`
-   and the class disappears. Ranked (0,2,1) so it beats the plain `.td-ctr` /
-   `.td-right` helpers on the same cells; an inline style={{textAlign}} still
-   wins over it, so those have to be deleted from the markup, not overridden. */
 /* ── TABLE-ALIGNMENT STANDARD ────────────────────────────────────────────────
    Every table in the app centres BOTH rows: the column name and the values
    under it share one centre line. Headers left over centred data was tried on
