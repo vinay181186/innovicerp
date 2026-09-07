@@ -555,7 +555,15 @@
    and the class disappears. Ranked (0,2,1) so it beats the plain `.td-ctr` /
    `.td-right` helpers on the same cells; an inline style={{textAlign}} still
    wins over it, so those have to be deleted from the markup, not overridden. */
-.innovic-table.tbl-ctr td {
+table.tbl-ctr td {
+  text-align: center;
+}
+/* On form-style tables the value the user reads sits inside a full-width
+   <input>/<select> that fills the cell, so centring the cell alone moves
+   nothing on screen. An inline style={{textAlign}} on the control still wins
+   over this and has to be deleted from the markup instead. */
+table.tbl-ctr td .innovic-input,
+table.tbl-ctr td .innovic-select {
   text-align: center;
 }
 
@@ -651,6 +659,11 @@
   padding: 12px 14px;
   vertical-align: middle;
   border-top: 1px solid var(--border);
+  text-align: center;
+}
+.ops-routing td .innovic-input,
+.ops-routing td .innovic-select {
+  text-align: center;
 }
 
 /* ═══ BADGES ═══ */
