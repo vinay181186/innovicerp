@@ -555,6 +555,7 @@
    and the class disappears. Ranked (0,2,1) so it beats the plain `.td-ctr` /
    `.td-right` helpers on the same cells; an inline style={{textAlign}} still
    wins over it, so those have to be deleted from the markup, not overridden. */
+table.tbl-ctr th,
 table.tbl-ctr td {
   text-align: center;
 }
@@ -646,7 +647,7 @@ table.tbl-ctr td .innovic-select {
 }
 .ops-routing th {
   padding: 10px 14px;
-  text-align: left;
+  text-align: center;
   font-family: var(--mono);
   font-size: var(--fs-mono);
   text-transform: uppercase;
