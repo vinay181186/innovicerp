@@ -508,11 +508,9 @@
   letter-spacing: 0.08em;
   /* 9px 12px -> 6px 10px. Compounds over a 20-row list: ~120px recovered. */
   padding: 6px 10px;
-  /* Header cells stay LEFT. The alignment standard centres DATA cells only --
-     see the block under `.td-ctr`. The consequence is deliberate and known: a
-     value sits in the middle of its column while the column name sits at the
-     left edge of it, so the two do not line up. */
-  text-align: left;
+  /* Table-alignment standard: the column name centres with its values so the
+     column reads as one line. See the block under `.td-ctr`. */
+  text-align: center;
   font-family: var(--mono);
   white-space: nowrap;
   border-bottom: 1px solid var(--border2);
@@ -560,13 +558,10 @@
    `.td-right` helpers on the same cells; an inline style={{textAlign}} still
    wins over it, so those have to be deleted from the markup, not overridden. */
 /* ── TABLE-ALIGNMENT STANDARD ────────────────────────────────────────────────
-   Every table in the app centres its DATA cells. Header cells are NOT touched:
-   they stay left, exactly as they were.
-
-   Known and accepted consequence: a value sits in the middle of its column
-   while the column name sits at the left edge, so the two do not line up --
-   about 50px apart on a wide column. Centring the headers too was tried on
-   2026-09-07 and reverted; leaving headers alone is the standing instruction.
+   Every table in the app centres BOTH rows: the column name and the values
+   under it share one centre line. Headers left over centred data was tried on
+   SO Master (2026-09-07) and rejected -- it left every value about 50px right
+   of its own column name, so nothing lined up.
 
    Applied here once rather than per table. `table.tbl-ctr` stays in the list
    for the handful of tables that carry neither shared class; the class is a
@@ -576,8 +571,11 @@
    it does not reach `.td-right` / `.td-ctr` either way -- at (0,1,1) it already
    outranks those (0,1,0) helpers. Inline ones have to be deleted from the
    markup; there is no specificity that beats them. */
+.innovic-table th,
 .innovic-table td,
+.ops-routing th,
 .ops-routing td,
+table.tbl-ctr th,
 table.tbl-ctr td {
   text-align: center;
 }
@@ -672,7 +670,7 @@ table.tbl-ctr td .innovic-select {
 }
 .ops-routing th {
   padding: 10px 14px;
-  text-align: left;
+  text-align: center;
   font-family: var(--mono);
   font-size: var(--fs-mono);
   text-transform: uppercase;
