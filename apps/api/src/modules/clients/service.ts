@@ -27,6 +27,20 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the Client Master search box gets a wildcard pattern instead
+ *  of a literal search — i.e. the search box becomes a "show everything"
+ *  button. Postgres's DEFAULT LIKE/ILIKE escape character is backslash, so no
+ *  explicit ESCAPE clause is needed here (and drizzle's `ilike()` builder,
+ *  which this list is written with, cannot emit one) — verified against the
+ *  live database.
+ *  Deliberately a local copy of the sales-orders / purchase-orders helper
+ *  rather than an export across modules: it is three lines, and each list must
+ *  be free to change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listClients(
   input: ListClientsQuery,
   user: AuthContext,
@@ -35,9 +49,24 @@ export async function listClients(
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(clients.companyId, companyId), isNull(clients.deletedAt)];
     if (input.search) {
+      // Search covers every column the Client Master list actually shows —
+      // Code, Client Name, Address, Contact and Email (the column defs in
+      // apps/web/src/modules/clients/routes/list.tsx).
+      // Deliberately NOT searched:
+      //  - phone, GST number, city, state, pincode — held on the client, but
+      //    not on this screen;
+      //  - Status — it is a boolean rendered as an "active"/"inactive" badge,
+      //    and a substring match on "active" also matches "inactive", so it
+      //    would return every row. The StatStrip tiles already filter status.
+      // No money or quantity column exists on this table, so there is nothing
+      // here that could leak a value to someone without price access.
+      const term = `%${escapeLikeTerm(input.search)}%`;
       const s = or(
-        ilike(clients.code, `%${input.search}%`),
-        ilike(clients.name, `%${input.search}%`),
+        ilike(clients.code, term),
+        ilike(clients.name, term),
+        ilike(clients.addressLine1, term),
+        ilike(clients.contactPerson, term),
+        ilike(clients.email, term),
       );
       if (s) conditions.push(s);
     }

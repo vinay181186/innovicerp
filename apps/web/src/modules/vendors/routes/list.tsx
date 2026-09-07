@@ -29,6 +29,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../api';
@@ -84,7 +85,9 @@ function VendorsListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  Shree  Steel " and "Shree Steel" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -240,8 +243,8 @@ function VendorsListPage(): React.JSX.Element {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               className="innovic-input"
-              placeholder="🔍 Search vendor…"
-              title="Search by vendor code or name"
+              placeholder="🔍 Search this list…"
+              title="Search this list"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ minWidth: 220, fontSize: 13 }}

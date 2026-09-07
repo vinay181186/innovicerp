@@ -22,9 +22,12 @@
 //    ISSUE-017).
 //  - No Approve/Reject/Print row actions: see ISSUE-030. Both live on the
 //    detail page, one click away via View.
-//  - Search placeholder says what the API actually matches, not legacy's
-//    "Search PO, vendor, item…" (trap 1 — legacy's box is a client-side filter
-//    over rendered rows; ours is a server-side code/PR-ref/vendor-code match).
+//  - Search placeholder does not list columns (trap 1 — legacy's "Search PO,
+//    vendor, item…" box is a client-side filter over rendered rows; ours is a
+//    server-side match). The API now matches PO code, PR ref, vendor code AND
+//    vendor name, status, PO type, PO date and the item code / item name on the
+//    lines — too many to name in a 240px box, and a listed-columns placeholder
+//    goes stale the moment the API widens again, so it stays generic.
 
 import {
   type ListPurchaseOrdersQuery,
@@ -38,6 +41,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -115,7 +119,9 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  IN-PO  26 " and "IN-PO 26" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -201,7 +207,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
               className="innovic-input"
-              placeholder="🔍 Search code, PR ref, vendor code…"
+              placeholder="🔍 Search this list…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ width: 240, fontSize: 12 }}

@@ -219,6 +219,18 @@ function hideNcMoney<T extends { scrapCost: string | null }>(r: T): T {
   return { ...r, scrapCost: null };
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the NC Register search box gets a wildcard
+ *  pattern instead of a literal search — a bare "%" returned every NC. The SQL
+ *  side must pair it with an ESCAPE '\' clause on every ILIKE, or the escapes
+ *  match literally.
+ *  Deliberately a local copy of the sales-orders helper rather than an export
+ *  across modules: it is three lines, and each list must be free to change its
+ *  own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listNcRegister(
   input: ListNcRegisterQuery,
   user: AuthContext,
@@ -226,9 +238,44 @@ export async function listNcRegister(
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'nc_dispose');
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    // Search covers every column the NC list table actually shows — Rej No.,
+    // Date, JC No., Operation (the resolved op name, falling back to the stored
+    // operation / QC-operation text), Item (master code + name and the stored
+    // code + name text), Reason, Disposition, Status, and the linked CAPA code
+    // printed in the Actions cell. `nc.reason` is kept from the original clause
+    // set: the Reason column shows the category, but the free-text reason is the
+    // NC's own description and users search it.
+    // Deliberately NOT searched: rejected qty, rework-done qty and the op
+    // sequence number — matching numbers would make "2" hit almost every NC.
+    // And NOT scrap_cost: it is money, hidden behind `canSeeFormPrice`
+    // (hideNcMoney above), so a searchable amount would let a user who may not
+    // see prices confirm a scrap value by guessing at it.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (nc.code ILIKE ${term} OR nc.reason ILIKE ${term} OR nc.item_name_text ILIKE ${term} OR nc.item_code_text ILIKE ${term})`
+      ? sql`AND (
+          nc.code ILIKE ${term} ESCAPE '\\'
+          OR nc.nc_date::text ILIKE ${term} ESCAPE '\\'
+          -- JC No. column — jc is the job_cards join already in the SELECT.
+          OR jc.code ILIKE ${term} ESCAPE '\\'
+          -- Operation column: "Op<seq>: <name>", name resolved in this order.
+          OR jo.operation ILIKE ${term} ESCAPE '\\'
+          OR nc.operation_text ILIKE ${term} ESCAPE '\\'
+          OR nc.qc_operation_text ILIKE ${term} ESCAPE '\\'
+          -- Item column: master row first, stored snapshot second, so an item
+          -- renamed after the NC was raised is found under either name.
+          OR i.code ILIKE ${term} ESCAPE '\\'
+          OR i.name ILIKE ${term} ESCAPE '\\'
+          OR nc.item_code_text ILIKE ${term} ESCAPE '\\'
+          OR nc.item_name_text ILIKE ${term} ESCAPE '\\'
+          OR nc.reason ILIKE ${term} ESCAPE '\\'
+          -- The three badge columns.
+          OR nc.reason_category::text ILIKE ${term} ESCAPE '\\'
+          OR nc.disposition::text ILIKE ${term} ESCAPE '\\'
+          OR nc.status::text ILIKE ${term} ESCAPE '\\'
+          -- Linked CAPA code, printed in the Actions cell (cap is the LATERAL
+          -- join below).
+          OR cap.code ILIKE ${term} ESCAPE '\\'
+        )`
       : sql``;
     const statusFrag = input.status ? sql`AND nc.status = ${input.status}::nc_status` : sql``;
     const reasonFrag = input.reasonCategory

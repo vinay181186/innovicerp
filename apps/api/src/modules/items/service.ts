@@ -21,6 +21,19 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the Item Master search box gets a wildcard pattern instead of
+ *  a literal search — i.e. the search box becomes a "show everything" button.
+ *  Postgres's DEFAULT LIKE/ILIKE escape character is backslash, so no explicit
+ *  ESCAPE clause is needed here (and drizzle's `ilike()` builder, which this
+ *  list is written with, cannot emit one) — verified against the live database.
+ *  Deliberately a local copy of the sales-orders / purchase-orders helper
+ *  rather than an export across modules: it is three lines, and each list must
+ *  be free to change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listItems(
   input: ListItemsQuery,
   user: AuthContext,
@@ -29,9 +42,31 @@ export async function listItems(
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(items.companyId, companyId), isNull(items.deletedAt)];
     if (input.search) {
+      // Search covers every column the Item Master list actually shows — Item
+      // Code, Name, Description, Drawing No., Rev, Material and the UOM badge
+      // (the column defs in apps/web/src/modules/items/routes/list.tsx).
+      // UOM is a Postgres enum, so it needs an explicit ::text cast — `uom
+      // ILIKE $1` errors with "operator does not exist: uom ~~*". The raw
+      // fragment carries ESCAPE '\' so it behaves exactly like the ilike()
+      // calls around it (which get the same behaviour from Postgres's default).
+      // Deliberately NOT searched:
+      //  - HSN code — stored on the item, not on this screen;
+      //  - item type — not a row column; it is the StatStrip filter above the
+      //    table (All / Component / Assembly), so searching it would only
+      //    duplicate a filter that already exists;
+      //  - the drawing file path — the "Drw" cell renders an icon, not the path;
+      //  - min stock qty — a quantity: partial matching on numbers makes a
+      //    short term useless.
+      // No money column exists on this table.
+      const term = `%${escapeLikeTerm(input.search)}%`;
       const searchCondition = or(
-        ilike(items.code, `%${input.search}%`),
-        ilike(items.name, `%${input.search}%`),
+        ilike(items.code, term),
+        ilike(items.name, term),
+        ilike(items.description, term),
+        ilike(items.drawingNo, term),
+        ilike(items.revision, term),
+        ilike(items.material, term),
+        sql`${items.uom}::text ILIKE ${term} ESCAPE '\\'`,
       );
       if (searchCondition) conditions.push(searchCondition);
     }

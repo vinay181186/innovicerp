@@ -203,22 +203,65 @@ async function sumPartyReceivedQty(tx: DbTransaction, jobWorkOrderId: string): P
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the JWSO search box gets a wildcard pattern
+ *  instead of a literal search — a bare "%" returned every JWSO. The SQL side
+ *  must pair it with an ESCAPE '\' clause on every ILIKE, or the escapes match
+ *  literally.
+ *  Deliberately a local copy of the sales-orders helper rather than an export
+ *  across modules: it is three lines, and each list must be free to change its
+ *  own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listJobWorkOrders(
   input: ListJobWorkOrdersQuery,
   user: AuthContext,
 ): Promise<ListJobWorkOrdersResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
-    // Match JW / client / client-PO, or any of the JWSO's lines by item code /
-    // part name (via EXISTS so the header stays one row — #6).
+    // Search covers every field the JWSO list card actually shows — band 1
+    // (JWSO code, client name, status badge), band 2's meta line (JWSO date,
+    // client PO no, earliest due date, remarks) and, via EXISTS, the expandable
+    // LINE ITEMS table (Item Code, Part Name, Material, Drawing No, UOM, Due
+    // Date, line Status). One matching line surfaces its whole JWSO — the
+    // header stays one row (#6).
+    // Deliberately NOT searched: total / JC / dispatched / balance / line
+    // quantities and the client-material qty behind the ✓ Full / ◑ Partial
+    // badge — matching numbers would make "5" hit almost every JWSO. And NOT
+    // the line rate: this module hides money behind `canSeeFormPrice`
+    // (hideJwLineMoney below), so a searchable amount would let a user who may
+    // not see prices confirm a rate by guessing at it.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (jw.code ILIKE ${term} OR jw.customer_name ILIKE ${term} OR jw.client_po_no ILIKE ${term}
+      ? sql`AND (jw.code ILIKE ${term} ESCAPE '\\'
+                 OR jw.customer_name ILIKE ${term} ESCAPE '\\'
+                 OR jw.client_po_no ILIKE ${term} ESCAPE '\\'
+                 OR jw.status::text ILIKE ${term} ESCAPE '\\'
+                 OR jw.jw_date::text ILIKE ${term} ESCAPE '\\'
+                 OR jw.remarks ILIKE ${term} ESCAPE '\\'
                  OR EXISTS (
                    SELECT 1 FROM public.job_work_order_lines l2
                    LEFT JOIN public.items i2 ON i2.id = l2.item_id AND i2.deleted_at IS NULL
                    WHERE l2.job_work_order_id = jw.id AND l2.deleted_at IS NULL
-                     AND (COALESCE(i2.code, l2.item_code_text) ILIKE ${term} OR l2.part_name ILIKE ${term})
+                     AND (
+                       -- Item Code is matched on BOTH the text the line stored
+                       -- and the live master code: an item renamed after the
+                       -- JWSO was raised keeps the old code on the line, and
+                       -- users search either one. (Was a COALESCE, which hid
+                       -- the stored text whenever the master row still existed.)
+                       l2.item_code_text ILIKE ${term} ESCAPE '\\'
+                       OR i2.code ILIKE ${term} ESCAPE '\\'
+                       OR l2.part_name ILIKE ${term} ESCAPE '\\'
+                       OR l2.material ILIKE ${term} ESCAPE '\\'
+                       OR l2.drawing_no ILIKE ${term} ESCAPE '\\'
+                       OR l2.uom::text ILIKE ${term} ESCAPE '\\'
+                       OR l2.status::text ILIKE ${term} ESCAPE '\\'
+                       -- The card's "Due" is MIN(line due_date); matching any
+                       -- line's due date is what the user means by it.
+                       OR l2.due_date::text ILIKE ${term} ESCAPE '\\'
+                     )
                  ))`
       : sql``;
     const statusFrag = input.status ? sql`AND jw.status = ${input.status}::so_status` : sql``;

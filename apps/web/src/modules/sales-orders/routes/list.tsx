@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoStatus } from '../../so-status/api';
@@ -127,7 +128,9 @@ function SalesOrdersListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  IN-SO  26 " and "IN-SO 26" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -295,7 +298,7 @@ function SalesOrdersListPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input className="innovic-input" placeholder="Search code, customer, client PO…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
+            <input className="innovic-input" placeholder="Search this list…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
             <select className="innovic-select" value={search.type ?? ''} onChange={(e) => { const v = e.target.value as SoType | ''; void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 160, fontSize: 12 }}>
               <option value="">All types</option>
               {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}

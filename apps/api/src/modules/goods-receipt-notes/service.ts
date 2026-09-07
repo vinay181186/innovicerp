@@ -236,15 +236,81 @@ function maybeDateLike(v: unknown): string | null {
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the GRN search box gets a wildcard pattern
+ *  instead of a literal search — and a bare "%" returns every row. The SQL side
+ *  must pair it with an ESCAPE '\' clause on every ILIKE, or the escapes match
+ *  literally.
+ *  Deliberately a local copy of the sales-orders / purchase-orders helper rather
+ *  than an export across modules: it is three lines, and each list must be free
+ *  to change its own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listGoodsReceiptNotes(
   input: ListGoodsReceiptNotesQuery,
   user: AuthContext,
 ): Promise<ListGoodsReceiptNotesResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    // Search covers every column the GRN register (goods-receipt-notes/routes/
+    // list.tsx) actually shows: GRN No., Date, PO/JWPO (the resolved PO code the
+    // cell falls back from), Vendor (resolved name, then the stored code), the
+    // Close/Pending GRN Status badge, and the Ref cell (invoice no. + DC no.).
+    //
+    // Two aliases the page query has are NOT available here — this same
+    // fragment is reused by the KPI summary query below, which joins only
+    // `grn` + `v`. The PO code and the status badge are therefore reached with
+    // their own subqueries on grn.id, so both queries stay valid.
+    //
+    // Deliberately NOT searched:
+    //  - every quantity cell (Lines, Received, QC Accepted, QC Rejected, QC
+    //    pending): numbers, so "2" would hit nearly every GRN.
+    //  - money of any kind. There is none on this list (rate/amount live on the
+    //    PO), and this module's prices are gated by `canSeeFormPrice` — a
+    //    searchable amount would let a user without that right confirm a value
+    //    by guessing it.
+    //  - line item code / item name: the register has no item column (it shows
+    //    a line COUNT), so there is nothing on screen for them to match.
+    //  - remarks: not on the list screen.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (grn.code ILIKE ${term} OR grn.po_code_text ILIKE ${term} OR grn.dc_no ILIKE ${term} OR grn.invoice_no ILIKE ${term})`
+      ? sql`AND (
+          grn.code ILIKE ${term} ESCAPE '\\'
+          -- PO/JWPO cell renders poCode ?? poCodeText, so match both the live
+          -- PO's code and the text this GRN stored when it was raised.
+          OR grn.po_code_text ILIKE ${term} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM public.purchase_orders spo
+            WHERE spo.id = grn.purchase_order_id
+              AND spo.deleted_at IS NULL
+              AND spo.code ILIKE ${term} ESCAPE '\\'
+          )
+          -- Vendor cell renders vendorName ?? vendorCodeText.
+          OR v.name ILIKE ${term} ESCAPE '\\'
+          OR grn.vendor_code_text ILIKE ${term} ESCAPE '\\'
+          OR grn.grn_date::text ILIKE ${term} ESCAPE '\\'
+          OR grn.dc_no ILIKE ${term} ESCAPE '\\'
+          OR grn.invoice_no ILIKE ${term} ESCAPE '\\'
+          -- The GRN Status badge is derived, not stored: 'close' once every
+          -- line is fully QC-inspected, else 'pending'. Same expression as the
+          -- SELECT below, written as one subquery so it also works inside the
+          -- summary query (which has no line_agg join).
+          OR (
+            SELECT CASE
+                     WHEN COUNT(*) > 0
+                      AND COALESCE(
+                            SUM(sgl.received_qty - sgl.qc_accepted_qty - sgl.qc_rejected_qty), 0
+                          ) <= 0
+                     THEN 'close' ELSE 'pending'
+                   END
+            FROM public.goods_receipt_note_lines sgl
+            WHERE sgl.goods_receipt_note_id = grn.id
+              AND sgl.deleted_at IS NULL
+          ) ILIKE ${term} ESCAPE '\\'
+        )`
       : sql``;
     const vendorFrag = input.vendorId ? sql`AND grn.vendor_id = ${input.vendorId}::uuid` : sql``;
     const poFrag = input.purchaseOrderId
