@@ -1,4 +1,4 @@
-name: Deploy Web → Cloudflare Pages
+name: Deploy Web (PRODUCTION) → innovicerp.com
 
 # Auto-deploys the React web app to Cloudflare Pages on every push to main
 # (mirrors how Railway auto-deploys the API). Direct-upload via wrangler — the
@@ -69,4 +69,4 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WRANGLER_SEND_METRICS: 'false'
-        run: pnpm dlx wrangler@latest pages deploy apps/web/dist --project-name=innovic-erp --branch=main
+        run: pnpm dlx wrangler@latest pages deploy apps/web/dist --project-name=innovic-erp-prod --branch=main
