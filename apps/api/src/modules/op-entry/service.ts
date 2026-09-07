@@ -18,7 +18,7 @@
 // (machine_id) where status='running' and is_osp=false. The service catches
 // the resulting unique-violation and returns a typed ConflictError.
 
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import {
   approvalConfig,
   jcOps,
@@ -80,11 +80,60 @@ export async function listJcOpsEnriched(
     throw new ValidationError('Provide jobCardId, jobCardCode, or machineId');
   }
   return withUserContext(user, async (tx) => {
-    const filter = input.jobCardId
-      ? sql`jc.id = ${input.jobCardId}::uuid`
-      : input.jobCardCode
-        ? sql`jc.code = ${input.jobCardCode}`
-        : sql`o.machine_id = ${input.machineId!}::uuid`;
+    let filter: SQL;
+    if (input.jobCardId) {
+      filter = sql`jc.id = ${input.jobCardId}::uuid`;
+    } else if (input.jobCardCode) {
+      filter = sql`jc.code = ${input.jobCardCode}`;
+    } else {
+      // "By machine" must return every op this machine has anything to do with:
+      //
+      //  1. It RUNS here now — by the resolved FK, OR by machine_code_text for
+      //     plan/route-sourced ops that never resolved an FK (ADR-012 #10
+      //     fallback). Without the text arm those ops are invisible under every
+      //     machine, permanently — the same hole job-queue already closes (see
+      //     job-queue/service.ts: "they never appear in any machine queue even
+      //     though the Job Card exists"). Done in SQL here, against the code we
+      //     look up below.
+      //
+      //  2. It RAN here in the past — machine_id is where the REMAINING qty
+      //     runs, so re-routing an op (CNC-1 → CNC-2 after 10 pcs) used to erase
+      //     CNC-1's own production from its screen. Past production keeps its
+      //     machine stamped on op_log (0095) and is aggregated per (op ×
+      //     machine) in v_op_machine_output; the view COALESCEs the code, hence
+      //     matching machine_code too for the text-only case.
+      //
+      // EXISTS, never a join: an op that is BOTH assigned here AND produced here
+      // must come back once, not twice.
+      const machineId = input.machineId!;
+      const machineRows = await tx
+        .select({ code: machines.code })
+        .from(machines)
+        .where(
+          and(
+            eq(machines.id, machineId),
+            eq(machines.companyId, companyId),
+            isNull(machines.deletedAt),
+          ),
+        )
+        .limit(1);
+      // No such machine in this company → no code to match on, so the filter
+      // collapses to the FK arms and behaves exactly as it did before.
+      const machineCode = machineRows[0]?.code ?? null;
+      const assignedByCode = machineCode ? sql`OR o.machine_code_text = ${machineCode}` : sql``;
+      const producedByCode = machineCode ? sql`OR v.machine_code = ${machineCode}` : sql``;
+      filter = sql`(
+        o.machine_id = ${machineId}::uuid
+        ${assignedByCode}
+        OR EXISTS (
+          SELECT 1
+          FROM public.v_op_machine_output v
+          WHERE v.jc_op_id = o.id
+            AND v.company_id = ${companyId}::uuid
+            AND (v.machine_id = ${machineId}::uuid ${producedByCode})
+        )
+      )`;
+    }
     const orderBy = input.machineId
       ? sql`ORDER BY jc.code ASC, o.op_seq ASC`
       : sql`ORDER BY o.op_seq ASC`;
