@@ -173,7 +173,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const [vendorSearch, setVendorSearch] = useState('');
   const vendors = useVendorsList({
     ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
-    limit: 50,
+    // 200 (the endpoint's cap) rather than 50: the vendor master runs to several
+    // hundred rows, so browsing without typing showed a thin and arbitrary slice.
+    // Typing is still what finds a specific vendor — the search goes to the
+    // server — but a wider first page makes the list worth opening.
+    limit: 200,
     offset: 0,
   });
   // The full machine rows, not just the three picker fields: the Machine Group
@@ -903,7 +907,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             // Both pickers draw their dropdown into a <body> portal and reposition
             // on any capture-phase scroll, so this scroller cannot clip them.
             <div style={{ overflowX: 'auto' }}>
-              <table className="ops-routing" style={{ minWidth: 940 }}>
+              <table className="ops-routing" style={{ minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
                     <th style={{ width: 40, textAlign: 'center' }}>#</th>
@@ -915,7 +919,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                     <th style={{ width: 210 }}>Machine / Vendor</th>
                     <th style={{ minWidth: 200 }}>Operation</th>
                     <th style={{ width: 96 }}>Cycle (h)</th>
-                    <th style={{ width: 168, color: 'var(--amber)' }}>OSP</th>
+                    <th style={{ width: 132, color: 'var(--amber)' }}>OSP</th>
                     <th style={{ width: 48 }} />
                   </tr>
                 </thead>
@@ -1056,7 +1060,17 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           {isOS ? (
                             <SearchableSelect
                               id={`plan-osp-vend-${op.uid}`}
-                              value={vendorIdByCode(op.outsourceVendorText ?? '')}
+                              // The stored FK is the LINK to Vendor Master, so it
+                              // is what the picker is asked for first. Matching on
+                              // the code text was the fallback doing all the work,
+                              // and it could only ever match a vendor inside the
+                              // page of rows this hook had fetched — against a
+                              // vendor master of several hundred that is almost
+                              // never the saved one, so an op that plainly had a
+                              // vendor read as unlinked and reopening the list
+                              // risked clearing it. The text match stays as the
+                              // fallback for ops saved before the id was recorded.
+                              value={op.outsourceVendorId ?? vendorIdByCode(op.outsourceVendorText ?? '')}
                               onChange={(id) =>
                                 updateOp(op.uid, {
                                   outsourceVendorId: id,
@@ -1168,25 +1182,20 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             />
                             OUTSOURCE
                           </label>
-                          {/* Legacy L9578 renders a ₹/pc cost input on an
-                              outsourced op. It stays in this column with the tick
-                              box that reveals it — only the vendor picker moved
-                              out, into the Machine / Vendor column where the rest
-                              of the table asks "who does this step". */}
-                          {isOS ? (
-                            <input
-                              className="innovic-input"
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              value={op.outsourceCost}
-                              onChange={(e) =>
-                                updateOp(op.uid, { outsourceCost: Number(e.target.value) })
-                              }
-                              placeholder="₹/pc"
-                              style={{ marginTop: 6 }}
-                            />
-                          ) : null}
+                          {/* No ₹/pc rate here. Legacy L9578 put one on an
+                              outsourced op and it was added back in an earlier
+                              pass, but the user does not price the work on this
+                              screen — the rate is agreed on the purchase side,
+                              not while planning the route. Checked before
+                              removing it: outsource_cost is 0 on every plan_ops
+                              row in both databases, so no one has ever entered a
+                              figure here and nothing on screen was carrying
+                              information.
+
+                              The COLUMN stays: buildPayload still writes
+                              o.outsourceCost, which is whatever the plan was
+                              loaded with. Dropping the input hides the field, it
+                              does not blank a value already stored. */}
                         </td>
                         <td>
                           <button
