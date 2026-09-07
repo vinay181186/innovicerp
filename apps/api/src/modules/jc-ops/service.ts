@@ -240,8 +240,16 @@ export async function changeJcOpMachine(
     if (!op) throw new NotFoundError(`JC operation ${jcOpId} not found`);
     const status = String(op.status);
     if (status === 'complete') {
+      // Naming the op, the qty and the machine it stays on answers the three
+      // questions the old one-liner left open: which op, how much, and where
+      // does the production I can see actually live now.
       throw new ConflictError(
-        'Cannot change machine: this operation is complete — there is no remaining qty to run.',
+        `Op ${op.opSeq} ${op.operation} on ${op.jcCode} is finished — all ` +
+          `${op.done} ${op.done === 1 ? 'pc is' : 'pcs are'} made, so there is nothing left ` +
+          `to run on another machine. ` +
+          (op.oldMachineCode
+            ? `The ${op.done} stay recorded against ${op.oldMachineCode}.`
+            : `The finished qty stays recorded against the machine that made it.`),
       );
     }
 
