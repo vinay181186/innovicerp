@@ -56,11 +56,37 @@
   overflow: hidden;
   min-width: 0;
 }
+/* ── The header chrome is ONE surface ───────────────────────────────────────
+   #app-header (routes/_authenticated.tsx) wraps the topbar, the breadcrumb
+   trail and the open-page tab strip, and paints the background for all three.
+   The bands themselves are now transparent: giving each its own colour
+   (--bg2 topbar / --bg breadcrumbs / --bg3 tabs) is what
+   made the header read as three mismatched strips, with the PAGE background
+   showing through the breadcrumb row like a gap in the middle of the chrome.
+   The chrome closes with exactly ONE hairline — #pagetabs' border-bottom, which
+   also closes off the tabs the way it always did. No second border below it:
+   two lines 20px apart is the double-border look this was meant to remove.
+
+   It also owns the page's top gutter (padding-bottom). That gutter used to be
+   #content's padding-top, but #content is the scroll container: a gutter made
+   from its padding sits INSIDE the scrollport, so it is painted in the page
+   colour, scrolls away, and any toolbar a list pins at `top: 0` (e.g.
+   sales-orders/routes/list.tsx) starts 20px below the chrome and then jumps
+   flush the moment you scroll. Held here it is painted in the header colour,
+   never scrolls, and a pinned toolbar sits flush under the chrome from the
+   start. The gutter is the same 20px as before and sits BELOW the hairline, so
+   every page keeps exactly the breathing room it has today — only the colour of
+   that strip changes, from page grey to header white. Keep it equal to
+   #content's horizontal padding at BOTH breakpoints (see the max-width:768px
+   block at the bottom of this file). */
+#app-header {
+  flex-shrink: 0;
+  background: var(--bg2);
+  padding-bottom: 20px;
+}
 #topbar {
   height: var(--topbar-height);
   min-height: var(--topbar-height);
-  background: var(--bg2);
-  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -78,20 +104,19 @@
   font-size: 12px;
   color: var(--text3);
   padding: 10px 20px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
 }
 /* Open-pages tab bar (components/shared/open-tabs-bar.tsx) — browser-style tabs
    for visited routes, sits between the breadcrumb and #content as fixed chrome.
    The strip stays within the available width with NO horizontal scroll: tabs
    share the row and shrink (labels ellipsize) when crowded, backed by the store's
-   MAX_TABS cap. Mirrors #breadcrumbs' padding so tabs line up with the page body. */
+   MAX_TABS cap. Mirrors #breadcrumbs' padding so tabs line up with the page body.
+   Background comes from #app-header (one surface); the border-bottom stays — it
+   closes off the tabs AND is the chrome's single hairline. */
 #pagetabs {
   display: flex;
   align-items: stretch;
   gap: 4px;
   padding: 4px 20px 0;
-  background: var(--bg3);
   border-bottom: 1px solid var(--border);
   overflow: hidden;
   flex-shrink: 0;
@@ -157,7 +182,23 @@
 #content {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+}
+/* The top gutter moved to #app-header (see above), so the scrollport starts
+   immediately under the chrome. Written as `#main > #content` on purpose:
+   index.css keeps a duplicate `#content { padding: 20px }` as a PostCSS
+   safety net and it is loaded AFTER this file, so a plain `#content` rule here
+   would lose the cascade to it. Sides + bottom are unchanged, so pages that
+   bleed out sideways with `margin: 0 -20px -20px` still line up. */
+#main > #content {
+  padding: 0 20px 20px;
+}
+/* Nothing may pull itself ABOVE the scrollport. A scroll container clips its
+   block-start overflow and cannot scroll back to it, so a page root with a
+   negative top margin — written when there was 20px of #content padding to
+   bleed into (qc-call-register's full-bleed shell) — would lose its first
+   pixels under the chrome. Side/bottom negative margins still work. */
+#content > *:first-child {
+  margin-top: 0 !important;
 }
 
 /* ═══ SIDEBAR ═══ */
@@ -1067,14 +1108,30 @@ table.tbl-ctr td .innovic-select {
   #sidebar.sb-open {
     left: 0;
   }
+  /* Every band of the chrome and the page body share ONE horizontal edge at
+     this breakpoint too. That edge is 20px, not the 12px this block used to ask
+     for: the duplicate `#content` rule in index.css loads later and has been
+     overriding it, so the page body has ALWAYS rendered at 20px here. Making
+     the 12px real would move the body 8px in while two pages bleed sideways
+     with a hard-coded `margin: 0 -20px -20px` (so-status/routes/index.tsx and
+     purchase-orders/components/po-form-css.ts) -- they would hang past the edge
+     and give the app a horizontal scrollbar on a phone. Matching the 20px that
+     actually ships keeps every band aligned and changes nothing below 768px
+     except the header's colour. */
   #breadcrumbs {
-    padding: 8px 12px;
+    padding: 8px 20px;
   }
-  #content {
-    padding: 12px;
+  #pagetabs {
+    padding: 4px 20px 0;
+  }
+  #app-header {
+    padding-bottom: 20px;
+  }
+  #main > #content {
+    padding: 0 20px 20px;
   }
   #topbar {
-    padding: 0 10px;
+    padding: 0 20px;
     gap: 8px;
     min-height: 48px;
     height: 48px;
