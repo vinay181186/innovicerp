@@ -245,6 +245,17 @@ function RouteCardDetailPage(): React.JSX.Element {
                       ? (op.ospVendorCode ?? op.ospVendorCodeText ?? '—')
                       : (op.machineCode ?? op.machineCodeText ?? '—');
                   const tagName = op.opType === 'outsource' ? op.ospVendorName : op.machineName;
+                  // The machine GROUP ('VMC', 'CNC') is the word the shop floor
+                  // actually uses for a family of machines, so showing it under
+                  // the machine tells a reader what KIND of step this is without
+                  // them having to recognise the individual machine code. It
+                  // hangs off the machine, so it only ever appears on an in-house
+                  // op: an OSP row carries a vendor and a QC row carries neither,
+                  // and on those rows nothing extra is drawn at all. Null (no
+                  // machine, or a machine filed under no group) draws nothing —
+                  // no dash, no blank line.
+                  const groupCode =
+                    op.opType === 'outsource' || op.opType === 'qc' ? null : op.machineGroupCode;
                   return (
                     <tr key={op.id} style={{ background: bg }}>
                       <td className="td-ctr mono fw-700" style={{ color: accent }}>
@@ -276,6 +287,23 @@ function RouteCardDetailPage(): React.JSX.Element {
                               }}
                             >
                               {tagName}
+                            </span>
+                          ) : null}
+                          {groupCode ? (
+                            // Smallest line in the chip, and muted, so the machine
+                            // code stays the thing the eye lands on first — the
+                            // group is context, not the identity of the step.
+                            <span
+                              style={{
+                                fontSize: 8,
+                                color: 'var(--text3)',
+                                fontWeight: 700,
+                                letterSpacing: '.08em',
+                                display: 'block',
+                              }}
+                              title={`Machine group: ${groupCode}`}
+                            >
+                              {groupCode}
                             </span>
                           ) : null}
                         </span>

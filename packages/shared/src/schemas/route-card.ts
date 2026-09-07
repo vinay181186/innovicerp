@@ -79,6 +79,12 @@ export const routeCardOpSchema = z.object({
   // Joined display values (populated by service via machines + vendors).
   machineCode: z.string().nullable().default(null),
   machineName: z.string().nullable().default(null),
+  /** The Machine GROUP this op's machine belongs to — the word the shop floor
+   *  reads ('VMC', 'CNC'), resolved machines → machine_groups (migration 0116).
+   *  Null on an op with no machine, on a machine filed under no group, and on
+   *  OSP/QC steps, which have no machine to group. Display only: the route card
+   *  stores the machine, and the group is whatever that machine belongs to now. */
+  machineGroupCode: z.string().nullable().default(null),
   ospVendorCode: z.string().nullable().default(null),
   ospVendorName: z.string().nullable().default(null),
 });
