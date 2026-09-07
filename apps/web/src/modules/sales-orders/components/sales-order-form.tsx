@@ -939,7 +939,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           {/* Fixed layout so every column gets exactly its share — the percentage
               widths are balanced to each field's data and scale with the panel. */}
           <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottom: 'none' }}>
-            <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 1080 }}>
+            <table className="innovic-table tbl-ctr" style={{ width: '100%', tableLayout: 'fixed', minWidth: 1080 }}>
               <thead>
                 {/* Legacy column order (L12163): # · Item Code ★ · Part Name ·
                     Material · Drawing No. · Client PO Ln · Qty ★ · Rate ₹ · Amount.
@@ -1007,7 +1007,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
                         <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, textAlign: 'right' }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
+                        <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
                         <td><button type="button" className="btn btn-sm" style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', padding: '3px 8px' }} onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}>Del</button></td>
                       </tr>
                     );
@@ -1067,7 +1067,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => appendMs({ ...NEW_MILESTONE, lotNo: msFields.length + 1 })}><Plus size={13} /> Add Lot</button>
             </div>
             {msFields.length === 0 ? null : (
-              <table className="innovic-table" style={{ width: '100%' }}>
+              <table className="innovic-table tbl-ctr" style={{ width: '100%' }}>
                 <thead>
                   <tr>
                     <th>Lot</th>
