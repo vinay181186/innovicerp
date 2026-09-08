@@ -53,6 +53,51 @@ export function printOspDc(args: {
     totalQty: String(totalQty),
   };
 
+  // ── What came BACK from the vendor ──────────────────────────────────────
+  // The DC detail load carries `receipts[]` (per-line receivedQty), which is
+  // what the on-screen receipts panel renders. Without it a printed challan
+  // cannot say whether the material ever returned.
+  //
+  // The received/pending numbers are NOT extra columns in the goods table:
+  // the shared builder's `DocLine` shape has no such fields and that builder
+  // is off limits. They print instead as a short summary block AFTER the
+  // table, appended to the `special_notes` block the builder already renders
+  // there — the user's own template text is kept and this is added under it.
+  const receivedByLine = new Map<string, number>();
+  for (const r of dc.receipts) {
+    for (const rl of r.lines) {
+      receivedByLine.set(
+        rl.deliveryChallanLineId,
+        (receivedByLine.get(rl.deliveryChallanLineId) ?? 0) + Number(rl.receivedQty),
+      );
+    }
+  }
+  const totalReceived = dc.lines.reduce((s, l) => s + (receivedByLine.get(l.id) ?? 0), 0);
+  const totalPending = Math.max(0, totalQty - totalReceived);
+
+  const blocks = templatesToBlocks('OSP DC', templates);
+  const returnLines = dc.lines.map((l, i) => {
+    const sent = Number(l.qty);
+    const received = receivedByLine.get(l.id) ?? 0;
+    const pending = Math.max(0, sent - received);
+    const label = l.itemCode ?? l.itemCodeText;
+    return `${i + 1}. ${label} — sent ${sent} / received ${received} / pending ${pending}`;
+  });
+  // Its OWN section under the goods table, not folded into `special_notes`.
+  // special_notes is text the USER authors in Settings -> Print Templates; a
+  // computed return status filed under that heading is mislabelled on a document
+  // the vendor reads, and would be glued onto whatever they had typed there.
+  const extraSection =
+    returnLines.length > 0
+      ? {
+          title: 'Material Return Status (as on print date)',
+          body: [
+            ...returnLines,
+            `Total: sent ${totalQty} / received ${totalReceived} / pending ${totalPending}`,
+          ].join('\n'),
+        }
+      : undefined;
+
   const meta: DocMetaCell[] = [
     { label: 'DC No.', value: dc.code },
     { label: 'Date', value: fmtDate(dc.dcDate) },
@@ -63,7 +108,7 @@ export function printOspDc(args: {
 
   const model: DocPrintModel = {
     doc: 'OSP DC',
-    blocks: templatesToBlocks('OSP DC', templates),
+    blocks,
     data,
     company: buildDocCompany(company),
     recipient: {
@@ -73,11 +118,18 @@ export function printOspDc(args: {
     },
     meta,
     lines: dc.lines.map((l) => ({
-      itemCode: l.itemCodeText,
-      itemName: l.itemNameText,
+      // LIVE master code/name first, issue-time snapshot only as the fallback.
+      // itemCodeText is filled with the item NAME when the source line had no
+      // code, so printing it alone put a part name under the "Item Code" heading
+      // on a document the vendor reads. Same bug was just fixed on the JW DC.
+      itemCode: l.itemCode ?? l.itemCodeText,
+      itemName: l.itemName ?? l.itemNameText,
       qty: String(Number(l.qty)),
       uom: l.uom,
     })),
+    // Spread, not `extraSection,`: exactOptionalPropertyTypes refuses an
+    // explicit undefined on an optional property.
+    ...(extraSection ? { extraSection } : {}),
   };
 
   return openDocPrintWindow(model);

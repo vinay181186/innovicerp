@@ -249,7 +249,12 @@ function CustomerDispatchListPage(): React.JSX.Element {
               className="btn btn-ghost btn-sm"
               style={{ fontSize: 12 }}
               title="Print the dispatch register"
-              onClick={() => printCustomerDispatchRegister({ rows: active, company })}
+              disabled={isLoading}
+              onClick={() => {
+                if (!printCustomerDispatchRegister({ rows: active, company })) {
+                  window.alert('Allow popups to print.');
+                }
+              }}
             >
               🖨 Print
             </button>

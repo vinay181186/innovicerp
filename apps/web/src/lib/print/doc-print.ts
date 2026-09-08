@@ -126,6 +126,12 @@ export interface DocPrintModel {
   // Amount and totals columns — for viewers whose access hides prices. The
   // table falls back to the qty-only layout the delivery challans use.
   hideMoney?: boolean;
+  // A block the DOCUMENT computes for itself, printed under the goods table
+  // with its own heading. Distinct from `blocks`, which is user-authored text
+  // from Settings -> Print Templates: folding computed status into
+  // `special_notes` would file it under a heading that does not describe it,
+  // and would glue it to whatever the user had typed there.
+  extraSection?: { title: string; body: string };
   opts?: { testBanner?: boolean };
 }
 
@@ -221,6 +227,17 @@ export function buildDocHtml(model: DocPrintModel): string {
       <tr style="background:#f1f5f9"><td colspan="${span}" style="text-align:right;font-weight:800">TOTAL</td><td style="text-align:right;font-weight:800">₹ ${esc(totals.grand)}</td></tr>`;
   }
 
+  // Plain text in, so newlines have to become breaks; escaped because the
+  // caller computed this from data, not from a template the user authored.
+  const extraHtml = model.extraSection
+    ? `<div class="section"><b style="font-size:10px;text-transform:uppercase">${esc(
+        model.extraSection.title,
+      )}</b><br><div class="note-block">${esc(model.extraSection.body).replace(
+        /\n/g,
+        '<br>',
+      )}</div></div>`
+    : '';
+
   const amtWordsHtml =
     priced && totals
       ? `<div class="amt-words"><b>Amount Chargeable (in words)</b><br><i>${esc(totals.amountInWords)}</i></div>`
@@ -252,6 +269,7 @@ export function buildDocHtml(model: DocPrintModel): string {
       ${itemRows}
       ${totalsHtml}
     </tbody></table></div>
+    ${extraHtml}
     ${amtWordsHtml}
     ${specialNotes ? `<div class="section" style="background:#fffbeb"><b style="font-size:10px;color:#92400e;text-transform:uppercase">Special Notes</b><br><div class="note-block">${specialNotes}</div></div>` : ''}
     ${terms ? `<div class="section"><b style="font-size:10px;text-transform:uppercase">Terms &amp; Conditions</b><br><div class="note-block">${terms}</div></div>` : ''}

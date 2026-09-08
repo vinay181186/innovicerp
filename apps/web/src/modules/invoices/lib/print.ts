@@ -80,8 +80,11 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
   const stateCode = gst ? gst.substring(0, 2) : '24';
   const isIGST = stateCode !== '24';
   // Money hidden for L1 Viewers: drop Rate/Amount columns, tax rows, totals and
-  // amount-in-words from the printed invoice.
-  const priceHidden = inv.grandTotal == null;
+  // amount-in-words from the printed invoice. TOLD by the server, not inferred
+  // from a null money field — the same test the detail page makes. A null
+  // grandTotal also means "no value yet", so probing it blanked the money on a
+  // printed invoice for users fully entitled to see it.
+  const priceHidden = inv.priceVisible === false;
   const gstPct = inv.gstPercent ?? 0;
   const amtWords = `Indian Rupees ${numWords(Math.floor(inv.grandTotal ?? 0))} Only`;
   const coName = company?.name ?? 'Innovic Technology';
@@ -154,9 +157,12 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
 
 // Print window: A4 PORTRAIT pinned via @page, same document markup as the
 // on-screen preview.
-export function printInvoice(inv: InvoiceDetail, company: Company | null | undefined): void {
+/** Returns false if the popup was blocked, so the caller can say so. It used to
+ *  return void and swallow the blocked window — the user clicked Print and
+ *  nothing at all happened. */
+export function printInvoice(inv: InvoiceDetail, company: Company | null | undefined): boolean {
   const w = window.open('', '_blank', 'width=850,height=900');
-  if (!w) return;
+  if (!w) return false;
   w.document.write(
     `<!DOCTYPE html><html><head><title>Invoice ${esc(inv.code)}</title>` +
       `<style>@page{size:A4 portrait;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{background:#fff}` +
@@ -167,4 +173,5 @@ export function printInvoice(inv: InvoiceDetail, company: Company | null | undef
       `</body></html>`,
   );
   w.document.close();
+  return true;
 }

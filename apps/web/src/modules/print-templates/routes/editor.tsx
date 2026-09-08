@@ -396,6 +396,10 @@ function PrintTemplatesPage(): React.JSX.Element {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
+            // The button sits ABOVE the loading branch, so before this it could
+            // be clicked while the templates were still in flight and printed a
+            // sample document with every editable block blank.
+            disabled={isLoading || allTemplates.length === 0}
             onClick={() => {
               if (!openTestPrint(doc, allTemplates)) window.alert('Allow popups to print.');
             }}

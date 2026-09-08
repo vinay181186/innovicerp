@@ -28,7 +28,6 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -66,9 +65,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
-    // "  IN-DC  26 " and "IN-DC 26" are one query, one cache entry, one URL.
-    const trimmed = normalizeSearchTerm(searchInput);
+    const trimmed = searchInput.trim();
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -105,13 +102,17 @@ function DeliveryChallansListPage(): React.JSX.Element {
     if (search.search) bits.push(`search "${search.search}"`);
     if (search.status) bits.push(search.status.replaceAll('_', ' '));
     bits.push(`page ${currentPage} of ${totalPages}`);
+    // The builder RETURNS false when the popup was blocked — it does not throw.
+    // Catching only the throw meant a blocked print did nothing at all and said
+    // nothing either.
     try {
-      printDispatchRegister({
+      const ok = printDispatchRegister({
         rows: data.items,
         summary: data.summary,
         filterLabel: bits.join(' · '),
         company,
       });
+      if (!ok) window.alert('Allow popups to print.');
     } catch {
       window.alert('Allow popups to print.');
     }
@@ -218,7 +219,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <input
                   className="innovic-input"
-                  placeholder="🔍 Search this list..."
+                  placeholder="🔍 Search DC, PO, vendor..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   style={{ width: 240, fontSize: 12 }}
@@ -299,15 +300,6 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
-
-          <div className="panel" style={{ marginBottom: 12 }}>
-            <div className="panel-body" style={{ padding: '10px 14px' }}>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-                ⚠️ DCs are issued against PO_jw. Create from a PO detail page → &ldquo;Issue
-                DC&rdquo;. Receive back from the DC detail page.
-              </span>
-            </div>
           </div>
 
           {isLoading ? (

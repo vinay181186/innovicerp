@@ -28,6 +28,26 @@ export function sampleDataFor(doc: PrintDocType): Record<string, string> {
     date: today,
     currentUser: 'Admin User',
   };
+  // Service PO carries its OWN variable set (PRINT_TEMPLATE_VARS['SERVICE PO']:
+  // spoNo / spoDate / expenseHead / costCenter). Without this branch it fell
+  // through to the delivery-challan bag below, so every {spoNo} in a Service PO
+  // block substituted to blank and the test print showed a DC's fields.
+  if (doc === 'SERVICE PO') {
+    return {
+      ...common,
+      spoNo: 'IN-SPO-99999',
+      spoDate: today,
+      expenseHead: 'Machining charges',
+      costCenter: 'Production',
+      paymentTerms: '30 days from invoice',
+      vendorName: 'Sample Services Pvt Ltd',
+      vendorAddress: 'Industrial Area, Phase 2, Vadodara',
+      vendorGSTIN: '24AAACS1234D1Z5',
+      vendorContact: 'Mr. Sample, +91 90000 00000',
+      totalValue: '1,18,000.00',
+      totalQty: '200',
+    };
+  }
   if (doc === 'PO') {
     return {
       ...common,
@@ -58,7 +78,10 @@ export function sampleDataFor(doc: PrintDocType): Record<string, string> {
 }
 
 function sampleLines(doc: PrintDocType): DocLine[] {
-  if (doc === 'PO') {
+  // Both purchase documents print the PRICED goods table (doc-print's `isPo`),
+  // so both need sample Rate/Amount. Service PO used to fall through to the
+  // qty-only DC lines and printed a Rate and Amount column with empty cells.
+  if (doc === 'PO' || doc === 'SERVICE PO') {
     return [
       {
         itemCode: 'STL-PL-6',
@@ -88,7 +111,10 @@ function sampleLines(doc: PrintDocType): DocLine[] {
 export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTemplate[]): boolean {
   const data = sampleDataFor(doc);
   const today = data.date ?? format(new Date(), 'dd-MM-yyyy');
-  const isPo = doc === 'PO';
+  // Mirrors `isPo` in @/lib/print/doc-print — Service PO is a purchase
+  // document, not a challan.
+  const isPo = doc === 'PO' || doc === 'SERVICE PO';
+  const isSpo = doc === 'SERVICE PO';
 
   const model: DocPrintModel = {
     doc,
@@ -103,7 +129,7 @@ export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTempla
     recipient: isPo
       ? {
           label: 'Supplier (Bill from)',
-          name: 'Sample Vendor Pvt Ltd',
+          name: isSpo ? 'Sample Services Pvt Ltd' : 'Sample Vendor Pvt Ltd',
           lines: ['Industrial Area, Phase 2, Vadodara', 'GSTIN: 24AAACS1234D1Z5', 'Mr. Sample, +91 90000 00000'],
         }
       : {
@@ -111,18 +137,25 @@ export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTempla
           name: 'Sample Process House',
           lines: ['GIDC, Vadodara, Gujarat'],
         },
-    meta: isPo
+    meta: isSpo
       ? [
-          { label: 'PO No.', value: 'IN-PO-99999' },
+          { label: 'SPO No.', value: 'IN-SPO-99999' },
           { label: 'Date', value: today },
-          { label: 'Payment Terms', value: '30 days from invoice' },
+          { label: 'Expense Head', value: 'Machining charges' },
+          { label: 'Cost Center', value: 'Production' },
         ]
-      : [
-          { label: 'DC No.', value: doc === 'OSP DC' ? 'OSP-99999' : 'JWDC-99999' },
-          { label: 'Date', value: today },
-          { label: 'Linked PO', value: 'IN-PO-99999' },
-          { label: 'Vehicle', value: 'GJ-05-XX-9999' },
-        ],
+      : isPo
+        ? [
+            { label: 'PO No.', value: 'IN-PO-99999' },
+            { label: 'Date', value: today },
+            { label: 'Payment Terms', value: '30 days from invoice' },
+          ]
+        : [
+            { label: 'DC No.', value: doc === 'OSP DC' ? 'OSP-99999' : 'JWDC-99999' },
+            { label: 'Date', value: today },
+            { label: 'Linked PO', value: 'IN-PO-99999' },
+            { label: 'Vehicle', value: 'GJ-05-XX-9999' },
+          ],
     lines: sampleLines(doc),
     opts: { testBanner: true },
   };

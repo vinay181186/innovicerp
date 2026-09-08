@@ -66,11 +66,15 @@ export function printJwDc(args: {
     },
     meta,
     lines: dc.lines.map((l) => ({
-      itemCode: l.itemCodeText,
+      // Live join first, snapshot second — exactly what the detail table above
+      // shows. The snapshot `itemCodeText` is written from the PO line and
+      // falls back to the item NAME when that line had no code text, so
+      // printing it alone put a name under the "Item Code" heading.
+      itemCode: l.itemCode ?? l.itemCodeText,
       // Legacy's printed line column is "Description / Process" and renders
       // `itemName — process` (L24614). The port was dropping the process, so the
       // vendor's copy of the gate pass never said what to do with the material.
-      itemName: [l.itemNameText, l.processText].filter(Boolean).join(' — '),
+      itemName: [l.itemName ?? l.itemNameText, l.processText].filter(Boolean).join(' — '),
       qty: String(l.sentQty),
       // Legacy hardcodes NOS on the printed DC line too (L24614) and the JW DC
       // line carries no uom, so this is faithful — not the ISSUE-158 pattern.

@@ -30,7 +30,11 @@ export function printPurchaseOrder(args: {
   // Money is hidden for L1 Viewers: the API nulls the header total and line
   // rates. A printed PO must not leak what the screen hides, so every rupee
   // cell prints "—" and the amount-in-words is dropped.
-  const priceHidden = po.totalAmount == null;
+  // TOLD, not inferred — same test the detail page makes (routes/detail.tsx
+  // `priceVisible === false`). Probing `totalAmount == null` also caught POs
+  // whose header roll-up was simply never filled, and printed "—" in every
+  // rupee cell for a buyer fully entitled to see the price.
+  const priceHidden = po.priceVisible === false;
   const money = (n: number): string => (priceHidden ? '—' : inrFormat(n));
 
   const subtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);

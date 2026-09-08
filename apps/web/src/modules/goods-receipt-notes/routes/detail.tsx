@@ -2,14 +2,16 @@
 
 import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLineDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useMyCompany } from '@/modules/settings/api';
 import { useGoodsReceiptNote, useSoftDeleteGoodsReceiptNote } from '../api';
 import { QcStatusBadge } from '../components/qc-status-badge';
+import { printGrn } from '../lib/print-grn';
 
 export const goodsReceiptNoteDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -26,6 +28,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'grn_create');
   const softDelete = useSoftDeleteGoodsReceiptNote();
+  const { data: company } = useMyCompany();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -72,6 +75,13 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
     });
   };
 
+  // Print follows the page's existing VIEW permission — if you can read the
+  // GRN you may put it on paper. No new gate is introduced.
+  const onPrint = (): void => {
+    const ok = printGrn({ grn: detail, company });
+    if (!ok) window.alert('Allow popups to print.');
+  };
+
   const canEdit = perms.edit;
   // Delete is not one of the four tier actions, so "L5 Department Admin and
   // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
@@ -112,6 +122,9 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               }}
               suggestedTitle={`Follow up on GRN ${detail.code}`}
             />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
+              <Printer size={13} /> Print
+            </button>
             {detail.purchaseOrderId ? (
               <Link
                 to="/purchase-orders/$id"
