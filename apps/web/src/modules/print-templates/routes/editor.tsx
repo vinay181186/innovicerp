@@ -549,13 +549,17 @@ function PrintTemplatesPage(): React.JSX.Element {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                   <thead>
                     <tr style={{ background: '#f1f5f9' }}>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'center', width: 30 }}>
-                        #
+                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'center', width: 44 }}>
+                        Sr No.
                       </th>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>Item</th>
+                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 110 }}>
+                        Item Code
+                      </th>
+                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>Item Name</th>
                       <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 60 }}>
                         Qty
                       </th>
+                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 60 }}>UOM</th>
                       {isPo ? (
                         <>
                           <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 80 }}>
@@ -565,20 +569,16 @@ function PrintTemplatesPage(): React.JSX.Element {
                             Amount
                           </th>
                         </>
-                      ) : (
-                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 60 }}>
-                          UOM
-                        </th>
-                      )}
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
                       <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>1</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                        Sample Item — Steel Plate 6mm
-                      </td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>STL-PL-6</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Steel Plate 6mm</td>
                       <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
                       {isPo ? (
                         <>
                           <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
@@ -588,16 +588,14 @@ function PrintTemplatesPage(): React.JSX.Element {
                             50,000.00
                           </td>
                         </>
-                      ) : (
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                      )}
+                      ) : null}
                     </tr>
                     <tr>
                       <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>2</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                        Sample Item — Bearings 6203
-                      </td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>BRG-6203</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Bearings 6203</td>
                       <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
                       {isPo ? (
                         <>
                           <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
@@ -607,14 +605,12 @@ function PrintTemplatesPage(): React.JSX.Element {
                             50,000.00
                           </td>
                         </>
-                      ) : (
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                      )}
+                      ) : null}
                     </tr>
                     {isPo ? (
                       <tr style={{ background: '#f8fafc' }}>
                         <td
-                          colSpan={4}
+                          colSpan={6}
                           style={{
                             padding: 6,
                             border: '1px solid #cbd5e1',

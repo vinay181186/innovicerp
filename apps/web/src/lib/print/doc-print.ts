@@ -181,24 +181,34 @@ export function buildDocHtml(model: DocPrintModel): string {
     .map((l) => `<div>${esc(l)}</div>`)
     .join('');
 
+  // Sr No. / Item Code / Item Name are three COLUMNS. They used to be two:
+  // the code with the name stacked beneath it in small grey type. That reads
+  // acceptably on screen and badly on paper -- a long name wraps and shoves the
+  // row height around, and there is no column for the eye to run the names down.
   const itemHead = priced
-    ? '<th>#</th><th>Description of Goods</th><th style="text-align:right">Qty</th><th>UOM</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th>'
-    : '<th>#</th><th>Item</th><th style="text-align:right">Qty</th><th>UOM</th>';
+    ? '<th style="width:44px">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:right">Qty</th><th>UOM</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th>'
+    : '<th style="width:44px">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:right">Qty</th><th>UOM</th>';
 
   const itemRows = lines
     .map((l, i) => {
-      const name = l.itemName
-        ? `<br><span style="font-size:10px;color:#666">${esc(l.itemName)}</span>`
-        : '';
+      // An empty cell on a printed document reads as something gone wrong. A
+      // dash reads as "this line has no name", which is what is actually true.
+      const name = l.itemName ? esc(l.itemName) : '&mdash;';
+      const lead =
+        `<tr><td style="text-align:center">${i + 1}</td>` +
+        `<td>${esc(l.itemCode)}</td>` +
+        `<td>${name}</td>` +
+        `<td style="text-align:right">${esc(l.qty)}</td>` +
+        `<td style="text-align:center">${esc(l.uom ?? 'NOS')}</td>`;
       return priced
-        ? `<tr><td style="text-align:center">${i + 1}</td><td>${esc(l.itemCode)}${name}</td><td style="text-align:right">${esc(l.qty)}</td><td style="text-align:center">${esc(l.uom ?? 'NOS')}</td><td style="text-align:right">${esc(l.rate ?? '')}</td><td style="text-align:right;font-weight:600">${esc(l.amount ?? '')}</td></tr>`
-        : `<tr><td style="text-align:center">${i + 1}</td><td>${esc(l.itemCode)}${name}</td><td style="text-align:right">${esc(l.qty)}</td><td style="text-align:center">${esc(l.uom ?? 'NOS')}</td></tr>`;
+        ? `${lead}<td style="text-align:right">${esc(l.rate ?? '')}</td><td style="text-align:right;font-weight:600">${esc(l.amount ?? '')}</td></tr>`
+        : `${lead}</tr>`;
     })
     .join('');
 
   let totalsHtml = '';
   if (priced && totals) {
-    const span = 5; // columns left of Amount
+    const span = 6; // columns left of Amount: Sr No, Item Code, Item Name, Qty, UOM
     const taxRows = totals.taxRows
       .map(
         (t) =>
