@@ -12,6 +12,13 @@ import {
   printGrnDoc,
 } from '@/modules/goods-receipt-notes/lib/print-grn';
 import {
+  type ChallanField,
+  type ChallanPrintModel,
+  challanDate,
+  challanEndDate,
+  openChallanPrintWindow,
+} from '@/lib/print/challan-print';
+import {
   type DocLine,
   type DocPrintModel,
   amountInWords,
@@ -207,9 +214,81 @@ function openGrnTestPrint(templates: EffectivePrintTemplate[]): boolean {
   });
 }
 
+// The two delivery challans print on their OWN approved layout
+// (@/lib/print/challan-print), not the shared PO document builder, so their
+// Test Print has to go there too — otherwise the editor previews a sheet that
+// no real challan ever produces. Same effective template blocks, same TEST
+// PRINT banner.
+function openChallanTestPrint(
+  doc: 'OSP DC' | 'JW DC',
+  templates: EffectivePrintTemplate[],
+): boolean {
+  const data = sampleDataFor(doc);
+  // A fixed sample challan date so the sample "Challan end date" (+3 months) is
+  // visibly three months later rather than today's date twice.
+  const sampleDcDate = format(new Date(), 'yyyy-MM-dd');
+  const recipient: ChallanField[] = [
+    { label: 'Vendor code', value: 'VND-099', variant: 'mono' },
+    { label: 'Name', value: 'Sample Process House', variant: 'name' },
+    { label: 'Address', value: 'GIDC, Vadodara', extra: ['Gujarat — 390010'] },
+    { label: 'GSTIN', value: '24AAACS1234D1Z5', variant: 'mono' },
+  ];
+  const document: ChallanField[] = [
+    { label: 'Challan No.', value: data.dcNo ?? '', variant: 'mono' },
+    { label: 'Challan date', value: challanDate(sampleDcDate), variant: 'mono' },
+    { label: 'SO No.', value: '', variant: 'mono' },
+    { label: 'PO No.', value: data.linkedPONo ?? '', variant: 'mono' },
+    {
+      label: 'Challan end date',
+      value: challanEndDate(sampleDcDate),
+      variant: 'mono',
+      strong: true,
+    },
+    { label: 'Vehicle No.', value: data.vehicleNo ?? '', variant: 'mono' },
+  ];
+  const model: ChallanPrintModel = {
+    title: 'Delivery Challan',
+    windowTitle: doc === 'OSP DC' ? 'OSP Delivery Challan' : 'Job Work Delivery Challan',
+    blocks: templatesToBlocks(doc, templates),
+    data,
+    company: {
+      name: SAMPLE_COMPANY.name,
+      addressLines: ['V.U. Nagar, Anand, Gujarat, India'],
+      gstin: SAMPLE_COMPANY.gstNumber ?? '',
+      email: SAMPLE_COMPANY.email ?? '',
+      phone: SAMPLE_COMPANY.phone ?? '',
+    },
+    recipient: { label: 'Recipient — job worker', fields: recipient },
+    document: { label: 'Document', fields: document },
+    lines: [
+      {
+        itemCode: 'STL-PL-6',
+        itemName: 'Steel Plate 6mm',
+        uom: 'NOS',
+        hsn: null,
+        qty: '100.00',
+        remarks: data.purpose ?? '',
+      },
+      {
+        itemCode: 'BRG-6203',
+        itemName: 'Bearings 6203',
+        uom: 'NOS',
+        hsn: null,
+        qty: '100.00',
+        remarks: data.purpose ?? '',
+      },
+    ],
+    totalQty: '200.00',
+    totalUom: 'NOS',
+    opts: { testBanner: true },
+  };
+  return openChallanPrintWindow(model);
+}
+
 // Build a sample DocPrintModel for the editor's Test Print button.
 export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTemplate[]): boolean {
   if (doc === 'GRN') return openGrnTestPrint(templates);
+  if (doc === 'OSP DC' || doc === 'JW DC') return openChallanTestPrint(doc, templates);
   const data = sampleDataFor(doc);
   const today = data.date ?? format(new Date(), 'dd-MM-yyyy');
   // Mirrors `isPo` in @/lib/print/doc-print — Service PO is a purchase

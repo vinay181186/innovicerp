@@ -18,6 +18,12 @@ import {
 } from '@innovic/shared';
 import { letterheadFooterHtml, letterheadHeaderHtml } from './letterhead';
 
+// The company PAN, printed on outward documents. There is NO `pan` column on
+// `companies`, so it lives here as one named constant rather than as a literal
+// buried in the markup. It BELONGS in the company record — putting it there is
+// a schema change, deliberately not made here.
+export const COMPANY_PAN = 'AQKPM4121A';
+
 // ── escaping ──
 export function esc(s: string): string {
   return s
@@ -26,7 +32,9 @@ export function esc(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
-function nl2br(s: string): string {
+// Exported so the challan renderer (./challan-print) escapes and breaks
+// template text exactly the way this builder does.
+export function nl2br(s: string): string {
   return esc(s).replace(/\r?\n/g, '<br>');
 }
 
@@ -293,7 +301,7 @@ export function buildDocHtml(model: DocPrintModel): string {
     ${terms ? `<div class="section"><b style="font-size:10px;text-transform:uppercase">Terms &amp; Conditions</b><br><div class="note-block">${terms}</div></div>` : ''}
     ${footer ? `<div class="section" style="text-align:center;font-size:10px;color:#666">${footer}</div>` : ''}
     <div class="sign-row">
-      <div style="padding:14px;font-size:10px;flex:1">Company's PAN: <b>AQKPM4121A</b><br><span style="font-style:italic;color:#666">E. &amp; O.E.</span></div>
+      <div style="padding:14px;font-size:10px;flex:1">Company's PAN: <b>${COMPANY_PAN}</b><br><span style="font-style:italic;color:#666">E. &amp; O.E.</span></div>
       <div style="flex:1;padding:14px;text-align:right"><div class="note-block">${signature || 'For ' + esc(company.name) + '<br><br><br>Authorised Signatory'}</div></div>
     </div>
     ${letterheadFooterHtml({ addressLines: company.addressLines, email: company.email, phone: company.phone })}
