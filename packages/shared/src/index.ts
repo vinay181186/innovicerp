@@ -90,6 +90,7 @@ export * from './schemas/prod-so-list';
 export * from './schemas/prod-jw-list';
 export * from './schemas/daily-report';
 export * from './schemas/jc-ops';
+export * from './schemas/jc-op-po-line';
 export * from './schemas/shop-floor';
 export * from './schemas/job-queue';
 export * from './schemas/production-schedule';

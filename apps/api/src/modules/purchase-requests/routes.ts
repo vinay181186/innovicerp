@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  closePurchaseRequestBalanceInputSchema,
   createPurchaseRequestInputSchema,
   listPurchaseRequestsQuerySchema,
   updatePurchaseRequestInputSchema,
@@ -56,6 +57,16 @@ export async function purchaseRequestsRoutes(app: FastifyInstance): Promise<void
     const { id } = idParamSchema.parse(req.params);
     const { reason } = rejectPurchaseRequestInputSchema.parse(req.body);
     return service.rejectPurchaseRequest(id, reason, req.user);
+  });
+
+  // Short-close the remaining balance (0117). Same shape as /reject: a POST
+  // with a required reason. It does NOT cancel the PR — what was already
+  // ordered stands; only the unordered remainder is abandoned.
+  app.post('/purchase-requests/:id/close-balance', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = closePurchaseRequestBalanceInputSchema.parse(req.body);
+    return service.closePurchaseRequestBalance(id, body, req.user);
   });
 
   app.delete('/purchase-requests/:id', async (req, reply) => {

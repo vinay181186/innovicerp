@@ -4,10 +4,11 @@
 //
 //   1. applyReceiveToJcOp(tx, args)
 //        For a DC line linked to a JW PO line, find the corresponding outsource
-//        jc_op (via jc_ops.outsource_po_line_id) and:
+//        jc_op (via jc_op_po_lines, 0118 — so an op covered by SEVERAL purchase
+//        orders is found from ANY of them, not only its first) and:
 //          - if cumulative received+rejected qty across all receipts on the
-//            DC lines linked to this po_line >= outsource_sent_qty, flip
-//            outsource_status to 'received'
+//            DC lines linked to ANY of that op's PO lines >= outsource_sent_qty,
+//            flip outsource_status to 'received'
 //          - otherwise leave status as 'sent' (partial receive)
 //        Returns the snapshot for audit emission. No-op when no jc_op is
 //        linked to the PO line.
@@ -26,6 +27,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
   deliveryChallanReceiptLines,
+  jcOpPoLines,
   jcOps,
   jobCards,
   storeTransactions,
@@ -68,9 +70,21 @@ export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<Rece
       outsourceSentQty: jcOps.outsourceSentQty,
     })
     .from(jcOps)
+    // 0118: resolve through the op→PO-line link table, so the receipt against a
+    // SECOND purchase order still finds its operation. Matching on
+    // jc_ops.outsource_po_line_id found only the first, and the vendor's pieces
+    // never reached the job card.
+    .innerJoin(
+      jcOpPoLines,
+      and(
+        eq(jcOpPoLines.jcOpId, jcOps.id),
+        eq(jcOpPoLines.companyId, companyId),
+        isNull(jcOpPoLines.deletedAt),
+      ),
+    )
     .where(
       and(
-        eq(jcOps.outsourcePoLineId, purchaseOrderLineId),
+        eq(jcOpPoLines.purchaseOrderLineId, purchaseOrderLineId),
         eq(jcOps.companyId, companyId),
         eq(jcOps.opType, 'outsource'),
         isNull(jcOps.deletedAt),
@@ -88,7 +102,14 @@ export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<Rece
   const jcCode = jcRows[0]?.code ?? '';
 
   // Sum cumulative received + rejected across ALL active (non-cancelled,
-  // non-deleted) receipt lines whose dc_line is linked to this po_line.
+  // non-deleted) receipt lines whose dc_line is linked to ANY purchase order
+  // line covering this op (0118).
+  //
+  // It is compared against outsource_sent_qty, which is the op's TOTAL sent
+  // across every challan. Counting one PO line's receipts against that total is
+  // only right while an op has one PO line: split the op over two purchase
+  // orders and the sum could never reach the total, so the op would stay at
+  // 'sent' with the material already back in the building.
   const sumRows = (await tx.execute(sql`
     SELECT COALESCE(SUM(drl.received_qty + drl.rejected_qty), 0)::numeric AS total
     FROM public.delivery_challan_receipt_lines drl
@@ -98,7 +119,13 @@ export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<Rece
       ON dc.id = dcl.delivery_challan_id
       AND dc.deleted_at IS NULL
       AND dc.status <> 'cancelled'
-    WHERE dcl.purchase_order_line_id = ${purchaseOrderLineId}::uuid
+    WHERE dcl.purchase_order_line_id IN (
+        SELECT l.purchase_order_line_id
+        FROM public.jc_op_po_lines l
+        WHERE l.jc_op_id = ${op.id}::uuid
+          AND l.company_id = ${companyId}::uuid
+          AND l.deleted_at IS NULL
+      )
       AND drl.deleted_at IS NULL
       AND drl.company_id = ${companyId}::uuid
   `)) as unknown as Array<{ total: string | number }>;

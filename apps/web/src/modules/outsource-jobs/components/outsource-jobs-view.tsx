@@ -15,6 +15,15 @@
 // Ours is a superset — it adds a code-uniqueness check and blocks already-
 // converted/cancelled PRs. Legacy's handler does NOT touch jc_ops here.
 //
+// 2026-09-08 (ADR-152 phase 2): the two clickable bands — Open PR / PO Created
+// — used to test `status === 'po_created'`. That status now only means buying
+// STARTED, so an OSP request for 100 with a purchase order for 10 was counted
+// as finished and 90 quietly disappeared from the buyer's "still to do" pile.
+// Both bands now read the BALANCE through purchase-requests/lib/pr-balance, the
+// same helper the PR card, the PR detail page and the PO picker use, so the
+// four screens agree. Nothing else on this tab moved: same cards, same table,
+// same batch-PO flow, same selection rule.
+//
 // Legacy's "SO" and "Plan" columns are not portable: PurchaseRequestListItem
 // exposes sourceJcCode/sourceJcOpSeq (used here), a bare sourceSoLineId uuid
 // with no code join, and no plan field at all. See report / ISSUE-067.
@@ -22,10 +31,16 @@
 import type { ListPurchaseRequestsQuery, PurchaseRequestListItem } from '@innovic/shared';
 import { Loader2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useCreatePurchaseOrderFromPrBatch } from '@/modules/purchase-orders/api';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
+import {
+  prBalanceClosedText,
+  prBalanceColor,
+  prOrderBalance,
+} from '@/modules/purchase-requests/lib/pr-balance';
 import { useVendorsList } from '@/modules/vendors/api';
 
 const PAGE_SIZE = 100;
@@ -39,6 +54,16 @@ function statusColor(s: string): string {
   if (s === 'approved') return 'var(--blue)';
   if (s === 'open') return 'var(--amber)';
   return 'var(--text3)';
+}
+
+/** Which band a request belongs in — the QUANTITY question, not the status one.
+ *  "Open PR" = there is still something to buy. "PO Created" = the buying is
+ *  finished, either because every piece is on a purchase order or because the
+ *  buyer short-closed the remainder. A cancelled request is in neither, exactly
+ *  as before (the old test only ever matched open / approved / po_created). */
+function ospBand(pr: PurchaseRequestListItem): 'open' | 'po_created' | null {
+  if (pr.status === 'cancelled') return null;
+  return prOrderBalance(pr).balance > 0 ? 'open' : 'po_created';
 }
 
 export function OutsourceJobsView(): React.JSX.Element {
@@ -77,28 +102,37 @@ export function OutsourceJobsView(): React.JSX.Element {
 
   // Client-side filter for status + SO (legacy filters by these in-page).
   const filtered = useMemo(() => {
-    const q = searchText.toLowerCase().trim();
     return allPrs.filter((pr) => {
       if (soNo && pr.sourceJcCode !== soNo) return false;
-      if (statusBand === 'open' && pr.status !== 'open' && pr.status !== 'approved') return false;
-      if (statusBand === 'po_created' && pr.status !== 'po_created') return false;
-      if (q) {
-        const hay = [
-          pr.code,
-          pr.sourceJcCode,
-          pr.itemCode,
-          pr.itemCodeText,
-          pr.itemName,
-          pr.operation,
-          pr.vendorName,
-          pr.vendorCodeText,
-          pr.poCode,
-          pr.status,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
+      if (statusBand && ospBand(pr) !== statusBand) return false;
+      // Every column this table shows, through the ONE shared matcher
+      // (components/shared/search-match) instead of another hand-rolled
+      // join-and-includes. Qty, Est. Rate and Due were columns you could read
+      // but not search; they are covered now. Client-side is correct HERE and
+      // only here: this tab loads its whole list in one fetch, so nothing the
+      // box hides was left on the server.
+      if (
+        !matchesSearchTerm(
+          [
+            pr.code,
+            pr.sourceJcCode,
+            pr.sourceJcOpSeq,
+            pr.itemCode,
+            pr.itemCodeText,
+            pr.itemName,
+            pr.operation,
+            pr.vendorName,
+            pr.vendorCodeText,
+            pr.qty,
+            pr.estCost,
+            pr.requiredDate,
+            pr.poCode,
+            pr.status.replaceAll('_', ' '),
+          ],
+          searchText,
+        )
+      ) {
+        return false;
       }
       return true;
     });
@@ -115,8 +149,8 @@ export function OutsourceJobsView(): React.JSX.Element {
 
   // Cards
   const totalPR = allPrs.length;
-  const openPR = allPrs.filter((pr) => pr.status === 'open' || pr.status === 'approved').length;
-  const poCreated = allPrs.filter((pr) => pr.status === 'po_created').length;
+  const openPR = allPrs.filter((pr) => ospBand(pr) === 'open').length;
+  const poCreated = allPrs.filter((pr) => ospBand(pr) === 'po_created').length;
   const totalQty = allPrs.reduce((s, pr) => s + pr.qty, 0);
 
   const selectablePrs = filtered.filter(
@@ -270,7 +304,7 @@ export function OutsourceJobsView(): React.JSX.Element {
           className="innovic-input"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          placeholder="🔍 Search PR, JC, item, vendor..."
+          placeholder="🔍 Search PR no, JC, item, process, vendor, qty, due, status…"
           style={{ width: 220, fontSize: 12 }}
         />
         <select
@@ -304,9 +338,9 @@ export function OutsourceJobsView(): React.JSX.Element {
                 <th>JC Source</th>
                 <th>Item</th>
                 <th style={{ color: 'var(--purple)' }}>Process</th>
-                <th className="td-ctr">Qty</th>
+                <th>Qty</th>
                 <th>Suggested Vendor</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>Est. Rate</th>
+                <th style={{ color: 'var(--green)' }}>Est. Rate</th>
                 <th>Due</th>
                 <th>Status</th>
               </tr>
@@ -457,9 +491,9 @@ export function OutsourceJobsView(): React.JSX.Element {
                       <th>JC Source</th>
                       <th>Item</th>
                       <th>Process</th>
-                      <th className="td-ctr">Qty</th>
-                      <th className="td-ctr" style={{ color: 'var(--green)' }}>Rate ₹/pc</th>
-                      <th className="td-ctr">Amount</th>
+                      <th>Qty</th>
+                      <th style={{ color: 'var(--green)' }}>Rate ₹/pc</th>
+                      <th>Amount</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -477,8 +511,8 @@ export function OutsourceJobsView(): React.JSX.Element {
                           <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                             {pr.operation ?? '—'}
                           </td>
-                          <td className="td-ctr mono fw-700">{pr.qty}</td>
-                          <td className="td-ctr">
+                          <td className="mono fw-700">{pr.qty}</td>
+                          <td>
                             <input
                               type="number"
                               className="innovic-input"
@@ -492,10 +526,15 @@ export function OutsourceJobsView(): React.JSX.Element {
                                   [pr.id]: Number(e.target.value) || 0,
                                 }))
                               }
-                              style={{ width: 80, fontSize: 12, fontWeight: 700, color: 'var(--green)', textAlign: 'right' }}
+                              style={{
+                                width: 80,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: 'var(--green)',
+                              }}
                             />
                           </td>
-                          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                          <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                             ₹{inr(rate * pr.qty)}
                           </td>
                         </tr>
@@ -562,9 +601,10 @@ function OspRow({
   selected: boolean;
   onToggle: (checked: boolean) => void;
 }): React.JSX.Element {
+  const bal = prOrderBalance(pr);
   return (
     <tr>
-      <td className="td-ctr">
+      <td>
         {canSelect ? (
           <input
             type="checkbox"
@@ -585,14 +625,14 @@ function OspRow({
       <td style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
         {pr.operation ?? '—'}
       </td>
-      <td className="td-ctr mono fw-700">{pr.qty}</td>
+      <td className="mono fw-700">{pr.qty}</td>
       <td style={{ fontSize: 11 }}>
         {pr.vendorName ?? <span style={{ color: 'var(--amber)' }}>TBD</span>}
         {pr.vendorCodeText && pr.vendorCodeText !== pr.vendorName ? (
           <span style={{ color: 'var(--text3)', fontSize: 10 }}> [{pr.vendorCodeText}]</span>
         ) : null}
       </td>
-      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+      <td className="mono" style={{ color: 'var(--green)' }}>
         {Number(pr.estCost) > 0 ? `₹${Number(pr.estCost).toFixed(2)}` : '—'}
       </td>
       <td style={{ fontSize: 11 }}>{pr.requiredDate ?? '—'}</td>
@@ -604,6 +644,23 @@ function OspRow({
           <span className="mono" style={{ fontSize: 10, marginLeft: 4, color: 'var(--cyan)' }}>
             {pr.poCode}
           </span>
+        ) : null}
+        {/* Why a `po created` row can still sit in the Open PR band: the status
+            says buying started, this says how much of it is left. Shown only
+            when the two differ, so a plain open or fully-ordered row is as
+            clean as it was. */}
+        {bal.ordered > 0 && (bal.balance > 0 || bal.closed) ? (
+          <div
+            className="mono"
+            style={{ fontSize: 10, color: prBalanceColor(bal.state) }}
+            title={
+              bal.closed
+                ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`
+                : `${bal.ordered} of ${bal.qty} ordered`
+            }
+          >
+            {bal.closed ? '🚫 balance closed' : `${bal.balance} of ${bal.qty} left`}
+          </div>
         ) : null}
       </td>
     </tr>

@@ -46,8 +46,36 @@ export const purchaseRequestSchema = z.object({
   remarks: z.string().nullable(),
   approvedBy: z.string().uuid().nullable(),
   approvedAt: z.string().nullable(),
+  /** DEPRECATED as the source of truth (ADR-152). Holds ONE purchase order, so
+   *  it cannot describe a PR covered by several. Still written for now and still
+   *  populated on the three pre-0103 PRs, which is what keeps them closed — see
+   *  `orderedQty` below. Read `purchaseOrders` for the real list. */
   poId: z.string().uuid().nullable(),
   poCreatedAt: z.string().nullable(),
+  /** How much of `qty` is actually on a live purchase order — the sum of
+   *  purchase_order_lines.qty where source_pr_id is this PR, ignoring deleted
+   *  lines and CANCELLED POs. Cancelling a PO therefore returns its quantity
+   *  here on its own, with no status to keep in sync (ADR-152, gap 2).
+   *
+   *  LEGACY RULE: a PR with a header `poId` but NO linked lines predates
+   *  migration 0103, which deliberately did not backfill. Those three PRs report
+   *  their full `qty` as ordered so they stay closed and can never be offered
+   *  for a second PO. */
+  orderedQty: z.number().int().nonnegative(),
+  /** `qty` minus `orderedQty`, less anything short-closed. What may still be
+   *  ordered. Deliberately a plain int, not nonnegative: if a PR is somehow
+   *  over-ordered the balance goes negative and the screen says so, rather than
+   *  clamping to 0 and hiding it. */
+  balanceQty: z.number().int(),
+  /** Set when the buyer SHORT-CLOSES the remainder: "we ordered 10 of 100 and
+   *  the rest is not coming" (migration 0117, ADR-152 gap 6). Deliberately not
+   *  the same as editing `qty` down — the PR still records that 100 was asked
+   *  for, because that is what happened, and separately that the rest was
+   *  abandoned and why. While this is set `balanceQty` reports 0 and the PR
+   *  drops out of the PO form's picker. */
+  balanceClosedAt: z.string().nullable(),
+  balanceClosedBy: z.string().uuid().nullable(),
+  balanceClosedReason: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -162,6 +190,19 @@ export const updatePurchaseRequestInputSchema = _prInputBase
   .omit({ code: true, prType: true, status: true });
 export type UpdatePurchaseRequestInput = z.infer<typeof updatePurchaseRequestInputSchema>;
 
+/** SHORT-CLOSE the balance — stop expecting the unordered remainder.
+ *
+ *  Allowed only while some quantity is still outstanding; closing an untouched
+ *  PR is a rejection, and closing a fully-ordered one is a no-op. The reason is
+ *  required and the database enforces it too (0117 CHECK), because in six months
+ *  "why did we not buy the other 90?" is the only question anyone asks. */
+export const closePurchaseRequestBalanceInputSchema = z.object({
+  reason: z.string().min(1, 'A reason is required to close the balance').max(2000),
+});
+export type ClosePurchaseRequestBalanceInput = z.infer<
+  typeof closePurchaseRequestBalanceInputSchema
+>;
+
 /** REJECT — a non-empty reason is required (stored in remarks on the PR since
  *  it has no dedicated rejection column). Mirrors the PO reject input. */
 export const rejectPurchaseRequestInputSchema = z.object({
@@ -178,6 +219,14 @@ export const listPurchaseRequestsQuerySchema = z.object({
   vendorId: z.string().uuid().optional(),
   /** Filter to PRs originating from a specific JC op (outsource workflow). */
   sourceJcOpId: z.string().uuid().optional(),
+  /** Only PRs that still have quantity left to order — `balanceQty > 0` and not
+   *  short-closed. This is what the PO form's PR picker asks for (ADR-152).
+   *
+   *  It replaces the old client-side test `poId === null && status !== 'po_created'`,
+   *  which was a BOOLEAN "has a PO at all" and so hid a PR the moment one PO was
+   *  raised, even for 10 of 100. The server owns this filter because the balance
+   *  is a SUM over purchase_order_lines that the browser cannot compute. */
+  convertibleOnly: z.coerce.boolean().optional(),
   /** Inclusive lower bound on pr_date (YYYY-MM-DD). */
   fromDate: z
     .string()

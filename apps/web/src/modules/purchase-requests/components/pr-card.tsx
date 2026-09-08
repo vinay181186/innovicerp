@@ -13,19 +13,38 @@
 // single `canWrite` flag, so an L3 Editor could approve and an L4 Approver got
 // buttons they may not press. They are now two independent tier rights —
 // `canApprove` (L4+) for the sign-off pair, `canEntry` (L2+) for raising the PO.
+//
+// 2026-09-08 (ADR-152, PR→PO balance): the card carries Ordered and Balance
+// beside Qty, the accent bar and the new progress pill read the BALANCE instead
+// of the yes/no "has a PO", and 📝 PO stays available while quantity is left to
+// order. Before this, one PO for 10 of 100 closed the request on screen and the
+// other 90 could never be bought. The linked PO code is untouched.
+//
+// Phase 2: a SHORT-CLOSED request (the buyer stopped expecting the rest) reads
+// grey and says so — "Balance closed — 90 of 100 not ordered" — instead of
+// borrowing the green "Fully ordered" wording, which would claim the whole
+// quantity was bought. All of that comes out of pr-balance.ts; the card has no
+// rule of its own.
 
 import type { PurchaseRequestListItem } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import {
+  type PrOrderBalance,
+  prBalanceBadgeClass,
+  prBalanceClosedText,
+  prBalanceColor,
+  prOrderBalance,
+} from '../lib/pr-balance';
 import { PrStatusBadge } from './pr-status-badge';
 
-/** Accent bar: amber waiting on a decision, blue approved, green turned into a
- *  PO, grey cancelled — the same meaning the status badge carries. */
-function accentFor(status: PurchaseRequestListItem['status']): string {
-  if (status === 'approved') return 'var(--blue)';
-  if (status === 'po_created') return 'var(--green)';
-  if (status === 'cancelled') return 'var(--text3)';
-  return 'var(--amber)';
+/** Accent bar: how much of this request is actually on order (ADR-152) — amber
+ *  none of it yet, blue part of it, green all of it, red over-ordered, grey
+ *  cancelled. It used to read `status === 'po_created' → green`, which painted
+ *  a PR "done" after a PO for 10 of 100. */
+function accentFor(pr: PurchaseRequestListItem, bal: PrOrderBalance): string {
+  if (pr.status === 'cancelled') return 'var(--text3)';
+  return prBalanceColor(bal.state);
 }
 
 /** One cell of the card's metric strip — big number over a small caps label,
@@ -118,6 +137,9 @@ export function PrCard({
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = pr.priceVisible === false;
   const estCost = Number(pr.estCost ?? 0);
+  // How much is on a live purchase order and how much is still to buy. This is
+  // what the card now says instead of the old yes/no "has a PO".
+  const bal = prOrderBalance(pr);
   const openDetail = (): void => {
     void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } });
   };
@@ -127,7 +149,7 @@ export function PrCard({
       className="panel"
       style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
     >
-      <div style={{ width: 4, flexShrink: 0, background: accentFor(pr.status) }} />
+      <div style={{ width: 4, flexShrink: 0, background: accentFor(pr, bal) }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* ── Band 1: identity + item + vendor + status — actions ── */}
         <div
@@ -161,6 +183,23 @@ export function PrCard({
             {pr.vendorName ?? pr.vendorCodeText ?? '—'}
           </span>
           <PrStatusBadge status={pr.status} />
+          {/* How far the ORDERING has got, which the status alone cannot say:
+              a `po_created` PR may still have 90 of 100 to buy. Shown only once
+              something has actually been ordered — before that the status badge
+              already says Open / Approved and the Balance box below carries the
+              full quantity, so a second "Open" pill would only add noise. */}
+          {bal.ordered > 0 ? (
+            <span
+              className={`badge ${prBalanceBadgeClass(bal.state)}`}
+              title={
+                bal.closed
+                  ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`
+                  : `${bal.ordered} of ${bal.qty} ordered · ${bal.balance} left`
+              }
+            >
+              {bal.label}
+            </span>
+          ) : null}
           {/* Type tag — only when it is NOT a plain buy, so a normal PR row stays
               as clean as it was. SVC becomes a Service PO (sends the item out on
               a DC); OSP is the system-raised outsource PR. */}
@@ -209,7 +248,11 @@ export function PrCard({
                 </button>
               </>
             ) : null}
-            {canEntry && (pr.status === 'open' || pr.status === 'approved') ? (
+            {/* Raise a PO for what is LEFT. The old gate was
+                `status === 'open' || 'approved'`, so the first partial PO flipped
+                the PR to `po_created` and took the button away with 90 of 100
+                still unordered (ADR-152). Cancelled PRs are never orderable. */}
+            {canEntry && pr.status !== 'cancelled' && bal.balance > 0 ? (
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: pr.id }}
@@ -260,6 +303,15 @@ export function PrCard({
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
             <QtyBox label="Qty" value={pr.qty} />
+            <QtyBox label="Ordered" value={bal.ordered} bordered />
+            {/* Negative = more ordered than requested. Red and flagged, never
+                clamped to 0 — somebody has to go and look at it. */}
+            <QtyBox
+              label="Balance"
+              value={bal.balance < 0 ? `⚠ ${bal.balance}` : bal.balance}
+              color={prBalanceColor(bal.state)}
+              bordered
+            />
             {priceHidden ? null : (
               <QtyBox
                 label="Est. Cost"
@@ -302,6 +354,25 @@ export function PrCard({
               <>
                 <span>·</span>
                 <span style={{ color: 'var(--green)' }}>📝 {pr.poCreatedAt.slice(0, 10)}</span>
+              </>
+            ) : null}
+            {bal.closed ? (
+              <>
+                <span>·</span>
+                <span
+                  className="text3"
+                  title={bal.closedReason ?? undefined}
+                  style={{
+                    maxWidth: 220,
+                    display: 'inline-block',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  🚫 {prBalanceClosedText(bal)}
+                  {bal.closedReason ? ` — ${bal.closedReason}` : ''}
+                </span>
               </>
             ) : null}
           </div>

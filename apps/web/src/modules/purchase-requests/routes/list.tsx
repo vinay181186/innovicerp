@@ -260,7 +260,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <input
                   className="innovic-input"
-                  placeholder="🔍 Search PRs..."
+                  placeholder="🔍 Search PR no, item, vendor, SO/JC, PO…"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   style={{ width: 220, fontSize: 12 }}

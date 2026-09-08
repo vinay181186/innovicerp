@@ -6,6 +6,8 @@ import {
   items,
   jcOps,
   jobCards,
+  purchaseOrderLines,
+  purchaseOrders,
   purchaseRequests,
   users,
   vendors,
@@ -116,6 +118,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // PO lines first: purchase_order_lines.source_pr_id points AT the PRs below,
+  // so the PR delete would fail that FK if the lines outlived them.
+  await db.delete(purchaseOrderLines).where(like(purchaseOrderLines.itemName, `${TEST_PREFIX}%`));
+  await db.delete(purchaseOrders).where(like(purchaseOrders.code, `${TEST_PREFIX}%`));
   await db.delete(purchaseRequests).where(like(purchaseRequests.code, `${TEST_PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
   await db.delete(jcOps).where(eq(jcOps.jobCardId, cascadeJcId));
@@ -493,5 +499,168 @@ describe('purchase-requests service', () => {
       expect(r.userName).toBe(admin.email);
       expect(r.detail).toContain(code);
     }
+  });
+
+  // ─── Short-close the balance (0117, ADR-152 phase 2) ─────────────────────
+  //
+  // Mirrors the reject tests above — same permission, same "a reason is
+  // required" shape, same activity-log expectation — but it does NOT kill the
+  // PR. What was already ordered stands; only the remainder is abandoned.
+
+  /** Put `qty` of a PR onto a real, live purchase order line, the way the PO
+   *  module does, so the derived orderedQty / balanceQty have something to
+   *  count. The PR is then read back through the service, not the table. */
+  async function orderAgainstPr(prId: string, qty: number, suffix: string): Promise<void> {
+    const po = (
+      await db
+        .insert(purchaseOrders)
+        .values({
+          companyId: admin.companyId!,
+          code: `${TEST_PREFIX}PO-${suffix}`,
+          poDate: '2026-05-02',
+          vendorId: firstVendorId,
+          status: 'open',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+    await db.insert(purchaseOrderLines).values({
+      companyId: admin.companyId!,
+      purchaseOrderId: po.id,
+      lineNo: 1,
+      itemId: firstItemId,
+      itemName: `${TEST_PREFIX}LINE-${suffix}`,
+      qty,
+      rate: '0.00',
+      receivedQty: 0,
+      sourcePrId: prId,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+  }
+
+  it('closePurchaseRequestBalance sends an un-ordered PR to Reject instead', async () => {
+    const pr = await service.createPurchaseRequest(
+      {
+        code: `${TEST_PREFIX}CLOSE-NONE`,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 100,
+        estCost: 0,
+        status: 'open',
+      },
+      admin,
+    );
+    // Nothing is on order, so this is a rejection, not a short-close — and the
+    // refusal must send the user to that button by name, not just say no.
+    await expect(
+      service.closePurchaseRequestBalance(pr.id, { reason: 'customer cut the order' }, admin),
+    ).rejects.toThrow(/use Reject/);
+    await expect(
+      service.closePurchaseRequestBalance(pr.id, { reason: 'customer cut the order' }, admin),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('closePurchaseRequestBalance zeroes the balance, keeps qty + orderedQty, and cannot run twice', async () => {
+    const code = `${TEST_PREFIX}CLOSE-PART`;
+    const pr = await service.createPurchaseRequest(
+      {
+        code,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        itemName: 'Short-close Item',
+        qty: 100,
+        estCost: 0,
+        status: 'open',
+      },
+      admin,
+    );
+    await orderAgainstPr(pr.id, 10, 'PART');
+
+    const before = await service.getPurchaseRequest(pr.id, admin);
+    expect(before.orderedQty).toBe(10);
+    expect(before.balanceQty).toBe(90);
+    expect(before.balanceClosedAt).toBeNull();
+
+    const closed = await service.closePurchaseRequestBalance(
+      pr.id,
+      { reason: '  customer cut the order  ' },
+      admin,
+    );
+    // The PR still says 100 was asked for and 10 was bought — only the
+    // remainder is abandoned. The gap between them IS the record.
+    expect(closed.qty).toBe(100);
+    expect(closed.orderedQty).toBe(10);
+    expect(closed.balanceQty).toBe(0);
+    expect(closed.balanceClosedBy).toBe(admin.id);
+    expect(closed.balanceClosedReason).toBe('customer cut the order');
+    expect(closed.balanceClosedAt).not.toBeNull();
+
+    // The read path agrees with what the write returned.
+    const reread = await service.getPurchaseRequest(pr.id, admin);
+    expect(reread.balanceQty).toBe(0);
+    expect(reread.orderedQty).toBe(10);
+    expect(reread.balanceClosedReason).toBe('customer cut the order');
+
+    // And it drops out of the "still to order" list the PO picker asks for.
+    const convertible = await service.listPurchaseRequests(
+      { search: code, convertibleOnly: true, limit: 50, offset: 0 },
+      admin,
+    );
+    expect(convertible.items.map((i) => i.code)).not.toContain(code);
+
+    // Closing twice is refused — a second click is a mistake, not a no-op.
+    await expect(
+      service.closePurchaseRequestBalance(pr.id, { reason: 'again' }, admin),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, code)));
+    const closeRow = auditRows.find((r) => r.action === 'BALANCE_CLOSE');
+    expect(closeRow).toBeDefined();
+    expect(closeRow!.detail).toContain('customer cut the order');
+  });
+
+  it('closePurchaseRequestBalance refuses a cancelled PR', async () => {
+    const pr = await service.createPurchaseRequest(
+      {
+        code: `${TEST_PREFIX}CLOSE-CANC`,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 20,
+        estCost: 0,
+        status: 'open',
+      },
+      admin,
+    );
+    await service.rejectPurchaseRequest(pr.id, 'not needed', admin);
+    await expect(
+      service.closePurchaseRequestBalance(pr.id, { reason: 'too late' }, admin),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('closePurchaseRequestBalance requires a reason', async () => {
+    const pr = await service.createPurchaseRequest(
+      {
+        code: `${TEST_PREFIX}CLOSE-NOREASON`,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 30,
+        estCost: 0,
+        status: 'open',
+      },
+      admin,
+    );
+    await orderAgainstPr(pr.id, 5, 'NOREASON');
+    await expect(
+      service.closePurchaseRequestBalance(pr.id, { reason: '   ' }, admin),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 });

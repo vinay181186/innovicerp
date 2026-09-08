@@ -6,17 +6,36 @@
 // actions, and colours taken only from the tokens in styles/tokens.css. The
 // former page-local `.prd-*` stylesheet (a duplicated palette + type scale with
 // ten hard-coded hexes) is gone — nothing here paints outside the theme.
+//
+// 2026-09-08 (ADR-152, PR→PO balance): the request detail strip carries Ordered
+// and Balance beside Qty, an over-ordered PR (negative balance) shouts in red,
+// and Create PO is offered while there is quantity left to order rather than
+// only until the first PO exists. The Linked PO field and the View linked PO
+// button are unchanged.
+//
+// Phase 2 adds "Close balance": a buyer who ordered 10 of 100 and knows the
+// other 90 is not coming says so here. It is NOT an edit of the quantity (the
+// request still says 100 was asked for) and NOT a rejection (what was ordered
+// stands), so it needed a door of its own — the PR could previously be neither
+// edited nor rejected once any PO existed, and the 90 sat in the "still to buy"
+// list forever.
 
 import type { PurchaseRequestDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { usePurchaseRequest, useSoftDeletePurchaseRequest } from '../api';
+import {
+  useClosePurchaseRequestBalance,
+  usePurchaseRequest,
+  useSoftDeletePurchaseRequest,
+} from '../api';
+import { CloseBalanceModal } from '../components/close-balance-modal';
 import { PrStatusBadge } from '../components/pr-status-badge';
+import { prBalanceClosedText, prBalanceColor, prOrderBalance } from '../lib/pr-balance';
 
 export const purchaseRequestDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -38,6 +57,14 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
   const softDelete = useSoftDeletePurchaseRequest();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Short-closing the remainder is a SIGN-OFF, not data entry, so it rides the
+  // same `pr_create` + approve right the Approve / Reject pair on the PR list
+  // uses — and the same right the API gate (`requireFormAccess(user,
+  // 'pr_create', 'approve')`) checks, so the button cannot appear to someone
+  // the server then refuses.
+  const closeBalanceMut = useClosePurchaseRequestBalance();
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -91,6 +118,31 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // without approve; L4 has approve without edit.
   const canDelete = perms.edit && perms.approve;
   const linkedToPo = detail.poId !== null;
+  // What is still to order. A PR for 100 with a PO for 10 has 90 left, so
+  // "has a PO" is no longer the test for whether another PO may be raised.
+  const bal = prOrderBalance(detail);
+  // Offered only when there is something to close: part of it bought, part of
+  // it still outstanding, nothing closed yet, request not cancelled. A PR with
+  // NOTHING ordered is a Reject, not a close — the API refuses it by name, so
+  // the button must not be there to press.
+  const canCloseBalance =
+    perms.approve &&
+    detail.status !== 'cancelled' &&
+    !bal.closed &&
+    bal.ordered > 0 &&
+    bal.balance > 0;
+
+  const onCloseBalance = (reason: string): void => {
+    setCloseError(null);
+    closeBalanceMut.mutate(
+      { id: detail.id, reason },
+      {
+        onSuccess: () => setCloseOpen(false),
+        onError: (e) =>
+          setCloseError(e instanceof Error ? e.message : 'Failed to close the balance'),
+      },
+    );
+  };
 
   // The SO this PR serves. Set by Planning (an OSP PR raised off a Job Card
   // carries its SO line); a hand-raised PR has no order behind it, so "—".
@@ -136,9 +188,10 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               }}
               suggestedTitle={`Follow up on PR ${detail.code}`}
             />
-            {(detail.status === 'open' || detail.status === 'approved') &&
-            !linkedToPo &&
-            canCreatePo ? (
+            {/* Offered while quantity is LEFT, whatever POs already exist. The old
+                test (`!linkedToPo`) removed the button the moment one PO was
+                raised, even a PO for 10 of 100. Cancelled PRs stay unorderable. */}
+            {detail.status !== 'cancelled' && bal.balance > 0 && canCreatePo ? (
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: detail.id }}
@@ -146,6 +199,19 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               >
                 <FileText size={13} /> Create PO
               </Link>
+            ) : null}
+            {canCloseBalance ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setCloseError(null);
+                  setCloseOpen(true);
+                }}
+                title={`Stop expecting the remaining ${bal.balance} of ${bal.qty}`}
+              >
+                <Ban size={13} /> Close balance
+              </button>
             ) : null}
             {linkedToPo && detail.poId ? (
               // Once a PO exists this PR is locked — surface the PO to view
@@ -276,6 +342,20 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
       </div>
 
       <RelatedDocsPanel module="purchase-requests" id={detail.id} />
+
+      {closeOpen ? (
+        <CloseBalanceModal
+          code={detail.code}
+          bal={bal}
+          pending={closeBalanceMut.isPending}
+          errorText={closeError}
+          onCancel={() => {
+            setCloseError(null);
+            setCloseOpen(false);
+          }}
+          onSubmit={onCloseBalance}
+        />
+      ) : null}
     </div>
   );
 }
@@ -298,10 +378,84 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
   const estCostNum = Number(detail.estCost ?? 0);
   const qtyNum = Number(detail.qty);
   const total = estCostNum * qtyNum;
+  const bal = prOrderBalance(detail);
   return (
     <>
+      {/* A negative balance means MORE has been ordered than was requested. It is
+          never normal, so it is said out loud here instead of being clamped to
+          zero and hidden — somebody has to open the POs and fix one. */}
+      {bal.state === 'over' ? (
+        <div
+          style={{
+            color: 'var(--red)',
+            background: 'var(--red3)',
+            border: '1px solid var(--sig-critical-bd)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+            fontWeight: 600,
+          }}
+        >
+          ⚠ Over-ordered — {bal.ordered} of {bal.qty} is already on purchase orders,{' '}
+          {Math.abs(bal.balance)} more than this request asked for. Check the linked POs.
+        </div>
+      ) : null}
+      {/* Deliberately finished, NOT fully ordered. Grey, not green: nobody
+          should read this as "we bought it all". The reason is on the face of
+          the page because in six months "why did we not buy the other 90?" is
+          the only question anyone asks. */}
+      {bal.closed ? (
+        <div
+          style={{
+            color: 'var(--text2)',
+            background: 'var(--bg3)',
+            border: '1px solid var(--border2)',
+            borderRadius: 6,
+            padding: '8px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          <div className="fw-700">🚫 {prBalanceClosedText(bal)}</div>
+          <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>
+            <span className="form-label">Reason</span> {bal.closedReason ?? '—'}
+          </div>
+          {bal.closedAt ? (
+            <div className="text3" style={{ marginTop: 2 }}>
+              Closed on <span className="mono">{bal.closedAt.slice(0, 10)}</span>. The {bal.ordered}{' '}
+              already on purchase orders still stands.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div style={STRIP}>
         <Fact label="Qty" value={<span className="mono">{String(detail.qty)}</span>} />
+        <Fact
+          label="Ordered"
+          title="On live purchase orders (cancelled POs not counted)"
+          value={<span className="mono">{String(bal.ordered)}</span>}
+        />
+        <Fact
+          label="Balance"
+          title={
+            bal.closed
+              ? prBalanceClosedText(bal)
+              : `${bal.label} — ${bal.balance} of ${bal.qty} still to order`
+          }
+          value={
+            <span
+              className="mono"
+              style={{ color: prBalanceColor(bal.state), fontWeight: 700, whiteSpace: 'nowrap' }}
+            >
+              {bal.balance < 0 ? `⚠ ${bal.balance}` : String(bal.balance)}
+              <span className="text3" style={{ fontWeight: 400 }}>
+                {' '}
+                · {bal.label}
+              </span>
+            </span>
+          }
+        />
         {priceHidden ? null : (
           <>
             <Fact
@@ -330,6 +484,13 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
           label="PO Created At"
           value={<span className="mono">{detail.poCreatedAt ?? '—'}</span>}
         />
+        {bal.closed ? (
+          <Fact
+            label="Balance Closed At"
+            title={bal.closedReason ?? ''}
+            value={<span className="mono">{bal.closedAt?.slice(0, 10) ?? '—'}</span>}
+          />
+        ) : null}
       </div>
       <div className="divider" />
       <div style={{ minWidth: 0 }}>

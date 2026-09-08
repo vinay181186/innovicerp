@@ -6,7 +6,7 @@
 // cancelled). Only the basic field updates land here in T-036a; the approve
 // + create-PO actions ship in T-036b alongside the PO module.
 
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { type SQL, type SQLWrapper, and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import {
@@ -33,6 +33,7 @@ import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import type {
+  ClosePurchaseRequestBalanceInput,
   CreatePurchaseRequestInput,
   ListPurchaseRequestsQuery,
   ListPurchaseRequestsResponse,
@@ -204,7 +205,10 @@ function maybeDateLike(v: unknown): string | null {
   return dateLike(v);
 }
 
-function toPurchaseRequest(row: typeof purchaseRequests.$inferSelect): PurchaseRequest {
+function toPurchaseRequest(
+  row: typeof purchaseRequests.$inferSelect,
+  orderedQty: number,
+): PurchaseRequest {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -228,12 +232,202 @@ function toPurchaseRequest(row: typeof purchaseRequests.$inferSelect): PurchaseR
     approvedAt: maybeTsLike(row.approvedAt),
     poId: row.poId,
     poCreatedAt: maybeTsLike(row.poCreatedAt),
+    orderedQty,
+    balanceQty: deriveBalanceQty({
+      qty: row.qty,
+      orderedQty,
+      balanceClosed: row.balanceClosedAt != null,
+    }),
+    balanceClosedAt: maybeTsLike(row.balanceClosedAt),
+    balanceClosedBy: row.balanceClosedBy,
+    balanceClosedReason: row.balanceClosedReason,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: tsLike(row.updatedAt),
     updatedBy: row.updatedBy,
     deletedAt: maybeTsLike(row.deletedAt),
   };
+}
+
+// ─── Ordered / balance quantity (ADR-152, phase 1) ────────────────────────
+//
+// "Does this PR have a PO?" used to be a BOOLEAN — `purchase_requests.po_id`
+// plus `status = 'po_created'`. A PR for 100 covered by a PO for 10 therefore
+// counted as finished, the remaining 90 became unorderable, and cancelling
+// that PO released nothing because no code path ever wrote the status back.
+//
+// The quantity is now DERIVED on every read from the PO lines themselves, so
+// there is no stored figure to keep in sync: cancel the PO and its quantity
+// returns to the balance on its own.
+//
+// Tenancy: both subqueries are correlated to a `purchase_requests` row that the
+// caller's own WHERE clause has already scoped to the company, and
+// `purchase_order_lines.source_pr_id` is a foreign key to that same row — so no
+// other company's rows are reachable through them.
+
+/** Quantity of this PR that sits on a LIVE purchase order: the sum of the PO
+ *  lines raised from it, ignoring deleted lines, deleted POs and CANCELLED POs.
+ *  Excluding cancelled POs is what makes a cancelled PO give its quantity back. */
+function liveOrderedQtySql(prIdRef: SQLWrapper): SQL<number> {
+  return sql<number>`(
+    SELECT COALESCE(SUM(pol.qty), 0)::int
+    FROM public.purchase_order_lines pol
+    JOIN public.purchase_orders p2 ON p2.id = pol.purchase_order_id
+    WHERE pol.source_pr_id = ${prIdRef}
+      AND pol.deleted_at IS NULL
+      AND p2.deleted_at IS NULL
+      AND p2.status <> 'cancelled'
+  )`;
+}
+
+/** How many PO lines point at this PR AT ALL — no PO-status condition. Used
+ *  only to tell "never ordered" apart from "ordered, then cancelled". */
+function linkedLineCountSql(prIdRef: SQLWrapper): SQL<number> {
+  return sql<number>`(
+    SELECT COUNT(*)::int
+    FROM public.purchase_order_lines pol
+    WHERE pol.source_pr_id = ${prIdRef}
+      AND pol.deleted_at IS NULL
+  )`;
+}
+
+/**
+ * The one place the ordered quantity is decided. Used by the list, the detail
+ * read and the edit/reject guards so all four can never disagree.
+ */
+function deriveOrderedQty(input: {
+  qty: number;
+  poId: string | null;
+  liveOrderedQty: number;
+  linkedLineCount: number;
+}): number {
+  // LEGACY RULE — do not remove.
+  //
+  // Three production PRs (IN-JWPR-00001 / 00002 / 00003) carry a header `po_id`
+  // but have ZERO linked PO lines, because migration 0103 added
+  // `purchase_order_lines.source_pr_id` and deliberately did NOT backfill it.
+  // Counting lines alone would report those three as 0 ordered, put them back in
+  // the PO form's PR picker as if nothing had ever been bought, and invite a
+  // duplicate PO for material that is already on order. So a PR that has a
+  // header PO but no lines is treated as FULLY ordered: it stays closed, exactly
+  // as the user asked, and is never offered again.
+  if (input.poId !== null && input.linkedLineCount === 0) return input.qty;
+  return input.liveOrderedQty;
+}
+
+/** Same rule as `deriveOrderedQty`, expressed in SQL so a list can filter on the
+ *  balance BEFORE paging — a post-filter would make the page counts and `total`
+ *  lie. `prRef` is the alias the caller gave `purchase_requests` (e.g. `pr`). */
+function orderedQtySql(prRef: { id: SQLWrapper; poId: SQLWrapper; qty: SQLWrapper }): SQL<number> {
+  return sql<number>`(CASE
+    WHEN ${prRef.poId} IS NOT NULL AND ${linkedLineCountSql(prRef.id)} = 0 THEN ${prRef.qty}
+    ELSE ${liveOrderedQtySql(prRef.id)}
+  END)`;
+}
+
+/**
+ * The one place the BALANCE is decided — `qty` minus what is on order, unless
+ * the buyer short-closed the remainder, in which case it is 0.
+ *
+ * A short-closed PR keeps its real `orderedQty`: it still reports what was
+ * actually bought. The two therefore stop adding up to `qty`, and that is the
+ * whole point — the difference is the quantity that was abandoned (0117).
+ *
+ * Not clamped at 0 otherwise: an over-ordered PR shows a negative balance so the
+ * screen says so, rather than hiding it (see the contract note on balanceQty).
+ */
+export function deriveBalanceQty(input: {
+  qty: number;
+  orderedQty: number;
+  balanceClosed: boolean;
+}): number {
+  if (input.balanceClosed) return 0;
+  return input.qty - input.orderedQty;
+}
+
+/**
+ * Ordered quantity for ONE purchase request, for the write paths (edit / reject
+ * guards and the shape they return). One indexed round-trip, no N+1: the write
+ * paths handle a single PR by id.
+ */
+async function loadOrderedQty(
+  tx: DbTransaction,
+  pr: { id: string; qty: number; poId: string | null },
+): Promise<number> {
+  const rows = (await tx.execute(sql`
+    SELECT
+      ${liveOrderedQtySql(sql`${pr.id}::uuid`)} AS "liveOrderedQty",
+      ${linkedLineCountSql(sql`${pr.id}::uuid`)} AS "linkedLineCount"
+  `)) as unknown as Array<Record<string, unknown>>;
+  const row = rows[0];
+  return deriveOrderedQty({
+    qty: pr.qty,
+    poId: pr.poId,
+    liveOrderedQty: Number(row?.['liveOrderedQty'] ?? 0),
+    linkedLineCount: Number(row?.['linkedLineCount'] ?? 0),
+  });
+}
+
+/** What one PR has on order and what is left to order. */
+export interface PrBalance {
+  orderedQty: number;
+  balanceQty: number;
+  balanceClosed: boolean;
+}
+
+/**
+ * Ordered / balance quantity for MANY purchase requests in ONE round trip.
+ *
+ * Exported because the purchase-orders module must ask the same question before
+ * it lets a line be raised against a PR, and the arithmetic must have exactly
+ * one home (ADR-152): a second copy over there would drift from the legacy rule
+ * and quietly re-open the three pre-0103 PRs.
+ *
+ * Batched deliberately — the batch-convert path handles N PRs at once, and a
+ * per-PR lookup inside that loop is the N+1 CLAUDE.md §6 forbids. Missing ids
+ * simply do not appear in the map; the caller has already proved they exist.
+ */
+export async function loadPrBalances(
+  tx: DbTransaction,
+  prs: Array<{
+    id: string;
+    qty: number;
+    poId: string | null;
+    balanceClosedAt: Date | string | null;
+  }>,
+): Promise<Map<string, PrBalance>> {
+  const out = new Map<string, PrBalance>();
+  if (prs.length === 0) return out;
+  // Same two subqueries the list and the detail read use, correlated to the PR
+  // rows themselves — so this cannot disagree with what the screens show.
+  const rows = (await tx.execute(sql`
+    SELECT
+      p.id AS "prId",
+      ${liveOrderedQtySql(sql`p.id`)} AS "liveOrderedQty",
+      ${linkedLineCountSql(sql`p.id`)} AS "linkedLineCount"
+    FROM public.purchase_requests p
+    WHERE p.id IN (${sql.join(
+      prs.map((p) => sql`${p.id}::uuid`),
+      sql`, `,
+    )})
+  `)) as unknown as Array<Record<string, unknown>>;
+  const byId = new Map(rows.map((r) => [String(r['prId']), r]));
+  for (const pr of prs) {
+    const r = byId.get(pr.id);
+    const orderedQty = deriveOrderedQty({
+      qty: pr.qty,
+      poId: pr.poId,
+      liveOrderedQty: Number(r?.['liveOrderedQty'] ?? 0),
+      linkedLineCount: Number(r?.['linkedLineCount'] ?? 0),
+    });
+    const balanceClosed = pr.balanceClosedAt != null;
+    out.set(pr.id, {
+      orderedQty,
+      balanceQty: deriveBalanceQty({ qty: pr.qty, orderedQty, balanceClosed }),
+      balanceClosed,
+    });
+  }
+  return out;
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────
@@ -329,6 +523,20 @@ export async function listPurchaseRequests(
       : sql``;
     const fromFrag = input.fromDate ? sql`AND pr.pr_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND pr.pr_date <= ${input.toDate}::date` : sql``;
+    // convertibleOnly — "still has quantity left to order" (ADR-152). Applied in
+    // SQL, on the same expression the rows report, so paging and `total` agree
+    // with what the caller sees; a post-filter after LIMIT would show 3 rows and
+    // claim 40. A cancelled PR is excluded outright: its balance is untouched
+    // (nothing was ever ordered) but it is dead paperwork, and the PO form's PR
+    // picker has never offered one.
+    // A SHORT-CLOSED PR is excluded too (0117): its arithmetic balance is still
+    // positive — that is exactly what short-closing records — but the buyer has
+    // said the remainder is not coming, so it must not be offered again.
+    const convertibleFrag = input.convertibleOnly
+      ? sql`AND pr.status <> 'cancelled'
+        AND pr.balance_closed_at IS NULL
+        AND pr.qty > ${orderedQtySql({ id: sql`pr.id`, poId: sql`pr.po_id`, qty: sql`pr.qty` })}`
+      : sql``;
 
     const result = await tx.execute(sql`
       SELECT
@@ -343,6 +551,9 @@ export async function listPurchaseRequests(
         pr.operation, pr.remarks,
         pr.approved_by AS "approvedBy", pr.approved_at AS "approvedAt",
         pr.po_id AS "poId", pr.po_created_at AS "poCreatedAt",
+        pr.balance_closed_at AS "balanceClosedAt",
+        pr.balance_closed_by AS "balanceClosedBy",
+        pr.balance_closed_reason AS "balanceClosedReason",
         pr.created_at AS "createdAt", pr.created_by AS "createdBy",
         pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy",
         pr.deleted_at AS "deletedAt",
@@ -352,7 +563,12 @@ export async function listPurchaseRequests(
         jo.op_seq AS "sourceJcOpSeq",
         po.code AS "poCode",
         so.code AS "soCode",
-        sol.line_no AS "soLineNo"
+        sol.line_no AS "soLineNo",
+        -- Ordered / balance quantity (ADR-152). Two scalar subqueries per row,
+        -- both hitting the purchase_order_lines_source_pr_idx index; combined
+        -- into orderedQty by deriveOrderedQty in toListItem below.
+        ${liveOrderedQtySql(sql`pr.id`)} AS "liveOrderedQty",
+        ${linkedLineCountSql(sql`pr.id`)} AS "linkedLineCount"
       FROM public.purchase_requests pr
       LEFT JOIN public.vendors v
         ON v.id = pr.vendor_id AND v.deleted_at IS NULL
@@ -378,6 +594,7 @@ export async function listPurchaseRequests(
         ${jcOpFrag}
         ${fromFrag}
         ${toFrag}
+        ${convertibleFrag}
       -- Newest first, matching the SO list (sales-orders/service.ts). This was
       -- pr.code ASC, which sank every new PR to the last page.
       ORDER BY pr.pr_date DESC, pr.code DESC
@@ -424,6 +641,7 @@ export async function listPurchaseRequests(
         ${jcOpFrag}
         ${fromFrag}
         ${toFrag}
+        ${convertibleFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
@@ -436,6 +654,13 @@ export async function listPurchaseRequests(
 }
 
 function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
+  const qty = Number(r['qty'] ?? 0);
+  const orderedQty = deriveOrderedQty({
+    qty,
+    poId: (r['poId'] as string | null) ?? null,
+    liveOrderedQty: Number(r['liveOrderedQty'] ?? 0),
+    linkedLineCount: Number(r['linkedLineCount'] ?? 0),
+  });
   return {
     id: r['id'] as string,
     companyId: r['companyId'] as string,
@@ -448,7 +673,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     itemId: (r['itemId'] as string | null) ?? null,
     itemCodeText: (r['itemCodeText'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
-    qty: Number(r['qty'] ?? 0),
+    qty,
     estCost: r['estCost'] as string,
     requiredDate: maybeDateLike(r['requiredDate']),
     sourceJcOpId: (r['sourceJcOpId'] as string | null) ?? null,
@@ -459,6 +684,15 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     approvedAt: maybeTsLike(r['approvedAt']),
     poId: (r['poId'] as string | null) ?? null,
     poCreatedAt: maybeTsLike(r['poCreatedAt']),
+    orderedQty,
+    balanceQty: deriveBalanceQty({
+      qty,
+      orderedQty,
+      balanceClosed: r['balanceClosedAt'] != null,
+    }),
+    balanceClosedAt: maybeTsLike(r['balanceClosedAt']),
+    balanceClosedBy: (r['balanceClosedBy'] as string | null) ?? null,
+    balanceClosedReason: (r['balanceClosedReason'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
     updatedAt: tsLike(r['updatedAt']),
@@ -521,6 +755,10 @@ export async function getPurchaseRequest(
         sourceJcOpSeq: jcOps.opSeq,
         soCode: salesOrders.code,
         soLineNo: salesOrderLines.lineNo,
+        // Ordered / balance quantity (ADR-152) — same two subqueries the list
+        // uses, combined by deriveOrderedQty below.
+        liveOrderedQty: liveOrderedQtySql(purchaseRequests.id),
+        linkedLineCount: linkedLineCountSql(purchaseRequests.id),
       })
       .from(purchaseRequests)
       .leftJoin(vendors, and(eq(vendors.id, purchaseRequests.vendorId), isNull(vendors.deletedAt)))
@@ -560,7 +798,13 @@ export async function getPurchaseRequest(
       .limit(1);
     const found = rows[0];
     if (!found) throw new NotFoundError(`Purchase request ${id} not found`);
-    const prOut = toPurchaseRequest(found.row);
+    const orderedQty = deriveOrderedQty({
+      qty: found.row.qty,
+      poId: found.row.poId,
+      liveOrderedQty: Number(found.liveOrderedQty ?? 0),
+      linkedLineCount: Number(found.linkedLineCount ?? 0),
+    });
+    const prOut = toPurchaseRequest(found.row, orderedQty);
     return {
       ...(showMoney ? prOut : hidePrMoney(prOut)),
       vendorName: found.vendorName,
@@ -688,7 +932,9 @@ export async function createPurchaseRequest(
       companyId,
       user,
     );
-    return toPurchaseRequest(row);
+    // A PR born a moment ago has no PO line pointing at it and no header po_id,
+    // so its ordered quantity is 0 by construction — no query needed.
+    return toPurchaseRequest(row, 0);
   });
 }
 
@@ -717,8 +963,15 @@ export async function updatePurchaseRequest(
     if (existing.length === 0) {
       throw new NotFoundError(`Purchase request ${id} not found`);
     }
-    // A PR converted to a PO is locked — no further edits.
-    if (existing[0]!.poId !== null || existing[0]!.status === 'po_created') {
+    // A PR with quantity on a LIVE purchase order is locked — no further edits.
+    //
+    // This used to test the boolean (`po_id IS NOT NULL OR status='po_created'`),
+    // which left a PR dead forever once its only PO was cancelled: nothing ever
+    // wrote the flag back. It now asks how much is actually on order, so a PR
+    // whose PO was cancelled becomes editable again on its own, while one with
+    // any live quantity stays locked exactly as before.
+    const orderedQty = await loadOrderedQty(tx, existing[0]!);
+    if (orderedQty > 0) {
       throw new ConflictError(
         `Purchase request ${existing[0]!.code} is linked to a PO and cannot be edited`,
       );
@@ -790,7 +1043,9 @@ export async function updatePurchaseRequest(
       companyId,
       user,
     );
-    return toPurchaseRequest(row);
+    // The guard above proved this PR has nothing on a live PO, and this
+    // transaction has not created one.
+    return toPurchaseRequest(row, orderedQty);
   });
 }
 
@@ -863,7 +1118,7 @@ export async function approvePurchaseRequest(
       companyId,
       user,
     );
-    return toPurchaseRequest(row);
+    return toPurchaseRequest(row, await loadOrderedQty(tx, row));
   });
 }
 
@@ -895,9 +1150,13 @@ export async function rejectPurchaseRequest(
       .limit(1);
     const pr = existing[0];
     if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
-    // A PR already converted to a PO carries the procurement obligation on the
-    // PO; a rejected/cancelled PR is terminal. Only pre-PO PRs can be rejected.
-    if (pr.poId !== null || pr.status === 'po_created' || pr.status === 'cancelled') {
+    // Quantity already on a LIVE purchase order carries the procurement
+    // obligation on that PO; a cancelled PR is terminal. Same change as the edit
+    // guard: this asks how much is actually on order instead of reading the
+    // boolean po_id / 'po_created' flag, so a PR whose only PO was cancelled can
+    // be rejected (and edited) again rather than being stuck forever.
+    const orderedQty = await loadOrderedQty(tx, pr);
+    if (orderedQty > 0 || pr.status === 'cancelled') {
       throw new ValidationError(
         `PR ${pr.code} is ${pr.status}; only open or approved purchase requests can be rejected`,
       );
@@ -946,7 +1205,114 @@ export async function rejectPurchaseRequest(
       companyId,
       user,
     );
-    return toPurchaseRequest(row);
+    // The guard above proved nothing is on a live PO for this PR.
+    return toPurchaseRequest(row, orderedQty);
+  });
+}
+
+// ─── Short-close the balance (0117, ADR-152 gap 6) ────────────────────────
+//
+// "We ordered 10 of 100 and the rest is not coming."
+//
+// Without this a partly-ordered PR is immortal: it cannot be edited (quantity
+// is already committed to a vendor) and cannot be rejected (that guard refuses
+// once anything is on order), so the unordered 90 sits in the "still to buy"
+// list forever until somebody buys it by mistake.
+//
+// Deliberately NOT the same as editing the qty down. The PR still says 100 was
+// asked for, because that is what happened; it records separately that the rest
+// was abandoned, by whom and why. Rewriting the original request to match what
+// was bought would destroy the audit trail the PR exists to keep.
+
+export async function closePurchaseRequestBalance(
+  id: string,
+  input: ClosePurchaseRequestBalanceInput,
+  user: AuthContext,
+): Promise<PurchaseRequest> {
+  // Same gate as approve / reject (`pr_create` + `approve`): abandoning
+  // quantity that was formally requested is a sign-off decision, not data
+  // entry. An L3 Editor raises PRs; an L4/L5 decides the rest is not coming.
+  await requireFormAccess(user, 'pr_create', 'approve');
+  const companyId = requireCompany(user);
+
+  const trimmedReason = input.reason.trim();
+  if (!trimmedReason) {
+    throw new ValidationError('A reason is required to close the balance');
+  }
+
+  return withUserContext(user, async (tx) => {
+    // Loaded WITHOUT the soft-delete filter on purpose: a deleted PR should be
+    // told apart from one that never existed, so the user gets "it was deleted"
+    // instead of a bare not-found.
+    const existing = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(and(eq(purchaseRequests.id, id), eq(purchaseRequests.companyId, companyId)))
+      .limit(1);
+    const pr = existing[0];
+    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (pr.deletedAt !== null) {
+      throw new ValidationError(`PR ${pr.code} has been deleted; its balance cannot be closed`);
+    }
+    if (pr.status === 'cancelled') {
+      throw new ValidationError(`PR ${pr.code} is cancelled; it has no balance to close`);
+    }
+    if (pr.balanceClosedAt !== null) {
+      throw new ValidationError(`PR ${pr.code} already has its balance closed`);
+    }
+
+    const orderedQty = await loadOrderedQty(tx, pr);
+    const balanceQty = deriveBalanceQty({ qty: pr.qty, orderedQty, balanceClosed: false });
+    // Two different mistakes, two different answers — and neither is "no".
+    //
+    // Nothing bought at all is not a short-close, it is a rejection: there is
+    // no partial order to preserve, so the PR should be killed outright and the
+    // JC op it was raised against released (which Reject does and this does
+    // not). The user is sent to that button by name.
+    if (orderedQty <= 0) {
+      throw new ValidationError(
+        `PR ${pr.code} has nothing on order — use Reject to cancel the whole request, not Close Balance`,
+      );
+    }
+    // Fully ordered (or over-ordered): closing would change nothing.
+    if (balanceQty <= 0) {
+      throw new ValidationError(
+        `PR ${pr.code} has nothing left to order (${orderedQty} of ${pr.qty} already ordered); there is no balance to close`,
+      );
+    }
+
+    const now = new Date();
+    await tx
+      .update(purchaseRequests)
+      .set({
+        balanceClosedAt: now,
+        balanceClosedBy: user.id,
+        balanceClosedReason: trimmedReason,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(purchaseRequests.id, id));
+
+    const reread = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(eq(purchaseRequests.id, id))
+      .limit(1);
+    const row = reread[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'BALANCE_CLOSE',
+        entity: 'PurchaseRequest',
+        detail: `${row.code} balance closed — ${balanceQty} of ${row.qty} abandoned: ${trimmedReason}`,
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    // orderedQty is unchanged by closing — what was bought is still bought.
+    // Only the balance the row reports drops to 0.
+    return toPurchaseRequest(row, orderedQty);
   });
 }
 

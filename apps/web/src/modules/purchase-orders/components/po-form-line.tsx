@@ -42,6 +42,7 @@ import {
   useFieldCascade,
 } from '@/lib/use-field-cascade';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
+import { prOrderBalance } from '@/modules/purchase-requests/lib/pr-balance';
 import { PO_FORM_ITEM_DATALIST_ID, type PoFormLineValue, type PoFormValues } from './po-form-types';
 import {
   PICK_VENDOR_FIRST_PLACEHOLDER,
@@ -200,7 +201,15 @@ export function PoFormLine({
         // hand-written either, so it counts as ours to refresh.
         isEmpty: (v) => typeof v !== 'string' || v.trim() === '' || v === matchedName,
       }),
-      prField(`lines.${idx}.qty`, (p) => p.qty, 0, { keepUserEdits: true }),
+      // The qty STILL TO ORDER, not the PR's original qty (ADR-152). A PR for
+      // 100 that already has a PO for 10 must open this line at 90 — filling
+      // 100 would over-order the request the moment the buyer accepts the
+      // default. On an untouched PR balance === qty, so nothing changes there.
+      // Clamped at 0: an already over-ordered PR reached by URL fills nothing
+      // and the buyer has to type a quantity on purpose.
+      prField(`lines.${idx}.qty`, (p) => Math.max(0, prOrderBalance(p).balance), 0, {
+        keepUserEdits: true,
+      }),
       prField(`lines.${idx}.rate`, (p) => Number(p.estCost ?? 0), 0, { keepUserEdits: true }),
       prField(`lines.${idx}.dueDate`, (p) => p.requiredDate ?? undefined, undefined, {
         keepUserEdits: true,
@@ -256,7 +265,9 @@ export function PoFormLine({
 
   const amount = (Number(line?.qty) || 0) * (Number(line?.rate) || 0);
   // An edit-mode line that already carries a PR shows it as a read-only code:
-  // that PR is `po_created` and so is (rightly) not in the picker's list.
+  // the link is this document's history and swapping it would silently move
+  // quantity between two requests. (Note the reason is NOT "the PR is closed"
+  // any more — since ADR-152 a part-ordered PR is still offered elsewhere.)
   const lockedPrCode = isEdit && line?.sourcePrId ? (line.sourcePrCode ?? '— linked —') : null;
 
   // The PR box is DISABLED until the header names a vendor — the rule is a block,
