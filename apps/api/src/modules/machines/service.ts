@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -62,6 +62,19 @@ function hideMachineMoney(m: Machine): Machine {
   return { ...m, hourRate: null };
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "a_b" — or a bare "%", which listed every machine — gets a
+ *  wildcard pattern instead of a literal search. No ESCAPE clause is needed
+ *  alongside it here: backslash is already Postgres's default LIKE escape
+ *  character (drizzle's `ilike()`, which this list is written with, cannot
+ *  emit one) — verified against the live database.
+ *  Deliberately a local copy of the clients / operators helper rather than an
+ *  export across modules: it is three lines, and each list must be free to
+ *  change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listMachines(
   input: ListMachinesQuery,
   user: AuthContext,
@@ -71,9 +84,36 @@ export async function listMachines(
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(machines.companyId, companyId), isNull(machines.deletedAt)];
     if (input.search) {
+      // Search covers every column the Machine Master table actually shows —
+      // Machine ID, Name, Type, Group and the Status badge (the column defs in
+      // apps/web/src/modules/machines/routes/list.tsx).
+      // Deliberately NOT searched:
+      //  - Cap/Shift: a number, so "2" would hit nearly every machine;
+      //  - ₹/hr: money. The column is hidden from anyone without "Can See
+      //    Price" (canSeeFormPrice above nulls hourRate), and a searchable rate
+      //    would let exactly those users confirm a machine's rate by guessing
+      //    it — the column they are not allowed to read;
+      //  - product code and shifts/day: on the machine FORM, not on this list.
+      const term = `%${escapeLikeTerm(input.search)}%`;
       const s = or(
-        ilike(machines.code, `%${input.search}%`),
-        ilike(machines.name, `%${input.search}%`),
+        ilike(machines.code, term),
+        ilike(machines.name, term),
+        ilike(machines.machineType, term),
+        // Status is a real four-value badge (Idle / Running / Down /
+        // Maintenance), not an Active/Inactive boolean, so matching it cannot
+        // collapse into "every row".
+        ilike(machines.status, term),
+        // The Group column prints the machine group's code, which lives on the
+        // group master. One EXISTS on the machine's own FK keeps this valid in
+        // the count query below too — both run over the machines table alone.
+        sql`EXISTS (
+          SELECT 1
+          FROM public.machine_groups mg
+          WHERE mg.id = ${machines.machineGroupId}
+            AND mg.company_id = ${machines.companyId}
+            AND mg.deleted_at IS NULL
+            AND mg.code ILIKE ${term}
+        )`,
       );
       if (s) conditions.push(s);
     }

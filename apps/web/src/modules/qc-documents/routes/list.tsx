@@ -22,6 +22,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
@@ -1193,10 +1194,12 @@ function RegisterView(): React.JSX.Element {
           <input
             className="innovic-input"
             style={{ width: 240, fontSize: 12 }}
-            placeholder="🔍 Search file, type, JC/SO…"
+            placeholder="🔍 Search this register…"
             defaultValue={search.search ?? ''}
             onChange={(e) => {
-              const v = e.target.value.trim();
+              // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+              // "  MTC  01 " and "MTC 01" are one query, one cache entry, one URL.
+              const v = normalizeSearchTerm(e.target.value);
               void navigate({
                 search: (prev) => ({ ...prev, search: v || undefined }),
                 replace: true,

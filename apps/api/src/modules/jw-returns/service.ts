@@ -7,10 +7,11 @@
 // job_work_order_lines.returned_qty and flips the JWSO to 'dispatched' once
 // every line is fully returned.
 
-import { and, desc, eq, isNull, like, sql } from 'drizzle-orm';
+import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
 import type {
   CreateJwReturnChallanInput,
   JwReturnChallan,
+  ListJwReturnChallansQuery,
   ListJwReturnChallansResponse,
 } from '@innovic/shared';
 import {
@@ -595,30 +596,90 @@ export async function cancelJwReturnChallan(
   });
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the JW Dispatch search box gets a wildcard pattern instead of a
+ *  literal search — i.e. the search box becomes a "show everything" button.
+ *  Postgres's DEFAULT LIKE/ILIKE escape character is backslash, so no explicit
+ *  ESCAPE clause is needed here (and drizzle's `ilike()` builder, which this
+ *  list is written with, cannot emit one) — verified against the live database.
+ *  Deliberately a local copy of the clients / sales-orders helper rather than an
+ *  export across modules: it is three lines, and each list must be free to
+ *  change its own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listJwReturnChallans(
+  input: ListJwReturnChallansQuery,
   user: AuthContext,
 ): Promise<ListJwReturnChallansResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        ret: jwReturnChallans,
-        clientName: clients.name,
-        partName: jobWorkOrderLines.partName,
-      })
-      .from(jwReturnChallans)
-      .leftJoin(clients, eq(clients.id, jwReturnChallans.clientId))
-      .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwReturnChallans.jobWorkOrderLineId))
-      .where(and(eq(jwReturnChallans.companyId, companyId), isNull(jwReturnChallans.deletedAt)))
-      .orderBy(desc(jwReturnChallans.returnDate), desc(jwReturnChallans.code))
-      .limit(500);
+    const conditions: SQL[] = [
+      eq(jwReturnChallans.companyId, companyId),
+      isNull(jwReturnChallans.deletedAt),
+    ];
+    if (input.search) {
+      // Search covers every column the JW Dispatch register
+      // (apps/web/src/modules/jw-returns/components/jw-dispatch-view.tsx) shows:
+      // Return No., Date, JWSO, Client, Part, Transport, Vehicle and the
+      // issued/cancelled Status badge.
+      // Deliberately NOT searched:
+      //  - Qty — a number, so "5" would hit nearly every challan.
+      //  - money: this register prints none (the labour value lives on the JW
+      //    invoice, which gates amounts behind `priceVisible`); a searchable
+      //    amount would let a user without price rights confirm a value by
+      //    typing it.
+      const term = `%${escapeLikeTerm(input.search)}%`;
+      const s = or(
+        ilike(jwReturnChallans.code, term),
+        // `return_date` is a DATE column; cast so ILIKE has text to match, and
+        // so the pattern matches exactly the YYYY-MM-DD the screen prints.
+        sql`${jwReturnChallans.returnDate}::text ILIKE ${term}`,
+        ilike(jwReturnChallans.jwCodeText, term),
+        ilike(clients.name, term),
+        ilike(jobWorkOrderLines.partName, term),
+        ilike(jwReturnChallans.transport, term),
+        ilike(jwReturnChallans.vehicleNo, term),
+        // Status is a plain text column ('issued' | 'cancelled') — the badge
+        // text, so typing "cancelled" filters to the cancelled challans.
+        ilike(jwReturnChallans.status, term),
+      );
+      if (s) conditions.push(s);
+    }
+    const where = and(...conditions);
+
+    // ONE predicate, used by both the page query and the count — a total that
+    // ignored the search would break the pager the moment anyone typed.
+    const [rows, totals] = await Promise.all([
+      tx
+        .select({
+          ret: jwReturnChallans,
+          clientName: clients.name,
+          partName: jobWorkOrderLines.partName,
+        })
+        .from(jwReturnChallans)
+        .leftJoin(clients, eq(clients.id, jwReturnChallans.clientId))
+        .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwReturnChallans.jobWorkOrderLineId))
+        .where(where)
+        .orderBy(desc(jwReturnChallans.returnDate), desc(jwReturnChallans.code))
+        .limit(input.limit)
+        .offset(input.offset),
+      tx
+        .select({ value: count() })
+        .from(jwReturnChallans)
+        .leftJoin(clients, eq(clients.id, jwReturnChallans.clientId))
+        .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwReturnChallans.jobWorkOrderLineId))
+        .where(where),
+    ]);
+
     return {
       items: rows.map((r) => ({
         ...rowToReturn(r.ret),
         clientName: r.clientName ?? null,
         partName: r.partName ?? null,
       })),
-      total: rows.length,
+      total: totals[0]?.value ?? 0,
     };
   });
 }

@@ -6,7 +6,7 @@
 // cancelled). Only the basic field updates land here in T-036a; the approve
 // + create-PO actions ship in T-036b alongside the PO module.
 
-import { and, count, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import {
@@ -384,31 +384,50 @@ export async function listPurchaseRequests(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    // Total — same fast count pattern as sales-orders.
-    const conditions = [
-      eq(purchaseRequests.companyId, companyId),
-      isNull(purchaseRequests.deletedAt),
-    ];
-    if (input.status) conditions.push(eq(purchaseRequests.status, input.status));
-    if (input.prType) conditions.push(eq(purchaseRequests.prType, input.prType));
-    // Same FK-or-text rule as the page query above — otherwise the total would
-    // say 0 while the page showed rows.
-    if (input.vendorId) {
-      conditions.push(
-        vendorCode
-          ? or(
-              eq(purchaseRequests.vendorId, input.vendorId),
-              sql`upper(btrim(${purchaseRequests.vendorCodeText})) = ${vendorCode}`,
-            )!
-          : eq(purchaseRequests.vendorId, input.vendorId),
-      );
-    }
-    if (input.sourceJcOpId) conditions.push(eq(purchaseRequests.sourceJcOpId, input.sourceJcOpId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(purchaseRequests)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // Total = exactly the rows the query above returns without its LIMIT: same
+    // FROM, same joins, the SAME fragment objects — including the FK-or-text
+    // vendor rule, which is now shared rather than restated. It used to be a
+    // Drizzle count() that skipped the search and the dates, so the header
+    // counted every PR in the company while the list showed the one that
+    // matched. A Drizzle count on purchase_requests alone cannot express the
+    // search (it reads the item, both vendor joins and the SO / JC / PO codes),
+    // so the count is raw SQL too and the predicate stays defined once.
+    // NOTE: the old count also applied `input.prType`, which the page query
+    // above has never applied. Counting a filter the rows ignore is what made
+    // the two disagree, so the count now mirrors the rows exactly. That the
+    // page query ignores prType at all is a separate, pre-existing bug (it
+    // also never SELECTs pr_type) — reported, not fixed here.
+    const totalRows = await tx.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM public.purchase_requests pr
+      LEFT JOIN public.vendors v
+        ON v.id = pr.vendor_id AND v.deleted_at IS NULL
+      LEFT JOIN public.vendors vt
+        ON vt.code = pr.vendor_code_text AND vt.company_id = pr.company_id AND vt.deleted_at IS NULL
+      LEFT JOIN public.items i
+        ON i.id = pr.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.jc_ops jo
+        ON jo.id = pr.source_jc_op_id AND jo.deleted_at IS NULL
+      LEFT JOIN public.job_cards jc
+        ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.purchase_orders po
+        ON po.id = pr.po_id AND po.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = pr.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      WHERE pr.company_id = ${companyId}::uuid
+        AND pr.deleted_at IS NULL
+        ${searchFrag}
+        ${statusFrag}
+        ${vendorFrag}
+        ${jcOpFrag}
+        ${fromFrag}
+        ${toFrag}
+    `);
+    const total = Number(
+      (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
+    );
 
     const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     const rowsList = showMoney ? mapped : mapped.map(hidePrMoney);

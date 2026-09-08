@@ -37,6 +37,7 @@ import {
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -153,7 +154,9 @@ function MachinesTab(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  VMC  01 " and "VMC 01" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -256,16 +259,14 @@ function MachinesTab(): React.JSX.Element {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Legacy placeholder is "🔍 Search machine, type…" (L13103) because
-              legacy searchFilter (L1513-1520) text-matches the whole rendered
-              row, type column included. Our GET /machines only ILIKEs code +
-              name (machines/service.ts L38-44), so the legacy wording would
-              advertise a search this page cannot do — trimmed per the Vendors
-              precedent (ISSUE-018). */}
+          {/* Placeholder and tooltip stay generic on purpose: naming columns
+              here is what dated the old wording (it promised code + name only),
+              and GET /machines now matches across the columns the table shows.
+              A generic label cannot go stale the next time that list widens. */}
           <input
             className="innovic-input"
             placeholder="🔍 Search machine…"
-            title="Search by machine ID or name"
+            title="Search this list"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ minWidth: 220, fontSize: 13 }}

@@ -11,7 +11,7 @@
 // is omitted, only the header is updated; existing lines untouched. This
 // avoids the footgun where a header-only PATCH would wipe lines.
 
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   assemblyUnits,
   bomMasters,
@@ -347,6 +347,15 @@ export async function listSalesOrders(
           OR so.client_po_no ILIKE ${term} ESCAPE '\\'
           OR so.remarks ILIKE ${term} ESCAPE '\\'
           OR so.type::text ILIKE ${term} ESCAPE '\\'
+          -- The type badge is printed with its underscores swapped for spaces
+          -- (list.tsx: so.type.replaceAll('_',' ')), so a user typing what they
+          -- can see — "component manufacturing" — matched nothing. Match the
+          -- displayed form as well as the stored one. Only the type needs this:
+          -- so.status (draft/open/closed/dispatched/cancelled) and the line
+          -- status use the same enum, have no underscores and are rendered raw,
+          -- and bom_status is free text ("BOM Pending") that is also rendered
+          -- as stored.
+          OR replace(so.type::text, '_', ' ') ILIKE ${term} ESCAPE '\\'
           OR so.status::text ILIKE ${term} ESCAPE '\\'
           OR so.bom_status ILIKE ${term} ESCAPE '\\'
           OR so.so_date::text ILIKE ${term} ESCAPE '\\'
@@ -446,19 +455,32 @@ export async function listSalesOrders(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    // Total count uses Drizzle ORM with the same filter set.
-    const conditions = [eq(salesOrders.companyId, companyId), isNull(salesOrders.deletedAt)];
-    if (input.status) conditions.push(eq(salesOrders.status, input.status));
-    if (input.type) conditions.push(eq(salesOrders.type, input.type));
-    if (input.clientId) conditions.push(eq(salesOrders.clientId, input.clientId));
-    // search/dates omitted from the count for performance; total is approximate
-    // when search is active (acceptable — UI shows "X+ results"). Tighten later
-    // if needed.
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(salesOrders)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // Total = exactly the rows the query above returns without its LIMIT: same
+    // FROM, same joins, the SAME fragment objects. It used to be a Drizzle
+    // count() that skipped the search and the dates, so the header said
+    // "13 results" over a single searched row. It cannot be a Drizzle count on
+    // sales_orders alone, because the search fragment reaches the users join
+    // (cu.full_name) and the lines via EXISTS — so the count is raw SQL too,
+    // and the predicate stays defined once and used twice.
+    // The joins the page query has and this one drops (line_agg, jc_agg and
+    // the cpo_file LATERAL) are all one-row-per-SO, so they cannot change the
+    // count. Costs ~5ms more than the old count on live data.
+    const totalRows = await tx.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM public.sales_orders so
+      LEFT JOIN public.users cu ON cu.id = so.created_by
+      WHERE so.company_id = ${companyId}::uuid
+        AND so.deleted_at IS NULL
+        ${searchFrag}
+        ${statusFrag}
+        ${typeFrag}
+        ${clientFrag}
+        ${fromFrag}
+        ${toFrag}
+    `);
+    const total = Number(
+      (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
+    );
 
     const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     const items = showMoney ? mapped : mapped.map(hideSoHeaderMoney);

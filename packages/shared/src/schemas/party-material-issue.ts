@@ -63,3 +63,23 @@ export const listPartyMaterialIssuesResponseSchema = z.object({
 export type ListPartyMaterialIssuesResponse = z.infer<
   typeof listPartyMaterialIssuesResponseSchema
 >;
+
+/** List filters for the Party Material Issue register.
+ *
+ *  These lists had NO query schema at all: the endpoint took no parameters,
+ *  returned a hard-capped page and the screen filtered the rows it had been
+ *  given in the browser. That works only while a company stays under the cap —
+ *  past it, rows the server never sent are invisible to the list AND to its
+ *  search, and the search box quietly lies. Moving the match to the server is
+ *  what makes the cap safe.
+ *
+ *  `search` is a single case-insensitive substring, matched across every column
+ *  the register displays (see the service). `limit`/`offset` replace the old
+ *  fixed cap so the page size is the caller's decision, not a constant buried
+ *  in a query. */
+export const listPartyMaterialIssuesQuerySchema = z.object({
+  search: z.string().min(1).max(100).optional(),
+  limit: z.coerce.number().int().positive().max(500).default(200),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+export type ListPartyMaterialIssuesQuery = z.infer<typeof listPartyMaterialIssuesQuerySchema>;

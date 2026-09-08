@@ -1,5 +1,6 @@
 import type {
   CreatePartyMaterialIssueInput,
+  ListPartyMaterialIssuesQuery,
   ListPartyMaterialIssuesResponse,
   PartyMaterialIssue,
 } from '@innovic/shared';
@@ -8,13 +9,31 @@ import { apiFetch } from '@/lib/api';
 
 export const partyMaterialIssuesKeys = {
   all: ['party-material-issues'] as const,
-  list: () => [...partyMaterialIssuesKeys.all, 'list'] as const,
+  lists: () => [...partyMaterialIssuesKeys.all, 'list'] as const,
+  // The query is part of the key, so a new search term is a new cache entry
+  // and a new fetch — the whole point of moving the match to the server.
+  list: (q: ListPartyMaterialIssuesQuery) =>
+    [...partyMaterialIssuesKeys.lists(), q] as const,
 };
 
-export function usePartyMaterialIssuesList() {
+/** The register's filters, as a query string. `search` is dropped when empty so
+ *  an untouched box is not sent as `search=` — the server treats "absent" and
+ *  "empty" alike, but leaving it out keeps the URL and the cache key clean. */
+function toQueryString(q: ListPartyMaterialIssuesQuery): string {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  params.set('limit', String(q.limit));
+  params.set('offset', String(q.offset));
+  return params.toString();
+}
+
+export function usePartyMaterialIssuesList(query: ListPartyMaterialIssuesQuery) {
   return useQuery<ListPartyMaterialIssuesResponse>({
-    queryKey: partyMaterialIssuesKeys.list(),
-    queryFn: () => apiFetch<ListPartyMaterialIssuesResponse>('/party-material-issues'),
+    queryKey: partyMaterialIssuesKeys.list(query),
+    queryFn: () =>
+      apiFetch<ListPartyMaterialIssuesResponse>(
+        `/party-material-issues?${toQueryString(query)}`,
+      ),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

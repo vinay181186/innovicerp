@@ -5,9 +5,10 @@
 // issued_qty↑) — never writes own-stock store_transactions. Guard: cannot issue
 // more than the received party stock on hand.
 
-import { and, desc, eq, isNull, like, sql } from 'drizzle-orm';
+import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
 import type {
   CreatePartyMaterialIssueInput,
+  ListPartyMaterialIssuesQuery,
   ListPartyMaterialIssuesResponse,
   PartyMaterialIssue,
 } from '@innovic/shared';
@@ -427,29 +428,80 @@ export async function cancelPartyMaterialIssue(
   });
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the Party Material Issue search box gets a wildcard pattern
+ *  instead of a literal search — i.e. the search box becomes a "show everything"
+ *  button. Postgres's DEFAULT LIKE/ILIKE escape character is backslash, so no
+ *  explicit ESCAPE clause is needed here (and drizzle's `ilike()` builder, which
+ *  this list is written with, cannot emit one) — verified against the live
+ *  database.
+ *  Deliberately a local copy of the clients / sales-orders helper rather than an
+ *  export across modules: it is three lines, and each list must be free to
+ *  change its own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listPartyMaterialIssues(
+  input: ListPartyMaterialIssuesQuery,
   user: AuthContext,
 ): Promise<ListPartyMaterialIssuesResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        issue: partyMaterialIssues,
-        materialStockQty: partyMaterials.stockQty,
-      })
-      .from(partyMaterialIssues)
-      .leftJoin(partyMaterials, eq(partyMaterials.id, partyMaterialIssues.partyMaterialId))
-      .where(
-        and(eq(partyMaterialIssues.companyId, companyId), isNull(partyMaterialIssues.deletedAt)),
-      )
-      .orderBy(desc(partyMaterialIssues.issueDate), desc(partyMaterialIssues.code))
-      .limit(500);
+    const conditions: SQL[] = [
+      eq(partyMaterialIssues.companyId, companyId),
+      isNull(partyMaterialIssues.deletedAt),
+    ];
+    if (input.search) {
+      // Search covers every column the Party Material Issue register
+      // (apps/web/src/modules/party-material-issues/components/
+      // party-material-issue-view.tsx) shows: Issue No., Date, JWSO, Job Card,
+      // the Material cell (code — name, both halves) and Remarks.
+      // Deliberately NOT searched:
+      //  - Qty, and the live party stock qty — numbers, so "5" would hit nearly
+      //    every issue.
+      //  - money: this register prints none, and party material is the
+      //    client's, so it carries no rate here; a searchable amount would let
+      //    a user without price rights confirm a value by typing it.
+      const term = `%${escapeLikeTerm(input.search)}%`;
+      const s = or(
+        ilike(partyMaterialIssues.code, term),
+        // `issue_date` is a DATE column; cast so ILIKE has text to match, and
+        // so the pattern matches exactly the YYYY-MM-DD the screen prints.
+        sql`${partyMaterialIssues.issueDate}::text ILIKE ${term}`,
+        ilike(partyMaterialIssues.jwCodeText, term),
+        ilike(partyMaterialIssues.jcCodeText, term),
+        ilike(partyMaterialIssues.partyMaterialCodeText, term),
+        ilike(partyMaterialIssues.partyMaterialName, term),
+        ilike(partyMaterialIssues.remarks, term),
+      );
+      if (s) conditions.push(s);
+    }
+    const where = and(...conditions);
+
+    // ONE predicate, used by both the page query and the count — a total that
+    // ignored the search would break the pager the moment anyone typed.
+    const [rows, totals] = await Promise.all([
+      tx
+        .select({
+          issue: partyMaterialIssues,
+          materialStockQty: partyMaterials.stockQty,
+        })
+        .from(partyMaterialIssues)
+        .leftJoin(partyMaterials, eq(partyMaterials.id, partyMaterialIssues.partyMaterialId))
+        .where(where)
+        .orderBy(desc(partyMaterialIssues.issueDate), desc(partyMaterialIssues.code))
+        .limit(input.limit)
+        .offset(input.offset),
+      tx.select({ value: count() }).from(partyMaterialIssues).where(where),
+    ]);
+
     return {
       items: rows.map((r) => ({
         ...rowToIssue(r.issue),
         materialStockQty: r.materialStockQty ?? null,
       })),
-      total: rows.length,
+      total: totals[0]?.value ?? 0,
     };
   });
 }

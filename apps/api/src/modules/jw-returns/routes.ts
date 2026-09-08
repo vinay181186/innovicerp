@@ -1,4 +1,7 @@
-import { createJwReturnChallanInputSchema } from '@innovic/shared';
+import {
+  createJwReturnChallanInputSchema,
+  listJwReturnChallansQuerySchema,
+} from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
@@ -6,7 +9,8 @@ import * as service from './service';
 export async function jwReturnsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/jw-returns', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listJwReturnChallans(req.user);
+    const query = listJwReturnChallansQuerySchema.parse(req.query);
+    return service.listJwReturnChallans(query, req.user);
   });
 
   app.post('/jw-returns', async (req, reply) => {
