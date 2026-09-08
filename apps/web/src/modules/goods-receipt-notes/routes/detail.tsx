@@ -8,7 +8,10 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useSession } from '@/lib/session';
 import { useMyCompany } from '@/modules/settings/api';
+import { usePrintTemplates } from '@/modules/print-templates/api';
+import { useVendor } from '@/modules/vendors/api';
 import { useGoodsReceiptNote, useSoftDeleteGoodsReceiptNote } from '../api';
 import { QcStatusBadge } from '../components/qc-status-badge';
 import { printGrn } from '../lib/print-grn';
@@ -29,6 +32,12 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'grn_create');
   const softDelete = useSoftDeleteGoodsReceiptNote();
   const { data: company } = useMyCompany();
+  const { data: me } = useSession();
+  // Vendor row + the effective GRN print blocks, so the printed sheet can fill
+  // {vendorAddress}/{vendorGSTIN}/{vendorContact} and render whatever an admin
+  // wrote in Settings → Print Templates. Same wiring the OSP DC detail uses.
+  const { data: vendor } = useVendor(detail?.vendorId ?? undefined);
+  const { data: templates } = usePrintTemplates();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -78,7 +87,13 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // Print follows the page's existing VIEW permission — if you can read the
   // GRN you may put it on paper. No new gate is introduced.
   const onPrint = (): void => {
-    const ok = printGrn({ grn: detail, company });
+    const ok = printGrn({
+      grn: detail,
+      vendor,
+      company,
+      templates: templates?.items ?? [],
+      currentUser: me?.email,
+    });
     if (!ok) window.alert('Allow popups to print.');
   };
 

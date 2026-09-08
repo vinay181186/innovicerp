@@ -140,6 +140,11 @@ const DOC_TITLE: Record<PrintDocType, string> = {
   'SERVICE PO': 'SERVICE PURCHASE ORDER',
   'OSP DC': 'OSP DELIVERY CHALLAN',
   'JW DC': 'JOB WORK DELIVERY CHALLAN',
+  // The GRN has TEMPLATE blocks like the other four, but it does NOT render
+  // through this builder -- it is an inward document with its own layout in
+  // modules/goods-receipt-notes/lib/print-grn.ts. The entry exists because the
+  // map is exhaustive over PrintDocType, and it is the title that builder uses.
+  GRN: 'GOODS RECEIPT NOTE',
 };
 
 const DOC_STYLE = `

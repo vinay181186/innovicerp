@@ -20,7 +20,7 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates, useRestorePrintTemplateDefault, useSavePrintTemplate } from '../api';
 import { RevisionsModal } from '../components/revisions-modal';
-import { openTestPrint, sampleDataFor } from '../lib/test-print';
+import { GRN_SAMPLE_LINES, openTestPrint, sampleDataFor } from '../lib/test-print';
 
 export const printTemplatesRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -33,12 +33,17 @@ const DOC_COLOR: Record<PrintDocType, string> = {
   'SERVICE PO': '#0e7490',
   'OSP DC': '#7c3aed',
   'JW DC': '#c47a00',
+  // The GRN is the one INWARD document here — green, the app's "accepted /
+  // received" tone. Taken from the theme token so it tracks the palette; the
+  // four literals above predate the tokens and are left as they are.
+  GRN: 'var(--green)',
 };
 const DOC_LABEL: Record<PrintDocType, string> = {
   PO: 'Purchase Order',
   'SERVICE PO': 'Service Purchase Order',
   'OSP DC': 'OSP Delivery Challan',
   'JW DC': 'Job Work DC',
+  GRN: 'Goods Receipt Note',
 };
 // Title printed on the document itself (legacy titleText L14708). Distinct from
 // the selector button label — legacy's "Job Work DC" button prints as
@@ -48,6 +53,7 @@ const DOC_TITLE: Record<PrintDocType, string> = {
   'SERVICE PO': 'SERVICE PURCHASE ORDER',
   'OSP DC': 'OSP DELIVERY CHALLAN',
   'JW DC': 'JOB WORK DELIVERY CHALLAN',
+  GRN: 'GOODS RECEIPT NOTE',
 };
 
 function lastEditLabel(t: EffectivePrintTemplate): string {
@@ -82,6 +88,11 @@ function PrintTemplatesPage(): React.JSX.Element {
   // two DC docs print a qty-only table. Mirrors `isPo` in @/lib/print/doc-print,
   // so the mock previews what actually prints.
   const isPo = doc === 'PO' || doc === 'SERVICE PO';
+  // The GRN is a THIRD shape, not a variant of either: it is an inward receipt,
+  // so it prints received / accepted / rejected quantities and NO money at all.
+  // Mirrors modules/goods-receipt-notes/lib/print-grn.ts, which is the builder
+  // that actually puts a GRN on paper.
+  const isGrn = doc === 'GRN';
   const blockOf = (b: string): EffectivePrintTemplate | undefined =>
     docTemplates.find((t) => t.block === b);
 
@@ -483,7 +494,32 @@ function PrintTemplatesPage(): React.JSX.Element {
               </div>
 
               {/* Meta info row (sample) */}
-              {isPo ? (
+              {isGrn ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    borderBottom: '1px solid #999',
+                  }}
+                >
+                  <div
+                    style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}
+                  >
+                    <b>GRN No.:</b> {sample.grnNo}
+                    <br />
+                    <b>GRN Date:</b> {sample.grnDate}
+                    <br />
+                    <b>Vendor:</b> {sample.vendorName}
+                  </div>
+                  <div style={{ padding: '10px 14px', fontSize: 11 }}>
+                    <b>PO No.:</b> {sample.poNo}
+                    <br />
+                    <b>Vendor DC No.:</b> {sample.dcNo}
+                    <br />
+                    <b>Invoice No.:</b> {sample.invoiceNo}
+                  </div>
+                </div>
+              ) : isPo ? (
                 <div
                   style={{
                     display: 'grid',
@@ -550,6 +586,182 @@ function PrintTemplatesPage(): React.JSX.Element {
                 >
                   SYSTEM-GENERATED — LINE ITEMS TABLE
                 </div>
+                {isGrn ? (
+                  // Received / accepted / rejected — no Rate, no Amount, no
+                  // money. Same seven columns, same order, same two sample
+                  // lines the GRN test print puts on paper.
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9' }}>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            width: 44,
+                          }}
+                        >
+                          Sr No.
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'left',
+                            width: 110,
+                          }}
+                        >
+                          Item Code
+                        </th>
+                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>
+                          Item Name
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            width: 78,
+                          }}
+                        >
+                          Received Qty
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            width: 78,
+                          }}
+                        >
+                          QC Accepted
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            width: 78,
+                          }}
+                        >
+                          QC Rejected
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'left',
+                            width: 90,
+                          }}
+                        >
+                          QC Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {GRN_SAMPLE_LINES.map((l, i) => (
+                        <tr key={l.itemCode}>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                            }}
+                          >
+                            {i + 1}
+                          </td>
+                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                            {l.itemCode}
+                          </td>
+                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                            {l.itemName}
+                          </td>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {l.receivedQty}
+                          </td>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              color: '#16a34a',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {l.qcAcceptedQty}
+                          </td>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              color: '#d97706',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {l.qcRejectedQty}
+                          </td>
+                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                            {l.qcStatus.replaceAll('_', ' ')}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: '#f8fafc' }}>
+                        <td
+                          colSpan={3}
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                          }}
+                        >
+                          TOTAL
+                        </td>
+                        <td
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {sample.totalReceived}
+                        </td>
+                        <td
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                            color: '#16a34a',
+                          }}
+                        >
+                          {sample.totalAccepted}
+                        </td>
+                        <td
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                            color: '#d97706',
+                          }}
+                        >
+                          {sample.totalRejected}
+                        </td>
+                        <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
+                      </tr>
+                    </tbody>
+                  </table>
+                ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                   <thead>
                     <tr style={{ background: '#f1f5f9' }}>
@@ -663,6 +875,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                     )}
                   </tbody>
                 </table>
+                )}
               </div>
 
               {/* PO-only: Amount in words */}
