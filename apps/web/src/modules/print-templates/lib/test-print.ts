@@ -5,7 +5,7 @@
 // live PO/DC data — this file only supplies the sample model.
 
 import { type Company, type EffectivePrintTemplate, type PrintDocType } from '@innovic/shared';
-import { format } from 'date-fns';
+import { addDays, format } from 'date-fns';
 import {
   type GrnPrintLine,
   type GrnPrintModel,
@@ -20,6 +20,8 @@ import {
 } from '@/lib/print/challan-print';
 import {
   type DocLine,
+  type DocMetaCell,
+  type DocPartyBlock,
   type DocPrintModel,
   amountInWords,
   inrFormat,
@@ -111,11 +113,78 @@ export function sampleDataFor(doc: PrintDocType): Record<string, string> {
   };
 }
 
+// The Purchase Order's two sample lines. Exported so the editor's on-screen
+// preview and the PO Test Print show the SAME material. The first line carries
+// remarks, which the approved format prints as "Description: …" under the item
+// name; the second has none, which is what a normal row looks like.
+export const PO_SAMPLE_LINES: DocLine[] = [
+  {
+    itemCode: 'STL-PL-6',
+    itemName: 'Steel Plate 6mm',
+    qty: '100',
+    uom: 'NOS',
+    rate: inrFormat(500),
+    amount: inrFormat(50000),
+    description: 'As per drawing rev. 3. Material MS EN8, black oxide finish.',
+  },
+  {
+    itemCode: 'BRG-6203',
+    itemName: 'Bearings 6203',
+    qty: '100',
+    uom: 'NOS',
+    rate: inrFormat(500),
+    amount: inrFormat(50000),
+  },
+];
+
+// The PO's sample document row — the five cells under the title bar. A function,
+// not a constant, because two of the dates are "today". Exported so the editor
+// preview and the Test Print cannot drift apart.
+export function poSampleDocRow(): DocMetaCell[] {
+  const today = format(new Date(), 'dd-MM-yyyy');
+  return [
+    { label: 'PO No.', value: 'IN-PO-99999' },
+    { label: 'PO Date', value: today },
+    { label: 'Due Date', value: format(addDays(new Date(), 15), 'dd-MM-yyyy') },
+    { label: 'PR Ref.', value: 'IN-PR-99999' },
+    // Contact Person is the person who RAISED the PO, and a name is not a code
+    // — it prints in the ordinary face, not the monospace one.
+    { label: 'Contact Person', value: 'Admin User', mono: false },
+  ];
+}
+
+// The PO's two sample party boxes: who we are buying from, and where the goods
+// are to be delivered (our own works).
+export const PO_SAMPLE_PARTIES: [DocPartyBlock, DocPartyBlock] = [
+  {
+    label: 'Vendor / Supplier',
+    name: 'Sample Vendor Pvt Ltd',
+    rows: [
+      { label: 'Vendor Code', value: 'VND-999', mono: true },
+      { label: 'Address', value: 'Industrial Area, Phase 2, Vadodara, Gujarat - 390010' },
+      { label: 'GSTIN', value: '24AAACS1234D1Z5', mono: true },
+      { label: 'Vendor Phone', value: '+91 90000 00000', mono: true },
+      { label: 'Vendor E-mail', value: 'sales@samplevendor.example' },
+    ],
+  },
+  {
+    label: 'Ship To',
+    name: 'Innovic Technology',
+    rows: [
+      { label: 'Address', value: 'V.U. Nagar, Anand, Gujarat, India' },
+      { label: 'GSTIN', value: '24AQKPM4121A1Z5', mono: true },
+      { label: 'Phone', value: '+91 98XXX XXXXX', mono: true },
+      { label: 'E-mail', value: 'innovic.technology@gmail.com' },
+    ],
+  },
+];
+
 function sampleLines(doc: PrintDocType): DocLine[] {
   // Both purchase documents print the PRICED goods table (doc-print's `isPo`),
   // so both need sample Rate/Amount. Service PO used to fall through to the
   // qty-only DC lines and printed a Rate and Amount column with empty cells.
-  if (doc === 'PO' || doc === 'SERVICE PO') {
+  if (doc === 'PO') return PO_SAMPLE_LINES;
+  if (doc === 'SERVICE PO') {
     return [
       {
         itemCode: 'STL-PL-6',
@@ -295,6 +364,10 @@ export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTempla
   // document, not a challan.
   const isPo = doc === 'PO' || doc === 'SERVICE PO';
   const isSpo = doc === 'SERVICE PO';
+  // Only the Purchase Order prints the approved format. The Service PO and the
+  // two challans keep the layout they have always test-printed.
+  const isPoV10 = doc === 'PO';
+
 
   const model: DocPrintModel = {
     doc,
@@ -317,7 +390,10 @@ export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTempla
           name: 'Sample Process House',
           lines: ['GIDC, Vadodara, Gujarat'],
         },
-    meta: isSpo
+    ...(isPoV10 ? { docLayout: 'v10' as const, parties: PO_SAMPLE_PARTIES } : {}),
+    meta: isPoV10
+      ? poSampleDocRow()
+      : isSpo
       ? [
           { label: 'SPO No.', value: 'IN-SPO-99999' },
           { label: 'Date', value: today },

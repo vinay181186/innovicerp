@@ -513,11 +513,13 @@ export async function listPurchaseOrders(
         po.updated_at AS "updatedAt", po.updated_by AS "updatedBy",
         po.deleted_at AS "deletedAt",
         v.name AS "vendorName",
+        cu.full_name AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int   AS "totalQty",
         COALESCE(line_agg.received_qty, 0)::int AS "receivedQty"
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
+      LEFT JOIN public.users cu ON cu.id = po.created_by
       LEFT JOIN (
         SELECT purchase_order_id,
                COUNT(*) AS line_count,
@@ -599,6 +601,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),
