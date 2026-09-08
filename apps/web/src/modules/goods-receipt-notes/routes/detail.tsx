@@ -37,7 +37,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // {vendorAddress}/{vendorGSTIN}/{vendorContact} and render whatever an admin
   // wrote in Settings → Print Templates. Same wiring the OSP DC detail uses.
   const { data: vendor } = useVendor(detail?.vendorId ?? undefined);
-  const { data: templates } = usePrintTemplates();
+  const { data: templates, isLoading: templatesLoading } = usePrintTemplates();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -137,7 +137,17 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               }}
               suggestedTitle={`Follow up on GRN ${detail.code}`}
             />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
+            {/* Disabled until the blocks land. Printing early is worse than
+                waiting: the sheet comes out looking complete but carries none
+                of the header note, terms, footer or signature an admin wrote,
+                and nothing on it says so. */}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onPrint}
+              disabled={templatesLoading}
+              title={templatesLoading ? 'Loading print templates\u2026' : 'Print this GRN'}
+            >
               <Printer size={13} /> Print
             </button>
             {detail.purchaseOrderId ? (
