@@ -22,6 +22,19 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "a_b" — or a bare "%", which listed every inspector — gets a
+ *  wildcard pattern instead of a literal search. No ESCAPE clause is needed
+ *  alongside it: backslash is already Postgres's default LIKE escape character
+ *  (drizzle's `ilike()`, which this list is written with, cannot emit one) —
+ *  verified against the live database.
+ *  Deliberately a local copy of the clients / operators helper rather than an
+ *  export across modules: it is three lines, and each list must be free to
+ *  change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 // Named column list rather than a bare select(): house rule 6 forbids SELECT *,
 // and spelling the columns out means a column added to tpi_masters later cannot
 // silently start travelling to the browser.
@@ -49,11 +62,26 @@ export async function listTpiMasters(
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(tpiMasters.companyId, companyId), isNull(tpiMasters.deletedAt)];
     if (input.search) {
-      // Both halves of the picker label are searchable: users look an inspector
-      // up by person ("Sharma") as often as by the firm they inspect for.
+      // Search covers every column the TPI Master table actually shows —
+      // Inspector Name (`code`), Organization, Contact No. and Email (the
+      // column defs in apps/web/src/modules/tpi-masters/routes/list.tsx).
+      // Both halves of the picker label stay searchable: users look an
+      // inspector up by person ("Sharma") as often as by the firm they inspect
+      // for.
+      // Deliberately NOT searched:
+      //  - remarks: held on the inspector, but not on this screen;
+      //  - Status — it is a boolean rendered as an "Active"/"Inactive" badge,
+      //    and a substring match on "active" also matches "inactive", so it
+      //    would return every row. The list already has an Active/Inactive
+      //    dropdown for that.
+      // No money or quantity column exists on this table, so there is nothing
+      // here that could leak a value to someone without price access.
+      const term = `%${escapeLikeTerm(input.search)}%`;
       const s = or(
-        ilike(tpiMasters.code, `%${input.search}%`),
-        ilike(tpiMasters.organization, `%${input.search}%`),
+        ilike(tpiMasters.code, term),
+        ilike(tpiMasters.organization, term),
+        ilike(tpiMasters.contactNo, term),
+        ilike(tpiMasters.email, term),
       );
       if (s) conditions.push(s);
     }

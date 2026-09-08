@@ -1,4 +1,4 @@
-import { createJwInvoiceInputSchema } from '@innovic/shared';
+import { createJwInvoiceInputSchema, listJwInvoicesQuerySchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
@@ -6,7 +6,8 @@ import * as service from './service';
 export async function jwInvoicesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/jw-invoices', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listJwInvoices(req.user);
+    const query = listJwInvoicesQuerySchema.parse(req.query);
+    return service.listJwInvoices(query, req.user);
   });
 
   app.post('/jw-invoices', async (req, reply) => {

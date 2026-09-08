@@ -21,7 +21,7 @@
 // is present in the payload, run the merge; if omitted, only the header is
 // updated (existing lines untouched).
 
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
@@ -383,19 +383,6 @@ export async function listGoodsReceiptNotes(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [
-      eq(goodsReceiptNotes.companyId, companyId),
-      isNull(goodsReceiptNotes.deletedAt),
-    ];
-    if (input.vendorId) conditions.push(eq(goodsReceiptNotes.vendorId, input.vendorId));
-    if (input.purchaseOrderId)
-      conditions.push(eq(goodsReceiptNotes.purchaseOrderId, input.purchaseOrderId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(goodsReceiptNotes)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
-
     // PL-GRN-1b — KPI summary across the SAME filter set (no LIMIT). Mirrors
     // legacy renderGRN L26483–26488 four-tile strip. A GRN counts as
     // QC-cleared if all its lines have qc_status='completed'; QC-pending if
@@ -434,6 +421,14 @@ export async function listGoodsReceiptNotes(
       qcCleared: Number(sumRow['qc_cleared'] ?? 0),
       today: Number(sumRow['today'] ?? 0),
     };
+
+    // Pager total comes from the summary above, which already runs the SAME
+    // fragments over the SAME filter set with no LIMIT — so it is exactly the
+    // number of rows the search returns. The separate Drizzle count() that
+    // used to stand here skipped the search and the dates, so the header
+    // counted every GRN in the company while the list showed the one that
+    // matched. Reusing the summary keeps one predicate and removes a query.
+    const total = summary.total;
 
     const rowsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     return { items: rowsList, total, limit: input.limit, offset: input.offset, summary };

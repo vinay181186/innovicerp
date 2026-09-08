@@ -6,10 +6,11 @@
 // RETURNED to the customer minus already invoiced. Bumps
 // job_work_order_lines.invoiced_qty.
 
-import { and, desc, eq, isNull, like, sql } from 'drizzle-orm';
+import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
 import type {
   CreateJwInvoiceInput,
   JwInvoice,
+  ListJwInvoicesQuery,
   ListJwInvoicesResponse,
 } from '@innovic/shared';
 import { clients, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
@@ -190,22 +191,76 @@ function hideJwInvoiceMoney<
   return { ...r, rate: null, taxableAmount: null, gstPercent: null, gstAmount: null, totalAmount: null };
 }
 
-export async function listJwInvoices(user: AuthContext): Promise<ListJwInvoicesResponse> {
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the JW Invoice search box gets a wildcard pattern instead of a
+ *  literal search — i.e. the search box becomes a "show everything" button.
+ *  Postgres's DEFAULT LIKE/ILIKE escape character is backslash, so no explicit
+ *  ESCAPE clause is needed here (and drizzle's `ilike()` builder, which this
+ *  list is written with, cannot emit one) — verified against the live database.
+ *  Deliberately a local copy of the clients / sales-orders helper rather than an
+ *  export across modules: it is three lines, and each list must be free to
+ *  change its own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+export async function listJwInvoices(
+  input: ListJwInvoicesQuery,
+  user: AuthContext,
+): Promise<ListJwInvoicesResponse> {
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'jw_create');
   return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        inv: jwInvoices,
-        clientName: clients.name,
-        partName: jobWorkOrderLines.partName,
-      })
-      .from(jwInvoices)
-      .leftJoin(clients, eq(clients.id, jwInvoices.clientId))
-      .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwInvoices.jobWorkOrderLineId))
-      .where(and(eq(jwInvoices.companyId, companyId), isNull(jwInvoices.deletedAt)))
-      .orderBy(desc(jwInvoices.invoiceDate), desc(jwInvoices.code))
-      .limit(500);
+    const conditions: SQL[] = [eq(jwInvoices.companyId, companyId), isNull(jwInvoices.deletedAt)];
+    if (input.search) {
+      // Search covers every column the JW Invoice register
+      // (apps/web/src/modules/jw-invoices/components/jw-invoice-view.tsx) shows:
+      // Invoice No., Date, JWSO, Client and Part.
+      // Deliberately NOT searched:
+      //  - Qty — a number, so "2" would hit nearly every invoice.
+      //  - EVERY money column (Rate, Taxable, GST%, GST Amt, Total). This list
+      //    gates amounts behind `priceVisible` (canSeeFormPrice 'jw_create')
+      //    and nulls them for a user without price rights — a searchable
+      //    amount would hand that same user a way to confirm a value by typing
+      //    it and seeing whether the row comes back.
+      const term = `%${escapeLikeTerm(input.search)}%`;
+      const s = or(
+        ilike(jwInvoices.code, term),
+        // `invoice_date` is a DATE column; cast so ILIKE has text to match, and
+        // so the pattern matches exactly the YYYY-MM-DD the screen prints.
+        sql`${jwInvoices.invoiceDate}::text ILIKE ${term}`,
+        ilike(jwInvoices.jwCodeText, term),
+        ilike(clients.name, term),
+        ilike(jobWorkOrderLines.partName, term),
+      );
+      if (s) conditions.push(s);
+    }
+    const where = and(...conditions);
+
+    // ONE predicate, used by both the page query and the count — a total that
+    // ignored the search would break the pager the moment anyone typed.
+    const [rows, totals] = await Promise.all([
+      tx
+        .select({
+          inv: jwInvoices,
+          clientName: clients.name,
+          partName: jobWorkOrderLines.partName,
+        })
+        .from(jwInvoices)
+        .leftJoin(clients, eq(clients.id, jwInvoices.clientId))
+        .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwInvoices.jobWorkOrderLineId))
+        .where(where)
+        .orderBy(desc(jwInvoices.invoiceDate), desc(jwInvoices.code))
+        .limit(input.limit)
+        .offset(input.offset),
+      tx
+        .select({ value: count() })
+        .from(jwInvoices)
+        .leftJoin(clients, eq(clients.id, jwInvoices.clientId))
+        .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwInvoices.jobWorkOrderLineId))
+        .where(where),
+    ]);
+
     return {
       items: rows.map((r) => {
         const item = {
@@ -215,7 +270,7 @@ export async function listJwInvoices(user: AuthContext): Promise<ListJwInvoicesR
         };
         return showMoney ? item : hideJwInvoiceMoney(item);
       }),
-      total: rows.length,
+      total: totals[0]?.value ?? 0,
       priceVisible: showMoney,
     };
   });

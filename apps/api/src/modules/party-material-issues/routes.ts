@@ -1,6 +1,7 @@
 import {
   cancelPartyMaterialIssueInputSchema,
   createPartyMaterialIssueInputSchema,
+  listPartyMaterialIssuesQuerySchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -12,7 +13,8 @@ const idParam = z.object({ id: z.string().uuid() });
 export async function partyMaterialIssuesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/party-material-issues', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listPartyMaterialIssues(req.user);
+    const query = listPartyMaterialIssuesQuerySchema.parse(req.query);
+    return service.listPartyMaterialIssues(query, req.user);
   });
 
   app.post('/party-material-issues', async (req, reply) => {

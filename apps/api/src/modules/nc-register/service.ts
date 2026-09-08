@@ -7,7 +7,7 @@
 // stays 'pending' until T-040b's dispose action flips it. SoftDelete blocks
 // once status leaves 'pending' — disposed/closed NCs are permanent records.
 
-import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import { capaRecords, items, jcOps, jobCards, ncRegister, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -345,15 +345,45 @@ export async function listNcRegister(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(ncRegister.companyId, companyId), isNull(ncRegister.deletedAt)];
-    if (input.status) conditions.push(eq(ncRegister.status, input.status));
-    if (input.reasonCategory) conditions.push(eq(ncRegister.reasonCategory, input.reasonCategory));
-    if (input.jobCardId) conditions.push(eq(ncRegister.jobCardId, input.jobCardId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(ncRegister)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // Total = exactly the rows the query above returns without its LIMIT: same
+    // FROM, same joins, the SAME fragment objects. It used to be a Drizzle
+    // count() that skipped the search and the dates, which is why the pager
+    // offered a page 2 that came back empty — the total was the whole
+    // register, not the search. A Drizzle count on nc_register alone cannot
+    // express the search (it reads the job card, the op, the item and the
+    // linked CAPA code), so the count is raw SQL too and the predicate stays
+    // defined once. Every join here is one row per NC (the CAPA lateral is
+    // LIMIT 1), so none of them can change the count.
+    const totalRows = await tx.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM public.nc_register nc
+      LEFT JOIN public.job_cards jc
+        ON jc.id = nc.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.jc_ops jo
+        ON jo.id = nc.jc_op_id AND jo.deleted_at IS NULL
+      LEFT JOIN public.items i
+        ON i.id = nc.item_id AND i.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT c.code
+        FROM public.capa_records c
+        WHERE c.company_id = nc.company_id
+          AND c.deleted_at IS NULL
+          AND c.nc_refs @> to_jsonb(ARRAY[nc.code])
+        ORDER BY c.created_at ASC
+        LIMIT 1
+      ) cap ON TRUE
+      WHERE nc.company_id = ${companyId}::uuid
+        AND nc.deleted_at IS NULL
+        ${searchFrag}
+        ${statusFrag}
+        ${reasonFrag}
+        ${jcFrag}
+        ${fromFrag}
+        ${toFrag}
+    `);
+    const total = Number(
+      (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
+    );
 
     const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     const rowsList = showMoney ? mapped : mapped.map(hideNcMoney);

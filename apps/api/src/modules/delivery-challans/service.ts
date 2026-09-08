@@ -5,7 +5,7 @@
 // T-059b. Writes go through service.ts so cascades into jc_ops.sentQty +
 // outsource_status + store_transactions stay atomic with the DC row insert.
 
-import { and, asc, count, eq, inArray, isNull, like, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
   deliveryChallanReceiptLines,
@@ -70,15 +70,90 @@ function maybeTsLike(v: unknown): string | null {
   return tsLike(v);
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the DC search box gets a wildcard pattern
+ *  instead of a literal search — a bare "%" listed every DC in the company.
+ *  The SQL side must pair it with an ESCAPE '\' clause on every ILIKE, or the
+ *  escapes themselves start matching literally.
+ *  Deliberately a local copy of the sales-orders / GRN helper rather than an
+ *  export across modules: it is three lines, and each list must stay free to
+ *  change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listDeliveryChallans(
   input: ListDeliveryChallansQuery,
   user: AuthContext,
 ): Promise<ListDeliveryChallansResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    // Search covers every field the DC card (delivery-challans/components/
+    // dc-card.tsx) actually shows: DC No., Vendor (the resolved name, then the
+    // stored vendor text the card falls back to), the PO chip (the linked PO's
+    // live code, then the amber snapshot text), the status badge, the DC date,
+    // the SO cell (the resolved SO code, then the stored SO ref) and Transport.
+    //
+    // Two aliases the page query has are NOT available here — this same
+    // fragment is reused by the total-count and KPI-summary queries below,
+    // which join only `dc` + `v`. The PO code and both SO paths are therefore
+    // reached with their own EXISTS on dc's own foreign keys, so all three
+    // queries stay valid.
+    //
+    // Deliberately NOT searched:
+    //  - the Sent quantity and the Lines count: numbers, so "2" would hit
+    //    nearly every DC;
+    //  - money of any kind. There is none on this card (OSP rates live on the
+    //    PO), and this area's prices are gated by `canSeeFormPrice` — a
+    //    searchable amount would let a user without that right confirm a value
+    //    by guessing it;
+    //  - vehicle no. and the line items: not on the list screen.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (dc.code ILIKE ${term} OR dc.po_code_text ILIKE ${term} OR v.name ILIKE ${term})`
+      ? sql`AND (
+          dc.code ILIKE ${term} ESCAPE '\\'
+          -- Vendor cell renders vendorName ?? vendorCodeText.
+          OR v.name ILIKE ${term} ESCAPE '\\'
+          OR dc.vendor_code_text ILIKE ${term} ESCAPE '\\'
+          -- PO chip renders poCode (green) ?? poCodeText (amber), so match the
+          -- live PO's code as well as the text this DC stored when issued.
+          OR dc.po_code_text ILIKE ${term} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM public.purchase_orders spo
+            WHERE spo.id = dc.purchase_order_id
+              AND spo.deleted_at IS NULL
+              AND spo.code ILIKE ${term} ESCAPE '\\'
+          )
+          OR dc.status::text ILIKE ${term} ESCAPE '\\'
+          OR dc.dc_date::text ILIKE ${term} ESCAPE '\\'
+          OR dc.transport ILIKE ${term} ESCAPE '\\'
+          -- SO cell renders soCode ?? soRefText. soCode itself has two sources,
+          -- the same two the SELECT COALESCEs: the DC's own SO line...
+          OR dc.so_ref_text ILIKE ${term} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM public.sales_order_lines ssol
+            JOIN public.sales_orders sso
+              ON sso.id = ssol.sales_order_id AND sso.deleted_at IS NULL
+            WHERE ssol.id = dc.sales_order_line_id
+              AND ssol.deleted_at IS NULL
+              AND sso.code ILIKE ${term} ESCAPE '\\'
+          )
+          -- ...and, for an OSP DC that carries only a PO, the SO(s) behind that
+          -- PO's lines.
+          OR EXISTS (
+            SELECT 1
+            FROM public.purchase_order_lines spol
+            JOIN public.sales_order_lines ssol2
+              ON ssol2.id = spol.source_so_line_id AND ssol2.deleted_at IS NULL
+            JOIN public.sales_orders sso2
+              ON sso2.id = ssol2.sales_order_id AND sso2.deleted_at IS NULL
+            WHERE spol.purchase_order_id = dc.purchase_order_id
+              AND spol.deleted_at IS NULL
+              AND sso2.code ILIKE ${term} ESCAPE '\\'
+          )
+        )`
       : sql``;
     const statusFrag = input.status ? sql`AND dc.status = ${input.status}::dc_status` : sql``;
     const vendorFrag = input.vendorId ? sql`AND dc.vendor_id = ${input.vendorId}::uuid` : sql``;
@@ -148,19 +223,28 @@ export async function listDeliveryChallans(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [
-      eq(deliveryChallans.companyId, companyId),
-      isNull(deliveryChallans.deletedAt),
-    ];
-    if (input.status) conditions.push(eq(deliveryChallans.status, input.status));
-    if (input.vendorId) conditions.push(eq(deliveryChallans.vendorId, input.vendorId));
-    if (input.purchaseOrderId)
-      conditions.push(eq(deliveryChallans.purchaseOrderId, input.purchaseOrderId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(deliveryChallans)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // Total behind "N DCs" and the pager. Runs the SAME fragments as the page
+    // query above — search and dates included — so the header count, the
+    // "Showing 1–25 of N" line and the page buttons agree with what is listed.
+    // It used to be a Drizzle count that skipped the search and the date range,
+    // so a search that matched two DCs still reported (and paged) the whole
+    // company's DC count.
+    const totalRows = await tx.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM public.delivery_challans dc
+      LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
+      WHERE dc.company_id = ${companyId}::uuid
+        AND dc.deleted_at IS NULL
+        ${searchFrag}
+        ${statusFrag}
+        ${vendorFrag}
+        ${poFrag}
+        ${fromFrag}
+        ${toFrag}
+    `);
+    const total = Number(
+      (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
+    );
 
     // PL-DR-1b — KPI summary (matches the filter set). Legacy
     // renderDispatchRegister L10756–10770: Total Dispatched / Entries /

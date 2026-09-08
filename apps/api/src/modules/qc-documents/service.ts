@@ -29,6 +29,18 @@ function requireCompany(user: AuthContext): string {
 
 type Row = typeof qcDocuments.$inferSelect;
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "a_b" — or a bare "%", which listed every registered document —
+ *  gets a wildcard pattern instead of a literal search. The SQL side pairs it
+ *  with an ESCAPE '\' clause on every ILIKE, or the escapes themselves start
+ *  matching literally.
+ *  Deliberately a local copy of the sales-orders / clients helper rather than
+ *  an export across modules: it is three lines, and each list must stay free to
+ *  change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 function toItem(r: Row): QcDocument {
   return {
     id: r.id,
@@ -56,9 +68,30 @@ export async function listQcDocuments(
     if (input.category) conds.push(eq(qcDocuments.category, input.category));
     if (input.jobCardId) conds.push(eq(qcDocuments.jobCardId, input.jobCardId));
     if (input.search) {
-      const term = `%${input.search}%`;
+      // Search covers every column the QC document register (the Register view
+      // in apps/web/src/modules/qc-documents/routes/list.tsx) actually shows:
+      // Doc Type, File Name, Category, JC, SO, Uploaded By and Date.
+      // Deliberately NOT searched:
+      //  - storage path, and the matrix link columns (jc op, QC op name, serial
+      //    from/to): none of them is on this table;
+      //  - the serial numbers themselves: numbers, so "2" would hit nearly
+      //    every document;
+      //  - money: this table holds none, and QC screens gate prices behind
+      //    canSeeFormPrice — a searchable amount would let a user without that
+      //    right confirm a value by guessing it.
+      const term = `%${escapeLikeTerm(input.search)}%`;
       conds.push(
-        sql`(${qcDocuments.fileName} ILIKE ${term} OR ${qcDocuments.docType} ILIKE ${term} OR ${qcDocuments.jcCodeText} ILIKE ${term} OR ${qcDocuments.soCodeText} ILIKE ${term})`,
+        sql`(
+          ${qcDocuments.docType} ILIKE ${term} ESCAPE '\\'
+          OR ${qcDocuments.fileName} ILIKE ${term} ESCAPE '\\'
+          OR ${qcDocuments.category} ILIKE ${term} ESCAPE '\\'
+          OR ${qcDocuments.jcCodeText} ILIKE ${term} ESCAPE '\\'
+          OR ${qcDocuments.soCodeText} ILIKE ${term} ESCAPE '\\'
+          OR ${qcDocuments.uploadedByText} ILIKE ${term} ESCAPE '\\'
+          -- The Date cell prints createdAt.slice(0,10) — the calendar day, not
+          -- the timestamp — so match the date, not "…T09:14:22.981Z".
+          OR ${qcDocuments.createdAt}::date::text ILIKE ${term} ESCAPE '\\'
+        )`,
       );
     }
     const rows = await tx

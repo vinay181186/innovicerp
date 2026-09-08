@@ -6,11 +6,12 @@
 
 import {
   type CreatePartyMaterialIssueInput,
+  type ListPartyMaterialIssuesQuery,
   type PartyMaterialIssueListItem,
 } from '@innovic/shared';
 import { Loader2, Plus, XCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { useEffect, useMemo, useState } from 'react';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -23,6 +24,12 @@ import {
   usePartyMaterialIssuesList,
 } from '../api';
 
+// The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
+// exactly the cap this list already ran under, so nothing that was visible
+// before disappears — what changed is that the SEARCH now runs on the server,
+// over the whole book, instead of over the rows that happened to be downloaded.
+const LIST_LIMIT = 500;
+
 export function PartyMaterialIssueView(): React.JSX.Element {
   // Tier-driven, per department (party_create sits in Store). This view renders
   // as the Issue tab of /party-grn, so it has to gate itself — the host screen
@@ -32,35 +39,32 @@ export function PartyMaterialIssueView(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'party_create');
   const canIssue = perms.entry;
   const canCancel = perms.edit && perms.approve;
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [term, setTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<PartyMaterialIssueListItem | null>(null);
 
-  const { data, isLoading, isError, error } = usePartyMaterialIssuesList();
+  useEffect(() => {
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  IN-PMI  26 " and "IN-PMI 26" are one query, one cache entry, one fetch.
+    const next = normalizeSearchTerm(searchInput);
+    if (next === term) return;
+    const id = window.setTimeout(() => setTerm(next), 300);
+    return () => window.clearTimeout(id);
+  }, [searchInput, term]);
 
-  // GET /party-material-issues returns the whole list in one fetch (no page or
-  // limit sent), so the match happens here across every text column the table
-  // shows — issue no, date, JWSO, Job Card, material code + name and remarks.
-  // Qty is deliberately out: "5" would match nearly every row.
-  const filtered = useMemo(() => {
-    const q = normalizeSearchTerm(search);
-    const items = data?.items ?? [];
-    if (!q) return items;
-    return items.filter((it) =>
-      matchesSearchTerm(
-        [
-          it.code,
-          it.issueDate,
-          it.jwCodeText,
-          it.jcCodeText,
-          it.partyMaterialCodeText,
-          it.partyMaterialName,
-          it.remarks,
-        ],
-        q,
-      ),
-    );
-  }, [data?.items, search]);
+  // The term goes to the SERVER now. It used to filter the downloaded rows in
+  // the browser, which only ever searched the capped page the endpoint had
+  // sent — past the cap the box quietly hid matching issues. A new term is a
+  // new query key, so it refetches, and the read always starts at the first
+  // page (offset 0) rather than stranding the user mid-list.
+  const query: ListPartyMaterialIssuesQuery = useMemo(
+    () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
+    [term],
+  );
+
+  const { data, isLoading, isError, error } = usePartyMaterialIssuesList(query);
+  const rows = data?.items ?? [];
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -81,8 +85,8 @@ export function PartyMaterialIssueView(): React.JSX.Element {
           type="text"
           className="innovic-input"
           placeholder="🔍 Search Issue No., date, JWSO, Job Card, material, remarks…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           style={{ width: 260, fontSize: 12 }}
         />
         {canIssue ? (
@@ -123,14 +127,14 @@ export function PartyMaterialIssueView(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr>
                     <td colSpan={canCancel ? 8 : 7} className="empty-state">
                       No party material issues — click + New Issue
                     </td>
                   </tr>
                 ) : null}
-                {filtered.map((it) => (
+                {rows.map((it) => (
                   <tr key={it.id}>
                     <td>
                       <span className="td-code" style={{ color: 'var(--cyan)' }}>

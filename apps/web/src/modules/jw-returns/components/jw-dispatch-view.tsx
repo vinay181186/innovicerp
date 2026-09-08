@@ -4,23 +4,53 @@
 // can render inside the Customer Dispatch screen as a tab. Behavior, hooks and
 // modals are identical to the original screen.
 
-import { type CreateJwReturnChallanInput } from '@innovic/shared';
+import {
+  type CreateJwReturnChallanInput,
+  type ListJwReturnChallansQuery,
+} from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { useEffect, useMemo, useState } from 'react';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCancelJwReturn, useCreateJwReturnChallan, useJwReturnsList } from '../api';
 
+// The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
+// exactly the cap this list already ran under, so nothing that was visible
+// before disappears — what changed is that the SEARCH now runs on the server,
+// over the whole book, instead of over the rows that happened to be downloaded.
+const LIST_LIMIT = 500;
+
 export function JwDispatchView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [term, setTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
 
-  const { data, isLoading, isError, error } = useJwReturnsList();
+  useEffect(() => {
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  IN-JR  26 " and "IN-JR 26" are one query, one cache entry, one fetch.
+    const next = normalizeSearchTerm(searchInput);
+    if (next === term) return;
+    const id = window.setTimeout(() => setTerm(next), 300);
+    return () => window.clearTimeout(id);
+  }, [searchInput, term]);
+
+  // The term goes to the SERVER now. It used to filter the downloaded rows in
+  // the browser, which only ever searched the capped page the endpoint had
+  // sent — past the cap the box quietly hid matching returns. A new term is a
+  // new query key, so it refetches, and the read always starts at the first
+  // page (offset 0) rather than stranding the user mid-list.
+  const query: ListJwReturnChallansQuery = useMemo(
+    () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
+    [term],
+  );
+
+  const { data, isLoading, isError, error } = useJwReturnsList(query);
+  const rows = data?.items ?? [];
   const cancelMut = useCancelJwReturn();
 
   const onCancel = (id: string, code: string): void => {
@@ -30,30 +60,6 @@ export function JwDispatchView(): React.JSX.Element {
     cancelMut.mutate(id);
   };
 
-  // GET /jw-returns returns the whole list in one fetch (no page/limit sent),
-  // so the match happens here across every text column the table shows —
-  // return no, date, JWSO, client, part, transport, vehicle and the status
-  // badge. Qty is deliberately out: "5" would match nearly every row.
-  const filtered = useMemo(() => {
-    const q = normalizeSearchTerm(search);
-    const items = data?.items ?? [];
-    if (!q) return items;
-    return items.filter((r) =>
-      matchesSearchTerm(
-        [
-          r.code,
-          r.returnDate,
-          r.jwCodeText,
-          r.clientName,
-          r.partName,
-          r.transport,
-          r.vehicleNo,
-          r.status,
-        ],
-        q,
-      ),
-    );
-  }, [data?.items, search]);
 
   return (
     <div>
@@ -63,8 +69,8 @@ export function JwDispatchView(): React.JSX.Element {
             type="text"
             className="innovic-input"
             placeholder="🔍 Search return no., date, JWSO, client, part, transport, status…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 260, fontSize: 12 }}
           />
           {canWrite ? (
@@ -112,14 +118,14 @@ export function JwDispatchView(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr>
                     <td colSpan={canWrite ? 10 : 9} className="empty-state">
                       No JW returns — click + New Return
                     </td>
                   </tr>
                 ) : null}
-                {filtered.map((r) => (
+                {rows.map((r) => (
                   <tr key={r.id}>
                     <td>
                       <span className="td-code" style={{ color: 'var(--cyan)' }}>

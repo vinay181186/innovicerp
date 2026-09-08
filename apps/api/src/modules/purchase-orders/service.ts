@@ -14,7 +14,7 @@
 // single-line PO from a PR row in one transaction, also setting PR.poId /
 // poCreatedAt / status='po_created'. Mirrors legacy `addPO()` line 25728.
 
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   approvalConfig,
   deliveryChallans,
@@ -359,15 +359,31 @@ export async function listPurchaseOrders(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(purchaseOrders.companyId, companyId), isNull(purchaseOrders.deletedAt)];
-    if (input.status) conditions.push(eq(purchaseOrders.status, input.status));
-    if (input.poType) conditions.push(eq(purchaseOrders.poType, input.poType));
-    if (input.vendorId) conditions.push(eq(purchaseOrders.vendorId, input.vendorId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(purchaseOrders)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // Total = exactly the rows the query above returns without its LIMIT: same
+    // FROM, same vendor join, the SAME fragment objects. It used to be a
+    // Drizzle count() that skipped the search and the dates, so the header
+    // counted every PO in the company while the list showed the one that
+    // matched. A Drizzle count on purchase_orders alone cannot express this
+    // predicate (it reads v.name and the lines via EXISTS), so the count is
+    // raw SQL too and the predicate stays defined once, used twice. The
+    // line_agg join the page query has is one row per PO and cannot change the
+    // count.
+    const totalRows = await tx.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM public.purchase_orders po
+      LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
+      WHERE po.company_id = ${companyId}::uuid
+        AND po.deleted_at IS NULL
+        ${searchFrag}
+        ${statusFrag}
+        ${typeFrag}
+        ${vendorFrag}
+        ${fromFrag}
+        ${toFrag}
+    `);
+    const total = Number(
+      (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
+    );
 
     const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     const rowsList = showMoney ? mapped : mapped.map(hidePoHeaderMoney);

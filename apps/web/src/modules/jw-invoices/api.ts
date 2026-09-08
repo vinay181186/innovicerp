@@ -1,6 +1,7 @@
 import type {
   CreateJwInvoiceInput,
   JwInvoice,
+  ListJwInvoicesQuery,
   ListJwInvoicesResponse,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -8,13 +9,27 @@ import { apiFetch } from '@/lib/api';
 
 export const jwInvoicesKeys = {
   all: ['jw-invoices'] as const,
-  list: () => [...jwInvoicesKeys.all, 'list'] as const,
+  lists: () => [...jwInvoicesKeys.all, 'list'] as const,
+  // The query is part of the key, so a new search term is a new cache entry
+  // and a new fetch — the whole point of moving the match to the server.
+  list: (q: ListJwInvoicesQuery) => [...jwInvoicesKeys.lists(), q] as const,
 };
 
-export function useJwInvoicesList() {
+/** The register's filters, as a query string. `search` is dropped when empty so
+ *  an untouched box is not sent as `search=` — the server treats "absent" and
+ *  "empty" alike, but leaving it out keeps the URL and the cache key clean. */
+function toQueryString(q: ListJwInvoicesQuery): string {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  params.set('limit', String(q.limit));
+  params.set('offset', String(q.offset));
+  return params.toString();
+}
+
+export function useJwInvoicesList(query: ListJwInvoicesQuery) {
   return useQuery<ListJwInvoicesResponse>({
-    queryKey: jwInvoicesKeys.list(),
-    queryFn: () => apiFetch<ListJwInvoicesResponse>('/jw-invoices'),
+    queryKey: jwInvoicesKeys.list(query),
+    queryFn: () => apiFetch<ListJwInvoicesResponse>(`/jw-invoices?${toQueryString(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

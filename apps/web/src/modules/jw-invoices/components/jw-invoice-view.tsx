@@ -4,15 +4,21 @@
 // route so it can render inside the Invoices screen as a tab. Behavior, hooks,
 // modals and price/money display are identical to the original screen.
 
-import { type CreateJwInvoiceInput } from '@innovic/shared';
+import { type CreateJwInvoiceInput, type ListJwInvoicesQuery } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoicesList } from '../api';
+
+// The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
+// exactly the cap this list already ran under, so nothing that was visible
+// before disappears — what changed is that the SEARCH now runs on the server,
+// over the whole book, instead of over the rows that happened to be downloaded.
+const LIST_LIMIT = 500;
 
 function money(n: number): string {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,27 +27,31 @@ function money(n: number): string {
 export function JwInvoiceView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [term, setTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
 
-  const { data, isLoading, isError, error } = useJwInvoicesList();
+  useEffect(() => {
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  IN-JI  26 " and "IN-JI 26" are one query, one cache entry, one fetch.
+    const next = normalizeSearchTerm(searchInput);
+    if (next === term) return;
+    const id = window.setTimeout(() => setTerm(next), 300);
+    return () => window.clearTimeout(id);
+  }, [searchInput, term]);
 
-  const items = useMemo(() => {
-    // Every text column this table prints, matched through the shared helper so
-    // this list agrees with every other one about what a search term means.
-    // Client-side is correct HERE and only here: the endpoint returns the whole
-    // list in one payload, so the browser already holds every row (a paginated
-    // list must widen its API query instead — see search-match.ts).
-    // The invoice DATE is included; money columns (rate, taxable, GST, total)
-    // are NOT — they are hidden from users without price rights, so making an
-    // amount findable would let them confirm a value by typing it.
-    const q = normalizeSearchTerm(search);
-    const all = data?.items ?? [];
-    if (!q) return all;
-    return all.filter((r) =>
-      matchesSearchTerm([r.code, r.invoiceDate, r.jwCodeText, r.clientName, r.partName], q),
-    );
-  }, [data, search]);
+  // The term goes to the SERVER now. It used to filter the downloaded rows in
+  // the browser, which only ever searched the capped page the endpoint had
+  // sent — past the cap the box quietly hid matching invoices. A new term is a
+  // new query key, so it refetches, and the read always starts at the first
+  // page (offset 0) rather than stranding the user mid-list.
+  const query: ListJwInvoicesQuery = useMemo(
+    () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
+    [term],
+  );
+
+  const { data, isLoading, isError, error } = useJwInvoicesList(query);
+  const items = data?.items ?? [];
 
   // Money hidden for L1 Viewers: the API nulls the amounts, so the Rate /
   // Taxable / GST% / GST Amt / Total columns are dropped for them.
@@ -57,8 +67,8 @@ export function JwInvoiceView(): React.JSX.Element {
             type="text"
             className="innovic-input"
             placeholder="🔍 Search invoice, date, JWSO, client, part…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 260, fontSize: 12 }}
           />
           {canWrite ? (
