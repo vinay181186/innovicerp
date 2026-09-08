@@ -132,6 +132,14 @@ export interface DocPrintModel {
   // `special_notes` would file it under a heading that does not describe it,
   // and would glue it to whatever the user had typed there.
   extraSection?: { title: string; body: string };
+  // A document whose lines do not fit the goods table supplies its own table
+  // here and keeps ALL the surrounding chrome -- letterhead, title bar, the
+  // party/meta row, and the five template blocks in print order. The GRN needs
+  // this: its columns are received / accepted / rejected / QC status, which the
+  // qty-and-money goods table cannot express. Without it a GRN could only be
+  // built on the internal Job Card layout, which is a grid of info boxes and
+  // looks nothing like the document its own print template describes.
+  tableHtml?: string;
   opts?: { testBanner?: boolean };
 }
 
@@ -140,10 +148,12 @@ const DOC_TITLE: Record<PrintDocType, string> = {
   'SERVICE PO': 'SERVICE PURCHASE ORDER',
   'OSP DC': 'OSP DELIVERY CHALLAN',
   'JW DC': 'JOB WORK DELIVERY CHALLAN',
-  // The GRN has TEMPLATE blocks like the other four, but it does NOT render
-  // through this builder -- it is an inward document with its own layout in
-  // modules/goods-receipt-notes/lib/print-grn.ts. The entry exists because the
-  // map is exhaustive over PrintDocType, and it is the title that builder uses.
+  // The GRN DOES render through this builder, like the other four -- it just
+  // supplies its own `tableHtml`, because its columns are received / accepted /
+  // rejected / QC status rather than qty and money. It was briefly built on the
+  // internal Job Card layout instead, which prints facts as a grid of info-box
+  // tiles; that looked nothing like the document its own print template
+  // describes, which is what this entry and `tableHtml` exist to avoid.
   GRN: 'GOODS RECEIPT NOTE',
 };
 
@@ -270,10 +280,13 @@ export function buildDocHtml(model: DocPrintModel): string {
       </div>
     </div>
     ${headerNote ? `<div class="section" style="background:#fafafa"><div class="note-block">${headerNote}</div></div>` : ''}
-    <div class="section"><table><thead><tr>${itemHead}</tr></thead><tbody>
+    ${
+      model.tableHtml ??
+      `<div class="section"><table><thead><tr>${itemHead}</tr></thead><tbody>
       ${itemRows}
       ${totalsHtml}
-    </tbody></table></div>
+    </tbody></table></div>`
+    }
     ${extraHtml}
     ${amtWordsHtml}
     ${specialNotes ? `<div class="section" style="background:#fffbeb"><b style="font-size:10px;color:#92400e;text-transform:uppercase">Special Notes</b><br><div class="note-block">${specialNotes}</div></div>` : ''}

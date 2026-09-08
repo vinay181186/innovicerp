@@ -1,30 +1,33 @@
 // Goods Receipt Note print.
 //
 // The GRN is one of the template-backed documents in Settings → Print
-// Templates (PO / Service PO / OSP DC / JW DC / GRN), but it does NOT render
-// through the shared `@/lib/print/doc-print` builder: that builder prints an
-// OUTWARD, priced document (Rate / Amount / amount-in-words / one supplier
-// address block). A GRN records what ARRIVED and what survived inspection —
-// received / accepted / rejected quantities, no money anywhere — so it keeps
-// its own fixed layout on the shared `printWindow` util and renders the five
-// editable blocks itself, in print order:
+// Templates (PO / Service PO / OSP DC / JW DC / GRN), and it now renders on the
+// SAME document layout the other four use — the shared `@/lib/print/doc-print`
+// builder: a bordered sheet with the letterhead, a TITLE BAR, the party block
+// on the left with the meta cells on the right, then the five editable blocks
+// in print order around the line table:
 //
 //   header_note    → above the line items
 //   special_notes  → below the line items
 //   terms          → below Special Notes
 //   footer         → bottom of the sheet
-//   signature      → the signature strip (default: Received By / Checked By /
-//                    Authorised Signatory)
+//   signature      → the signature area at the foot
 //
-// Variable substitution uses the same `substituteTemplateVars` from
-// @innovic/shared that every other printed document uses, over the variables
-// the contract lists in PRINT_TEMPLATE_VARS.GRN.
+// It used to print through `@/lib/print/print-window`, the INTERNAL layout the
+// Job Card and the Route Card use, which renders the header facts as a grid of
+// info-box tiles. That is not the layout the GRN print template describes, and
+// the boxes were reported as a defect.
 //
-// Letterhead: GRN is an INTERNAL receipt document (goods arriving at OUR
-// store), so per the rule documented in `lib/print/letterhead.ts` it gets the
-// LOGO-only company header that `printWindow` already renders, not the full
-// outward letterhead with the address/e-mail footer strip. Adding
-// `letterheadHeaderHtml` on top of that would print the company block twice.
+// A GRN's columns are received / accepted / rejected / QC status, which the
+// builder's qty-and-money goods table cannot express, so this file supplies its
+// own `tableHtml`. Everything else on the sheet — letterhead, title bar, party
+// and meta row, the template blocks, the signature strip — comes from the
+// shared builder, so the printed GRN matches the PO and the two delivery
+// challans.
+//
+// Variable substitution is the same `substituteTemplateVars` from
+// @innovic/shared that every other printed document uses (the builder applies
+// it), over the variables the contract lists in PRINT_TEMPLATE_VARS.GRN.
 //
 // Everything on the sheet is already on the GRN detail screen — no new field,
 // no new API call, no calculation the screen does not also do.
@@ -36,18 +39,15 @@ import type {
   GrnQcStatus,
   Vendor,
 } from '@innovic/shared';
-import { substituteTemplateVars } from '@innovic/shared';
-import { companyAddressLines } from '@/lib/print/company';
-import { esc, fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
-import { printWindow, printedMeta } from '@/lib/print/print-window';
-
-// Same three tones the on-screen QcStatusBadge uses, mapped to the badge
-// classes the shared print stylesheet defines.
-const QC_BADGE: Record<GrnQcStatus, string> = {
-  pending: 'b-amber',
-  in_progress: 'b-blue',
-  completed: 'b-green',
-};
+import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import {
+  type DocMetaCell,
+  type DocPrintModel,
+  esc,
+  fmtDate,
+  openDocPrintWindow,
+  templatesToBlocks,
+} from '@/lib/print/doc-print';
 
 function qcLabel(status: GrnQcStatus): string {
   return status.replaceAll('_', ' ');
@@ -57,12 +57,6 @@ function qcLabel(status: GrnQcStatus): string {
 // wrong, a dash reads as "there is no value here", which is what is true.
 function dash(v: string | null | undefined): string {
   return v && v.trim() ? esc(v) : '&mdash;';
-}
-
-// Template text is plain text the user typed, so newlines have to become
-// breaks and the text has to be escaped before it goes into the document.
-function nl2br(s: string): string {
-  return esc(s).replace(/\r?\n/g, '<br>');
 }
 
 // ── The shape this builder prints ────────────────────────────────────────────
@@ -91,47 +85,61 @@ export interface GrnPrintModel {
   lines: GrnPrintLine[];
 }
 
-// The five editable blocks, substituted and ready to drop into the sheet.
-function renderBlocks(
-  templates: EffectivePrintTemplate[],
-  data: Record<string, string>,
-): { headerNote: string; specialNotes: string; terms: string; footer: string; signature: string } {
-  const blocks = templatesToBlocks('GRN', templates);
-  const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
-  return {
-    headerNote: sub('header_note'),
-    specialNotes: sub('special_notes'),
-    terms: sub('terms'),
-    footer: sub('footer'),
-    signature: sub('signature'),
-  };
-}
+// The GRN line table, as an HTML string in the same
+// `<div class="section"><table>…</table></div>` shape the shared builder emits
+// for its own goods table, so it inherits the document stylesheet (the section
+// rule, the th/td borders, the 11px type) instead of carrying a second one.
+function grnTableHtml(lines: GrnPrintLine[]): string {
+  // The per-line DC reference only earns a column when at least one line
+  // carries one — otherwise the sheet prints a column of dashes.
+  const showDcRef = lines.some((l) => Boolean(l.dcRefNo));
+  const colCount = showDcRef ? 8 : 7;
 
-// The signature strip. The GRN's factory default is three names separated by
-// blank lines ("Received By / Checked By / Authorised Signatory"), so each
-// blank-line-separated chunk becomes one signing box — which reproduces the
-// three-box strip this sheet has always printed, while letting an admin change
-// the names (or reduce them to one) in Settings → Print Templates.
-function signatureHtml(signature: string): string {
-  const parts = signature
-    .split(/(?:<br>\s*){2,}/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  const boxes = parts.length > 0 ? parts : ['Received By', 'Checked By', 'Authorised Signatory'];
-  // One name only → a single box in the bottom-RIGHT corner. Two or more →
-  // an even strip across the foot of the sheet, as today.
-  const style =
-    boxes.length > 1
-      ? `grid-template-columns:repeat(${boxes.length},1fr)`
-      : 'grid-template-columns:1fr;width:38%;margin-left:auto';
-  return `<div class="sign-row" style="${style}">${boxes
-    .map((b) => `<div class="sign-box">${b}</div>`)
-    .join('')}</div>`;
-}
+  const head =
+    '<th style="width:44px">Sr No.</th>' +
+    '<th style="width:120px">Item Code</th>' +
+    '<th>Item Name</th>' +
+    '<th style="width:70px;text-align:center">Received Qty</th>' +
+    '<th style="width:70px;text-align:center">QC Accepted</th>' +
+    '<th style="width:70px;text-align:center">QC Rejected</th>' +
+    '<th style="width:86px;text-align:center">QC Status</th>' +
+    (showDcRef ? '<th style="width:100px">DC Ref</th>' : '');
 
-const TEST_BANNER =
-  '<div class="no-print" style="background:#fef3c7;border:2px dashed #d97706;padding:10px;text-align:center;border-radius:6px;color:#92400e;font-weight:700">' +
-  'ⓘ TEST PRINT — Sample data shown. Real data is substituted on actual prints.</div>';
+  const rows = lines
+    .map(
+      (l, i) => `<tr>
+      <td style="text-align:center">${i + 1}</td>
+      <td>${dash(l.itemCode)}</td>
+      <td>${dash(l.itemName)}</td>
+      <td style="text-align:center;font-weight:600">${l.receivedQty}</td>
+      <td style="text-align:center;font-weight:600">${l.qcAcceptedQty}</td>
+      <td style="text-align:center;font-weight:600">${l.qcRejectedQty}</td>
+      <td style="text-align:center;text-transform:capitalize">${esc(qcLabel(l.qcStatus))}</td>
+      ${showDcRef ? `<td>${dash(l.dcRefNo)}</td>` : ''}
+    </tr>`,
+    )
+    .join('');
+
+  const totalReceived = lines.reduce((s, l) => s + l.receivedQty, 0);
+  const totalAccepted = lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
+  const totalRejected = lines.reduce((s, l) => s + l.qcRejectedQty, 0);
+
+  // Same tone the shared builder's own TOTAL row carries, so the two documents
+  // read alike on paper.
+  const totalsRow = `<tr style="background:#f1f5f9">
+      <td colspan="3" style="text-align:right;font-weight:800">TOTAL</td>
+      <td style="text-align:center;font-weight:800">${totalReceived}</td>
+      <td style="text-align:center;font-weight:800">${totalAccepted}</td>
+      <td style="text-align:center;font-weight:800">${totalRejected}</td>
+      <td${showDcRef ? ' colspan="2"' : ''}></td>
+    </tr>`;
+
+  const emptyRow = `<tr><td colspan="${colCount}" style="text-align:center;color:#94a3b8">No lines on this GRN</td></tr>`;
+
+  return `<div class="section"><table><thead><tr>${head}</tr></thead><tbody>${
+    rows ? rows + totalsRow : emptyRow
+  }</tbody></table></div>`;
+}
 
 // Builds and opens the sheet. `data` is the {var} substitution bag — the
 // caller assembles it, exactly as print-po / print-ospdc do for the shared
@@ -144,87 +152,52 @@ export function printGrnDoc(args: {
   testBanner?: boolean;
 }): boolean {
   const { model, data, company, templates } = args;
-  const lines = model.lines;
 
-  const totalReceived = lines.reduce((s, l) => s + l.receivedQty, 0);
-  const totalAccepted = lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
-  const totalRejected = lines.reduce((s, l) => s + l.qcRejectedQty, 0);
+  // GRN No. and GRN Date always print; the three reference numbers only when
+  // the document actually carries them — the same way the OSP DC pushes its
+  // optional meta cells.
+  const meta: DocMetaCell[] = [
+    { label: 'GRN No.', value: model.code },
+    { label: 'GRN Date', value: fmtDate(model.grnDate) },
+  ];
+  if (model.poNo) meta.push({ label: 'PO No.', value: model.poNo });
+  if (model.dcNo) meta.push({ label: 'Vendor DC No.', value: model.dcNo });
+  if (model.invoiceNo) meta.push({ label: 'Invoice No.', value: model.invoiceNo });
 
-  const { headerNote, specialNotes, terms, footer, signature } = renderBlocks(templates, data);
+  // The GRN is INWARD, so the counterparty is the party that SUPPLIED the
+  // goods — labelled "Supplier", not "Recipient". Address / GSTIN / contact
+  // come from the same substitution bag the template blocks read, which is
+  // where both entry points already resolve them.
+  const vendorName = model.vendorName || (data.vendorName ?? '');
+  const vendorLines = [
+    data.vendorAddress ?? '',
+    data.vendorGSTIN ? `GSTIN: ${data.vendorGSTIN}` : '',
+    data.vendorContact ?? '',
+  ].filter(Boolean);
 
-  // The per-line DC reference only earns a column when at least one line
-  // carries one — otherwise the sheet prints a column of dashes.
-  const showDcRef = lines.some((l) => Boolean(l.dcRefNo));
+  // Remarks are free text the store typed on THIS GRN, not template text, so
+  // they print as the document's own computed section under the line table —
+  // the same slot the OSP DC uses for its material return status.
+  const remarks = model.remarks?.trim();
 
-  const head =
-    '<th style="width:44px">Sr No.</th>' +
-    '<th style="width:130px">Item Code</th>' +
-    '<th>Item Name</th>' +
-    '<th style="width:80px;text-align:center">Received Qty</th>' +
-    '<th style="width:80px;text-align:center">QC Accepted</th>' +
-    '<th style="width:80px;text-align:center">QC Rejected</th>' +
-    '<th style="width:90px">QC Status</th>' +
-    (showDcRef ? '<th style="width:110px">DC Ref</th>' : '');
+  const docModel: DocPrintModel = {
+    doc: 'GRN',
+    blocks: templatesToBlocks('GRN', templates),
+    data,
+    company: buildDocCompany(company),
+    recipient: { label: 'Supplier', name: vendorName, lines: vendorLines },
+    meta,
+    // The GRN supplies its own table below, so the builder's goods table is
+    // never rendered and this list is never read.
+    lines: [],
+    tableHtml: grnTableHtml(model.lines),
+    // Spread, not an explicit key: exactOptionalPropertyTypes refuses an
+    // explicit undefined on an optional property.
+    ...(remarks ? { extraSection: { title: 'Remarks', body: remarks } } : {}),
+    ...(args.testBanner ? { opts: { testBanner: true } } : {}),
+  };
 
-  const colCount = showDcRef ? 8 : 7;
-
-  const rows = lines
-    .map(
-      (l, i) => `<tr>
-      <td style="text-align:center">${i + 1}</td>
-      <td style="font-family:monospace">${dash(l.itemCode)}</td>
-      <td>${dash(l.itemName)}</td>
-      <td style="text-align:center;font-weight:700">${l.receivedQty}</td>
-      <td style="text-align:center;color:#16a34a;font-weight:700">${l.qcAcceptedQty}</td>
-      <td style="text-align:center;color:#d97706;font-weight:700">${l.qcRejectedQty}</td>
-      <td><span class="badge ${QC_BADGE[l.qcStatus]}">${esc(qcLabel(l.qcStatus))}</span></td>
-      ${showDcRef ? `<td style="font-family:monospace">${dash(l.dcRefNo)}</td>` : ''}
-    </tr>`,
-    )
-    .join('');
-
-  const totalsRow = `<tr style="background:#f1f5f9">
-      <td colspan="3" style="text-align:right;font-weight:800">TOTAL</td>
-      <td style="text-align:center;font-weight:800">${totalReceived}</td>
-      <td style="text-align:center;font-weight:800;color:#16a34a">${totalAccepted}</td>
-      <td style="text-align:center;font-weight:800;color:#d97706">${totalRejected}</td>
-      <td${showDcRef ? ' colspan="2"' : ''}></td>
-    </tr>`;
-
-  const emptyRow = `<tr><td colspan="${colCount}" style="text-align:center;color:#aaa">No lines on this GRN</td></tr>`;
-
-  const noteBox = (html: string): string =>
-    `<div style="font-size:11px;line-height:1.6;border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-bottom:12px;background:#f8fafc">${html}</div>`;
-
-  const body = `
-    ${args.testBanner ? TEST_BANNER : ''}
-    <div class="doc-title"><h1>GOODS RECEIPT NOTE — ${esc(model.code)}</h1><span class="print-meta">${printedMeta()}</span></div>
-    <div class="info-grid">
-      <div class="info-box"><div class="info-lbl">GRN No.</div><div class="info-val" style="font-family:monospace;font-size:13px">${esc(model.code)}</div></div>
-      <div class="info-box"><div class="info-lbl">GRN Date</div><div class="info-val">${fmtDate(model.grnDate) || '&mdash;'}</div></div>
-      <div class="info-box"><div class="info-lbl">Vendor</div><div class="info-val">${dash(model.vendorName)}</div></div>
-      <div class="info-box"><div class="info-lbl">PO No.</div><div class="info-val" style="font-family:monospace;font-size:13px">${dash(model.poNo)}</div></div>
-      <div class="info-box"><div class="info-lbl">Vendor DC No.</div><div class="info-val" style="font-family:monospace;font-size:13px">${dash(model.dcNo)}</div></div>
-      <div class="info-box"><div class="info-lbl">Invoice No.</div><div class="info-val" style="font-family:monospace;font-size:13px">${dash(model.invoiceNo)}</div></div>
-      <div class="info-box"><div class="info-lbl">Total Received</div><div class="info-val">${totalReceived}</div></div>
-      <div class="info-box"><div class="info-lbl">Accepted / Rejected</div><div class="info-val"><span style="color:#16a34a">${totalAccepted}</span> / <span style="color:#d97706">${totalRejected}</span></div></div>
-    </div>
-    ${headerNote ? noteBox(headerNote) : ''}
-    <h2>Remarks</h2>
-    <div style="font-size:11px;white-space:pre-wrap;padding:2px 8px 4px">${dash(model.remarks)}</div>
-    <h2>Received Items</h2>
-    <table><thead><tr>${head}</tr></thead>
-    <tbody>${rows ? rows + totalsRow : emptyRow}</tbody></table>
-    ${specialNotes ? `<h2>Special Notes</h2><div style="font-size:11px;line-height:1.6;padding:2px 8px 4px">${specialNotes}</div>` : ''}
-    ${terms ? `<h2>Terms &amp; Conditions</h2><div style="font-size:11px;line-height:1.6;padding:2px 8px 4px">${terms}</div>` : ''}
-    ${footer ? `<div style="margin-top:14px;text-align:center;font-size:10px;color:#666">${footer}</div>` : ''}
-    ${signatureHtml(signature)}`;
-
-  // `company` feeds the logo/letterhead block printWindow renders; the
-  // {company*} variables come from `data`, which the caller built from the
-  // same company row.
-  const title = args.testBanner ? 'Test Print — GOODS RECEIPT NOTE' : `GRN ${model.code}`;
-  return printWindow({ title, body, company });
+  return openDocPrintWindow(docModel);
 }
 
 // Real-data entry point, called from the GRN detail page.

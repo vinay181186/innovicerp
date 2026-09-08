@@ -180,10 +180,12 @@ const SAMPLE_COMPANY: Company = {
   deletedAt: null,
 };
 
-// The GRN does NOT render through the shared doc builder — it is an inward
-// receipt with received / accepted / rejected quantities and no money, and it
-// has its own builder. Test Print therefore goes to that builder, with the
-// same effective template blocks and the same TEST PRINT banner.
+// The GRN renders on the SAME document layout as the PO and the two delivery
+// challans, but its columns are received / accepted / rejected / QC status, so
+// it supplies its own table to the shared builder through its own entry point
+// in modules/goods-receipt-notes/lib/print-grn.ts. Test Print therefore goes to
+// that entry point, with the same effective template blocks and the same TEST
+// PRINT banner.
 function openGrnTestPrint(templates: EffectivePrintTemplate[]): boolean {
   const data = sampleDataFor('GRN');
   const model: GrnPrintModel = {
