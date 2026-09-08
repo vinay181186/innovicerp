@@ -111,6 +111,21 @@ export function prOrderBalance(pr: PrBalanceSource): PrOrderBalance {
   };
 }
 
+/** Can a NEW purchase order still take quantity from this request?
+ *
+ *  The browser-side mirror of the API's `assertPrCanTakeAnotherPo`
+ *  (purchase-orders/service.ts): a short-closed balance is finished ON PURPOSE,
+ *  and nothing may be ordered once the balance reaches zero — including an
+ *  over-ordered request, whose balance is negative. Screens use this to decide
+ *  what to OFFER, so a button that exists is a button that works instead of one
+ *  that only fails on click.
+ *
+ *  The CANCELLED test is deliberately NOT in here: a status is not part of the
+ *  balance, and every caller already has the status in hand. Ask both. */
+export function prHasBalanceToOrder(bal: PrOrderBalance): boolean {
+  return !bal.closed && bal.balance > 0;
+}
+
 /** Token colour per state — amber waiting, blue part-done, green done, red
  *  wrong, grey deliberately finished. Same meanings the status badge already
  *  carries elsewhere on these screens. */

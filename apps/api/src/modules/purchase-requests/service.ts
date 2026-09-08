@@ -499,6 +499,10 @@ export async function listPurchaseRequests(
           -- 📝 PO created). Cast to text so a "2026-08" style search hits.
           OR pr.approved_at::text ILIKE ${term} ESCAPE '\\'
           OR pr.po_created_at::text ILIKE ${term} ESCAPE '\\'
+          -- Why the abandonment happened is exactly what someone searches for
+          -- months later (ADR-152 phase 2); the date alone is not enough.
+          OR pr.balance_closed_reason ILIKE ${term} ESCAPE '\\'
+          OR pr.balance_closed_at::text ILIKE ${term} ESCAPE '\\'
           -- Source ref + the PO link on the card, both already joined below.
           OR so.code ILIKE ${term} ESCAPE '\\'
           OR jc.code ILIKE ${term} ESCAPE '\\'
