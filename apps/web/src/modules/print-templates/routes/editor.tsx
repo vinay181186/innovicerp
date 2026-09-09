@@ -15,8 +15,9 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { format } from 'date-fns';
 import { Loader2, Pencil, Printer } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
+import type { SheetField } from '@/lib/print/sheet-print';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates, useRestorePrintTemplateDefault, useSavePrintTemplate } from '../api';
@@ -24,9 +25,9 @@ import { RevisionsModal } from '../components/revisions-modal';
 import {
   GRN_SAMPLE_LINES,
   PO_SAMPLE_LINES,
-  PO_SAMPLE_PARTIES,
   openTestPrint,
-  poSampleDocRow,
+  poSampleOrder,
+  poSampleRecipient,
   sampleDataFor,
 } from '../lib/test-print';
 
@@ -92,26 +93,57 @@ function PrintTemplatesPage(): React.JSX.Element {
   const docTemplates = useMemo(() => allTemplates.filter((t) => t.doc === doc), [allTemplates, doc]);
   const sample = useMemo(() => sampleDataFor(doc), [doc]);
   const allowedVars = PRINT_TEMPLATE_VARS[doc];
-  // PO and Service PO both print the priced goods table + amount in words; the
-  // two DC docs print a qty-only table. Mirrors `isPo` in @/lib/print/doc-print,
-  // so the mock previews what actually prints.
-  const isPo = doc === 'PO' || doc === 'SERVICE PO';
-  // The GRN is a THIRD shape, not a variant of either: it is an inward receipt,
-  // so it prints received / accepted / rejected quantities and NO money at all.
-  // Mirrors modules/goods-receipt-notes/lib/print-grn.ts, which is the builder
-  // that actually puts a GRN on paper.
+  // The GRN is its own shape: an INWARD receipt, so it prints received /
+  // accepted / rejected quantities and NO money at all. Mirrors
+  // modules/goods-receipt-notes/lib/print-grn.ts, which is the builder that
+  // actually puts a GRN on paper.
   const isGrn = doc === 'GRN';
-  // The Purchase Order prints the APPROVED FORMAT (sample signed off
-  // 2026-09-08): a letterhead that repeats on every page, a five-cell document
-  // row, supplier + ship-to boxes, and one "Item Code & Description" column.
-  // Mirrors `docLayout: 'v10'` in @/lib/print/doc-print, so this mock shows
-  // what actually comes out of the printer. The Service PO, the two challans
-  // and the GRN keep the layout they have always previewed.
-  const isPoV10 = doc === 'PO';
+  // BOTH purchase orders preview the SHARED SHEET (@/lib/print/sheet-print) —
+  // the layout the two delivery challans print on, which the PO moved onto on
+  // 2026-09-09 and the Service PO joined the same day. The mock below shows
+  // that sheet, so what the admin sees on screen is what Test Print puts on
+  // paper. The two challans and the GRN keep the layout they have always
+  // previewed.
+  const isPoSheet = doc === 'PO' || doc === 'SERVICE PO';
+  // A Service PO is the SAME sheet as a Purchase Order, worded differently:
+  // its own title, its own recipient heading, its own SPO No. / SPO date rows
+  // and its own number. ONE flag drives every one of those differences — here
+  // and in openPoTestPrint — so the preview and the paper cannot drift.
+  const isSpo = doc === 'SERVICE PO';
   // The printed document sets every code, date and number in a monospace face;
   // the mock does the same so the preview reads like the paper.
   const MONO = "'DejaVu Sans Mono', Consolas, 'Courier New', monospace";
-  const poDocRow = poSampleDocRow();
+  // The sheet's own rule, band and label face (see the stylesheet in
+  // @/lib/print/sheet-print) so the preview and the paper cannot drift apart.
+  const PO_RULE = '1px solid #1A1A1A';
+  const PO_BAND = '#F1F1F1';
+  const PO_LABEL_FACE = '"Arial Narrow", Arial, sans-serif';
+  const poCell: React.CSSProperties = {
+    padding: '6px 9px',
+    borderBottom: PO_RULE,
+    borderRight: PO_RULE,
+    verticalAlign: 'top',
+  };
+  const poMoneyCell: React.CSSProperties = {
+    ...poCell,
+    textAlign: 'right',
+    fontFamily: MONO,
+    whiteSpace: 'nowrap',
+  };
+  const poSumLabel: React.CSSProperties = {
+    padding: '6px 9px',
+    borderBottom: PO_RULE,
+    borderRight: PO_RULE,
+    textAlign: 'right',
+    fontFamily: PO_LABEL_FACE,
+    fontWeight: 700,
+    fontSize: 11,
+    letterSpacing: '.08em',
+    textTransform: 'uppercase',
+    color: '#3A3A3A',
+  };
+  const poRecipient = poSampleRecipient(isSpo);
+  const poOrder = poSampleOrder(isSpo);
   const blockOf = (b: string): EffectivePrintTemplate | undefined =>
     docTemplates.find((t) => t.block === b);
 
@@ -458,288 +490,176 @@ function PrintTemplatesPage(): React.JSX.Element {
             className="panel"
             style={{ padding: 0, background: '#fff', color: '#1e293b', borderRadius: 6, overflow: 'hidden' }}
           >
-            <div style={{ padding: 0, border: '2px solid #333' }}>
-              {/* Header: the letterhead. On the Purchase Order it is the
-                  approved band — logo left, company block right, blue rule —
-                  and it is REPEATED at the top of every printed page. */}
-              {isPoV10 ? (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '8px 14px',
-                    borderBottom: '2px solid #1E4DB3',
-                  }}
-                >
-                  <img src={INNOVIC_LOGO_DATA_URI} alt="INNOVIC" style={{ height: 34 }} />
-                  <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                    <div
-                      style={{ fontSize: 20, fontWeight: 700, color: '#1E4DB3', lineHeight: 1.25 }}
-                    >
-                      {sample.companyName}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#334155', lineHeight: 1.45 }}>
-                      {sample.companyAddress}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#334155', lineHeight: 1.45 }}>
-                      <b>GSTIN:</b> {sample.companyGSTIN} &nbsp;·&nbsp; <b>PAN:</b> AQKPM4121A
-                    </div>
-                  </div>
-                </div>
-              ) : (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: 14,
-                  borderBottom: '2px solid #333',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 28,
-                    fontWeight: 900,
-                    color: '#1E4DB3',
-                    marginRight: 18,
-                    letterSpacing: -1,
-                  }}
-                >
-                  INNOVIC
-                </div>
-                <div style={{ flex: 1, textAlign: 'center' }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: '#1E4DB3', letterSpacing: 1 }}>
-                    {sample.companyName}
-                  </div>
-                  <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
-                    {sample.companyAddress}
-                  </div>
-                  <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
-                    GSTIN: {sample.companyGSTIN}
-                    {sample.companyPhone ? `   Phone: ${sample.companyPhone}` : ''}
-                  </div>
-                  <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
-                    E-Mail: {sample.companyEmail}
-                  </div>
-                </div>
-              </div>
-              )}
-
-              {/* Document title bar */}
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: 10,
-                  borderBottom: '2px solid #333',
-                  fontSize: 18,
-                  fontWeight: 900,
-                  letterSpacing: 3,
-                  color: DOC_COLOR[doc],
-                  background: '#f8fafc',
-                }}
-              >
-                {DOC_TITLE[doc]}
-              </div>
-
-              {/* Meta info row (sample) */}
-              {isPoV10 ? (
+            <div style={{ padding: 0, border: isPoSheet ? PO_RULE : '2px solid #333' }}>
+              {isPoSheet ? (
+                /* THE SHARED SHEET. Since 2026-09-09 the Purchase Order and
+                   the Service Purchase Order both print on
+                   @/lib/print/sheet-print — the same layout as the two
+                   delivery challans: letterhead, blue rule, centred title, the
+                   recipient / Order boxes, the priced goods table and the
+                   money rows. ONE outer border, every cell divided by the same
+                   1px rule; no inner box around the goods table. Same sample
+                   recipient, lines and totals the Test Print puts on paper;
+                   the Service PO differs in wording only, off `isSpo`. */
                 <>
-                  {/* The five-cell document row */}
-                  <div style={{ display: 'flex', borderBottom: '1px solid #999' }}>
-                    {poDocRow.map((c, i) => (
-                      <div
-                        key={c.label}
-                        style={{
-                          flex: 1,
-                          padding: '5px 10px',
-                          borderRight: i < poDocRow.length - 1 ? '1px solid #999' : 'none',
-                        }}
-                      >
-                        <span style={{ fontSize: 11, color: '#666', letterSpacing: '.09em' }}>
-                          {c.label}
-                        </span>
-                        <br />
-                        <b style={{ fontSize: 12, fontFamily: c.mono === false ? undefined : MONO }}>
-                          {c.value}
-                        </b>
+                  {/* 1-3. Letterhead, blue rule, centred document title. */}
+                  <div style={{ padding: '13px 18px 9px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        justifyContent: 'space-between',
+                        gap: 22,
+                      }}
+                    >
+                      <img src={INNOVIC_LOGO_DATA_URI} alt="INNOVIC" style={{ height: 44 }} />
+                      <div style={{ textAlign: 'right', lineHeight: 1.35, color: '#1A1A1A' }}>
+                        <div
+                          style={{
+                            fontSize: 20,
+                            fontWeight: 700,
+                            color: '#1E4DB3',
+                            lineHeight: 1.1,
+                            marginBottom: 3,
+                          }}
+                        >
+                          {sample.companyName}
+                        </div>
+                        <div style={{ fontSize: 10 }}>{sample.companyAddress}</div>
+                        <div style={{ fontSize: 10 }}>
+                          e-mail: {sample.companyEmail} &nbsp;&middot;&nbsp; M: {sample.companyPhone}
+                        </div>
+                        <div style={{ fontSize: 10 }}>
+                          <b>GSTIN:</b> {sample.companyGSTIN} &nbsp;&middot;&nbsp; <b>PAN:</b>{' '}
+                          AQKPM4121A
+                        </div>
                       </div>
-                    ))}
+                    </div>
+                    <div style={{ height: 4, background: '#1E4DB3', margin: '7px 0 8px' }} />
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        fontFamily: PO_LABEL_FACE,
+                        fontSize: 16,
+                        fontWeight: 700,
+                        letterSpacing: '.15em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {DOC_TITLE[doc]}
+                    </div>
                   </div>
-                  {/* Vendor / Supplier and Ship To, label column + value column */}
-                  <div style={{ display: 'flex', borderBottom: '1px solid #999' }}>
-                    {PO_SAMPLE_PARTIES.map((b, i) => (
+
+                  {/* 4. The recipient box (Vendor / Supplier on a PO, Service
+                      provider on a Service PO) and Order, side by side with
+                      one vertical rule between them. */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      borderTop: PO_RULE,
+                      borderBottom: PO_RULE,
+                    }}
+                  >
+                    {(
+                      [
+                        [isSpo ? 'Service provider' : 'Vendor / Supplier', poRecipient],
+                        ['Order', poOrder],
+                      ] as [string, SheetField[]][]
+                    ).map(([boxLabel, fields], i) => (
                       <div
-                        key={b.label}
-                        style={{
-                          flex: 1,
-                          padding: '10px 14px',
-                          fontSize: 12,
-                          lineHeight: 1.45,
-                          borderRight: i === 0 ? '1px solid #999' : 'none',
-                        }}
+                        key={boxLabel}
+                        style={{ padding: '11px 16px', borderRight: i === 0 ? PO_RULE : undefined }}
                       >
                         <div
                           style={{
+                            fontFamily: PO_LABEL_FACE,
+                            fontSize: 10,
                             fontWeight: 700,
-                            color: '#333',
-                            textDecoration: 'underline',
-                            fontSize: 11,
-                            letterSpacing: '.11em',
+                            letterSpacing: '.13em',
+                            textTransform: 'uppercase',
+                            color: '#3A3A3A',
+                            paddingBottom: 3,
+                            marginBottom: 7,
+                            borderBottom: '1px solid #8A8A8A',
                           }}
                         >
-                          {b.label}
+                          {boxLabel}
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
-                          {b.name}
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '104px 1fr',
+                            gap: '5px 12px',
+                            fontSize: 12,
+                          }}
+                        >
+                          {fields.map((f) => (
+                            <Fragment key={f.label}>
+                              <div
+                                style={{
+                                  fontFamily: PO_LABEL_FACE,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  letterSpacing: '.05em',
+                                  textTransform: 'uppercase',
+                                  color: '#3A3A3A',
+                                }}
+                              >
+                                {f.label}
+                              </div>
+                              <div
+                                style={{
+                                  minWidth: 0,
+                                  lineHeight: 1.3,
+                                  fontFamily: f.variant === 'mono' ? MONO : undefined,
+                                  fontSize: f.variant === 'name' ? 15 : 12,
+                                  fontWeight: f.variant === 'name' || f.strong ? 700 : undefined,
+                                }}
+                              >
+                                {[f.value, ...(f.extra ?? [])].filter(Boolean).map((line) => (
+                                  <div key={line}>{line}</div>
+                                ))}
+                              </div>
+                            </Fragment>
+                          ))}
                         </div>
-                        {b.rows.map((r) => (
-                          <div key={r.label} style={{ display: 'flex', gap: 10, marginTop: 3 }}>
-                            <b
-                              style={{
-                                flex: '0 0 118px',
-                                fontSize: 11,
-                                fontWeight: 600,
-                                color: '#475569',
-                                letterSpacing: '.07em',
-                              }}
-                            >
-                              {r.label}
-                            </b>
-                            <span
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                fontSize: 12,
-                                fontFamily: r.mono ? MONO : undefined,
-                              }}
-                            >
-                              {r.value}
-                            </span>
-                          </div>
-                        ))}
                       </div>
                     ))}
                   </div>
-                </>
-              ) : isGrn ? (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    borderBottom: '1px solid #999',
-                  }}
-                >
-                  <div
-                    style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}
-                  >
-                    <b>GRN No.:</b> {sample.grnNo}
-                    <br />
-                    <b>GRN Date:</b> {sample.grnDate}
-                    <br />
-                    <b>Vendor:</b> {sample.vendorName}
-                  </div>
-                  <div style={{ padding: '10px 14px', fontSize: 11 }}>
-                    <b>PO No.:</b> {sample.poNo}
-                    <br />
-                    <b>Vendor DC No.:</b> {sample.dcNo}
-                    <br />
-                    <b>Invoice No.:</b> {sample.invoiceNo}
-                  </div>
-                </div>
-              ) : isPo ? (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    borderBottom: '1px solid #999',
-                  }}
-                >
-                  {/* Only the Service PO reaches here now — the Purchase Order
-                      has its own branch above, on the approved format. */}
-                  <div style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}>
-                    <b>SPO No.:</b> {sample.spoNo}
-                    <br />
-                    <b>SPO Date:</b> {sample.spoDate}
-                    <br />
-                    <b>Payment:</b> {sample.paymentTerms}
-                  </div>
-                  <div style={{ padding: '10px 14px', fontSize: 11 }}>
-                    <b>Vendor:</b> {sample.vendorName}
-                    <br />
-                    <b>GSTIN:</b> {sample.vendorGSTIN}
-                    <br />
-                    <b>Address:</b> {sample.vendorAddress}
-                  </div>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    borderBottom: '1px solid #999',
-                  }}
-                >
-                  <div style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}>
-                    <b>DC No.:</b> {sample.dcNo}
-                    <br />
-                    <b>DC Date:</b> {sample.dcDate}
-                    <br />
-                    <b>Purpose:</b> {sample.purpose}
-                  </div>
-                  <div style={{ padding: '10px 14px', fontSize: 11 }}>
-                    <b>Recipient:</b> {sample.recipientName}
-                    <br />
-                    <b>Vehicle:</b> {sample.vehicleNo}
-                    <br />
-                    <b>Linked PO:</b> {sample.linkedPONo}
-                  </div>
-                </div>
-              )}
 
-              {/* Sample items table (NOT editable — system-generated) */}
-              <div style={{ borderBottom: '1px solid #999' }}>
-                <div
-                  style={{
-                    padding: '6px 14px',
-                    background: '#f1f5f9',
-                    fontSize: 9,
-                    color: '#64748b',
-                    fontWeight: 700,
-                    letterSpacing: '.04em',
-                    borderBottom: '1px solid #cbd5e1',
-                  }}
-                >
-                  SYSTEM-GENERATED — LINE ITEMS TABLE
-                </div>
-                {isPoV10 ? (
-                  // Approved format: ONE column stacks the item code, the item
-                  // name and — only when the line has remarks — a
-                  // "Description:" line. Same two sample lines the PO Test
-                  // Print puts on paper.
+                  {/* 5-8. The goods table (NOT editable — system-generated):
+                      column band, one row per line, the quantity total, then
+                      the money rows. */}
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
-                      <tr style={{ background: '#f1f5f9' }}>
+                      <tr style={{ background: PO_BAND }}>
                         {(
                           [
-                            ['Sr No.', 40],
-                            ['Item Code & Description', 0],
-                            ['Qty', 52],
-                            ['UOM', 46],
-                            ['Rate', 82],
-                            ['Amount', 96],
-                          ] as [string, number][]
-                        ).map(([label, w], i) => (
+                            ['Sr', 34, 'center'],
+                            ['Item detail', 0, 'left'],
+                            ['UOM', 46, 'center'],
+                            ['Qty', 58, 'center'],
+                            ['Rate', 78, 'center'],
+                            ['Amount', 92, 'center'],
+                          ] as [string, number, 'left' | 'center'][]
+                        ).map(([colLabel, w, align], i) => (
                           <th
-                            key={label}
+                            key={colLabel}
                             style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
+                              padding: '6px 9px',
+                              borderBottom: PO_RULE,
+                              borderRight: i < 5 ? PO_RULE : 'none',
+                              fontFamily: PO_LABEL_FACE,
                               fontSize: 11,
-                              letterSpacing: '.09em',
-                              textAlign: i === 1 ? 'left' : 'center',
+                              fontWeight: 700,
+                              letterSpacing: '.08em',
+                              textTransform: 'uppercase',
+                              textAlign: align,
                               ...(w ? { width: w } : {}),
                             }}
                           >
-                            {label}
+                            {colLabel}
                           </th>
                         ))}
                       </tr>
@@ -747,105 +667,112 @@ function PrintTemplatesPage(): React.JSX.Element {
                     <tbody>
                       {PO_SAMPLE_LINES.map((l, i) => (
                         <tr key={l.itemCode}>
-                          <td
-                            style={{
-                              padding: '5px 8px',
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              fontFamily: MONO,
-                            }}
-                          >
+                          <td style={{ ...poCell, textAlign: 'center', fontFamily: MONO }}>
                             {i + 1}
                           </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                          <td style={poCell}>
                             <span
                               style={{
                                 display: 'block',
                                 fontFamily: MONO,
-                                fontWeight: 700,
-                                fontSize: 12,
+                                fontSize: 11,
+                                color: '#3A3A3A',
                               }}
                             >
                               {l.itemCode}
                             </span>
-                            <span style={{ display: 'block', fontWeight: 700 }}>{l.itemName}</span>
+                            <span
+                              style={{
+                                display: 'block',
+                                fontWeight: 600,
+                                fontSize: 12.5,
+                                lineHeight: 1.25,
+                                marginTop: 1,
+                              }}
+                            >
+                              {l.itemName}
+                            </span>
                             {l.description ? (
                               <span
                                 style={{
                                   display: 'block',
                                   fontSize: 11,
-                                  color: '#475569',
+                                  lineHeight: 1.4,
+                                  color: '#3A3A3A',
                                   marginTop: 2,
                                 }}
                               >
-                                <b style={{ color: '#334155' }}>Description:</b> {l.description}
+                                <b
+                                  style={{
+                                    fontFamily: PO_LABEL_FACE,
+                                    fontSize: 10,
+                                    letterSpacing: '.05em',
+                                    textTransform: 'uppercase',
+                                  }}
+                                >
+                                  Description
+                                </b>{' '}
+                                {l.description}
                               </span>
                             ) : null}
                           </td>
-                          {[l.qty, l.uom ?? 'NOS'].map((v, k) => (
-                            <td
-                              key={k}
-                              style={{
-                                padding: '5px 8px',
-                                border: '1px solid #cbd5e1',
-                                textAlign: 'center',
-                                fontFamily: MONO,
-                              }}
-                            >
-                              {v}
-                            </td>
-                          ))}
+                          <td style={{ ...poCell, textAlign: 'center' }}>{l.uom}</td>
                           <td
                             style={{
-                              padding: '5px 8px',
-                              border: '1px solid #cbd5e1',
+                              ...poCell,
                               textAlign: 'right',
                               fontFamily: MONO,
+                              fontWeight: 600,
                             }}
                           >
-                            {l.rate}
+                            {l.qty}
                           </td>
-                          <td
-                            style={{
-                              padding: '5px 8px',
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'right',
-                              fontFamily: MONO,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {l.amount}
-                          </td>
+                          <td style={poMoneyCell}>{l.rate}</td>
+                          <td style={{ ...poMoneyCell, borderRight: 'none' }}>{l.amount}</td>
                         </tr>
                       ))}
+                      <tr style={{ background: PO_BAND }}>
+                        <td colSpan={3} style={{ ...poSumLabel, fontSize: 13, color: '#1A1A1A' }}>
+                          Total quantity &mdash; {PO_SAMPLE_LINES.length} line
+                          {PO_SAMPLE_LINES.length === 1 ? '' : 's'}
+                        </td>
+                        <td
+                          style={{
+                            ...poCell,
+                            textAlign: 'right',
+                            fontFamily: MONO,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {sample.totalQty}
+                        </td>
+                        <td style={{ ...poCell, textAlign: 'center', fontWeight: 700 }}>NOS</td>
+                        <td style={{ ...poCell, borderRight: 'none' }} />
+                      </tr>
                       {(
                         [
-                          ['Subtotal', '1,00,000.00', 700, '#f8fafc'],
-                          ['SGST @ 9%', '9,000.00', 400, ''],
-                          ['CGST @ 9%', '9,000.00', 400, ''],
-                          ['TOTAL', '₹ ' + sample.totalValue, 800, '#f1f5f9'],
-                        ] as [string, string, number, string][]
-                      ).map(([label, value, weight, bg]) => (
-                        <tr key={label} style={bg ? { background: bg } : undefined}>
+                          ['Subtotal', '1,00,000.00', false],
+                          ['SGST @ 9%', '9,000.00', false],
+                          ['CGST @ 9%', '9,000.00', false],
+                          ['Total', `₹ ${sample.totalValue}`, true],
+                        ] as [string, string, boolean][]
+                      ).map(([sumLabel, value, isGrand]) => (
+                        <tr key={sumLabel} style={isGrand ? { background: PO_BAND } : undefined}>
                           <td
                             colSpan={5}
                             style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'right',
-                              fontWeight: weight,
+                              ...poSumLabel,
+                              ...(isGrand ? { fontSize: 13, color: '#1A1A1A' } : {}),
                             }}
                           >
-                            {label}
+                            {sumLabel}
                           </td>
                           <td
                             style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'right',
-                              fontFamily: MONO,
-                              fontWeight: weight,
-                              whiteSpace: 'nowrap',
+                              ...poMoneyCell,
+                              borderRight: 'none',
+                              fontWeight: isGrand ? 700 : 400,
+                              ...(isGrand ? { fontSize: 13 } : {}),
                             }}
                           >
                             {value}
@@ -854,268 +781,353 @@ function PrintTemplatesPage(): React.JSX.Element {
                       ))}
                     </tbody>
                   </table>
-                ) : isGrn ? (
-                  // Received / accepted / rejected — no Rate, no Amount, no
-                  // money. Same seven columns, same order, same two sample
-                  // lines the GRN test print puts on paper.
+
+                  {/* 9. Amount chargeable (in words). */}
+                  <div style={{ padding: '8px 14px', borderBottom: PO_RULE, fontSize: 11 }}>
+                    <b
+                      style={{
+                        fontFamily: PO_LABEL_FACE,
+                        fontSize: 10,
+                        letterSpacing: '.06em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Amount chargeable (in words)
+                    </b>
+                    <br />
+                    <i>Indian Rupees One Lakh Eighteen Thousand Only</i>
+                  </div>
+                </>
+              ) : (
+                <>
+                {/* Header: the letterhead the two delivery challans and the
+                    GRN still preview. Both purchase orders have their own, on
+                    the shared sheet, above. */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: 14,
+                    borderBottom: '2px solid #333',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 28,
+                      fontWeight: 900,
+                      color: '#1E4DB3',
+                      marginRight: 18,
+                      letterSpacing: -1,
+                    }}
+                  >
+                    INNOVIC
+                  </div>
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: '#1E4DB3', letterSpacing: 1 }}>
+                      {sample.companyName}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
+                      {sample.companyAddress}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
+                      GSTIN: {sample.companyGSTIN}
+                      {sample.companyPhone ? `   Phone: ${sample.companyPhone}` : ''}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
+                      E-Mail: {sample.companyEmail}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Document title bar */}
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: 10,
+                    borderBottom: '2px solid #333',
+                    fontSize: 18,
+                    fontWeight: 900,
+                    letterSpacing: 3,
+                    color: DOC_COLOR[doc],
+                    background: '#f8fafc',
+                  }}
+                >
+                  {DOC_TITLE[doc]}
+                </div>
+
+                {/* Meta info row (sample) */}
+                {isGrn ? (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      borderBottom: '1px solid #999',
+                    }}
+                  >
+                    <div
+                      style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}
+                    >
+                      <b>GRN No.:</b> {sample.grnNo}
+                      <br />
+                      <b>GRN Date:</b> {sample.grnDate}
+                      <br />
+                      <b>Vendor:</b> {sample.vendorName}
+                    </div>
+                    <div style={{ padding: '10px 14px', fontSize: 11 }}>
+                      <b>PO No.:</b> {sample.poNo}
+                      <br />
+                      <b>Vendor DC No.:</b> {sample.dcNo}
+                      <br />
+                      <b>Invoice No.:</b> {sample.invoiceNo}
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      borderBottom: '1px solid #999',
+                    }}
+                  >
+                    <div style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}>
+                      <b>DC No.:</b> {sample.dcNo}
+                      <br />
+                      <b>DC Date:</b> {sample.dcDate}
+                      <br />
+                      <b>Purpose:</b> {sample.purpose}
+                    </div>
+                    <div style={{ padding: '10px 14px', fontSize: 11 }}>
+                      <b>Recipient:</b> {sample.recipientName}
+                      <br />
+                      <b>Vehicle:</b> {sample.vehicleNo}
+                      <br />
+                      <b>Linked PO:</b> {sample.linkedPONo}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sample items table (NOT editable — system-generated) */}
+                <div style={{ borderBottom: '1px solid #999' }}>
+                  <div
+                    style={{
+                      padding: '6px 14px',
+                      background: '#f1f5f9',
+                      fontSize: 9,
+                      color: '#64748b',
+                      fontWeight: 700,
+                      letterSpacing: '.04em',
+                      borderBottom: '1px solid #cbd5e1',
+                    }}
+                  >
+                    SYSTEM-GENERATED — LINE ITEMS TABLE
+                  </div>
+                  {isGrn ? (
+                    // Received / accepted / rejected — no Rate, no Amount, no
+                    // money. Same seven columns, same order, same two sample
+                    // lines the GRN test print puts on paper.
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ background: '#f1f5f9' }}>
+                          <th
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              width: 44,
+                            }}
+                          >
+                            Sr No.
+                          </th>
+                          <th
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'left',
+                              width: 110,
+                            }}
+                          >
+                            Item Code
+                          </th>
+                          <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>
+                            Item Name
+                          </th>
+                          <th
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              width: 78,
+                            }}
+                          >
+                            Received Qty
+                          </th>
+                          <th
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              width: 78,
+                            }}
+                          >
+                            QC Accepted
+                          </th>
+                          <th
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              width: 78,
+                            }}
+                          >
+                            QC Rejected
+                          </th>
+                          <th
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'left',
+                              width: 90,
+                            }}
+                          >
+                            QC Status
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {GRN_SAMPLE_LINES.map((l, i) => (
+                          <tr key={l.itemCode}>
+                            <td
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                              }}
+                            >
+                              {i + 1}
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                              {l.itemCode}
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                              {l.itemName}
+                            </td>
+                            <td
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {l.receivedQty}
+                            </td>
+                            <td
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                color: '#16a34a',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {l.qcAcceptedQty}
+                            </td>
+                            <td
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                color: '#d97706',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {l.qcRejectedQty}
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                              {l.qcStatus.replaceAll('_', ' ')}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr style={{ background: '#f8fafc' }}>
+                          <td
+                            colSpan={3}
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'right',
+                              fontWeight: 700,
+                            }}
+                          >
+                            TOTAL
+                          </td>
+                          <td
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              fontWeight: 800,
+                            }}
+                          >
+                            {sample.totalReceived}
+                          </td>
+                          <td
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              fontWeight: 800,
+                              color: '#16a34a',
+                            }}
+                          >
+                            {sample.totalAccepted}
+                          </td>
+                          <td
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              fontWeight: 800,
+                              color: '#d97706',
+                            }}
+                          >
+                            {sample.totalRejected}
+                          </td>
+                          <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
+                        </tr>
+                      </tbody>
+                    </table>
+                  ) : (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                     <thead>
                       <tr style={{ background: '#f1f5f9' }}>
-                        <th
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'center',
-                            width: 44,
-                          }}
-                        >
+                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'center', width: 44 }}>
                           Sr No.
                         </th>
-                        <th
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'left',
-                            width: 110,
-                          }}
-                        >
+                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 110 }}>
                           Item Code
                         </th>
-                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>
-                          Item Name
+                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>Item Name</th>
+                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 60 }}>
+                          Qty
                         </th>
-                        <th
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'center',
-                            width: 78,
-                          }}
-                        >
-                          Received Qty
-                        </th>
-                        <th
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'center',
-                            width: 78,
-                          }}
-                        >
-                          QC Accepted
-                        </th>
-                        <th
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'center',
-                            width: 78,
-                          }}
-                        >
-                          QC Rejected
-                        </th>
-                        <th
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'left',
-                            width: 90,
-                          }}
-                        >
-                          QC Status
-                        </th>
+                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 60 }}>UOM</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {GRN_SAMPLE_LINES.map((l, i) => (
-                        <tr key={l.itemCode}>
-                          <td
-                            style={{
-                              padding: '5px 8px',
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                            }}
-                          >
-                            {i + 1}
-                          </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                            {l.itemCode}
-                          </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                            {l.itemName}
-                          </td>
-                          <td
-                            style={{
-                              padding: '5px 8px',
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              fontWeight: 700,
-                            }}
-                          >
-                            {l.receivedQty}
-                          </td>
-                          <td
-                            style={{
-                              padding: '5px 8px',
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              color: '#16a34a',
-                              fontWeight: 700,
-                            }}
-                          >
-                            {l.qcAcceptedQty}
-                          </td>
-                          <td
-                            style={{
-                              padding: '5px 8px',
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              color: '#d97706',
-                              fontWeight: 700,
-                            }}
-                          >
-                            {l.qcRejectedQty}
-                          </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                            {l.qcStatus.replaceAll('_', ' ')}
-                          </td>
-                        </tr>
-                      ))}
-                      <tr style={{ background: '#f8fafc' }}>
-                        <td
-                          colSpan={3}
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                          }}
-                        >
-                          TOTAL
-                        </td>
-                        <td
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'center',
-                            fontWeight: 800,
-                          }}
-                        >
-                          {sample.totalReceived}
-                        </td>
-                        <td
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'center',
-                            fontWeight: 800,
-                            color: '#16a34a',
-                          }}
-                        >
-                          {sample.totalAccepted}
-                        </td>
-                        <td
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'center',
-                            fontWeight: 800,
-                            color: '#d97706',
-                          }}
-                        >
-                          {sample.totalRejected}
-                        </td>
-                        <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
+                      <tr>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>1</td>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>STL-PL-6</td>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Steel Plate 6mm</td>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
                       </tr>
-                    </tbody>
-                  </table>
-                ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                  <thead>
-                    <tr style={{ background: '#f1f5f9' }}>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'center', width: 44 }}>
-                        Sr No.
-                      </th>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 110 }}>
-                        Item Code
-                      </th>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>Item Name</th>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 60 }}>
-                        Qty
-                      </th>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 60 }}>UOM</th>
-                      {isPo ? (
-                        <>
-                          <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 80 }}>
-                            Rate
-                          </th>
-                          <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 90 }}>
-                            Amount
-                          </th>
-                        </>
-                      ) : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>1</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>STL-PL-6</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Steel Plate 6mm</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                      {isPo ? (
-                        <>
-                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
-                            500.00
-                          </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
-                            50,000.00
-                          </td>
-                        </>
-                      ) : null}
-                    </tr>
-                    <tr>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>2</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>BRG-6203</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Bearings 6203</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                      {isPo ? (
-                        <>
-                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
-                            500.00
-                          </td>
-                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
-                            50,000.00
-                          </td>
-                        </>
-                      ) : null}
-                    </tr>
-                    {isPo ? (
-                      <tr style={{ background: '#f8fafc' }}>
-                        <td
-                          colSpan={6}
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                          }}
-                        >
-                          TOTAL
-                        </td>
-                        <td
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'right',
-                            fontWeight: 800,
-                          }}
-                        >
-                          ₹ {sample.totalValue}
-                        </td>
+                      <tr>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>2</td>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>BRG-6203</td>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Bearings 6203</td>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
+                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
                       </tr>
-                    ) : (
                       <tr style={{ background: '#f8fafc' }}>
                         <td
                           colSpan={2}
@@ -1140,30 +1152,12 @@ function PrintTemplatesPage(): React.JSX.Element {
                         </td>
                         <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-                )}
-              </div>
-
-              {/* PO-only: Amount in words */}
-              {isPo ? (
-                <div
-                  style={{
-                    padding: '8px 14px',
-                    borderBottom: '1px solid #999',
-                    fontSize: 10,
-                    background: '#fafafa',
-                  }}
-                >
-                  <b>{isPoV10 ? 'Amount Chargeable (in words)' : 'Amount in Words:'}</b>{' '}
-                  <i>
-                    {isPoV10
-                      ? 'Indian Rupees One Lakh Eighteen Thousand Only'
-                      : 'One Lakh Rupees Only'}
-                  </i>
+                    </tbody>
+                  </table>
+                  )}
                 </div>
-              ) : null}
+                </>
+              )}
 
               {/* EDITABLE BLOCK 1: Special Notes */}
               {renderBlock(blockOf('special_notes'))}

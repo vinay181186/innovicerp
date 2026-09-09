@@ -283,6 +283,13 @@ export const runningOpSchema = z.object({
   shift: shiftSchema,
   status: runningOpStatusSchema,
   endedAt: z.string().nullable(),
+  /** The most this operation can still be logged for, RIGHT NOW — the same
+   *  `v_jc_op_status.available` the write path enforces. The Stop box shows it
+   *  ("you can log up to N") so the operator is told the limit BEFORE typing
+   *  instead of being refused after: the form must not invite a number it will
+   *  then reject. Advisory only — the server re-checks under a row lock, and
+   *  the client-material gate can lower it further. */
+  availableQty: z.number().int().nonnegative(),
 });
 export type RunningOp = z.infer<typeof runningOpSchema>;
 
@@ -306,6 +313,36 @@ export const submitOpLogInputSchema = z.object({
   remarks: z.string().max(500).optional(),
 });
 export type SubmitOpLogInput = z.infer<typeof submitOpLogInputSchema>;
+
+/** Body for "stop the session". EVERY field is optional, because stopping and
+ *  logging production are one action with two shapes:
+ *
+ *    * breakdown / nothing made -> send nothing (or qty 0). The session ends
+ *      exactly as it did before this schema existed. That is the common case
+ *      on a real shop floor and must stay one click.
+ *    * finished a batch -> send qty (and rejects). The server writes the SAME
+ *      op_log row `submitOpLog` writes and ends the session in ONE
+ *      transaction, so the pieces can never be counted while the machine is
+ *      still shown as running, nor the reverse.
+ *
+ *  Not asked for, and deliberately so: shift, operator and date. All three are
+ *  already on the running_ops session and are read from it — re-asking an
+ *  operator for what the system started the session with is how entries get
+ *  mistyped. */
+export const stopOpInputSchema = z.object({
+  /** Good pieces made in this session. 0 or absent = stop only, no op_log row.
+   *  Capped server-side by v_jc_op_status.available under a row lock. */
+  qty: z.number().int().nonnegative().optional(),
+  /** Pieces scrapped in this session. Only meaningful alongside a qty. */
+  rejectQty: z.number().int().nonnegative().optional(),
+  /** Clock time for the log row (HH:MM). Defaults to now when a qty is sent. */
+  logTime: z
+    .string()
+    .regex(/^\d{1,2}:\d{2}(:\d{2})?$/)
+    .optional(),
+  remarks: z.string().max(500).optional(),
+});
+export type StopOpInput = z.infer<typeof stopOpInputSchema>;
 
 export const startOpInputSchema = z
   .object({

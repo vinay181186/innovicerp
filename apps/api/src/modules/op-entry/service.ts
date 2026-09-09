@@ -58,6 +58,7 @@ import type {
   OpMachineOutput,
   RunningOp,
   StartOpInput,
+  StopOpInput,
   SubmitOpLogInput,
   SubmitQcLogInput,
   UpdateOpLogTimingInput,
@@ -68,6 +69,13 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+/** Server-side IST clock as HH:MM. Asia/Kolkata is a fixed UTC+5:30 offset (no
+ *  DST), so the shift is exact. Used as the default log time when a stop
+ *  records production without the operator naming a time. */
+function istNowTime(): string {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(11, 16);
+}
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
@@ -415,11 +423,15 @@ export async function listRunningOps(
         r.start_time::text  AS "startTime",
         r.shift,
         r.status,
-        r.ended_at          AS "endedAt"
+        r.ended_at          AS "endedAt",
+        -- The live cap the Stop box shows ("you can log up to N"). Joined, not
+        -- fetched per row: one query for the whole board.
+        COALESCE(s.available, 0)::int AS "availableQty"
       FROM public.running_ops r
       JOIN public.jc_ops o    ON o.id = r.jc_op_id
       JOIN public.job_cards jc ON jc.id = o.job_card_id
       LEFT JOIN public.machines m ON m.id = r.machine_id
+      LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = r.jc_op_id
       WHERE r.company_id = ${companyId}::uuid
         ${input.status ? sql`AND r.status = ${input.status}::running_op_status` : sql``}
       ORDER BY r.start_date DESC, r.start_time DESC
@@ -428,6 +440,7 @@ export async function listRunningOps(
     return (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       ...r,
       opSeq: Number(r['opSeq']),
+      availableQty: Number(r['availableQty'] ?? 0),
       startDate:
         r['startDate'] instanceof Date
           ? (r['startDate'] as Date).toISOString().slice(0, 10)
@@ -698,6 +711,216 @@ function nextLogNo(): string {
   return `LOG-${stamp}`;
 }
 
+// ─── The one production-log write path ─────────────────────────────────────
+//
+// Everything a `log_type='complete'` op_log write must do, extracted so that
+// BOTH callers run it: POST /op-entry/op-log (the Op Entry screen) and the
+// Stop-with-a-quantity path in `stopOp` (the Live Shop Floor). It is shared by
+// call, not by copy-paste, on purpose: any guard that existed on one path and
+// not the other would turn the weaker endpoint into a way to record production
+// that the normal screen would have refused.
+//
+// This function owns:
+//   - the op lookup and the outsource / QC op-type refusals
+//   - the `SELECT ... FOR UPDATE` row lock on jc_ops that serialises two
+//     operators logging against the same op at the same moment
+//   - the qc_pending refusal
+//   - the ADR-103 client-material cap and the "exceeds available" refusal
+//   - the machine stamp (0095)
+//   - the op_log insert
+//   - the availability-hit-zero cascade: end running sessions, stamp
+//     qc_call_date on the next QC op, T-033 SO/JW auto-close
+//   - the OP_COMPLETE activity log
+//
+// It does NOT own the role / department-tier gates: those belong to the
+// endpoint, and each caller applies its own before opening the transaction.
+interface ProductionLogParams {
+  jcOpId: string;
+  qty: number;
+  rejectQty: number;
+  logDate: string;
+  /** HH:MM clock time for the entry, or null to leave op_log.start_time empty. */
+  logTime: string | null;
+  shift: SubmitOpLogInput['shift'];
+  operatorId: string | null;
+  operatorName: string | null;
+  remarks: string | null;
+}
+
+async function writeProductionLog(
+  tx: DbTransaction,
+  input: ProductionLogParams,
+  companyId: string,
+  user: AuthContext,
+): Promise<{ row: typeof opLog.$inferSelect; stamped: StampedMachine }> {
+  const op = await loadJcOp(tx, input.jcOpId, companyId);
+  if (op.opType === 'outsource') {
+    throw new ValidationError(
+      'This is an outsource operation; use the procurement flow, not Op Entry',
+    );
+  }
+  // T-040d / ISSUE-001 — production-complete logs are not valid against QC ops.
+  // QC ops use POST /op-entry/qc-log which writes log_type='qc' with split
+  // accept/reject qty.
+  if (op.opType === 'qc') {
+    throw new ValidationError(
+      'This is a QC operation; use the QC inspection flow (POST /op-entry/qc-log)',
+    );
+  }
+
+  // Serialize concurrent production logs on the SAME op: lock the jc_ops row
+  // so two operators can't both read the same `available` and both insert,
+  // over-producing past the planned qty.
+  await tx.execute(sql`SELECT 1 FROM public.jc_ops WHERE id = ${input.jcOpId}::uuid FOR UPDATE`);
+
+  const snapshot = await loadAvailability(tx, input.jcOpId);
+  if (snapshot.computedStatus === 'qc_pending') {
+    throw new ValidationError('Operation is waiting for QC clearance — go to QC dashboard');
+  }
+  // Client-material gate: on the first op of a JWSO Job Card, cap the loggable
+  // qty at the client material available for this part — ISSUED to this job
+  // card (ADR-103), or RECEIVED for the part on pre-cutover job cards
+  // (ADR-096/097).
+  const cap = await loadMaterialCap(tx, op, companyId);
+  const effectiveAvailable = cap
+    ? Math.max(0, snapshot.available - cap.shortfall)
+    : snapshot.available;
+  if (input.qty > effectiveAvailable) {
+    if (cap && effectiveAvailable < snapshot.available) {
+      throw new ValidationError(materialCapMessage(cap, effectiveAvailable, input.qty));
+    }
+    throw new ValidationError(
+      `Qty ${input.qty} exceeds available ${snapshot.available} — cannot exceed planned qty`,
+    );
+  }
+
+  // 0095 — stamp the machine that made THIS qty (open session first, then the
+  // op's own machine), so a later machine change rewrites no history.
+  const stamped = await resolveLogMachine(tx, op, companyId);
+
+  const inserted = await tx
+    .insert(opLog)
+    .values({
+      companyId,
+      jcOpId: input.jcOpId,
+      logNo: nextLogNo(),
+      logType: 'complete',
+      logDate: input.logDate,
+      shift: input.shift,
+      qty: input.qty,
+      rejectQty: input.rejectQty,
+      operatorId: input.operatorId,
+      operatorName: input.operatorName,
+      machineId: stamped.machineId,
+      machineCodeText: stamped.machineCodeText,
+      // The clock time of this completion, when the operator supplied one.
+      // Was hard-coded null, so a completion log carried no time at all and
+      // the JC completion feed (which already reads start_time for every log
+      // type) could only ever show a time against a 'start' marker.
+      startTime: input.logTime,
+      remarks: input.remarks,
+      createdBy: user.id,
+    })
+    .returning();
+
+  // After this insert, recompute availability — if we've consumed all
+  // available qty for this op, transition any active running_op to 'done'
+  // AND auto-set qcCallDate on the next QC op (mirrors legacy line 5471-5479).
+  const post = await loadAvailability(tx, input.jcOpId);
+  if (post.available === 0) {
+    await tx
+      .update(runningOps)
+      .set({ status: 'done', endedAt: new Date(), updatedBy: user.id })
+      .where(
+        and(
+          eq(runningOps.jcOpId, input.jcOpId),
+          eq(runningOps.companyId, companyId),
+          eq(runningOps.status, 'running'),
+        ),
+      );
+
+    // Look up the next op in the same JC; if it's a QC op without a
+    // qc_call_date, set it to today's log_date. Operators rely on this to
+    // know which QC ops are now ready to inspect.
+    const next = await tx
+      .select({
+        id: jcOps.id,
+        opType: jcOps.opType,
+        qcRequired: jcOps.qcRequired,
+        qcCallDate: jcOps.qcCallDate,
+      })
+      .from(jcOps)
+      .where(and(eq(jcOps.jobCardId, op.jobCardId), eq(jcOps.opSeq, op.opSeq + 1)))
+      .limit(1);
+    const nextOp = next[0];
+    if (nextOp && (nextOp.opType === 'qc' || nextOp.qcRequired) && !nextOp.qcCallDate) {
+      await tx
+        .update(jcOps)
+        .set({ qcCallDate: input.logDate, updatedBy: user.id })
+        .where(eq(jcOps.id, nextOp.id));
+    }
+
+    // T-033: cascade SO/JW line + header auto-close when this insert
+    // brings the JC to v_jc_status.computed_status='complete'. Idempotent;
+    // no-op for source-less JCs or already-closed lines.
+    await tryCascadeJcComplete(tx, op.jobCardId, user);
+  }
+
+  const row = inserted[0]!;
+
+  // Audit: emit OP_COMPLETE keyed by JC code (legacy line 5459).
+  const jcMeta = await tx
+    .select({ code: jobCards.code, operation: jcOps.operation })
+    .from(jcOps)
+    .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+    .where(eq(jcOps.id, input.jcOpId))
+    .limit(1);
+  const meta = jcMeta[0];
+  if (meta) {
+    const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
+    await emitActivityLog(
+      tx,
+      {
+        action: 'OP_COMPLETE',
+        entity: 'Op',
+        detail: `${meta.code} Op #${op.opSeq} — ${input.qty} pcs${operatorPart}`,
+        refId: meta.code,
+      },
+      companyId,
+      user,
+    );
+  }
+
+  return { row, stamped };
+}
+
+/** The API shape for a just-inserted op_log row. `timingEditedAt` is null by
+ *  construction and `machineCode` comes from the stamp, not a re-query. */
+function toInsertedOpLog(row: typeof opLog.$inferSelect, stamped: StampedMachine): OpLog {
+  return {
+    id: row.id,
+    jcOpId: row.jcOpId,
+    logNo: row.logNo,
+    logType: row.logType,
+    logDate: row.logDate,
+    shift: row.shift,
+    qty: row.qty,
+    rejectQty: row.rejectQty,
+    operatorId: row.operatorId,
+    operatorName: row.operatorName,
+    // Null here by construction: only submitQcLog ever sets it.
+    qcUserId: row.qcUserId,
+    machineId: row.machineId,
+    machineCode: stamped.machineCode,
+    machineCodeText: row.machineCodeText,
+    startTime: row.startTime,
+    remarks: row.remarks,
+    timingEditedAt: null, // just inserted
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    createdBy: row.createdBy,
+  } as OpLog;
+}
+
 export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): Promise<OpLog> {
   requireOpEntryRole(user);
   // Per-department tier gate (op_entry sits in Production). The role guard alone
@@ -707,167 +930,23 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const op = await loadJcOp(tx, input.jcOpId, companyId);
-    if (op.opType === 'outsource') {
-      throw new ValidationError(
-        'This is an outsource operation; use the procurement flow, not Op Entry',
-      );
-    }
-    // T-040d / ISSUE-001 — production-complete logs are not valid against QC ops.
-    // QC ops use POST /op-entry/qc-log which writes log_type='qc' with split
-    // accept/reject qty.
-    if (op.opType === 'qc') {
-      throw new ValidationError(
-        'This is a QC operation; use the QC inspection flow (POST /op-entry/qc-log)',
-      );
-    }
-
-    // Serialize concurrent production logs on the SAME op: lock the jc_ops row
-    // so two operators can't both read the same `available` and both insert,
-    // over-producing past the planned qty.
-    await tx.execute(sql`SELECT 1 FROM public.jc_ops WHERE id = ${input.jcOpId}::uuid FOR UPDATE`);
-
-    const snapshot = await loadAvailability(tx, input.jcOpId);
-    if (snapshot.computedStatus === 'qc_pending') {
-      throw new ValidationError('Operation is waiting for QC clearance — go to QC dashboard');
-    }
-    // Client-material gate: on the first op of a JWSO Job Card, cap the loggable
-    // qty at the client material available for this part — ISSUED to this job
-    // card (ADR-103), or RECEIVED for the part on pre-cutover job cards
-    // (ADR-096/097).
-    const cap = await loadMaterialCap(tx, op, companyId);
-    const effectiveAvailable = cap
-      ? Math.max(0, snapshot.available - cap.shortfall)
-      : snapshot.available;
-    if (input.qty > effectiveAvailable) {
-      if (cap && effectiveAvailable < snapshot.available) {
-        throw new ValidationError(materialCapMessage(cap, effectiveAvailable, input.qty));
-      }
-      throw new ValidationError(
-        `Qty ${input.qty} exceeds available ${snapshot.available} — cannot exceed planned qty`,
-      );
-    }
-
-    // 0095 — stamp the machine that made THIS qty (open session first, then the
-    // op's own machine), so a later machine change rewrites no history.
-    const stamped = await resolveLogMachine(tx, op, companyId);
-
-    const inserted = await tx
-      .insert(opLog)
-      .values({
-        companyId,
+    const { row, stamped } = await writeProductionLog(
+      tx,
+      {
         jcOpId: input.jcOpId,
-        logNo: nextLogNo(),
-        logType: 'complete',
-        logDate: input.logDate,
-        shift: input.shift,
         qty: input.qty,
         rejectQty: input.rejectQty ?? 0,
+        logDate: input.logDate,
+        logTime: input.logTime ?? null,
+        shift: input.shift,
         operatorId: input.operatorId ?? null,
         operatorName: input.operatorName ?? null,
-        machineId: stamped.machineId,
-        machineCodeText: stamped.machineCodeText,
-        // The clock time of this completion, when the operator supplied one.
-        // Was hard-coded null, so a completion log carried no time at all and
-        // the JC completion feed (which already reads start_time for every log
-        // type) could only ever show a time against a 'start' marker.
-        startTime: input.logTime ?? null,
         remarks: input.remarks ?? null,
-        createdBy: user.id,
-      })
-      .returning();
-
-    // After this insert, recompute availability — if we've consumed all
-    // available qty for this op, transition any active running_op to 'done'
-    // AND auto-set qcCallDate on the next QC op (mirrors legacy line 5471-5479).
-    const post = await loadAvailability(tx, input.jcOpId);
-    if (post.available === 0) {
-      await tx
-        .update(runningOps)
-        .set({ status: 'done', endedAt: new Date(), updatedBy: user.id })
-        .where(
-          and(
-            eq(runningOps.jcOpId, input.jcOpId),
-            eq(runningOps.companyId, companyId),
-            eq(runningOps.status, 'running'),
-          ),
-        );
-
-      // Look up the next op in the same JC; if it's a QC op without a
-      // qc_call_date, set it to today's log_date. Operators rely on this to
-      // know which QC ops are now ready to inspect.
-      const next = await tx
-        .select({
-          id: jcOps.id,
-          opType: jcOps.opType,
-          qcRequired: jcOps.qcRequired,
-          qcCallDate: jcOps.qcCallDate,
-        })
-        .from(jcOps)
-        .where(and(eq(jcOps.jobCardId, op.jobCardId), eq(jcOps.opSeq, op.opSeq + 1)))
-        .limit(1);
-      const nextOp = next[0];
-      if (nextOp && (nextOp.opType === 'qc' || nextOp.qcRequired) && !nextOp.qcCallDate) {
-        await tx
-          .update(jcOps)
-          .set({ qcCallDate: input.logDate, updatedBy: user.id })
-          .where(eq(jcOps.id, nextOp.id));
-      }
-
-      // T-033: cascade SO/JW line + header auto-close when this insert
-      // brings the JC to v_jc_status.computed_status='complete'. Idempotent;
-      // no-op for source-less JCs or already-closed lines.
-      await tryCascadeJcComplete(tx, op.jobCardId, user);
-    }
-
-    const row = inserted[0]!;
-
-    // Audit: emit OP_COMPLETE keyed by JC code (legacy line 5459).
-    const jcMeta = await tx
-      .select({ code: jobCards.code, operation: jcOps.operation })
-      .from(jcOps)
-      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
-      .where(eq(jcOps.id, input.jcOpId))
-      .limit(1);
-    const meta = jcMeta[0];
-    if (meta) {
-      const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
-      await emitActivityLog(
-        tx,
-        {
-          action: 'OP_COMPLETE',
-          entity: 'Op',
-          detail: `${meta.code} Op #${op.opSeq} — ${input.qty} pcs${operatorPart}`,
-          refId: meta.code,
-        },
-        companyId,
-        user,
-      );
-    }
-
-    return {
-      id: row.id,
-      jcOpId: row.jcOpId,
-      logNo: row.logNo,
-      logType: row.logType,
-      logDate: row.logDate,
-      shift: row.shift,
-      qty: row.qty,
-      rejectQty: row.rejectQty,
-      operatorId: row.operatorId,
-      operatorName: row.operatorName,
-      // Null here by construction: only submitQcLog ever sets it.
-      qcUserId: row.qcUserId,
-      machineId: row.machineId,
-      machineCode: stamped.machineCode,
-      machineCodeText: row.machineCodeText,
-      startTime: row.startTime,
-      remarks: row.remarks,
-      timingEditedAt: null, // just inserted
-      createdAt:
-        row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
-      createdBy: row.createdBy,
-    } as OpLog;
+      },
+      companyId,
+      user,
+    );
+    return toInsertedOpLog(row, stamped);
   });
 }
 
@@ -1688,6 +1767,9 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       shift: row.shift,
       status: row.status,
       endedAt: row.endedAt instanceof Date ? row.endedAt.toISOString() : null,
+      // The cap the Stop box will show. Read before the insert above, which
+      // only adds a qty=0 'start' marker and so cannot have moved it.
+      availableQty: snapshot.available,
     } as RunningOp;
   });
 }
@@ -1706,12 +1788,38 @@ export async function generateOspPr(
   return withUserContext(user, (tx) => generateOspPrForOp(tx, input.jcOpId, companyId, user));
 }
 
-export async function stopOp(runningOpId: string, user: AuthContext): Promise<RunningOp> {
+// Stop a running session — and, when the operator typed a quantity, record the
+// production in the SAME transaction (ADR: one Stop, one truth).
+//
+// Before this, Stop only flipped a status. The operation's Done stayed 0 and
+// the next operation never became workable unless the operator remembered to
+// go to Op Entry separately — of 8 sessions ended through the Live board, 4
+// had no completion logged against the operation at all.
+//
+// Two shapes, one endpoint:
+//   * nothing made (a breakdown) -> send no body, or qty 0. The session ends
+//     exactly as it always did, one click, no op_log row.
+//   * a batch finished -> send qty (+ rejects). `writeProductionLog` writes the
+//     identical op_log row POST /op-entry/op-log writes, under the identical
+//     guards, and the session ends in the same transaction — so the pieces can
+//     never be counted while the board still shows the machine running, nor
+//     the reverse.
+//
+// Shift, operator and date are NOT asked for. They are already on the session
+// row and are read from it; re-asking the operator for what the system started
+// the session with is how entries get mistyped.
+export async function stopOp(
+  runningOpId: string,
+  input: StopOpInput,
+  user: AuthContext,
+): Promise<RunningOp> {
   requireOpEntryRole(user);
   // Per-department tier gate (op_entry sits in Production). Stopping a session
   // commits the produced qty to op_log → `entry`. Admins bypass.
   await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
+  const qty = input.qty ?? 0;
+  const rejectQty = input.rejectQty ?? 0;
 
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -1724,9 +1832,55 @@ export async function stopOp(runningOpId: string, user: AuthContext): Promise<Ru
     if (row.status !== 'running') {
       throw new ValidationError(`Running op already in status "${row.status}"`);
     }
+    // Rejects on their own cannot be stored: op_log 'complete' rows are the
+    // only place they live and those require a qty. Refusing is better than
+    // accepting the number and silently dropping it.
+    if (qty <= 0 && rejectQty > 0) {
+      throw new ValidationError(
+        'Enter the good quantity as well — rejects cannot be recorded on their own',
+      );
+    }
+
+    if (qty > 0) {
+      // Production FIRST, session-end SECOND. The machine stamp (0095) resolves
+      // off the OPEN running session, so ending the session first would credit
+      // a re-routed op's pieces to the wrong machine.
+      await writeProductionLog(
+        tx,
+        {
+          jcOpId: row.jcOpId,
+          qty,
+          rejectQty,
+          // The session's OWN start date, not "today". A night shift that
+          // starts 22:00 and stops 02:00 belongs to the day it started: that
+          // is the date the operator confirmed at Start, it is the date on the
+          // 'start' marker already in op_log, and using it keeps both halves of
+          // one run on one date instead of straddling midnight.
+          logDate: row.startDate,
+          logTime: input.logTime ?? istNowTime(),
+          shift: row.shift,
+          operatorId: row.operatorId,
+          operatorName: row.operatorName,
+          remarks: input.remarks ?? null,
+        },
+        companyId,
+        user,
+      );
+    }
+
+    // End the session. `writeProductionLog` may ALREADY have ended it — it
+    // flips every running session on the op to 'done' when availability hits 0.
+    // This update is deliberately unconditional and re-uses the existing
+    // ended_at via COALESCE, so that path is never double-timestamped and the
+    // row can never be left saying 'done' while an identical stop elsewhere
+    // says 'stopped'.
     const updated = await tx
       .update(runningOps)
-      .set({ status: 'stopped', endedAt: new Date(), updatedBy: user.id })
+      .set({
+        status: 'stopped',
+        endedAt: sql`COALESCE(${runningOps.endedAt}, now())`,
+        updatedBy: user.id,
+      })
       .where(eq(runningOps.id, runningOpId))
       .returning();
     const r = updated[0]!;
@@ -1752,19 +1906,26 @@ export async function stopOp(runningOpId: string, user: AuthContext): Promise<Ru
       machineCode = machineRow[0]?.code ?? null;
     }
 
-    // Audit: OP_STOP (legacy line 5704).
+    // Audit: OP_STOP (legacy line 5704). Unchanged for a bare stop; a stop that
+    // logged production names the qty, so the activity feed shows both the
+    // OP_COMPLETE and the OP_STOP for one action.
     const machinePart = machineCode ? ` on ${machineCode}` : '';
+    const qtyPart = qty > 0 ? ` — ${qty} pcs logged` : '';
     await emitActivityLog(
       tx,
       {
         action: 'OP_STOP',
         entity: 'Op',
-        detail: `${m.code} Op #${m.opSeq} — Stopped${machinePart}`,
+        detail: `${m.code} Op #${m.opSeq} — Stopped${machinePart}${qtyPart}`,
         refId: m.code,
       },
       companyId,
       user,
     );
+
+    // What is left loggable AFTER this stop — the Stop box on the next session
+    // shows it as "you can log up to N".
+    const after = await loadAvailability(tx, r.jcOpId);
 
     return {
       id: r.id,
@@ -1782,6 +1943,7 @@ export async function stopOp(runningOpId: string, user: AuthContext): Promise<Ru
       shift: r.shift,
       status: r.status,
       endedAt: r.endedAt instanceof Date ? r.endedAt.toISOString() : null,
+      availableQty: after.available,
     } as RunningOp;
   });
 }

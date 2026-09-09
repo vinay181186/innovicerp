@@ -1,10 +1,12 @@
 // Live operations board — legacy chrome (.panel / .innovic-table / .btn).
 
-import type { RunningOp } from '@innovic/shared';
+import type { RunningOp, StopOpInput } from '@innovic/shared';
 import { Square } from 'lucide-react';
+import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useStopOp } from '../api';
 import { RunningOpStatusBadge } from './status-badge';
+import { StopOpModal } from './stop-op-modal';
 
 interface Props {
   rows: RunningOp[];
@@ -17,6 +19,21 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const running = rows.filter((r) => r.status === 'running');
   const recent = rows.filter((r) => r.status !== 'running').slice(0, 20);
+  // The row whose Stop box is open, and the server's message if it refused.
+  const [stopRow, setStopRow] = useState<RunningOp | null>(null);
+  const [stopError, setStopError] = useState<string | null>(null);
+
+  function submitStop(input: StopOpInput): void {
+    if (!stopRow) return;
+    setStopError(null);
+    stop.mutate(
+      { id: stopRow.id, ...input },
+      {
+        onSuccess: () => setStopRow(null),
+        onError: (e) => setStopError(e instanceof Error ? e.message : 'Stop failed'),
+      },
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -70,7 +87,10 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                           type="button"
                           className="btn btn-ghost btn-sm"
                           disabled={stop.isPending}
-                          onClick={() => void stop.mutateAsync(r.id)}
+                          onClick={() => {
+                            setStopError(null);
+                            setStopRow(r);
+                          }}
                         >
                           <Square size={13} /> Stop
                         </button>
@@ -127,6 +147,26 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             </table>
           </div>
         </div>
+      ) : null}
+
+      {stopRow ? (
+        <StopOpModal
+          target={{
+            runningOpId: stopRow.id,
+            jobCardCode: stopRow.jobCardCode,
+            opSeq: stopRow.opSeq,
+            operation: stopRow.operation,
+            machineLabel: stopRow.machineCode ?? (stopRow.isOsp ? 'OSP' : '—'),
+            availableQty: stopRow.availableQty,
+          }}
+          pending={stop.isPending}
+          errorText={stopError}
+          onCancel={() => {
+            setStopRow(null);
+            setStopError(null);
+          }}
+          onSubmit={submitStop}
+        />
       ) : null}
     </div>
   );

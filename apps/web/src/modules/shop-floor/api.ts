@@ -1,5 +1,5 @@
 import type { ShopFloorResponse } from '@innovic/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const shopFloorKeys = {
@@ -17,13 +17,8 @@ export function useShopFloor() {
   });
 }
 
-export function useStopRunningOp() {
-  const qc = useQueryClient();
-  return useMutation<{ ok: true }, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<{ ok: true }>(`/shop-floor/running/${id}/stop`, { method: 'POST' }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: shopFloorKeys.all });
-    },
-  });
-}
+// There is no stop hook here on purpose. /shop-floor/running/:id/stop was
+// deleted: stopping a session is one action with one owner, and that is
+// op-entry's useStopOp (POST /op-entry/running-ops/:id/stop), which also logs
+// the quantity made. The By Machine view imports it directly. useStopOp
+// invalidates shopFloorKeys.all, so this view still refreshes after a stop.

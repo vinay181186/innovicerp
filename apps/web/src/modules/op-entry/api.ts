@@ -21,6 +21,7 @@ import type {
   OpMachineOutput,
   RunningOp,
   StartOpInput,
+  StopOpInput,
   SubmitOpLogInput,
   SubmitQcLogInput,
   UpdateOpLogTimingInput,
@@ -39,6 +40,7 @@ import { supabase } from '@/lib/supabase';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
 import { jobQueueKeys } from '@/modules/job-queue/api';
+import { shopFloorKeys } from '@/modules/shop-floor/api';
 
 export const opEntryKeys = {
   all: ['op-entry'] as const,
@@ -132,6 +134,11 @@ function invalidateProductionViews(qc: QueryClient): void {
   void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
   void qc.invalidateQueries({ queryKey: jobQueueKeys.all });
   void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
+  // The Live Operations Board's "By Machine" tab reads /shop-floor, a separate
+  // query key that renders the SAME done / pending / available numbers. Without
+  // this, stopping a session from one tab left the other tab showing the op as
+  // still running until its 30s poll came round.
+  void qc.invalidateQueries({ queryKey: shopFloorKeys.all });
 }
 
 export function useSubmitOpLog() {
@@ -303,13 +310,31 @@ export function useGenerateOspPr() {
   });
 }
 
+/** Variables for useStopOp: the running session's id, plus the OPTIONAL
+ *  production body. `{ id }` on its own posts no body at all — the breakdown
+ *  case, identical to what Stop posted before the quantity boxes existed. */
+export type StopOpVars = { id: string } & StopOpInput;
+
+// The single Stop path for the whole app. Both tabs of the Live Operations
+// Board and the Op Entry form call this; /shop-floor/running/:id/stop is gone.
 export function useStopOp() {
   const qc = useQueryClient();
-  return useMutation<RunningOp, Error, string>({
-    mutationFn: (id) => apiFetch<RunningOp>(`/op-entry/running-ops/${id}/stop`, { method: 'POST' }),
+  return useMutation<RunningOp, Error, StopOpVars>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<RunningOp>(`/op-entry/running-ops/${id}/stop`, {
+        method: 'POST',
+        // Only send a body when there is something to say. An empty object
+        // would still set content-type and post "{}"; keeping it undefined
+        // means the no-quantity stop is byte-for-byte the old request.
+        ...(Object.keys(body).length > 0 ? { json: body } : {}),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
+      // A stop can now write an op_log row, so the log/machine-output reads
+      // are stale too.
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'machine-output'] });
       invalidateProductionViews(qc);
     },
   });

@@ -12,33 +12,42 @@ import {
   printGrnDoc,
 } from '@/modules/goods-receipt-notes/lib/print-grn';
 import {
-  type ChallanField,
-  type ChallanPrintModel,
+  type SheetField,
+  type SheetLine,
+  type SheetPrintModel,
   challanDate,
   challanEndDate,
-  openChallanPrintWindow,
-} from '@/lib/print/challan-print';
-import {
-  type DocLine,
-  type DocMetaCell,
-  type DocPartyBlock,
-  type DocPrintModel,
-  amountInWords,
-  inrFormat,
-  openDocPrintWindow,
-  templatesToBlocks,
-} from '@/lib/print/doc-print';
+  openSheetPrintWindow,
+} from '@/lib/print/sheet-print';
+// Only the pure helpers now — the GRN is the last document that still renders
+// through this builder, and it goes there through its own entry point.
+import { amountInWords, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
+
+// The company as it really is, for every sample on this page. The Test Print
+// is what an admin checks a template against, so a placeholder address or a
+// mistyped GSTIN there is a trap: it reads as correct and is not. Real prints
+// read the `companies` row; this is the same row's content, written out.
+const CO_NAME = 'Innovic Technology';
+const CO_ADDRESS_LINES = [
+  'Plot No: 12, Phase 2, GIDC V U Nagar',
+  'Vithal Udyognagar',
+  'Anand, Gujarat, 388121',
+];
+const CO_ADDRESS = CO_ADDRESS_LINES.join(', ');
+const CO_GSTIN = '24AQKPM4121A1ZG';
+const CO_EMAIL = 'innovic.technology@gmail.com';
+const CO_PHONE = '+91 9909920457';
 
 // Variable substitution bag (the {var} values). Kept exported because the
 // editor's live WYSIWYG preview renders blocks with this sample data.
 export function sampleDataFor(doc: PrintDocType): Record<string, string> {
   const today = format(new Date(), 'dd-MM-yyyy');
   const common: Record<string, string> = {
-    companyName: 'Innovic Technology',
-    companyAddress: 'V.U. Nagar, Anand, Gujarat, India',
-    companyGSTIN: '24AQKPM4121A1Z5',
-    companyPhone: '+91 98XXX XXXXX',
-    companyEmail: 'innovic.technology@gmail.com',
+    companyName: CO_NAME,
+    companyAddress: CO_ADDRESS,
+    companyGSTIN: CO_GSTIN,
+    companyPhone: CO_PHONE,
+    companyEmail: CO_EMAIL,
     date: today,
     currentUser: 'Admin User',
   };
@@ -115,9 +124,9 @@ export function sampleDataFor(doc: PrintDocType): Record<string, string> {
 
 // The Purchase Order's two sample lines. Exported so the editor's on-screen
 // preview and the PO Test Print show the SAME material. The first line carries
-// remarks, which the approved format prints as "Description: …" under the item
+// remarks, which the sheet prints as a "Description" line under the item
 // name; the second has none, which is what a normal row looks like.
-export const PO_SAMPLE_LINES: DocLine[] = [
+export const PO_SAMPLE_LINES: SheetLine[] = [
   {
     itemCode: 'STL-PL-6',
     itemName: 'Steel Plate 6mm',
@@ -137,78 +146,51 @@ export const PO_SAMPLE_LINES: DocLine[] = [
   },
 ];
 
-// The PO's sample document row — the five cells under the title bar. A function,
-// not a constant, because two of the dates are "today". Exported so the editor
-// preview and the Test Print cannot drift apart.
-export function poSampleDocRow(): DocMetaCell[] {
-  const today = format(new Date(), 'dd-MM-yyyy');
+// The PO's two sample boxes, exported so the editor's preview and the Test
+// Print cannot drift apart. Functions, not constants, because the dates are
+// "today" and "today + 15".
+export function poSampleRecipient(isSpo = false): SheetField[] {
   return [
-    { label: 'PO No.', value: 'IN-PO-99999' },
-    { label: 'PO Date', value: today },
-    { label: 'Due Date', value: format(addDays(new Date(), 15), 'dd-MM-yyyy') },
-    { label: 'PR Ref.', value: 'IN-PR-99999' },
-    // Contact Person is the person who RAISED the PO, and a name is not a code
-    // — it prints in the ordinary face, not the monospace one.
-    { label: 'Contact Person', value: 'Admin User', mono: false },
+    { label: 'Vendor code', value: 'VND-999', variant: 'mono' },
+    {
+      label: 'Name',
+      value: isSpo ? 'Sample Services Pvt Ltd' : 'Sample Vendor Pvt Ltd',
+      variant: 'name',
+    },
+    {
+      label: 'Address',
+      value: 'Industrial Area, Phase 2, Vadodara',
+      extra: ['Gujarat — 390010'],
+    },
+    { label: 'GSTIN', value: '24AAACS1234D1Z5', variant: 'mono' },
+    { label: 'Contact', value: 'Mr. Sample, +91 90000 00000' },
   ];
 }
 
-// The PO's two sample party boxes: who we are buying from, and where the goods
-// are to be delivered (our own works).
-export const PO_SAMPLE_PARTIES: [DocPartyBlock, DocPartyBlock] = [
-  {
-    label: 'Vendor / Supplier',
-    name: 'Sample Vendor Pvt Ltd',
-    rows: [
-      { label: 'Vendor Code', value: 'VND-999', mono: true },
-      { label: 'Address', value: 'Industrial Area, Phase 2, Vadodara, Gujarat - 390010' },
-      { label: 'GSTIN', value: '24AAACS1234D1Z5', mono: true },
-      { label: 'Vendor Phone', value: '+91 90000 00000', mono: true },
-      { label: 'Vendor E-mail', value: 'sales@samplevendor.example' },
-    ],
-  },
-  {
-    label: 'Ship To',
-    name: 'Innovic Technology',
-    rows: [
-      { label: 'Address', value: 'V.U. Nagar, Anand, Gujarat, India' },
-      { label: 'GSTIN', value: '24AQKPM4121A1Z5', mono: true },
-      { label: 'Phone', value: '+91 98XXX XXXXX', mono: true },
-      { label: 'E-mail', value: 'innovic.technology@gmail.com' },
-    ],
-  },
-];
-
-function sampleLines(doc: PrintDocType): DocLine[] {
-  // Both purchase documents print the PRICED goods table (doc-print's `isPo`),
-  // so both need sample Rate/Amount. Service PO used to fall through to the
-  // qty-only DC lines and printed a Rate and Amount column with empty cells.
-  if (doc === 'PO') return PO_SAMPLE_LINES;
-  if (doc === 'SERVICE PO') {
-    return [
-      {
-        itemCode: 'STL-PL-6',
-        itemName: 'Steel Plate 6mm',
-        qty: '100',
-        uom: 'NOS',
-        rate: inrFormat(500),
-        amount: inrFormat(50000),
-      },
-      {
-        itemCode: 'BRG-6203',
-        itemName: 'Bearings 6203',
-        qty: '100',
-        uom: 'NOS',
-        rate: inrFormat(500),
-        amount: inrFormat(50000),
-      },
-    ];
-  }
+export function poSampleOrder(isSpo = false): SheetField[] {
   return [
-    { itemCode: 'STL-PL-6', itemName: 'Steel Plate 6mm', qty: '100', uom: 'NOS' },
-    { itemCode: 'BRG-6203', itemName: 'Bearings 6203', qty: '100', uom: 'NOS' },
+    {
+      label: isSpo ? 'SPO No.' : 'PO No.',
+      value: isSpo ? 'IN-SPO-99999' : 'IN-PO-99999',
+      variant: 'mono',
+      strong: true,
+    },
+    {
+      label: isSpo ? 'SPO date' : 'PO date',
+      value: challanDate(format(new Date(), 'yyyy-MM-dd')),
+      variant: 'mono',
+    },
+    {
+      label: 'Due date',
+      value: challanDate(format(addDays(new Date(), 15), 'yyyy-MM-dd')),
+      variant: 'mono',
+    },
+    { label: 'PR Ref.', value: 'IN-PR-99999', variant: 'mono' },
+    { label: 'Contact person', value: 'Admin User' },
+    { label: 'Ship to', value: CO_ADDRESS },
   ];
 }
+
 
 // The two sample GRN lines. Exported so the editor's on-screen preview and the
 // GRN test print show the SAME material — 100 + 100 received, 95 + 95 accepted,
@@ -239,11 +221,11 @@ export const GRN_SAMPLE_LINES: GrnPrintLine[] = [
 // values that back {companyName}/{companyAddress} above are used here.
 const SAMPLE_COMPANY: Company = {
   id: '00000000-0000-0000-0000-000000000000',
-  name: 'Innovic Technology',
+  name: CO_NAME,
   slug: 'innovic',
-  gstNumber: '24AQKPM4121A1Z5',
-  phone: '+91 98XXX XXXXX',
-  email: 'innovic.technology@gmail.com',
+  gstNumber: CO_GSTIN,
+  phone: CO_PHONE,
+  email: CO_EMAIL,
   addressLine1: 'V.U. Nagar',
   addressLine2: null,
   city: 'Anand',
@@ -284,7 +266,7 @@ function openGrnTestPrint(templates: EffectivePrintTemplate[]): boolean {
 }
 
 // The two delivery challans print on their OWN approved layout
-// (@/lib/print/challan-print), not the shared PO document builder, so their
+// (@/lib/print/sheet-print), not the shared PO document builder, so their
 // Test Print has to go there too — otherwise the editor previews a sheet that
 // no real challan ever produces. Same effective template blocks, same TEST
 // PRINT banner.
@@ -296,13 +278,13 @@ function openChallanTestPrint(
   // A fixed sample challan date so the sample "Challan end date" (+3 months) is
   // visibly three months later rather than today's date twice.
   const sampleDcDate = format(new Date(), 'yyyy-MM-dd');
-  const recipient: ChallanField[] = [
+  const recipient: SheetField[] = [
     { label: 'Vendor code', value: 'VND-099', variant: 'mono' },
     { label: 'Name', value: 'Sample Process House', variant: 'name' },
     { label: 'Address', value: 'GIDC, Vadodara', extra: ['Gujarat — 390010'] },
     { label: 'GSTIN', value: '24AAACS1234D1Z5', variant: 'mono' },
   ];
-  const document: ChallanField[] = [
+  const document: SheetField[] = [
     { label: 'Challan No.', value: data.dcNo ?? '', variant: 'mono' },
     { label: 'Challan date', value: challanDate(sampleDcDate), variant: 'mono' },
     { label: 'SO No.', value: '', variant: 'mono' },
@@ -315,19 +297,19 @@ function openChallanTestPrint(
     },
     { label: 'Vehicle No.', value: data.vehicleNo ?? '', variant: 'mono' },
   ];
-  const model: ChallanPrintModel = {
+  const model: SheetPrintModel = {
     title: 'Delivery Challan',
     windowTitle: doc === 'OSP DC' ? 'OSP Delivery Challan' : 'Job Work Delivery Challan',
     blocks: templatesToBlocks(doc, templates),
     data,
     company: {
       name: SAMPLE_COMPANY.name,
-      addressLines: ['V.U. Nagar, Anand, Gujarat, India'],
+      addressLines: CO_ADDRESS_LINES,
       gstin: SAMPLE_COMPANY.gstNumber ?? '',
       email: SAMPLE_COMPANY.email ?? '',
       phone: SAMPLE_COMPANY.phone ?? '',
     },
-    recipient: { label: 'Recipient — job worker', fields: recipient },
+    recipient: { label: 'Recipient', fields: recipient },
     document: { label: 'Document', fields: document },
     lines: [
       {
@@ -351,73 +333,44 @@ function openChallanTestPrint(
     totalUom: 'NOS',
     opts: { testBanner: true },
   };
-  return openChallanPrintWindow(model);
+  return openSheetPrintWindow(model);
 }
 
-// Build a sample DocPrintModel for the editor's Test Print button.
-export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTemplate[]): boolean {
-  if (doc === 'GRN') return openGrnTestPrint(templates);
-  if (doc === 'OSP DC' || doc === 'JW DC') return openChallanTestPrint(doc, templates);
-  const data = sampleDataFor(doc);
-  const today = data.date ?? format(new Date(), 'dd-MM-yyyy');
-  // Mirrors `isPo` in @/lib/print/doc-print — Service PO is a purchase
-  // document, not a challan.
-  const isPo = doc === 'PO' || doc === 'SERVICE PO';
+// Both purchase documents print on the SAME sheet as the delivery challans
+// (@/lib/print/sheet-print), so their Test Print goes there too — otherwise the
+// editor previews a sheet no real order produces. Same effective template
+// blocks, same TEST PRINT banner, same sample lines.
+//
+// A SERVICE PO differs from a PO in wording only: its own title, its own
+// spo_* blocks and its own {spoNo}/{spoDate}/{expenseHead}/{costCenter}
+// vocabulary. The sheet, the columns and the money are identical.
+function openPoTestPrint(
+  doc: 'PO' | 'SERVICE PO',
+  templates: EffectivePrintTemplate[],
+): boolean {
   const isSpo = doc === 'SERVICE PO';
-  // Only the Purchase Order prints the approved format. The Service PO and the
-  // two challans keep the layout they have always test-printed.
-  const isPoV10 = doc === 'PO';
-
-
-  const model: DocPrintModel = {
-    doc,
+  const data = sampleDataFor(doc);
+  const recipient = poSampleRecipient(isSpo);
+  const order = poSampleOrder(isSpo);
+  const model: SheetPrintModel = {
+    title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
+    windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
+    columns: 'po',
     blocks: templatesToBlocks(doc, templates),
     data,
     company: {
-      name: 'Innovic Technology',
-      addressLines: ['V.U. Nagar, Anand, Gujarat, India'],
-      gstin: '24AQKPM4121A1Z5',
-      email: 'innovic.technology@gmail.com',
+      name: SAMPLE_COMPANY.name,
+      addressLines: CO_ADDRESS_LINES,
+      gstin: SAMPLE_COMPANY.gstNumber ?? '',
+      email: SAMPLE_COMPANY.email ?? '',
+      phone: SAMPLE_COMPANY.phone ?? '',
     },
-    recipient: isPo
-      ? {
-          label: 'Supplier (Bill from)',
-          name: isSpo ? 'Sample Services Pvt Ltd' : 'Sample Vendor Pvt Ltd',
-          lines: ['Industrial Area, Phase 2, Vadodara', 'GSTIN: 24AAACS1234D1Z5', 'Mr. Sample, +91 90000 00000'],
-        }
-      : {
-          label: 'Recipient',
-          name: 'Sample Process House',
-          lines: ['GIDC, Vadodara, Gujarat'],
-        },
-    ...(isPoV10 ? { docLayout: 'v10' as const, parties: PO_SAMPLE_PARTIES } : {}),
-    meta: isPoV10
-      ? poSampleDocRow()
-      : isSpo
-      ? [
-          { label: 'SPO No.', value: 'IN-SPO-99999' },
-          { label: 'Date', value: today },
-          { label: 'Expense Head', value: 'Machining charges' },
-          { label: 'Cost Center', value: 'Production' },
-        ]
-      : isPo
-        ? [
-            { label: 'PO No.', value: 'IN-PO-99999' },
-            { label: 'Date', value: today },
-            { label: 'Payment Terms', value: '30 days from invoice' },
-          ]
-        : [
-            { label: 'DC No.', value: doc === 'OSP DC' ? 'OSP-99999' : 'JWDC-99999' },
-            { label: 'Date', value: today },
-            { label: 'Linked PO', value: 'IN-PO-99999' },
-            { label: 'Vehicle', value: 'GJ-05-XX-9999' },
-          ],
-    lines: sampleLines(doc),
-    opts: { testBanner: true },
-  };
-
-  if (isPo) {
-    model.totals = {
+    recipient: { label: isSpo ? 'Service provider' : 'Vendor / Supplier', fields: recipient },
+    document: { label: 'Order', fields: order },
+    lines: PO_SAMPLE_LINES,
+    totalQty: '200',
+    totalUom: 'NOS',
+    money: {
       subtotal: inrFormat(100000),
       taxRows: [
         { label: 'SGST @ 9%', value: inrFormat(9000) },
@@ -425,8 +378,19 @@ export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTempla
       ],
       grand: inrFormat(118000),
       amountInWords: amountInWords(118000),
-    };
-  }
+    },
+    opts: { testBanner: true },
+  };
+  return openSheetPrintWindow(model);
+}
 
-  return openDocPrintWindow(model);
+// Test Print for the editor. Every one of the five documents now has its own
+// entry point, so there is no fall-through branch left: the PO and the Service
+// PO print on the shared sheet, so do the two challans, and the GRN goes to its
+// own builder because its columns are received / accepted / rejected / QC
+// status rather than qty and money.
+export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTemplate[]): boolean {
+  if (doc === 'GRN') return openGrnTestPrint(templates);
+  if (doc === 'PO' || doc === 'SERVICE PO') return openPoTestPrint(doc, templates);
+  return openChallanTestPrint(doc, templates);
 }

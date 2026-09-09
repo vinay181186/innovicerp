@@ -1,11 +1,13 @@
 // Goods Receipt Note print.
 //
 // The GRN is one of the template-backed documents in Settings → Print
-// Templates (PO / Service PO / OSP DC / JW DC / GRN), and it now renders on the
-// SAME document layout the other four use — the shared `@/lib/print/doc-print`
-// builder: a bordered sheet with the letterhead, a TITLE BAR, the party block
-// on the left with the meta cells on the right, then the four editable blocks
-// in print order around the line table:
+// Templates (PO / Service PO / OSP DC / JW DC / GRN). It renders through the
+// shared `@/lib/print/doc-print` builder, which it now shares with the Service
+// PO only: the PO and the two challans moved to `@/lib/print/sheet-print` on
+// 2026-09-09 (ADR-155). Moving these two across is the obvious follow-up.
+// The doc-print layout is a bordered sheet with the letterhead, a TITLE BAR,
+// the party block on the left with the meta cells on the right, then the four
+// editable blocks in print order around the line table:
 //
 //   special_notes  → below the line items
 //   terms          → below Special Notes

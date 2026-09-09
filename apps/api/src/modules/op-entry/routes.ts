@@ -10,6 +10,7 @@ import {
   listOpMachineOutputQuerySchema,
   listRunningOpsQuerySchema,
   startOpInputSchema,
+  stopOpInputSchema,
   submitOpLogInputSchema,
   submitQcLogInputSchema,
   updateOpLogTimingInputSchema,
@@ -96,10 +97,15 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     return row;
   });
 
+  // THE stop endpoint for the whole app — the Op Entry screen and both tabs of
+  // the Live Operations Board. Every field of the body is optional: no body at
+  // all is the breakdown case and ends the session exactly as before; a qty
+  // records the production in the same transaction.
   app.post('/op-entry/running-ops/:id/stop', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.stopOp(id, req.user);
+    const body = stopOpInputSchema.parse(req.body ?? {});
+    return service.stopOp(id, body, req.user);
   });
 
   // OSP auto-PR generation (ADR-039). Manager/admin only (enforced in service).

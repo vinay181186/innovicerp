@@ -8137,3 +8137,185 @@ now with a message naming the Set / reset password panel.
 - Verification: typecheck + lint (api), build (`tsc -b` + vite) + lint (web).
   Every claim above about account state was checked with read-only SELECTs
   against production; no password, token or secret column was ever read.
+
+## ADR-154: Stopping a machine records what it made, through the one path that already had the guards
+
+**Date:** 2026-09-09
+**Status:** Accepted
+
+### Context
+
+Pressing Stop on the Live Operations Board only flipped a status. It recorded
+no production, so the operation's Done stayed where it was and the NEXT
+operation never became workable — the operator had to remember to go to Op
+Entry and enter the quantity separately. Live evidence at the time of writing:
+of 8 sessions ended through that path, 4 have no completion logged against the
+operation at all. The work happened; the system never heard about it.
+
+Three things made it worse:
+
+- **Two stop endpoints that disagreed.** `POST /shop-floor/running/:id/stop`
+  wrote status `'done'`; `POST /op-entry/running-ops/:id/stop` wrote
+  `'stopped'`. Same act, two words, and 8 `stopped` / 7 `done` rows in the
+  table to show for it.
+- **One of them had no permission check at all** — `shop-floor/service.ts`
+  contained zero `requireFormAccess` / `require*Role` calls, so the weaker door
+  was the one on the board people actually use.
+- Both carried a comment claiming they committed the produced qty to `op_log`.
+  Neither did.
+
+### Decision
+
+**One endpoint, one transaction.** `stopOp` takes an optional body
+(`stopOpInputSchema`: `qty?`, `rejectQty?`, `logTime?`, `remarks?` — every
+field optional) and, when a quantity is sent, writes the production and ends
+the session in the SAME transaction. Two calls would be wrong: a half-failure
+would count the pieces while the machine still showed as running, or the
+reverse.
+
+**Reuse, not re-implement.** The body of `submitOpLog`'s transaction was
+extracted verbatim into an internal `writeProductionLog`, which both endpoints
+now call. There is exactly one copy of the row lock, the `qc_pending` refusal,
+the op-type refusals, the ADR-103 client-material cap, the "exceeds available"
+refusal, the 0095 machine stamp, the insert, and the availability-hits-zero
+cascade (end sessions → stamp `qc_call_date` → T-033 auto-close). Had Stop
+carried its own copy, it would have become a way to log production the normal
+screen refuses.
+
+**Quantity is optional.** A breakdown with nothing made still stops in one
+click, and the request is byte-for-byte the one that shipped before this
+change — no body at all, not `{}`. That is the common case on a shop floor and
+it must not get slower.
+
+**The operator types only the numbers.** Shift, operator and date are read from
+the `running_ops` session, never re-asked. Re-asking for what the system
+started the session with is how entries get mistyped.
+
+**`logDate` is the session's `start_date`, not "today".** A night shift that
+starts 22:00 and stops 02:00 belongs to the day it started: that is the date
+the operator confirmed at Start, it is the date already on the `'start'` marker
+row, and it keeps one run on one date. "Today" is also ambiguous server-side —
+the clock is UTC, and at 02:00 IST it is still the previous UTC day, exactly in
+the case that decides it.
+
+**The limit is shown before the keystroke.** Both `RunningOp` and
+`ShopFloorRunningRow` gained `availableQty` (= `v_jc_op_status.available`, the
+number the write path enforces) and the Stop box prints "you can log up to N".
+ADR-144 fixed the same shape of problem on the OSP challan: a form must not
+invite a number it will then reject. It stays advisory — the server re-checks
+under the row lock, and the client-material gate can lower it further.
+
+**The duplicate endpoint is deleted.** `POST /shop-floor/running/:id/stop` and
+`stopRunningOp` are gone; both tabs of the board call the op-entry endpoint.
+That removes the unguarded door and the `done`/`stopped` split together.
+`'stopped'` is the kept value — it is what the surviving endpoint already
+wrote, so the path that is not going away does not change. `writeProductionLog`
+still writes `'done'` when it auto-closes a session because production consumed
+the last piece with no Stop pressed: that is the system ending it, not the
+operator, and the distinction is worth keeping.
+
+### Alternatives considered
+
+- **Log first, then call stop, from the browser** — rejected. Two requests can
+  half-fail, and the failure mode is the worst one: pieces counted, machine
+  still shown running.
+- **Make quantity mandatory** — rejected by the user, and rightly: a breakdown
+  produces nothing and still has to stop in one click.
+- **A migration to reconcile the 8 `stopped` / 7 `done` rows** — rejected. That
+  is history, and rewriting it was not asked for.
+- **End the session before writing the log** — rejected: the 0095 machine stamp
+  resolves off the OPEN session, so a re-routed op's pieces would be credited
+  to the wrong machine.
+- **Accept a rejects-only entry** — refused with a message instead. An `op_log`
+  completion row requires a quantity, so the alternative was to take the number
+  and silently discard it. Where scrap-with-no-output lives is its own decision.
+
+### Consequences
+
+- Positive: the shop floor can no longer stop a machine and lose the work. The
+  next operation becomes workable at the moment the machine stops.
+- Positive: one stop path, one status value, and the unguarded endpoint is
+  gone.
+- Positive: `submitOpLog` and `stopOp` cannot drift apart — one body, two
+  callers.
+- Neutral: a stop can now write an `op_log` row, so the log and machine-output
+  reads are invalidated after it; `shopFloorKeys` joined the shared production
+  invalidation, so the By Machine tab refreshes on any op-entry write instead
+  of waiting for its 30-second poll.
+- Negative: `availableQty` is now required on two row types, so the board's
+  reads carry one extra join.
+- Not done, deliberately: forcing a password change on first login is unrelated;
+  table alignment and list search on this page were left alone because they
+  need a stylesheet another session owns.
+- Verification: typecheck + lint (shared, api, web) and the web build
+  (`tsc -b` + vite). `availableQty` was checked against live rows
+  (IN-JC-26-00015 op 1: order 10, done 3 → 7 ✓; IN-JC-26-00014 op 1: order 50,
+  done 25 → 25 ✓). **The endpoint itself is unexercised** — production had zero
+  running sessions, and there is no staging environment.
+
+## ADR-155: One printed sheet for the Purchase Order and the Delivery Challan
+
+**Date:** 2026-09-09
+**Status:** Accepted
+
+### Context
+
+The Delivery Challan proof signed off on 2026-09-08 lives in its own renderer.
+The Purchase Order was given a lookalike ("v10") inside the older
+`doc-print.ts` a day later. Two renderers describing one house style drifted
+immediately: the PO's item code printed 9pt bold near-black against the
+challan's 8.5pt normal grey, its goods table sat in a bordered `<table>` inside
+a bordered `.doc-border` (a box inside a box, which the user reported), and its
+letterhead was a different block with a different rule and a separate title bar.
+
+Both also printed the browser's own header and footer strip — `about:blank`,
+the date and `1/1` — because `@page{margin:10mm}` leaves Chrome a margin box to
+draw them in.
+
+### Decision
+
+The challan sheet is THE sheet. `challan-print.ts` becomes
+`apps/web/src/lib/print/sheet-print.ts` and the Purchase Order renders through
+it. One `SheetPrintModel`, two column sets:
+
+- `'challan'` — Sr · Item detail · UOM · HSN · Qty · Remarks
+- `'po'` — Sr · Item detail · UOM · Qty · Rate · Amount, plus a money block
+
+Everything else — letterhead, type scale, case, weights, letter-spacing, the
+two party boxes, the single collapsed border — is shared, so it cannot drift.
+The "v10" layout is deleted from `doc-print.ts`, which now serves only the
+Service PO and the GRN.
+
+Browser header/footer is suppressed with `@page{margin:0}`, and the page
+margins are supplied by the document in ways that REPEAT per page:
+
+| edge | mechanism |
+| --- | --- |
+| left / right | `.sheet` side padding — a box's side edges repeat by nature |
+| top | `.lh-pad` inside the repeating `<thead>`, outside the border |
+| bottom | an empty `<tfoot>` spacer, repeated by `table-footer-group` |
+
+The letterhead `<th>` gives up its border to an inner `.lh-in` div so the top
+pad can sit outside that border; otherwise the frame printed hard against the
+paper edge.
+
+### Alternatives Considered
+
+- Keep two renderers and hand-sync the CSS — rejected: that is what produced
+  the drift this replaces.
+- A small non-zero `@page` margin — rejected: Chrome still draws its header and
+  footer into any margin box it is given, so only `0` suppresses them.
+- `position:fixed` header + footer for the page margins — rejected: already
+  tried for the challan; Chrome clipped it and dropped the block mid-sheet.
+
+### Consequences
+
+- Positive: one file to change, one house style; the box-inside-a-box is gone;
+  no `about:blank` on either document; the PO gains a quantity-total row above
+  the money, and the OSP DC drops its computed "Material Return Status" (which
+  is a fact about today, not about the consignment being handed over).
+- Negative: the PO loses its separate "Ship To" party box — the sheet has two
+  boxes, so the ship-to address moves in as a field of the Order box.
+- Risks: the Service PO and the GRN still print through `doc-print.ts` with the
+  old `@page{margin:10mm}`, so they still carry the browser's footer. Moving
+  them onto the sheet is the obvious follow-up and is NOT done here.
