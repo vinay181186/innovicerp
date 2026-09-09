@@ -225,9 +225,15 @@ const SHEET_STYLE = `
   .signs > div + div{border-left:1px solid var(--paper-rule)}
 
   /* The repeating bottom spacer. It carries no border and no content: its only
-     job is to reserve the foot margin on every printed page (see @page below). */
+     job is to reserve the foot margin on every printed page (see @page below).
+     It is REMOVED by the paginator, which supplies its own foot on each page --
+     it stays in the markup so a document whose script never ran still prints
+     with a bottom margin, just without the page numbers. */
   .pgfoot{border:0!important;padding:0!important}
   .pgfoot div{height:9mm}
+
+  /* One .page per printed sheet, built by the paginator. */
+  .page + .page{margin-top:8mm;border-top:1px dashed #CDD4DD;padding-top:8mm}
 
   .test-banner{background:#fef3c7;border:2px dashed #d97706;padding:10px;text-align:center;
                margin:0 auto 14px;max-width:210mm;border-radius:6px;color:#92400e;font-weight:700}
@@ -251,10 +257,117 @@ const SHEET_STYLE = `
     .lh-pad{padding-top:9mm}
     thead{display:table-header-group}
     tfoot{display:table-footer-group}
+    /* The paginator put exactly one page's worth of rows in each .page. The
+       break is declared BEFORE each page after the first, never AFTER: a
+       break-after on the last one spills a blank sheet out of the printer. */
+    .page + .page{break-before:page;page-break-before:always;
+                  margin-top:0;border-top:0;padding-top:0}
+    /* the foot margin, on every page, now that there is no footer element */
+    .page{padding-bottom:9mm}
     /* The letterhead repeats; nothing splits mid-row. */
     tr{break-inside:avoid;page-break-inside:avoid}
     .split,.split > div,.terms,.signs,.kv,.lh-in{break-inside:avoid;page-break-inside:avoid}
   }
+`;
+
+// ── The paginator ───────────────────────────────────────────────────────────
+//
+// "Page 1 of 3" cannot be done in CSS here. Chrome does not implement the
+// `@page` margin boxes that `counter(page)` lives in, and the ONE thing that
+// does print a page number -- the browser's own header/footer strip -- is
+// exactly what `@page{margin:0}` removes, along with the `about:blank` line the
+// user asked to be rid of. So the document paginates itself.
+//
+// It runs in the print window after load, and it is deliberately best-effort:
+// everything is inside a try/catch and the un-paginated document (one table,
+// repeating <thead>, <tfoot> spacer) is left exactly as it was if anything
+// goes wrong. A sheet without page numbers still prints correctly; a sheet
+// that throws halfway through would not.
+//
+// Measuring is the whole trick. Row heights on screen are the WRONG heights --
+// the window is not 210mm wide and the screen rules apply -- so before
+// measuring it turns the `@media print` block on (mediaText 'print' -> 'all')
+// and forces the sheet to paper width, then puts both back.
+const PAGINATE_SCRIPT = `
+(function(){
+  function run(){
+    try{
+      var MM = 96/25.4, PAGE_H = 297*MM;
+      var art = document.querySelector('.sheet');
+      var table = art && art.querySelector('table.doc');
+      if(!art || !table || !table.tHead || !table.tBodies[0]) return;
+      var thead = table.tHead, tbody = table.tBodies[0], tfoot = table.tFoot;
+      var rows = [].slice.call(tbody.rows);
+      if(!rows.length) return;
+
+      // Measuring is done with the PRINT rules switched on and the sheet forced
+      // to paper width. Both MUST be put back whatever happens: leaving the
+      // print rules live would hide the window's own Print and Close buttons,
+      // which carry .no-print. Hence try/finally, not a plain sequence -- an
+      // exception here has to cost the page numbers, not the buttons.
+      var flipped = [], prevW = art.style.width, footH = 9 * MM, headH = 0, hs = [];
+      try {
+        for (var i=0;i<document.styleSheets.length;i++){
+          var rr;
+          try { rr = document.styleSheets[i].cssRules; } catch(e){ continue; }
+          for (var j=0;j<rr.length;j++){
+            if (rr[j].media && rr[j].media.mediaText === 'print'){
+              rr[j].media.mediaText = 'all';
+              flipped.push(rr[j]);
+            }
+          }
+        }
+        art.style.width = '210mm';
+        if (tfoot) tfoot.style.display = 'none';
+        headH = thead.getBoundingClientRect().height;
+        hs = rows.map(function(r){ return r.getBoundingClientRect().height; });
+      } finally {
+        art.style.width = prevW;
+        if (tfoot) tfoot.style.display = '';
+        flipped.forEach(function(r){
+          try { r.media.mediaText = 'print'; } catch(e){ /* nothing left to do */ }
+        });
+      }
+      if (!hs.length) return;
+
+      var avail = PAGE_H - headH - footH;
+      if (!(avail > 0)) return;
+
+      var pages = [[]], used = 0;
+      for (var k=0;k<rows.length;k++){
+        if (used > 0 && used + hs[k] > avail){ pages.push([]); used = 0; }
+        pages[pages.length-1].push(rows[k]);
+        used += hs[k];
+      }
+      var total = pages.length;
+      if (tfoot && tfoot.parentNode) tfoot.parentNode.removeChild(tfoot);
+
+      var frag = document.createDocumentFragment();
+      for (var pi=0; pi<total; pi++){
+        var t = document.createElement('table');
+        t.className = 'doc';
+        t.appendChild(thead.cloneNode(true));
+        var tb = document.createElement('tbody');
+        for (var ri=0; ri<pages[pi].length; ri++) tb.appendChild(pages[pi][ri]);
+        t.appendChild(tb);
+        var pg = document.createElement('div');
+        pg.className = 'page';
+        pg.appendChild(t);
+        frag.appendChild(pg);
+      }
+      art.innerHTML = '';
+      art.appendChild(frag);
+      // The count goes in the Order / Document box, which prints on page 1 only
+      // (it is a body row, not part of the repeating letterhead). Every clone of
+      // the box is updated so the rule holds wherever the box ends up. Reaching
+      // here means the page count is REAL -- until now the box said just "1".
+      var slots = document.querySelectorAll('[data-pgof]');
+      for (var si=0; si<slots.length; si++) slots[si].textContent = '1 of ' + total;
+    } catch(e) { /* un-paginated document stands */ }
+  }
+  if (document.readyState === 'complete') run();
+  else window.addEventListener('load', run);
+})();
 `;
 
 // ── Rendering ──────────────────────────────────────────────────────────────
@@ -275,11 +388,25 @@ function fieldHtml(f: SheetField): string {
   return `<dt>${esc(f.label)}</dt><dd${cls}>${inner}</dd>`;
 }
 
-function boxHtml(box: { label: string; fields: SheetField[] }): string {
+function boxHtml(box: { label: string; fields: SheetField[] }, extraRows = ''): string {
   return `<p class="bt">${esc(box.label)}</p><dl class="kv">${box.fields
     .map(fieldHtml)
-    .join('')}</dl>`;
+    .join('')}${extraRows}</dl>`;
 }
+
+// "Page 1 of 4", inside the Order / Document box, on the user's instruction
+// (2026-09-09). That box is a BODY row, so it prints on page one and nowhere
+// else -- the user was told and chose this over a per-page footer.
+//
+// The total is not known until the sheet has been laid out at paper width, so
+// the markup ships just the "1" and the paginator turns it into "1 of 4".
+//
+// The bare "1" is the placeholder ON PURPOSE. If the paginator ever bails --
+// and it bails rather than throws, by design -- the sheet still prints, and a
+// reader sees "Page 1", which is TRUE. Shipping "1 of 1" instead would have
+// been a lie on any document that then printed as four sheets, and a plausible
+// enough one that nobody would catch it.
+const PAGE_OF_ROW = '<dt>Page</dt><dd class="mono" data-pgof>1</dd>';
 
 function sectionRow(html: string): string {
   return `<tr><td class="block" colspan="${COLS}">${html}</td></tr>`;
@@ -423,6 +550,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         ${sectionRow(
           `<div class="split"><div>${boxHtml(model.recipient)}</div><div>${boxHtml(
             model.document,
+            PAGE_OF_ROW,
           )}</div></div>`,
         )}
         <tr>${columnHeads}</tr>
@@ -448,8 +576,12 @@ export function openSheetPrintWindow(model: SheetPrintModel): boolean {
   const w = window.open('', '_blank', 'width=900,height=920');
   if (!w) return false;
   const title = model.opts?.testBanner ? `Test Print — ${model.windowTitle}` : model.windowTitle;
+  // The closing tag is split so the bundler never emits the character sequence
+  // that would end THIS module early if it were ever inlined into a page.
+  const close = '</' + 'script>';
   w.document.write(
-    `<!DOCTYPE html><html><head><title>${esc(title)}</title><style>${SHEET_STYLE}</style></head><body>${buildSheetHtml(model)}</body></html>`,
+    `<!DOCTYPE html><html><head><title>${esc(title)}</title><style>${SHEET_STYLE}</style></head>` +
+      `<body>${buildSheetHtml(model)}<script>${PAGINATE_SCRIPT}${close}</body></html>`,
   );
   w.document.close();
   return true;
