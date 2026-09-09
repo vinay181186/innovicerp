@@ -20,6 +20,21 @@ export class AuthenticationError extends AppError {
   }
 }
 
+/**
+ * The token is valid and the profile exists, but the account has been switched
+ * off in the Users screen (`is_active = false`). Still a 401 — the caller has
+ * no usable session — but a DISTINCT code and message, so "deactivated" is
+ * never confused with "not logged in" / "token expired".
+ */
+export class AccountDeactivatedError extends AppError {
+  constructor(
+    message = 'Your account has been deactivated. Please contact your administrator.',
+    details?: unknown,
+  ) {
+    super(401, 'account_deactivated', message, details);
+  }
+}
+
 export class AuthorizationError extends AppError {
   constructor(message = 'Forbidden', details?: unknown) {
     super(403, 'forbidden', message, details);

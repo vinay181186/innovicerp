@@ -106,13 +106,17 @@ export async function listUsers(
 }
 
 // Find an existing Supabase Auth user by email (paginate the admin list).
-async function findAuthUserByEmail(email: string): Promise<{ id: string } | undefined> {
+// `lastSignInAt` rides along because the revive decision below needs to know
+// whether the login has ever actually been used.
+async function findAuthUserByEmail(
+  email: string,
+): Promise<{ id: string; lastSignInAt: string | null } | undefined> {
   const target = email.toLowerCase();
   for (let page = 1; page <= 50; page += 1) {
     const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
     if (error) throw new ValidationError(error.message);
     const hit = data.users.find((u) => (u.email ?? '').toLowerCase() === target);
-    if (hit) return { id: hit.id };
+    if (hit) return { id: hit.id, lastSignInAt: hit.last_sign_in_at ?? null };
     if (data.users.length < 200) break; // last page
   }
   return undefined;
@@ -146,15 +150,35 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
     // The Auth identity already exists. Our "delete user" is a SOFT delete of
     // public.users — the auth account is never removed (and Trash doesn't cover
     // users), so re-adding a previously-deleted email lands here. REVIVE it
-    // rather than dead-ending — but only when the existing profile is
-    // soft-deleted or orphaned (company_id NULL). A live, company-assigned user
-    // is a genuine duplicate: refuse, so we never silently reset a colleague's
-    // password or steal another company's user. See ADR-050.
+    // rather than dead-ending. See ADR-050 for the guard: we must never
+    // silently reset a colleague's password or absorb another company's user.
+    //
+    // Revive is allowed when the account cannot belong to a working colleague
+    // elsewhere:
+    //   a) no profile row at all, or
+    //   b) the profile is soft-deleted, or
+    //   c) the profile is orphaned (company_id NULL), or
+    //   d) the login has NEVER been signed into AND the profile is already in
+    //      THIS admin's own company.
+    // (d) is the "+ Add User can't repair an unused account" case: the person
+    // was added, the password never reached them, and they have never got in.
+    // Nobody is using that login, so no working access is taken away — and the
+    // `companyId` match keeps ADR-050's cross-company rule intact: a
+    // never-signed-in user belonging to a DIFFERENT company still refuses.
     const existingAuth = await findAuthUserByEmail(email);
     if (!existingAuth) throw new ConflictError('A user with this email already exists');
     const profile = (await db.select().from(users).where(eq(users.id, existingAuth.id)).limit(1))[0];
-    const canRevive = !profile || profile.deletedAt !== null || profile.companyId === null;
-    if (!canRevive) throw new ConflictError('A user with this email already exists');
+    const neverSignedIn = existingAuth.lastSignInAt === null;
+    const canRevive =
+      !profile ||
+      profile.deletedAt !== null ||
+      profile.companyId === null ||
+      (neverSignedIn && profile.companyId === companyId);
+    if (!canRevive) {
+      throw new ConflictError(
+        'A user with this email already exists and has signed in before — open that user and use the "Set / reset password" panel on their edit screen instead.',
+      );
+    }
     // Reset the password to the new one the admin just entered, and confirm the
     // email — admin-provisioned accounts have no verification flow, so an
     // unconfirmed revived account would hit "email not confirmed" at login.
