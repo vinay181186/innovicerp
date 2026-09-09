@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
+import { authErrorMessage, isAddressSpecificOtpError } from './auth-error-message';
 import { rootRoute } from './__root';
 
 const magicSchema = z.object({
@@ -147,10 +148,25 @@ function MagicForm(props: {
     props.onClearError();
     const { error: err } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        // signInWithOtp defaults to shouldCreateUser: true, which means anyone who typed any
+        // address into this box got a real auth.users row created — and our on_auth_user_created
+        // trigger then manufactured a stray public.users profile. That is an open
+        // account-creation hole on a page anyone can reach, so signing up is switched off here.
+        // Accounts are created by an administrator from Users, never by this form.
+        shouldCreateUser: false,
+      },
     });
     if (err) {
-      props.onError(err.message);
+      // With sign-up switched off, an address we have no account for now comes back as an
+      // error. We show the same "Check your inbox" screen for it as for a link we really did
+      // send, so this form cannot be used to find out which email addresses have accounts.
+      if (isAddressSpecificOtpError(err)) {
+        props.onSent(email);
+        return;
+      }
+      props.onError(authErrorMessage(err, 'magic-link'));
       return;
     }
     props.onSent(email);
@@ -201,7 +217,7 @@ function ResetRequestForm(props: {
       redirectTo: `${window.location.origin}/auth/reset-password`,
     });
     if (err) {
-      props.onError(err.message);
+      props.onError(authErrorMessage(err, 'password-reset'));
       return;
     }
     props.onSent(email);
@@ -251,7 +267,7 @@ function PasswordForm(props: {
     props.onClearError();
     const { error: err } = await supabase.auth.signInWithPassword({ email, password });
     if (err) {
-      props.onError(err.message);
+      props.onError(authErrorMessage(err, 'sign-in'));
       return;
     }
     props.onSuccess();

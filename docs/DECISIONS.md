@@ -8024,3 +8024,116 @@ once one PR can carry several POs, a per-PO ceiling is trivially avoided.
   cascade moves to `jc_op_po_lines`, an OSP op split across POs would follow only
   the first — so the Phase 2 quantity cap must not be allowed to split an OSP PR
   before Phase 4 ships.
+
+## ADR-153: A failed login says which failure it was; a switched-off account is actually switched off
+
+**Date:** 2026-09-09
+**Status:** Accepted
+
+### Context
+
+Staff reported that a first-time login on production returned "Invalid login
+credentials". Tracing it against the live database ruled out every structural
+cause: all 29 auth accounts were confirmed (`mailer_autoconfirm` is on at the
+project level), all had a password, all had an identity row, none was banned,
+every one had a matching profile with a company and an access row. The accounts
+were healthy; only the password could be wrong. 16 of them had never once
+signed in, 15 having been created in a 75-second scripted burst.
+
+What made a one-line problem cost a day is that the login screen printed
+Supabase's error verbatim (`login.tsx`, `props.onError(err.message)`), and
+Supabase deliberately returns the SAME "Invalid login credentials" string for a
+wrong password, an unknown address, an unconfirmed email and a passwordless
+account. Neither the user nor the admin could tell which. The diagnosis was
+blocked by the interface, not by the bug.
+
+Three further defects surfaced while tracing:
+
+- `signInWithOtp` on the Magic-link tab was called without
+  `shouldCreateUser: false`, so anyone typing any address into a public login
+  page created a real `auth.users` row — and the `on_auth_user_created` trigger
+  then manufactured a stray `public.users` profile.
+- `plugins/auth.ts` SELECTed `users.is_active` and never read it. Switching a
+  user off in the Users screen did not stop them; they kept full access.
+- `createUser`'s ADR-050 guard refused to re-add an email whose profile was
+  live and company-assigned. For a never-used account that is a dead end: the
+  admin sees the name in the list, assumes the login works, and the person can
+  never get in. The only repair was the Set-password panel on the edit screen,
+  which is not where anyone looks while onboarding.
+
+### Decision
+
+**1. Map the auth error.** One helper, `routes/auth-error-message.ts`, turns a
+Supabase `AuthError` into plain English for `invalid_credentials`,
+`email_not_confirmed`, `user_banned`, the two rate limits, and the
+provider-disabled codes; anything unrecognised falls through to Supabase's own
+message so information is never swallowed. `code` and `status` are read
+defensively — supabase-js leaves both undefined when the failure happens before
+a response arrives.
+
+The `invalid_credentials` wording carries the hint that resolves the real
+incident — that an administrator may not have set a password yet, and where
+they do it — while staying silent about WHICH of email or password was wrong.
+Supabase collapses those on purpose so an outsider cannot probe which addresses
+exist, and that property is preserved.
+
+**2. `shouldCreateUser: false`** on the magic-link call. An address with no
+account now shows the SAME "Check your inbox" screen as a real send, so closing
+the account-creation hole does not open an email-enumeration one.
+
+**3. Refuse an inactive account, and say so.** The auth hook withholds
+`req.user` and records `req.authRejectedReason = 'inactive'`; the error handler
+turns the generic 401 into `account_deactivated` with a plain message. The hook
+does NOT throw: it is a global `onRequest` hook that also runs for `/health` and
+`/readyz`, which Railway's deploy probe hits, and a throw there would fail a
+public probe whenever a stale token happened to be attached. Translating in the
+error handler also covers all ~396 `throw new AuthenticationError()` call sites
+without touching them. Soft-delete behaviour is unchanged.
+
+**4. Widen ADR-050's revive rule by exactly one clause** — a login that has
+NEVER been signed into, whose profile is already in the admin's OWN company,
+may be repaired from "+ Add User":
+
+    !profile || profile.deletedAt !== null || profile.companyId === null
+      || (neverSignedIn && profile.companyId === companyId)
+
+ADR-050 exists so we never silently reset a colleague's password or absorb
+another company's user. Both halves hold: `last_sign_in_at IS NULL` means there
+is no working access to take away, and the company equality keeps another
+company's user out of reach. Anyone who has ever signed in is still refused,
+now with a message naming the Set / reset password panel.
+
+### Alternatives considered
+
+- **Tell the user their email is unknown** — rejected. It converts the login
+  page into an account-existence oracle. The ambiguity is a feature.
+- **Throw from the auth hook for an inactive user** — rejected; it would break
+  `/health` and with it the deploy healthcheck.
+- **Check `is_active` at each route** — rejected; ~396 call sites, and one
+  missed site is a silent hole.
+- **Let "+ Add User" always reset the password** — rejected outright; that is
+  precisely the colleague-password-reset ADR-050 forbids.
+- **Force a password change on first login** — deliberately NOT done; the user
+  asked to leave it. Admin-set passwords still live forever.
+
+### Consequences
+
+- Positive: the next login failure names its own cause, for the user and for
+  whoever is asked to fix it.
+- Positive: the login page can no longer create accounts.
+- Positive: deactivating a user now means something. Verified against live data
+  that this locks out nobody today — all 4 inactive profiles are also
+  soft-deleted, so the existing `deleted_at` filter already refused them
+  (`is_active = false AND deleted_at IS NULL` = 0). It closes the hole for the
+  next person switched off.
+- Positive: all 16 never-signed-in accounts are live in the one company, so
+  every one is now repairable from "+ Add User".
+- Negative: a 401 body can now carry `error: "account_deactivated"` as well as
+  `"unauthorized"`. An added value in an existing field, not a shape change;
+  nothing in `packages/shared` was touched.
+- Not addressed: the root cause of the incident itself. The accounts are
+  healthy, so the passwords handed out did not match the ones the bulk run set.
+  That is fixed per-user with the Set-password panel, not in code.
+- Verification: typecheck + lint (api), build (`tsc -b` + vite) + lint (web).
+  Every claim above about account state was checked with read-only SELECTs
+  against production; no password, token or secret column was ever read.
