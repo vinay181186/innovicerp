@@ -587,7 +587,13 @@ export function OpEntryForm({
   // Production form for non-QC / non-outsource ops. Legacy renderOpEntry
   // (L5277-5331) switches between a Start and a Complete sub-form via
   // _opEntryMode; the header toggle mirrors legacy L5278-5283.
-  const isStart = mode === 'start';
+  // No open session means there is nothing to complete, so Complete is not
+  // offered at all -- neither as a button nor as a form. `mode` is forced back
+  // to 'start' rather than trusted, because it can also arrive from ?mode= in
+  // the URL (a bookmark, a shared link) and would otherwise reach the Complete
+  // form with no button having been pressed.
+  const canComplete = Boolean(activeRunningId);
+  const isStart = !canComplete || mode === 'start';
   const modeToggle = onModeChange ? (
     <div style={{ display: 'flex', gap: 4 }}>
       <button
@@ -603,57 +609,55 @@ export function OpEntryForm({
       >
         ▶ Start
       </button>
-      <button
-        type="button"
-        className="btn btn-sm"
-        onClick={() => onModeChange('complete')}
-        style={{
-          borderColor: !isStart ? 'var(--green)' : 'var(--border2)',
-          background: !isStart ? 'var(--green3)' : 'transparent',
-          color: !isStart ? 'var(--green)' : 'var(--text2)',
-          fontWeight: 700,
-        }}
-      >
-        ✓ Complete
-      </button>
+      {canComplete ? (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => onModeChange('complete')}
+          style={{
+            borderColor: !isStart ? 'var(--green)' : 'var(--border2)',
+            background: !isStart ? 'var(--green3)' : 'transparent',
+            color: !isStart ? 'var(--green)' : 'var(--text2)',
+            fontWeight: 700,
+          }}
+        >
+          ✓ Complete
+        </button>
+      ) : null}
     </div>
   ) : null;
 
-  // Completing with no session open is ALLOWED, and the qty is then stamped
-  // with the op's CURRENT machine (resolveLogMachine in the op-entry service
-  // falls back to it). That fallback is only honest while the op stays put:
-  // re-route it later and pieces made here are credited to a machine that
-  // never made them. Say so at the moment of logging rather than let the
-  // system assume in silence.
+  // Complete is absent, not broken. Say why, or the operator hunts for a
+  // button that used to be there. Naming the machine matters too: pressing
+  // Start is what records WHICH machine made the pieces -- without a session
+  // the log would fall back to whatever machine the op is assigned to today,
+  // and a later re-route would credit them to a machine that never ran them.
   const stampMachine = op.machineCode ?? op.machineCodeText ?? null;
-  const noSessionNote =
-    !isStart && !activeRunningId ? (
-      <div
-        style={{
-          marginBottom: 10,
-          padding: '7px 10px',
-          borderRadius: 6,
-          border: '1px solid var(--amber)',
-          background: 'var(--amber3)',
-          color: 'var(--amber)',
-          fontSize: 11.5,
-          lineHeight: 1.5,
-        }}
-      >
-        No machine session is running on this operation.{' '}
-        {stampMachine ? (
-          <>
-            What you log will be recorded against{' '}
-            <b className="mono">{stampMachine}</b>, the machine this operation is
-            assigned to.
-          </>
-        ) : (
-          <>This operation has no machine, so the entry will carry none.</>
-        )}{' '}
-        Press <b>▶ Start</b> first if the work is being done now — that records the
-        real machine and its start time.
-      </div>
-    ) : null;
+  const noSessionNote = !canComplete ? (
+    <div
+      style={{
+        marginBottom: 10,
+        padding: '7px 10px',
+        borderRadius: 6,
+        border: '1px solid var(--amber)',
+        background: 'var(--amber3)',
+        color: 'var(--amber)',
+        fontSize: 11.5,
+        lineHeight: 1.5,
+      }}
+    >
+      Nothing is running on this operation yet, so there is nothing to complete.
+      Press <b>▶ Start</b>
+      {stampMachine ? (
+        <>
+          {' '}
+          on <b className="mono">{stampMachine}</b>
+        </>
+      ) : null}{' '}
+      first — that records the machine and the start time. <b>✓ Complete</b> appears
+      once it is running.
+    </div>
+  ) : null;
 
   return (
     <form onSubmit={(e) => void handleProductionSubmit(e)}>
