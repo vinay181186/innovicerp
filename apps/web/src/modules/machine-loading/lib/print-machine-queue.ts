@@ -59,8 +59,8 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
       (o, i) => `<tr>
       <td style="text-align:center;font-weight:700">${i + 1}</td>
       <td style="font-family:monospace;font-weight:700">${esc(o.jobCardCode)}</td>
-      <td style="color:#7c3aed">${esc(o.itemCode ?? '')}</td>
-      <td>${esc(o.itemName ?? '')}</td>
+      <td style="color:#7c3aed">${esc(o.itemCode ?? '—')}</td>
+      <td>${esc(o.itemName ?? '—')}</td>
       <td>${esc(o.soCode ?? '—')}</td>
       <td style="text-align:center">${o.opSeq}</td>
       <td>${esc(o.operation)}</td>

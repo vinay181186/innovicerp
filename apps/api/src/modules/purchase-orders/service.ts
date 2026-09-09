@@ -11,10 +11,12 @@
 // untouched on existing lines (we never re-write received_qty from the form).
 //
 // Plus a third entry-point — `createPurchaseOrderFromPr` — that builds a
-// single-line PO from a PR row in one transaction, also setting PR.poId /
-// poCreatedAt / status='po_created'. Mirrors legacy `addPO()` line 25728.
+// single-line PO from a PR row in one transaction, also setting
+// PR.status='po_created' (and PR.poId / poCreatedAt on the FIRST PO only, since
+// a PR may be covered by several — ADR-152 phase 2). Mirrors legacy `addPO()`
+// line 25728.
 
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   approvalConfig,
   deliveryChallans,
@@ -42,6 +44,8 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
+import { loadPrBalances } from '../purchase-requests/service';
 import type { DocumentTraceability } from '@innovic/shared';
 import type {
   CreatePurchaseOrderFromPrInput,
@@ -63,6 +67,182 @@ const requireCompany = (user: AuthContext): string => {
 
 function poDetail(code: string, vendorCodeText: string | null | undefined): string {
   return vendorCodeText ? `${code} — ${vendorCodeText}` : code;
+}
+
+// ─── PR balance guards (ADR-152 phase 2) ──────────────────────────────────
+//
+// One PR may now be covered by SEVERAL purchase orders. The old rule was a
+// BOOLEAN — "does this PR already have a PO?" — which meant a PR for 100
+// bought 10 at a time was finished after the first order and its other 90
+// unbuyable. What replaces it is a QUANTITY: how much of the PR is already on
+// a live PO, and therefore how much is still fair game.
+//
+// The arithmetic itself deliberately lives in the purchase-requests module and
+// is imported, not copied: a second implementation here would drift from the
+// legacy pre-0103 rule and quietly re-open the three PRs that rule protects.
+
+/** The ONE gate every path goes through before it may take more quantity off a
+ *  purchase request.
+ *
+ *  Refuses a PR that has nothing left to buy — either because every piece is
+ *  already on a live purchase order, or because a buyer short-closed the
+ *  remainder (0117). ConflictError, not ValidationError: this is the
+ *  state-of-the-document refusal that replaces "already linked to a PO", so the
+ *  HTTP status callers already handle (409) does not move.
+ *
+ *  `balance` is what is available TO THIS purchase order. On the edit path that
+ *  is not the raw balance — a PO's own existing lines are added back, or a PO
+ *  could never be edited without appearing to double-order itself. */
+function assertPrCanTakeAnotherPo(
+  pr: { code: string; qty: number },
+  balance: { orderedQty: number; balanceQty: number; balanceClosed: boolean },
+): void {
+  if (balance.balanceClosed) {
+    throw new ConflictError(
+      `PR ${pr.code} has had its remaining balance closed — nothing further can be ordered against it`,
+    );
+  }
+  if (balance.balanceQty <= 0) {
+    throw new ConflictError(
+      `PR ${pr.code} has nothing left to order (${balance.orderedQty} of ${pr.qty} already on a purchase order)`,
+    );
+  }
+}
+
+/** Cap what this PO may take from one PR at that PR's remaining balance. No
+ *  tolerance: over-ordering is how a request for 100 quietly becomes 190.
+ *  `lineCount` is how many lines of THIS purchase order draw on the PR, so a
+ *  buyer who split one PR across two lines is told about both. */
+function assertPrQtyWithinBalance(
+  pr: { code: string },
+  balanceQty: number,
+  askedQty: number,
+  lineCount: number,
+): void {
+  if (askedQty > balanceQty) {
+    const asks = lineCount > 1 ? `these ${lineCount} lines ask` : 'this line asks';
+    throw new ValidationError(
+      `PR ${pr.code} has ${balanceQty} left to order; ${asks} for ${askedQty}.`,
+    );
+  }
+}
+
+/** The PR's legacy header link, written ONLY the first time.
+ *
+ *  `purchase_requests.po_id` holds ONE purchase order, so on a PR covered by
+ *  several it can only ever be a pointer to the FIRST — which is what the older
+ *  screens that still read it expect. Overwriting it with each new PO would
+ *  silently lose the earlier link. The real, complete link is per line:
+ *  `purchase_order_lines.source_pr_id` (0103, and deprecated-as-source-of-truth
+ *  in the shared contract).
+ *
+ *  Expressed as COALESCE in SQL rather than an if in TypeScript so it is decided
+ *  by the database at write time, on the row's actual current value. */
+function firstPoStamp(poId: string): {
+  poId: SQL;
+  poCreatedAt: SQL;
+} {
+  return {
+    poId: sql`coalesce(${purchaseRequests.poId}, ${poId}::uuid)`,
+    poCreatedAt: sql`coalesce(${purchaseRequests.poCreatedAt}, now())`,
+  };
+}
+
+/**
+ * The same quantity cap as the create paths, for the PO EDIT path.
+ *
+ * Editing a purchase order can add a line against a PR, or raise an existing
+ * line's quantity, and until now nothing checked either — so the cap the create
+ * paths enforce could be walked straight around by saving the PO and then
+ * editing it.
+ *
+ * The arithmetic has one wrinkle the create paths do not. This PO's own live
+ * lines are ALREADY counted in the PR's ordered quantity, so they have to be
+ * added back before asking "is there room?" — otherwise editing a line of 10 up
+ * to 12 would be measured as 22 against a balance of 10 and wrongly refused.
+ * What each PR must accommodate is this PO's FINAL total for it, not its
+ * increment.
+ *
+ * Checks run only where the payload asks for MORE than this PO already holds
+ * against that PR. A neutral edit (fixing an item name) or a reduction must
+ * never be blocked — including on a PR whose balance was short-closed after
+ * this PO was raised, where the quantity already ordered is legitimately still
+ * on this document.
+ */
+async function assertLinesWithinPrBalances(
+  tx: DbTransaction,
+  companyId: string,
+  po: { id: string; status: string },
+  inputLines: PurchaseOrderLineInput[],
+): Promise<void> {
+  const askedByPr = new Map<string, number>();
+  const lineCountByPr = new Map<string, number>();
+  for (const l of inputLines) {
+    if (!l.sourcePrId) continue;
+    askedByPr.set(l.sourcePrId, (askedByPr.get(l.sourcePrId) ?? 0) + l.qty);
+    lineCountByPr.set(l.sourcePrId, (lineCountByPr.get(l.sourcePrId) ?? 0) + 1);
+  }
+  const prIds = [...askedByPr.keys()];
+  if (prIds.length === 0) return;
+
+  const prRows = await tx
+    .select()
+    .from(purchaseRequests)
+    .where(
+      and(
+        inArray(purchaseRequests.id, prIds),
+        // Company filter, not decoration: a PR id from another company must not
+        // be linkable, so it is treated as not found.
+        eq(purchaseRequests.companyId, companyId),
+        isNull(purchaseRequests.deletedAt),
+      ),
+    );
+  const prById = new Map(prRows.map((r) => [r.id, r]));
+  for (const prId of prIds) {
+    if (!prById.has(prId)) throw new NotFoundError(`Purchase request ${prId} not found`);
+  }
+
+  // What THIS purchase order already contributes to each PR's ordered quantity.
+  // A cancelled PO contributes nothing (its lines are excluded from the ordered
+  // sum), so nothing is added back for one.
+  const mineByPr = new Map<string, number>();
+  if (po.status !== 'cancelled') {
+    const mine = await tx
+      .select({ sourcePrId: purchaseOrderLines.sourcePrId, qty: purchaseOrderLines.qty })
+      .from(purchaseOrderLines)
+      .where(
+        and(
+          eq(purchaseOrderLines.purchaseOrderId, po.id),
+          inArray(purchaseOrderLines.sourcePrId, prIds),
+          isNull(purchaseOrderLines.deletedAt),
+        ),
+      );
+    for (const l of mine) {
+      if (!l.sourcePrId) continue;
+      mineByPr.set(l.sourcePrId, (mineByPr.get(l.sourcePrId) ?? 0) + l.qty);
+    }
+  }
+
+  // One round trip for every PR on the form — not one per PR.
+  const balances = await loadPrBalances(tx, prRows);
+  for (const pr of prRows) {
+    if (pr.status === 'cancelled') {
+      throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
+    }
+    const balance = balances.get(pr.id)!;
+    const mine = mineByPr.get(pr.id) ?? 0;
+    const asked = askedByPr.get(pr.id) ?? 0;
+    // Neutral or a reduction — nothing new is being taken, so nothing to refuse.
+    if (asked <= mine) continue;
+    // Everything below is measured EXCLUDING this PO's own lines, so the
+    // refusals read the same way they do on the create paths.
+    assertPrCanTakeAnotherPo(pr, {
+      orderedQty: balance.orderedQty - mine,
+      balanceQty: balance.balanceQty + mine,
+      balanceClosed: balance.balanceClosed,
+    });
+    assertPrQtyWithinBalance(pr, balance.balanceQty + mine, asked, lineCountByPr.get(pr.id) ?? 0);
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -333,11 +513,13 @@ export async function listPurchaseOrders(
         po.updated_at AS "updatedAt", po.updated_by AS "updatedBy",
         po.deleted_at AS "deletedAt",
         v.name AS "vendorName",
+        cu.full_name AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int   AS "totalQty",
         COALESCE(line_agg.received_qty, 0)::int AS "receivedQty"
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
+      LEFT JOIN public.users cu ON cu.id = po.created_by
       LEFT JOIN (
         SELECT purchase_order_id,
                COUNT(*) AS line_count,
@@ -419,6 +601,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),
@@ -526,6 +709,11 @@ function toPurchaseOrder(row: typeof purchaseOrders.$inferSelect): PurchaseOrder
     rejectedAt: maybeTsLike(row.rejectedAt),
     rejectionReason: row.rejectionReason,
     remarks: row.remarks,
+    // A bare purchase_orders row carries no join, so there is no creator NAME
+    // to report here -- only the uuid in createdBy. The list and detail reads
+    // join users.full_name for it; these write-back paths return null, which
+    // the field already allows (see its note in packages/shared).
+    createdByName: null,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: tsLike(row.updatedAt),
@@ -651,8 +839,13 @@ export async function createPurchaseOrder(
     // ── The PRs this PO is raised against ─────────────────────────
     // DISTINCT, in line order: a buyer picks PR-1, adds a line, picks PR-2,
     // adds another, and may well add a second line off PR-1. Each PR is
-    // stamped once. The guards are the from-PR path's, word for word — a PR
-    // already on a PO, or cancelled, cannot be bought against again.
+    // stamped once.
+    //
+    // The guards are quantity-based now (ADR-152 phase 2), not "has a PO at
+    // all": a PR keeps its place in the picker until its balance is used up,
+    // and this PO may take no more than that balance — counting EVERY line of
+    // this PO that draws on the same PR, or two lines of 60 would each pass a
+    // 100 check and together buy 120.
     const distinctPrIds: string[] = [];
     for (const l of input.lines) {
       if (l.sourcePrId && !distinctPrIds.includes(l.sourcePrId)) distinctPrIds.push(l.sourcePrId);
@@ -675,13 +868,30 @@ export async function createPurchaseOrder(
       for (const prId of distinctPrIds) {
         const pr = prById.get(prId);
         if (!pr) throw new NotFoundError(`Purchase request ${prId} not found`);
-        if (pr.status === 'po_created' || pr.poId !== null) {
-          throw new ConflictError(`PR ${pr.code} is already linked to a PO`);
-        }
         if (pr.status === 'cancelled') {
           throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
         }
         sourcePrs.push(pr);
+      }
+      // What this PO asks of each PR, summed over its own lines.
+      const askedByPr = new Map<string, number>();
+      const lineCountByPr = new Map<string, number>();
+      for (const l of input.lines) {
+        if (!l.sourcePrId) continue;
+        askedByPr.set(l.sourcePrId, (askedByPr.get(l.sourcePrId) ?? 0) + l.qty);
+        lineCountByPr.set(l.sourcePrId, (lineCountByPr.get(l.sourcePrId) ?? 0) + 1);
+      }
+      // One round trip for every PR on the form — not one per PR.
+      const balances = await loadPrBalances(tx, sourcePrs);
+      for (const pr of sourcePrs) {
+        const balance = balances.get(pr.id)!;
+        assertPrCanTakeAnotherPo(pr, balance);
+        assertPrQtyWithinBalance(
+          pr,
+          balance.balanceQty,
+          askedByPr.get(pr.id) ?? 0,
+          lineCountByPr.get(pr.id) ?? 0,
+        );
       }
     }
     // Header `pr_id` can only hold ONE PR, so it is stamped only when there IS
@@ -795,33 +1005,38 @@ export async function createPurchaseOrder(
     // createPurchaseOrderFromPr. Once the op knows its PO line, the outward-DC
     // cascade can find it -- which is what caps the send at the qty upstream has
     // actually cleared, and what lets the GRN / incoming-QC return flow back
-    // onto the job card. Only ops not already committed to a PO line are
-    // touched, so re-running against an op that is already on another PO is a
-    // no-op rather than a silent re-point.
+    // onto the job card.
+    //
+    // Every line writes a jc_op_po_lines row (0118), so an op covered by two
+    // purchase orders is reachable from BOTH. The legacy
+    // jc_ops.outsource_po_line_id column keeps only the FIRST link -- a second
+    // PO must not re-point the op and lose the first.
     for (const line of insertedLines) {
       if (!line.sourceJcOpId) continue;
-      await tx
-        .update(jcOps)
-        .set({
-          outsourcePoLineId: line.id,
-          outsourceStatus: 'po_created',
-          updatedAt: new Date(),
-          updatedBy: user.id,
-        })
-        .where(and(eq(jcOps.id, line.sourceJcOpId), isNull(jcOps.outsourcePoLineId)));
+      await linkJcOpToPoLine(tx, {
+        companyId,
+        jcOpId: line.sourceJcOpId,
+        purchaseOrderLineId: line.id,
+        qty: line.qty,
+        userId: user.id,
+      });
     }
 
-    // Stamp every source PR: linked to this PO, converted, in the same tx as
-    // the PO itself. Deliberately NOT touching the PR's vendorId /
-    // vendorCodeText — the buyer may order from a different vendor than the one
-    // the requester named, and rewriting the source document to match the PO
-    // would destroy what was actually asked for.
+    // Stamp every source PR: converted, in the same tx as the PO itself.
+    // Deliberately NOT touching the PR's vendorId / vendorCodeText — the buyer
+    // may order from a different vendor than the one the requester named, and
+    // rewriting the source document to match the PO would destroy what was
+    // actually asked for.
+    //
+    // po_id / po_created_at record the FIRST purchase order only (firstPoStamp);
+    // 'po_created' is now a workflow marker — "buying has started" — not the
+    // claim that the whole PR is bought. What is actually bought is the sum of
+    // the PO lines, and the balance is derived from it on every read.
     for (const pr of sourcePrs) {
       await tx
         .update(purchaseRequests)
         .set({
-          poId: header.id,
-          poCreatedAt: new Date(),
+          ...firstPoStamp(header.id),
           status: 'po_created',
           updatedBy: user.id,
         })
@@ -1104,6 +1319,9 @@ export async function updatePurchaseOrder(
     await tx.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, id));
 
     if (input.lines !== undefined) {
+      // Same quantity cap as the create paths (ADR-152 phase 2). Runs BEFORE
+      // the merge writes anything, so a refusal leaves the PO exactly as it was.
+      await assertLinesWithinPrBalances(tx, companyId, existingHdr, input.lines);
       await mergeLines(tx, id, companyId, input.lines, user, showMoney);
     }
 
@@ -1338,9 +1556,15 @@ export async function softDeletePurchaseOrder(
 
 // ─── Create-from-PR ───────────────────────────────────────────────────────
 
-/** Convert a PR into a single-line PO in one transaction. PR must be open or
- *  approved (not po_created or cancelled). Side-effects on the PR row:
- *  poId / poCreatedAt / status='po_created'. */
+/** Convert a PR into a single-line PO in one transaction.
+ *
+ *  The PR must not be cancelled and must still have quantity left to order —
+ *  it may already have been partly bought, in which case THIS PO covers the
+ *  remaining balance, not the original qty (ADR-152 phase 2). A short-closed
+ *  balance is refused outright.
+ *
+ *  Side-effects on the PR row: status='po_created', plus poId / poCreatedAt
+ *  when this is its first purchase order. */
 export async function createPurchaseOrderFromPr(
   input: CreatePurchaseOrderFromPrInput,
   user: AuthContext,
@@ -1363,12 +1587,18 @@ export async function createPurchaseOrderFromPr(
       .limit(1);
     const pr = prRows[0];
     if (!pr) throw new NotFoundError(`Purchase request ${input.prId} not found`);
-    if (pr.status === 'po_created' || pr.poId !== null) {
-      throw new ConflictError(`PR ${pr.code} is already linked to a PO`);
-    }
     if (pr.status === 'cancelled') {
       throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
     }
+    // Quantity, not a boolean (ADR-152 phase 2): a PR is convertible for as
+    // long as it has balance left, so a PR for 100 already covered for 10 can
+    // be converted again for the other 90.
+    const prBalance = (await loadPrBalances(tx, [pr])).get(pr.id)!;
+    assertPrCanTakeAnotherPo(pr, prBalance);
+    // The line this path raises is the PR's REMAINING balance, not its original
+    // qty. Hard-coding pr.qty would make the second PO ask for the full 100 all
+    // over again — the exact double-order this phase exists to stop.
+    const convertQty = prBalance.balanceQty;
 
     // Vendor override: validated the same way the main create path validates
     // its header vendor, and its code snapshotted for the PO's own text column.
@@ -1405,7 +1635,7 @@ export async function createPurchaseOrderFromPr(
 
     // Stored totals from the single PR-derived line (qty × est cost) + header tax.
     const fromPrTotals = computePoTotals(
-      [{ qty: pr.qty, rate: pr.estCost }],
+      [{ qty: convertQty, rate: pr.estCost }],
       Number(input.header.sgstPct ?? 0),
       Number(input.header.cgstPct ?? 0),
       Number(input.header.igstPct ?? 0),
@@ -1480,7 +1710,7 @@ export async function createPurchaseOrderFromPr(
         itemId: prItemId,
         itemCodeText: prItemId ? null : pr.itemCodeText,
         itemName: itemNameForLine,
-        qty: pr.qty,
+        qty: convertQty,
         rate: pr.estCost,
         receivedQty: 0,
         dueDate: pr.requiredDate ?? null,
@@ -1496,12 +1726,13 @@ export async function createPurchaseOrderFromPr(
       })
       .returning();
 
-    // Side-effect: stamp PR with the new PO link + status flip.
+    // Side-effect: stamp PR with the status flip, and with the PO link only if
+    // this is its FIRST purchase order (firstPoStamp) — a later PO must not
+    // overwrite the earlier link and lose it.
     await tx
       .update(purchaseRequests)
       .set({
-        poId: header.id,
-        poCreatedAt: new Date(),
+        ...firstPoStamp(header.id),
         status: 'po_created',
         updatedBy: user.id,
       })
@@ -1511,15 +1742,19 @@ export async function createPurchaseOrderFromPr(
     // it. Without this, an OSP PR converted here leaves the op stuck at
     // 'pr_raised' with a null outsource_po_line_id (mirrors osp-cascade's
     // auto-PO path, which already does this).
+    //
+    // Writes the jc_op_po_lines link (0118) and stamps the legacy column only
+    // when it is still empty. This path used to stamp it UNCONDITIONALLY, so a
+    // second PO against the same OSP request re-pointed the op at the new line
+    // and the first line's challan and receipt could never cascade back.
     if (pr.sourceJcOpId) {
-      await tx
-        .update(jcOps)
-        .set({
-          outsourcePoLineId: insertedLines[0]!.id,
-          outsourceStatus: 'po_created',
-          updatedBy: user.id,
-        })
-        .where(eq(jcOps.id, pr.sourceJcOpId));
+      await linkJcOpToPoLine(tx, {
+        companyId,
+        jcOpId: pr.sourceJcOpId,
+        purchaseOrderLineId: insertedLines[0]!.id,
+        qty: insertedLines[0]!.qty,
+        userId: user.id,
+      });
     }
 
     // Audit: emit two rows in the same tx — one for the new PO (CREATE),
@@ -1897,9 +2132,6 @@ export async function createPurchaseOrderFromPrBatch(
       throw new NotFoundError('Some PR IDs not found in this company');
     }
     for (const pr of prRows) {
-      if (pr.status === 'po_created' || pr.poId !== null) {
-        throw new ConflictError(`PR ${pr.code} already linked to a PO`);
-      }
       if (pr.status === 'cancelled') {
         throw new ConflictError(`PR ${pr.code} is cancelled — cannot convert`);
       }
@@ -1907,6 +2139,18 @@ export async function createPurchaseOrderFromPrBatch(
 
     // Sort PRs by created_at so line_no ordering is stable.
     const sortedPrs = [...prRows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    // Quantity guard, not "has a PO at all" (ADR-152 phase 2). One round trip
+    // for the whole batch — a per-PR lookup inside this loop would be the N+1
+    // this path exists to avoid. Each line takes the PR's REMAINING balance, so
+    // a PR already covered for 10 of 100 contributes a line for 90, not 100.
+    const batchBalances = await loadPrBalances(tx, sortedPrs);
+    const batchQtyByPr = new Map<string, number>();
+    for (const pr of sortedPrs) {
+      const balance = batchBalances.get(pr.id)!;
+      assertPrCanTakeAnotherPo(pr, balance);
+      batchQtyByPr.set(pr.id, balance.balanceQty);
+    }
 
     // Same re-resolve as the single convert: a PR carrying only a typed code
     // gets linked to the Item Master here, so the PO line can credit stock later.
@@ -1925,7 +2169,7 @@ export async function createPurchaseOrderFromPrBatch(
       sortedPrs.map((pr) => [pr.id, String(input.rateOverrides?.[pr.id] ?? Number(pr.estCost))]),
     );
     const batchTotals = computePoTotals(
-      sortedPrs.map((pr) => ({ qty: pr.qty, rate: batchRates.get(pr.id)! })),
+      sortedPrs.map((pr) => ({ qty: batchQtyByPr.get(pr.id)!, rate: batchRates.get(pr.id)! })),
       Number(input.header.sgstPct ?? 0),
       Number(input.header.cgstPct ?? 0),
       Number(input.header.igstPct ?? 0),
@@ -1981,7 +2225,7 @@ export async function createPurchaseOrderFromPrBatch(
         itemId: prItemId,
         itemCodeText: prItemId ? null : pr.itemCodeText,
         itemName: pr.itemName ?? pr.itemCodeText ?? 'Item',
-        qty: pr.qty,
+        qty: batchQtyByPr.get(pr.id)!,
         rate: batchRates.get(pr.id)!,
         receivedQty: 0,
         dueDate: pr.requiredDate ?? null,
@@ -1999,13 +2243,18 @@ export async function createPurchaseOrderFromPrBatch(
 
     // Stamp every PR + advance its linked outsource jc_op. lineRows/insertedLines
     // are built in sortedPrs order, so insertedLines[i] is pr[i]'s PO line.
+    //
+    // As on the single convert: the (op, PO line) link is always recorded (0118)
+    // and the legacy first-link column is stamped only while it is still empty,
+    // instead of the unconditional re-point this loop used to do.
     for (let i = 0; i < sortedPrs.length; i++) {
       const pr = sortedPrs[i]!;
       await tx
         .update(purchaseRequests)
         .set({
-          poId: header.id,
-          poCreatedAt: new Date(),
+          // First PO only — a PR clubbed into a second batch keeps the link to
+          // the batch that actually bought first (firstPoStamp).
+          ...firstPoStamp(header.id),
           status: 'po_created',
           vendorId: input.vendorId,
           vendorCodeText,
@@ -2014,14 +2263,13 @@ export async function createPurchaseOrderFromPrBatch(
         .where(eq(purchaseRequests.id, pr.id));
 
       if (pr.sourceJcOpId) {
-        await tx
-          .update(jcOps)
-          .set({
-            outsourcePoLineId: insertedLines[i]!.id,
-            outsourceStatus: 'po_created',
-            updatedBy: user.id,
-          })
-          .where(eq(jcOps.id, pr.sourceJcOpId));
+        await linkJcOpToPoLine(tx, {
+          companyId,
+          jcOpId: pr.sourceJcOpId,
+          purchaseOrderLineId: insertedLines[i]!.id,
+          qty: insertedLines[i]!.qty,
+          userId: user.id,
+        });
       }
     }
 

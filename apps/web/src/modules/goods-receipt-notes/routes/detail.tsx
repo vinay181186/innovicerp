@@ -2,14 +2,19 @@
 
 import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLineDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useSession } from '@/lib/session';
+import { useMyCompany } from '@/modules/settings/api';
+import { usePrintTemplates } from '@/modules/print-templates/api';
+import { useVendor } from '@/modules/vendors/api';
 import { useGoodsReceiptNote, useSoftDeleteGoodsReceiptNote } from '../api';
 import { QcStatusBadge } from '../components/qc-status-badge';
+import { printGrn } from '../lib/print-grn';
 
 export const goodsReceiptNoteDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -26,6 +31,13 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'grn_create');
   const softDelete = useSoftDeleteGoodsReceiptNote();
+  const { data: company } = useMyCompany();
+  const { data: me } = useSession();
+  // Vendor row + the effective GRN print blocks, so the printed sheet can fill
+  // {vendorAddress}/{vendorGSTIN}/{vendorContact} and render whatever an admin
+  // wrote in Settings → Print Templates. Same wiring the OSP DC detail uses.
+  const { data: vendor } = useVendor(detail?.vendorId ?? undefined);
+  const { data: templates, isLoading: templatesLoading } = usePrintTemplates();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -72,6 +84,19 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
     });
   };
 
+  // Print follows the page's existing VIEW permission — if you can read the
+  // GRN you may put it on paper. No new gate is introduced.
+  const onPrint = (): void => {
+    const ok = printGrn({
+      grn: detail,
+      vendor,
+      company,
+      templates: templates?.items ?? [],
+      currentUser: me?.email,
+    });
+    if (!ok) window.alert('Allow popups to print.');
+  };
+
   const canEdit = perms.edit;
   // Delete is not one of the four tier actions, so "L5 Department Admin and
   // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
@@ -112,6 +137,19 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               }}
               suggestedTitle={`Follow up on GRN ${detail.code}`}
             />
+            {/* Disabled until the blocks land. Printing early is worse than
+                waiting: the sheet comes out looking complete but carries none
+                of the header note, terms, footer or signature an admin wrote,
+                and nothing on it says so. */}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onPrint}
+              disabled={templatesLoading}
+              title={templatesLoading ? 'Loading print templates\u2026' : 'Print this GRN'}
+            >
+              <Printer size={13} /> Print
+            </button>
             {detail.purchaseOrderId ? (
               <Link
                 to="/purchase-orders/$id"

@@ -1775,6 +1775,14 @@ export const purchaseRequests = pgTable(
       onDelete: 'set null',
     }),
     poCreatedAt: timestamp('po_created_at', { withTimezone: true }),
+    // SHORT-CLOSE (migration 0117, ADR-152 gap 6) — "we ordered 10 of 100 and
+    // the rest is not coming". Deliberately NOT the same as editing qty down:
+    // the PR still records that 100 was asked for, and separately that the
+    // remainder was abandoned, by whom and why. While balance_closed_at is set
+    // the derived balanceQty reports 0 and the PR drops out of the PO picker.
+    balanceClosedAt: timestamp('balance_closed_at', { withTimezone: true }),
+    balanceClosedBy: uuid('balance_closed_by').references(() => users.id),
+    balanceClosedReason: text('balance_closed_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1798,7 +1806,20 @@ export const purchaseRequests = pgTable(
     index('purchase_requests_source_jc_op_idx')
       .on(t.sourceJcOpId)
       .where(sql`${t.sourceJcOpId} is not null AND ${t.deletedAt} is null`),
+    // Drives the "still to order" list (migration 0117): a short-closed PR must
+    // drop out of the PO form's picker even though its arithmetic balance is
+    // still positive.
+    index('purchase_requests_balance_open_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null AND ${t.balanceClosedAt} is null`),
     check('purchase_requests_qty_positive', sql`${t.qty} > 0`),
+    // A closed balance must carry BOTH a closer and a reason — enforced at the
+    // database, not only in Zod, so a direct SQL fix cannot leave an
+    // unexplained abandonment (migration 0117).
+    check(
+      'purchase_requests_balance_close_complete',
+      sql`${t.balanceClosedAt} is null OR (${t.balanceClosedBy} is not null AND length(btrim(coalesce(${t.balanceClosedReason}, ''))) > 0)`,
+    ),
     check(
       'purchase_requests_vendor_check',
       sql`num_nonnulls(${t.vendorId}, ${t.vendorCodeText}) >= 1`,
@@ -1965,6 +1986,70 @@ export const purchaseOrderLines = pgTable(
       using: sql`company_id = current_company_id()`,
     }),
     pgPolicy('purchase_order_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// An outsourced operation and the purchase order lines that cover it (0118,
+// ADR-152 phase 4). One row per (op, PO line) carrying the quantity that link
+// buys, so an op split across two purchase orders is found from EITHER of them
+// and its outsourced quantity is the SUM of its live links.
+//
+// `jc_ops.outsource_po_line_id` is deliberately kept and still written with the
+// FIRST link (exactly as `machines.machine_type` was kept in 0116) so every
+// screen and cascade that still reads the column keeps working while callers
+// move across one at a time.
+export const jcOpPoLines = pgTable(
+  'jc_op_po_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jcOpId: uuid('jc_op_id')
+      .notNull()
+      .references(() => jcOps.id, { onDelete: 'cascade' }),
+    purchaseOrderLineId: uuid('purchase_order_line_id')
+      .notNull()
+      .references(() => purchaseOrderLines.id, { onDelete: 'cascade' }),
+    /** How much of this operation this particular PO line covers. */
+    qty: integer('qty').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    // One link per (op, line): a second PO for the same op on the SAME line is a
+    // mistake, not a second lane. A second lane is a different line.
+    uniqueIndex('jc_op_po_lines_op_line_uniq')
+      .on(t.jcOpId, t.purchaseOrderLineId)
+      .where(sql`${t.deletedAt} is null`),
+    // The two directions the cascades travel: a challan/receipt arrives holding
+    // a PO line and needs its ops; the job card screen holds an op and needs
+    // its lines.
+    index('jc_op_po_lines_po_line_idx')
+      .on(t.purchaseOrderLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('jc_op_po_lines_jc_op_idx')
+      .on(t.jcOpId)
+      .where(sql`${t.deletedAt} is null`),
+    check('jc_op_po_lines_qty_positive', sql`${t.qty} > 0`),
+    pgPolicy('jc_op_po_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('jc_op_po_lines_manager_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
@@ -5017,6 +5102,8 @@ export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 export type NewPurchaseOrder = typeof purchaseOrders.$inferInsert;
 export type PurchaseOrderLine = typeof purchaseOrderLines.$inferSelect;
 export type NewPurchaseOrderLine = typeof purchaseOrderLines.$inferInsert;
+export type JcOpPoLine = typeof jcOpPoLines.$inferSelect;
+export type NewJcOpPoLine = typeof jcOpPoLines.$inferInsert;
 export type GoodsReceiptNote = typeof goodsReceiptNotes.$inferSelect;
 export type NewGoodsReceiptNote = typeof goodsReceiptNotes.$inferInsert;
 export type GoodsReceiptNoteLine = typeof goodsReceiptNoteLines.$inferSelect;

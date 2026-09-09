@@ -15,6 +15,7 @@
 // which the JC list page links into directly.
 
 import { z } from 'zod';
+import { jcOpPoLinkViewSchema } from './jc-op-po-line';
 import { JC_COMPUTED_STATUSES } from '../enums/jc-computed-status';
 import { JC_PRIORITIES } from '../enums/jc-priority';
 import { machineSplitSchema } from './machine-split';
@@ -417,5 +418,19 @@ export const jobCardStatusExtrasSchema = z.object({
     /** true when op_log was capped → render "showing latest N of total". */
     truncated: z.boolean(),
   }),
+  /** The purchase order lines covering each OUTSOURCED op (migration 0118,
+   *  ADR-152 phase 4). An op may now sit on several, so this is the list the
+   *  screen shows instead of the single `outsource_po_line_id`.
+   *
+   *  Optional with a `[]` default so an older API — or any caller that has not
+   *  been rebuilt — still parses. Ops with no outsourcing simply do not appear. */
+  opPoLinks: z
+    .array(
+      z.object({
+        jcOpId: z.string().uuid(),
+        links: z.array(jcOpPoLinkViewSchema),
+      }),
+    )
+    .default([]),
 });
 export type JobCardStatusExtras = z.infer<typeof jobCardStatusExtrasSchema>;

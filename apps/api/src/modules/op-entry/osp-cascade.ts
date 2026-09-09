@@ -29,6 +29,7 @@ import {
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 
 // Sentinel vendor text stored on a JW_OSP PR when its matched OSP process has
 // no vendor configured. The PR's vendor_check needs vendorId OR vendorCodeText;
@@ -287,10 +288,16 @@ export async function generateOspPrForOp(
       .set({ poId: po.id, poCreatedAt: new Date(), status: 'po_created', updatedBy: user.id })
       .where(eq(purchaseRequests.id, pr.id));
 
-    await tx
-      .update(jcOps)
-      .set({ outsourcePoLineId: poLine.id, outsourceStatus: 'po_created', updatedBy: user.id })
-      .where(eq(jcOps.id, op.id));
+    // Record the (op, PO line) link (0118) as well as the legacy first-link
+    // column, so this op is still found from this PO line once it is covered by
+    // a second purchase order too.
+    await linkJcOpToPoLine(tx, {
+      companyId,
+      jcOpId: op.id,
+      purchaseOrderLineId: poLine.id,
+      qty: poLine.qty,
+      userId: user.id,
+    });
 
     await emitActivityLog(
       tx,

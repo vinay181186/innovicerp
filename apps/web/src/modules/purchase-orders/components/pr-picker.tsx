@@ -3,14 +3,26 @@
 // A PO is now always raised AGAINST a Purchase Request (the "+ New PO" flow is
 // PR-first). This picker is that first field: type a PR code / item name and
 // pick the PR the PO is for. Storing the PR's id is what lets the server link
-// the PO back to the PR, flip it to `po_created`, and stop a second PO being
-// raised for the same request.
+// the PO back to the PR.
+//
+// WHAT IT OFFERS — AND WHY THAT CHANGED (ADR-152). It used to offer only PRs
+// with NO purchase order at all, and the design goal written here was "stop a
+// second PO being raised for the same request". That goal is deliberately
+// REVERSED: a PR for 100 that got a PO for 10 still has 90 to buy, and the old
+// boolean test (`poId === null && status !== 'po_created'`) made those 90
+// unorderable and invisible the moment the first PO was raised. A PR is now
+// offered while it has BALANCE LEFT, however many POs already touch it, and the
+// dropdown says how much is left so the buyer orders the right quantity.
+//
+// The balance is a SUM over live purchase order lines (cancelled POs excluded),
+// which the browser cannot compute, so the SERVER decides: the list query asks
+// for `convertibleOnly: true` and renders what comes back. The only filtering
+// left here is `excludeIds` (a PR already taken on another line of this same
+// PO) plus a belt-and-braces `cancelled` guard.
 //
 // Mirrors <VendorPicker>: owns its own search state + list hook, wraps the
 // shared <SearchableSelect>, and stays decoupled from react-hook-form so each
-// caller wires its own value/onChange. Only PRs that can still be converted are
-// offered — an already-linked (`po_created` / has a poId) or `cancelled` PR is
-// filtered out so it can never be picked.
+// caller wires its own value/onChange.
 //
 // The vendor is a HARD prerequisite: a PR belongs to a vendor, so with no vendor
 // named there is no honest list to show and the caller disables this control
@@ -25,6 +37,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type SearchableOption, SearchableSelect } from '@/components/shared/searchable-select';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
+import { prBalanceText } from '@/modules/purchase-requests/lib/pr-balance';
 
 /** Why the PR box is greyed out. The vendor is a HARD prerequisite now, not a
  *  hint: a PR belongs to a vendor, so there is no honest list to show until the
@@ -40,10 +53,14 @@ export const PICK_VENDOR_FIRST_PLACEHOLDER = 'Select a Vendor first…';
  *  An empty dropdown on its own reads as a broken screen. This is the COMMON case
  *  rather than an edge one — most vendors have nothing waiting to be converted at
  *  any given moment — so it is worded as a plain statement of fact with the two
- *  ways forward, never as an error. */
+ *  ways forward, never as an error.
+ *
+ *  "Nothing left to order" is now the honest wording: a PR only drops out of this
+ *  list once its whole quantity is on a purchase order, not the moment the first
+ *  PO is raised (ADR-152). */
 export function noOpenPrsMessage(vendorName: string): string {
   const who = vendorName.trim() === '' ? 'this vendor' : vendorName.trim();
-  return `No open Purchase Requests for ${who} — raise a PR first, or choose another vendor.`;
+  return `No Purchase Requests left to order for ${who} — raise a PR first, or choose another vendor.`;
 }
 
 export interface PrPickerProps {
@@ -53,7 +70,7 @@ export interface PrPickerProps {
   id?: string | undefined;
   /** Selected PR id, or null. */
   value: string | null;
-  /** Picked PR id (null when cleared) plus its "CODE — item · qty" label. */
+  /** Picked PR id (null when cleared) plus its "CODE — item · N of M left" label. */
   onChange: (id: string | null, label: string) => void;
   /** Label for a pre-selected value, so it reads correctly before its search
    *  page has loaded. */
@@ -67,7 +84,7 @@ export interface PrPickerProps {
   showLabel?: boolean | undefined;
   placeholder?: string | undefined;
   /** Show only the PR code once picked. The dropdown still lists
-   *  "CODE - item - qty"; a table cell is too narrow for all of it. */
+   *  "CODE - item - N of M left"; a table cell is too narrow for all of it. */
   codeOnly?: boolean | undefined;
   /** The vendor the document is being raised on. STRICT: only that vendor's PRs
    *  are offered — the PR's vendor is what ties it to this PO. Null/undefined
@@ -102,6 +119,11 @@ export function PrPicker({
   const [search, setSearch] = useState('');
   const base = {
     ...(search.trim() ? { search: search.trim() } : {}),
+    // The SERVER decides what is still convertible: `balanceQty > 0`, i.e. a PR
+    // with quantity left to order, however many POs already exist against it
+    // (ADR-152). The old browser-side `poId === null` test could not see a
+    // part-ordered PR at all.
+    convertibleOnly: true,
     limit: 50,
     offset: 0,
   };
@@ -129,22 +151,24 @@ export function PrPicker({
   const rows = listQ.data?.items ?? [];
   const isFetching = listQ.isFetching;
 
-  // Only PRs that can still become a PO. An already-linked or cancelled PR must
-  // never be pickable — the server would reject it, and offering it invites a
-  // duplicate-PO attempt.
-  // A PR taken on another line is dropped too — one request, one line.
+  // The balance filter is the server's (`convertibleOnly` above). Two things are
+  // still decided here:
+  //   • a PR already taken on ANOTHER line of this same PO — one request, one
+  //     line on one document, or the same balance gets ordered twice;
+  //   • `cancelled`, as a belt-and-braces guard so a cancelled PR can never be
+  //     offered even if a stale page is on screen.
+  // Nothing here looks at `poId` or `po_created` any more: on a part-ordered PR
+  // both say "has a PO" while 90 of 100 are still to buy.
   const excluded = new Set((excludeIds ?? []).filter((x) => x !== value));
-  const convertible = rows.filter(
-    (pr) =>
-      pr.poId === null &&
-      pr.status !== 'po_created' &&
-      pr.status !== 'cancelled' &&
-      !excluded.has(pr.id),
-  );
+  const convertible = rows.filter((pr) => pr.status !== 'cancelled' && !excluded.has(pr.id));
 
+  // "Shaft 50mm · 90 of 100 left" — the buyer is choosing how much to order, so
+  // the quantity STILL AVAILABLE is what the option has to say, not the PR's
+  // original qty on its own. <SearchableSelect> renders this after the code, so
+  // the row reads "IN-PR-00012 — Shaft 50mm · 90 of 100 left".
   const labelFor = (pr: (typeof convertible)[number]): string => {
     const item = pr.itemName ?? pr.itemCodeText ?? 'item';
-    return `${item} · qty ${pr.qty}`;
+    return `${item} · ${prBalanceText(pr)}`;
   };
 
   const [label, setLabel] = useState(initialLabel);

@@ -80,8 +80,11 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
   const stateCode = gst ? gst.substring(0, 2) : '24';
   const isIGST = stateCode !== '24';
   // Money hidden for L1 Viewers: drop Rate/Amount columns, tax rows, totals and
-  // amount-in-words from the printed invoice.
-  const priceHidden = inv.grandTotal == null;
+  // amount-in-words from the printed invoice. TOLD by the server, not inferred
+  // from a null money field — the same test the detail page makes. A null
+  // grandTotal also means "no value yet", so probing it blanked the money on a
+  // printed invoice for users fully entitled to see it.
+  const priceHidden = inv.priceVisible === false;
   const gstPct = inv.gstPercent ?? 0;
   const amtWords = `Indian Rupees ${numWords(Math.floor(inv.grandTotal ?? 0))} Only`;
   const coName = company?.name ?? 'Innovic Technology';
@@ -91,7 +94,13 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
     .map(
       (l, i) =>
         `<tr><td style="${TD};text-align:center">${i + 1}</td>` +
-        `<td style="${TD}">${esc(l.itemCode ?? l.itemCodeText ?? l.itemName)}<br><span style="font-size:10px;color:#666">${esc(l.itemName)}</span></td>` +
+        // Code and name are two CELLS now, not a code with the name stacked
+        // beneath it in small grey type. A long name used to wrap inside the
+        // one cell and push the row height around, and there was no column to
+        // run the names down. An em dash where a name is missing: a blank cell
+        // on a tax invoice reads as something having gone wrong.
+        `<td style="${TD}">${esc(l.itemCode ?? l.itemCodeText ?? '') || '&mdash;'}</td>` +
+        `<td style="${TD}">${esc(l.itemName) || '&mdash;'}</td>` +
         `<td style="${TD};text-align:right">${l.qty.toFixed(1)}</td>` +
         `<td style="${TD};text-align:center;font-size:10px">NOS</td>` +
         (priceHidden
@@ -103,9 +112,9 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
     .join('');
 
   const taxRows = isIGST
-    ? `<tr><td colspan="5" style="${TD};text-align:right">IGST @ ${gstPct}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount ?? 0)}</td></tr>`
-    : `<tr><td colspan="5" style="${TD};text-align:right">SGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>` +
-      `<tr><td colspan="5" style="${TD};text-align:right">CGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>`;
+    ? `<tr><td colspan="6" style="${TD};text-align:right">IGST @ ${gstPct}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount ?? 0)}</td></tr>`
+    : `<tr><td colspan="6" style="${TD};text-align:right">SGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>` +
+      `<tr><td colspan="6" style="${TD};text-align:right">CGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>`;
 
   return `<div style="background:#fff;color:#1e293b;font-family:Arial,sans-serif;font-size:11px;line-height:1.35;padding:18px">
     <div style="border:2px solid #333">
@@ -128,14 +137,14 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
         </div>
       </div>
       <table style="width:100%;border-collapse:collapse">
-        <thead><tr><th style="${TH}">Sl</th><th style="${TH};text-align:left">Description</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
+        <thead><tr><th style="${TH}">Sr No.</th><th style="${TH};text-align:left">Item Code</th><th style="${TH};text-align:left">Item Name</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
         <tbody>${lineRows}
           ${
             priceHidden
               ? ''
-              : `<tr style="font-weight:700;background:#f5f5f5"><td colspan="5" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inrFormat(inv.subtotal ?? 0)}</td></tr>` +
+              : `<tr style="font-weight:700;background:#f5f5f5"><td colspan="6" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inrFormat(inv.subtotal ?? 0)}</td></tr>` +
                 taxRows +
-                `<tr><td colspan="5" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inrFormat(inv.grandTotal ?? 0)}</td></tr>`
+                `<tr><td colspan="6" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inrFormat(inv.grandTotal ?? 0)}</td></tr>`
           }
         </tbody>
       </table>
@@ -154,9 +163,12 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
 
 // Print window: A4 PORTRAIT pinned via @page, same document markup as the
 // on-screen preview.
-export function printInvoice(inv: InvoiceDetail, company: Company | null | undefined): void {
+/** Returns false if the popup was blocked, so the caller can say so. It used to
+ *  return void and swallow the blocked window — the user clicked Print and
+ *  nothing at all happened. */
+export function printInvoice(inv: InvoiceDetail, company: Company | null | undefined): boolean {
   const w = window.open('', '_blank', 'width=850,height=900');
-  if (!w) return;
+  if (!w) return false;
   w.document.write(
     `<!DOCTYPE html><html><head><title>Invoice ${esc(inv.code)}</title>` +
       `<style>@page{size:A4 portrait;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{background:#fff}` +
@@ -167,4 +179,5 @@ export function printInvoice(inv: InvoiceDetail, company: Company | null | undef
       `</body></html>`,
   );
   w.document.close();
+  return true;
 }

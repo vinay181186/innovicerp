@@ -13,7 +13,7 @@
 import { z } from 'zod';
 
 // ── Document types with customisable templates ──
-export const PRINT_DOC_TYPES = ['PO', 'SERVICE PO', 'OSP DC', 'JW DC'] as const;
+export const PRINT_DOC_TYPES = ['PO', 'SERVICE PO', 'OSP DC', 'JW DC', 'GRN'] as const;
 export type PrintDocType = (typeof PRINT_DOC_TYPES)[number];
 
 // ── The 5 editable blocks per document (in print order) ──
@@ -32,6 +32,7 @@ export const PRINT_DOC_KEY_PREFIX: Record<PrintDocType, string> = {
   'SERVICE PO': 'spo',
   'OSP DC': 'ospdc',
   'JW DC': 'jwdc',
+  GRN: 'grn',
 };
 
 // ── Per-block metadata (drives the editor list) ──
@@ -79,6 +80,7 @@ export function printTemplateDocType(key: string): PrintDocType | null {
   if (key.startsWith('po_')) return 'PO';
   if (key.startsWith('ospdc_')) return 'OSP DC';
   if (key.startsWith('jwdc_')) return 'JW DC';
+  if (key.startsWith('grn_')) return 'GRN';
   return null;
 }
 
@@ -123,6 +125,19 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   jwdc_footer:
     'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
   jwdc_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
+
+  // GOODS RECEIPT NOTE
+  // An INWARD document: it is not sent to the vendor, it is filed in store and
+  // signed by the people who counted and checked the material. Hence the
+  // three-name signature block rather than the outward 'For Innovic Technology'.
+  grn_header_note:
+    'Material received against {poNo} has been counted and taken into store. Quote our GRN number {grnNo} on all correspondence and invoices relating to this receipt.',
+  grn_special_notes: '',
+  grn_terms:
+    '1. Quantity received is subject to inspection; acceptance is confirmed only after QC clearance.\n2. Short supply, excess supply or damage in transit must be reported to the vendor within 48 hours of receipt.\n3. Rejected material is held at the vendor’s risk and cost, and must be collected against a debit note.\n4. Payment is released against accepted quantity only, not against quantity received.\n5. This receipt does not by itself constitute acceptance of the goods.',
+  grn_footer:
+    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
+  grn_signature: 'Received By\n\n\n\nChecked By\n\n\n\nAuthorised Signatory',
 };
 
 export function printTemplateDefault(key: string): string {
@@ -201,6 +216,29 @@ export const PRINT_TEMPLATE_VARS: Record<PrintDocType, readonly string[]> = {
     'driverName',
     'linkedPONo',
     'totalQty',
+  ],
+  // Inward, so the counterparty is the SUPPLIER and the quantities are what
+  // arrived and what survived inspection -- there is no rate or value on a GRN.
+  GRN: [
+    'companyName',
+    'companyAddress',
+    'companyGSTIN',
+    'companyPhone',
+    'companyEmail',
+    'date',
+    'currentUser',
+    'grnNo',
+    'grnDate',
+    'vendorName',
+    'vendorAddress',
+    'vendorGSTIN',
+    'vendorContact',
+    'poNo',
+    'dcNo',
+    'invoiceNo',
+    'totalReceived',
+    'totalAccepted',
+    'totalRejected',
   ],
 };
 

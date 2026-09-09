@@ -15,6 +15,23 @@
 // Ours is a superset — it adds a code-uniqueness check and blocks already-
 // converted/cancelled PRs. Legacy's handler does NOT touch jc_ops here.
 //
+// 2026-09-08 (ADR-152 phase 2): the two clickable bands — Open PR / PO Created
+// — used to test `status === 'po_created'`. That status now only means buying
+// STARTED, so an OSP request for 100 with a purchase order for 10 was counted
+// as finished and 90 quietly disappeared from the buyer's "still to do" pile.
+// Both bands now read the BALANCE through purchase-requests/lib/pr-balance, the
+// same helper the PR card, the PR detail page and the PO picker use, so the
+// four screens agree.
+//
+// 2026-09-08 (ADR-152 phase 4): the CHECKBOX follows the balance too. It used
+// to test `status open|approved`, which was correct only while the API refused
+// a second purchase order against a job-work request — so a request for 100
+// with a PO for 10 lost its checkbox and the other 90 could never be bought.
+// That guard is gone (jc_op_po_lines lets one outsourced operation sit on
+// several PO lines), so a PART-ordered request is selectable again and the
+// batch modal quotes what is LEFT, which is the quantity the server writes.
+// Same cards, same search, same JC-source filter, same batch-PO write path.
+//
 // Legacy's "SO" and "Plan" columns are not portable: PurchaseRequestListItem
 // exposes sourceJcCode/sourceJcOpSeq (used here), a bare sourceSoLineId uuid
 // with no code join, and no plan field at all. See report / ISSUE-067.
@@ -22,10 +39,18 @@
 import type { ListPurchaseRequestsQuery, PurchaseRequestListItem } from '@innovic/shared';
 import { Loader2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useCreatePurchaseOrderFromPrBatch } from '@/modules/purchase-orders/api';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
+import {
+  prBalanceClosedText,
+  prBalanceColor,
+  prBalanceText,
+  prHasBalanceToOrder,
+  prOrderBalance,
+} from '@/modules/purchase-requests/lib/pr-balance';
 import { useVendorsList } from '@/modules/vendors/api';
 
 const PAGE_SIZE = 100;
@@ -39,6 +64,37 @@ function statusColor(s: string): string {
   if (s === 'approved') return 'var(--blue)';
   if (s === 'open') return 'var(--amber)';
   return 'var(--text3)';
+}
+
+/** May this request go on a NEW purchase order? The QUANTITY question, asked
+ *  through the one balance helper — the same test the API makes in
+ *  `assertPrCanTakeAnotherPo`, so the checkbox and the server agree. Out:
+ *  cancelled, short-closed, fully ordered, over-ordered. IN: anything with
+ *  quantity still owed, INCLUDING a part-ordered request. */
+function ospCanOrder(pr: PurchaseRequestListItem): boolean {
+  if (pr.status === 'cancelled') return false;
+  return prHasBalanceToOrder(prOrderBalance(pr));
+}
+
+/** How much a new purchase order takes from this request: what is LEFT, never
+ *  the original qty. The batch endpoint has no qty field — it recomputes the
+ *  remaining balance itself for the line it writes — so quoting `qty` in the
+ *  modal would show the buyer a PO the server refuses ("PR X has N left to
+ *  order; this line asks for M"). Floored at 0 so an over-ordered row prints a
+ *  number instead of a minus. */
+function ospOrderQty(pr: PurchaseRequestListItem): number {
+  return Math.max(0, prOrderBalance(pr).balance);
+}
+
+/** Which band a request belongs in — the QUANTITY question, not the status one.
+ *  "Open PR" = there is still something to buy, which is now exactly the set of
+ *  rows that carry a checkbox. "PO Created" = the buying is finished, either
+ *  because every piece is on a purchase order or because the buyer short-closed
+ *  the remainder. A cancelled request is in neither, exactly as before (the old
+ *  test only ever matched open / approved / po_created). */
+function ospBand(pr: PurchaseRequestListItem): 'open' | 'po_created' | null {
+  if (pr.status === 'cancelled') return null;
+  return ospCanOrder(pr) ? 'open' : 'po_created';
 }
 
 export function OutsourceJobsView(): React.JSX.Element {
@@ -77,28 +133,42 @@ export function OutsourceJobsView(): React.JSX.Element {
 
   // Client-side filter for status + SO (legacy filters by these in-page).
   const filtered = useMemo(() => {
-    const q = searchText.toLowerCase().trim();
     return allPrs.filter((pr) => {
       if (soNo && pr.sourceJcCode !== soNo) return false;
-      if (statusBand === 'open' && pr.status !== 'open' && pr.status !== 'approved') return false;
-      if (statusBand === 'po_created' && pr.status !== 'po_created') return false;
-      if (q) {
-        const hay = [
-          pr.code,
-          pr.sourceJcCode,
-          pr.itemCode,
-          pr.itemCodeText,
-          pr.itemName,
-          pr.operation,
-          pr.vendorName,
-          pr.vendorCodeText,
-          pr.poCode,
-          pr.status,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
+      if (statusBand && ospBand(pr) !== statusBand) return false;
+      // Every column this table shows, through the ONE shared matcher
+      // (components/shared/search-match) instead of another hand-rolled
+      // join-and-includes. Qty, Est. Rate and Due were columns you could read
+      // but not search; they are covered now. Client-side is correct HERE and
+      // only here: this tab loads its whole list in one fetch, so nothing the
+      // box hides was left on the server.
+      if (
+        !matchesSearchTerm(
+          [
+            pr.code,
+            pr.sourceJcCode,
+            pr.sourceJcOpSeq,
+            pr.itemCode,
+            pr.itemCodeText,
+            pr.itemName,
+            pr.operation,
+            pr.vendorName,
+            pr.vendorCodeText,
+            pr.qty,
+            pr.estCost,
+            pr.requiredDate,
+            pr.poCode,
+            pr.status.replaceAll('_', ' '),
+            // The Status cell's second line — "90 of 100 left" / "balance
+            // closed" — is text the user can read, so it is text the box can
+            // find. Only when the row actually shows it, which is the same
+            // `ordered > 0` test OspRow makes.
+            prOrderBalance(pr).ordered > 0 ? prBalanceText(pr) : null,
+          ],
+          searchText,
+        )
+      ) {
+        return false;
       }
       return true;
     });
@@ -115,13 +185,13 @@ export function OutsourceJobsView(): React.JSX.Element {
 
   // Cards
   const totalPR = allPrs.length;
-  const openPR = allPrs.filter((pr) => pr.status === 'open' || pr.status === 'approved').length;
-  const poCreated = allPrs.filter((pr) => pr.status === 'po_created').length;
+  const openPR = allPrs.filter((pr) => ospBand(pr) === 'open').length;
+  const poCreated = allPrs.filter((pr) => ospBand(pr) === 'po_created').length;
   const totalQty = allPrs.reduce((s, pr) => s + pr.qty, 0);
 
-  const selectablePrs = filtered.filter(
-    (pr) => pr.status === 'open' || pr.status === 'approved',
-  );
+  // A checkbox now means "this request still has quantity to buy", not "its
+  // status is open/approved". `canEdit` gates it on top, exactly as before.
+  const selectablePrs = filtered.filter(ospCanOrder);
   const allSelectedOnPage =
     selectablePrs.length > 0 && selectablePrs.every((pr) => selectedIds.has(pr.id));
 
@@ -186,10 +256,12 @@ export function OutsourceJobsView(): React.JSX.Element {
     }
   }
 
+  // Both totals are the quantity that will actually be ORDERED (each request's
+  // remaining balance), not the quantity that was once requested.
   const selectedList = filtered.filter((pr) => selectedIds.has(pr.id));
-  const totalSelectedQty = selectedList.reduce((s, pr) => s + pr.qty, 0);
+  const totalSelectedQty = selectedList.reduce((s, pr) => s + ospOrderQty(pr), 0);
   const totalSelectedValue = selectedList.reduce(
-    (s, pr) => s + pr.qty * (rateOverrides[pr.id] ?? (Number(pr.estCost) || 0)),
+    (s, pr) => s + ospOrderQty(pr) * (rateOverrides[pr.id] ?? (Number(pr.estCost) || 0)),
     0,
   );
 
@@ -270,7 +342,7 @@ export function OutsourceJobsView(): React.JSX.Element {
           className="innovic-input"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          placeholder="🔍 Search PR, JC, item, vendor..."
+          placeholder="🔍 Search PR no, JC, item, process, vendor, qty, due, status…"
           style={{ width: 220, fontSize: 12 }}
         />
         <select
@@ -304,9 +376,9 @@ export function OutsourceJobsView(): React.JSX.Element {
                 <th>JC Source</th>
                 <th>Item</th>
                 <th style={{ color: 'var(--purple)' }}>Process</th>
-                <th className="td-ctr">Qty</th>
+                <th>Qty</th>
                 <th>Suggested Vendor</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>Est. Rate</th>
+                <th style={{ color: 'var(--green)' }}>Est. Rate</th>
                 <th>Due</th>
                 <th>Status</th>
               </tr>
@@ -335,7 +407,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                   <OspRow
                     key={pr.id}
                     pr={pr}
-                    canSelect={canEdit && (pr.status === 'open' || pr.status === 'approved')}
+                    canSelect={canEdit && ospCanOrder(pr)}
                     selected={selectedIds.has(pr.id)}
                     onToggle={(c) => togglePr(pr.id, c)}
                   />
@@ -347,8 +419,9 @@ export function OutsourceJobsView(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Select open PRs using checkboxes → Click <b>🛒 Create PO</b>. You can club multiple PRs
-        into 1 PO (same vendor). Vendor and rate can be changed during PO creation.
+        💡 Select the PRs that still have quantity left → Click <b>🛒 Create PO</b>. A part-ordered
+        PR can be picked again; the new PO covers what is LEFT, not the original qty. You can club
+        multiple PRs into 1 PO (same vendor). Vendor and rate can be changed during PO creation.
       </div>
 
       {/* Batch-create modal */}
@@ -404,7 +477,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                   color: 'var(--text3)',
                 }}
               >
-                Creating PO for <b>{selectedIds.size} line(s)</b> · Total qty:{' '}
+                Creating PO for <b>{selectedIds.size} line(s)</b> · Qty to order:{' '}
                 <b>{totalSelectedQty}</b> · Est. value:{' '}
                 <b style={{ color: 'var(--green)' }}>₹{inr(totalSelectedValue)}</b>
               </div>
@@ -457,14 +530,15 @@ export function OutsourceJobsView(): React.JSX.Element {
                       <th>JC Source</th>
                       <th>Item</th>
                       <th>Process</th>
-                      <th className="td-ctr">Qty</th>
-                      <th className="td-ctr" style={{ color: 'var(--green)' }}>Rate ₹/pc</th>
-                      <th className="td-ctr">Amount</th>
+                      <th>Qty to order</th>
+                      <th style={{ color: 'var(--green)' }}>Rate ₹/pc</th>
+                      <th>Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selectedList.map((pr) => {
                       const rate = rateOverrides[pr.id] ?? (Number(pr.estCost) || 0);
+                      const orderQty = ospOrderQty(pr);
                       return (
                         <tr key={pr.id}>
                           <td className="mono" style={{ color: 'var(--purple)', fontSize: 11 }}>{pr.code}</td>
@@ -477,8 +551,19 @@ export function OutsourceJobsView(): React.JSX.Element {
                           <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                             {pr.operation ?? '—'}
                           </td>
-                          <td className="td-ctr mono fw-700">{pr.qty}</td>
-                          <td className="td-ctr">
+                          <td className="mono fw-700">
+                            {orderQty}
+                            {orderQty !== pr.qty ? (
+                              <div
+                                className="text3"
+                                style={{ fontSize: 10, fontWeight: 400 }}
+                                title={`${pr.qty - orderQty} of ${pr.qty} is already on a purchase order`}
+                              >
+                                of {pr.qty} requested
+                              </div>
+                            ) : null}
+                          </td>
+                          <td>
                             <input
                               type="number"
                               className="innovic-input"
@@ -492,11 +577,16 @@ export function OutsourceJobsView(): React.JSX.Element {
                                   [pr.id]: Number(e.target.value) || 0,
                                 }))
                               }
-                              style={{ width: 80, fontSize: 12, fontWeight: 700, color: 'var(--green)', textAlign: 'right' }}
+                              style={{
+                                width: 80,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: 'var(--green)',
+                              }}
                             />
                           </td>
-                          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-                            ₹{inr(rate * pr.qty)}
+                          <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                            ₹{inr(rate * orderQty)}
                           </td>
                         </tr>
                       );
@@ -562,9 +652,10 @@ function OspRow({
   selected: boolean;
   onToggle: (checked: boolean) => void;
 }): React.JSX.Element {
+  const bal = prOrderBalance(pr);
   return (
     <tr>
-      <td className="td-ctr">
+      <td>
         {canSelect ? (
           <input
             type="checkbox"
@@ -585,14 +676,14 @@ function OspRow({
       <td style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
         {pr.operation ?? '—'}
       </td>
-      <td className="td-ctr mono fw-700">{pr.qty}</td>
+      <td className="mono fw-700">{pr.qty}</td>
       <td style={{ fontSize: 11 }}>
         {pr.vendorName ?? <span style={{ color: 'var(--amber)' }}>TBD</span>}
         {pr.vendorCodeText && pr.vendorCodeText !== pr.vendorName ? (
           <span style={{ color: 'var(--text3)', fontSize: 10 }}> [{pr.vendorCodeText}]</span>
         ) : null}
       </td>
-      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+      <td className="mono" style={{ color: 'var(--green)' }}>
         {Number(pr.estCost) > 0 ? `₹${Number(pr.estCost).toFixed(2)}` : '—'}
       </td>
       <td style={{ fontSize: 11 }}>{pr.requiredDate ?? '—'}</td>
@@ -604,6 +695,25 @@ function OspRow({
           <span className="mono" style={{ fontSize: 10, marginLeft: 4, color: 'var(--cyan)' }}>
             {pr.poCode}
           </span>
+        ) : null}
+        {/* Why a `po created` row can still sit in the Open PR band and still
+            offer a checkbox: the status says buying STARTED, this says how much
+            of it is left to buy — and that remainder is what the next PO will
+            take. Shown only when something is ordered and something is still
+            owed (or the balance was closed), so a plain open or fully-ordered
+            row is as clean as it was. */}
+        {bal.ordered > 0 && (bal.balance > 0 || bal.closed) ? (
+          <div
+            className="mono"
+            style={{ fontSize: 10, color: prBalanceColor(bal.state) }}
+            title={
+              bal.closed
+                ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`
+                : `${bal.ordered} of ${bal.qty} ordered`
+            }
+          >
+            {bal.closed ? '🚫 balance closed' : `${bal.balance} of ${bal.qty} left`}
+          </div>
         ) : null}
       </td>
     </tr>

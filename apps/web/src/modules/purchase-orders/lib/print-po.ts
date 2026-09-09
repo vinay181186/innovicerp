@@ -30,7 +30,11 @@ export function printPurchaseOrder(args: {
   // Money is hidden for L1 Viewers: the API nulls the header total and line
   // rates. A printed PO must not leak what the screen hides, so every rupee
   // cell prints "—" and the amount-in-words is dropped.
-  const priceHidden = po.totalAmount == null;
+  // TOLD, not inferred — same test the detail page makes (routes/detail.tsx
+  // `priceVisible === false`). Probing `totalAmount == null` also caught POs
+  // whose header roll-up was simply never filled, and printed "—" in every
+  // rupee cell for a buyer fully entitled to see the price.
+  const priceHidden = po.priceVisible === false;
   const money = (n: number): string => (priceHidden ? '—' : inrFormat(n));
 
   const subtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
@@ -57,7 +61,11 @@ export function printPurchaseOrder(args: {
   const grand = subtotal + tax;
 
   const vendorName = vendor?.name ?? po.vendorName ?? po.vendorCodeText ?? '';
-  const vendorAddress = vendor?.addressLine1 ?? '';
+  // Full postal address for the party box — line 1 plus city / state / pincode,
+  // the same join the vendor master shows.
+  const vendorAddress = [vendor?.addressLine1, vendor?.city, vendor?.state, vendor?.pincode]
+    .filter(Boolean)
+    .join(', ');
   const vendorGstin = vendor?.gstNumber ?? '';
   const vendorContact = [vendor?.contactPerson, vendor?.phone].filter(Boolean).join(', ');
 
@@ -81,15 +89,53 @@ export function printPurchaseOrder(args: {
     totalQty: String(totalQty),
   };
 
+  // The approved format's document row. Five cells in a fixed order, so a
+  // missing due date or PR reference prints an em dash rather than collapsing
+  // the row and shifting every other cell along.
+  //
+  // CONTACT PERSON is the person who RAISED the PO -- the name a vendor rings
+  // about it. `createdBy` alone is a uuid, so the PO detail now joins
+  // `createdByName` (users.full_name), the same way the Sales Order does. Null
+  // only when that user has since been deleted; a dash, never an id.
+  const dash = '—';
   const meta: DocMetaCell[] = [
     { label: 'PO No.', value: po.code },
-    { label: 'Date', value: fmtDate(po.poDate) },
+    { label: 'PO Date', value: fmtDate(po.poDate) },
+    { label: 'Due Date', value: po.dueDate ? fmtDate(po.dueDate) : dash },
+    { label: 'PR Ref.', value: po.prCodeText ?? dash },
+    { label: 'Contact Person', value: po.createdByName ?? dash, mono: false },
   ];
-  if (po.dueDate) meta.push({ label: 'Delivery Date', value: fmtDate(po.dueDate) });
-  if (po.prCodeText) meta.push({ label: 'PR Ref', value: po.prCodeText });
 
   const model: DocPrintModel = {
     doc: 'PO',
+    // Approved Purchase Order format (sample signed off 2026-09-08): repeating
+    // letterhead, five-cell document row, supplier + ship-to boxes, and the
+    // combined "Item Code & Description" column.
+    docLayout: 'v10',
+    parties: [
+      {
+        label: 'Vendor / Supplier',
+        name: vendorName,
+        rows: [
+          { label: 'Vendor Code', value: vendor?.code ?? po.vendorCodeText ?? '', mono: true },
+          { label: 'Address', value: vendorAddress },
+          { label: 'GSTIN', value: vendorGstin, mono: true },
+          { label: 'Vendor Phone', value: vendor?.phone ?? '', mono: true },
+          { label: 'Vendor E-mail', value: vendor?.email ?? '' },
+        ],
+      },
+      {
+        // Ship To is OUR works — the same company record the letterhead uses.
+        label: 'Ship To',
+        name: company?.name ?? 'Innovic Technology',
+        rows: [
+          { label: 'Address', value: companyAddressLines(company).join(', ') },
+          { label: 'GSTIN', value: company?.gstNumber ?? '', mono: true },
+          { label: 'Phone', value: company?.phone ?? '', mono: true },
+          { label: 'E-mail', value: company?.email ?? '' },
+        ],
+      },
+    ],
     // Viewers who may not see prices get the qty-only PO — no Rate/Amount
     // columns, no totals, no amount-in-words.
     hideMoney: priceHidden,
@@ -113,6 +159,9 @@ export function printPurchaseOrder(args: {
       uom: 'NOS',
       rate: money(Number(l.rate ?? 0)),
       amount: money(l.qty * Number(l.rate ?? 0)),
+      // Per-line remarks print as "Description: ..." under the item name; a
+      // line without remarks prints nothing extra.
+      description: l.lineRemarks,
     })),
     totals: {
       subtotal: money(subtotal),

@@ -6,7 +6,8 @@
 //
 //   1. applyOutwardToJcOp(tx, args)
 //        For a DC line linked to a JW PO line, find the corresponding outsource
-//        jc_op (via jc_ops.outsource_po_line_id) and bump:
+//        jc_op (via jc_op_po_lines, 0118 — so an op covered by SEVERAL purchase
+//        orders is found from ANY of them, not only its first) and bump:
 //          - outsource_sent_qty += qty
 //          - outsource_sent_date = dcDate (set when null OR replace with earlier)
 //          - outsource_dc_no = dcCode (overwrites; legacy only stored the latest)
@@ -32,7 +33,7 @@
 
 import type { OutsourceStatus } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { jcOps, jobCards, purchaseOrderLines, purchaseOrders } from '../../db/schema';
+import { jcOpPoLines, jcOps, jobCards, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
 import { type MaterialCap, loadMaterialCap, materialCapMessage } from '../op-entry/service';
@@ -126,9 +127,21 @@ export async function loadOutwardSendable(
       outsourceDcNo: jcOps.outsourceDcNo,
     })
     .from(jcOps)
+    // 0118: the op→PO-line link is now a table, because one operation may be
+    // covered by several purchase orders. Matching on jc_ops.outsource_po_line_id
+    // found the op only through its FIRST purchase order, so a challan raised
+    // against the SECOND one silently skipped every guard below.
+    .innerJoin(
+      jcOpPoLines,
+      and(
+        eq(jcOpPoLines.jcOpId, jcOps.id),
+        eq(jcOpPoLines.companyId, companyId),
+        isNull(jcOpPoLines.deletedAt),
+      ),
+    )
     .where(
       and(
-        eq(jcOps.outsourcePoLineId, purchaseOrderLineId),
+        eq(jcOpPoLines.purchaseOrderLineId, purchaseOrderLineId),
         eq(jcOps.companyId, companyId),
         // Dual-lane (ADR-081): match by the OSP PO line regardless of op_type, so
         // a PROCESS op carrying an OSP balance also gets its sent-qty tracked
@@ -287,9 +300,19 @@ export async function reverseOutwardFromJcOp(
       outsourceDcNo: jcOps.outsourceDcNo,
     })
     .from(jcOps)
+    // Same 0118 hop as loadOutwardSendable: cancel a challan raised against ANY
+    // of the op's purchase order lines and the sent qty comes back off the op.
+    .innerJoin(
+      jcOpPoLines,
+      and(
+        eq(jcOpPoLines.jcOpId, jcOps.id),
+        eq(jcOpPoLines.companyId, companyId),
+        isNull(jcOpPoLines.deletedAt),
+      ),
+    )
     .where(
       and(
-        eq(jcOps.outsourcePoLineId, purchaseOrderLineId),
+        eq(jcOpPoLines.purchaseOrderLineId, purchaseOrderLineId),
         eq(jcOps.companyId, companyId),
         // Dual-lane (ADR-081): match by the OSP PO line regardless of op_type, so
         // a PROCESS op carrying an OSP balance also gets its sent-qty tracked

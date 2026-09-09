@@ -7902,3 +7902,125 @@ Server side it is a second `leftJoin` on the ops query that already left-joins m
 - Shown on in-house operations only. The group hangs off the machine, so an OSP step (which carries a vendor) and a QC step (which carries neither) have none.
 - Negative: display only. The route card stores the machine; the group is whatever that machine belongs to now, so re-grouping a machine changes what old cards read. That is right here — a route card names a machine, not a family.
 - Added to the route card DETAIL projection only, the single place in the API that builds a `RouteCardOp`.
+
+## ADR-152: A Purchase Request carries a BALANCE, not a "has a PO" flag
+
+**Date:** 2026-09-07
+**Status:** Accepted
+
+### Context
+
+A PR is flat — one item, one `qty` — and carried a single `purchase_requests.po_id`.
+Raising a PO stamped `po_id` + `status = 'po_created'` unconditionally, and the PO
+form's PR picker then hid any PR where `poId !== null`. The picker's own header
+comment named this as the design: "stop a second PO being raised for the same
+request".
+
+So a PR for 100 that received a PO for 10 was treated as finished. The other 90
+became unorderable and invisible, and nothing recorded that only 10 was bought.
+Live data confirmed the shape: of 13 production PRs, every one that had a PO was
+ordered at **exactly** 100% — partial never happened, because it could not.
+
+Seven separate gaps fell out of that one design:
+
+1. Three PRs (IN-JWPR-00001/2/3) predate migration 0103 and have a header `po_id`
+   with NO `source_pr_id` line links, because 0103 deliberately did not backfill.
+2. **Cancelling a PO never released its PR** — nothing wrote the status back, so
+   the PR was dead forever. Broken before any of this work.
+3. `jc_ops.outsource_po_line_id` is a single column and is the join key for the
+   whole outsource cascade, so an OSP op could only ever follow one PO.
+4. PO approval is tested per-PO on `Σ(qty × rate)`, so splitting one large PO into
+   several small ones walks under the limit.
+5. Nothing capped the total ordered against a PR.
+6. A part-ordered PR could not be edited or rejected, so its remainder sat in the
+   "still to buy" list forever with no way to abandon it.
+7. `po_id` can only hold one PO and would silently show whichever was written last.
+
+### Decision
+
+**Stop storing whether a PR has a PO. Compute how much of it is on order.**
+
+    orderedQty = Σ(purchase_order_lines.qty) where source_pr_id = this PR,
+                 excluding deleted lines and CANCELLED purchase orders
+    balanceQty = qty - orderedQty          (0 while the balance is short-closed)
+
+Delivered in four phases:
+
+- **Phase 1** — derive `orderedQty` / `balanceQty`; server-side `convertibleOnly`
+  filter; the edit and reject guards test `orderedQty > 0` instead of `po_id`.
+  No migration; everything comes from columns 0103 already added and indexed.
+- **Phase 2** — migration `0117_pr_short_close.sql`: short-close the remainder
+  with a required reason. PO creation writes `po_id` only when it is still null,
+  caps each line at the PR's balance, and converts at the BALANCE rather than the
+  original qty.
+- **Phase 3** — CLOSED AS "NO CHANGE" by the user on 2026-09-07, after tracing
+  showed gap 4 was not what it looked like. See the correction below.
+- **Phase 4** — migration `0118_jc_op_po_lines.sql`: a link table carrying
+  (jc_op, purchase_order_line, qty), so an outsourced op can span several POs.
+
+**The legacy rule, which is not optional:** a PR with a header `po_id` but zero
+linked lines reports its full `qty` as ordered. Without it those three PRs read as
+0-ordered, reappear in the picker, and invite a duplicate PO for material already
+bought. Verified against production before and after: all three compute to balance
+0 and no other PR changes state.
+
+### Correction to gap 4 — there is no PO approval gate to bypass
+
+Gap 4 was first written as "splitting a PO walks under the approval limit". That
+is wrong, and the truth is larger.
+
+`approvePurchaseOrder` refuses unless `po.status === 'draft'` (service.ts:1709),
+and **every new PO is born `'open'`** — `const headerStatus = 'open' as const`
+(service.ts:709), and the PR conversion path is explicit about it:
+`status: 'open', // PRs only convert to open POs (skip draft state)`
+(service.ts:1441). The code says this was deliberate: legacy `_poInitialStatus()`
+opened a PO in draft when approval was configured, that branch was already
+unreachable, and opening straight at `open` was made "the deliberate rule, not an
+accident" (service.ts:704-708).
+
+So the ceiling at service.ts:1719 is unreachable for anything created today. A
+Rs 2,00,000 PO and ten Rs 20,000 POs are treated identically: neither needs
+anyone's approval. `users.approval_limit` and `approval_config.po_manager_limit`
+are populated but inert.
+
+**Decision (user, 2026-09-07): option A — leave it as it is.** POs continue to
+need no approval. Gap 4 is closed as "not a gap, by design".
+
+The alternatives offered and declined were (B) gate POs on value, born `draft`
+above the raiser's limit, and (C) B plus testing the CUMULATIVE value ordered
+against a PR so splitting cannot dodge it. Both were declined because switching
+the ceiling on would begin blocking purchase orders that staff raise freely
+today — a change to how purchasing runs, not a bug fix — and the business has
+operated without the control for months.
+
+If this is ever revisited, note that C is the only version that survives Phase 2:
+once one PR can carry several POs, a per-PO ceiling is trivially avoided.
+
+### Alternatives Considered
+
+- **Store `ordered_qty` on the PR and maintain it** — rejected: a denormalised
+  counter has to be corrected on PO create, edit, line delete, PO cancel and PO
+  un-cancel. Every one of those is a chance to drift, and gap 2 exists precisely
+  because a stored status was not maintained. Deriving it cannot drift.
+- **Backfill `source_pr_id` for the three legacy PRs** — rejected, and the user
+  explicitly asked they be left alone. 0103's own header says inferring a line's
+  PR from the header would invent data on batch POs.
+- **Gap 3 option (a): forbid partial ordering for OSP PRs** — offered and
+  rejected by the user in favour of option (b), the link table.
+- **Give PRs child LINES** (one PR, many items) — rejected as a much larger
+  change that solves a different problem; the qty here is on the PR header.
+
+### Consequences
+
+- Positive: cancelling a PO frees its PR automatically, with no status to sync.
+  One PR can be ordered across several POs, each producing its own challan and
+  GRN — which already worked, since those hang off the PO LINE, not the PR.
+- Negative: `balanceQty` is a correlated subquery on the PR list. It is indexed
+  (`purchase_order_lines_source_pr_idx`) but it is no longer a free column read.
+- Negative: `orderedQty + shortClosed` need not equal `qty`, deliberately. A
+  short-closed PR still says 100 was asked for and 10 was bought.
+- Risk: `jc_ops.outsource_po_line_id` stays populated with the FIRST link during
+  Phase 4, exactly as `machines.machine_type` was kept in 0116. Until every
+  cascade moves to `jc_op_po_lines`, an OSP op split across POs would follow only
+  the first — so the Phase 2 quantity cap must not be allowed to split an OSP PR
+  before Phase 4 ships.

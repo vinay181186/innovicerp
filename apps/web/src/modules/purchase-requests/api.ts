@@ -24,6 +24,10 @@ function toQueryString(q: ListPurchaseRequestsQuery): string {
   if (q.prType) params.set('prType', q.prType);
   if (q.vendorId) params.set('vendorId', q.vendorId);
   if (q.sourceJcOpId) params.set('sourceJcOpId', q.sourceJcOpId);
+  // Only PRs with quantity still left to order (ADR-152). Sent only when true —
+  // an absent param means "no balance filter", which is what every other list
+  // on this screen wants.
+  if (q.convertibleOnly) params.set('convertibleOnly', 'true');
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
   params.set('limit', String(q.limit));
@@ -99,6 +103,29 @@ export function useRejectPr() {
     onSuccess: (pr) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
       qc.setQueryData(purchaseRequestsKeys.detail(pr.id), pr);
+    },
+  });
+}
+
+/** Short-close the unordered remainder (ADR-152 phase 2). The PR keeps its
+ *  quantity and everything already ordered; only the balance is abandoned, with
+ *  a reason that is required. Same invalidation as approve / reject — the list
+ *  rows carry the balance too, so both caches have to move together. */
+export function useClosePurchaseRequestBalance() {
+  const qc = useQueryClient();
+  return useMutation<PurchaseRequest, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<PurchaseRequest>(`/purchase-requests/${id}/close-balance`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: (pr) => {
+      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      // The detail read carries joins (vendor name, PO code) the write-back
+      // shape does not, so refetch it rather than overwriting the cache with a
+      // narrower row — the same reason the page must show the closed banner
+      // straight after the mutation.
+      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(pr.id) });
     },
   });
 }

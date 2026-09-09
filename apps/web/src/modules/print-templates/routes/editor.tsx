@@ -16,11 +16,19 @@ import { createRoute } from '@tanstack/react-router';
 import { format } from 'date-fns';
 import { Loader2, Pencil, Printer } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates, useRestorePrintTemplateDefault, useSavePrintTemplate } from '../api';
 import { RevisionsModal } from '../components/revisions-modal';
-import { openTestPrint, sampleDataFor } from '../lib/test-print';
+import {
+  GRN_SAMPLE_LINES,
+  PO_SAMPLE_LINES,
+  PO_SAMPLE_PARTIES,
+  openTestPrint,
+  poSampleDocRow,
+  sampleDataFor,
+} from '../lib/test-print';
 
 export const printTemplatesRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -33,12 +41,17 @@ const DOC_COLOR: Record<PrintDocType, string> = {
   'SERVICE PO': '#0e7490',
   'OSP DC': '#7c3aed',
   'JW DC': '#c47a00',
+  // The GRN is the one INWARD document here — green, the app's "accepted /
+  // received" tone. Taken from the theme token so it tracks the palette; the
+  // four literals above predate the tokens and are left as they are.
+  GRN: 'var(--green)',
 };
 const DOC_LABEL: Record<PrintDocType, string> = {
   PO: 'Purchase Order',
   'SERVICE PO': 'Service Purchase Order',
   'OSP DC': 'OSP Delivery Challan',
   'JW DC': 'Job Work DC',
+  GRN: 'Goods Receipt Note',
 };
 // Title printed on the document itself (legacy titleText L14708). Distinct from
 // the selector button label — legacy's "Job Work DC" button prints as
@@ -48,6 +61,7 @@ const DOC_TITLE: Record<PrintDocType, string> = {
   'SERVICE PO': 'SERVICE PURCHASE ORDER',
   'OSP DC': 'OSP DELIVERY CHALLAN',
   'JW DC': 'JOB WORK DELIVERY CHALLAN',
+  GRN: 'GOODS RECEIPT NOTE',
 };
 
 function lastEditLabel(t: EffectivePrintTemplate): string {
@@ -82,6 +96,22 @@ function PrintTemplatesPage(): React.JSX.Element {
   // two DC docs print a qty-only table. Mirrors `isPo` in @/lib/print/doc-print,
   // so the mock previews what actually prints.
   const isPo = doc === 'PO' || doc === 'SERVICE PO';
+  // The GRN is a THIRD shape, not a variant of either: it is an inward receipt,
+  // so it prints received / accepted / rejected quantities and NO money at all.
+  // Mirrors modules/goods-receipt-notes/lib/print-grn.ts, which is the builder
+  // that actually puts a GRN on paper.
+  const isGrn = doc === 'GRN';
+  // The Purchase Order prints the APPROVED FORMAT (sample signed off
+  // 2026-09-08): a letterhead that repeats on every page, a five-cell document
+  // row, supplier + ship-to boxes, and one "Item Code & Description" column.
+  // Mirrors `docLayout: 'v10'` in @/lib/print/doc-print, so this mock shows
+  // what actually comes out of the printer. The Service PO, the two challans
+  // and the GRN keep the layout they have always previewed.
+  const isPoV10 = doc === 'PO';
+  // The printed document sets every code, date and number in a monospace face;
+  // the mock does the same so the preview reads like the paper.
+  const MONO = "'DejaVu Sans Mono', Consolas, 'Courier New', monospace";
+  const poDocRow = poSampleDocRow();
   const blockOf = (b: string): EffectivePrintTemplate | undefined =>
     docTemplates.find((t) => t.block === b);
 
@@ -396,6 +426,10 @@ function PrintTemplatesPage(): React.JSX.Element {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
+            // The button sits ABOVE the loading branch, so before this it could
+            // be clicked while the templates were still in flight and printed a
+            // sample document with every editable block blank.
+            disabled={isLoading || allTemplates.length === 0}
             onClick={() => {
               if (!openTestPrint(doc, allTemplates)) window.alert('Allow popups to print.');
             }}
@@ -425,7 +459,34 @@ function PrintTemplatesPage(): React.JSX.Element {
             style={{ padding: 0, background: '#fff', color: '#1e293b', borderRadius: 6, overflow: 'hidden' }}
           >
             <div style={{ padding: 0, border: '2px solid #333' }}>
-              {/* Header: logo + company */}
+              {/* Header: the letterhead. On the Purchase Order it is the
+                  approved band — logo left, company block right, blue rule —
+                  and it is REPEATED at the top of every printed page. */}
+              {isPoV10 ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '8px 14px',
+                    borderBottom: '2px solid #1E4DB3',
+                  }}
+                >
+                  <img src={INNOVIC_LOGO_DATA_URI} alt="INNOVIC" style={{ height: 34 }} />
+                  <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                    <div
+                      style={{ fontSize: 20, fontWeight: 700, color: '#1E4DB3', lineHeight: 1.25 }}
+                    >
+                      {sample.companyName}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#334155', lineHeight: 1.45 }}>
+                      {sample.companyAddress}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#334155', lineHeight: 1.45 }}>
+                      <b>GSTIN:</b> {sample.companyGSTIN} &nbsp;·&nbsp; <b>PAN:</b> AQKPM4121A
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div
                 style={{
                   display: 'flex',
@@ -461,6 +522,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                   </div>
                 </div>
               </div>
+              )}
 
               {/* Document title bar */}
               <div
@@ -479,7 +541,86 @@ function PrintTemplatesPage(): React.JSX.Element {
               </div>
 
               {/* Meta info row (sample) */}
-              {isPo ? (
+              {isPoV10 ? (
+                <>
+                  {/* The five-cell document row */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid #999' }}>
+                    {poDocRow.map((c, i) => (
+                      <div
+                        key={c.label}
+                        style={{
+                          flex: 1,
+                          padding: '5px 10px',
+                          borderRight: i < poDocRow.length - 1 ? '1px solid #999' : 'none',
+                        }}
+                      >
+                        <span style={{ fontSize: 11, color: '#666', letterSpacing: '.09em' }}>
+                          {c.label}
+                        </span>
+                        <br />
+                        <b style={{ fontSize: 12, fontFamily: c.mono === false ? undefined : MONO }}>
+                          {c.value}
+                        </b>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Vendor / Supplier and Ship To, label column + value column */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid #999' }}>
+                    {PO_SAMPLE_PARTIES.map((b, i) => (
+                      <div
+                        key={b.label}
+                        style={{
+                          flex: 1,
+                          padding: '10px 14px',
+                          fontSize: 12,
+                          lineHeight: 1.45,
+                          borderRight: i === 0 ? '1px solid #999' : 'none',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            color: '#333',
+                            textDecoration: 'underline',
+                            fontSize: 11,
+                            letterSpacing: '.11em',
+                          }}
+                        >
+                          {b.label}
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
+                          {b.name}
+                        </div>
+                        {b.rows.map((r) => (
+                          <div key={r.label} style={{ display: 'flex', gap: 10, marginTop: 3 }}>
+                            <b
+                              style={{
+                                flex: '0 0 118px',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: '#475569',
+                                letterSpacing: '.07em',
+                              }}
+                            >
+                              {r.label}
+                            </b>
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                fontSize: 12,
+                                fontFamily: r.mono ? MONO : undefined,
+                              }}
+                            >
+                              {r.value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : isGrn ? (
                 <div
                   style={{
                     display: 'grid',
@@ -487,11 +628,37 @@ function PrintTemplatesPage(): React.JSX.Element {
                     borderBottom: '1px solid #999',
                   }}
                 >
-                  <div style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}>
-                    <b>{doc === 'PO' ? 'PO No.:' : 'SPO No.:'}</b> {doc === 'PO' ? sample.poNo : sample.spoNo}
+                  <div
+                    style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}
+                  >
+                    <b>GRN No.:</b> {sample.grnNo}
                     <br />
-                    <b>{doc === 'PO' ? 'PO Date:' : 'SPO Date:'}</b>{' '}
-                    {doc === 'PO' ? sample.poDate : sample.spoDate}
+                    <b>GRN Date:</b> {sample.grnDate}
+                    <br />
+                    <b>Vendor:</b> {sample.vendorName}
+                  </div>
+                  <div style={{ padding: '10px 14px', fontSize: 11 }}>
+                    <b>PO No.:</b> {sample.poNo}
+                    <br />
+                    <b>Vendor DC No.:</b> {sample.dcNo}
+                    <br />
+                    <b>Invoice No.:</b> {sample.invoiceNo}
+                  </div>
+                </div>
+              ) : isPo ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    borderBottom: '1px solid #999',
+                  }}
+                >
+                  {/* Only the Service PO reaches here now — the Purchase Order
+                      has its own branch above, on the approved format. */}
+                  <div style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}>
+                    <b>SPO No.:</b> {sample.spoNo}
+                    <br />
+                    <b>SPO Date:</b> {sample.spoDate}
                     <br />
                     <b>Payment:</b> {sample.paymentTerms}
                   </div>
@@ -546,16 +713,340 @@ function PrintTemplatesPage(): React.JSX.Element {
                 >
                   SYSTEM-GENERATED — LINE ITEMS TABLE
                 </div>
+                {isPoV10 ? (
+                  // Approved format: ONE column stacks the item code, the item
+                  // name and — only when the line has remarks — a
+                  // "Description:" line. Same two sample lines the PO Test
+                  // Print puts on paper.
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9' }}>
+                        {(
+                          [
+                            ['Sr No.', 40],
+                            ['Item Code & Description', 0],
+                            ['Qty', 52],
+                            ['UOM', 46],
+                            ['Rate', 82],
+                            ['Amount', 96],
+                          ] as [string, number][]
+                        ).map(([label, w], i) => (
+                          <th
+                            key={label}
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              fontSize: 11,
+                              letterSpacing: '.09em',
+                              textAlign: i === 1 ? 'left' : 'center',
+                              ...(w ? { width: w } : {}),
+                            }}
+                          >
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {PO_SAMPLE_LINES.map((l, i) => (
+                        <tr key={l.itemCode}>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              fontFamily: MONO,
+                            }}
+                          >
+                            {i + 1}
+                          </td>
+                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                            <span
+                              style={{
+                                display: 'block',
+                                fontFamily: MONO,
+                                fontWeight: 700,
+                                fontSize: 12,
+                              }}
+                            >
+                              {l.itemCode}
+                            </span>
+                            <span style={{ display: 'block', fontWeight: 700 }}>{l.itemName}</span>
+                            {l.description ? (
+                              <span
+                                style={{
+                                  display: 'block',
+                                  fontSize: 11,
+                                  color: '#475569',
+                                  marginTop: 2,
+                                }}
+                              >
+                                <b style={{ color: '#334155' }}>Description:</b> {l.description}
+                              </span>
+                            ) : null}
+                          </td>
+                          {[l.qty, l.uom ?? 'NOS'].map((v, k) => (
+                            <td
+                              key={k}
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                fontFamily: MONO,
+                              }}
+                            >
+                              {v}
+                            </td>
+                          ))}
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'right',
+                              fontFamily: MONO,
+                            }}
+                          >
+                            {l.rate}
+                          </td>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'right',
+                              fontFamily: MONO,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {l.amount}
+                          </td>
+                        </tr>
+                      ))}
+                      {(
+                        [
+                          ['Subtotal', '1,00,000.00', 700, '#f8fafc'],
+                          ['SGST @ 9%', '9,000.00', 400, ''],
+                          ['CGST @ 9%', '9,000.00', 400, ''],
+                          ['TOTAL', '₹ ' + sample.totalValue, 800, '#f1f5f9'],
+                        ] as [string, string, number, string][]
+                      ).map(([label, value, weight, bg]) => (
+                        <tr key={label} style={bg ? { background: bg } : undefined}>
+                          <td
+                            colSpan={5}
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'right',
+                              fontWeight: weight,
+                            }}
+                          >
+                            {label}
+                          </td>
+                          <td
+                            style={{
+                              padding: 6,
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'right',
+                              fontFamily: MONO,
+                              fontWeight: weight,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {value}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : isGrn ? (
+                  // Received / accepted / rejected — no Rate, no Amount, no
+                  // money. Same seven columns, same order, same two sample
+                  // lines the GRN test print puts on paper.
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9' }}>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            width: 44,
+                          }}
+                        >
+                          Sr No.
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'left',
+                            width: 110,
+                          }}
+                        >
+                          Item Code
+                        </th>
+                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>
+                          Item Name
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            width: 78,
+                          }}
+                        >
+                          Received Qty
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            width: 78,
+                          }}
+                        >
+                          QC Accepted
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            width: 78,
+                          }}
+                        >
+                          QC Rejected
+                        </th>
+                        <th
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'left',
+                            width: 90,
+                          }}
+                        >
+                          QC Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {GRN_SAMPLE_LINES.map((l, i) => (
+                        <tr key={l.itemCode}>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                            }}
+                          >
+                            {i + 1}
+                          </td>
+                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                            {l.itemCode}
+                          </td>
+                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                            {l.itemName}
+                          </td>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {l.receivedQty}
+                          </td>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              color: '#16a34a',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {l.qcAcceptedQty}
+                          </td>
+                          <td
+                            style={{
+                              padding: '5px 8px',
+                              border: '1px solid #cbd5e1',
+                              textAlign: 'center',
+                              color: '#d97706',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {l.qcRejectedQty}
+                          </td>
+                          <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                            {l.qcStatus.replaceAll('_', ' ')}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: '#f8fafc' }}>
+                        <td
+                          colSpan={3}
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                          }}
+                        >
+                          TOTAL
+                        </td>
+                        <td
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {sample.totalReceived}
+                        </td>
+                        <td
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                            color: '#16a34a',
+                          }}
+                        >
+                          {sample.totalAccepted}
+                        </td>
+                        <td
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                            color: '#d97706',
+                          }}
+                        >
+                          {sample.totalRejected}
+                        </td>
+                        <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
+                      </tr>
+                    </tbody>
+                  </table>
+                ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                   <thead>
                     <tr style={{ background: '#f1f5f9' }}>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'center', width: 30 }}>
-                        #
+                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'center', width: 44 }}>
+                        Sr No.
                       </th>
-                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>Item</th>
+                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 110 }}>
+                        Item Code
+                      </th>
+                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>Item Name</th>
                       <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 60 }}>
                         Qty
                       </th>
+                      <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 60 }}>UOM</th>
                       {isPo ? (
                         <>
                           <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 80 }}>
@@ -565,20 +1056,16 @@ function PrintTemplatesPage(): React.JSX.Element {
                             Amount
                           </th>
                         </>
-                      ) : (
-                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 60 }}>
-                          UOM
-                        </th>
-                      )}
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
                       <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>1</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                        Sample Item — Steel Plate 6mm
-                      </td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>STL-PL-6</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Steel Plate 6mm</td>
                       <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
                       {isPo ? (
                         <>
                           <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
@@ -588,16 +1075,14 @@ function PrintTemplatesPage(): React.JSX.Element {
                             50,000.00
                           </td>
                         </>
-                      ) : (
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                      )}
+                      ) : null}
                     </tr>
                     <tr>
                       <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>2</td>
-                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                        Sample Item — Bearings 6203
-                      </td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>BRG-6203</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Bearings 6203</td>
                       <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
                       {isPo ? (
                         <>
                           <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
@@ -607,14 +1092,12 @@ function PrintTemplatesPage(): React.JSX.Element {
                             50,000.00
                           </td>
                         </>
-                      ) : (
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                      )}
+                      ) : null}
                     </tr>
                     {isPo ? (
                       <tr style={{ background: '#f8fafc' }}>
                         <td
-                          colSpan={4}
+                          colSpan={6}
                           style={{
                             padding: 6,
                             border: '1px solid #cbd5e1',
@@ -663,6 +1146,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                     )}
                   </tbody>
                 </table>
+                )}
               </div>
 
               {/* PO-only: Amount in words */}
@@ -675,7 +1159,12 @@ function PrintTemplatesPage(): React.JSX.Element {
                     background: '#fafafa',
                   }}
                 >
-                  <b>Amount in Words:</b> <i>One Lakh Rupees Only</i>
+                  <b>{isPoV10 ? 'Amount Chargeable (in words)' : 'Amount in Words:'}</b>{' '}
+                  <i>
+                    {isPoV10
+                      ? 'Indian Rupees One Lakh Eighteen Thousand Only'
+                      : 'One Lakh Rupees Only'}
+                  </i>
                 </div>
               ) : null}
 

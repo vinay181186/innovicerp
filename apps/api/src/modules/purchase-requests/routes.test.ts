@@ -128,6 +128,46 @@ describe('purchase-requests routes', () => {
     expect(res.json()).toMatchObject({ error: 'validation_error' });
   });
 
+  // Short-close (0117) — same route shape as /reject: POST + a required reason.
+  it('POST /purchase-requests/:id/close-balance returns 401 without auth', async () => {
+    app = await buildApp(null);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/purchase-requests/${'00000000-0000-0000-0000-000000000000'}/close-balance`,
+      headers: { 'content-type': 'application/json' },
+      payload: { reason: 'customer cut the order' },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ error: 'unauthorized' });
+  });
+
+  it('POST /purchase-requests/:id/close-balance returns 400 when the reason is missing', async () => {
+    app = await buildApp(admin);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/purchase-requests',
+      headers: { 'content-type': 'application/json' },
+      payload: {
+        code: `${TEST_PREFIX}CLOSE`,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 5,
+        estCost: 0,
+        status: 'open',
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/purchase-requests/${created.json().id}/close-balance`,
+      headers: { 'content-type': 'application/json' },
+      payload: { reason: '' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'validation_error' });
+  });
+
   it('POST /purchase-requests returns clean 403 for viewer role (not 500 from RLS leak)', async () => {
     const viewer: AuthContext = { ...admin, role: 'viewer' };
     app = await buildApp(viewer);

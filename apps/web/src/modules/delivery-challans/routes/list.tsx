@@ -105,13 +105,17 @@ function DeliveryChallansListPage(): React.JSX.Element {
     if (search.search) bits.push(`search "${search.search}"`);
     if (search.status) bits.push(search.status.replaceAll('_', ' '));
     bits.push(`page ${currentPage} of ${totalPages}`);
+    // The builder RETURNS false when the popup was blocked — it does not throw.
+    // Catching only the throw meant a blocked print did nothing at all and said
+    // nothing either.
     try {
-      printDispatchRegister({
+      const ok = printDispatchRegister({
         rows: data.items,
         summary: data.summary,
         filterLabel: bits.join(' · '),
         company,
       });
+      if (!ok) window.alert('Allow popups to print.');
     } catch {
       window.alert('Allow popups to print.');
     }
@@ -299,15 +303,6 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
-
-          <div className="panel" style={{ marginBottom: 12 }}>
-            <div className="panel-body" style={{ padding: '10px 14px' }}>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-                ⚠️ DCs are issued against PO_jw. Create from a PO detail page → &ldquo;Issue
-                DC&rdquo;. Receive back from the DC detail page.
-              </span>
-            </div>
           </div>
 
           {isLoading ? (

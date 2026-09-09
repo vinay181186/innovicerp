@@ -18,6 +18,7 @@ export {
 export type {
   JcDocInput,
   JcOpInput,
+  JcOpPoLinkView,
   JobCardCompletionEvent,
   JobCardCreateInput,
   JobCardDoc,

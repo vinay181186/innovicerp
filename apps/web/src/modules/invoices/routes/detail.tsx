@@ -158,7 +158,13 @@ function InvoiceDetailPage(): React.JSX.Element {
               💳 Add Payment
             </button>
           ) : null}
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => printInvoice(inv, company)}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
+            }}
+          >
             🖨 Print
           </button>
         </div>

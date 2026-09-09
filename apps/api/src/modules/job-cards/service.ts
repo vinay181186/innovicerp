@@ -20,6 +20,7 @@ import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
   items,
+  jcOpPoLines,
   jcOps,
   jobCards,
   jobWorkOrderLines,
@@ -47,6 +48,7 @@ import { saveRouteCardForItem } from '../route-cards/service';
 import type { CreateRouteCardOpInput, DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import type {
   JcOpInput,
+  JcOpPoLinkView,
   JobCardCompletionEvent,
   JobCardEditModel,
   JobCardListItem,
@@ -657,11 +659,27 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
  *  exact server COUNT (legacy fetched all; we cap the list but never the count). */
 const COMPLETION_LOG_OPLOG_CAP = 300;
 
+/** The Status page payload plus the per-op purchase order links (0118).
+ *
+ *  Additive: `JobCardStatusExtras` is the frozen shared contract and carries no
+ *  slot for the links yet, so the extra key is declared here rather than by
+ *  editing the shared package. Element shape is the shared
+ *  `jcOpPoLinkViewSchema`, so the screen and the API agree on the field names. */
+export interface JobCardStatusExtrasWithPoLinks extends JobCardStatusExtras {
+  /** One entry per op that has at least one live PO link, in op_seq order. Ops
+   *  with no outsourcing are omitted rather than sent as empty arrays. */
+  opPoLinks: Array<{ jcOpId: string; links: JcOpPoLinkView[] }>;
+}
+
 export async function getJobCardStatusExtras(
   id: string,
   user: AuthContext,
-): Promise<JobCardStatusExtras> {
+): Promise<JobCardStatusExtrasWithPoLinks> {
   const companyId = requireCompany(user);
+  // The link's rate is a PURCHASE ORDER rate, so it is gated by the purchase
+  // order form's price permission — not the job card's. A viewer who may not
+  // see PO money gets the link with `rate: null`, exactly as the PO list does.
+  const showPoMoney = await canSeeFormPrice(user, 'po_create');
   return withUserContext(user, async (tx) => {
     const jcRows = (await tx.execute(sql`
       SELECT jc.code FROM public.job_cards jc
@@ -961,10 +979,50 @@ export async function getJobCardStatusExtras(
         }
       : null;
 
+    // 5. Per-op purchase order links (0118, ADR-152 phase 4). An outsourced op
+    //    may now be covered by SEVERAL purchase orders, and the op's outsourced
+    //    quantity is the SUM of these links — so the screen has to be able to
+    //    show them all, or a part-ordered operation looks under-sent for no
+    //    visible reason. One query for the whole job card, grouped below: no
+    //    per-op round trip.
+    const poLinkRows = (await tx.execute(sql`
+      SELECT l.jc_op_id AS "jcOpId", l.qty,
+        l.purchase_order_line_id AS "purchaseOrderLineId",
+        po.id AS "purchaseOrderId", po.code AS "poCode", po.status AS "poStatus",
+        pol.line_no AS "poLineNo", pol.rate
+      FROM public.jc_op_po_lines l
+      JOIN public.jc_ops o ON o.id = l.jc_op_id AND o.deleted_at IS NULL
+      JOIN public.purchase_order_lines pol
+        ON pol.id = l.purchase_order_line_id AND pol.deleted_at IS NULL
+      JOIN public.purchase_orders po
+        ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
+      WHERE o.job_card_id = ${id}::uuid
+        AND l.company_id = ${companyId}::uuid
+        AND l.deleted_at IS NULL
+      ORDER BY o.op_seq, po.code, pol.line_no
+    `)) as unknown as Array<Record<string, unknown>>;
+    const linksByOp = new Map<string, JcOpPoLinkView[]>();
+    for (const r of poLinkRows) {
+      const jcOpId = r['jcOpId'] as string;
+      const list = linksByOp.get(jcOpId) ?? [];
+      list.push({
+        purchaseOrderLineId: r['purchaseOrderLineId'] as string,
+        purchaseOrderId: r['purchaseOrderId'] as string,
+        poCode: (r['poCode'] as string | null) ?? '',
+        poLineNo: Number(r['poLineNo'] ?? 1),
+        rate: showPoMoney ? String(r['rate'] ?? '0') : null,
+        qty: Number(r['qty'] ?? 0),
+        poStatus: (r['poStatus'] as string | null) ?? '',
+      });
+      linksByOp.set(jcOpId, list);
+    }
+    const opPoLinks = [...linksByOp.entries()].map(([jcOpId, links]) => ({ jcOpId, links }));
+
     return {
       qcDocs,
       opExtras,
       rmAvailable,
+      opPoLinks,
       completionLog: { events, total, truncated: total > events.length },
     };
   });
@@ -2131,7 +2189,18 @@ export async function getJobCardRelated(
       })
       .from(purchaseOrders)
       .innerJoin(purchaseOrderLines, eq(purchaseOrderLines.purchaseOrderId, purchaseOrders.id))
-      .innerJoin(jcOps, eq(jcOps.outsourcePoLineId, purchaseOrderLines.id))
+      // 0118: an op may be covered by SEVERAL purchase orders, so the hop runs
+      // through jc_op_po_lines. jc_ops.outsource_po_line_id would list only the
+      // FIRST purchase order and quietly drop the rest off this trail.
+      .innerJoin(
+        jcOpPoLines,
+        and(
+          eq(jcOpPoLines.purchaseOrderLineId, purchaseOrderLines.id),
+          eq(jcOpPoLines.companyId, companyId),
+          isNull(jcOpPoLines.deletedAt),
+        ),
+      )
+      .innerJoin(jcOps, eq(jcOps.id, jcOpPoLines.jcOpId))
       .where(
         and(
           eq(jcOps.jobCardId, id),
@@ -2144,9 +2213,9 @@ export async function getJobCardRelated(
       .orderBy(desc(purchaseOrders.poDate));
 
     // ── Downstream: OSP delivery challans (material sent OUT to the vendor) ──
-    // Same hop as the OSP PO section above — jc_ops.outsource_po_line_id — so no
-    // new relationship is invented: the DC line points at the very PO line the
-    // op was outsourced on.
+    // Same hop as the OSP PO section above — jc_op_po_lines (0118) — so no new
+    // relationship is invented: the DC line points at one of the very PO lines
+    // the op was outsourced on.
     //
     // Cancelled challans are INCLUDED on purpose. This card is a document trail,
     // not a quantity calculation: a cancelled DC is a real document the user
@@ -2165,7 +2234,15 @@ export async function getJobCardRelated(
         deliveryChallanLines,
         eq(deliveryChallanLines.deliveryChallanId, deliveryChallans.id),
       )
-      .innerJoin(jcOps, eq(jcOps.outsourcePoLineId, deliveryChallanLines.purchaseOrderLineId))
+      .innerJoin(
+        jcOpPoLines,
+        and(
+          eq(jcOpPoLines.purchaseOrderLineId, deliveryChallanLines.purchaseOrderLineId),
+          eq(jcOpPoLines.companyId, companyId),
+          isNull(jcOpPoLines.deletedAt),
+        ),
+      )
+      .innerJoin(jcOps, eq(jcOps.id, jcOpPoLines.jcOpId))
       .where(
         and(
           eq(jcOps.jobCardId, id),
@@ -2192,7 +2269,15 @@ export async function getJobCardRelated(
         goodsReceiptNoteLines,
         eq(goodsReceiptNoteLines.goodsReceiptNoteId, goodsReceiptNotes.id),
       )
-      .innerJoin(jcOps, eq(jcOps.outsourcePoLineId, goodsReceiptNoteLines.purchaseOrderLineId))
+      .innerJoin(
+        jcOpPoLines,
+        and(
+          eq(jcOpPoLines.purchaseOrderLineId, goodsReceiptNoteLines.purchaseOrderLineId),
+          eq(jcOpPoLines.companyId, companyId),
+          isNull(jcOpPoLines.deletedAt),
+        ),
+      )
+      .innerJoin(jcOps, eq(jcOps.id, jcOpPoLines.jcOpId))
       .where(
         and(
           eq(jcOps.jobCardId, id),
