@@ -11,11 +11,7 @@ import type {
   ShopFloorRunningRow,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import {
-  AuthorizationError,
-  ConflictError,
-  NotFoundError,
-} from '../../lib/errors';
+import { AuthorizationError } from '../../lib/errors';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -70,6 +66,11 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         jc.order_qty AS "orderQty",
         COALESCE(s.completed_qty, 0)::int AS "doneQty",
         GREATEST(0, jc.order_qty - COALESCE(s.completed_qty, 0))::int AS "pendingQty",
+        -- The most THIS operation can still be logged for — the same number the
+        -- write path enforces, so the Stop box can state the limit before the
+        -- operator types. NOT the same as pendingQty above, which is the whole
+        -- job card's un-done balance.
+        COALESCE(s.available, 0)::int AS "availableQty",
         COALESCE(jc.priority::text, 'normal') AS priority,
         jc.due_date AS "dueDate",
         ro.operator_name AS "operatorName",
@@ -106,6 +107,7 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         orderQty: num(r['orderQty']),
         doneQty: num(r['doneQty']),
         pendingQty: num(r['pendingQty']),
+        availableQty: num(r['availableQty']),
         priority: String(r['priority'] ?? 'normal'),
         dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
         operatorName: (r['operatorName'] as string | null) ?? null,
@@ -133,32 +135,10 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
   });
 }
 
-export async function stopRunningOp(
-  runningOpId: string,
-  user: AuthContext,
-): Promise<{ ok: true }> {
-  const companyId = requireCompany(user);
-  const userId = user.id;
-  return withUserContext(user, async (tx) => {
-    const rows = (await tx.execute(sql`
-      SELECT id, status FROM public.running_ops
-      WHERE id = ${runningOpId}::uuid
-        AND company_id = ${companyId}::uuid
-      LIMIT 1
-    `)) as unknown as Array<{ id: string; status: string }>;
-    const r = rows[0];
-    if (!r) throw new NotFoundError(`Running op ${runningOpId} not found`);
-    if (r.status !== 'running') {
-      throw new ConflictError(`Running op already ${r.status}`);
-    }
-    await tx.execute(sql`
-      UPDATE public.running_ops
-      SET status = 'done',
-          ended_at = now(),
-          updated_at = now(),
-          updated_by = ${userId}::uuid
-      WHERE id = ${runningOpId}::uuid
-    `);
-    return { ok: true };
-  });
-}
+// There is no stop function here on purpose. POST /shop-floor/running/:id/stop
+// used to live in this module: it had NO permission check at all and it set the
+// session to 'done' while the op-entry stop set 'stopped', so the same action
+// left two different histories depending on which screen was used. Stopping a
+// session is one action with one owner — op-entry's stopOp
+// (POST /op-entry/running-ops/:id/stop), which is role- and tier-gated and also
+// records the quantity made. This module is read-only.

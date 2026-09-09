@@ -1,19 +1,47 @@
 // Shop Floor "By Machine" view — extracted body of the former standalone
 // Shop Floor screen (was shop-floor/routes/list.tsx, mirrors legacy
 // renderShopFloor, HTML L10286). Live running ops grouped by machine, with a
-// per-op stop action. Hooks (useShopFloor, useStopRunningOp) are unchanged;
-// this now renders inside the Live Operations Board as a view toggle.
+// per-op stop action; this renders inside the Live Operations Board as a view
+// toggle.
+//
+// Stop no longer just marks the machine idle. It opens the SAME StopOpModal the
+// Table tab uses and posts to the SAME endpoint (op-entry's useStopOp), so the
+// quantity made is logged in the one action. The old
+// /shop-floor/running/:id/stop hook is gone.
 
+import type { ShopFloorRunningRow, StopOpInput } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import { useSession } from '@/lib/session';
-import { useShopFloor, useStopRunningOp } from '../api';
+import { useStopOp } from '@/modules/op-entry/api';
+import { StopOpModal } from '@/modules/op-entry/components/stop-op-modal';
+import { useShopFloor } from '../api';
 
 export function ShopFloorView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const { data, isLoading, isError, error, refetch } = useShopFloor();
-  const stopMut = useStopRunningOp();
+  const stopMut = useStopOp();
+  // The row whose Stop box is open (with its machine code for the title), and
+  // the server's message if it refused.
+  const [stopRow, setStopRow] = useState<{
+    row: ShopFloorRunningRow;
+    machineCode: string;
+  } | null>(null);
+  const [stopError, setStopError] = useState<string | null>(null);
+
+  function submitStop(input: StopOpInput): void {
+    if (!stopRow) return;
+    setStopError(null);
+    stopMut.mutate(
+      { id: stopRow.row.runningOpId, ...input },
+      {
+        onSuccess: () => setStopRow(null),
+        onError: (e) => setStopError(e instanceof Error ? e.message : 'Stop failed'),
+      },
+    );
+  }
 
   const total = data?.total ?? 0;
 
@@ -249,13 +277,8 @@ export function ShopFloorView(): React.JSX.Element {
                               className="btn btn-ghost btn-sm"
                               disabled={stopMut.isPending}
                               onClick={() => {
-                                if (
-                                  window.confirm(
-                                    `Stop ${r.jcCode} Op${r.opSeq} on ${m.machineCode}?`,
-                                  )
-                                ) {
-                                  stopMut.mutate(r.runningOpId);
-                                }
+                                setStopError(null);
+                                setStopRow({ row: r, machineCode: m.machineCode });
                               }}
                             >
                               ■ Stop
@@ -271,6 +294,26 @@ export function ShopFloorView(): React.JSX.Element {
           ),
         )
       )}
+
+      {stopRow ? (
+        <StopOpModal
+          target={{
+            runningOpId: stopRow.row.runningOpId,
+            jobCardCode: stopRow.row.jcCode,
+            opSeq: stopRow.row.opSeq,
+            operation: stopRow.row.operation,
+            machineLabel: stopRow.machineCode,
+            availableQty: stopRow.row.availableQty,
+          }}
+          pending={stopMut.isPending}
+          errorText={stopError}
+          onCancel={() => {
+            setStopRow(null);
+            setStopError(null);
+          }}
+          onSubmit={submitStop}
+        />
+      ) : null}
     </div>
   );
 }

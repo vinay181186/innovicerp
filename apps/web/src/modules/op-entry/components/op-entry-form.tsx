@@ -238,7 +238,9 @@ export function OpEntryForm({
     if (!activeRunningId) return;
     setErrorMessage(null);
     try {
-      await stop.mutateAsync(activeRunningId);
+      // No body: this form's own Stop button is unchanged — the operator logs
+      // the quantity in the fields above it, not in the stop call.
+      await stop.mutateAsync({ id: activeRunningId });
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Stop failed');
     }
