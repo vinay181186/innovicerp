@@ -1,21 +1,32 @@
-// Real-data Purchase Order print (Print Templates P2, ADR-034). Assembles a
-// DocPrintModel from the loaded PO detail + vendor + company + the effective
+// Real-data Purchase Order print (Print Templates P2, ADR-034). Assembles the
+// print model from the loaded PO detail + vendor + company + the effective
 // `po_*` template blocks, then opens the shared print window. Presentation
 // only (DELTA #2) — totals/tax/amount-in-words are display formatting of data
 // the API already returns, not new business rules. Mirrors legacy `printPO`
 // (L25913): subtotal → IGST or SGST+CGST per taxType → grand → words.
+//
+// It renders on `@/lib/print/sheet-print` — THE SAME SHEET AS THE DELIVERY
+// CHALLAN, on the user's instruction (2026-09-09). The challan proof is the
+// master: one letterhead, one type scale, one set of rules, one outer border.
+// The PO differs from a challan in exactly two places, both of them content:
+// the last three columns are Qty / Rate / Amount, and the money block prints
+// under the quantity total.
 
 import type { Company, EffectivePrintTemplate, PurchaseOrderDetail, Vendor } from '@innovic/shared';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import {
-  type DocMetaCell,
-  type DocPrintModel,
-  amountInWords,
-  fmtDate,
-  inrFormat,
-  openDocPrintWindow,
-  templatesToBlocks,
-} from '@/lib/print/doc-print';
+  type SheetField,
+  type SheetPrintModel,
+  challanDate,
+  openSheetPrintWindow,
+} from '@/lib/print/sheet-print';
+
+// A purchase-order line carries no unit of its own -- `purchase_order_lines`
+// has no uom column -- so the sheet prints the one the whole system assumes.
+// It was hard-coded in this file before the PO moved onto the shared sheet;
+// naming it here keeps it one value instead of two literals that can drift.
+const PO_UOM = 'NOS';
 
 export function printPurchaseOrder(args: {
   po: PurchaseOrderDetail;
@@ -45,7 +56,7 @@ export function printPurchaseOrder(args: {
   const igstPct = Number(po.igstPct) || 0;
   const isIgst = po.taxType === 'igst' || (igstPct > 0 && sgstPct === 0 && cgstPct === 0);
 
-  const taxRows: DocMetaCell[] = [];
+  const taxRows: { label: string; value: string }[] = [];
   let tax = 0;
   if (isIgst) {
     const amt = (subtotal * igstPct) / 100;
@@ -63,9 +74,11 @@ export function printPurchaseOrder(args: {
   const vendorName = vendor?.name ?? po.vendorName ?? po.vendorCodeText ?? '';
   // Full postal address for the party box — line 1 plus city / state / pincode,
   // the same join the vendor master shows.
-  const vendorAddress = [vendor?.addressLine1, vendor?.city, vendor?.state, vendor?.pincode]
-    .filter(Boolean)
-    .join(', ');
+  const vendorAddressLines = [
+    vendor?.addressLine1 ?? '',
+    [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
+  ].filter(Boolean);
+  const vendorAddress = vendorAddressLines.join(', ');
   const vendorGstin = vendor?.gstNumber ?? '';
   const vendorContact = [vendor?.contactPerson, vendor?.phone].filter(Boolean).join(', ');
 
@@ -74,7 +87,7 @@ export function printPurchaseOrder(args: {
     companyAddress: companyAddressLines(company).join(', '),
     companyGSTIN: company?.gstNumber ?? '',
     companyPhone: company?.phone ?? '',
-    companyEmail: '',
+    companyEmail: company?.email ?? '',
     date: fmtDate(new Date().toISOString()),
     currentUser: args.currentUser ?? '',
     poNo: po.code,
@@ -89,87 +102,79 @@ export function printPurchaseOrder(args: {
     totalQty: String(totalQty),
   };
 
-  // The approved format's document row. Five cells in a fixed order, so a
-  // missing due date or PR reference prints an em dash rather than collapsing
-  // the row and shifting every other cell along.
+  const dash = '—';
+  // The left box on the sheet: who the order goes to. Same fields, same order
+  // and same labels the challan's recipient box uses, so a vendor holding both
+  // documents reads them the same way.
+  const recipientFields: SheetField[] = [
+    { label: 'Vendor code', value: vendor?.code ?? po.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Name', value: vendorName, variant: 'name' },
+    {
+      label: 'Address',
+      value: vendorAddressLines[0] ?? '',
+      ...(vendorAddressLines.length > 1 ? { extra: vendorAddressLines.slice(1) } : {}),
+    },
+    { label: 'GSTIN', value: vendorGstin, variant: 'mono' },
+  ];
+  if (vendorContact) recipientFields.push({ label: 'Contact', value: vendorContact });
+
+  // The right box: the facts about the order itself.
   //
   // CONTACT PERSON is the person who RAISED the PO -- the name a vendor rings
-  // about it. `createdBy` alone is a uuid, so the PO detail now joins
+  // about it. `createdBy` alone is a uuid, so the PO detail joins
   // `createdByName` (users.full_name), the same way the Sales Order does. Null
   // only when that user has since been deleted; a dash, never an id.
-  const dash = '—';
-  const meta: DocMetaCell[] = [
-    { label: 'PO No.', value: po.code },
-    { label: 'PO Date', value: fmtDate(po.poDate) },
-    { label: 'Due Date', value: po.dueDate ? fmtDate(po.dueDate) : dash },
-    { label: 'PR Ref.', value: po.prCodeText ?? dash },
-    { label: 'Contact Person', value: po.createdByName ?? dash, mono: false },
+  //
+  // SHIP TO is our own works. It was a third party box on the old PO layout;
+  // the sheet has two boxes, so it comes in here as a field rather than being
+  // dropped — the address is still on the document the vendor delivers against.
+  const documentFields: SheetField[] = [
+    { label: 'PO No.', value: po.code, variant: 'mono', strong: true },
+    { label: 'PO date', value: challanDate(po.poDate), variant: 'mono' },
+    { label: 'Due date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
+    { label: 'PR Ref.', value: po.prCodeText ?? '', variant: 'mono' },
+    { label: 'Contact person', value: po.createdByName ?? dash },
+    { label: 'Ship to', value: companyAddressLines(company).join(', ') },
   ];
 
-  const model: DocPrintModel = {
-    doc: 'PO',
-    // Approved Purchase Order format (sample signed off 2026-09-08): repeating
-    // letterhead, five-cell document row, supplier + ship-to boxes, and the
-    // combined "Item Code & Description" column.
-    docLayout: 'v10',
-    parties: [
-      {
-        label: 'Vendor / Supplier',
-        name: vendorName,
-        rows: [
-          { label: 'Vendor Code', value: vendor?.code ?? po.vendorCodeText ?? '', mono: true },
-          { label: 'Address', value: vendorAddress },
-          { label: 'GSTIN', value: vendorGstin, mono: true },
-          { label: 'Vendor Phone', value: vendor?.phone ?? '', mono: true },
-          { label: 'Vendor E-mail', value: vendor?.email ?? '' },
-        ],
-      },
-      {
-        // Ship To is OUR works — the same company record the letterhead uses.
-        label: 'Ship To',
-        name: company?.name ?? 'Innovic Technology',
-        rows: [
-          { label: 'Address', value: companyAddressLines(company).join(', ') },
-          { label: 'GSTIN', value: company?.gstNumber ?? '', mono: true },
-          { label: 'Phone', value: company?.phone ?? '', mono: true },
-          { label: 'E-mail', value: company?.email ?? '' },
-        ],
-      },
-    ],
-    // Viewers who may not see prices get the qty-only PO — no Rate/Amount
-    // columns, no totals, no amount-in-words.
-    hideMoney: priceHidden,
+  const model: SheetPrintModel = {
+    title: 'Purchase Order',
+    windowTitle: 'Purchase Order',
+    columns: 'po',
     blocks: templatesToBlocks('PO', templates),
     data,
     company: buildDocCompany(company),
-    recipient: {
-      label: 'Supplier (Bill from)',
-      name: vendorName,
-      lines: [
-        vendorAddress,
-        vendorGstin ? `GSTIN: ${vendorGstin}` : '',
-        vendorContact,
-      ].filter((l): l is string => Boolean(l)),
-    },
-    meta,
+    recipient: { label: 'Vendor / Supplier', fields: recipientFields },
+    document: { label: 'Order', fields: documentFields },
     lines: lines.map((l) => ({
       itemCode: l.itemCode ?? l.itemCodeText ?? '',
       itemName: l.itemName,
+      uom: PO_UOM,
       qty: String(l.qty),
-      uom: 'NOS',
       rate: money(Number(l.rate ?? 0)),
       amount: money(l.qty * Number(l.rate ?? 0)),
-      // Per-line remarks print as "Description: ..." under the item name; a
-      // line without remarks prints nothing extra.
+      // Per-line remarks print under the item name; a line without remarks
+      // prints nothing extra.
       description: l.lineRemarks,
     })),
-    totals: {
-      subtotal: money(subtotal),
-      taxRows,
-      grand: money(grand),
-      amountInWords: priceHidden ? '' : amountInWords(grand),
-    },
+    totalQty: String(totalQty),
+    totalUom: PO_UOM,
+    // Viewers who may not see prices get the qty-only PO — the Rate and Amount
+    // cells print an em dash and no money block or amount-in-words follows.
+    ...(priceHidden
+      ? {}
+      : {
+          money: {
+            subtotal: money(subtotal),
+            taxRows,
+            grand: money(grand),
+            amountInWords: amountInWords(grand),
+          },
+        }),
+    // No third foot panel: a purchase order is not received at a gate, so the
+    // challan's "Received by — job worker" would be a lie on it. The signature
+    // strip prints two panels — Prepared by, and the authorised signatory.
   };
 
-  return openDocPrintWindow(model);
+  return openSheetPrintWindow(model);
 }

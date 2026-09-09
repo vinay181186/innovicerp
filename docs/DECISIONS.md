@@ -8252,3 +8252,70 @@ operator, and the distinction is worth keeping.
   (IN-JC-26-00015 op 1: order 10, done 3 → 7 ✓; IN-JC-26-00014 op 1: order 50,
   done 25 → 25 ✓). **The endpoint itself is unexercised** — production had zero
   running sessions, and there is no staging environment.
+
+## ADR-155: One printed sheet for the Purchase Order and the Delivery Challan
+
+**Date:** 2026-09-09
+**Status:** Accepted
+
+### Context
+
+The Delivery Challan proof signed off on 2026-09-08 lives in its own renderer.
+The Purchase Order was given a lookalike ("v10") inside the older
+`doc-print.ts` a day later. Two renderers describing one house style drifted
+immediately: the PO's item code printed 9pt bold near-black against the
+challan's 8.5pt normal grey, its goods table sat in a bordered `<table>` inside
+a bordered `.doc-border` (a box inside a box, which the user reported), and its
+letterhead was a different block with a different rule and a separate title bar.
+
+Both also printed the browser's own header and footer strip — `about:blank`,
+the date and `1/1` — because `@page{margin:10mm}` leaves Chrome a margin box to
+draw them in.
+
+### Decision
+
+The challan sheet is THE sheet. `challan-print.ts` becomes
+`apps/web/src/lib/print/sheet-print.ts` and the Purchase Order renders through
+it. One `SheetPrintModel`, two column sets:
+
+- `'challan'` — Sr · Item detail · UOM · HSN · Qty · Remarks
+- `'po'` — Sr · Item detail · UOM · Qty · Rate · Amount, plus a money block
+
+Everything else — letterhead, type scale, case, weights, letter-spacing, the
+two party boxes, the single collapsed border — is shared, so it cannot drift.
+The "v10" layout is deleted from `doc-print.ts`, which now serves only the
+Service PO and the GRN.
+
+Browser header/footer is suppressed with `@page{margin:0}`, and the page
+margins are supplied by the document in ways that REPEAT per page:
+
+| edge | mechanism |
+| --- | --- |
+| left / right | `.sheet` side padding — a box's side edges repeat by nature |
+| top | `.lh-pad` inside the repeating `<thead>`, outside the border |
+| bottom | an empty `<tfoot>` spacer, repeated by `table-footer-group` |
+
+The letterhead `<th>` gives up its border to an inner `.lh-in` div so the top
+pad can sit outside that border; otherwise the frame printed hard against the
+paper edge.
+
+### Alternatives Considered
+
+- Keep two renderers and hand-sync the CSS — rejected: that is what produced
+  the drift this replaces.
+- A small non-zero `@page` margin — rejected: Chrome still draws its header and
+  footer into any margin box it is given, so only `0` suppresses them.
+- `position:fixed` header + footer for the page margins — rejected: already
+  tried for the challan; Chrome clipped it and dropped the block mid-sheet.
+
+### Consequences
+
+- Positive: one file to change, one house style; the box-inside-a-box is gone;
+  no `about:blank` on either document; the PO gains a quantity-total row above
+  the money, and the OSP DC drops its computed "Material Return Status" (which
+  is a fact about today, not about the consignment being handed over).
+- Negative: the PO loses its separate "Ship To" party box — the sheet has two
+  boxes, so the ship-to address moves in as a field of the Order box.
+- Risks: the Service PO and the GRN still print through `doc-print.ts` with the
+  old `@page{margin:10mm}`, so they still carry the browser's footer. Moving
+  them onto the sheet is the obvious follow-up and is NOT done here.

@@ -4,9 +4,16 @@
 // (DELTA #2). Mirrors legacy `printChallan` (L26133) — outsource gate pass for
 // a Job-Work PO.
 //
-// Renders on the approved challan layout in `@/lib/print/challan-print`, NOT
-// the shared `buildDocHtml` that PO / Service PO / GRN use — so the challan
-// sheet can change without touching a purchase order.
+// Renders on the shared sheet layout in `@/lib/print/sheet-print` — the same
+// one the Purchase Order now prints on, so both documents carry one letterhead,
+// one type scale and one border.
+//
+// It does NOT print a "Material Return Status" block. It used to: a computed
+// per-line sent / received / pending tally under the goods table. Removed on
+// the user's instruction (2026-09-09) — a challan is the note that travels OUT
+// with the material, and what has come back since is a fact about today, not
+// about the consignment the vendor is being handed. It is still on the screen,
+// in the receipts panel, which is where it is read.
 
 import type {
   Company,
@@ -15,12 +22,12 @@ import type {
   Vendor,
 } from '@innovic/shared';
 import {
-  type ChallanField,
-  type ChallanPrintModel,
+  type SheetField,
+  type SheetPrintModel,
   challanDate,
   challanEndDate,
-  openChallanPrintWindow,
-} from '@/lib/print/challan-print';
+  openSheetPrintWindow,
+} from '@/lib/print/sheet-print';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 
@@ -59,52 +66,14 @@ export function printOspDc(args: {
     totalQty: String(totalQty),
   };
 
-  // ── What came BACK from the vendor ──────────────────────────────────────
-  // The DC detail load carries `receipts[]` (per-line receivedQty), which is
-  // what the on-screen receipts panel renders. Without it a printed challan
-  // cannot say whether the material ever returned.
-  const receivedByLine = new Map<string, number>();
-  for (const r of dc.receipts) {
-    for (const rl of r.lines) {
-      receivedByLine.set(
-        rl.deliveryChallanLineId,
-        (receivedByLine.get(rl.deliveryChallanLineId) ?? 0) + Number(rl.receivedQty),
-      );
-    }
-  }
-  const totalReceived = dc.lines.reduce((s, l) => s + (receivedByLine.get(l.id) ?? 0), 0);
-  const totalPending = Math.max(0, totalQty - totalReceived);
-
   const blocks = templatesToBlocks('OSP DC', templates);
-  const returnLines = dc.lines.map((l, i) => {
-    const sent = Number(l.qty);
-    const received = receivedByLine.get(l.id) ?? 0;
-    const pending = Math.max(0, sent - received);
-    const label = l.itemCode ?? l.itemCodeText;
-    return `${i + 1}. ${label} — sent ${sent} / received ${received} / pending ${pending}`;
-  });
-  // Its OWN section under the goods table, not folded into `special_notes`.
-  // special_notes is text the USER authors in Settings -> Print Templates; a
-  // computed return status filed under that heading is mislabelled on a document
-  // the vendor reads, and would be glued onto whatever they had typed there.
-  const extraSection =
-    returnLines.length > 0
-      ? {
-          title: 'Material Return Status (as on print date)',
-          body: [
-            ...returnLines,
-            `Total: sent ${totalQty} / received ${totalReceived} / pending ${totalPending}`,
-          ].join('\n'),
-        }
-      : undefined;
-
   // Vendor master first: `vendorCodeText` is the ISSUE-TIME snapshot and on
   // every production challan it holds the PO number, not the vendor's code.
   const vendorAddressLines = [
     vendor?.addressLine1 ?? '',
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
-  const recipientFields: ChallanField[] = [
+  const recipientFields: SheetField[] = [
     { label: 'Vendor code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
@@ -115,7 +84,7 @@ export function printOspDc(args: {
     { label: 'GSTIN', value: vendor?.gstNumber ?? '', variant: 'mono' },
   ];
 
-  const documentFields: ChallanField[] = [
+  const documentFields: SheetField[] = [
     { label: 'Challan No.', value: dc.code, variant: 'mono' },
     { label: 'Challan date', value: challanDate(dc.dcDate), variant: 'mono' },
     // Live SO code first, snapshot text second. Both are null on every
@@ -131,7 +100,7 @@ export function printOspDc(args: {
 
   const uoms = [...new Set(dc.lines.map((l) => l.uom).filter(Boolean))];
 
-  const model: ChallanPrintModel = {
+  const model: SheetPrintModel = {
     title: 'Delivery Challan',
     windowTitle: 'OSP Delivery Challan',
     blocks,
@@ -154,10 +123,7 @@ export function printOspDc(args: {
     })),
     totalQty: totalQty.toFixed(2),
     totalUom: uoms.length === 1 ? (uoms[0] ?? '') : '',
-    // Spread, not `extraSection,`: exactOptionalPropertyTypes refuses an
-    // explicit undefined on an optional property.
-    ...(extraSection ? { extraSection } : {}),
   };
 
-  return openChallanPrintWindow(model);
+  return openSheetPrintWindow(model);
 }

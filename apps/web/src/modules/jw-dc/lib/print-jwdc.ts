@@ -4,18 +4,18 @@
 // (DELTA #2). Mirrors legacy `_jwdcPrint` (L24611) — returnable gate pass under
 // the GST job-work provisions.
 //
-// Renders on the approved challan layout in `@/lib/print/challan-print`, NOT
-// the shared `buildDocHtml` that PO / Service PO / GRN use — so the challan
-// sheet can change without touching a purchase order.
+// Renders on the shared sheet layout in `@/lib/print/sheet-print` — the same
+// one the OSP DC and the Purchase Order print on, so all three carry one
+// letterhead, one type scale and one border.
 
 import type { Company, EffectivePrintTemplate, JwDcOutwardDetail, Vendor } from '@innovic/shared';
 import {
-  type ChallanField,
-  type ChallanPrintModel,
+  type SheetField,
+  type SheetPrintModel,
   challanDate,
   challanEndDate,
-  openChallanPrintWindow,
-} from '@/lib/print/challan-print';
+  openSheetPrintWindow,
+} from '@/lib/print/sheet-print';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 
@@ -56,7 +56,7 @@ export function printJwDc(args: {
     vendor?.addressLine1 ?? '',
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
-  const recipientFields: ChallanField[] = [
+  const recipientFields: SheetField[] = [
     { label: 'Vendor code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
@@ -67,7 +67,7 @@ export function printJwDc(args: {
     { label: 'GSTIN', value: vendor?.gstNumber ?? '', variant: 'mono' },
   ];
 
-  const documentFields: ChallanField[] = [
+  const documentFields: SheetField[] = [
     { label: 'Challan No.', value: dc.code, variant: 'mono' },
     { label: 'Challan date', value: challanDate(dc.dcDate), variant: 'mono' },
     // Resolved through the JWPO's lines back to the sales order; null when the
@@ -80,7 +80,7 @@ export function printJwDc(args: {
   ];
   if (vehicleNo) documentFields.push({ label: 'Vehicle No.', value: vehicleNo, variant: 'mono' });
 
-  const model: ChallanPrintModel = {
+  const model: SheetPrintModel = {
     title: 'Delivery Challan',
     windowTitle: 'Job Work Delivery Challan',
     blocks: templatesToBlocks('JW DC', templates),
@@ -111,5 +111,5 @@ export function printJwDc(args: {
     totalUom: 'NOS',
   };
 
-  return openChallanPrintWindow(model);
+  return openSheetPrintWindow(model);
 }
