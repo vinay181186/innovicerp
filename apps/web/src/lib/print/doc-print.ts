@@ -163,6 +163,13 @@ const DOC_TITLE: Record<PrintDocType, string> = {
   // tiles; that looked nothing like the document its own print template
   // describes, which is what this entry and `tableHtml` exist to avoid.
   GRN: 'GOODS RECEIPT NOTE',
+  // The JW Invoice does NOT render through this builder -- it prints on the
+  // shared sheet (@/lib/print/sheet-print) through
+  // modules/jw-invoices/lib/print-jw-invoice.ts, which supplies its own title.
+  // The entry exists because PrintDocType now includes it and this map is keyed
+  // by the whole union; the title is the one that document actually prints, so
+  // the two can never disagree if it is ever routed through here.
+  'JW INVOICE': 'JOB WORK INVOICE',
 };
 
 const DOC_STYLE = `

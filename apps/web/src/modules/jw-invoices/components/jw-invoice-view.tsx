@@ -13,6 +13,7 @@ import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoicesList } from '../api';
+import { PrintJwInvoiceButton } from './print-jw-invoice-button';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
 // exactly the cap this list already ran under, so nothing that was visible
@@ -116,12 +117,18 @@ export function JwInvoiceView(): React.JSX.Element {
                       <th style={{ color: 'var(--green)' }}>Total</th>
                     </>
                   )}
+                  {/* Print. No new permission gate: anyone who can see the row
+                      can print it, exactly as on the DC detail page. What a
+                      viewer without price rights may not see is already gone
+                      from the row AND from the printed sheet — the invoice
+                      prints with the money suppressed, not blocked. */}
+                  <th>Print</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={priceHidden ? 6 : 11} className="empty-state">
+                    <td colSpan={priceHidden ? 7 : 12} className="empty-state">
                       No JW invoices — click + New Invoice
                     </td>
                   </tr>
@@ -171,6 +178,9 @@ export function JwInvoiceView(): React.JSX.Element {
                         </td>
                       </>
                     )}
+                    <td>
+                      <PrintJwInvoiceButton invoice={r} priceVisible={!priceHidden} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
