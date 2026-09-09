@@ -160,7 +160,12 @@ const SHEET_STYLE = `
      A border on the <th> would sit hard against the paper edge (see @page). */
   .lh{padding:0!important;border:none!important}
   .lh-pad{padding:0}
-  .lh-in{padding:3.5mm 5mm 2.5mm;border:1px solid var(--paper-rule);border-bottom:none}
+  /* The box CLOSES at the bottom. It used to carry border-bottom:none and lean on
+     the first tbody row's top border for its lower edge -- two different elements, so
+     the left and right verticals ended in mid-air and the corners did not meet. The
+     row below still draws its own top border; both are 1px of --paper-rule and sit
+     flush, so the join reads as one line. */
+  .lh-in{padding:3.5mm 5mm 2.5mm;border:1px solid var(--paper-rule);margin:0 -.5px -.5px}
   .lh-top{display:flex;align-items:flex-end;justify-content:space-between;gap:6mm}
   .lh-logo{height:13mm;width:auto;flex:none}
   .lh-co{text-align:right;font-weight:400}
