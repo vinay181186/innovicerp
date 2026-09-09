@@ -284,6 +284,41 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     setDeliveryDays((cur) => (cur === next ? cur : next));
   }, [poDate, deliveryDate, setValue]);
 
+  // ── Each line's Due Date follows the header's Delivery Date ──────────────
+  //
+  // A PO is normally wanted on ONE date, so making the buyer retype it on every
+  // line is pure friction. A new line is therefore born on the header's date,
+  // and moving the header moves the lines with it.
+  //
+  // It only moves a line that is still ON that default — one whose Due Date is
+  // blank, or still equals the header value it was handed. Anything else is
+  // real data and is left alone: a date the buyer typed for a single line, and
+  // a date seeded from that line's Purchase Request (po-form-line.tsx binds
+  // `dueDate` to the PR's `requiredDate`), which is the supplier's own promise
+  // and not ours to overwrite.
+  //
+  // The ref starts at the value the form opened with, so the first pass is a
+  // no-op: opening a saved PO must not rewrite its stored line dates, nor mark
+  // an untouched form dirty.
+  const lineDueRef = useRef(deliveryDate);
+  useEffect(() => {
+    const prev = lineDueRef.current;
+    if (prev === deliveryDate) return;
+    lineDueRef.current = deliveryDate;
+    const lines = getValues('lines') ?? [];
+    lines.forEach((l, i) => {
+      const cur = l?.dueDate ?? '';
+      if (cur !== '' && cur !== prev) return; // buyer's own date, or the PR's
+      setValue(`lines.${i}.dueDate`, deliveryDate || undefined, { shouldDirty: true });
+    });
+  }, [deliveryDate, getValues, setValue]);
+
+  // Every "+ Add Line" goes through here so a new row cannot miss the default.
+  const addLine = useCallback(
+    () => append({ ...NEW_PO_LINE, ...(deliveryDate ? { dueDate: deliveryDate } : {}) }),
+    [append, deliveryDate],
+  );
+
   const onDeliveryDaysChange = useCallback(
     (raw: string) => {
       setDeliveryDays(raw);
@@ -724,7 +759,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                       <button
                         type="button"
                         className="pof-add"
-                        onClick={() => append({ ...NEW_PO_LINE })}
+                        onClick={addLine}
                       >
                         + Add Line
                       </button>
@@ -758,7 +793,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                     itemsLoaded={itemsLoaded}
                     onPrLoaded={onPrLoaded}
                     onRemove={() => remove(idx)}
-                    onAddLine={() => append({ ...NEW_PO_LINE })}
+                    onAddLine={addLine}
                     canRemove={fields.length > 1}
                   />
                 ))
