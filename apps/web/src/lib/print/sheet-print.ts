@@ -107,6 +107,10 @@ export interface SheetPrintModel {
   company: DocCompany;
   recipient: { label: string; fields: SheetField[] };
   document: { label: string; fields: SheetField[] };
+  /** Where the goods actually go. Printed in its own box UNDER the recipient,
+   *  mirroring the reference PO's Supplier / Consignee pair. Omit it and the
+   *  row is not drawn at all, so the challans are unaffected. */
+  shipTo?: { label: string; fields: SheetField[] };
   lines: SheetLine[];
   /** Pre-formatted total, e.g. "3563.00". */
   totalQty: string;
@@ -156,9 +160,14 @@ const SHEET_STYLE = `
   :root{
     --paper:#FFFFFF;--paper-ink:#1A1A1A;--paper-rule:#1A1A1A;--paper-rule-soft:#8A8A8A;
     --paper-band:#F1F1F1;--brand:#1E4DB3;
-    --f-label:"Arial Narrow",Arial,sans-serif;
-    --f-body:"Segoe UI",system-ui,Arial,sans-serif;
+    /* Traced from the real Innovic PO (IT_PO16_Kamya.pdf): Helvetica and
+       Helvetica-Bold throughout, 5.4pt-10.4pt. Arial is metrically identical
+       and is what Windows substitutes anyway. */
+    --f-label:Helvetica,Arial,sans-serif;
+    --f-body:Helvetica,Arial,sans-serif;
     --f-mono:ui-monospace,Consolas,"Courier New",monospace;
+    /* The company name only -- explicit instruction. Everything else is
+       Helvetica, per the reference PO. */
     --f-head:Verdana,Geneva,"DejaVu Sans",sans-serif;
   }
   *{box-sizing:border-box}
@@ -182,18 +191,18 @@ const SHEET_STYLE = `
      the left and right verticals ended in mid-air and the corners did not meet. The
      row below still draws its own top border; both are 1px of --paper-rule and sit
      flush, so the join reads as one line. */
-  .lh-in{padding:3.5mm 5mm 2.5mm;border:1px solid var(--paper-rule);margin:0 -.5px -.5px}
+  .lh-in{padding:2mm 4mm 1.5mm;border:1px solid var(--paper-rule);margin:0 -.5px -.5px}
   .lh-top{display:flex;align-items:flex-end;justify-content:space-between;gap:6mm}
-  .lh-logo{height:13mm;width:auto;flex:none}
+  .lh-logo{height:9.5mm;width:auto;flex:none}
   .lh-co{text-align:right;font-weight:400}
-  .co-name{font-family:var(--f-head);font-weight:700;font-size:15pt;line-height:1.1;
-           margin:0 0 1mm;color:var(--brand);letter-spacing:-.01em}
-  .co-addr{font-family:var(--f-head);font-size:7.5pt;line-height:1.35;margin:0 0 .8mm;
+  .co-name{font-family:var(--f-head);font-weight:700;font-size:11.5pt;line-height:1.1;
+           margin:0 0 .6mm;color:var(--brand);letter-spacing:-.01em}
+  .co-addr{font-family:var(--f-label);font-size:7.5pt;line-height:1.3;margin:0 0 .4mm;
            color:var(--paper-ink)}
-  .co-ids{font-family:var(--f-head);font-size:7.5pt;margin:0;color:var(--paper-ink)}
+  .co-ids{font-family:var(--f-label);font-size:7.5pt;margin:0;color:var(--paper-ink)}
   .co-ids b{font-weight:700}
-  .lh-rule{height:1.1mm;background:var(--brand);margin:2mm 0 2.5mm}
-  .doc-title{font-family:var(--f-label);font-weight:700;font-size:12.5pt;letter-spacing:.15em;
+  .lh-rule{height:.9mm;background:var(--brand);margin:1.2mm 0 1.4mm}
+  .doc-title{font-family:var(--f-label);font-weight:700;font-size:10.5pt;letter-spacing:.14em;
              text-transform:uppercase;margin:0;text-align:center}
 
   .colh{font-family:var(--f-label);font-weight:700;font-size:8.5pt;letter-spacing:.08em;
@@ -457,10 +466,10 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   const footer = sub('footer');
   const signature = sub('signature');
 
-  const addressHtml = company.addressLines
-    .filter(Boolean)
-    .map((l) => `<p class="co-addr">${esc(l)}</p>`)
-    .join('');
+  // ONE line, not one paragraph per stored line: four short lines stacked was
+  // most of the header's height, and the address reads perfectly well running on.
+  const addressOneLine = company.addressLines.filter(Boolean).join(', ');
+  const addressHtml = addressOneLine ? `<p class="co-addr">${esc(addressOneLine)}</p>` : '';
   // e-mail / phone kept on the letterhead: the old challan carried them in a
   // footer strip that this layout does not have, and dropping a vendor-facing
   // contact line off the document would be a loss, not a redesign.
@@ -602,6 +611,11 @@ export function buildSheetHtml(model: SheetPrintModel): string {
             PAGE_OF_ROW,
           )}</div></div>`,
         )}
+        ${
+          model.shipTo
+            ? sectionRow(`<div class="split"><div>${boxHtml(model.shipTo)}</div><div></div></div>`)
+            : ''
+        }
         <tr>${columnHeads}</tr>
         ${itemRows}
         ${qtyTotalRow}

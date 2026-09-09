@@ -193,6 +193,16 @@ export function printPurchaseOrder(args: {
     data,
     company: buildDocCompany(company),
     recipient: { label: 'Vendor / Supplier', fields: recipientFields },
+    // Where the goods are to be delivered. On a buying PO that is our own
+    // works; the vendor should not have to infer it from the letterhead.
+    shipTo: {
+      label: 'Ship to',
+      fields: [
+        { label: 'Name', value: company?.name ?? '', variant: 'name' },
+        { label: 'Address', value: companyAddressLines(company).join(', ') },
+        { label: 'GSTIN', value: company?.gstNumber ?? '', variant: 'mono' },
+      ],
+    },
     document: { label: 'Order', fields: documentFields },
     lines: lines.map((l) => ({
       itemCode: l.itemCode ?? l.itemCodeText ?? '',
