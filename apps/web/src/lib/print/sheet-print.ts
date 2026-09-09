@@ -9,6 +9,9 @@
 // Two column sets, one sheet:
 //   'challan'  Sr · Item detail · UOM · HSN · Qty · Remarks
 //   'po'       Sr · Item detail · UOM · Qty · Rate · Amount   (+ money totals)
+//   'grn'      Sr · Item detail · Received · Accepted · Rejected · QC status
+//              (no UOM: a GRN line does not carry one, so the column was blank
+//               on every row of every GRN)
 //
 // Why one <table> carries the whole document
 // ------------------------------------------
@@ -64,6 +67,17 @@ export interface SheetLine {
   amount?: string | null;
   /** PO columns only: the line's own remarks, printed under the item name. */
   description?: string | null;
+  /** The bold word in front of `description`. Defaults to "Description"; a GRN
+   *  uses it for the line's DC reference, where that word would be wrong. */
+  descLabel?: string;
+  /** GRN columns only. `qty` carries the RECEIVED quantity; these two carry
+   *  what survived inspection. A GRN is the only document here whose line has
+   *  three quantities, which is why it needs its own column set rather than
+   *  being squeezed into the challan's. */
+  acceptedQty?: string | null;
+  rejectedQty?: string | null;
+  /** GRN columns only — pending / in progress / completed. */
+  qcStatus?: string | null;
 }
 
 /** The money block a Purchase Order carries under its quantity total. */
@@ -76,7 +90,7 @@ export interface SheetMoney {
   amountInWords: string;
 }
 
-export type SheetColumns = 'challan' | 'po';
+export type SheetColumns = 'challan' | 'po' | 'grn';
 
 export interface SheetPrintModel {
   /** Title printed on the sheet — "Delivery Challan" / "Purchase Order". The
@@ -100,6 +114,9 @@ export interface SheetPrintModel {
   totalUom: string;
   /** PO only. Subtotal / tax / grand rows under the quantity total. */
   money?: SheetMoney;
+  /** GRN only — the accepted / rejected columns of the total row. */
+  totalAccepted?: string;
+  totalRejected?: string;
   /** The third foot panel — whoever signs for the goods on arrival. The
    *  challans print one; a purchase order has no such party, so its signature
    *  strip is two panels wide. Defaults to the challan's wording. */
@@ -423,13 +440,16 @@ function sectionRow(html: string): string {
 function itemCellHtml(l: SheetLine): string {
   const name = l.itemName ? `<span class="iname">${esc(l.itemName)}</span>` : '';
   const desc = (l.description ?? '').trim();
-  const descHtml = desc ? `<span class="idesc"><b>Description</b> ${esc(desc)}</span>` : '';
+  const descHtml = desc
+    ? `<span class="idesc"><b>${esc(l.descLabel ?? 'Description')}</b> ${esc(desc)}</span>`
+    : '';
   return `<span class="icode">${esc(l.itemCode)}</span>${name}${descHtml}`;
 }
 
 export function buildSheetHtml(model: SheetPrintModel): string {
   const { blocks, data, company, lines } = model;
   const po = model.columns === 'po';
+  const grn = model.columns === 'grn';
   const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
 
   const specialNotes = sub('special_notes');
@@ -475,7 +495,14 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
       '<td class="colh ctr" style="width:26mm">Rate</td>' +
       '<td class="colh ctr" style="width:30mm">Amount</td>'
-    : '<td class="colh ctr" style="width:11mm">Sr</td>' +
+    : grn
+      ? '<td class="colh ctr" style="width:11mm">Sr</td>' +
+        '<td class="colh">Item detail</td>' +
+        '<td class="colh ctr" style="width:24mm">Received</td>' +
+        '<td class="colh ctr" style="width:22mm">Accepted</td>' +
+        '<td class="colh ctr" style="width:22mm">Rejected</td>' +
+        '<td class="colh ctr" style="width:24mm">QC status</td>'
+      : '<td class="colh ctr" style="width:11mm">Sr</td>' +
       '<td class="colh">Item detail</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
       '<td class="colh ctr" style="width:19mm">HSN</td>' +
@@ -487,12 +514,21 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       const lead =
         `<tr><td class="num">${i + 1}</td>` +
         `<td>${itemCellHtml(l)}</td>` +
-        `<td class="ctr">${esc(l.uom ?? '')}</td>`;
+        // The GRN has no UOM column -- its lines do not carry one.
+        (grn ? '' : `<td class="ctr">${esc(l.uom ?? '')}</td>`);
       if (po) {
         return (
           `${lead}<td class="qty">${esc(l.qty)}</td>` +
           `<td class="money">${esc(l.rate ?? '')}</td>` +
           `<td class="money">${esc(l.amount ?? '')}</td></tr>`
+        );
+      }
+      if (grn) {
+        return (
+          `${lead}<td class="qty">${esc(l.qty)}</td>` +
+          `<td class="qty">${esc(l.acceptedQty ?? '')}</td>` +
+          `<td class="qty">${esc(l.rejectedQty ?? '')}</td>` +
+          `<td class="ctr">${esc(l.qcStatus ?? '')}</td></tr>`
         );
       }
       const hsn = l.hsn ? esc(l.hsn) : '<span class="blank"></span>';
@@ -512,7 +548,15 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   const qtyTotalRow = po
     ? `<tr class="total"><td colspan="3" class="sumlbl">${qtyLabel}</td>` +
       `<td class="qty">${esc(model.totalQty)}</td><td class="ctr">${esc(model.totalUom)}</td><td></td></tr>`
-    : `<tr class="total"><td colspan="4" class="sumlbl">${qtyLabel}</td>` +
+    : grn
+      ? // Received / accepted / rejected each get their own total, because the
+        // three are the whole point of the document.
+        `<tr class="total"><td colspan="2" class="sumlbl">${qtyLabel}</td>` +
+        `<td class="qty">${esc(model.totalQty)}</td>` +
+        `<td class="qty">${esc(model.totalAccepted ?? '')}</td>` +
+        `<td class="qty">${esc(model.totalRejected ?? '')}</td>` +
+        `<td></td></tr>`
+      : `<tr class="total"><td colspan="4" class="sumlbl">${qtyLabel}</td>` +
       `<td class="qty">${esc(model.totalQty)}</td><td>${esc(model.totalUom)}</td></tr>`;
 
   const money = model.money;

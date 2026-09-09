@@ -1,10 +1,15 @@
 // Goods Receipt Note print.
 //
 // The GRN is one of the template-backed documents in Settings → Print
-// Templates (PO / Service PO / OSP DC / JW DC / GRN). It renders through the
-// shared `@/lib/print/doc-print` builder, which it now shares with the Service
-// PO only: the PO and the two challans moved to `@/lib/print/sheet-print` on
-// 2026-09-09 (ADR-155). Moving these two across is the obvious follow-up.
+// Templates (PO / Service PO / OSP DC / JW DC / GRN). It renders on the SHARED
+// SHEET, `@/lib/print/sheet-print` — the same one the Purchase Order and both
+// challans print on, so every document in the set carries one letterhead, one
+// type scale, one border and one page-numbering scheme.
+//
+// It uses the sheet's `grn` column set: Sr | Item detail | UOM | Received |
+// Accepted | Rejected | QC status. A GRN is the only document here whose line
+// carries THREE quantities, which is why it needed its own column set rather
+// than being squeezed into the challan's.
 // The doc-print layout is a bordered sheet with the letterhead, a TITLE BAR,
 // the party block on the left with the meta cells on the right, then the four
 // editable blocks in print order around the line table:
@@ -41,23 +46,16 @@ import type {
   Vendor,
 } from '@innovic/shared';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 import {
-  type DocMetaCell,
-  type DocPrintModel,
-  esc,
-  fmtDate,
-  openDocPrintWindow,
-  templatesToBlocks,
-} from '@/lib/print/doc-print';
+  type SheetField,
+  type SheetPrintModel,
+  challanDate,
+  openSheetPrintWindow,
+} from '@/lib/print/sheet-print';
 
 function qcLabel(status: GrnQcStatus): string {
   return status.replaceAll('_', ' ');
-}
-
-// A dash, never a blank cell: an empty cell on paper reads as something gone
-// wrong, a dash reads as "there is no value here", which is what is true.
-function dash(v: string | null | undefined): string {
-  return v && v.trim() ? esc(v) : '&mdash;';
 }
 
 // ── The shape this builder prints ────────────────────────────────────────────
@@ -86,62 +84,6 @@ export interface GrnPrintModel {
   lines: GrnPrintLine[];
 }
 
-// The GRN line table, as an HTML string in the same
-// `<div class="section"><table>…</table></div>` shape the shared builder emits
-// for its own goods table, so it inherits the document stylesheet (the section
-// rule, the th/td borders, the 11px type) instead of carrying a second one.
-function grnTableHtml(lines: GrnPrintLine[]): string {
-  // The per-line DC reference only earns a column when at least one line
-  // carries one — otherwise the sheet prints a column of dashes.
-  const showDcRef = lines.some((l) => Boolean(l.dcRefNo));
-  const colCount = showDcRef ? 8 : 7;
-
-  const head =
-    '<th style="width:44px">Sr No.</th>' +
-    '<th style="width:120px">Item Code</th>' +
-    '<th>Item Name</th>' +
-    '<th style="width:70px;text-align:center">Received Qty</th>' +
-    '<th style="width:70px;text-align:center">QC Accepted</th>' +
-    '<th style="width:70px;text-align:center">QC Rejected</th>' +
-    '<th style="width:86px;text-align:center">QC Status</th>' +
-    (showDcRef ? '<th style="width:100px">DC Ref</th>' : '');
-
-  const rows = lines
-    .map(
-      (l, i) => `<tr>
-      <td style="text-align:center">${i + 1}</td>
-      <td>${dash(l.itemCode)}</td>
-      <td>${dash(l.itemName)}</td>
-      <td style="text-align:center;font-weight:600">${l.receivedQty}</td>
-      <td style="text-align:center;font-weight:600">${l.qcAcceptedQty}</td>
-      <td style="text-align:center;font-weight:600">${l.qcRejectedQty}</td>
-      <td style="text-align:center;text-transform:capitalize">${esc(qcLabel(l.qcStatus))}</td>
-      ${showDcRef ? `<td>${dash(l.dcRefNo)}</td>` : ''}
-    </tr>`,
-    )
-    .join('');
-
-  const totalReceived = lines.reduce((s, l) => s + l.receivedQty, 0);
-  const totalAccepted = lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
-  const totalRejected = lines.reduce((s, l) => s + l.qcRejectedQty, 0);
-
-  // Same tone the shared builder's own TOTAL row carries, so the two documents
-  // read alike on paper.
-  const totalsRow = `<tr style="background:#f1f5f9">
-      <td colspan="3" style="text-align:right;font-weight:800">TOTAL</td>
-      <td style="text-align:center;font-weight:800">${totalReceived}</td>
-      <td style="text-align:center;font-weight:800">${totalAccepted}</td>
-      <td style="text-align:center;font-weight:800">${totalRejected}</td>
-      <td${showDcRef ? ' colspan="2"' : ''}></td>
-    </tr>`;
-
-  const emptyRow = `<tr><td colspan="${colCount}" style="text-align:center;color:#94a3b8">No lines on this GRN</td></tr>`;
-
-  return `<div class="section"><table><thead><tr>${head}</tr></thead><tbody>${
-    rows ? rows + totalsRow : emptyRow
-  }</tbody></table></div>`;
-}
-
 // Builds and opens the sheet. `data` is the {var} substitution bag — the
 // caller assembles it, exactly as print-po / print-ospdc do for the shared
 // builder. Returns false if the popup was blocked.
@@ -155,50 +97,76 @@ export function printGrnDoc(args: {
   const { model, data, company, templates } = args;
 
   // GRN No. and GRN Date always print; the three reference numbers only when
-  // the document actually carries them — the same way the OSP DC pushes its
-  // optional meta cells.
-  const meta: DocMetaCell[] = [
-    { label: 'GRN No.', value: model.code },
-    { label: 'GRN Date', value: fmtDate(model.grnDate) },
+  // the document actually carries them -- the same way the challan pushes its
+  // optional document cells.
+  const documentFields: SheetField[] = [
+    { label: 'GRN No.', value: model.code, variant: 'mono', strong: true },
+    { label: 'GRN date', value: challanDate(model.grnDate), variant: 'mono' },
   ];
-  if (model.poNo) meta.push({ label: 'PO No.', value: model.poNo });
-  if (model.dcNo) meta.push({ label: 'Vendor DC No.', value: model.dcNo });
-  if (model.invoiceNo) meta.push({ label: 'Invoice No.', value: model.invoiceNo });
+  if (model.poNo) documentFields.push({ label: 'PO No.', value: model.poNo, variant: 'mono' });
+  if (model.dcNo)
+    documentFields.push({ label: 'Vendor DC No.', value: model.dcNo, variant: 'mono' });
+  if (model.invoiceNo)
+    documentFields.push({ label: 'Invoice No.', value: model.invoiceNo, variant: 'mono' });
 
-  // The GRN is INWARD, so the counterparty is the party that SUPPLIED the
-  // goods — labelled "Supplier", not "Recipient". Address / GSTIN / contact
-  // come from the same substitution bag the template blocks read, which is
-  // where both entry points already resolve them.
+  // The GRN is INWARD, so the counterparty SUPPLIED the goods -- "Supplier",
+  // not "Recipient". Address / GSTIN / contact come from the same substitution
+  // bag the template blocks read, which is where both entry points resolve them.
   const vendorName = model.vendorName || (data.vendorName ?? '');
-  const vendorLines = [
-    data.vendorAddress ?? '',
-    data.vendorGSTIN ? `GSTIN: ${data.vendorGSTIN}` : '',
-    data.vendorContact ?? '',
-  ].filter(Boolean);
+  const supplierFields: SheetField[] = [
+    { label: 'Name', value: vendorName, variant: 'name' },
+    { label: 'Address', value: data.vendorAddress ?? '' },
+    { label: 'GSTIN', value: data.vendorGSTIN ?? '', variant: 'mono' },
+  ];
+  if (data.vendorContact)
+    supplierFields.push({ label: 'Contact', value: data.vendorContact });
+
+  const totalReceived = model.lines.reduce((t, l) => t + l.receivedQty, 0);
+  const totalAccepted = model.lines.reduce((t, l) => t + l.qcAcceptedQty, 0);
+  const totalRejected = model.lines.reduce((t, l) => t + l.qcRejectedQty, 0);
 
   // Remarks are free text the store typed on THIS GRN, not template text, so
-  // they print as the document's own computed section under the line table —
-  // the same slot the OSP DC uses for its material return status.
+  // they print in the sheet's own notes slot rather than as a template block.
   const remarks = model.remarks?.trim();
+  const blocks = templatesToBlocks('GRN', templates);
+  if (remarks) {
+    blocks.special_notes = [blocks.special_notes, `Remarks: ${remarks}`]
+      .filter(Boolean)
+      .join('\n\n');
+  }
 
-  const docModel: DocPrintModel = {
-    doc: 'GRN',
-    blocks: templatesToBlocks('GRN', templates),
+  const sheet: SheetPrintModel = {
+    title: 'Goods Receipt Note',
+    windowTitle: 'Goods Receipt Note',
+    columns: 'grn',
+    blocks,
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Supplier', name: vendorName, lines: vendorLines },
-    meta,
-    // The GRN supplies its own table below, so the builder's goods table is
-    // never rendered and this list is never read.
-    lines: [],
-    tableHtml: grnTableHtml(model.lines),
-    // Spread, not an explicit key: exactOptionalPropertyTypes refuses an
-    // explicit undefined on an optional property.
-    ...(remarks ? { extraSection: { title: 'Remarks', body: remarks } } : {}),
+    recipient: { label: 'Supplier', fields: supplierFields },
+    document: { label: 'Document', fields: documentFields },
+    lines: model.lines.map((l) => ({
+      itemCode: l.itemCode ?? '',
+      itemName: l.itemName,
+      uom: null,
+      qty: String(l.receivedQty),
+      acceptedQty: String(l.qcAcceptedQty),
+      rejectedQty: String(l.qcRejectedQty),
+      qcStatus: qcLabel(l.qcStatus),
+      // The per-line DC reference has no column of its own -- it would be a
+      // column of dashes on most GRNs -- so it rides under the item, labelled,
+      // and only on the lines that carry one.
+      ...(l.dcRefNo ? { description: l.dcRefNo, descLabel: 'DC Ref' } : {}),
+    })),
+    totalQty: String(totalReceived),
+    totalAccepted: String(totalAccepted),
+    totalRejected: String(totalRejected),
+    totalUom: '',
+    // A GRN is signed by the people who counted and checked it, not by us.
+    receiverCell: 'Received by<br>Name, sign &amp; date',
     ...(args.testBanner ? { opts: { testBanner: true } } : {}),
   };
 
-  return openDocPrintWindow(docModel);
+  return openSheetPrintWindow(sheet);
 }
 
 // Real-data entry point, called from the GRN detail page.
