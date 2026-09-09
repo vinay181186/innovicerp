@@ -28,6 +28,7 @@ import {
 } from '@/lib/print/sheet-print';
 // Only the pure helpers now — the GRN is the last document that still renders
 // through this builder, and it goes there through its own entry point.
+import { COMPANY_CARD_ADDRESS_LINES } from '@/lib/print/company';
 import { amountInWords, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 
 // The company as it really is, for every sample on this page. The Test Print
@@ -35,11 +36,11 @@ import { amountInWords, inrFormat, templatesToBlocks } from '@/lib/print/doc-pri
 // mistyped GSTIN there is a trap: it reads as correct and is not. Real prints
 // read the `companies` row; this is the same row's content, written out.
 const CO_NAME = 'Innovic Technology';
-const CO_ADDRESS_LINES = [
-  'Plot No: 12, Phase 2, GIDC V U Nagar',
-  'Vithal Udyognagar',
-  'Anand, Gujarat, 388121',
-];
+// The address as printed on the company business card — the same lines the
+// real Purchase Order letterhead uses, so the Test Print previews the document
+// the buyer will actually get. The previous sample was a third variant of the
+// address and carried the wrong pincode (388121).
+const CO_ADDRESS_LINES = [...COMPANY_CARD_ADDRESS_LINES];
 const CO_ADDRESS = CO_ADDRESS_LINES.join(', ');
 const CO_GSTIN = '24AQKPM4121A1ZG';
 const CO_EMAIL = 'innovic.technology@gmail.com';
@@ -216,7 +217,6 @@ export function poSampleOrder(isSpo = false): SheetField[] {
     },
     { label: 'PR Ref.', value: 'IN-PR-99999', variant: 'mono' },
     { label: 'Contact person', value: 'Admin User' },
-    { label: 'Ship to', value: CO_ADDRESS },
   ];
 }
 
