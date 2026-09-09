@@ -40,7 +40,7 @@ function assertKey(key: string): void {
 
 type Tx = Parameters<Parameters<typeof withUserContext>[1]>[0];
 
-// Build the 20 effective templates (5 blocks x 5 doc types) by merging
+// Build the 20 effective templates (4 blocks x 5 doc types) by merging
 // customised rows + defaults. Derived from PRINT_TEMPLATE_META, so a new doc
 // type in @innovic/shared appears here with no change to this file.
 async function buildEffective(tx: Tx, companyId: string): Promise<EffectivePrintTemplate[]> {

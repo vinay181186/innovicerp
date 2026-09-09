@@ -139,7 +139,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             />
             {/* Disabled until the blocks land. Printing early is worse than
                 waiting: the sheet comes out looking complete but carries none
-                of the header note, terms, footer or signature an admin wrote,
+                of the special notes, terms, footer or signature an admin wrote,
                 and nothing on it says so. */}
             <button
               type="button"

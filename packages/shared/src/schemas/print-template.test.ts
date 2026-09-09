@@ -10,7 +10,7 @@ import {
 } from './print-template';
 
 describe('print-template helpers', () => {
-  it('exposes exactly 20 keys (4 docs × 5 blocks) with a default each', () => {
+  it('exposes exactly 20 keys (5 docs × 4 blocks) with a default each', () => {
     expect(PRINT_TEMPLATE_KEYS).toHaveLength(20);
     expect(PRINT_TEMPLATE_META).toHaveLength(20);
     for (const key of PRINT_TEMPLATE_KEYS) {
@@ -27,7 +27,7 @@ describe('print-template helpers', () => {
   });
 
   it('validates known keys', () => {
-    expect(isPrintTemplateKey('po_header_note')).toBe(true);
+    expect(isPrintTemplateKey('po_special_notes')).toBe(true);
     expect(isPrintTemplateKey('po_unknown')).toBe(false);
   });
 

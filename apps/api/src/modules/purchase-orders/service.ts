@@ -709,6 +709,11 @@ function toPurchaseOrder(row: typeof purchaseOrders.$inferSelect): PurchaseOrder
     rejectedAt: maybeTsLike(row.rejectedAt),
     rejectionReason: row.rejectionReason,
     remarks: row.remarks,
+    // A bare purchase_orders row carries no join, so there is no creator NAME
+    // to report here -- only the uuid in createdBy. The list and detail reads
+    // join users.full_name for it; these write-back paths return null, which
+    // the field already allows (see its note in packages/shared).
+    createdByName: null,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: tsLike(row.updatedAt),

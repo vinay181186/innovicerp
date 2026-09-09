@@ -4,10 +4,9 @@
 // Templates (PO / Service PO / OSP DC / JW DC / GRN), and it now renders on the
 // SAME document layout the other four use — the shared `@/lib/print/doc-print`
 // builder: a bordered sheet with the letterhead, a TITLE BAR, the party block
-// on the left with the meta cells on the right, then the five editable blocks
+// on the left with the meta cells on the right, then the four editable blocks
 // in print order around the line table:
 //
-//   header_note    → above the line items
 //   special_notes  → below the line items
 //   terms          → below Special Notes
 //   footer         → bottom of the sheet

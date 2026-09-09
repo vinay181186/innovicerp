@@ -1,6 +1,6 @@
 // Print Templates — admin-only WYSIWYG editor. Mirror of legacy
 // renderPrintTemplates (L14660) + _pteRenderBlock (L14819). Legacy's 3 docs
-// (PO / OSP DC / JW DC) plus our SERVICE PO, 5 editable blocks each, variable
+// (PO / OSP DC / JW DC) plus our SERVICE PO, 4 editable blocks each, variable
 // insertion, last-5 revision rollback, test print.
 // See docs/PARITY/print-templates.md.
 
@@ -695,9 +695,6 @@ function PrintTemplatesPage(): React.JSX.Element {
                 </div>
               )}
 
-              {/* EDITABLE BLOCK 1: Header Note */}
-              {renderBlock(blockOf('header_note'))}
-
               {/* Sample items table (NOT editable — system-generated) */}
               <div style={{ borderBottom: '1px solid #999' }}>
                 <div
@@ -1168,14 +1165,14 @@ function PrintTemplatesPage(): React.JSX.Element {
                 </div>
               ) : null}
 
-              {/* EDITABLE BLOCK 2: Special Notes */}
+              {/* EDITABLE BLOCK 1: Special Notes */}
               {renderBlock(blockOf('special_notes'))}
-              {/* EDITABLE BLOCK 3: Terms & Conditions */}
+              {/* EDITABLE BLOCK 2: Terms & Conditions */}
               {renderBlock(blockOf('terms'))}
-              {/* EDITABLE BLOCK 4: Footer */}
+              {/* EDITABLE BLOCK 3: Footer */}
               {renderBlock(blockOf('footer'), { isSmallCentered: true })}
 
-              {/* EDITABLE BLOCK 5: Signature */}
+              {/* EDITABLE BLOCK 4: Signature */}
               <div
                 style={{
                   display: 'flex',
