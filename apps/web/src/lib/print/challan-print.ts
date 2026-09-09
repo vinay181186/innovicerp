@@ -60,7 +60,7 @@ export interface ChallanPrintModel {
   title: string;
   /** Print-window / PDF-file title, so the two challans stay distinguishable. */
   windowTitle: string;
-  /** header_note / special_notes / terms / footer / signature. */
+  /** special_notes / terms / footer / signature. */
   blocks: Record<string, string>;
   /** {placeholder} substitution bag for those blocks. */
   data: Record<string, string>;
@@ -229,7 +229,6 @@ export function buildChallanHtml(model: ChallanPrintModel): string {
   const { blocks, data, company, lines } = model;
   const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
 
-  const headerNote = sub('header_note');
   const specialNotes = sub('special_notes');
   const terms = sub('terms');
   const footer = sub('footer');
@@ -309,7 +308,6 @@ export function buildChallanHtml(model: ChallanPrintModel): string {
             model.document,
           )}</div></div>`,
         )}
-        ${headerNote ? sectionRow(`<div class="terms">${headerNote}</div>`) : ''}
         <tr>
           <td class="colh ctr" style="width:11mm">Sr</td>
           <td class="colh">Item detail</td>

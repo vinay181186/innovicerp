@@ -9,7 +9,7 @@ import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 // Keys this suite mutates — cleaned up in afterAll (scoped, never company-wide).
-const TOUCHED_KEYS = ['po_terms', 'po_header_note', 'jwdc_footer'];
+const TOUCHED_KEYS = ['po_terms', 'po_special_notes', 'jwdc_footer'];
 
 let admin: AuthContext;
 let operator: AuthContext;
@@ -96,12 +96,12 @@ describe('print-templates service', () => {
   });
 
   it('restorePrintTemplateDefault reverts to factory default + archives current', async () => {
-    await service.savePrintTemplate('po_header_note', 'A customised header note.', admin);
-    const restored = await service.restorePrintTemplateDefault('po_header_note', admin);
-    expect(restored.content).toBe(PRINT_TEMPLATE_DEFAULTS.po_header_note);
+    await service.savePrintTemplate('po_special_notes', 'A customised special note.', admin);
+    const restored = await service.restorePrintTemplateDefault('po_special_notes', admin);
+    expect(restored.content).toBe(PRINT_TEMPLATE_DEFAULTS.po_special_notes);
     expect(restored.isCustomised).toBe(false);
-    const { items } = await service.listPrintTemplateRevisions('po_header_note', admin);
-    expect(items.some((r) => r.content === 'A customised header note.')).toBe(true);
+    const { items } = await service.listPrintTemplateRevisions('po_special_notes', admin);
+    expect(items.some((r) => r.content === 'A customised special note.')).toBe(true);
   });
 
   it('lists revisions most-recent-first, capped at 5', async () => {

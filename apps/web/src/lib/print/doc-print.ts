@@ -145,7 +145,7 @@ export interface DocCompany {
 }
 export interface DocPrintModel {
   doc: PrintDocType;
-  blocks: Record<string, string>; // header_note/special_notes/terms/footer/signature
+  blocks: Record<string, string>; // special_notes/terms/footer/signature
   data: Record<string, string>; // {var} substitution bag
   company: DocCompany;
   recipient: DocAddressBlock;
@@ -274,8 +274,11 @@ const DOC_STYLE_V10 = `
   /* goods table */
   body.v10 .doc-border th{font-size:8.5pt;letter-spacing:.09em;text-align:center}
   body.v10 .doc-border td{font-size:9.5pt}
-  body.v10 .icode{display:block;font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace;font-weight:700;font-size:9pt}
-  body.v10 .iname{display:block;font-size:9.5pt;font-weight:700;color:#1e293b}
+  /* item code + name are set to match the approved challan sheet exactly
+     (challan-print.ts .icode/.iname): the code is the quiet grey line, the
+     name is the one the eye lands on. */
+  body.v10 .icode{display:block;font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace;font-weight:400;font-size:8.5pt;color:#3A3A3A}
+  body.v10 .iname{display:block;font-size:9.5pt;font-weight:600;color:#1e293b}
   body.v10 .idesc{display:block;font-size:8.5pt;color:#475569;margin-top:2px;line-height:1.35}
   body.v10 .idesc b{color:#334155}
   /* qty / UOM / rate / amount are short values — they never wrap, so a long
@@ -352,7 +355,6 @@ export function buildDocHtml(model: DocPrintModel): string {
   const v10 = model.docLayout === 'v10';
   const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
 
-  const headerNote = sub('header_note');
   const specialNotes = sub('special_notes');
   const terms = sub('terms');
   const footer = sub('footer');
@@ -493,7 +495,6 @@ export function buildDocHtml(model: DocPrintModel): string {
     ${v10 ? '' : letterheadHeaderHtml({ name: company.name, gstin: company.gstin })}
     <div class="title-bar">${esc(DOC_TITLE[doc])}</div>
     ${headBlocks}
-    ${headerNote ? `<div class="section" style="background:#fafafa"><div class="note-block">${headerNote}</div></div>` : ''}
     ${tableHtml}
     ${extraHtml}
     ${amtWordsHtml}
@@ -543,8 +544,8 @@ export function openDocPrintWindow(model: DocPrintModel): boolean {
   return true;
 }
 
-// Filter the full effective-template list down to one doc's 5 blocks, keyed by
-// block name (header_note/special_notes/terms/footer/signature).
+// Filter the full effective-template list down to one doc's 4 blocks, keyed by
+// block name (special_notes/terms/footer/signature).
 export function templatesToBlocks(
   doc: PrintDocType,
   templates: EffectivePrintTemplate[],

@@ -16,9 +16,15 @@ import { z } from 'zod';
 export const PRINT_DOC_TYPES = ['PO', 'SERVICE PO', 'OSP DC', 'JW DC', 'GRN'] as const;
 export type PrintDocType = (typeof PRINT_DOC_TYPES)[number];
 
-// ── The 5 editable blocks per document (in print order) ──
+// ── The 4 editable blocks per document (in print order) ──
+//
+// `header_note` was removed on the user's instruction (2026-09-09). It printed a
+// paragraph above the line items on all five documents. Nothing was lost: a
+// check of both databases found ZERO saved header notes -- every company was
+// still on the factory default, so no one had ever customised one. Rows for the
+// old `*_header_note` keys, if any ever appear, are simply no longer reachable;
+// isPrintTemplateKey() rejects them and no print renders them.
 export const PRINT_TEMPLATE_BLOCKS = [
-  'header_note',
   'special_notes',
   'terms',
   'footer',
@@ -45,14 +51,12 @@ export interface PrintTemplateMeta {
 }
 
 const BLOCK_NAME: Record<PrintTemplateBlock, string> = {
-  header_note: 'Header Note',
   special_notes: 'Special Notes',
   terms: 'Terms & Conditions',
   footer: 'Footer',
   signature: 'Signature Block',
 };
 const BLOCK_POSITION: Record<PrintTemplateBlock, string> = {
-  header_note: 'Top of document, above line items',
   special_notes: 'Below totals, above Terms & Conditions',
   terms: 'Below Special Notes',
   footer: 'Bottom of page (jurisdiction, E.&O.E.)',
@@ -87,8 +91,6 @@ export function printTemplateDocType(key: string): PrintDocType | null {
 // ── Factory defaults (verbatim from legacy _PT_DEFAULTS L14439-14459) ──
 export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   // PURCHASE ORDER
-  po_header_note:
-    'Please supply the items as per specifications mentioned in this Purchase Order. Quote our PO number {poNo} on all correspondence, invoices and delivery challans.',
   po_special_notes: '',
   po_terms:
     '1. Goods supplied must conform to our specifications strictly.\n2. Payment will be made as per agreed terms ({paymentTerms}).\n3. Delivery as per the agreed schedule. Late delivery may attract penalty.\n4. Test certificates and inspection reports must accompany the supply where applicable.\n5. Goods rejected during inspection shall be replaced at vendor’s cost.\n6. All disputes are subject to V.U. Nagar jurisdiction only.',
@@ -97,8 +99,6 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   po_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 
   // SERVICE PURCHASE ORDER
-  spo_header_note:
-    'This Service Purchase Order is placed for the services described below. Quote our SPO number {spoNo} on all correspondence and invoices.',
   spo_special_notes: '',
   spo_terms:
     '1. Services must be rendered as per the scope and specifications agreed.\n2. Payment will be made as per agreed terms ({paymentTerms}).\n3. Service completion timeline must be adhered to; delays may attract penalty.\n4. Invoices must quote this SPO number and the relevant expense head.\n5. All disputes are subject to V.U. Nagar jurisdiction only.',
@@ -107,8 +107,6 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   spo_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 
   // OSP DELIVERY CHALLAN
-  ospdc_header_note:
-    'Material is being sent to the vendor for the process specified below. Vendor must acknowledge receipt by signing and returning a copy of this challan.',
   ospdc_special_notes: '',
   ospdc_terms:
     '1. Material is sent on a returnable basis for processing only.\n2. Material to be returned within agreed timeline along with processed output.\n3. Any rejection or scrap during processing must be returned with finished goods.\n4. Vendor is responsible for material damage or loss during transit and processing.\n5. Any subcontracting or outsourcing of this work without prior written consent is prohibited.',
@@ -117,8 +115,6 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   ospdc_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 
   // JOB WORK DELIVERY CHALLAN
-  jwdc_header_note:
-    'Material is being sent to the job-work vendor for the operation specified below. This is a returnable gate pass under the Job Work provisions of GST.',
   jwdc_special_notes: '',
   jwdc_terms:
     '1. Material is sent on returnable basis under GST Job Work provisions.\n2. Material to be returned within the timeline mandated by GST law.\n3. All scrap, waste and rejections must be returned along with the finished goods.\n4. Vendor must not use this material for any purpose other than the specified job work.\n5. Subcontracting of this job work without prior written consent is prohibited.\n6. Loss or damage during transit and processing is the vendor’s responsibility.',
@@ -130,8 +126,6 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   // An INWARD document: it is not sent to the vendor, it is filed in store and
   // signed by the people who counted and checked the material. Hence the
   // three-name signature block rather than the outward 'For Innovic Technology'.
-  grn_header_note:
-    'Material received against {poNo} has been counted and taken into store. Quote our GRN number {grnNo} on all correspondence and invoices relating to this receipt.',
   grn_special_notes: '',
   grn_terms:
     '1. Quantity received is subject to inspection; acceptance is confirmed only after QC clearance.\n2. Short supply, excess supply or damage in transit must be reported to the vendor within 48 hours of receipt.\n3. Rejected material is held at the vendor’s risk and cost, and must be collected against a debit note.\n4. Payment is released against accepted quantity only, not against quantity received.\n5. This receipt does not by itself constitute acceptance of the goods.',
