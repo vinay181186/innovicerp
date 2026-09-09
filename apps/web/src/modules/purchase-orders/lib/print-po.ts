@@ -198,6 +198,11 @@ export function printPurchaseOrder(args: {
     data,
     company: buildDocCompany(company),
     recipient: { label: 'Vendor / Supplier', fields: recipientFields },
+    // There is deliberately NO "Ship to" block either. It printed our own name,
+    // address and GSTIN a second time, directly under a letterhead already
+    // carrying all three on every page — and it brought a full-width rule with
+    // it. Removed on the user's instruction (2026-09-09) along with the Order
+    // box's Ship to field: one works address, printed once.
     document: { label: 'Order', fields: documentFields },
     lines: lines.map((l) => ({
       itemCode: l.itemCode ?? l.itemCodeText ?? '',
