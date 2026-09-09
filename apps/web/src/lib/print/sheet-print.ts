@@ -107,9 +107,11 @@ export interface SheetPrintModel {
   company: DocCompany;
   recipient: { label: string; fields: SheetField[] };
   document: { label: string; fields: SheetField[] };
-  /** Where the goods actually go. Printed in its own box UNDER the recipient,
-   *  mirroring the reference PO's Supplier / Consignee pair. Omit it and the
-   *  row is not drawn at all, so the challans are unaffected. */
+  /** Where the goods actually go. Printed INSIDE the recipient box, under a
+   *  rule after the vendor's last field -- not as a box of its own. A separate
+   *  row left half the sheet blank beside it, and the two parties belong
+   *  together: who you buy from, then where it is delivered. Omit it and
+   *  nothing is drawn, so the challans and the GRN are unaffected. */
   shipTo?: { label: string; fields: SheetField[] };
   lines: SheetLine[];
   /** Pre-formatted total, e.g. "3563.00". */
@@ -160,11 +162,12 @@ const SHEET_STYLE = `
   :root{
     --paper:#FFFFFF;--paper-ink:#1A1A1A;--paper-rule:#1A1A1A;--paper-rule-soft:#8A8A8A;
     --paper-band:#F1F1F1;--brand:#1E4DB3;
-    /* Traced from the real Innovic PO (IT_PO16_Kamya.pdf): Helvetica and
-       Helvetica-Bold throughout, 5.4pt-10.4pt. Arial is metrically identical
-       and is what Windows substitutes anyway. */
-    --f-label:Helvetica,Arial,sans-serif;
-    --f-body:Helvetica,Arial,sans-serif;
+    /* Times New Roman, on instruction (2026-09-09). The sizes still come from
+       the real Innovic PO (IT_PO16_Kamya.pdf), which is Helvetica at 5.4-10.4pt;
+       only the family changed. Times is narrower per character, so the same
+       point size fits more in -- the address and item names gain room. */
+    --f-label:"Times New Roman",Times,serif;
+    --f-body:"Times New Roman",Times,serif;
     --f-mono:ui-monospace,Consolas,"Courier New",monospace;
     /* The company name only -- explicit instruction. Everything else is
        Helvetica, per the reference PO. */
@@ -216,6 +219,10 @@ const SHEET_STYLE = `
   .bt{font-family:var(--f-label);font-weight:700;font-size:8pt;letter-spacing:.13em;
       text-transform:uppercase;color:#3A3A3A;margin:0 0 2mm;padding-bottom:1mm;
       border-bottom:1px solid var(--paper-rule-soft)}
+  /* Ship to, inside the vendor box: a full-width rule after the vendor's last
+     field, then the same heading treatment as the box itself so the two read
+     as one block with two parts rather than a heading floating in a list. */
+  .bt2{margin-top:2.5mm}
   .kv{display:grid;grid-template-columns:28mm 1fr;gap:1.2mm 3mm;font-size:9.5pt;margin:0}
   .kv dt{font-family:var(--f-label);font-weight:700;font-size:8.5pt;letter-spacing:.05em;
          text-transform:uppercase;color:#3A3A3A}
@@ -419,10 +426,23 @@ function fieldHtml(f: SheetField): string {
   return `<dt>${esc(f.label)}</dt><dd${cls}>${inner}</dd>`;
 }
 
-function boxHtml(box: { label: string; fields: SheetField[] }, extraRows = ''): string {
-  return `<p class="bt">${esc(box.label)}</p><dl class="kv">${box.fields
+function boxHtml(
+  box: { label: string; fields: SheetField[] },
+  extraRows = '',
+  below?: { label: string; fields: SheetField[] } | undefined,
+): string {
+  const head = `<p class="bt">${esc(box.label)}</p><dl class="kv">${box.fields
     .map(fieldHtml)
     .join('')}${extraRows}</dl>`;
+  // The rule is the `.bt` heading's own bottom border -- the same line the box
+  // heading draws -- so the divider and the two headings are one treatment
+  // rather than a rule invented for this one spot.
+  if (!below) return head;
+  return (
+    head +
+    `<p class="bt bt2">${esc(below.label)}</p>` +
+    `<dl class="kv">${below.fields.map(fieldHtml).join('')}</dl>`
+  );
 }
 
 // "Page 1 of 4", inside the Order / Document box, on the user's instruction
@@ -606,16 +626,9 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       <tfoot><tr><td class="pgfoot" colspan="${COLS}"><div></div></td></tr></tfoot>
       <tbody>
         ${sectionRow(
-          `<div class="split"><div>${boxHtml(model.recipient)}</div><div>${boxHtml(
-            model.document,
-            PAGE_OF_ROW,
-          )}</div></div>`,
+          `<div class="split"><div>${boxHtml(model.recipient, '', model.shipTo)}</div>` +
+            `<div>${boxHtml(model.document, PAGE_OF_ROW)}</div></div>`,
         )}
-        ${
-          model.shipTo
-            ? sectionRow(`<div class="split"><div>${boxHtml(model.shipTo)}</div><div></div></div>`)
-            : ''
-        }
         <tr>${columnHeads}</tr>
         ${itemRows}
         ${qtyTotalRow}
