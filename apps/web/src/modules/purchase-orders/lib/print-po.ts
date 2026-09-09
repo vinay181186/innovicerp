@@ -19,7 +19,7 @@ import type {
   PurchaseOrderDetail,
   Vendor,
 } from '@innovic/shared';
-import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import { COMPANY_CARD_ADDRESS_LINES, buildDocCompany } from '@/lib/print/company';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import {
   type SheetField,
@@ -113,7 +113,8 @@ export function printPurchaseOrder(args: {
 
   const data: Record<string, string> = {
     companyName: company?.name ?? '',
-    companyAddress: companyAddressLines(company).join(', '),
+    // The card's wording, not the row's — see COMPANY_CARD_ADDRESS_LINES.
+    companyAddress: COMPANY_CARD_ADDRESS_LINES.join(' '),
     companyGSTIN: company?.gstNumber ?? '',
     companyPhone: company?.phone ?? '',
     companyEmail: company?.email ?? '',
@@ -196,7 +197,10 @@ export function printPurchaseOrder(args: {
     sheetVariant: 'po',
     blocks: templatesToBlocks(doc, templates),
     data,
-    company: buildDocCompany(company),
+    // Letterhead address comes from the business card rather than the
+    // companies row, which splits the same address differently and cannot
+    // hold the country. Everything else about the company is the row's.
+    company: { ...buildDocCompany(company), addressLines: [...COMPANY_CARD_ADDRESS_LINES] },
     recipient: { label: 'Vendor / Supplier', fields: recipientFields },
     // There is deliberately NO "Ship to" block either. It printed our own name,
     // address and GSTIN a second time, directly under a letterhead already
