@@ -46,6 +46,15 @@ function docTypeOf(po: PurchaseOrderDetail): PrintDocType {
   return po.poType === 'service' ? 'SERVICE PO' : 'PO';
 }
 
+// The stored values are snake_case enum keys ('job_work'); nobody wants to read
+// that on a printed document.
+const PO_TYPE_LABEL: Record<string, string> = {
+  standard: 'Standard',
+  job_work: 'Job work',
+  outsource: 'Outsource',
+  service: 'Service',
+};
+
 export function printPurchaseOrder(args: {
   po: PurchaseOrderDetail;
   vendor: Vendor | null | undefined;
@@ -162,6 +171,13 @@ export function printPurchaseOrder(args: {
   // dropped — the address is still on the document the vendor delivers against.
   const documentFields: SheetField[] = [
     { label: isSpo ? 'SPO No.' : 'PO No.', value: po.code, variant: 'mono', strong: true },
+    // The type decides what happens to the material afterwards -- job work and
+    // service send OUR parts out and expect them back; standard buys goods. A
+    // vendor holding the paper should not have to infer which one this is.
+    { label: 'PO type', value: PO_TYPE_LABEL[po.poType] ?? po.poType },
+    // The sales order behind it, resolved by the detail read from the first line
+    // that carries one. Blank on a hand-raised PO, which genuinely has no SO.
+    { label: 'SO No.', value: po.soCode ?? '', variant: 'mono' },
     { label: isSpo ? 'SPO date' : 'PO date', value: challanDate(po.poDate), variant: 'mono' },
     { label: 'Due date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
     { label: 'PR Ref.', value: po.prCodeText ?? '', variant: 'mono' },

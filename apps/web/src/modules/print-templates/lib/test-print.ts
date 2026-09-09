@@ -309,7 +309,7 @@ function openChallanTestPrint(
       email: SAMPLE_COMPANY.email ?? '',
       phone: SAMPLE_COMPANY.phone ?? '',
     },
-    recipient: { label: 'Recipient — job worker', fields: recipient },
+    recipient: { label: 'Recipient', fields: recipient },
     document: { label: 'Document', fields: document },
     lines: [
       {

@@ -86,7 +86,7 @@ export function printJwDc(args: {
     blocks: templatesToBlocks('JW DC', templates),
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Recipient — job worker', fields: recipientFields },
+    recipient: { label: 'Recipient', fields: recipientFields },
     document: { label: 'Document', fields: documentFields },
     lines: dc.lines.map((l) => ({
       // Live join first, snapshot second — exactly what the detail table above

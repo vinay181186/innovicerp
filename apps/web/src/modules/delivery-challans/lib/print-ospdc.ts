@@ -106,7 +106,7 @@ export function printOspDc(args: {
     blocks,
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Recipient — job worker', fields: recipientFields },
+    recipient: { label: 'Recipient', fields: recipientFields },
     document: { label: 'Document', fields: documentFields },
     lines: dc.lines.map((l) => ({
       // LIVE master code/name first, issue-time snapshot only as the fallback.
