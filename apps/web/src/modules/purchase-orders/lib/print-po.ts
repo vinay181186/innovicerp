@@ -12,7 +12,13 @@
 // the last three columns are Qty / Rate / Amount, and the money block prints
 // under the quantity total.
 
-import type { Company, EffectivePrintTemplate, PurchaseOrderDetail, Vendor } from '@innovic/shared';
+import type {
+  Company,
+  EffectivePrintTemplate,
+  PrintDocType,
+  PurchaseOrderDetail,
+  Vendor,
+} from '@innovic/shared';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import {
@@ -28,6 +34,18 @@ import {
 // naming it here keeps it one value instead of two literals that can drift.
 const PO_UOM = 'NOS';
 
+// A SERVICE purchase order is a purchase order with `poType: 'service'` -- the
+// same table, the same screen, the same lines. It is NOT the `service_pos`
+// table, which has no API and no screen and is empty in both databases.
+//
+// Until 2026-09-09 it printed as a plain "PURCHASE ORDER" carrying the `po_*`
+// template blocks, which meant the SERVICE PO tab in Settings -> Print
+// Templates reached no paper at all: an admin could edit its terms and nothing
+// would ever print them. It now prints its own title and its own blocks.
+function docTypeOf(po: PurchaseOrderDetail): PrintDocType {
+  return po.poType === 'service' ? 'SERVICE PO' : 'PO';
+}
+
 export function printPurchaseOrder(args: {
   po: PurchaseOrderDetail;
   vendor: Vendor | null | undefined;
@@ -37,6 +55,8 @@ export function printPurchaseOrder(args: {
 }): boolean {
   const { po, vendor, company, templates } = args;
   const lines = po.lines;
+  const doc = docTypeOf(po);
+  const isSpo = doc === 'SERVICE PO';
 
   // Money is hidden for L1 Viewers: the API nulls the header total and line
   // rates. A printed PO must not leak what the screen hides, so every rupee
@@ -92,6 +112,18 @@ export function printPurchaseOrder(args: {
     currentUser: args.currentUser ?? '',
     poNo: po.code,
     poDate: fmtDate(po.poDate),
+    // The SERVICE PO block vocabulary names the same two facts spoNo/spoDate
+    // (PRINT_TEMPLATE_VARS in @innovic/shared). Both are supplied so a template
+    // written against either vocabulary substitutes rather than blanking.
+    spoNo: po.code,
+    spoDate: fmtDate(po.poDate),
+    // `purchase_orders` carries no expense head or cost centre -- those columns
+    // live on the unbuilt `service_pos` table. The variables are declared for
+    // the SERVICE PO document, so they are passed as blanks rather than left
+    // out: substituteTemplateVars blanks an unknown name either way, and this
+    // says the omission is known.
+    expenseHead: '',
+    costCenter: '',
     paymentTerms: 'As per agreement',
     deliveryTerms: po.dueDate ? `By ${fmtDate(po.dueDate)}` : '',
     vendorName,
@@ -129,8 +161,8 @@ export function printPurchaseOrder(args: {
   // the sheet has two boxes, so it comes in here as a field rather than being
   // dropped — the address is still on the document the vendor delivers against.
   const documentFields: SheetField[] = [
-    { label: 'PO No.', value: po.code, variant: 'mono', strong: true },
-    { label: 'PO date', value: challanDate(po.poDate), variant: 'mono' },
+    { label: isSpo ? 'SPO No.' : 'PO No.', value: po.code, variant: 'mono', strong: true },
+    { label: isSpo ? 'SPO date' : 'PO date', value: challanDate(po.poDate), variant: 'mono' },
     { label: 'Due date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
     { label: 'PR Ref.', value: po.prCodeText ?? '', variant: 'mono' },
     { label: 'Contact person', value: po.createdByName ?? dash },
@@ -138,10 +170,10 @@ export function printPurchaseOrder(args: {
   ];
 
   const model: SheetPrintModel = {
-    title: 'Purchase Order',
-    windowTitle: 'Purchase Order',
+    title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
+    windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
-    blocks: templatesToBlocks('PO', templates),
+    blocks: templatesToBlocks(doc, templates),
     data,
     company: buildDocCompany(company),
     recipient: { label: 'Vendor / Supplier', fields: recipientFields },

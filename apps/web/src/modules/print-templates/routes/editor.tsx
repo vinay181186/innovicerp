@@ -93,21 +93,23 @@ function PrintTemplatesPage(): React.JSX.Element {
   const docTemplates = useMemo(() => allTemplates.filter((t) => t.doc === doc), [allTemplates, doc]);
   const sample = useMemo(() => sampleDataFor(doc), [doc]);
   const allowedVars = PRINT_TEMPLATE_VARS[doc];
-  // PO and Service PO both print the priced goods table + amount in words; the
-  // two DC docs print a qty-only table. Mirrors `isPo` in @/lib/print/doc-print,
-  // so the mock previews what actually prints.
-  const isPo = doc === 'PO' || doc === 'SERVICE PO';
-  // The GRN is a THIRD shape, not a variant of either: it is an inward receipt,
-  // so it prints received / accepted / rejected quantities and NO money at all.
-  // Mirrors modules/goods-receipt-notes/lib/print-grn.ts, which is the builder
-  // that actually puts a GRN on paper.
+  // The GRN is its own shape: an INWARD receipt, so it prints received /
+  // accepted / rejected quantities and NO money at all. Mirrors
+  // modules/goods-receipt-notes/lib/print-grn.ts, which is the builder that
+  // actually puts a GRN on paper.
   const isGrn = doc === 'GRN';
-  // The Purchase Order previews the SHARED SHEET (@/lib/print/sheet-print) —
+  // BOTH purchase orders preview the SHARED SHEET (@/lib/print/sheet-print) —
   // the layout the two delivery challans print on, which the PO moved onto on
-  // 2026-09-09. The mock below shows that sheet, so what the admin sees on
-  // screen is what Test Print puts on paper. The Service PO, the two challans
-  // and the GRN keep the layout they have always previewed.
-  const isPoSheet = doc === 'PO';
+  // 2026-09-09 and the Service PO joined the same day. The mock below shows
+  // that sheet, so what the admin sees on screen is what Test Print puts on
+  // paper. The two challans and the GRN keep the layout they have always
+  // previewed.
+  const isPoSheet = doc === 'PO' || doc === 'SERVICE PO';
+  // A Service PO is the SAME sheet as a Purchase Order, worded differently:
+  // its own title, its own recipient heading, its own SPO No. / SPO date rows
+  // and its own number. ONE flag drives every one of those differences — here
+  // and in openPoTestPrint — so the preview and the paper cannot drift.
+  const isSpo = doc === 'SERVICE PO';
   // The printed document sets every code, date and number in a monospace face;
   // the mock does the same so the preview reads like the paper.
   const MONO = "'DejaVu Sans Mono', Consolas, 'Courier New', monospace";
@@ -140,8 +142,8 @@ function PrintTemplatesPage(): React.JSX.Element {
     textTransform: 'uppercase',
     color: '#3A3A3A',
   };
-  const poRecipient = poSampleRecipient();
-  const poOrder = poSampleOrder();
+  const poRecipient = poSampleRecipient(isSpo);
+  const poOrder = poSampleOrder(isSpo);
   const blockOf = (b: string): EffectivePrintTemplate | undefined =>
     docTemplates.find((t) => t.block === b);
 
@@ -490,13 +492,15 @@ function PrintTemplatesPage(): React.JSX.Element {
           >
             <div style={{ padding: 0, border: isPoSheet ? PO_RULE : '2px solid #333' }}>
               {isPoSheet ? (
-                /* THE SHARED SHEET. Since 2026-09-09 the Purchase Order prints
-                   on @/lib/print/sheet-print — the same layout as the two
+                /* THE SHARED SHEET. Since 2026-09-09 the Purchase Order and
+                   the Service Purchase Order both print on
+                   @/lib/print/sheet-print — the same layout as the two
                    delivery challans: letterhead, blue rule, centred title, the
-                   Vendor / Order boxes, the priced goods table and the money
-                   rows. ONE outer border, every cell divided by the same 1px
-                   rule; no inner box around the goods table. Same sample
-                   vendor, lines and totals the PO Test Print puts on paper. */
+                   recipient / Order boxes, the priced goods table and the
+                   money rows. ONE outer border, every cell divided by the same
+                   1px rule; no inner box around the goods table. Same sample
+                   recipient, lines and totals the Test Print puts on paper;
+                   the Service PO differs in wording only, off `isSpo`. */
                 <>
                   {/* 1-3. Letterhead, blue rule, centred document title. */}
                   <div style={{ padding: '13px 18px 9px' }}>
@@ -546,8 +550,9 @@ function PrintTemplatesPage(): React.JSX.Element {
                     </div>
                   </div>
 
-                  {/* 4. Vendor / Supplier and Order, side by side with one
-                      vertical rule between them. */}
+                  {/* 4. The recipient box (Vendor / Supplier on a PO, Service
+                      provider on a Service PO) and Order, side by side with
+                      one vertical rule between them. */}
                   <div
                     style={{
                       display: 'grid',
@@ -558,7 +563,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                   >
                     {(
                       [
-                        ['Vendor / Supplier', poRecipient],
+                        [isSpo ? 'Service provider' : 'Vendor / Supplier', poRecipient],
                         ['Order', poOrder],
                       ] as [string, SheetField[]][]
                     ).map(([boxLabel, fields], i) => (
@@ -795,9 +800,9 @@ function PrintTemplatesPage(): React.JSX.Element {
                 </>
               ) : (
                 <>
-                {/* Header: the letterhead the Service PO, the two delivery
-                    challans and the GRN still preview. The Purchase Order has
-                    its own, on the shared sheet, above. */}
+                {/* Header: the letterhead the two delivery challans and the
+                    GRN still preview. Both purchase orders have their own, on
+                    the shared sheet, above. */}
                 <div
                   style={{
                     display: 'flex',
@@ -874,31 +879,6 @@ function PrintTemplatesPage(): React.JSX.Element {
                       <b>Vendor DC No.:</b> {sample.dcNo}
                       <br />
                       <b>Invoice No.:</b> {sample.invoiceNo}
-                    </div>
-                  </div>
-                ) : isPo ? (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      borderBottom: '1px solid #999',
-                    }}
-                  >
-                    {/* Only the Service PO reaches here now — the Purchase Order
-                        has its own branch above, on the approved format. */}
-                    <div style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}>
-                      <b>SPO No.:</b> {sample.spoNo}
-                      <br />
-                      <b>SPO Date:</b> {sample.spoDate}
-                      <br />
-                      <b>Payment:</b> {sample.paymentTerms}
-                    </div>
-                    <div style={{ padding: '10px 14px', fontSize: 11 }}>
-                      <b>Vendor:</b> {sample.vendorName}
-                      <br />
-                      <b>GSTIN:</b> {sample.vendorGSTIN}
-                      <br />
-                      <b>Address:</b> {sample.vendorAddress}
                     </div>
                   </div>
                 ) : (
@@ -1131,16 +1111,6 @@ function PrintTemplatesPage(): React.JSX.Element {
                           Qty
                         </th>
                         <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 60 }}>UOM</th>
-                        {isPo ? (
-                          <>
-                            <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 80 }}>
-                              Rate
-                            </th>
-                            <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 90 }}>
-                              Amount
-                            </th>
-                          </>
-                        ) : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -1150,16 +1120,6 @@ function PrintTemplatesPage(): React.JSX.Element {
                         <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Steel Plate 6mm</td>
                         <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
                         <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                        {isPo ? (
-                          <>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
-                              500.00
-                            </td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
-                              50,000.00
-                            </td>
-                          </>
-                        ) : null}
                       </tr>
                       <tr>
                         <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>2</td>
@@ -1167,86 +1127,35 @@ function PrintTemplatesPage(): React.JSX.Element {
                         <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Bearings 6203</td>
                         <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
                         <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                        {isPo ? (
-                          <>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
-                              500.00
-                            </td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>
-                              50,000.00
-                            </td>
-                          </>
-                        ) : null}
                       </tr>
-                      {isPo ? (
-                        <tr style={{ background: '#f8fafc' }}>
-                          <td
-                            colSpan={6}
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'right',
-                              fontWeight: 700,
-                            }}
-                          >
-                            TOTAL
-                          </td>
-                          <td
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'right',
-                              fontWeight: 800,
-                            }}
-                          >
-                            ₹ {sample.totalValue}
-                          </td>
-                        </tr>
-                      ) : (
-                        <tr style={{ background: '#f8fafc' }}>
-                          <td
-                            colSpan={2}
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'right',
-                              fontWeight: 700,
-                            }}
-                          >
-                            TOTAL QTY
-                          </td>
-                          <td
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'right',
-                              fontWeight: 800,
-                            }}
-                          >
-                            {sample.totalQty}
-                          </td>
-                          <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
-                        </tr>
-                      )}
+                      <tr style={{ background: '#f8fafc' }}>
+                        <td
+                          colSpan={2}
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                          }}
+                        >
+                          TOTAL QTY
+                        </td>
+                        <td
+                          style={{
+                            padding: 6,
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'right',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {sample.totalQty}
+                        </td>
+                        <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
+                      </tr>
                     </tbody>
                   </table>
                   )}
                 </div>
-
-                {/* Service PO only: Amount in words */}
-                {isPo ? (
-                  <div
-                    style={{
-                      padding: '8px 14px',
-                      borderBottom: '1px solid #999',
-                      fontSize: 10,
-                      background: '#fafafa',
-                    }}
-                  >
-                    <b>Amount in Words:</b>{' '}
-                    <i>One Lakh Rupees Only</i>
-                  </div>
-                ) : null}
                 </>
               )}
 
