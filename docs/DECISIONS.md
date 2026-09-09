@@ -8319,3 +8319,67 @@ paper edge.
 - Risks: the Service PO and the GRN still print through `doc-print.ts` with the
   old `@page{margin:10mm}`, so they still carry the browser's footer. Moving
   them onto the sheet is the obvious follow-up and is NOT done here.
+
+## ADR-156: A PO line's Due Date follows the header's Delivery Date, until someone means otherwise
+
+**Date:** 2026-09-09
+**Status:** Accepted
+
+### Context
+
+On the Create PO screen the header carries a **Delivery Date** and every line
+carries its own **Due Date**. The line date started blank, so a buyer who wanted
+the whole order on one date — which is the normal case — had to retype that date
+on every line, and any line they forgot went out with no date at all.
+
+### Decision
+
+A line's Due Date follows the header's Delivery Date by default. A new line is
+created on the header's date, and changing the header moves the lines with it.
+
+It moves a line only while that line is still ON the default: its Due Date is
+blank, or still equals the header value it was handed. Two kinds of date are
+therefore never touched:
+
+- **One the buyer typed for a single line.** A PO can legitimately want one item
+  earlier than the rest; silently resetting that on the next header edit would
+  destroy a deliberate entry.
+- **One seeded from that line's Purchase Request.** `po-form-line.tsx` binds a
+  line's `dueDate` to the PR's `requiredDate` when a PR is picked. That is the
+  date the request actually asked for — it is data, not a default, and it falls
+  out of the rule for free by being non-blank and unequal to the header.
+
+Both "+ Add Line" buttons now share one `addLine` helper, so a new row cannot
+be added by a path that skips the default.
+
+The tracking ref is seeded with the value the form opened with, so the first
+pass is a no-op. Opening a saved PO must not rewrite its stored line dates, nor
+mark an untouched form dirty — `defaultValues` is computed once at mount with
+no later `reset()`, so this is the only guard needed.
+
+### Alternatives considered
+
+- **Always overwrite every line on a header change** — rejected: it destroys a
+  per-line date the buyer set on purpose, and it overwrites the PR's own
+  requested date, which the PO is supposed to honour.
+- **Only prefill on add, never follow** — rejected: the buyer usually picks the
+  delivery date AFTER adding the lines, so the common order of work would leave
+  every line blank and the feature would rarely fire.
+- **Track "did the user edit this line" with react-hook-form dirty state** —
+  rejected as more machinery for the same answer. Comparing against the previous
+  header value distinguishes default-from-deliberate without extra bookkeeping,
+  and it handles PR-seeded dates correctly by accident of being correct.
+
+### Consequences
+
+- Positive: the date is typed once for a normal single-delivery PO.
+- Positive: no line can be saved dateless just because it was added last.
+- Neutral: a buyer who wants a line back on the header date clears it, and the
+  next header change picks it up again.
+- Negative: a line that happens to have been typed with exactly the old header
+  value is indistinguishable from one left on the default, and will move. The
+  alternative is per-line dirty tracking, judged not worth it.
+- Verification: typecheck, lint and the web build (`tsc -b` + vite). Not
+  exercised against a live server — this is form state only, no API or schema
+  change. The API test suite was NOT run: it seeds and deletes on the production
+  database.
