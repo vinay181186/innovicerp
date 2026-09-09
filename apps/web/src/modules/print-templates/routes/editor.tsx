@@ -46,6 +46,10 @@ const DOC_COLOR: Record<PrintDocType, string> = {
   // received" tone. Taken from the theme token so it tracks the palette; the
   // four literals above predate the tokens and are left as they are.
   GRN: 'var(--green)',
+  // The JW Invoice is the one document here that bills a CLIENT rather than
+  // dealing with a vendor — cyan, the tone the register already gives its
+  // invoice numbers, so the tab and the list agree. Token, like the GRN's.
+  'JW INVOICE': 'var(--cyan)',
 };
 const DOC_LABEL: Record<PrintDocType, string> = {
   PO: 'Purchase Order',
@@ -53,6 +57,7 @@ const DOC_LABEL: Record<PrintDocType, string> = {
   'OSP DC': 'OSP Delivery Challan',
   'JW DC': 'Job Work DC',
   GRN: 'Goods Receipt Note',
+  'JW INVOICE': 'JW Invoice',
 };
 // Title printed on the document itself (legacy titleText L14708). Distinct from
 // the selector button label — legacy's "Job Work DC" button prints as
@@ -63,6 +68,9 @@ const DOC_TITLE: Record<PrintDocType, string> = {
   'OSP DC': 'OSP DELIVERY CHALLAN',
   'JW DC': 'JOB WORK DELIVERY CHALLAN',
   GRN: 'GOODS RECEIPT NOTE',
+  // The selector button says "JW Invoice"; the sheet itself prints the full
+  // name, the same way "Job Work DC" prints as "JOB WORK DELIVERY CHALLAN".
+  'JW INVOICE': 'JOB WORK INVOICE',
 };
 
 function lastEditLabel(t: EffectivePrintTemplate): string {

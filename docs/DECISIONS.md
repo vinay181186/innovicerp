@@ -8383,3 +8383,70 @@ no later `reset()`, so this is the only guard needed.
   exercised against a live server — this is form state only, no API or schema
   change. The API test suite was NOT run: it seeds and deletes on the production
   database.
+
+## ADR-157: The Job Work Invoice prints on the shared sheet, worded as a bill to a client
+
+**Date:** 2026-09-09
+**Status:** Accepted
+
+### Context
+
+Every other document in the ERP prints on the shared sheet
+(`lib/print/sheet-print.ts`) — the Purchase Order, the OSP Delivery Challan and,
+most recently, the GRN. The Job Work Invoice had **no print at all**: its module
+was an `api.ts` and a view, nothing else. A finished job-work cycle could be
+invoiced in the system and then not handed to the customer.
+
+### Decision
+
+Print it on the same sheet, taking the Delivery Challan as the reference — one
+letterhead, one type scale, one border — but worded for a **bill to a client**
+rather than a note to a vendor.
+
+**The recipient is the client.** The challan is handed to a vendor; this bills a
+customer. Name, address, GSTIN and contact come from the client master, fetched
+for the ONE client being printed rather than loading all 195 to print one
+invoice.
+
+**It says the material is not being charged.** The schema is explicit: a JW
+invoice bills qty × rate + GST for labour, with no material value because the
+customer owns the material. On paper that is the one thing a reader must never
+have to infer from a document that otherwise looks like an ordinary sale
+invoice, so it ships as FACTORY TEXT in `jwinv_special_notes` — not as something
+each admin must remember to type. An admin's own notes replace it.
+
+**One GST row, not the PO's IGST-or-SGST+CGST pair.** `jw_invoices` stores a
+single `gst_percent` and no `taxType`. Splitting 18% into 9 + 9 would assert
+something the data does not say.
+
+**The item code column prints blank.** The part belongs to the client and has no
+row in our item master. Same choice, and the same reasoning, as the challan
+makes for HSN: leave it empty rather than invent a value.
+
+**`priceVisible` is obeyed, and the document still prints.** With prices hidden,
+Rate and Amount print an em dash and the totals block and amount-in-words are
+dropped — but who is billed, for which JWSO, for what part and for how many
+pieces still print. Told by the server, never inferred from a null money field.
+
+**`'JW INVOICE'` became a real print document type** (`PRINT_DOC_TYPES`, prefix
+`jwinv`), so the Print Templates editor offers its four blocks automatically and
+they carry factory defaults in the GRN's voice. `template_key` is free text with
+no database constraint, so no migration was needed — checked, not assumed.
+
+### Consequences
+
+- Positive: the last un-printable document now prints, on the same sheet as the
+  rest.
+- Positive: adding the doc type wired up the templates editor for free.
+- Negative: `PRINT_TEMPLATE_VARS` is a `Record` over the whole doc-type union,
+  so widening that union is a hard compile error until the entry is added — and
+  `printTemplateDocType()` needed a `jwinv_` branch or the editor would return
+  `null` and crash on `.map()`. Both were caught before merge; anyone adding the
+  next doc type must do all three.
+- Neutral: no client carries a GSTIN yet (0 of 195), so that row prints as a
+  dotted rule. The field stays — it is the first thing an accounts desk reads.
+- Verification: typecheck (shared, api), build (`tsc -b` + vite) and lint. The
+  sheet was rendered against the one real row in production —
+  IN-JWINV-00001, Adani Power Limited, SINGLE FIRE CHECK LEVER, 10 x 10.00,
+  GST 18% = 18.00, total 118.00, "Indian Rupees One Hundred Eighteen Only" —
+  and again with prices hidden.

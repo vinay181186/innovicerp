@@ -4,13 +4,20 @@
 // banner. Real-data prints (P2) use the same `@/lib/print` builder but feed
 // live PO/DC data — this file only supplies the sample model.
 
-import { type Company, type EffectivePrintTemplate, type PrintDocType } from '@innovic/shared';
+import {
+  type Client,
+  type Company,
+  type EffectivePrintTemplate,
+  type JwInvoiceListItem,
+  type PrintDocType,
+} from '@innovic/shared';
 import { addDays, format } from 'date-fns';
 import {
   type GrnPrintLine,
   type GrnPrintModel,
   printGrnDoc,
 } from '@/modules/goods-receipt-notes/lib/print-grn';
+import { printJwInvoice } from '@/modules/jw-invoices/lib/print-jw-invoice';
 import {
   type SheetField,
   type SheetLine,
@@ -91,6 +98,28 @@ export function sampleDataFor(doc: PrintDocType): Record<string, string> {
       totalReceived: '200',
       totalAccepted: '190',
       totalRejected: '10',
+    };
+  }
+  // The JW Invoice bills a CLIENT for labour, so its bag names the client, not
+  // a vendor, and its numbers are a single job-work line: 10 pcs x Rs 500 =
+  // Rs 5,000 + 18% GST = Rs 5,900. The contract does not yet list 'JW INVOICE'
+  // in PRINT_TEMPLATE_VARS, so the editor shows no variable chips for these
+  // four blocks; these are the names the real print
+  // (modules/jw-invoices/lib/print-jw-invoice.ts) fills, so a block written by
+  // hand against them substitutes here exactly as it will on paper.
+  if (doc === 'JW INVOICE') {
+    return {
+      ...common,
+      invoiceNo: 'IN-JWINV-99999',
+      invoiceDate: today,
+      jwNo: 'IN-JW-99999',
+      clientName: 'Sample Client Pvt Ltd',
+      clientAddress: 'GIDC Estate, Phase 1, Vadodara, Gujarat',
+      clientGSTIN: '24AAACS1234D1Z5',
+      clientContact: 'Mr. Sample, +91 90000 00000',
+      partName: 'Single Fire Check Lever',
+      totalValue: '5,900.00',
+      totalQty: '10',
     };
   }
   if (doc === 'PO') {
@@ -384,13 +413,81 @@ function openPoTestPrint(
   return openSheetPrintWindow(model);
 }
 
-// Test Print for the editor. Every one of the five documents now has its own
+// The JW Invoice's Test Print goes through the REAL print entry point with a
+// sample invoice and a sample client, rather than assembling a second model
+// here. That is the same principle the GRN's test print records: whatever an
+// admin checks a template against has to be the sheet a real invoice produces,
+// or the check is worthless. One job-work line — 10 pcs at Rs 500, Rs 5,000
+// taxable, 18% GST, Rs 5,900 total — matching the sample bag above.
+const JWINV_SAMPLE_ID = '00000000-0000-0000-0000-000000000000';
+
+function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const client: Client = {
+    id: JWINV_SAMPLE_ID,
+    companyId: JWINV_SAMPLE_ID,
+    code: 'CLI-999',
+    name: 'Sample Client Pvt Ltd',
+    contactPerson: 'Mr. Sample',
+    email: null,
+    phone: '+91 90000 00000',
+    gstNumber: '24AAACS1234D1Z5',
+    addressLine1: 'GIDC Estate, Phase 1',
+    city: 'Vadodara',
+    state: 'Gujarat',
+    pincode: '390010',
+    isActive: true,
+    createdAt: '',
+    createdBy: JWINV_SAMPLE_ID,
+    updatedAt: '',
+    updatedBy: JWINV_SAMPLE_ID,
+    deletedAt: null,
+  };
+  const invoice: JwInvoiceListItem = {
+    id: JWINV_SAMPLE_ID,
+    companyId: JWINV_SAMPLE_ID,
+    code: 'IN-JWINV-99999',
+    invoiceDate: today,
+    jobWorkOrderId: JWINV_SAMPLE_ID,
+    jobWorkOrderLineId: JWINV_SAMPLE_ID,
+    jwCodeText: 'IN-JW-99999',
+    clientId: JWINV_SAMPLE_ID,
+    clientName: client.name,
+    partName: 'Single Fire Check Lever',
+    qty: 10,
+    rate: 500,
+    taxableAmount: 5000,
+    gstPercent: 18,
+    gstAmount: 900,
+    totalAmount: 5900,
+    remarks: 'Sample invoice — turning and grinding on client-supplied blanks.',
+    createdAt: '',
+    createdBy: JWINV_SAMPLE_ID,
+    updatedAt: '',
+    updatedBy: JWINV_SAMPLE_ID,
+    deletedAt: null,
+  };
+  return printJwInvoice({
+    invoice,
+    // The sample sheet shows the money: an admin editing the invoice's blocks
+    // needs to see where the totals land relative to them.
+    priceVisible: true,
+    client,
+    company: SAMPLE_COMPANY,
+    templates,
+    currentUser: 'Admin User',
+    testBanner: true,
+  });
+}
+
+// Test Print for the editor. Every one of the six documents now has its own
 // entry point, so there is no fall-through branch left: the PO and the Service
-// PO print on the shared sheet, so do the two challans, and the GRN goes to its
-// own builder because its columns are received / accepted / rejected / QC
-// status rather than qty and money.
+// PO print on the shared sheet, so do the two challans and the JW Invoice, and
+// the GRN goes to its own builder because its columns are received / accepted /
+// rejected / QC status rather than qty and money.
 export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTemplate[]): boolean {
   if (doc === 'GRN') return openGrnTestPrint(templates);
+  if (doc === 'JW INVOICE') return openJwInvoiceTestPrint(templates);
   if (doc === 'PO' || doc === 'SERVICE PO') return openPoTestPrint(doc, templates);
   return openChallanTestPrint(doc, templates);
 }

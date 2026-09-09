@@ -13,7 +13,7 @@
 import { z } from 'zod';
 
 // ── Document types with customisable templates ──
-export const PRINT_DOC_TYPES = ['PO', 'SERVICE PO', 'OSP DC', 'JW DC', 'GRN'] as const;
+export const PRINT_DOC_TYPES = ['PO', 'SERVICE PO', 'OSP DC', 'JW DC', 'GRN', 'JW INVOICE'] as const;
 export type PrintDocType = (typeof PRINT_DOC_TYPES)[number];
 
 // ── The 4 editable blocks per document (in print order) ──
@@ -39,6 +39,10 @@ export const PRINT_DOC_KEY_PREFIX: Record<PrintDocType, string> = {
   'OSP DC': 'ospdc',
   'JW DC': 'jwdc',
   GRN: 'grn',
+  // The job-work invoice bills the LABOUR on a JWSO line. It is a separate
+  // document from the JW DC that carried the goods, so it gets its own blocks
+  // rather than borrowing the challan's terms.
+  'JW INVOICE': 'jwinv',
 };
 
 // ── Per-block metadata (drives the editor list) ──
@@ -85,6 +89,7 @@ export function printTemplateDocType(key: string): PrintDocType | null {
   if (key.startsWith('ospdc_')) return 'OSP DC';
   if (key.startsWith('jwdc_')) return 'JW DC';
   if (key.startsWith('grn_')) return 'GRN';
+  if (key.startsWith('jwinv_')) return 'JW INVOICE';
   return null;
 }
 
@@ -132,6 +137,17 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   grn_footer:
     'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
   grn_signature: 'Received By\n\n\n\nChecked By\n\n\n\nAuthorised Signatory',
+  // JOB WORK INVOICE — labour only. That the material stays the client's
+  // throughout is the one thing a reader must never have to infer from a
+  // document that otherwise looks like an ordinary sale invoice, so it is
+  // factory text rather than something each admin has to remember to type.
+  jwinv_special_notes:
+    'This invoice is for the labour / processing charge only. The material processed under it is supplied by the client and remains the property of the client throughout — no material value is charged on this invoice.',
+  jwinv_terms:
+    '1. This invoice covers job-work charges against the Job Work Order and quantity stated above.\n2. Quantity billed is the quantity returned to the client and accepted; rejected pieces are not billed.\n3. GST is charged on the job-work value only, at the rate shown.\n4. Payment is due within the terms agreed on the Job Work Order.\n5. Any discrepancy must be raised in writing within 7 days of the invoice date.',
+  jwinv_footer:
+    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
+  jwinv_signature: 'Prepared By\n\n\n\nAuthorised Signatory',
 };
 
 export function printTemplateDefault(key: string): string {
@@ -233,6 +249,29 @@ export const PRINT_TEMPLATE_VARS: Record<PrintDocType, readonly string[]> = {
     'totalReceived',
     'totalAccepted',
     'totalRejected',
+  ],
+  // A job-work invoice bills a CLIENT for the labour on one JWSO line, so its
+  // vocabulary names the client rather than a vendor, and its money is a single
+  // taxable amount plus one GST figure -- there is no IGST/SGST split to offer,
+  // because jw_invoices stores one gst_percent and no taxType.
+  'JW INVOICE': [
+    'companyName',
+    'companyAddress',
+    'companyGSTIN',
+    'companyPhone',
+    'companyEmail',
+    'date',
+    'currentUser',
+    'invoiceNo',
+    'invoiceDate',
+    'jwNo',
+    'clientName',
+    'clientAddress',
+    'clientGSTIN',
+    'clientContact',
+    'partName',
+    'totalQty',
+    'totalValue',
   ],
 };
 
