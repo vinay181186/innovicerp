@@ -100,6 +100,16 @@ export interface SheetPrintModel {
   windowTitle: string;
   /** Which column set the goods table uses. Defaults to the challan's. */
   columns?: SheetColumns;
+  /** The PURCHASE ORDER's own skin, and nothing else's: Times New Roman
+   *  throughout, minimum vertical spacing, and GSTIN ending its own letterhead
+   *  line with PAN under it. Everything it changes is scoped to `.po-sheet` in
+   *  the stylesheet, so the four other documents on this sheet -- OSP DC, JW
+   *  DC, GRN, JW Invoice -- print exactly as they did before.
+   *
+   *  It is a SEPARATE flag from `columns` on purpose. The JW Invoice also
+   *  passes `columns:'po'` for the money column set, and keying the skin off
+   *  that would have restyled the invoice too. */
+  sheetVariant?: 'po';
   /** special_notes / terms / footer / signature. */
   blocks: Record<string, string>;
   /** {placeholder} substitution bag for those blocks. */
@@ -290,6 +300,76 @@ const SHEET_STYLE = `
     tr{break-inside:avoid;page-break-inside:avoid}
     .split,.split > div,.terms,.signs,.kv,.lh-in{break-inside:avoid;page-break-inside:avoid}
   }
+
+  /* ── THE PURCHASE ORDER SKIN ───────────────────────────────────────────────
+     Everything below is scoped to .po-sheet, which only print-po.ts asks for
+     (SheetPrintModel.sheetVariant === 'po'). The OSP DC, the JW DC, the GRN and
+     the JW Invoice never carry the class, so not one declaration here can reach
+     them — their sheets render exactly as before, byte for byte.
+
+     Two instructions from the user (2026-09-09): Times New Roman throughout,
+     and the least vertical space the document can use and still read cleanly.
+
+     The FOUR font tokens are redefined here rather than each rule being
+     rewritten, so every element that already asks for a token — the company
+     name, the address, the document title, the column heads, the boxes, the
+     goods table and the money block — comes out Times without being named.
+     font-family is restated on the .po-sheet element itself because the body
+     resolved var(--f-body) with the :root value before this override existed,
+     and font-family is inherited as a computed value.
+
+     THE MONO TOKEN GOES TO TIMES TOO. It carries the codes and the figures,
+     where column alignment matters — but Times New Roman's digits are all one
+     width, and every numeric cell already sets font-variant-numeric:tabular-nums
+     and is right- or centre-aligned, so the rupee columns stay in line. Leaving
+     mono as Consolas would have left half the document in a different typeface
+     from the rest, which is not what "Times New Roman throughout" means.
+
+     Type sizes move only where Times' smaller x-height would have made the old
+     size hard to read on paper (the 7.5pt letterhead lines, the 8.5pt small
+     print). The saving comes from the padding, the gaps and the line heights. */
+  .po-sheet{
+    --f-label:"Times New Roman",Times,serif;
+    --f-body:"Times New Roman",Times,serif;
+    --f-mono:"Times New Roman",Times,serif;
+    --f-head:"Times New Roman",Times,serif;
+    font-family:var(--f-body);
+  }
+  /* letterhead — was 3.5/2.5mm of padding, 1mm + .8mm of paragraph margin */
+  .po-sheet .lh-in{padding:2.2mm 5mm 1.6mm}
+  .po-sheet .co-name{font-size:16pt;margin:0 0 .6mm}
+  .po-sheet .co-addr{font-size:8.5pt;line-height:1.2;margin:0 0 .3mm}
+  .po-sheet .co-ids{font-size:8.5pt;line-height:1.2}
+  .po-sheet .lh-rule{margin:1.2mm 0 1.4mm}
+  .po-sheet .doc-title{font-size:13pt;letter-spacing:.12em;line-height:1.05}
+  /* the two boxes — was 3.5mm of padding and 1.2mm between the rows */
+  .po-sheet .split > div{padding:2.2mm 5mm}
+  .po-sheet .bt{font-size:8.5pt;margin:0 0 1.2mm;padding-bottom:.7mm}
+  /* The label column widens from 28mm to 33mm ON THIS DOCUMENT ONLY. Times is
+     a wider face than the Arial Narrow the labels were set in, and at 28mm
+     "CONTACT PERSON" wrapped onto a second line and cost more height than the
+     5mm buys back. The value column keeps the rest of the box. */
+  .po-sheet .kv{grid-template-columns:33mm 1fr;gap:.5mm 3mm}
+  .po-sheet .kv dt{font-size:9pt}
+  .po-sheet .kv dd.mono{font-size:9.5pt}
+  .po-sheet .kv dd.vname{line-height:1.15}
+  /* the goods table — was 2mm / 2.2mm / 2.4mm of cell padding */
+  .po-sheet .colh{padding:1.3mm 2.5mm!important;font-size:9pt}
+  .po-sheet tbody td{padding:1.4mm 2.5mm}
+  .po-sheet .num,.po-sheet .qty,.po-sheet .money{font-size:9.5pt}
+  .po-sheet .icode{font-size:9pt}
+  .po-sheet .iname{line-height:1.15;margin-top:.2mm}
+  .po-sheet .idesc{font-size:9pt;line-height:1.25;margin-top:.3mm}
+  .po-sheet .idesc b{font-size:9pt}
+  .po-sheet .sumlbl{font-size:9pt}
+  /* the money block and everything under it */
+  .po-sheet tr.total td{padding:1.5mm 2.5mm}
+  .po-sheet .terms{padding:1.8mm 5mm;font-size:9pt;line-height:1.3}
+  .po-sheet .terms b{font-size:9pt}
+  .po-sheet .foot{padding:1.6mm 5mm;font-size:8.5pt}
+  /* 13mm of blank under the signature strip was room for a signature; 11mm
+     still is. Any less and there is nowhere to sign. */
+  .po-sheet .signs > div{padding:2mm 5mm 11mm;font-size:9pt}
 `;
 
 // ── The paginator ───────────────────────────────────────────────────────────
@@ -450,6 +530,9 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   const { blocks, data, company, lines } = model;
   const po = model.columns === 'po';
   const grn = model.columns === 'grn';
+  // The purchase order's skin. Everything it turns on is scoped under
+  // `.po-sheet`, so no other document can pick any of it up.
+  const poSkin = model.sheetVariant === 'po';
   const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
 
   const specialNotes = sub('special_notes');
@@ -473,6 +556,10 @@ export function buildSheetHtml(model: SheetPrintModel): string {
     company.gstin ? `<b>GSTIN:</b> ${esc(company.gstin)}` : '',
     `<b>PAN:</b> ${esc(COMPANY_PAN)}`,
   ].filter(Boolean);
+  // On the purchase order GSTIN ENDS ITS LINE and PAN drops underneath it
+  // (user, 2026-09-09). Every other document keeps the two on one line, joined
+  // by the middle dot.
+  const idsHtml = poSkin ? ids.join('<br>') : ids.join(' &nbsp;&middot;&nbsp; ');
 
   const letterhead = `<div class="lh-pad"><div class="lh-in">
     <div class="lh-top">
@@ -481,7 +568,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         <p class="co-name">${esc(company.name)}</p>
         ${addressHtml}
         ${contactHtml}
-        <p class="co-ids">${ids.join(' &nbsp;&middot;&nbsp; ')}</p>
+        <p class="co-ids">${idsHtml}</p>
       </div>
     </div>
     <div class="lh-rule"></div>
@@ -591,7 +678,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
     <button onclick="window.print()" style="padding:8px 24px;background:#1E4DB3;color:#fff;border:0;border-radius:5px;cursor:pointer">🖨 Print</button>
     <button onclick="window.close()" style="padding:8px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">✕ Close</button>
   </div>
-  <article class="sheet">
+  <article class="sheet${poSkin ? ' po-sheet' : ''}">
     <table class="doc">
       <thead><tr><th class="lh" colspan="${COLS}">${letterhead}</th></tr></thead>
       <tfoot><tr><td class="pgfoot" colspan="${COLS}"><div></div></td></tr></tfoot>

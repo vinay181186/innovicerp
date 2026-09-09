@@ -166,9 +166,10 @@ export function printPurchaseOrder(args: {
   // `createdByName` (users.full_name), the same way the Sales Order does. Null
   // only when that user has since been deleted; a dash, never an id.
   //
-  // SHIP TO is our own works. It was a third party box on the old PO layout;
-  // the sheet has two boxes, so it comes in here as a field rather than being
-  // dropped — the address is still on the document the vendor delivers against.
+  // There is deliberately NO "Ship to" field. Our own works address is printed
+  // in full on the letterhead at the top of every page, so repeating it inside
+  // the Order box said the same thing twice and cost four lines of the box.
+  // Removed on the user's instruction, 2026-09-09.
   const documentFields: SheetField[] = [
     { label: isSpo ? 'SPO No.' : 'PO No.', value: po.code, variant: 'mono', strong: true },
     // The type decides what happens to the material afterwards -- job work and
@@ -182,13 +183,17 @@ export function printPurchaseOrder(args: {
     { label: 'Due date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
     { label: 'PR Ref.', value: po.prCodeText ?? '', variant: 'mono' },
     { label: 'Contact person', value: po.createdByName ?? dash },
-    { label: 'Ship to', value: companyAddressLines(company).join(', ') },
   ];
 
   const model: SheetPrintModel = {
     title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
+    // The purchase order's own skin -- Times New Roman throughout, tight
+    // vertical spacing, GSTIN ending its own letterhead line. It is a SEPARATE
+    // flag from `columns` on purpose: the JW Invoice also prints the 'po'
+    // column set, and it must keep the shared look.
+    sheetVariant: 'po',
     blocks: templatesToBlocks(doc, templates),
     data,
     company: buildDocCompany(company),
