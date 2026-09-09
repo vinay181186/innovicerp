@@ -94,7 +94,6 @@ function OpEntryPage() {
 
   // Start vs Complete intent (legacy _opEntryMode). Default 'complete' matches
   // legacy L5210 and preserves the current form. Toggling writes it to the URL.
-  const mode = search.mode ?? 'complete';
 
   const selectedOp = useMemo(
     () => ops.data?.find((o) => o.id === search.op) ?? null,
@@ -116,6 +115,15 @@ function OpEntryPage() {
       running.data.find((r) => r.jcOpId === selectedOp.id && r.status === 'running')?.id ?? null
     );
   }, [running.data, selectedOp]);
+
+  // Open on the action that applies: Start when nothing is running on this
+  // operation, Complete once a session is open. An explicit ?mode in the URL
+  // always wins, so the toggle and a shared link still work.
+  //
+  // While the running list is still loading this reads Start. That is the
+  // right way round to be wrong: Start is the harmless one, and an op with no
+  // session is much the commoner case.
+  const mode = search.mode ?? (activeRunningId ? 'complete' : 'start');
 
   function handleJcSubmit(e: React.FormEvent) {
     e.preventDefault();

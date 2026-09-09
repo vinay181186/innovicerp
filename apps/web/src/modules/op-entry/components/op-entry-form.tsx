@@ -619,6 +619,42 @@ export function OpEntryForm({
     </div>
   ) : null;
 
+  // Completing with no session open is ALLOWED, and the qty is then stamped
+  // with the op's CURRENT machine (resolveLogMachine in the op-entry service
+  // falls back to it). That fallback is only honest while the op stays put:
+  // re-route it later and pieces made here are credited to a machine that
+  // never made them. Say so at the moment of logging rather than let the
+  // system assume in silence.
+  const stampMachine = op.machineCode ?? op.machineCodeText ?? null;
+  const noSessionNote =
+    !isStart && !activeRunningId ? (
+      <div
+        style={{
+          marginBottom: 10,
+          padding: '7px 10px',
+          borderRadius: 6,
+          border: '1px solid var(--amber)',
+          background: 'var(--amber3)',
+          color: 'var(--amber)',
+          fontSize: 11.5,
+          lineHeight: 1.5,
+        }}
+      >
+        No machine session is running on this operation.{' '}
+        {stampMachine ? (
+          <>
+            What you log will be recorded against{' '}
+            <b className="mono">{stampMachine}</b>, the machine this operation is
+            assigned to.
+          </>
+        ) : (
+          <>This operation has no machine, so the entry will carry none.</>
+        )}{' '}
+        Press <b>▶ Start</b> first if the work is being done now — that records the
+        real machine and its start time.
+      </div>
+    ) : null;
+
   return (
     <form onSubmit={(e) => void handleProductionSubmit(e)}>
       <div className="panel">
@@ -632,6 +668,7 @@ export function OpEntryForm({
         </div>
         <div className="panel-body">
           {blockedBanner}
+          {noSessionNote}
           {/* Minimized single-row field strip (see reference UI): Date · Time ·
               Shift · [Qty · Reject] · Operator all on ONE wrapping row, with
               Remarks full-width below. Each field's form-grp carries an explicit
