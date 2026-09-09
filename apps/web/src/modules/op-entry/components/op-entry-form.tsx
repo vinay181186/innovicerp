@@ -627,37 +627,6 @@ export function OpEntryForm({
     </div>
   ) : null;
 
-  // Complete is absent, not broken. Say why, or the operator hunts for a
-  // button that used to be there. Naming the machine matters too: pressing
-  // Start is what records WHICH machine made the pieces -- without a session
-  // the log would fall back to whatever machine the op is assigned to today,
-  // and a later re-route would credit them to a machine that never ran them.
-  const stampMachine = op.machineCode ?? op.machineCodeText ?? null;
-  const noSessionNote = !canComplete ? (
-    <div
-      style={{
-        marginBottom: 10,
-        padding: '7px 10px',
-        borderRadius: 6,
-        border: '1px solid var(--amber)',
-        background: 'var(--amber3)',
-        color: 'var(--amber)',
-        fontSize: 11.5,
-        lineHeight: 1.5,
-      }}
-    >
-      Nothing is running on this operation yet, so there is nothing to complete.
-      Press <b>▶ Start</b>
-      {stampMachine ? (
-        <>
-          {' '}
-          on <b className="mono">{stampMachine}</b>
-        </>
-      ) : null}{' '}
-      first — that records the machine and the start time. <b>✓ Complete</b> appears
-      once it is running.
-    </div>
-  ) : null;
 
   return (
     <form onSubmit={(e) => void handleProductionSubmit(e)}>
@@ -672,7 +641,6 @@ export function OpEntryForm({
         </div>
         <div className="panel-body">
           {blockedBanner}
-          {noSessionNote}
           {/* Minimized single-row field strip (see reference UI): Date · Time ·
               Shift · [Qty · Reject] · Operator all on ONE wrapping row, with
               Remarks full-width below. Each field's form-grp carries an explicit
