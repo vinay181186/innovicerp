@@ -15,6 +15,7 @@ import type {
   JobCardListItem,
   JobCardStatusOpExtra,
 } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from './jc-status-badge';
 import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
 
@@ -93,11 +94,29 @@ export function JcStatTiles({
               (user decision) — the shop floor identifies a job by its code, and
               the old layout had that the other way round: an 18px name over an
               11px code chip. The code keeps its mono + purple code identity. */}
+          {/* The revision is the CUSTOMER'S drawing revision off the SO line, so
+              the code reads `IN-IT-0007/B` on a card raised against an SO and
+              stays the bare `IN-IT-0007` on a JW-sourced or standalone card.
+              It is rendered as ONE string from the shared helper and left in the
+              same purple mono as the code: splitting it into a second, calmer
+              span would re-implement the separator on this page, and the Sales
+              Order screens (the style reference) already show it undivided —
+              two screens spelling the same code differently is the drift the
+              helper exists to prevent. nowrap + ellipsis keep the revision
+              glued to its code on one line however narrow the tile folds. */}
           <div
             className="fw-700 mono"
-            style={{ fontSize: 18, lineHeight: 1.15, color: 'var(--purple)' }}
+            style={{
+              fontSize: 18,
+              lineHeight: 1.15,
+              color: 'var(--purple)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+            title={itemCodeWithRev(jc.itemCode, jc.itemRevision)}
           >
-            {jc.itemCode}
+            {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
           </div>
           <div className="fw-700" style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
             {jc.itemName || '—'}

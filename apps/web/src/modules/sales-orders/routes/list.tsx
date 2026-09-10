@@ -37,6 +37,7 @@ import {
 } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
 import { exportSoListExcel } from '../lib/import-export';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 // ISSUE-020 — legacy puts its cell classes on the <td> itself (e.g. L11867
 // `<td class="td-ctr mono fw-700">`), not on a wrapper span. td-ctr is
@@ -109,6 +110,13 @@ function lineToInput(l: SalesOrderLine): SalesOrderLineInput {
     partName: l.partName,
     ...(l.material ? { material: l.material } : {}),
     ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
+    // Carried through unconditionally. Rev is compulsory on the input shape, and
+    // this path is a line DELETE from the list — it re-sends the surviving lines
+    // untouched, so dropping the Rev here would blank it on every line of the SO
+    // as a side effect of removing one. Falls back to '0', the value every line
+    // held before anyone typed one, so a line that somehow stored a blank still
+    // satisfies the required field instead of failing the whole save.
+    revision: l.revision || '0',
     uom: l.uom,
     orderQty: l.orderQty,
     rate: Number(l.rate) || 0,
@@ -669,7 +677,8 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
                 <tr key={l.id} style={{ background: 'var(--bg)' }}>
                   <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
                   <td className="mono" style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 700 }}>{l.clientPoLineNo ?? '—'}</td>
-                  <td className="td-code" style={{ color: 'var(--text)' }}>{l.itemCode ?? l.itemCodeText ?? '—'}</td>
+                  {/* CODE/REV — the customer's drawing revision travels with the code. */}
+                  <td className="td-code" style={{ color: 'var(--text)' }}>{itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision)}</td>
                   <td style={{ color: 'var(--blue)', fontWeight: 600 }}>{l.partName}</td>
                   <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
                   <td className="td-ctr mono" style={{ fontSize: 11 }}>

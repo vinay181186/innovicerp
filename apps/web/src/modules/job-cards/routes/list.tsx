@@ -14,6 +14,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
@@ -353,7 +354,19 @@ function JobCardsListPage(): React.JSX.Element {
                     {jc.code}
                   </Link>
                   <span className="fw-700" style={{ fontSize: 13 }}>{jc.itemName || '—'}</span>
-                  <span className="td-code" style={{ color: 'var(--purple)', fontSize: 11 }}>{jc.itemCode}</span>
+                  {/* `CODE/REV` — the customer's drawing revision from the SO
+                      line this card was raised against; a JW-sourced or
+                      standalone card has none and keeps the bare code, with no
+                      trailing slash. Same helper as the Job Card view and the
+                      Sales Order screens so the three cannot spell it
+                      differently. nowrap because a short code must never break
+                      across two lines in a list row. */}
+                  <span
+                    className="td-code"
+                    style={{ color: 'var(--purple)', fontSize: 11, whiteSpace: 'nowrap' }}
+                  >
+                    {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+                  </span>
                   {s
                     ? (() => {
                         const to = s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id';

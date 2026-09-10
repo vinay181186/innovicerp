@@ -60,6 +60,19 @@ export const jobCardListItemSchema = z.object({
   jcDate: z.string(), // ISO date
   itemId: z.string().uuid(),
   itemCode: z.string(),
+  /** The customer's drawing revision, read from the SO line this card was
+   *  raised against (job_cards.source_so_line_id → sales_order_lines.revision).
+   *
+   *  Null whenever there is genuinely no revision to show: a JW-sourced card, a
+   *  card raised standalone, or an SO line since deleted (the FK is ON DELETE
+   *  SET NULL). Null must render as the bare item code — never as a slash with
+   *  nothing after it, and never as `items.revision`, which is a different
+   *  column about the item itself and would be a plausible-looking lie.
+   *
+   *  Display only, and deliberately NOT snapshotted onto the card: if the
+   *  customer reissues the drawing at Rev C, every job card against that line
+   *  should say Rev C, because they are all making that drawing. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string(),
   orderQty: z.number().int().positive(),
   priority: jcPrioritySchema,

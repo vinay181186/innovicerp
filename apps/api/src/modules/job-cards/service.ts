@@ -168,6 +168,18 @@ export async function listJobCards(
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
+        -- The customer's drawing revision, read live off the SO line this card was
+        -- raised against. It is deliberately NOT items.revision, which is a
+        -- different column describing the item master, and not a snapshot on the
+        -- card either: if the customer reissues the drawing, every card against
+        -- that line should report the new revision. The sol join is a LEFT JOIN,
+        -- so JW-sourced and standalone cards correctly come back null.
+        --
+        -- Cast to text on purpose. The contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119; on one
+        -- that has not, it is still the old integer and would arrive here as a
+        -- number wearing a string type. The cast is a no-op once 0119 is in.
+        sol.revision::text AS "itemRevision",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
         COALESCE(s.total_ops, 0)::int        AS "totalOps",
         COALESCE(s.done_ops, 0)::int         AS "doneOps",
@@ -292,6 +304,18 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
+        -- The customer's drawing revision, read live off the SO line this card was
+        -- raised against. It is deliberately NOT items.revision, which is a
+        -- different column describing the item master, and not a snapshot on the
+        -- card either: if the customer reissues the drawing, every card against
+        -- that line should report the new revision. The sol join is a LEFT JOIN,
+        -- so JW-sourced and standalone cards correctly come back null.
+        --
+        -- Cast to text on purpose. The contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119; on one
+        -- that has not, it is still the old integer and would arrive here as a
+        -- number wearing a string type. The cast is a no-op once 0119 is in.
+        sol.revision::text AS "itemRevision",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
         COALESCE(s.total_ops, 0)::int        AS "totalOps",
         COALESCE(s.done_ops, 0)::int         AS "doneOps",
@@ -393,6 +417,10 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     jcDate: dateLike(r['jcDate']),
     itemId: r['itemId'] as string,
     itemCode: (r['itemCode'] as string | null) ?? '',
+    // Null is a real answer here (JW-sourced, standalone, or an SO line since
+    // deleted), so it is passed through rather than coerced to a blank string —
+    // the UI needs to tell "no revision" apart from an empty one.
+    itemRevision: (r['itemRevision'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? '',
     orderQty: Number(r['orderQty']),
     priority: r['priority'] as JobCardListItem['priority'],
