@@ -741,6 +741,32 @@ function nextLogNo(): string {
 //     qc_call_date on the next QC op, T-033 SO/JW auto-close
 //   - the OP_COMPLETE activity log
 //
+// An operation cannot be worked on a day that has not happened yet.
+//
+// Until 2026-09-10 every date box on Op Entry opened pre-filled with today, so
+// this could not arise. The boxes now open blank and the operator types the
+// date, and within the hour a real completion was booked on the live site dated
+// 11-Sep -- "11" typed for "10" -- against IN-JC-26-00005 Op 1. Nothing caught
+// it: a future date is not a shape error, so Zod passes it, and every screen
+// downstream simply believed it.
+//
+// The comparison is against TODAY IN IST, not the server's UTC date. Between
+// 00:00 and 05:30 IST the two disagree, and using UTC would reject the entire
+// night shift's work as "tomorrow". YYYY-MM-DD strings compare correctly with
+// `>`, so no Date parsing is needed and no timezone can creep back in.
+//
+// `label` names the field the operator can see ("Log date", "Start date"), so
+// the message points at the box to fix rather than at an internal name.
+function assertNotFutureDate(value: string, label: string): void {
+  const istToday = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (value > istToday) {
+    throw new ValidationError(
+      `${label} ${value} is in the future — an operation cannot be worked on a day that has ` +
+        `not happened yet. Today is ${istToday}.`,
+    );
+  }
+}
+
 // It does NOT own the role / department-tier gates: those belong to the
 // endpoint, and each caller applies its own before opening the transaction.
 interface ProductionLogParams {
@@ -762,6 +788,9 @@ async function writeProductionLog(
   companyId: string,
   user: AuthContext,
 ): Promise<{ row: typeof opLog.$inferSelect; stamped: StampedMachine }> {
+  // Covers BOTH ways production is booked -- POST /op-entry/op-log and the
+  // quantity carried by a stop -- because both write through here.
+  assertNotFutureDate(input.logDate, 'Log date');
   const op = await loadJcOp(tx, input.jcOpId, companyId);
   if (op.opType === 'outsource') {
     throw new ValidationError(
@@ -991,6 +1020,9 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     await requireFormAccess(user, 'tpi_submit', 'entry');
   }
   const companyId = requireCompany(user);
+  // A QC date box is blank and typed like every other one, so it can be
+  // mistyped like every other one.
+  assertNotFutureDate(input.logDate, 'Inspection date');
 
   return withUserContext(user, async (tx) => {
     // Load op + qc_required + qc_call_date in one go (loadJcOp doesn't carry
@@ -1347,6 +1379,10 @@ export async function updateOpLogTiming(
   user: AuthContext,
 ): Promise<UpdateOpLogTimingResult> {
   const companyId = requireCompany(user);
+  // The fourth way a date reaches op_log. Guarding the three entry paths and
+  // leaving the correction path open would only move the hole -- a retime can
+  // put a row in the future just as easily as an original entry can.
+  assertNotFutureDate(input.logDate, 'Corrected date');
 
   return withUserContext(user, async (tx) => {
     const row = await loadTimingTarget(tx, input.id, companyId);
@@ -1640,6 +1676,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
   // session records shop-floor work → `entry`. Admins bypass.
   await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
+  assertNotFutureDate(input.startDate, 'Start date');
 
   return withUserContext(user, async (tx) => {
     const op = await loadJcOp(tx, input.jcOpId, companyId);
