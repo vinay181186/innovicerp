@@ -70,12 +70,6 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
-/** Server-side IST clock as HH:MM. Asia/Kolkata is a fixed UTC+5:30 offset (no
- *  DST), so the shift is exact. Used as the default log time when a stop
- *  records production without the operator naming a time. */
-function istNowTime(): string {
-  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(11, 16);
-}
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
@@ -182,6 +176,20 @@ export async function listJcOpsEnriched(
         s.rework_raised_qty    AS "reworkRaisedQty",
         s.rework_raised_to_ops AS "reworkRaisedToOps",
         s.computed_status      AS "computedStatus",
+        -- Is a machine holding this op RIGHT NOW? A separate question from
+        -- computed_status, which only ever answers "is there work left". A
+        -- correlated subquery, not a join: an op can carry several historical
+        -- sessions but only one may be 'running' (startOp enforces it), and a
+        -- join would still be the wrong shape if that ever changed.
+        (
+          SELECT r.id
+          FROM public.running_ops r
+          WHERE r.jc_op_id = o.id
+            AND r.company_id = o.company_id
+            AND r.status = 'running'
+          ORDER BY r.created_at DESC
+          LIMIT 1
+        ) AS "activeRunningOpId",
         -- Who actually made the completed qty, per machine (0095 / ADR-126).
         -- The machine columns above are the op's CURRENT machine — where the
         -- REMAINING qty runs — so on a re-routed op they name a machine that
@@ -226,6 +234,7 @@ export async function listJcOpsEnriched(
       reworkPendingQty: Number(r['reworkPendingQty'] ?? 0),
       reworkRaisedQty: Number(r['reworkRaisedQty'] ?? 0),
       reworkRaisedToOps: (r['reworkRaisedToOps'] as string | null) ?? null,
+      activeRunningOpId: (r['activeRunningOpId'] as string | null) ?? null,
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
       ),
@@ -1805,9 +1814,13 @@ export async function generateOspPr(
 //     never be counted while the board still shows the machine running, nor
 //     the reverse.
 //
-// Shift, operator and date are NOT asked for. They are already on the session
-// row and are read from it; re-asking the operator for what the system started
-// the session with is how entries get mistyped.
+// Date, time, shift and operator are ASKED FOR, not inherited from the session.
+// They used to be read off the running_ops row on the grounds that re-asking
+// invites mistyping. It also quietly asserts things that are often untrue: a
+// session started on the night shift by one operator can be stopped the next
+// morning by another, and the entry carried the wrong date, the wrong shift and
+// the wrong name -- silently, with nothing in the record to show it. The
+// operator states the facts of THIS entry, the same way Log asks for them.
 export async function stopOp(
   runningOpId: string,
   input: StopOpInput,
@@ -1818,8 +1831,8 @@ export async function stopOp(
   // commits the produced qty to op_log → `entry`. Admins bypass.
   await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
-  const qty = input.qty ?? 0;
-  const rejectQty = input.rejectQty ?? 0;
+  const qty = input.qty;
+  const rejectQty = input.rejectQty;
 
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -1851,16 +1864,11 @@ export async function stopOp(
           jcOpId: row.jcOpId,
           qty,
           rejectQty,
-          // The session's OWN start date, not "today". A night shift that
-          // starts 22:00 and stops 02:00 belongs to the day it started: that
-          // is the date the operator confirmed at Start, it is the date on the
-          // 'start' marker already in op_log, and using it keeps both halves of
-          // one run on one date instead of straddling midnight.
-          logDate: row.startDate,
-          logTime: input.logTime ?? istNowTime(),
-          shift: row.shift,
-          operatorId: row.operatorId,
-          operatorName: row.operatorName,
+          logDate: input.logDate,
+          logTime: input.logTime,
+          shift: input.shift,
+          operatorId: input.operatorId ?? null,
+          operatorName: input.operatorName ?? null,
           remarks: input.remarks ?? null,
         },
         companyId,

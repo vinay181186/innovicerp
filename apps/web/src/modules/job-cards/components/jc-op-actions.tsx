@@ -292,21 +292,45 @@ export function JcOpFooter({
   //
   // IN-JC-26-00013 op 3 is the case that prompted this: `waiting`, input 0, so
   // every control on it was an invitation the server would reject.
+  //
+  // WHICH of the two shows is a SESSION question, not a status one. It used to
+  // be decided from `computedStatus` (`in_progress` / `running` / any completed
+  // qty → Log, `available` / `waiting` → Start), and that was wrong from the
+  // first booked piece onward: `computedStatus` answers a QUANTITY question —
+  // is there work left on this op — so it flips to `in_progress` the moment
+  // anything is logged and stays there for the rest of the op's life. It has
+  // never been able to say whether a machine is holding the op RIGHT NOW.
+  //
+  // The result was a card stuck offering Log on an operation nobody was
+  // running. Live proof: IN-JC-26-00017 op 1 has 30 of 100 pcs done and 70 still
+  // pending, and all three of its sessions are `stopped` — nothing is running on
+  // it, yet the card offered ✚ Log. The operator's real next step there is to
+  // start the machine again.
+  //
+  // So we ask `activeRunningOpId` instead (op-entry.ts): it is the running_ops
+  // row RUNNING this op, or null when no machine is holding it.
+  //   activeRunningOpId !== null → ✚ Log   (add production to work in progress)
+  //   activeRunningOpId === null → ▶ Start (nothing running; start before logging)
+  // The two are now mutually exclusive by construction — they are branches of
+  // one chain below, so exactly one of them can ever render.
+  //
+  // `qc_pending` still suppresses BOTH, exactly as before: Log was excluded
+  // explicitly and Start was excluded implicitly (the old whitelist named only
+  // `available` and `waiting`), so the exclusion is now spelled out on each.
   const showLog =
     !isOut &&
     !isQc &&
     canOpEntry &&
     op.available > 0 &&
     op.computedStatus !== 'qc_pending' &&
-    (op.computedStatus === 'in_progress' ||
-      op.computedStatus === 'running' ||
-      op.completedQty > 0);
+    op.activeRunningOpId !== null;
   const showStart =
     !isQc &&
     !isOut &&
     canOpEntry &&
     op.available > 0 &&
-    (op.computedStatus === 'available' || op.computedStatus === 'waiting');
+    op.computedStatus !== 'qc_pending' &&
+    op.activeRunningOpId === null;
   const showDone = !isOut && !isQc && op.computedStatus === 'complete';
   // A third-party-inspection op is an ordinary QC op whose operation name says
   // TPI (e.g. "TPI Final Inspection") — the routing carries no separate flag.
@@ -367,13 +391,14 @@ export function JcOpFooter({
       ) : showDone ? (
         <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Done</span>
       ) : showLog ? (
-        /* T33: Log only once the op is started; otherwise the Start button
-           below is the only action shown. */
+        /* T33: Log only while a session is actually running on this op. Start
+           and Log are the two ends of one chain, so exactly one of them shows —
+           an op with pending qty and no running session offers Start, never
+           Log. */
         <button type="button" className="btn btn-sm btn-primary" onClick={() => onLog(op.id)}>
           ✚ Log
         </button>
-      ) : null}
-      {showStart ? (
+      ) : showStart ? (
         <button type="button" className="btn btn-sm" onClick={() => onStart(op.id)}>
           ▶ Start
         </button>

@@ -229,7 +229,18 @@ describe('op-entry service', () => {
       },
       admin,
     );
-    const stopped = await service.stopOp(started.id, {}, admin);
+    const stopped = await service.stopOp(
+      started.id,
+      {
+        qty: 0,
+        rejectQty: 0,
+        logDate: '2026-05-01',
+        logTime: '12:30',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
     expect(stopped.status).toBe('stopped');
     expect(stopped.endedAt).not.toBeNull();
     // Cleanup
@@ -427,7 +438,18 @@ describe('op-entry service', () => {
       },
       admin,
     );
-    await service.stopOp(running.id, {}, admin);
+    await service.stopOp(
+      running.id,
+      {
+        qty: 0,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        logTime: '08:30',
+        shift: 'day',
+        operatorName: 'Audit Op',
+      },
+      admin,
+    );
     await service.submitOpLog(
       {
         jcOpId: auditOpId,
