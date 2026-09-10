@@ -8450,3 +8450,64 @@ no database constraint, so no migration was needed — checked, not assumed.
   IN-JWINV-00001, Adani Power Limited, SINGLE FIRE CHECK LEVER, 10 x 10.00,
   GST 18% = 18.00, total 118.00, "Indian Rupees One Hundred Eighteen Only" —
   and again with prices hidden.
+
+## ADR-158: The SO line's Rev is the customer's drawing revision, typed and compulsory — not a consequence of the upload
+
+**Date:** 2026-09-10
+**Status:** Accepted. Supersedes the Rev half of ADR-143.
+
+### Context
+
+ADR-143 (migration 0112) made `sales_order_lines.revision` an integer the server owned: a line was born at Rev 0 and the number climbed by one every time the drawing FILE changed. It was a tidy rule and it was modelling the wrong thing.
+
+A revision is printed on the drawing the customer sends. It is a letter as often as a number. It moves when they re-issue the drawing, whether or not anyone uploads a file. Welding it to the upload meant a planner could not record "this is Rev B" at all, and re-uploading the same drawing after a bad scan minted a Rev that appears on no piece of paper anywhere.
+
+### Decision
+
+Rev becomes text the user types, compulsory, and independent of the drawing in BOTH directions — typing a Rev writes no drawing history, and uploading a drawing does not move the Rev. Nothing on the server computes it.
+
+Compulsory bites in two places: the form blocks the save and names the offending line, and the input schema requires a non-empty string so a client that skips the form is refused too.
+
+### Alternatives Considered
+
+- **Keep the integer and add a separate text field** — rejected. Two revision fields on one line is two things to disagree; the users only ever meant one.
+- **Leave Rev server-owned and let the user override** — rejected. An override that the next upload silently overwrites is worse than no field.
+- **Drop the column default now that the form insists** — rejected. The BOM cascade and JW-sourced lines insert without going through the schema and have no human to ask; a NOT NULL column with no default would make those paths fail. The form is the layer that can actually insist.
+
+### Consequences
+
+- The cast was proved lossless against live data before it was written: **PROD 45 live lines — 41 at 0, 4 at 1; TEST 2 lines, both 0.** Every value a small non-negative integer.
+- **The drawing history would have started lying, and that is the part worth remembering.** Its rows were labelled "Rev 0", "Rev 1" — those numbers WERE the line's Rev. They cannot be once Rev is typed: a drawing can change three times under one revision, and a revision can move without the drawing changing at all. So `revision_no` keeps its old job under an honest new name — "the Nth time this line's drawing changed" — still an integer because it orders the history and backs a `(so_line_id, revision_no)` unique index. The tab writes it as `#1, #2, #3` and shows the line's real Rev beside it, snapshotted per row as `line_revision_text`.
+- That backfill is **exact, not a guess**: until 0119 the two were the same number, so `revision_no::text` is precisely what the Rev was at that moment. A row the backfill could not reach shows a dash and says so on hover rather than inventing one.
+- `revision_no` can no longer be derived from the Rev, so it is allocated from `MAX(revision_no)` per line, seeded once per save and handed out by one closure. That also closes a latent crash: the same line named twice in one payload could previously write two rows on the same number and hit the unique index.
+- Costs one extra grouped query on the SO update path — scoped to one SO and indexed, but it is a new query on a hot write path.
+- The Excel line-import template gains a Rev column. Without it, importing fifty lines leaves fifty lines on '0' with no way to correct them but typing.
+- Equipment-type SOs have no Rev box of their own and save on the '0' default. Unchanged behaviour for them; a typed Rev there is a small follow-up, not something taken on here.
+- Migration 0119 applied to TEST and verified live. **Not applied to production** — it needs the user's word, and the code must not ship there before it.
+
+## ADR-159: An item code carries its drawing revision — `CODE/REV` — and only where an SO line is genuinely behind it
+
+**Date:** 2026-09-10
+**Status:** Accepted
+
+### Context
+
+An item code alone does not say which drawing it is being made to. The revision sat in its own cell on the SO detail and nowhere at all on the Job Card, so the shop floor read `IN-IT-0007` and had to go looking. The user asked for `itemcode/revision` "whichever the location itemcode shows", naming Job Card view.
+
+### Decision
+
+One shared helper (`apps/web/src/lib/item-code.ts`) writes it as a single string, so the separator and the empty cases cannot drift between screens. Applied to: SO detail line table, SO list expanded lines, Job Card view's Item tile, Job Card list, and the printed Job Card.
+
+### Alternatives Considered
+
+- **Every screen that shows an item code** — rejected as stated. 88 files render one; about 60 could technically reach an SO line. Several would be actively wrong: an OSP delivery challan line shows a SERVICE, not the customer's part, and stamping their drawing revision on it would mislead. The full map exists; the rest waits on the user naming which they want.
+- **Snapshot the revision onto the job card** — rejected. If the customer re-issues at Rev C, every job card against that line should say Rev C: they are all making that drawing. It is read live through the LEFT JOIN the query already had.
+- **`CODE/REV` in the Excel export cell** — rejected. That sheet is read in Excel, not looked at as a picture of the screen. The code is what people filter and VLOOKUP against the Items master, and `IN-IT-0007/B` there would break every one of those lookups and split one item into as many "items" as it has revisions. It gets its own `Drawing Rev` row instead.
+
+### Consequences
+
+- **`items.revision` is a different column about the item itself and is never substituted.** Doing so would put a plausible-looking wrong revision on every card, which is worse than a blank. Anyone extending this must check which of the two they are holding.
+- **Null is a correct answer, not a gap.** A job card may be raised from a JW line or standalone (`source_so_line_id` is nullable, and a CHECK allows neither source), and the SO line may since have been deleted (ON DELETE SET NULL). Those show the bare code — no slash, no placeholder.
+- The join is cast `::text`, so it behaves identically on a database where 0119 has not landed yet.
+- The SO detail's separate "Rev 1" line is gone: it is the same value the Item Code cell now carries, and one fact printed twice in one row reads as two facts that might disagree.
+- Job Card list search does not match a typed revision — the search runs server-side and that column is not in the query. Left as a known gap rather than filtered on the client, which would hide rows the server never sent.
