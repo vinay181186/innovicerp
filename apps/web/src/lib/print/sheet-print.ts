@@ -530,10 +530,16 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   const footer = sub('footer');
   const signature = sub('signature');
 
-  const addressHtml = company.addressLines
-    .filter(Boolean)
-    .map((l) => `<p class="co-addr">${esc(l)}</p>`)
-    .join('');
+  // The works address prints as ONE line on the letterhead (user, 2026-09-10).
+  // The lines arrive split because that is how the business card and the
+  // `companies` row both hold them; the letterhead joins them back with ", "
+  // rather than stacking one paragraph per line, which cost three lines of
+  // header height and read as an address block rather than a letterhead.
+  // It still WRAPS if a longer address is ever set -- nowrap would run it off
+  // the paper -- but the real address fits inside the column with room to
+  // spare. This is the shared letterhead, so it holds for all five documents.
+  const addressText = company.addressLines.filter(Boolean).join(', ');
+  const addressHtml = addressText ? `<p class="co-addr">${esc(addressText)}</p>` : '';
   // e-mail / phone kept on the letterhead: the old challan carried them in a
   // footer strip that this layout does not have, and dropping a vendor-facing
   // contact line off the document would be a loss, not a redesign.
