@@ -29,8 +29,11 @@ import type { JcOpEnriched } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { OpEntryForm } from './op-entry-form';
 
-/** What the popup was opened against. `mode` decides which half of the entry
- *  form shows first; the operator can still switch inside it. */
+/** What the popup was opened against. Which half of the entry form shows is
+ *  decided by `activeRunningId`, never by `mode`: a running operation cannot be
+ *  started and an idle one has nothing to complete, so there is no choice to
+ *  make. `mode` remains on the type because the callers still express an
+ *  intent when they open the box; nothing reads it. */
 export interface OpEntryModalTarget {
   op: JcOpEnriched;
   /** The running session on this op, or null when nothing is running. Decides
@@ -64,18 +67,21 @@ export function OpEntryModal({
    *  the same row does not throw the choice away. Optional. */
   onModeChange?: (mode: 'start' | 'complete') => void;
 }): React.JSX.Element {
-  const { op, activeRunningId, mode } = target;
+  const { op, activeRunningId } = target;
   const isQc = op.opType === 'qc' || op.qcRequired;
   const machine = op.machineCode ?? op.machineCodeText ?? '—';
 
-  // The title says what the operator pressed, so the box cannot be mistaken for
-  // the one they meant to open. A QC op has its own form inside and its own
-  // vocabulary, so it gets its own title rather than being called "production".
+  // The title names what the box is actually for, read off the SESSION rather
+  // than off what the caller asked for. A running operation cannot be started,
+  // so it must never be headed "Start operation" -- which is exactly what a
+  // stale ?mode=start used to do on IN-JC-26-00017 Op 1 while it was running.
+  // A QC op has its own form inside and its own vocabulary, so it keeps its own
+  // title rather than being called production either way.
   const title = isQc
     ? '✔ QC inspection'
-    : mode === 'start'
-      ? '▶ Start operation'
-      : '✚ Log production';
+    : activeRunningId
+      ? '✚ Log production'
+      : '▶ Start operation';
 
   return (
     <div
@@ -157,7 +163,6 @@ export function OpEntryModal({
           <OpEntryForm
             op={op}
             activeRunningId={activeRunningId}
-            mode={mode}
             {...(onModeChange ? { onModeChange } : {})}
             // Close once the entry has actually landed. Leaving the box open on
             // a successful save invites a second identical submission, which on
