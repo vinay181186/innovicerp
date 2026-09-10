@@ -349,31 +349,53 @@ const SHEET_STYLE = `
     --f-head:"Times New Roman",Times,serif;
     font-family:var(--f-body);
   }
-  /* letterhead — was 3.5/2.5mm of padding, 1mm + .8mm of paragraph margin */
-  .po-sheet .lh-in{padding:2.2mm 5mm 1.6mm}
-  .po-sheet .co-name{font-size:16pt;margin:0 0 .6mm}
-  .po-sheet .co-addr{font-size:8.5pt;line-height:1.2;margin:0 0 .3mm}
-  .po-sheet .co-ids{font-size:8.5pt;line-height:1.2}
-  .po-sheet .lh-rule{margin:1.2mm 0 1.4mm}
+  /* letterhead — was 3.5/2.5mm of padding, 1mm + .8mm of paragraph margin.
+     Tightened again on 2026-09-10: type sizes are untouched, only the space
+     between the lines, so the block reads exactly as before and simply starts
+     the goods table higher up the sheet. */
+  .po-sheet .lh-in{padding:1.6mm 5mm 1.1mm}
+  .po-sheet .co-name{font-size:16pt;margin:0 0 .4mm}
+  .po-sheet .co-addr{font-size:8.5pt;line-height:1.15;margin:0 0 .15mm}
+  .po-sheet .co-ids{font-size:8.5pt;line-height:1.15}
+  .po-sheet .lh-rule{margin:.9mm 0 1mm}
   .po-sheet .doc-title{font-size:13pt;letter-spacing:.12em;line-height:1.05}
   /* the two boxes — was 3.5mm of padding and 1.2mm between the rows */
-  .po-sheet .split > div{padding:2.2mm 5mm}
-  .po-sheet .bt{font-size:8.5pt;margin:0 0 1.2mm;padding-bottom:.7mm}
+  .po-sheet .split > div{padding:1.6mm 5mm}
+  /* NO RULE UNDER THE BOX HEADINGS on the purchase order (user, 2026-09-10).
+     VENDOR / SUPPLIER, SHIP TO and ORDER all carry .bt, so the underline goes
+     from all three at once, and the padding that held it goes with it -- the
+     heading now sits directly above its own fields. The shared .bt keeps its
+     rule for the four other documents on this sheet. */
+  .po-sheet .bt{font-size:8.5pt;margin:0 0 .8mm;padding-bottom:0;border-bottom:0}
   /* The label column widens from 28mm to 33mm ON THIS DOCUMENT ONLY. Times is
      a wider face than the Arial Narrow the labels were set in, and at 28mm
      "CONTACT PERSON" wrapped onto a second line and cost more height than the
      5mm buys back. The value column keeps the rest of the box. */
-  .po-sheet .kv{grid-template-columns:33mm 1fr;gap:.5mm 3mm}
+  .po-sheet .kv{grid-template-columns:33mm 1fr;gap:.35mm 3mm}
   .po-sheet .kv dt{font-size:9pt}
   .po-sheet .kv dd.mono{font-size:9.5pt}
   .po-sheet .kv dd.vname{line-height:1.15}
+  /* THE ONE RULE LEFT IN THE LEFT BOX: the line under the vendor's GSTIN that
+     separates the vendor from SHIP TO. It runs the FULL width of the left
+     column, border to centre divider. width:auto plus a negative margin on
+     BOTH sides is what makes it touch: each -5mm cancels one side of the
+     column's 5mm padding, so the rule starts on the box's left border and ends
+     on the divider. The shared half-width calc() stays as it is for any other
+     document that ever uses a second section. */
+  .po-sheet .boxdiv{width:auto;margin:1.6mm -5mm}
   /* the goods table — was 2mm / 2.2mm / 2.4mm of cell padding */
   .po-sheet .colh{padding:1.3mm 2.5mm!important;font-size:9pt}
   .po-sheet tbody td{padding:1.4mm 2.5mm}
   .po-sheet .num,.po-sheet .qty,.po-sheet .money{font-size:9.5pt}
-  .po-sheet .icode{font-size:9pt}
-  .po-sheet .iname{line-height:1.15;margin-top:.2mm}
-  .po-sheet .idesc{font-size:9pt;line-height:1.25;margin-top:.3mm}
+  /* On the purchase order the ITEM CODE is the bold line and the name and the
+     description are plain (user, 2026-09-10) -- the buyer and the vendor match
+     the order on the code, so that is the line the eye should land on. The
+     shared table keeps the opposite emphasis for the challans and the GRN.
+     .idesc b is the small uppercase label in front of the description and is
+     left bold: it is a label, not the description text. */
+  .po-sheet .icode{font-size:9pt;font-weight:700}
+  .po-sheet .iname{line-height:1.15;margin-top:.2mm;font-weight:400}
+  .po-sheet .idesc{font-size:9pt;line-height:1.25;margin-top:.3mm;font-weight:400}
   .po-sheet .idesc b{font-size:9pt}
   .po-sheet .sumlbl{font-size:9pt}
   /* the money block and everything under it */
