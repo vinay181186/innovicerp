@@ -15,6 +15,7 @@
     "test:e2e": "pnpm --filter web run test:e2e",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
+    "check:agents": "node scripts/check-agents.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
     "migrate:export": "pnpm --filter @innovic/migration run export"
