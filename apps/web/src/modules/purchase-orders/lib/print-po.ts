@@ -202,11 +202,26 @@ export function printPurchaseOrder(args: {
     // hold the country. Everything else about the company is the row's.
     company: { ...buildDocCompany(company), addressLines: [...COMPANY_CARD_ADDRESS_LINES] },
     recipient: { label: 'Vendor / Supplier', fields: recipientFields },
-    // There is deliberately NO "Ship to" block either. It printed our own name,
-    // address and GSTIN a second time, directly under a letterhead already
-    // carrying all three on every page — and it brought a full-width rule with
-    // it. Removed on the user's instruction (2026-09-09) along with the Order
-    // box's Ship to field: one works address, printed once.
+    // SHIP TO — where the goods are actually to be delivered. It sits INSIDE
+    // the Vendor / Supplier box, under a half-width rule below that box's GSTIN
+    // row, so the right-hand Order box keeps its fields and its alignment
+    // untouched (user's instruction, 2026-09-10).
+    //
+    // The address is the same COMPANY_CARD_ADDRESS_LINES the letterhead prints,
+    // not a second copy typed out here: one definition, so the two can never
+    // disagree about where the vendor is meant to send the material.
+    shipTo: {
+      label: 'Ship to',
+      fields: [
+        { label: 'Name', value: company?.name ?? '', variant: 'name' },
+        {
+          label: 'Address',
+          value: COMPANY_CARD_ADDRESS_LINES[0] ?? '',
+          extra: [...COMPANY_CARD_ADDRESS_LINES.slice(1)],
+        },
+        { label: 'GSTIN', value: company?.gstNumber ?? '', variant: 'mono' },
+      ],
+    },
     document: { label: 'Order', fields: documentFields },
     lines: lines.map((l) => ({
       itemCode: l.itemCode ?? l.itemCodeText ?? '',
