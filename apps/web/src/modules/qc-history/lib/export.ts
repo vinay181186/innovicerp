@@ -2,6 +2,11 @@
 // L23620-23621). Builds an .xlsx from the already-loaded rows using SheetJS
 // (xlsx — an existing dependency). Dates are formatted DD-MM-YYYY (IST-safe via
 // fmtDate, no timezone shift) to match the on-screen tables.
+//
+// The customer's drawing revision gets its own "Drawing Rev" column rather than
+// being glued onto Item as CODE/REV the way the screen shows it. A spreadsheet
+// is filtered and VLOOKUP-ed against Item Master, and a slashed code matches
+// nothing there. Same call as the Job Card export (export-job-card-excel.ts).
 
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import * as XLSX from 'xlsx';
@@ -24,6 +29,7 @@ export function exportCompletedQc(logs: QcHistoryLogRow[]): void {
     Op: `Op${l.opSeq}`,
     SO: l.soCode ?? '',
     Item: l.itemCode ?? '',
+    'Drawing Rev': l.itemRevision ?? '',
     Operation: l.operation,
     Accepted: l.accepted,
     Rejected: l.rejected,
@@ -42,6 +48,7 @@ export function exportPendingQc(pending: QcHistoryPendingRow[]): void {
     Op: `Op${o.opSeq}`,
     SO: o.soCode ?? '',
     Item: o.itemCode ?? '',
+    'Drawing Rev': o.itemRevision ?? '',
     Operation: o.operation,
     Order: o.orderQty,
     Done: o.completed,

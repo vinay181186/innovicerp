@@ -20,6 +20,15 @@ export const ospWipRowSchema = z.object({
   outsourceStatus: z.string().nullable(),
   itemId: z.string().uuid().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for the job card behind this operation
+   *  (job_cards.source_so_line_id → sales_order_lines.revision). It is NOT
+   *  carried by v_osp_wip — the service re-joins job_cards → sales_order_lines
+   *  off the view's job_card_id to reach it, because changing the view would
+   *  need a migration. Null on an op whose card came from a JW line or was
+   *  raised standalone, which is ordinary here, and null renders as the bare
+   *  item code. Never items.revision, which is a different column about the
+   *  item master. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
   vendorName: z.string().nullable(),

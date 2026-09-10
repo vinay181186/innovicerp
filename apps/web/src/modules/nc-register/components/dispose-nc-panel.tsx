@@ -9,6 +9,7 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 export interface JcOpOption {
   opSeq: number;
@@ -91,7 +92,11 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             </span>
           </CtxField>
           <CtxField label="ITEM">
-            {nc.itemCodeText}
+            {/* Whoever disposes an NC is deciding against a drawing, so this
+                context field shows the live item code with its revision — the
+                same joined pair the list and the detail header show. It falls
+                back to itemCodeText, the reporter's typed snapshot, bare. */}
+            {nc.itemCode ? itemCodeWithRev(nc.itemCode, nc.itemRevision) : nc.itemCodeText}
             {nc.itemNameText ? ` ${nc.itemNameText}` : ''}
           </CtxField>
           <CtxField label="OPERATION">

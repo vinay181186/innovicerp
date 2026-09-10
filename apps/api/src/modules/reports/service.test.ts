@@ -62,7 +62,8 @@ describe('reports service', () => {
   it('runReport "daily-op-log" returns rows with the expected columns', async () => {
     const result = await service.runReport('daily-op-log', {}, admin);
     expect(result.slug).toBe('daily-op-log');
-    expect(result.columns.length).toBe(10);
+    // 11 since the SO line's Drawing Rev column was added after JC.
+    expect(result.columns.length).toBe(11);
     expect(result.rowCount).toBe(result.rows.length);
     // op_log has 24 migrated rows; expect a non-zero count without filters.
     expect(result.rowCount).toBeGreaterThan(0);

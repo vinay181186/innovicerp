@@ -88,6 +88,11 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         dueDate: salesOrderLines.dueDate,
         clientPoLineNo: salesOrderLines.clientPoLineNo,
         itemCode: items.code,
+        // The customer's drawing revision typed on this line (migration 0119).
+        // Cast to text on purpose: the contract types it as a string, but a
+        // database that has not had 0119 still holds the old integer there and
+        // would hand the UI a number wearing a string type. No-op once 0119 is in.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
       })
       .from(salesOrderLines)
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
@@ -119,6 +124,12 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           sourceSoLineId: jobCards.sourceSoLineId,
           itemCode: items.code,
           itemName: items.name,
+          // The customer's drawing revision, read live off the SO line this card
+          // was raised against rather than snapshotted: if the customer reissues
+          // the drawing, every card against that line should report the new
+          // revision. LEFT JOIN so a card whose line has gone still comes back,
+          // with a null revision. Cast to text for the same reason as above.
+          itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
           // Full JC row needed for calc-engine
           companyId: jobCards.companyId,
           jcDate: jobCards.jcDate,
@@ -135,6 +146,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         })
         .from(jobCards)
         .leftJoin(items, and(eq(items.id, jobCards.itemId), isNull(items.deletedAt)))
+        .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
         .where(
           and(
             inArray(jobCards.sourceSoLineId, lineIds),
@@ -356,6 +368,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           id: jc.id,
           code: jc.code,
           itemCode: jc.itemCode ?? null,
+          itemRevision: jc.itemRevision ?? null,
           itemName: jc.itemName ?? null,
           orderQty: jc.orderQty,
           doneQty: rollup.doneQty,
@@ -394,6 +407,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         lineNo: line.lineNo,
         clientPoLineNo: line.clientPoLineNo,
         itemCode: line.itemCode ?? null,
+        itemRevision: line.itemRevision ?? null,
         itemCodeText: line.itemCodeText,
         partName: line.partName ?? null,
         orderQty: line.orderQty,

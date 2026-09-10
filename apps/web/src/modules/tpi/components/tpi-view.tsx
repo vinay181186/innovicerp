@@ -21,6 +21,7 @@ import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
@@ -44,6 +45,10 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'OP',
       'SO',
       'Item',
+      // The drawing revision gets its own column instead of riding inside Item
+      // as CODE/REV. This sheet is filtered and VLOOKUP-ed against Item Master,
+      // where a slashed code matches nothing. Same call as the Job Card export.
+      'Drawing Rev',
       'Operation',
       'Acc',
       'Rej',
@@ -59,6 +64,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       `Op${l.opSeq}`,
       l.soCode ?? '',
       l.itemCode ?? '',
+      l.itemRevision ?? '',
       l.operation,
       l.accepted,
       l.rejected,
@@ -233,7 +239,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         <td style={{ fontSize: 11 }}>Op{l.opSeq}</td>
                         <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{l.soCode ?? '—'}</td>
                         <td style={{ fontSize: 11, color: 'var(--purple)' }}>
-                          {l.itemCode ?? '—'}
+                          {itemCodeWithRev(l.itemCode, l.itemRevision)}
                         </td>
                         <td style={{ fontSize: 11 }}>{l.operation}</td>
                         <td className="mono fw-700" style={{ color: 'var(--green)' }}>
@@ -422,7 +428,8 @@ function PendingTpi(props: {
             </span>
           ) : null}
           <div className="text2" style={{ fontSize: 11 }}>
-            {o.soCode ?? '—'} • {o.itemCode ?? '—'} • Order: {o.orderQty} pcs
+            {o.soCode ?? '—'} • {itemCodeWithRev(o.itemCode, o.itemRevision)} • Order:{' '}
+            {o.orderQty} pcs
           </div>
           {o.callDate ? (
             <div style={{ fontSize: 10, color: 'var(--amber)' }}>Called: {o.callDate}</div>

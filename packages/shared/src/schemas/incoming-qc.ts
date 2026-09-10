@@ -26,6 +26,14 @@ export const incomingQcPendingRowSchema = z.object({
   opSeq: z.number().int().nullable(),
   opName: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision, read off the SO line behind this line's
+   *  job card along the same PO line → jc_op → JC → SO trace as soCode
+   *  (sales_order_lines.revision). This queue deliberately mixes two kinds of
+   *  row: an OSP return does reach an SO line and carries a revision, while a
+   *  raw-material receipt from a vendor has no SO behind it at all and is
+   *  correctly null here — a blank on half the rows is the truth, not a gap.
+   *  Never items.revision, which is a different column about the item master. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   receivedQty: z.number().int(),
   pendingQty: z.number().int(),
@@ -45,6 +53,12 @@ export const incomingQcCompletedRowSchema = z.object({
   respDays: z.number().int().nullable(),
   vendorName: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision the receipt was inspected against, traced
+   *  the same way as on the pending row (PO line → jc_op → JC →
+   *  sales_order_lines.revision). Null on raw-material receipts, which have no
+   *  SO line behind them, and null shows the bare item code. Never
+   *  items.revision. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   receivedQty: z.number().int(),
   acceptedQty: z.number().int(),

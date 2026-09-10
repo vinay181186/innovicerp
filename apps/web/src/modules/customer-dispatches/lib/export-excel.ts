@@ -14,6 +14,11 @@ const COLUMNS = [
   'JC No',
   'CPO Ln',
   'Item Code',
+  // The customer's drawing revision gets its OWN column rather than being
+  // pasted onto the item code. People filter this sheet and VLOOKUP the code
+  // column against Item Master; "IN-IT-0007/B" would match nothing there. Same
+  // decision as the Job Card export.
+  'Drawing Rev',
   'Item Name',
   'Qty',
   'UOM',
@@ -33,6 +38,7 @@ export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFi
     r.jcNo ?? '',
     r.clientPoLineNo ?? '',
     r.itemCode ?? r.itemCodeText ?? '',
+    r.itemRevision ?? '',
     r.itemName,
     r.qty,
     r.uom ?? 'NOS',

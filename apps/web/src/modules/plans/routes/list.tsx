@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { PlanningKpiStrip } from '../components/planning-kpi-strip';
@@ -253,7 +254,16 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                     </td>
                     <td>{TYPE_ICON[row.planType]}</td>
                     <td>
-                      <div>{row.itemCode ?? row.itemCodeText ?? '—'}</div>
+                      {/* `CODE/REV` — the customer's drawing revision from the
+                          SO line this plan was raised against. A JW-sourced or
+                          ad-hoc plan has none and keeps the bare code, with no
+                          trailing slash. Same helper as Job Cards and the Sales
+                          Order screens so the three cannot spell it differently.
+                          nowrap because a short code must never break across two
+                          lines in a list row. */}
+                      <div style={{ whiteSpace: 'nowrap' }}>
+                        {itemCodeWithRev(row.itemCode ?? row.itemCodeText, row.itemRevision)}
+                      </div>
                       {row.itemName ?? row.itemNameText ? (
                         <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                           {row.itemName ?? row.itemNameText}

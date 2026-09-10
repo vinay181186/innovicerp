@@ -638,10 +638,27 @@ export async function getPurchaseOrder(
       .select({
         row: purchaseOrderLines,
         itemCode: items.code,
+        // The customer's drawing revision for THIS line, off the SO line it was
+        // raised against. Cast to text because the contract types it as a
+        // string and the column is only text on a database that has had
+        // migration 0119; without the cast a pre-0119 database would hand the
+        // UI a number wearing a string type. Never items.revision -- a
+        // different column about the item master, which would print a
+        // plausible-looking wrong revision on the vendor's copy of the PO.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
         sourcePrCode: purchaseRequests.code,
       })
       .from(purchaseOrderLines)
       .leftJoin(items, and(eq(items.id, purchaseOrderLines.itemId), isNull(items.deletedAt)))
+      // LEFT, never inner: a line typed by hand on the PO form has no SO behind
+      // it and must still come back, with itemRevision null.
+      .leftJoin(
+        salesOrderLines,
+        and(
+          eq(salesOrderLines.id, purchaseOrderLines.sourceSoLineId),
+          isNull(salesOrderLines.deletedAt),
+        ),
+      )
       // Same join-the-code pattern as items above: the line stores a uuid, the
       // reader needs the PR number it can actually read.
       .leftJoin(
@@ -672,7 +689,9 @@ export async function getPurchaseOrder(
     }
 
     const header = toPurchaseOrder(headerRow.row);
-    const lines = lineRows.map((r) => toPurchaseOrderLine(r.row, r.itemCode, r.sourcePrCode));
+    const lines = lineRows.map((r) =>
+      toPurchaseOrderLine(r.row, r.itemCode, r.sourcePrCode, r.itemRevision),
+    );
     return {
       ...(showMoney ? header : hidePoHeaderMoney(header)),
       vendorName: headerRow.vendorName,
@@ -729,6 +748,11 @@ function toPurchaseOrderLine(
    *  join-the-code pattern as `itemCode`. Null when the line has no PR behind
    *  it, and on the write-back paths that return a freshly inserted row. */
   sourcePrCode: string | null = null,
+  /** The customer's drawing revision joined from sales_order_lines.revision on
+   *  source_so_line_id -- same join-the-value pattern again. Null when the line
+   *  has no SO line behind it, and on the write-back paths that return a
+   *  freshly inserted row without the join. */
+  itemRevision: string | null = null,
 ): PurchaseOrderLine {
   return {
     id: row.id,
@@ -738,6 +762,7 @@ function toPurchaseOrderLine(
     itemId: row.itemId,
     itemCodeText: row.itemCodeText,
     itemCode,
+    itemRevision,
     itemName: row.itemName,
     qty: row.qty,
     rate: row.rate,

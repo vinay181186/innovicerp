@@ -8,6 +8,7 @@
 import type { CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 /** One dispatch document plus the register rows that belong to it. */
 export type DispatchGroup = {
@@ -217,8 +218,11 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
               <td className="mono" style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
                 {l.clientPoLineNo ?? '—'}
               </td>
+              {/* Code carries the customer's drawing revision — "IN-IT-0007/B"
+                  — read off the SO line this piece shipped against. A line with
+                  no SO behind it keeps the bare code. */}
               <td className="td-code" style={{ color: 'var(--purple)' }}>
-                {l.itemCode ?? l.itemCodeText ?? '—'}
+                {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
               </td>
               <td className="fw-700">{l.itemName}</td>
               <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>-{l.qty}</td>

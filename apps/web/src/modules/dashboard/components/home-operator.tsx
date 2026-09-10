@@ -5,6 +5,7 @@
 import type { HomeResponse } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 function elapsedStr(min: number): string {
   return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
@@ -85,7 +86,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                     <td className="td-code" style={{ color: 'var(--cyan)', fontWeight: 700 }}>{r.jcCode}</td>
                     <td className="td-ctr mono">{r.opSeq}</td>
                     <td><b>{r.machine ?? '—'}</b></td>
-                    <td className="td-code" style={{ color: 'var(--text2)', fontSize: 11 }}>{r.itemCode ?? ''}</td>
+                    <td className="td-code" style={{ color: 'var(--text2)', fontSize: 11 }}>{itemCodeWithRev(r.itemCode, r.itemRevision, '')}</td>
                     <td className="td-ctr mono" style={{ fontSize: 15, fontWeight: 800, color: 'var(--sig-warn)' }}>{r.available}</td>
                     <td style={{ fontSize: 11, color: r.isOverdue ? 'var(--sig-critical)' : 'var(--text2)', fontWeight: r.isOverdue ? 700 : 400 }}>
                       {r.dueDate ?? '—'}{r.isOverdue ? ' ⚠' : ''}

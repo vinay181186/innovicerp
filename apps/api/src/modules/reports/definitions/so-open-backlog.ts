@@ -30,6 +30,11 @@ export const soOpenBacklogReport: RegisteredReport = {
       { key: 'so_type', label: 'Type', type: 'text' },
       { key: 'line_no', label: 'Line', type: 'number' },
       { key: 'item_code', label: 'Item code', type: 'text' },
+      // The customer's drawing revision, straight off the SO line. Its own
+      // column rather than an "/REV" suffix on item_code: this report is read
+      // in Excel, where item_code is filtered and VLOOKUP'd against Item
+      // Master, and a suffix would split one item into one per revision.
+      { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
       { key: 'item_name', label: 'Item name', type: 'text' },
       { key: 'order_qty', label: 'Order qty', type: 'number' },
       { key: 'completed_qty', label: 'Completed qty', type: 'number' },
@@ -57,6 +62,10 @@ export const soOpenBacklogReport: RegisteredReport = {
         so.type::text                            AS so_type,
         sol.line_no                              AS line_no,
         COALESCE(it.code, sol.item_code_text, '—') AS item_code,
+        -- sol is the driving table, so no join is needed at all. Cast to text
+        -- because production has not had migration 0119 applied and still
+        -- holds an integer in this column.
+        sol.revision::text                       AS so_revision,
         COALESCE(it.name, sol.part_name)         AS item_name,
         sol.order_qty                            AS order_qty,
         COALESCE((
@@ -105,6 +114,7 @@ export const soOpenBacklogReport: RegisteredReport = {
       so_type: String(r['so_type'] ?? ''),
       line_no: r['line_no'] != null ? Number(r['line_no']) : 0,
       item_code: String(r['item_code'] ?? ''),
+      so_revision: String(r['so_revision'] ?? ''),
       item_name: String(r['item_name'] ?? ''),
       order_qty: Number(r['order_qty'] ?? 0),
       completed_qty: Number(r['completed_qty'] ?? 0),

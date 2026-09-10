@@ -347,6 +347,13 @@ export async function getPlanningSoDetail(
         itemCode: items.code,
         itemName: items.name,
         itemType: items.itemType,
+        // The customer's drawing revision typed on this SO line. Selected as its
+        // own cast expression rather than read off `line` because the contract
+        // types it as a string, and a database that has not had migration 0119
+        // still holds the old integer there — the cast is a no-op once 0119 is
+        // in. It is never items.revision, a different column about the item
+        // master.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
       })
       .from(salesOrderLines)
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
@@ -587,6 +594,10 @@ export async function getPlanningSoDetail(
         clientPoLineNo: r.line.clientPoLineNo,
         itemId: r.line.itemId,
         itemCode: r.itemCode ?? r.line.itemCodeText,
+        // Null passed through, not blanked: on a database that predates
+        // migration 0119 the line may genuinely carry no revision, and the
+        // screen must then show the bare code rather than a trailing slash.
+        itemRevision: r.itemRevision ?? null,
         itemName: r.itemName ?? r.line.partName,
         orderQty,
         dueDate: r.line.dueDate,
@@ -837,6 +848,11 @@ async function getJwPlanningDetail(
       clientPoLineNo: null,
       itemId: r.line.itemId,
       itemCode: r.itemCode ?? r.line.itemCodeText,
+      // Always null on this path, and that is the right answer rather than a
+      // gap: these are Job Work Order lines, which have no customer SO line
+      // behind them and therefore no customer drawing revision. The screen shows
+      // the bare item code for them.
+      itemRevision: null,
       itemName: r.itemName ?? r.line.partName,
       orderQty,
       dueDate: r.line.dueDate,

@@ -12,6 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 // Reuse the existing PR create hook — do not build a parallel one.
 import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
@@ -214,7 +215,7 @@ function Row({
         {o.jcCode}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {o.jcItemCode ?? ''}
+        {itemCodeWithRev(o.jcItemCode, o.itemRevision, '')}
       </td>
       <td className="td-ctr mono fw-700">{o.opSeq}</td>
       <td>
@@ -746,7 +747,7 @@ function CreatePrModal({
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
             Vendor: {row.outsourceVendorName ?? row.outsourceVendorCode ?? '—'} · Item:{' '}
-            {row.jcItemCode ?? '—'}
+            {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
           </div>
         </div>
 
@@ -936,7 +937,7 @@ function OutsourceBalanceModal({
             Operation: <b>{row.operation}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            Item: {row.jcItemCode ?? '—'} · Available:{' '}
+            Item: {itemCodeWithRev(row.jcItemCode, row.itemRevision)} · Available:{' '}
             <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs. Sends the balance to a
             vendor as a JW OSP purchase request.
           </div>

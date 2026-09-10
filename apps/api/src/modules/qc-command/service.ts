@@ -60,6 +60,7 @@ interface PendingDbRow {
   opSeq: number;
   operation: string | null;
   itemCode: string | null;
+  itemRevision: string | null;
   soCode: string | null;
   customer: string | null;
   dueDate: unknown;
@@ -74,6 +75,7 @@ interface QcLogDbRow {
   opSeq: number;
   operation: string | null;
   itemCode: string | null;
+  itemRevision: string | null;
   itemName: string | null;
   soCode: string | null;
   qty: number;
@@ -88,6 +90,7 @@ interface OpGroup {
   opSeq: number;
   operation: string;
   itemCode: string | null;
+  itemRevision: string | null;
   itemName: string | null;
   soCode: string | null;
   entries: QcLogDbRow[];
@@ -107,7 +110,19 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
       tx.execute(sql`
         SELECT
           vos.jc_op_id AS "jcOpId", jc.code AS "jcCode", vos.op_seq AS "opSeq",
-          jo.operation, i.code AS "itemCode", so.code AS "soCode",
+          jo.operation, i.code AS "itemCode",
+          -- The customer's drawing revision, read live off the SO line the card
+          -- was raised against. It rides the sol LEFT JOIN that already produces
+          -- soCode, so a JW-sourced or standalone card comes back null and renders
+          -- as the bare code. It is NOT items.revision, which describes the item
+          -- master and would point the inspector at the wrong drawing.
+          --
+          -- Cast to text on purpose: the contract types this as a string, and the
+          -- column is only text on a database that has had migration 0119. On one
+          -- that has not it is still the old integer and would arrive here as a
+          -- number wearing a string type. The cast is a no-op once 0119 is in.
+          sol.revision::text AS "itemRevision",
+          so.code AS "soCode",
           so.customer_name AS "customer", jc.due_date AS "dueDate",
           vos.qc_pending AS "qcPending",
           (SELECT MAX(ol.log_date) FROM public.op_log ol
@@ -132,7 +147,13 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
       tx.execute(sql`
         SELECT
           l.jc_op_id AS "jcOpId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
-          jo.operation, i.code AS "itemCode", i.name AS "itemName", so.code AS "soCode",
+          jo.operation, i.code AS "itemCode",
+          -- Same live SO-line read as the queue query above: cast to text so a
+          -- pre-0119 database cannot hand the UI a number, null for cards with no
+          -- SO behind them, and never items.revision. It reaches the Rework tab
+          -- through the per-op group built from these rows.
+          sol.revision::text AS "itemRevision",
+          i.name AS "itemName", so.code AS "soCode",
           l.qty AS "qty", l.reject_qty AS "rejectQty", l.log_date AS "logDate",
           COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector"
         FROM public.op_log l
@@ -186,6 +207,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           opSeq: Number(r.opSeq),
           operation: r.operation ?? `Op ${r.opSeq}`,
           itemCode: r.itemCode ?? null,
+          itemRevision: r.itemRevision ?? null,
           itemName: r.itemName ?? null,
           soCode: r.soCode ?? null,
           entries: [],
@@ -207,6 +229,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         opSeq: Number(r.opSeq),
         operation: r.operation ?? '',
         itemCode: r.itemCode ?? null,
+        itemRevision: r.itemRevision ?? null,
         soCode: r.soCode ?? null,
         customer: r.customer ?? null,
         pendingQty: Number(r.qcPending ?? 0),
@@ -279,6 +302,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           opSeq: g.opSeq,
           operation: g.operation,
           itemCode: g.itemCode,
+          itemRevision: g.itemRevision,
           soCode: g.soCode,
           attempts: g.entries.length,
           totalRejected: g.entries.reduce((s, e) => s + Number(e.rejectQty), 0),

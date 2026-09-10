@@ -21,6 +21,11 @@ export const dailyOpLogReport: RegisteredReport = {
       { key: 'log_no', label: 'Log no.', type: 'text' },
       { key: 'log_type', label: 'Type', type: 'text' },
       { key: 'jc_code', label: 'JC', type: 'text' },
+      // This report has no item-code column, so the revision sits immediately
+      // after the JC — the column that identifies what was worked on. It is
+      // the customer drawing revision of the SO line behind that JC, and is
+      // blank for a JW-sourced or standalone JC.
+      { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
       { key: 'op_seq', label: 'Op seq', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'operator_name', label: 'Operator', type: 'text' },
@@ -41,6 +46,8 @@ export const dailyOpLogReport: RegisteredReport = {
         ol.log_no,
         ol.log_type,
         jc.code AS jc_code,
+        -- ::text because production is still pre-0119 and holds an integer.
+        sol.revision::text AS so_revision,
         jo.op_seq,
         jo.operation,
         ol.operator_name,
@@ -50,6 +57,10 @@ export const dailyOpLogReport: RegisteredReport = {
       FROM public.op_log ol
       JOIN public.jc_ops jo ON jo.id = ol.jc_op_id
       JOIN public.job_cards jc ON jc.id = jo.job_card_id
+      -- LEFT, never inner: work logged against a JW-sourced or standalone JC
+      -- has no SO line behind it, and this is the shop-floor audit trail —
+      -- every logged op has to stay visible.
+      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
       WHERE ol.company_id = ${companyId}::uuid
         ${fromFrag}
         ${toFrag}
@@ -65,6 +76,7 @@ export const dailyOpLogReport: RegisteredReport = {
       log_no: (r['log_no'] as string) ?? '',
       log_type: (r['log_type'] as string) ?? '',
       jc_code: (r['jc_code'] as string) ?? '',
+      so_revision: (r['so_revision'] as string | null) ?? '',
       op_seq: r['op_seq'] != null ? Number(r['op_seq']) : 0,
       operation: (r['operation'] as string) ?? '',
       operator_name: (r['operator_name'] as string | null) ?? null,

@@ -74,11 +74,21 @@ export async function getProductionDashboard(
     const jcRows = await tx.execute(sql`
       SELECT
         jc.id AS "jobCardId", jc.code, i.code AS "itemCode", i.name AS "itemName",
+        -- The customer's drawing revision for this card, read live off the SO
+        -- line it was raised against rather than items.revision, which is a
+        -- different column about the item master. The sol join is LEFT, so a
+        -- JW-sourced or standalone card keeps its place on the board and simply
+        -- reports null. Cast to text because the contract types it as a string
+        -- and a database without migration 0119 still holds an integer there;
+        -- the cast is a no-op once 0119 is applied.
+        sol.revision::text AS "itemRevision",
         jc.priority, jc.order_qty AS "orderQty", jc.due_date AS "dueDate",
         s.total_ops AS "totalOps", s.done_ops AS "doneOps"
       FROM public.v_jc_status s
       JOIN public.job_cards jc ON jc.id = s.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = jc.item_id
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       WHERE s.company_id = ${companyId}::uuid AND s.computed_status = 'open'
       ORDER BY (jc.priority = 'high') DESC, jc.due_date ASC NULLS LAST, jc.code
       LIMIT 60
@@ -89,6 +99,7 @@ export async function getProductionDashboard(
       jobCardId: r['jobCardId'] as string,
       code: r['code'] as string,
       itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       priority: r['priority'] as ProductionDashboardJc['priority'],
       orderQty: Number(r['orderQty'] ?? 0),

@@ -105,6 +105,18 @@ export const purchaseRequestDetailSchema = purchaseRequestSchema.extend({
    *  Null when the vendor is free text only, or the master has no address. */
   vendorAddress: z.string().nullable(),
   itemCode: z.string().nullable(), // resolved from items master when itemId set
+  /** The customer's drawing revision, read live off the SO line this PR was
+   *  raised against (purchase_requests.source_so_line_id →
+   *  sales_order_lines.revision). Displayed as `CODE/REV` beside the item code
+   *  so a buyer ordering material for an order is looking at the same revision
+   *  the shop floor is making.
+   *
+   *  Null is correct and common: a PR raised for stock, for a JC operation with
+   *  no SO behind it, or against an SO line since deleted (the FK is ON DELETE
+   *  SET NULL). Null renders as the bare item code — never a trailing slash,
+   *  and never `items.revision`, which is a different column about the item
+   *  itself and would put a plausible-looking wrong revision on the document. */
+  itemRevision: z.string().nullable().default(null),
   // Source/linked document codes resolved from the FK ids, so the detail page
   // shows real values instead of a '— linked —' placeholder.
   poCode: z.string().nullable(), // resolved from purchase_orders when poId set
@@ -124,6 +136,11 @@ export const purchaseRequestListItemSchema = purchaseRequestSchema.extend({
   priceVisible: z.boolean().optional(),
   vendorName: z.string().nullable(),
   itemCode: z.string().nullable(), // resolved from items master when itemId set
+  /** The customer's drawing revision off the SO line behind this PR — same
+   *  source, same rules, same `CODE/REV` rendering as the detail shape above.
+   *  Null whenever the PR has no live SO line behind it, which is the majority
+   *  of a stores-driven PR list. */
+  itemRevision: z.string().nullable().default(null),
   sourceJcCode: z.string().nullable(),
   sourceJcOpSeq: z.number().int().positive().nullable(),
   poCode: z.string().nullable(), // resolved from purchase_orders when poId set

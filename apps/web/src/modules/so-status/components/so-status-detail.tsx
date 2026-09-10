@@ -17,6 +17,7 @@ import type {
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { usePlan } from '@/modules/plans/api';
 import { usePlanningSoDetail } from '@/modules/so-planning/api';
 import { BomPlanningModal } from '@/modules/so-planning/components/bom-planning-modal';
@@ -471,7 +472,7 @@ function LinePanel({
           {line.clientPoLineNo ? (
             <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>[CPO:{line.clientPoLineNo}]</span>
           ) : null}
-          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--purple)' }}>{line.itemCode ?? line.itemCodeText ?? ''}</span>
+          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--purple)' }}>{itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision, '')}</span>
           <span style={{ fontSize: 13 }}>{line.partName ?? ''}</span>
         </div>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap', marginLeft: 'auto' }}>
@@ -615,7 +616,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
         <Link to="/job-cards/$id" params={{ id: jc.id }} style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', textDecoration: 'underline dotted' }}>{jc.code}</Link>
         {runCount > 0 ? <span style={{ fontSize: 10, color: 'var(--amber)', marginLeft: 4 }}>▶{runCount} running</span> : null}
       </td>
-      <td style={{ fontSize: 12 }}>{jc.itemCode ?? '—'}</td>
+      <td style={{ fontSize: 12 }}>{itemCodeWithRev(jc.itemCode, jc.itemRevision)}</td>
       <td className="td-ctr" style={{ fontSize: 12 }}>{jc.orderQty}</td>
       <td className="td-ctr">
         <span style={{ fontSize: 13, fontWeight: 700, color: jcColor }}>{jc.doneQty}</span>

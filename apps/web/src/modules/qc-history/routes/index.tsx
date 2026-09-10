@@ -8,6 +8,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '../api';
@@ -40,14 +41,20 @@ function QcHistoryPage(): React.JSX.Element {
     t === '' || vals.some((v) => (v ?? '').toLowerCase().includes(t));
 
   const pending = useMemo(
-    () => (data?.pending ?? []).filter((o) => matchText(o.soCode, o.jcCode, o.itemCode)),
+    () =>
+      (data?.pending ?? []).filter((o) =>
+        // The revision is part of what the Item column shows, so it has to be
+        // part of what the box searches — this filter runs over rows already in
+        // the browser, so nothing can be hidden by widening it.
+        matchText(o.soCode, o.jcCode, o.itemCode, o.itemRevision),
+      ),
     [data?.pending, t],
   );
   const logs = useMemo(
     () =>
       (data?.logs ?? []).filter(
         (l) =>
-          matchText(l.soCode, l.jcCode, l.itemCode) &&
+          matchText(l.soCode, l.jcCode, l.itemCode, l.itemRevision) &&
           (dateFrom === '' || l.logDate >= dateFrom) &&
           (dateTo === '' || l.logDate <= dateTo),
       ),
@@ -312,7 +319,7 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
         {o.soCode ?? '—'}
       </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
-        {o.itemCode ?? '—'}
+        {itemCodeWithRev(o.itemCode, o.itemRevision)}
       </td>
       <td style={{ fontSize: 11 }}>{o.operation}</td>
       <td className="td-ctr mono fw-700">{o.orderQty}</td>
@@ -352,7 +359,7 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
         {l.soCode ?? '—'}
       </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
-        {l.itemCode ?? '—'}
+        {itemCodeWithRev(l.itemCode, l.itemRevision)}
       </td>
       <td style={{ fontSize: 11 }}>{l.operation}</td>
       <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>

@@ -6,6 +6,7 @@ import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-re
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useExecutePlan,
@@ -130,7 +131,12 @@ function PlanDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              {plan.itemName ?? plan.itemNameText ?? plan.itemCode ?? plan.itemCodeText ?? '—'}
+              {/* Falls back to the item code only when neither name is known, and
+                  when it does it must read `CODE/REV` like everywhere else — the
+                  helper drops the slash when the plan has no SO line behind it. */}
+              {plan.itemName ??
+                plan.itemNameText ??
+                itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
               <span className={`badge ${status.cls}`}>{status.label}</span>
               <span className="text3" style={{ fontSize: 12 }}>
                 {TYPE_LABEL[plan.planType]}
@@ -251,7 +257,13 @@ function PlanDetailPage(): React.JSX.Element {
                 (a missing grade is a planning gap worth seeing). */}
             <KV label="RM grade" value={plan.rawMaterialGradeText ?? '—'} />
             <KV label="RM size" value={plan.rawMaterialSizeText ?? '—'} />
-            <KV label="Item code" value={plan.itemCode ?? plan.itemCodeText ?? '—'} />
+            {/* `CODE/REV` — the customer's drawing revision from the SO line this
+                plan was raised against; a JW-sourced or ad-hoc plan has none and
+                keeps the bare code, with no trailing slash. */}
+            <KV
+              label="Item code"
+              value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+            />
             <KV label="SO ref" value={plan.soCodeText ?? '—'} />
             <KV label="Line #" value={plan.lineNo ?? '—'} />
           </Grid>

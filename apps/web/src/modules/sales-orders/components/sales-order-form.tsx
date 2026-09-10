@@ -120,12 +120,12 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   status: 'open',
   gstPercent: SO_GST_DEFAULT,
 };
-// A fresh line is born at Rev '0' rather than as an empty box the user must
-// fill before anything can be saved: '0' is what every existing line in both
-// databases already holds (migration 0119 gave the column that default), so the
-// ordinary case still saves in one click while the box stays free to be typed
-// over with whatever the customer actually printed.
-const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: '0' };
+// A fresh line starts with an EMPTY Rev, deliberately. Pre-filling '0' made a
+// revision nobody had read off a drawing look like one somebody had confirmed,
+// and a box that already holds a plausible value is a box people tab straight
+// past. Empty plus the compulsory check below forces the question to be asked
+// once per line, which is the whole point of making it compulsory.
+const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: '' };
 const NEW_MILESTONE: MilestoneFormValue = { lotNo: 1, qty: 0 };
 
 /** Chrome for the form's own action bar. The Back link, title and breadcrumb are
@@ -432,9 +432,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           material: r.material ?? master.material ?? '',
           drawingNo: r.drawingNo ?? master.drawingNo ?? '',
           // Set explicitly AFTER the `...r` spread, never through it: an absent
-          // Rev column spreads `revision: undefined` straight over NEW_LINE's
-          // default and would leave the line with no revision at all, which the
-          // API now refuses.
+          // Rev column spreads `revision: undefined` over the value below.
+          // A sheet with no Rev column leaves the box EMPTY, exactly like a
+          // hand-added line — the compulsory check then makes the person fill it
+          // in rather than letting fifty imported lines inherit a revision that
+          // nobody read off a drawing.
           revision: r.revision?.trim() || NEW_LINE.revision,
           uom: master.uom,
         });
@@ -552,11 +554,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         // explicit null is what tells it the drawing was removed — and what
         // makes the removal show up in the drawing history.
         drawingFilePath: l.drawingFilePath || null,
-        // Back in the payload, trimmed and always sent. It was deliberately left
-        // out while the server computed it; now the form is the only source of
-        // it and the API requires a non-empty string. The '0' fallback is only
-        // reachable on the equipment path, which has no Rev box of its own —
-        // component lines are already blocked above if this is blank.
+        // Trimmed and always sent; the form is the only source of it and the API
+        // requires a non-empty string. The '0' fallback is unreachable for a
+        // component line — the compulsory check above has already refused the
+        // save — and exists only for the EQUIPMENT path, which has no Rev box of
+        // its own and so has nobody to ask.
         revision: String(l.revision ?? '').trim() || '0',
         uom: l.uom,
         orderQty: Number(l.orderQty),

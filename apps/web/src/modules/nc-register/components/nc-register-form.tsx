@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { useItemsList } from '@/modules/items/api';
 import { useJobCardsList } from '@/modules/job-cards/api';
@@ -260,7 +261,12 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                 <option value="">-- Select JC --</option>
                 {jcs.map((jc) => (
                   <option key={jc.id} value={jc.id}>
-                    {jc.code} — {jc.itemCode} {jc.itemName}
+                    {/* The picker shows CODE/REV so the reporter can tell two job
+                        cards on the same part at different drawing revisions
+                        apart. What the pick then WRITES stays bare — see the
+                        prefill effect above, which sets itemCodeText from
+                        jc.itemCode alone. */}
+                    {jc.code} — {itemCodeWithRev(jc.itemCode, jc.itemRevision, '')} {jc.itemName}
                   </option>
                 ))}
               </select>

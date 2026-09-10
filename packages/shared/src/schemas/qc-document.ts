@@ -123,6 +123,13 @@ export interface QcMatrixRow {
   lineNo: number;
   clientPoLineNo: string | null;
   itemCode: string | null;
+  /** The customer's drawing revision typed on this very SO line
+   *  (sales_order_lines.revision). This matrix is built from the SO line
+   *  outwards, so the value is one column away rather than three joins away.
+   *  Null only where the column is genuinely empty, and null renders as the
+   *  bare item code. Never items.revision, which describes the item master and
+   *  would point whoever files these reports at the wrong drawing. */
+  itemRevision: string | null;
   itemName: string | null;
   orderQty: number;
   jobCardId: string | null;
@@ -195,6 +202,11 @@ export interface QcLineDetailResponse {
   jobCardId: string;
   jcCode: string;
   itemCode: string | null;
+  /** The customer's drawing revision for this job card's part, read off the SO
+   *  line it was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision). Null for a card with no SO line behind it,
+   *  which shows the bare item code. Never items.revision. */
+  itemRevision: string | null;
   itemName: string | null;
   orderQty: number;
   /** Total accepted qty across QC batches (drives Sr range upper bound). */

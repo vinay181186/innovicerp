@@ -10,6 +10,14 @@ export const invoiceableLineSchema = z.object({
   salesOrderLineId: z.string().uuid(),
   lineNo: z.number().int(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision typed on this very SO line
+   *  (sales_order_lines.revision, migration 0119) — a fact about the order's
+   *  drawing, never about the item, so it is read from the SO line and never
+   *  from items.revision, which is a different column and would be a
+   *  plausible-looking lie. Null is correct and must render as the bare code:
+   *  a database that has not had 0119 applied, or a line whose revision was
+   *  never captured, has nothing true to print after the slash. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string(),
   orderQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),
@@ -60,6 +68,17 @@ export const invoiceLineRowSchema = z.object({
   lineNo: z.number().int(),
   // Resolved from the live items master (LEFT JOIN); null when unlinked/deleted.
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision, read live off the SO line this invoice
+   *  line was raised against (invoice_lines.sales_order_line_id →
+   *  sales_order_lines.revision, migration 0119). Unlike the code and name
+   *  beside it, the revision has no snapshot column to freeze at invoice time,
+   *  so the SO line is the only place it can be read from — it is deliberately
+   *  NOT items.revision, a different column describing the item master.
+   *
+   *  Null is correct and must render as the bare code, with no slash and no
+   *  placeholder: an invoice line with no SO line behind it (the join is a LEFT
+   *  JOIN, and the FK is nullable) genuinely has no drawing revision to state. */
+  itemRevision: z.string().nullable().default(null),
   // Stored snapshot fallback captured at invoice creation.
   itemCodeText: z.string().nullable(),
   itemName: z.string(),

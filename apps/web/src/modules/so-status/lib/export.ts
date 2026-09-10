@@ -12,6 +12,12 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
     SO: header.code,
     Line: l.lineNo,
     'Item Code': l.itemCode ?? l.itemCodeText ?? '',
+    // The customer's drawing revision gets its OWN column rather than being
+    // appended to Item Code as "CODE/REV". On screen the slash reads well, but in
+    // a spreadsheet people filter this column and VLOOKUP Item Code against Item
+    // Master, and a suffixed code matches nothing. Same split as the Job Card
+    // export.
+    'Drawing Rev': l.itemRevision ?? '',
     'Part Name': l.partName ?? '',
     'SO Qty': l.orderQty,
     Done: l.doneQty,
@@ -31,6 +37,7 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
       Line: l.lineNo,
       'JC No': jc.code,
       'Item Code': jc.itemCode ?? '',
+      'Drawing Rev': jc.itemRevision ?? '',
       'JC Qty': jc.orderQty,
       Completed: jc.doneQty,
       Remaining: jc.remainingQty,

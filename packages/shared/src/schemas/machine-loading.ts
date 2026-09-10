@@ -40,6 +40,13 @@ export const machineLoadOpSchema = z.object({
   /** Who actually made `completedQty`, per machine (ADR-126). See machineSplitSchema. */
   machines: machineSplitSchema,
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for this op's item, read off the SO line the
+   *  job card was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision). Null is the correct, common answer on this
+   *  board: a JW-sourced or standalone card has no SO line behind it, and null
+   *  renders as the bare item code. Never `items.revision`, which describes the
+   *  item master and would read to a machinist as a drawing revision it is not. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
   priority: z.enum(JC_PRIORITIES),

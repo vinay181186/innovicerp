@@ -12,6 +12,15 @@ export const tpiPendingRowSchema = z.object({
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for the part awaiting third-party
+   *  inspection, read off the SO line the job card was raised against
+   *  (job_cards.source_so_line_id → sales_order_lines.revision). Null when the
+   *  card has no SO behind it (JW-sourced or standalone, or an SO line since
+   *  deleted), and null must show as the bare item code. It is deliberately
+   *  NOT items.revision, which describes the item master — a TPI inspector
+   *  given the wrong drawing revision is the exact failure this field exists
+   *  to prevent. */
+  itemRevision: z.string().nullable().default(null),
   operation: z.string(),
   orderQty: z.number().int(),
   qcPending: z.number().int().nonnegative(),
@@ -26,6 +35,11 @@ export const tpiCompletedRowSchema = z.object({
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision the inspection was carried out against,
+   *  read off the SO line behind the job card (job_cards.source_so_line_id →
+   *  sales_order_lines.revision). Null for JW-sourced and standalone cards,
+   *  which render the bare item code. Never items.revision. */
+  itemRevision: z.string().nullable().default(null),
   operation: z.string(),
   accepted: z.number().int().nonnegative(),
   rejected: z.number().int().nonnegative(),

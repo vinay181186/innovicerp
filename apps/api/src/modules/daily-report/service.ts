@@ -40,6 +40,12 @@ export async function getDailyReport(
         l.id AS "logId",
         jc.code AS "jcCode",
         i.code AS "itemCode",
+        -- The customer's drawing revision, followed from the job card already
+        -- joined above to its SO line. LEFT JOIN, so a log entry against a
+        -- job-work or standalone card still appears in the day's report with a
+        -- null revision. Cast to text: the contract types this as a string, and
+        -- a database that has not had migration 0119 still holds an integer.
+        sol.revision::text AS "itemRevision",
         i.name AS "itemName",
         op.op_seq AS "opSeq",
         op.operation,
@@ -54,6 +60,7 @@ export async function getDailyReport(
       JOIN public.jc_ops op ON op.id = l.jc_op_id AND op.deleted_at IS NULL
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.machines m
         ON m.id = COALESCE(l.machine_id, op.machine_id) AND m.deleted_at IS NULL
       WHERE l.company_id = ${companyId}::uuid
@@ -81,6 +88,7 @@ export async function getDailyReport(
         logId: r['logId'] as string,
         jcCode: String(r['jcCode'] ?? ''),
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         opSeq: Number(r['opSeq'] ?? 0),
         operation: String(r['operation'] ?? ''),

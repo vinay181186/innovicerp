@@ -10,6 +10,7 @@
 // 1:1 to the board.
 
 import type { Company, MachineLoadCard, MachineLoadOp, MachineSplit } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -59,7 +60,7 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
       (o, i) => `<tr>
       <td style="text-align:center;font-weight:700">${i + 1}</td>
       <td style="font-family:monospace;font-weight:700">${esc(o.jobCardCode)}</td>
-      <td style="color:#7c3aed">${esc(o.itemCode ?? '—')}</td>
+      <td style="color:#7c3aed">${esc(itemCodeWithRev(o.itemCode, o.itemRevision))}</td>
       <td>${esc(o.itemName ?? '—')}</td>
       <td>${esc(o.soCode ?? '—')}</td>
       <td style="text-align:center">${o.opSeq}</td>

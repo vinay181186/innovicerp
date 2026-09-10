@@ -182,6 +182,12 @@ export async function listDeliveryChallans(
         v.name AS "vendorName",
         po.code AS "poCode",
         COALESCE(so.code, po_so.so_code) AS "soCode",
+        -- Header-level drawing revision, following soCode's two sources exactly.
+        -- Cast to text: the contract types it as a string, and the column is
+        -- only text on a database that has had migration 0119; on one that has
+        -- not it is still the old integer and a bare select would hand the UI a
+        -- number. Never items.revision — a different column about the item.
+        COALESCE(sol.revision::text, po_so.so_revision) AS "soLineRevision",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::text AS "totalQty"
       FROM public.delivery_challans dc
@@ -195,7 +201,15 @@ export async function listDeliveryChallans(
       -- OSP/vendor DCs carry only purchase_order_id (no sales_order_line_id),
       -- so resolve the SO through the PO's lines' source_so_line_id as a fallback.
       LEFT JOIN LATERAL (
-        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code
+        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code,
+          -- One drawing revision, or none at all. The SO code beside it is an
+          -- aggregate over every line of the PO, so pairing "IN-SO-11, IN-SO-12"
+          -- with "A, B" would leave the reader to guess which belongs to which.
+          -- A revision is emitted only when all of the PO's SO lines agree on
+          -- one; otherwise NULL, which prints as no revision rather than as a
+          -- guess. ::text for the same pre-0119 reason as everywhere else.
+          CASE WHEN COUNT(DISTINCT sol2.revision) = 1
+               THEN MIN(sol2.revision)::text END AS so_revision
         FROM public.purchase_order_lines pol
         JOIN public.sales_order_lines sol2
           ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
@@ -302,6 +316,7 @@ function toListItem(r: Record<string, unknown>): DeliveryChallanListItem {
     vendorName: (r['vendorName'] as string | null) ?? null,
     poCode: (r['poCode'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,
+    soLineRevision: (r['soLineRevision'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: r['totalQty'] as string,
   };
@@ -330,7 +345,12 @@ async function loadDeliveryChallanWithLines(
         dc.deleted_at AS "deletedAt",
         v.name AS "vendorName",
         po.code AS "poCode",
-        COALESCE(so.code, po_so.so_code) AS "soCode"
+        COALESCE(so.code, po_so.so_code) AS "soCode",
+        -- Header-level drawing revision, following soCode's two sources exactly.
+        -- ::text because the contract types it as a string and the column is
+        -- only text on a database that has had migration 0119. Never
+        -- items.revision — a different column, about the item master.
+        COALESCE(sol.revision::text, po_so.so_revision) AS "soLineRevision"
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
@@ -342,7 +362,15 @@ async function loadDeliveryChallanWithLines(
       -- OSP/vendor DCs carry only purchase_order_id (no sales_order_line_id),
       -- so resolve the SO through the PO's lines' source_so_line_id as a fallback.
       LEFT JOIN LATERAL (
-        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code
+        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code,
+          -- One drawing revision, or none at all. The SO code beside it is an
+          -- aggregate over every line of the PO, so pairing "IN-SO-11, IN-SO-12"
+          -- with "A, B" would leave the reader to guess which belongs to which.
+          -- A revision is emitted only when all of the PO's SO lines agree on
+          -- one; otherwise NULL, which prints as no revision rather than as a
+          -- guess. ::text for the same pre-0119 reason as everywhere else.
+          CASE WHEN COUNT(DISTINCT sol2.revision) = 1
+               THEN MIN(sol2.revision)::text END AS so_revision
         FROM public.purchase_order_lines pol
         JOIN public.sales_order_lines sol2
           ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
@@ -367,9 +395,42 @@ async function loadDeliveryChallanWithLines(
       // page should show the current master code/name when the FK is set.
       itemCode: items.code,
       itemName: items.name,
+      // The customer's drawing revision — see the two joins below for why it is
+      // null on most challan lines. ::text because the contract types it as a
+      // string and the column is only text on a database that has had migration
+      // 0119; on one that has not it is still the old integer. Never
+      // items.revision, which is a different column, about the item master.
+      itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
     })
     .from(deliveryChallanLines)
     .leftJoin(items, and(eq(items.id, deliveryChallanLines.itemId), isNull(items.deletedAt)))
+    // A challan line is a copy of a purchase-order line, and the PO line is the
+    // only thing that knows which SO line the work belongs to.
+    .leftJoin(
+      purchaseOrderLines,
+      and(
+        eq(purchaseOrderLines.id, deliveryChallanLines.purchaseOrderLineId),
+        isNull(purchaseOrderLines.deletedAt),
+      ),
+    )
+    // ...and this join deliberately does NOT stop at "the PO line came from an
+    // SO line". It also insists the SO line is for the SAME ITEM as the challan
+    // line. A job-work PO raised off a job card carries the job card's item, so
+    // the piece going to the vendor genuinely IS the customer's part and its
+    // drawing revision is a true statement about it. A buying PO line is a bar
+    // of raw material, and a bought-in line is hardware; on those the item ids
+    // differ, the join finds nothing, and the code prints bare — which is the
+    // point. `=` is already false when either item id is null, so an unlinked
+    // line needs no extra guard. Every join here is LEFT: a line with no PO, no
+    // SO or no matching item still comes back, with a null revision.
+    .leftJoin(
+      salesOrderLines,
+      and(
+        eq(salesOrderLines.id, purchaseOrderLines.sourceSoLineId),
+        isNull(salesOrderLines.deletedAt),
+        eq(salesOrderLines.itemId, deliveryChallanLines.itemId),
+      ),
+    )
     .where(
       and(
         eq(deliveryChallanLines.deliveryChallanId, id),
@@ -466,13 +527,15 @@ async function loadDeliveryChallanWithLines(
     vendorName: (headerRow['vendorName'] as string | null) ?? null,
     poCode: (headerRow['poCode'] as string | null) ?? null,
     soCode: (headerRow['soCode'] as string | null) ?? null,
-    lines: lineRows.map(({ line: l, itemCode, itemName }) => ({
+    soLineRevision: (headerRow['soLineRevision'] as string | null) ?? null,
+    lines: lineRows.map(({ line: l, itemCode, itemName, itemRevision }) => ({
       id: l.id,
       companyId: l.companyId,
       deliveryChallanId: l.deliveryChallanId,
       lineNo: l.lineNo,
       itemId: l.itemId,
       itemCode: itemCode ?? null,
+      itemRevision: itemRevision ?? null,
       itemName: itemName ?? null,
       itemCodeText: l.itemCodeText,
       itemNameText: l.itemNameText,

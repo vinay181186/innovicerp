@@ -9,7 +9,15 @@
 
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
-import { capaRecords, items, jcOps, jobCards, ncRegister, users } from '../../db/schema';
+import {
+  capaRecords,
+  items,
+  jcOps,
+  jobCards,
+  ncRegister,
+  salesOrderLines,
+  users,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireOpEntryRole } from '../../lib/auth';
@@ -147,6 +155,7 @@ function toNcRegister(
   linkedCapaCode: string | null = null,
   itemCode: string | null = null,
   itemName: string | null = null,
+  itemRevision: string | null = null,
 ): NcRegister {
   return {
     id: row.id,
@@ -164,6 +173,12 @@ function toNcRegister(
     // Live values resolved from the items master (LEFT JOIN in getNcRegister).
     itemCode,
     itemName,
+    // The customer's drawing revision, resolved live off the SO line behind this
+    // NC's job card (LEFT JOIN in getNcRegister and in the list reader). It is
+    // display-only and is never appended to itemCodeText, which stays the durable
+    // snapshot of what the reporter typed. The write paths below pass nothing and
+    // so return null, exactly as they already do for itemCode and itemName.
+    itemRevision,
     soCodeText: row.soCodeText,
     machineCodeText: row.machineCodeText,
     operatorText: row.operatorText,
@@ -315,6 +330,18 @@ export async function listNcRegister(
         jo.op_seq AS "jcOpSeqResolved",
         jo.operation AS "jcOpOperation",
         i.code AS "itemCode",
+        -- The customer's drawing revision, read live off the SO line behind this
+        -- NC's job card. It is display-only: nothing here touches itemCodeText,
+        -- which stays the snapshot the reporter typed. Null when the card has no
+        -- SO line behind it, and null renders as the bare code. It is NOT
+        -- items.revision, which describes the item master -- a wrong revision on
+        -- a rejection record is worse than no revision at all.
+        --
+        -- Cast to text on purpose: the contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119. On one
+        -- that has not it is still the old integer and would arrive here as a
+        -- number wearing a string type. The cast is a no-op once 0119 is in.
+        sol.revision::text AS "itemRevision",
         i.name AS "itemName",
         cap.code AS "linkedCapaCode"
       FROM public.nc_register nc
@@ -324,6 +351,11 @@ export async function listNcRegister(
         ON jo.id = nc.jc_op_id AND jo.deleted_at IS NULL
       LEFT JOIN public.items i
         ON i.id = nc.item_id AND i.deleted_at IS NULL
+      -- Second hop to the drawing revision. LEFT, and one row per NC (job_cards
+      -- has at most one source SO line), so it cannot change which NCs come back
+      -- -- the COUNT query below deliberately does not repeat it.
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT c.code
         FROM public.capa_records c
@@ -432,6 +464,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     jcOpSeqResolved: r['jcOpSeqResolved'] != null ? Number(r['jcOpSeqResolved']) : null,
     jcOpOperation: (r['jcOpOperation'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
+    itemRevision: (r['itemRevision'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
   };
 }
@@ -445,11 +478,27 @@ export async function getNcRegister(id: string, user: AuthContext): Promise<NcRe
         nc: ncRegister,
         itemCode: items.code,
         itemName: items.name,
+        // Cast to text on purpose: the contract types this as a string, and the
+        // column is only text on a database that has had migration 0119. On one
+        // that has not it is still the old integer and would arrive here as a
+        // number wearing a string type. The cast is a no-op once 0119 is in.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
       })
       .from(ncRegister)
       // Resolve item code/name from the live items master, not the stale
       // *Text snapshot columns. Mirrors the LIST reader's join (and GRN detail).
       .leftJoin(items, and(eq(items.id, ncRegister.itemId), isNull(items.deletedAt)))
+      // Two more LEFT hops for the customer's drawing revision: the NC's job card,
+      // then the SO line it was raised against. Both stay LEFT so an NC on a
+      // JW-sourced or standalone card still comes back, with a null revision.
+      .leftJoin(jobCards, and(eq(jobCards.id, ncRegister.jobCardId), isNull(jobCards.deletedAt)))
+      .leftJoin(
+        salesOrderLines,
+        and(
+          eq(salesOrderLines.id, jobCards.sourceSoLineId),
+          isNull(salesOrderLines.deletedAt),
+        ),
+      )
       .where(
         and(
           eq(ncRegister.id, id),
@@ -462,7 +511,13 @@ export async function getNcRegister(id: string, user: AuthContext): Promise<NcRe
     if (!found) throw new NotFoundError(`NC ${id} not found`);
     const row = found.nc;
     const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
-    const nc = toNcRegister(row, linkedCapaCode, found.itemCode, found.itemName);
+    const nc = toNcRegister(
+      row,
+      linkedCapaCode,
+      found.itemCode,
+      found.itemName,
+      found.itemRevision,
+    );
     return showMoney ? nc : hideNcMoney(nc);
   });
 }

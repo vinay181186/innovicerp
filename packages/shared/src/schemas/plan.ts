@@ -127,6 +127,22 @@ export const planDetailSchema = planSchema.extend({
   priceVisible: z.boolean(),
   // Lightweight joins for the detail view
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision, read live off the SO line this plan was
+   *  raised against (plans.so_line_id → sales_order_lines.revision).
+   *
+   *  It is deliberately NOT `items.revision`, which is a different column
+   *  describing the item master; substituting it would print a plausible-looking
+   *  but wrong revision on every plan.
+   *
+   *  Null is a correct answer here, never a gap to paper over: a plan carries at
+   *  most one of soLineId / jwLineId, so a JW-sourced or ad-hoc plan has no SO
+   *  line and therefore no customer revision, and the FK is ON DELETE SET NULL
+   *  so a since-deleted SO line also lands here as null. Null must render as the
+   *  bare item code — no trailing slash, no placeholder.
+   *
+   *  Read live rather than snapshotted onto the plan: if the customer reissues
+   *  the drawing at Rev C, every plan against that line is planning Rev C. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
 });
 export type PlanDetail = z.infer<typeof planDetailSchema>;
@@ -147,6 +163,10 @@ export const listPlansResponseSchema = z.object({
   items: z.array(
     planSchema.extend({
       itemCode: z.string().nullable(),
+      /** Same customer drawing revision as `planDetailSchema.itemRevision` — read
+       *  live off the plan's SO line, null on a JW-sourced or ad-hoc plan. See
+       *  that field for the full rules; they apply unchanged in the list. */
+      itemRevision: z.string().nullable().default(null),
       itemName: z.string().nullable(),
       opsCount: z.number().int().nonnegative(),
     }),
@@ -324,6 +344,10 @@ export const planningDashboardResponseSchema = z.object({
   recentPlans: z.array(
     planSchema.extend({
       itemCode: z.string().nullable(),
+      /** Same customer drawing revision as `planDetailSchema.itemRevision` — read
+       *  live off the plan's SO line, null on a JW-sourced or ad-hoc plan. See
+       *  that field for the full rules; they apply unchanged on the dashboard. */
+      itemRevision: z.string().nullable().default(null),
       itemName: z.string().nullable(),
       opsCount: z.number().int().nonnegative(),
     }),
@@ -343,6 +367,12 @@ export const unplannedOrderRowSchema = z.object({
   soCode: z.string(),
   lineNo: z.number().int().positive(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision typed on this very SO line
+   *  (sales_order_lines.revision) — every row here IS an SO line, so the
+   *  revision is read straight off it and is not `items.revision`. Still
+   *  nullable because the column only became compulsory text with migration
+   *  0119; a null renders as the bare item code, never a trailing slash. */
+  itemRevision: z.string().nullable().default(null),
   partName: z.string().nullable(),
   customerName: z.string().nullable(),
   dueDate: z.string().nullable(),

@@ -207,6 +207,17 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
             <span>
               SO <span className="text2">{dc.soCode ?? dc.soRefText ?? '—'}</span>
             </span>
+            {/* Said in words, not as "IN-SO-0012/B" — a slash after an SO number
+                would read as a revision of the sales order rather than of the
+                customer's drawing. Hidden entirely when there is none. */}
+            {dc.soLineRevision ? (
+              <>
+                <span>·</span>
+                <span>
+                  Rev <span className="text2">{dc.soLineRevision}</span>
+                </span>
+              </>
+            ) : null}
             {dc.transport ? (
               <>
                 <span>·</span>

@@ -6,6 +6,7 @@
 // OSP/JW DC register print, this one IS line-grain — same as legacy.
 
 import type { Company, CustomerDispatchRegisterRow } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { esc, fmtDate } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -15,6 +16,9 @@ export function printCustomerDispatchRegister(args: {
 }): boolean {
   const { rows, company } = args;
   const totalPcs = rows.reduce((s, r) => s + r.qty, 0);
+  // Counts how many distinct ITEMS were dispatched, so the drawing revision is
+  // deliberately not part of the key: Rev A and Rev B of one part are still one
+  // item, and folding the revision in here would inflate the tile.
   const itemCount = new Set(rows.map((r) => r.itemCode ?? r.itemCodeText ?? r.itemName)).size;
 
   const tableRows = rows
@@ -23,7 +27,7 @@ export function printCustomerDispatchRegister(args: {
       <td>${esc(fmtDate(r.date))}</td>
       <td style="font-family:monospace;font-size:10px">${esc(r.soNo ?? '—')}</td>
       <td style="color:#7c3aed;font-weight:700">${esc(r.clientPoLineNo ?? '—')}</td>
-      <td style="color:#7c3aed;font-family:monospace">${esc(r.itemCode ?? r.itemCodeText ?? '—')}</td>
+      <td style="color:#7c3aed;font-family:monospace">${esc(itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision))}</td>
       <td>${esc(r.itemName)}</td>
       <td style="text-align:center;font-weight:700;color:#dc2626">${r.qty}</td>
       <td style="text-align:center">${esc(r.uom ?? 'NOS')}</td>

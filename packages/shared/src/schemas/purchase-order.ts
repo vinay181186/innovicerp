@@ -45,6 +45,22 @@ export const purchaseOrderLineSchema = z.object({
   // Live item code joined from items.code when itemId is set; null otherwise.
   // Same pattern as salesOrderLineSchema.itemCode (per ISSUE-005 fix).
   itemCode: z.string().nullable().default(null),
+  /** The customer's drawing revision, read live off the SO line THIS LINE was
+   *  raised against (purchase_order_lines.source_so_line_id →
+   *  sales_order_lines.revision). Per line, not per PO: one purchase order may
+   *  cover several orders, so the revision belongs beside the line's own item
+   *  code and is displayed as `CODE/REV`.
+   *
+   *  Null is correct and common: a line typed by hand on the PO form, a
+   *  stock-replenishment line, or one whose SO line has since been deleted (the
+   *  FK is ON DELETE SET NULL). Null renders as the bare item code — never a
+   *  trailing slash, and never `items.revision`, which is a different column
+   *  about the item itself and would print a wrong revision on a vendor's copy.
+   *
+   *  Only the detail READ resolves it; the create / update / approve
+   *  write-backs return the line without the join, exactly as `itemCode` and
+   *  `sourcePrCode` do, and the detail page refetches. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string(),
   qty: z.number().int().positive(),
   // numeric stored as string; NULL when the viewer's access hides prices

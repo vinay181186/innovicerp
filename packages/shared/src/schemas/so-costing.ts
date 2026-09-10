@@ -58,6 +58,11 @@ export const soCostingLineSchema = z.object({
   salesOrderLineId: z.string().uuid(),
   lineNo: z.number().int(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for this SO line, straight off
+   *  `sales_order_lines.revision` (migration 0119) via `salesOrderLineId` above.
+   *  Null only on a database that has not had 0119. It is never `items.revision`,
+   *  which describes the item master rather than this order's drawing. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string(),
   orderQty: z.number().int().nonnegative(),
   materialCost: z.number().nonnegative().nullable(),

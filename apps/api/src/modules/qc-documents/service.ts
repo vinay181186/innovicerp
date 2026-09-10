@@ -234,6 +234,7 @@ interface QcOpDbRow {
   lineNo: number;
   clientPoLineNo: string | null;
   itemCode: string | null;
+  itemRevision: string | null;
   itemName: string | null;
   orderQty: number;
   jobCardId: string;
@@ -277,6 +278,16 @@ export async function getQcMatrix(
         sol.id AS "soLineId", sol.line_no AS "lineNo",
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE(i.code, sol.item_code_text) AS "itemCode",
+        -- The customer's drawing revision, typed on this very SO line. The matrix
+        -- is built outwards from the line, so it is one column away rather than
+        -- three joins away. It is NOT items.revision, which describes the item
+        -- master and would file the QC reports against the wrong drawing.
+        --
+        -- Cast to text on purpose: the contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119. On one
+        -- that has not it is still the old integer and would arrive here as a
+        -- number wearing a string type. The cast is a no-op once 0119 is in.
+        sol.revision::text AS "itemRevision",
         COALESCE(i.name, sol.part_name) AS "itemName",
         sol.order_qty AS "orderQty"
       FROM public.sales_order_lines sol
@@ -295,6 +306,10 @@ export async function getQcMatrix(
           sol.line_no AS "lineNo",
           sol.client_po_line_no AS "clientPoLineNo",
           COALESCE(i.code, sol.item_code_text) AS "itemCode",
+          -- Same SO-line column as the line query above, reached here through the
+          -- sol join the row already makes. Cast to text so a pre-0119 database
+          -- cannot hand the UI a number. Never items.revision.
+          sol.revision::text AS "itemRevision",
           COALESCE(i.name, sol.part_name) AS "itemName",
           sol.order_qty AS "orderQty",
           jc.id AS "jobCardId", jc.code AS "jcCode",
@@ -366,6 +381,7 @@ export async function getQcMatrix(
       lineNo: number;
       clientPoLineNo: string | null;
       itemCode: string | null;
+      itemRevision: string | null;
       itemName: string | null;
       orderQty: number;
       jobCardId: string;
@@ -382,6 +398,7 @@ export async function getQcMatrix(
           lineNo: num(op.lineNo),
           clientPoLineNo: op.clientPoLineNo ?? null,
           itemCode: op.itemCode ?? null,
+          itemRevision: op.itemRevision ?? null,
           itemName: op.itemName ?? null,
           orderQty: num(op.orderQty),
           jobCardId: op.jobCardId,
@@ -420,6 +437,7 @@ export async function getQcMatrix(
           lineNo: num(lineRow['lineNo']),
           clientPoLineNo: (lineRow['clientPoLineNo'] as string | null) ?? null,
           itemCode: (lineRow['itemCode'] as string | null) ?? null,
+          itemRevision: (lineRow['itemRevision'] as string | null) ?? null,
           itemName: (lineRow['itemName'] as string | null) ?? null,
           orderQty: num(lineRow['orderQty']),
           jobCardId: null,
@@ -470,6 +488,7 @@ export async function getQcMatrix(
         lineNo: g.lineNo,
         clientPoLineNo: g.clientPoLineNo,
         itemCode: g.itemCode,
+        itemRevision: g.itemRevision,
         itemName: g.itemName,
         orderQty: g.orderQty,
         jobCardId: g.jobCardId,
@@ -527,6 +546,11 @@ export async function getQcLineDetail(
       SELECT
         jc.id AS "jobCardId", jc.code AS "jcCode", jc.order_qty AS "orderQty",
         COALESCE(i.code, sol.item_code_text) AS "itemCode",
+        -- The customer's drawing revision off the SO line this card was raised
+        -- against, through the sol LEFT JOIN already made here — null for a card
+        -- with no SO behind it. Cast to text so a pre-0119 database cannot hand
+        -- the UI a number. Never items.revision.
+        sol.revision::text AS "itemRevision",
         COALESCE(i.name, sol.part_name) AS "itemName"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
@@ -649,6 +673,7 @@ export async function getQcLineDetail(
       jobCardId: jcRow['jobCardId'] as string,
       jcCode: (jcRow['jcCode'] as string) ?? '',
       itemCode: (jcRow['itemCode'] as string | null) ?? null,
+      itemRevision: (jcRow['itemRevision'] as string | null) ?? null,
       itemName: (jcRow['itemName'] as string | null) ?? null,
       orderQty: num(jcRow['orderQty']),
       totalAccepted,

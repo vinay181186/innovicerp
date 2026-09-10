@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useSoQcStatus } from '../api';
@@ -238,7 +239,7 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
       >
         <td className="fw-700">{l.lineNo}</td>
         <td className="td-code mono fw-700" style={{ color: 'var(--cyan)' }}>
-          {l.itemCode ?? '—'}
+          {itemCodeWithRev(l.itemCode, l.itemRevision)}
         </td>
         <td>{l.partName ?? '—'}</td>
         <td className="mono fw-700">{l.orderQty}</td>

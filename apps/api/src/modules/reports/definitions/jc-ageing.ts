@@ -25,6 +25,11 @@ export const jcAgeingReport: RegisteredReport = {
       { key: 'jc_date', label: 'JC date', type: 'date' },
       { key: 'days_open', label: 'Days open', type: 'number' },
       { key: 'item_code', label: 'Item code', type: 'text' },
+      // Customer drawing revision of the SO line this JC came from. Kept out
+      // of item_code because the sheet is filtered and VLOOKUP'd on that
+      // column. Blank for a JW-sourced or standalone JC — no SO line, no
+      // customer revision.
+      { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
       { key: 'item_name', label: 'Item name', type: 'text' },
       { key: 'qty', label: 'Order qty', type: 'number' },
       { key: 'computed_status', label: 'Status', type: 'text' },
@@ -47,6 +52,8 @@ export const jcAgeingReport: RegisteredReport = {
         jc.jc_date                       AS jc_date,
         (CURRENT_DATE - jc.jc_date)::int AS days_open,
         it.code                          AS item_code,
+        -- ::text because production is still pre-0119 and stores an integer.
+        sol.revision::text               AS so_revision,
         it.name                          AS item_name,
         jc.order_qty                     AS qty,
         v.computed_status                AS computed_status,
@@ -56,6 +63,10 @@ export const jcAgeingReport: RegisteredReport = {
       FROM public.job_cards jc
       JOIN public.items it ON it.id = jc.item_id
       LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
+      -- LEFT, never inner: a JC raised from a JW line or by hand has no source
+      -- SO line, and this ageing list is how stuck production is spotted —
+      -- silently dropping those rows would hide real work.
+      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
       WHERE jc.company_id = ${companyId}::uuid
         AND jc.deleted_at IS NULL
         ${statusFrag}
@@ -71,6 +82,9 @@ export const jcAgeingReport: RegisteredReport = {
           : String(r['jc_date'] ?? ''),
       days_open: r['days_open'] != null ? Number(r['days_open']) : 0,
       item_code: String(r['item_code'] ?? ''),
+      // '' not '—': a JC with no SO line must leave the cell blank so nobody
+      // ends up sorting a column of dashes.
+      so_revision: String(r['so_revision'] ?? ''),
       item_name: String(r['item_name'] ?? ''),
       qty: Number(r['qty'] ?? 0),
       computed_status: String(r['computed_status'] ?? ''),

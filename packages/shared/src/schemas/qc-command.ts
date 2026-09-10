@@ -21,6 +21,13 @@ export interface QcCommandQueueRow {
   opSeq: number;
   operation: string;
   itemCode: string | null;
+  /** The customer's drawing revision for this op's part, read off the SO line
+   *  the job card was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision) — the same LEFT JOIN that yields soCode, so
+   *  the two are null together on a JW-sourced or standalone card. Null renders
+   *  as the bare item code. Never items.revision, a different column about the
+   *  item master that would hand an inspector the wrong drawing. */
+  itemRevision: string | null;
   soCode: string | null;
   customer: string | null;
   pendingQty: number;
@@ -61,6 +68,11 @@ export interface QcReworkRow {
   opSeq: number;
   operation: string;
   itemCode: string | null;
+  /** The customer's drawing revision for the part being reworked, off the same
+   *  SO-line LEFT JOIN as soCode (sales_order_lines.revision). Null together
+   *  with soCode when no SO line stands behind the card; null shows the bare
+   *  item code. Never items.revision. */
+  itemRevision: string | null;
   soCode: string | null;
   attempts: number;
   totalRejected: number;

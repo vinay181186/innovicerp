@@ -24,6 +24,7 @@ interface WipRawRow {
   outsource_status: string | null;
   item_id: string | null;
   item_code: string | null;
+  item_revision: string | null;
   item_name: string | null;
   so_code: string | null;
   vendor_name: string | null;
@@ -56,8 +57,24 @@ export async function listOspWip(
         w.item_id, w.item_code, w.item_name, w.so_code, w.vendor_name, w.vendor_code,
         w.order_qty, w.sent_qty, w.returned_qty, w.rejected_qty,
         w.accepted_qty, w.at_vendor_qty, w.not_sent_qty, w.in_qc_qty,
-        w.ready_to_send_qty
+        w.ready_to_send_qty,
+        -- The customer's drawing revision. v_osp_wip resolves so_code through
+        -- jc.source_so_line_id but does not carry the revision column, and
+        -- widening the view would need a migration, so the two hops are made
+        -- here instead off the job_card_id the view does expose. Both hops are
+        -- LEFT JOINs: an op on a JW-sourced or standalone card must still come
+        -- back, with a null revision. It is never items.revision, which
+        -- describes the item master and means something else.
+        --
+        -- Cast to text on purpose: the contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119. On one
+        -- that has not it is still the old integer and would arrive here as a
+        -- number wearing a string type.
+        sol.revision::text AS item_revision
       FROM public.v_osp_wip w
+      LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       WHERE w.company_id = ${companyId}::uuid
         ${searchFrag}
       ORDER BY w.at_vendor_qty DESC, w.not_sent_qty DESC, w.jc_code ASC, w.op_seq ASC
@@ -72,6 +89,7 @@ export async function listOspWip(
       outsourceStatus: r.outsource_status,
       itemId: r.item_id,
       itemCode: r.item_code,
+      itemRevision: r.item_revision,
       itemName: r.item_name,
       soCode: r.so_code,
       vendorName: r.vendor_name,

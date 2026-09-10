@@ -21,6 +21,7 @@ import type {
 } from '@innovic/shared';
 import { COMPANY_CARD_ADDRESS_LINES, buildDocCompany } from '@/lib/print/company';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
+import { itemCodeWithRev } from '@/lib/item-code';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -224,7 +225,11 @@ export function printPurchaseOrder(args: {
     },
     document: { label: 'Order', fields: documentFields },
     lines: lines.map((l) => ({
-      itemCode: l.itemCode ?? l.itemCodeText ?? '',
+      // CODE/REV, exactly as the PO detail screen renders it. The printed copy
+      // is what the vendor works to, so it must not disagree with the screen
+      // about which drawing revision was ordered. Empty fallback, not an em
+      // dash: a blank cell is what this template expects for "nothing to say".
+      itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
       itemName: l.itemName,
       uom: PO_UOM,
       qty: String(l.qty),

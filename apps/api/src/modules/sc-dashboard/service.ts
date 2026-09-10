@@ -252,6 +252,14 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
           COALESCE(v.name, vt.name, po.vendor_code_text) AS vendor_name,
           so.code AS so_code,
           i.code AS item_code, COALESCE(i.name, pol.item_name) AS item_name,
+          -- The customer's drawing revision, read live off the SO line this PO
+          -- line was raised against via the sol LEFT JOIN already below. It is
+          -- deliberately not items.revision, which describes the item master
+          -- and would be a plausible-looking lie in this column. Cast to text
+          -- because the contract types it as a string and the column is only
+          -- text on a database that has had migration 0119; on one that has
+          -- not it is still an integer and would arrive wearing a string type.
+          sol.revision::text AS item_revision,
           pol.qty, pol.received_qty, pol.rate,
           GREATEST(0, pol.qty - pol.received_qty) AS pending_qty,
           GREATEST(0, (pol.qty - pol.received_qty) * pol.rate) AS pending_val,
@@ -279,6 +287,7 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       vendor_name: string | null;
       so_code: string | null;
       item_code: string | null;
+      item_revision: string | null;
       item_name: string | null;
       qty: string | number;
       received_qty: string | number;
@@ -296,6 +305,7 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       vendorName: r.vendor_name,
       soCode: r.so_code,
       itemCode: r.item_code,
+      itemRevision: r.item_revision,
       itemName: r.item_name,
       qty: Number(r.qty) || 0,
       receivedQty: Number(r.received_qty) || 0,

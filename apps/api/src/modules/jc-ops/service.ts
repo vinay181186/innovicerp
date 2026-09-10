@@ -52,6 +52,15 @@ export async function listJcOpsBoard(
         jc.id AS "jcId",
         jc.code AS "jcCode",
         i.code AS "jcItemCode",
+        -- The customer's drawing revision for the JC's item, read live off the
+        -- SO line the card was raised against — never items.revision, which
+        -- describes the item master and means something else entirely. The sol
+        -- join is LEFT: ops on JW-sourced and standalone cards are a normal
+        -- part of this board and come back null. Cast to text because the
+        -- contract types it as a string, while a database that has not had
+        -- migration 0119 still holds an integer in that column; the cast is a
+        -- no-op once 0119 is applied.
+        sol.revision::text AS "itemRevision",
         i.name AS "jcItemName",
         jc.order_qty AS "jcOrderQty",
         op.op_seq AS "opSeq",
@@ -95,6 +104,8 @@ export async function listJcOpsBoard(
       FROM public.jc_ops op
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = op.machine_id AND m.deleted_at IS NULL
       LEFT JOIN public.vendors ven ON ven.id = op.outsource_vendor_id AND ven.deleted_at IS NULL
       LEFT JOIN public.purchase_requests pr ON pr.id = op.outsource_pr_id AND pr.deleted_at IS NULL
@@ -136,6 +147,7 @@ export async function listJcOpsBoard(
         jcId: (r['jcId'] as string | null) ?? null,
         jcCode: String(r['jcCode'] ?? ''),
         jcItemCode: (r['jcItemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         jcItemName: (r['jcItemName'] as string | null) ?? null,
         jcOrderQty: num(r['jcOrderQty']),
         opSeq: num(r['opSeq']),

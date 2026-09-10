@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 
 export const scDashboardRoute = createRoute({
@@ -58,7 +59,9 @@ function ScDashboardPage(): React.JSX.Element {
     for (const p of pendingLines) {
       const v = p.vendorName ?? p.vendorCode;
       if (v) vendors.add(v);
-      if (p.itemCode) items.add(p.itemCode);
+      // The picklist offers exactly what the Item column prints, `CODE/REV`, so
+      // that choosing an option always matches a row the operator can see.
+      if (p.itemCode) items.add(itemCodeWithRev(p.itemCode, p.itemRevision, p.itemCode));
       if (p.soCode) sos.add(p.soCode);
     }
     return {
@@ -74,7 +77,10 @@ function ScDashboardPage(): React.JSX.Element {
     return pendingLines.filter(
       (p) =>
         has(p.vendorName ?? p.vendorCode, fltVendor) &&
-        has(p.itemCode, fltItem) &&
+        // Filtering runs over the already-loaded rows, so match on the printed
+        // `CODE/REV` — a revision the operator can see on the board has to be
+        // one they can type. The bare code still matches, it is a prefix.
+        has(itemCodeWithRev(p.itemCode, p.itemRevision, ''), fltItem) &&
         has(p.soCode, fltSo),
     );
   }, [pendingLines, fltVendor, fltItem, fltSo]);
@@ -280,7 +286,7 @@ function ScDashboardPage(): React.JSX.Element {
                         {p.soCode ?? '—'}
                       </td>
                       <td className="td-code" style={{ color: 'var(--purple)' }}>
-                        {p.itemCode ?? '—'}
+                        {itemCodeWithRev(p.itemCode, p.itemRevision)}
                       </td>
                       <td style={{ fontSize: 12 }}>{p.itemName ?? '—'}</td>
                       <td className="td-ctr mono fw-700">{p.qty}</td>

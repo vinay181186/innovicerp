@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import { z } from 'zod';
 import { MachineSplitLines } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
@@ -335,7 +336,7 @@ function JobQueuePage(): React.JSX.Element {
                                 color: 'var(--cyan)',
                               }}
                             >
-                              {r.itemCode ?? ''} {r.itemName ? `— ${r.itemName}` : ''}
+                              {itemCodeWithRev(r.itemCode, r.itemRevision, '')} {r.itemName ? `— ${r.itemName}` : ''}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                               {r.soCode ?? '—'}

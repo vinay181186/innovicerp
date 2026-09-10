@@ -102,6 +102,15 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
         jo.op_seq AS "opSeq", jo.operation, jo.machine_id AS "machineId",
         m.code AS "machineCode",
         i.code AS "itemCode", i.name AS "itemName",
+        -- The customer's drawing revision off the SO line this card was raised
+        -- against, not items.revision (a different column, about the item master).
+        -- The sol join below is a LEFT JOIN, so JW-sourced and standalone cards
+        -- come back null and render as the bare code.
+        --
+        -- ::text on purpose: the contract types this as a string, but a database
+        -- without migration 0119 still holds an integer here and would hand the
+        -- board a number. The cast is a no-op once 0119 is applied.
+        sol.revision::text AS "itemRevision",
         so.code AS "soCode",
         jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
         vos.completed_qty AS "completedQty", vos.available,
@@ -148,6 +157,7 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
       ),
       itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       soCode: (r['soCode'] as string | null) ?? null,
       priority: r['priority'] as MachineLoadOp['priority'],

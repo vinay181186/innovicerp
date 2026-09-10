@@ -52,6 +52,7 @@ import { useApprovalConfig } from '@/modules/approval-config/api';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -670,7 +671,10 @@ function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): Reac
       <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
         {l.lineNo}
       </td>
-      <td className="td-code">{l.itemCode ?? l.itemCodeText ?? '—'}</td>
+      {/* CODE/REV — the customer's drawing revision off the SO line THIS line
+          was raised against. A hand-typed line has no SO behind it and keeps
+          the bare code, with no trailing slash. */}
+      <td className="td-code">{itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}</td>
       <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.itemName}</td>
       <td className="mono text2" style={{ fontSize: 10 }}>
         {l.sourceJcOpId ? 'JC op' : '—'}

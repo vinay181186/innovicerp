@@ -9,6 +9,7 @@ import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useCloseNcReturn,
@@ -480,8 +481,12 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
       </div>
       <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>
         <InlinePair label="Item:">
-          {detail.itemCode ?? detail.itemCodeText ?? '—'} —{' '}
-          {detail.itemName ?? detail.itemNameText ?? ''}
+          {/* CODE/REV only on the live joined code; the itemCodeText fallback is
+              what the reporter typed and stays bare. */}
+          {detail.itemCode
+            ? itemCodeWithRev(detail.itemCode, detail.itemRevision)
+            : (detail.itemCodeText ?? '—')}{' '}
+          — {detail.itemName ?? detail.itemNameText ?? ''}
         </InlinePair>
         <InlinePair label="Operation:">
           {detail.opSeq != null ? `Op${detail.opSeq}` : ''}

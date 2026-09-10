@@ -12,6 +12,7 @@
 import type { DispatchableLine } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 export interface LineCard {
   id: number;
@@ -91,7 +92,16 @@ export function DispatchLineTable(props: {
                 );
                 const opts = lines
                   .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
-                  .map((l) => ({ id: l.salesOrderLineId, code: l.itemCode, name: l.itemName }));
+                  // The dropdown labels each option with the drawing revision —
+                  // "IN-IT-0007/B" — because two SO lines for the same part at
+                  // different revisions are otherwise indistinguishable here.
+                  // What the picker SUBMITS is still the SO line id, so this is
+                  // a label only; a line with no revision keeps the bare code.
+                  .map((l) => ({
+                    id: l.salesOrderLineId,
+                    code: itemCodeWithRev(l.itemCode, l.itemRevision, '') || null,
+                    name: l.itemName,
+                  }));
                 const err = lineErrors.get(card.id);
                 return (
                   <tr key={card.id}>
@@ -112,7 +122,11 @@ export function DispatchLineTable(props: {
                         // Name field carries the name. The open dropdown still
                         // renders "CODE — Name" so you can search by either.
                         selectedLabel={(o) => o.code ?? o.name}
-                        valueLabel={line ? (line.itemCode ?? line.itemName) : undefined}
+                        valueLabel={
+                          line
+                            ? itemCodeWithRev(line.itemCode, line.itemRevision, line.itemName)
+                            : undefined
+                        }
                       />
                     </td>
                     <td>

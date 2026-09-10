@@ -6,6 +6,7 @@ import type { UnplannedOrderRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useUnplannedOrders } from '../api';
 
 export function NeedsPlanningTable(): React.JSX.Element {
@@ -17,7 +18,10 @@ export function NeedsPlanningTable(): React.JSX.Element {
     const q = search.trim().toLowerCase();
     if (!q) return data.rows;
     return data.rows.filter((r) =>
-      `${r.soCode} ${r.itemCode ?? ''} ${r.partName ?? ''} ${r.customerName ?? ''}`
+      // Searched on the code AS DISPLAYED, so typing "IN-IT-0007/B" finds the
+      // row the planner is looking at. Empty fallback keeps the em dash out of
+      // the haystack.
+      `${r.soCode} ${itemCodeWithRev(r.itemCode, r.itemRevision, '')} ${r.partName ?? ''} ${r.customerName ?? ''}`
         .toLowerCase()
         .includes(q),
     );
@@ -96,7 +100,12 @@ export function NeedsPlanningTable(): React.JSX.Element {
                   </td>
                   <td className="td-ctr">{r.lineNo}</td>
                   <td>
-                    <span style={{ color: 'var(--purple)', fontWeight: 600 }}>{r.itemCode ?? '—'}</span>
+                    {/* `CODE/REV` — the customer's drawing revision typed on this
+                        very SO line. nowrap because a short code must never break
+                        across two lines in a list row. */}
+                    <span style={{ color: 'var(--purple)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      {itemCodeWithRev(r.itemCode, r.itemRevision)}
+                    </span>
                   </td>
                   <td>{r.partName ?? '—'}</td>
                   <td className="td-ctr" style={{ fontWeight: 700 }}>

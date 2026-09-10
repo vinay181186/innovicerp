@@ -29,6 +29,15 @@ export const itemTrackerReport: RegisteredReport = {
     ],
     columns: [
       { key: 'item_code', label: 'Item', type: 'text' },
+      // The customer drawing revision(s) currently in production for this
+      // item. This report's grain is ONE ROW PER ITEM — in_stock is a single
+      // on-hand figure that is not held per revision — so the revision cannot
+      // become part of the key without duplicating the stock figure across
+      // every revision and inflating Total. It is therefore reported as the
+      // distinct set of revisions on the open job cards, comma-separated
+      // ("A, B" when the same item is running at two revisions at once), and
+      // blank when no open JC traces back to an SO line.
+      { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
       { key: 'item_name', label: 'Name', type: 'text' },
       { key: 'in_stock', label: 'In Stock', type: 'number' },
       { key: 'in_production', label: 'In Production', type: 'number' },
@@ -44,9 +53,20 @@ export const itemTrackerReport: RegisteredReport = {
       WITH jc_open AS (
         SELECT
           jc.item_id,
-          SUM(jc.order_qty)::int AS qty
+          SUM(jc.order_qty)::int AS qty,
+          -- Distinct drawing revisions of the SO lines behind these open JCs.
+          -- sol.id is the primary key so the LEFT JOIN adds at most one row
+          -- per job card — SUM(jc.order_qty) above is untouched by it.
+          -- ::text because production is still pre-0119 and holds an integer.
+          NULLIF(
+            STRING_AGG(DISTINCT sol.revision::text, ', ' ORDER BY sol.revision::text),
+            ''
+          ) AS revisions
         FROM public.job_cards jc
         LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
+        -- LEFT, never inner: a JC raised from a JW line or by hand still
+        -- counts towards In Production, it just has no customer revision.
+        LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
         WHERE jc.company_id = ${companyId}::uuid
           AND jc.deleted_at IS NULL
           AND (v.computed_status IS NULL OR v.computed_status NOT IN ('complete', 'closed'))
@@ -79,6 +99,11 @@ export const itemTrackerReport: RegisteredReport = {
       )
       SELECT
         i.code                                     AS item_code,
+        -- Aliased so_revision, not plain revision: the items table has its own
+        -- revision column describing the item itself, and two columns called
+        -- Revision meaning different things would be worse than none. This
+        -- one is the CUSTOMER's drawing revision off the sales order line.
+        COALESCE(jc_open.revisions, '')             AS so_revision,
         i.name                                     AS item_name,
         COALESCE(s.on_hand_qty, 0)::int            AS in_stock,
         COALESCE(jc_open.qty, 0)::int              AS in_production,
@@ -102,6 +127,7 @@ export const itemTrackerReport: RegisteredReport = {
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       item_code: String(r['item_code'] ?? ''),
+      so_revision: String(r['so_revision'] ?? ''),
       item_name: String(r['item_name'] ?? ''),
       in_stock: Number(r['in_stock'] ?? 0),
       in_production: Number(r['in_production'] ?? 0),

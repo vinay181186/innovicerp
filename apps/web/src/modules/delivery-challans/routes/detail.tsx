@@ -18,6 +18,7 @@ import { ArrowLeft, Ban, Inbox, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -301,7 +302,17 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                       <tr key={line.id}>
                         <td className="mono">{line.lineNo}</td>
                         <td>
-                          <span className="mono">{line.itemCode ?? line.itemCodeText ?? '—'}</span>
+                          {/* The drawing revision joins the code only on a line
+                              the API could prove IS the customer's part — an
+                              OSP line going out for a process. A raw-material
+                              or bought-in line has no revision here and stays
+                              bare; the SO's revision is on the header instead. */}
+                          <span className="mono">
+                            {itemCodeWithRev(
+                              line.itemCode ?? line.itemCodeText,
+                              line.itemRevision,
+                            )}
+                          </span>
                           {(line.itemName ?? line.itemNameText) ? (
                             <span className="text3" style={{ marginLeft: 6 }}>
                               {line.itemName ?? line.itemNameText}
@@ -392,6 +403,11 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
       {/* Resolved through the PO's lines when the DC has no SO line of its own,
           which is the normal shape for an OSP/vendor challan. */}
       <Pair label="SO" value={dc.soCode ?? dc.soRefText ?? '—'} />
+      {/* Its own labelled field, NOT "IN-SO-0012/B" — a slash after an SO
+          number reads as a revision OF THE SALES ORDER, which is not a thing.
+          This is the customer's DRAWING revision, so it is said in words. It is
+          shown only when there is one; an empty "Rev —" tells nobody anything. */}
+      {dc.soLineRevision ? <Pair label="Drawing Rev" value={dc.soLineRevision} /> : null}
       <Pair label="Transport" value={dc.transport ?? '—'} />
       <Pair label="Vehicle No" value={dc.vehicleNo ?? '—'} />
       <Pair

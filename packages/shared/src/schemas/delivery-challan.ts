@@ -57,6 +57,25 @@ export const deliveryChallanLineSchema = z.object({
   // line has no FK or the item was deleted); itemCodeText/itemNameText remain the
   // issue-time snapshot fallback.
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision — but ONLY when this challan line provably
+   *  IS the customer's part, and null otherwise.
+   *
+   *  A DC line is a copy of a purchase-order line, and a PO line is not always
+   *  the finished part: on a buying PO it is raw material, and on some job-work
+   *  POs it is bought-in hardware. Printing the customer's drawing revision
+   *  beside a bar of EN8 would state something false, so the API only fills
+   *  this in when the chain dcl.purchase_order_line_id →
+   *  purchase_order_lines.source_so_line_id → sales_order_lines lands on an SO
+   *  line whose item_id is the SAME item as the challan line's. That is exactly
+   *  the OSP case (the auto-raised job-work PR carries the job card's item, so
+   *  the piece going to the vendor is the customer's part), and it excludes raw
+   *  material and bought-in lines by construction.
+   *
+   *  Source is sales_order_lines.revision (migration 0119), never
+   *  items.revision — a different column about the item master. Null renders as
+   *  the bare code, with no slash and no placeholder; the challan HEADER still
+   *  carries `soLineRevision` for the SO the whole document was raised under. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
@@ -77,6 +96,19 @@ export const deliveryChallanWithLinesSchema = deliveryChallanSchema.extend({
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(), // resolved from purchase_orders when purchaseOrderId set
   soCode: z.string().nullable(), // resolved through sales_order_lines → sales_orders
+  /** The customer's drawing revision of the SO LINE this challan hangs off —
+   *  a header-level fact, deliberately not named `itemRevision`, because on a
+   *  delivery challan it belongs beside the SO number and not beside a line's
+   *  item code (see the note on the line's own `itemRevision`).
+   *
+   *  It follows soCode exactly: the DC's own sales_order_line_id first, then
+   *  the SO line(s) behind the PO's lines. That fallback is an aggregate over
+   *  many PO lines, so it is filled in only when every one of them agrees on a
+   *  single revision — otherwise null, because "SO-11, SO-12" has no one
+   *  drawing revision and inventing one would be a lie. Source is
+   *  sales_order_lines.revision (migration 0119), never items.revision. Null is
+   *  correct and prints as nothing at all, not an empty "Rev". */
+  soLineRevision: z.string().nullable().default(null),
   lines: z.array(deliveryChallanLineSchema),
   // T-059b — receipts are included on the detail load so the UI can render
   // the receipt history + cumulative received/rejected aggregates per line.
@@ -88,6 +120,9 @@ export const deliveryChallanListItemSchema = deliveryChallanSchema.extend({
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(),
   soCode: z.string().nullable(),
+  /** Header-level drawing revision of the SO line behind this challan — see the
+   *  full note on the detail shape above. Same rule, same nulls. */
+  soLineRevision: z.string().nullable().default(null),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.string(), // sum of lines.qty as numeric string
 });

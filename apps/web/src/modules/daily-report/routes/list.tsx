@@ -4,6 +4,7 @@ import type { DailyReportResponse } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachinesList } from '../../machines/api';
 import { useMyCompany } from '../../settings/api';
@@ -265,7 +266,7 @@ function DailyReportPage(): React.JSX.Element {
                         {r.jcCode}
                       </td>
                       <td className="mono" style={{ color: 'var(--purple)' }}>
-                        {r.itemCode ?? '—'}
+                        {itemCodeWithRev(r.itemCode, r.itemRevision)}
                       </td>
                       <td>{r.itemName ?? '—'}</td>
                       <td className="td-ctr mono">{r.opSeq}</td>

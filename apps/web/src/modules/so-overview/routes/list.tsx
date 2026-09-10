@@ -16,6 +16,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoOverview, useSoOverviewDetail } from '../api';
 
@@ -837,7 +838,7 @@ function DrillItemsTable({
                   </td>
                 ) : null}
                 <td className="td-code" style={{ color: 'var(--purple)' }}>
-                  {r.itemCode}
+                  {itemCodeWithRev(r.itemCode, r.itemRevision)}
                 </td>
                 <td style={{ fontSize: 12 }}>{r.itemName}</td>
                 <td>

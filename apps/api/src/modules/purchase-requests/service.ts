@@ -563,6 +563,18 @@ export async function listPurchaseRequests(
         pr.deleted_at AS "deletedAt",
         COALESCE(v.name, vt.name) AS "vendorName",
         i.code AS "itemCode",
+        -- The customer's drawing revision, read live off the SO line this PR was
+        -- raised against, through the SAME sol join the SO code below already
+        -- uses. Deliberately not items.revision, which is a different column
+        -- about the item master and would print a wrong revision on the card.
+        -- The join is LEFT, so a PR raised for stock or off a Job Card with no
+        -- SO behind it correctly comes back null and renders the bare code.
+        --
+        -- Cast to text on purpose. The contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119; on one
+        -- that has not, it is still the old integer and would arrive here as a
+        -- number wearing a string type. The cast is a no-op once 0119 is in.
+        sol.revision::text AS "itemRevision",
         jc.code AS "sourceJcCode",
         jo.op_seq AS "sourceJcOpSeq",
         po.code AS "poCode",
@@ -704,6 +716,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     deletedAt: maybeTsLike(r['deletedAt']),
     vendorName: (r['vendorName'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
+    itemRevision: (r['itemRevision'] as string | null) ?? null,
     sourceJcCode: (r['sourceJcCode'] as string | null) ?? null,
     sourceJcOpSeq: r['sourceJcOpSeq'] != null ? Number(r['sourceJcOpSeq']) : null,
     poCode: (r['poCode'] as string | null) ?? null,
@@ -752,6 +765,13 @@ export async function getPurchaseRequest(
           NULLIF(btrim(coalesce(${vendors.pincode}, ${vendorByCode.pincode}), ' ,'), '')
         ), '(,\s*){2,}', ', ', 'g'), '')`,
         itemCode: items.code,
+        // The customer's drawing revision, taken off the SO line through the
+        // salesOrderLines join below that already resolves soCode / soLineNo.
+        // Cast to text: the contract types it as a string, and on a database
+        // without migration 0119 the column is still the old integer, which
+        // would arrive as a number wearing a string type. Never items.revision
+        // -- that is a different column about the item master.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
         // Resolve the source/linked document codes so the detail page shows real
         // values instead of a '— linked —' placeholder.
         poCode: purchaseOrders.code,
@@ -815,6 +835,7 @@ export async function getPurchaseRequest(
       vendorCode: found.vendorCode,
       vendorAddress: found.vendorAddress,
       itemCode: found.itemCode,
+      itemRevision: found.itemRevision,
       poCode: found.poCode,
       sourceJcCode: found.sourceJcCode,
       sourceJcOpSeq: found.sourceJcOpSeq,

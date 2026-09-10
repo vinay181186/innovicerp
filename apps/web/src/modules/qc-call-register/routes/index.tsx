@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -103,13 +104,20 @@ function QcCallRegisterPage(): React.JSX.Element {
   const ct = compSearch.trim().toLowerCase();
   const matchP = (o: QcHistoryPendingRow): boolean =>
     pt === '' ||
-    [o.jcCode, o.soCode, o.itemCode, o.operation].some((v) => (v ?? '').toLowerCase().includes(pt));
+    // The revision is part of what the row shows, so it is part of what the box
+    // searches. This filter runs over rows already loaded, so widening it cannot
+    // hide anything the server did send.
+    [o.jcCode, o.soCode, o.itemCode, o.itemRevision, o.operation].some((v) =>
+      (v ?? '').toLowerCase().includes(pt),
+    );
   const matchC = (l: QcHistoryLogRow): boolean =>
     ct === '' ||
-    [l.jcCode, l.soCode, l.itemCode, l.operation].some((v) => (v ?? '').toLowerCase().includes(ct));
+    [l.jcCode, l.soCode, l.itemCode, l.itemRevision, l.operation].some((v) =>
+      (v ?? '').toLowerCase().includes(ct),
+    );
   const matchIncP = (o: IncomingQcPendingRow): boolean =>
     pt === '' ||
-    [o.grnNo, o.itemCode, o.itemName, o.vendorName, o.poCode].some((v) =>
+    [o.grnNo, o.itemCode, o.itemRevision, o.itemName, o.vendorName, o.poCode].some((v) =>
       (v ?? '').toLowerCase().includes(pt),
     );
 
@@ -119,7 +127,7 @@ function QcCallRegisterPage(): React.JSX.Element {
   const incCompletedF = incCompleted.filter(
     (l) =>
       ct === '' ||
-      [l.grnNo, l.itemCode, l.itemName, l.vendorName].some((v) =>
+      [l.grnNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName].some((v) =>
         (v ?? '').toLowerCase().includes(ct),
       ),
   );
@@ -509,7 +517,7 @@ function PendingCall(props: {
             ) : null}
           </div>
           <div className="text2" style={{ fontSize: 11 }}>
-            {o.itemCode ?? '—'} — {o.operation}
+            {itemCodeWithRev(o.itemCode, o.itemRevision)} — {o.operation}
           </div>
           <div className="text3" style={{ fontSize: 10 }}>
             🏭 In-house · SO <b className="mono">{o.soCode ?? '—'}</b>
@@ -703,7 +711,7 @@ function CompletedLog({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
             Op{l.opSeq} — {l.operation}
           </span>
           <div className="text2" style={{ fontSize: 11 }}>
-            {l.itemCode ?? '—'} · {l.soCode ?? '—'}
+            {itemCodeWithRev(l.itemCode, l.itemRevision)} · {l.soCode ?? '—'}
           </div>
           {l.qcCallDate ? (
             <div style={{ fontSize: 10, marginTop: 2 }}>

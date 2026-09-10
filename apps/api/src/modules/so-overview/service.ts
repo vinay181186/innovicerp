@@ -422,6 +422,12 @@ export async function getSoOverviewDetail(
         itemId: salesOrderLines.itemId,
         itemCode: items.code,
         itemName: items.name,
+        // The customer's drawing revision typed on this line (migration 0119).
+        // Cast to text on purpose: the contract types it as a string, but a
+        // database that has not had 0119 still holds the old integer here and a
+        // bare select would hand the UI a number. No-op once 0119 is in. Never
+        // items.revision, which is a different column about the item master.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
         partName: salesOrderLines.partName,
       })
       .from(salesOrderLines)
@@ -618,6 +624,12 @@ export async function getSoOverviewDetail(
           buildChildRow({
             rowId: c.bml.childItemId,
             itemCode: c.childCode,
+            // Null by design. This row is a BOM child of the equipment the
+            // customer ordered, not an SO line, so there is no customer drawing
+            // revision behind it. items.revision would fit the type but describes
+            // the item master, and printing it here would put a plausible-looking
+            // wrong revision on every child — worse than a blank.
+            itemRevision: null,
             itemName: c.childName,
             requiredQty: Number(c.bml.qtyPerSet) * equipmentQty,
             lineNo: null,
@@ -647,6 +659,8 @@ export async function getSoOverviewDetail(
         buildChildRow({
           rowId: line.id,
           itemCode: line.itemCode ?? line.partName ?? '—',
+          // This row IS the SO line, so it carries that line's drawing revision.
+          itemRevision: line.itemRevision ?? null,
           itemName: line.itemName ?? line.partName ?? '—',
           requiredQty: line.orderQty,
           lineNo: line.lineNo,
@@ -759,6 +773,11 @@ export async function getSoOverviewDetail(
 interface BuildChildRowInput {
   rowId: string;
   itemCode: string;
+  /** The customer's drawing revision, and only a Component (SO-line) row has one.
+   *  An Equipment row is a BOM child of the ordered assembly — the customer's
+   *  drawing revision belongs to the equipment line they ordered, not to the child
+   *  — so that caller passes null and the row renders the bare child code. */
+  itemRevision: string | null;
   itemName: string;
   requiredQty: number;
   lineNo: number | null;
@@ -773,7 +792,7 @@ interface BuildChildRowInput {
 }
 
 function buildChildRow(input: BuildChildRowInput): SoOverviewChildRow {
-  const { rowId, itemCode, itemName, requiredQty, lineNo, clientPoLineNo, lineDueDate, jcs, rollupByJcId, machineMap, vendorMap, vendorByOpId, today } = input;
+  const { rowId, itemCode, itemRevision, itemName, requiredQty, lineNo, clientPoLineNo, lineDueDate, jcs, rollupByJcId, machineMap, vendorMap, vendorByOpId, today } = input;
 
   const enriched = jcs.flatMap((jc) => rollupByJcId.get(jc.id)?.ops ?? []);
   const jcRollups = jcs.map((jc) => rollupByJcId.get(jc.id)?.rollup).filter((r): r is JCRollup => Boolean(r));
@@ -856,6 +875,7 @@ function buildChildRow(input: BuildChildRowInput): SoOverviewChildRow {
     lineNo,
     clientPoLineNo,
     itemCode,
+    itemRevision,
     itemName,
     stage,
     status,
