@@ -98,13 +98,14 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // THE stop endpoint for the whole app — the Op Entry screen and both tabs of
-  // the Live Operations Board. Every field of the body is optional: no body at
-  // all is the breakdown case and ends the session exactly as before; a qty
-  // records the production in the same transaction.
+  // the Live Operations Board. The body is a full production entry: date, time,
+  // shift, operator and quantity, exactly as POST /op-entry/op-log takes them.
+  // A quantity of 0 is the breakdown case — it writes no op_log row but still
+  // ends the session, and the operator has still had to say so.
   app.post('/op-entry/running-ops/:id/stop', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    const body = stopOpInputSchema.parse(req.body ?? {});
+    const body = stopOpInputSchema.parse(req.body);
     return service.stopOp(id, body, req.user);
   });
 

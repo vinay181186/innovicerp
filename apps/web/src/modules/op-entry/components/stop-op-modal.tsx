@@ -7,14 +7,24 @@
 // so the op's Done stayed 0 and the NEXT operation never became workable — the
 // operator had to remember to go to Op Entry afterwards, and of 8 sessions
 // ended that way, 4 had no production logged at all. Stopping and logging what
-// was made are now one action.
+// was made are now ONE action, and the entry it writes is an ordinary
+// completion row: same log type, same machine stamp, same downstream cascades.
 //
-// Two shapes, deliberately:
-//   * breakdown / nothing made -> clear the qty, press Stop. Nothing is posted
-//     in the body, so the session ends exactly as it did before. Stop is NEVER
-//     disabled for a 0 quantity: that case has to stay one click.
-//   * finished a batch -> the qty is PREFILLED with the cap, so the common case
-//     is also one click.
+// EVERY FIELD STARTS BLANK AND NOTHING IS DEFAULTED — not the date, not the
+// time, not the shift, not the operator, not the quantity. The old modal
+// prefilled the quantity with the cap and asked for none of the other four,
+// reading them off the running_ops row instead. That silently asserted things
+// that are frequently untrue: a session started at 22:40 on the night shift by
+// one operator is often stopped the next morning by a different one, and the
+// entry then carried the wrong date, the wrong shift and the wrong name with
+// nothing in the record to show it. Re-typing four fields costs the operator a
+// few seconds; a production log nobody can trust costs far more. The person
+// standing at the machine states the facts of THIS entry.
+//
+// Quantity 0 is a perfectly valid answer (a breakdown, a setup that never ran)
+// and always goes through. What is blocked is an EMPTY quantity box — "nothing
+// made" has to be said out loud rather than walked away from, which is exactly
+// what used to happen.
 //
 // The cap ("you can log up to N") is shown BEFORE the operator types. Inviting
 // a number the server will then refuse is the exact problem that was fixed on
@@ -25,9 +35,10 @@
 // Shape lifted from purchase-requests/components/close-balance-modal.tsx: same
 // overlay, same `.panel` body, same footer pair.
 
-import type { StopOpInput } from '@innovic/shared';
+import { SHIFTS, SHIFT_LABELS, type Shift, type StopOpInput } from '@innovic/shared';
 import { Loader2, X } from 'lucide-react';
 import { useState } from 'react';
+import { useOperatorsList } from '@/modules/operators/api';
 
 /** The one row being stopped, flattened so both tabs can build it from their
  *  own row type (RunningOp on the Table tab, ShopFloorRunningRow on By
@@ -44,10 +55,14 @@ export interface StopOpTarget {
   availableQty: number;
 }
 
-/** '' counts as 0 — an operator clearing the box means "nothing made". */
+/** Returns the whole number typed into a count box, or null when the box holds
+ *  something that is not one. A BLANK box also returns null: blank no longer
+ *  quietly means zero, because the operator has to state the quantity rather
+ *  than have one assumed for them. Callers separate the two cases by testing
+ *  the trimmed string themselves. */
 function parseCount(raw: string): number | null {
   const t = raw.trim();
-  if (t === '') return 0;
+  if (t === '') return null;
   if (!/^\d+$/.test(t)) return null;
   return Number(t);
 }
@@ -66,26 +81,75 @@ export function StopOpModal({
   onCancel: () => void;
   onSubmit: (input: StopOpInput) => void;
 }): React.JSX.Element {
-  const [qty, setQty] = useState(String(target.availableQty));
-  const [rejectQty, setRejectQty] = useState('0');
+  // Every one of these starts empty on purpose. See the note at the top of the
+  // file — nothing here is inherited from the session or from the clock.
+  const [logDate, setLogDate] = useState('');
+  const [logTime, setLogTime] = useState('');
+  // '' is a real state, not a placeholder for 'day': the <select> opens on
+  // "Select shift" so no shift is ever recorded by accident.
+  const [shift, setShift] = useState<Shift | ''>('');
+  const [qty, setQty] = useState('');
+  const [rejectQty, setRejectQty] = useState('');
+  const [remarks, setRemarks] = useState('');
 
+  // Operator picker, identical to the one on the By Machine start strip and the
+  // By Job Card entry form: free text always works, and an exact name/code
+  // match resolves the operators-master FK so the entry links to a real person.
+  const [operatorName, setOperatorName] = useState('');
+  const [operatorId, setOperatorId] = useState<string | undefined>(undefined);
+  const operatorsQuery = useOperatorsList({ isActive: true, limit: 200, offset: 0 });
+  const operators = operatorsQuery.data?.operators ?? [];
+
+  function handleOperatorNameChange(value: string): void {
+    setOperatorName(value);
+    const needle = value.trim().toLowerCase();
+    const match = needle
+      ? operators.find(
+          (o) => o.name.trim().toLowerCase() === needle || o.code.trim().toLowerCase() === needle,
+        )
+      : undefined;
+    setOperatorId(match ? match.id : undefined);
+  }
+
+  const qtyBlank = qty.trim() === '';
   const qtyNum = parseCount(qty);
-  const rejNum = parseCount(rejectQty);
+  // Rejects are OPTIONAL, so a blank box legitimately means none.
+  const rejBlank = rejectQty.trim() === '';
+  const rejNum = rejBlank ? 0 : parseCount(rejectQty);
+
+  // Junk in a box is a different complaint from an empty one, and gets its own
+  // message so the operator is not told to "fill in Quantity" when they can see
+  // they have typed something into it.
+  const qtyIsJunk = !qtyBlank && qtyNum === null;
+  const rejIsJunk = !rejBlank && rejNum === null;
   const overCap = qtyNum !== null && qtyNum > target.availableQty;
-  // Stop stays enabled at 0. It is only blocked by a number the server would
-  // certainly refuse, or by junk typed into a box.
-  const canSubmit = qtyNum !== null && rejNum !== null && !overCap && !pending;
+
+  // Mandatory: date, time, shift, operator, quantity. A quantity of 0 satisfies
+  // this — an EMPTY box does not.
+  const missing: string[] = [];
+  if (!logDate) missing.push('Date');
+  if (!logTime) missing.push('Time');
+  if (!shift) missing.push('Shift');
+  if (!operatorId && !operatorName.trim()) missing.push('Operator');
+  if (qtyBlank) missing.push('Quantity made');
+
+  const canSubmit =
+    missing.length === 0 && !qtyIsJunk && !rejIsJunk && !overCap && !pending && qtyNum !== null;
 
   function handleStop(): void {
-    if (!canSubmit || qtyNum === null || rejNum === null) return;
-    // qty 0 posts an EMPTY body — byte for byte what Stop posted before this
-    // modal existed. Rejects are only meaningful alongside a quantity (see the
-    // note on stopOpInputSchema), so they ride along only when qty > 0.
-    if (qtyNum <= 0) {
-      onSubmit({});
-      return;
-    }
-    onSubmit(rejNum > 0 ? { qty: qtyNum, rejectQty: rejNum } : { qty: qtyNum });
+    if (!canSubmit || qtyNum === null || rejNum === null || !shift) return;
+    onSubmit({
+      qty: qtyNum,
+      rejectQty: rejNum,
+      logDate,
+      logTime,
+      shift,
+      // One of these two is always present — the Operator field is mandatory
+      // above, and the schema refuses a body carrying neither.
+      ...(operatorId ? { operatorId } : {}),
+      ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
+      ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
+    });
   }
 
   return (
@@ -107,7 +171,7 @@ export function StopOpModal({
       <div
         className="panel"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(460px, 96vw)' }}
+        style={{ width: 'min(520px, 96vw)' }}
       >
         <div
           style={{
@@ -150,25 +214,102 @@ export function StopOpModal({
             </div>
           </div>
 
+          {/* Date · Time · Shift on one wrapping row. Each form-grp carries an
+              explicit width because .innovic-input is width:100% and would
+              otherwise collapse in a flex row (same trick as op-entry-form). */}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div className="form-grp" style={{ width: 130 }}>
+            <div className="form-grp" style={{ width: 150 }}>
+              <label className="form-label" htmlFor="stop-op-date">
+                Date <span className="req">★</span>
+              </label>
+              <input
+                id="stop-op-date"
+                className="innovic-input"
+                type="date"
+                required
+                value={logDate}
+                autoFocus
+                onChange={(e) => setLogDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ width: 120 }}>
+              <label className="form-label" htmlFor="stop-op-time">
+                Time <span className="req">★</span>
+              </label>
+              <input
+                id="stop-op-time"
+                className="innovic-input"
+                type="time"
+                required
+                value={logTime}
+                onChange={(e) => setLogTime(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ width: 140 }}>
+              <label className="form-label" htmlFor="stop-op-shift">
+                Shift <span className="req">★</span>
+              </label>
+              <select
+                id="stop-op-shift"
+                className="innovic-select"
+                required
+                value={shift}
+                onChange={(e) => setShift(e.target.value as Shift | '')}
+              >
+                {/* First option is a placeholder, so nothing is pre-selected. */}
+                <option value="">Select shift</option>
+                {SHIFTS.map((s) => (
+                  <option key={s} value={s}>
+                    {SHIFT_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-grp" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="stop-op-operator">
+              Operator <span className="req">★</span>
+            </label>
+            <input
+              id="stop-op-operator"
+              className="innovic-input"
+              list="stop-op-operator-list"
+              required
+              value={operatorName}
+              onChange={(e) => handleOperatorNameChange(e.target.value)}
+              placeholder="Operator name"
+              autoComplete="off"
+            />
+            <datalist id="stop-op-operator-list">
+              {operators.map((o) => (
+                <option key={o.id} value={o.name}>
+                  {o.code}
+                  {o.department ? ` · ${o.department}` : ''}
+                </option>
+              ))}
+            </datalist>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div className="form-grp" style={{ width: 150 }}>
               <label className="form-label" htmlFor="stop-op-qty">
-                Quantity made
+                Quantity made <span className="req">★</span>
               </label>
               <input
                 id="stop-op-qty"
                 className="innovic-input"
                 type="number"
                 inputMode="numeric"
+                required
                 min={0}
                 max={target.availableQty}
                 value={qty}
-                autoFocus
                 onChange={(e) => setQty(e.target.value)}
-                placeholder="0"
+                placeholder="Enter qty"
               />
             </div>
-            <div className="form-grp" style={{ width: 130 }}>
+            <div className="form-grp" style={{ width: 150 }}>
               <label className="form-label" htmlFor="stop-op-rej">
                 Rejects
               </label>
@@ -180,9 +321,23 @@ export function StopOpModal({
                 min={0}
                 value={rejectQty}
                 onChange={(e) => setRejectQty(e.target.value)}
-                placeholder="0"
+                placeholder="Optional"
               />
             </div>
+          </div>
+
+          <div className="form-grp" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="stop-op-remarks">
+              Remarks
+            </label>
+            <input
+              id="stop-op-remarks"
+              className="innovic-input"
+              value={remarks}
+              maxLength={500}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Optional — why the session stopped, tooling notes…"
+            />
           </div>
 
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -190,7 +345,9 @@ export function StopOpModal({
             <b className="mono" style={{ color: 'var(--cyan)' }}>
               {target.availableQty}
             </b>{' '}
-            pcs. Leave the quantity at 0 to stop without logging any production.
+            pcs. Enter <b className="mono">0</b> if nothing was made in this session — the machine
+            is still released. Fields marked <span style={{ color: 'var(--red)' }}>★</span> are
+            required. {/* .req is scoped to .form-label, so this one is coloured inline. */}
           </div>
 
           {overCap ? (
@@ -198,15 +355,16 @@ export function StopOpModal({
               Only {target.availableQty} pcs can be logged on this operation right now.
             </div>
           ) : null}
-          {qtyNum === null || rejNum === null ? (
+          {qtyIsJunk || rejIsJunk ? (
             <div style={{ fontSize: 11, color: 'var(--red)' }}>
-              Enter whole numbers (0 or more).
+              Enter whole numbers (0 or more) in {qtyIsJunk ? 'Quantity made' : 'Rejects'}.
             </div>
           ) : null}
-          {qtyNum === 0 && rejNum !== null && rejNum > 0 ? (
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              Rejects are only recorded together with a quantity made — set a quantity above, or
-              they will not be logged.
+          {/* Naming what is still empty, rather than just greying the button out
+              and leaving the operator to hunt for the reason. */}
+          {missing.length > 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+              Still to fill in: <b>{missing.join(', ')}</b>.
             </div>
           ) : null}
 

@@ -105,6 +105,19 @@ export const jcOpEnrichedSchema = z.object({
    *  reworkRaisedQty is 0. */
   reworkRaisedToOps: z.string().nullable(),
   computedStatus: computedJcOpStatusSchema,
+  /** The running_ops row currently RUNNING this op, or null when no machine is
+   *  holding it right now.
+   *
+   *  `computedStatus` cannot answer this. It answers a QUANTITY question -- is
+   *  there work left here -- and once an op has been logged against even once
+   *  it reads `in_progress` for the rest of its life. Screens that used it to
+   *  mean "busy" therefore got it wrong from the first booked piece onward:
+   *  IN-JC-26-00017 Op 1 dropped out of CNC-1's pending list with 70 of 100 pcs
+   *  still owed (187 pcs hidden across that one machine), and the Job Card
+   *  offered a Log button on an operation nobody had started.
+   *
+   *  Two questions, two fields. This one is the session question. */
+  activeRunningOpId: z.string().uuid().nullable().default(null),
 });
 export type JcOpEnriched = z.infer<typeof jcOpEnrichedSchema>;
 
@@ -314,34 +327,46 @@ export const submitOpLogInputSchema = z.object({
 });
 export type SubmitOpLogInput = z.infer<typeof submitOpLogInputSchema>;
 
-/** Body for "stop the session". EVERY field is optional, because stopping and
- *  logging production are one action with two shapes:
+/** Body of POST /op-entry/running-ops/:id/stop.
  *
- *    * breakdown / nothing made -> send nothing (or qty 0). The session ends
- *      exactly as it did before this schema existed. That is the common case
- *      on a real shop floor and must stay one click.
- *    * finished a batch -> send qty (and rejects). The server writes the SAME
- *      op_log row `submitOpLog` writes and ends the session in ONE
- *      transaction, so the pieces can never be counted while the machine is
- *      still shown as running, nor the reverse.
+ *  Stopping a session is a PRODUCTION ENTRY that also releases the machine, so
+ *  this asks exactly what Log asks and the answer is written as a NORMAL
+ *  completion row -- same log_type, same machine stamp, same downstream
+ *  cascades. A piece made is a piece made, whichever button booked it. The only
+ *  difference between Log and Stop is what happens to the machine afterwards:
+ *  Log keeps it held, Stop frees it for the next available job.
  *
- *  Not asked for, and deliberately so: shift, operator and date. All three are
- *  already on the running_ops session and are read from it — re-asking an
- *  operator for what the system started the session with is how entries get
- *  mistyped. */
-export const stopOpInputSchema = z.object({
-  /** Good pieces made in this session. 0 or absent = stop only, no op_log row.
-   *  Capped server-side by v_jc_op_status.available under a row lock. */
-  qty: z.number().int().nonnegative().optional(),
-  /** Pieces scrapped in this session. Only meaningful alongside a qty. */
-  rejectQty: z.number().int().nonnegative().optional(),
-  /** Clock time for the log row (HH:MM). Defaults to now when a qty is sent. */
-  logTime: z
-    .string()
-    .regex(/^\d{1,2}:\d{2}(:\d{2})?$/)
-    .optional(),
-  remarks: z.string().max(500).optional(),
-});
+ *  NOTHING IS INHERITED FROM THE SESSION AND NOTHING IS DEFAULTED. Date, time,
+ *  shift and operator were previously read off the running_ops row, on the
+ *  grounds that re-asking invites mistyping. It also quietly asserts things
+ *  that are often untrue: a session started on the night shift by one operator
+ *  can be stopped the next morning by another, and the entry would carry the
+ *  wrong date, the wrong shift and the wrong name -- silently, with nobody able
+ *  to tell from the record. The operator states the facts of THIS entry.
+ *
+ *  `qty` is nonnegative rather than positive, and required rather than
+ *  optional: an operator who made nothing must still say zero out loud instead
+ *  of walking away silently -- 8 of the 13 sessions stopped before this asked
+ *  anything recorded no production at all. Nothing is written to op_log when
+ *  both qty and rejectQty are 0 (there is no production to record), but the
+ *  session still stops and the activity log still notes it. */
+export const stopOpInputSchema = z
+  .object({
+    /** Good pieces made in this session. 0 = stop only, no op_log row.
+     *  Capped server-side by v_jc_op_status.available under a row lock. */
+    qty: z.number().int().nonnegative(),
+    /** Pieces scrapped in this session. */
+    rejectQty: z.number().int().nonnegative().default(0),
+    logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    logTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/),
+    shift: shiftSchema,
+    operatorId: z.string().uuid().optional(),
+    operatorName: z.string().min(1).max(120).optional(),
+    remarks: z.string().max(500).optional(),
+  })
+  .refine((i) => Boolean(i.operatorId) || Boolean(i.operatorName?.trim()), {
+    message: 'operatorId or operatorName is required to stop an op',
+  });
 export type StopOpInput = z.infer<typeof stopOpInputSchema>;
 
 export const startOpInputSchema = z

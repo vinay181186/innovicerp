@@ -15,7 +15,6 @@ import { Loader2, Play, PackagePlus, ShieldCheck, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
-import { todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { useOperatorsList } from '@/modules/operators/api';
@@ -37,15 +36,6 @@ interface Props {
   // callers that don't care keep the current combined behaviour.
   mode?: 'start' | 'complete';
   onModeChange?: (mode: 'start' | 'complete') => void;
-}
-
-function todayIso(): string {
-  return todayLocal();
-}
-
-function nowHHMM(): string {
-  const d = new Date();
-  return d.toTimeString().slice(0, 5);
 }
 
 export function OpEntryForm({
@@ -70,17 +60,26 @@ export function OpEntryForm({
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const canQcSubmit = effectiveFormPerms(eff, 'qc_submit').entry;
 
-  const [logDate, setLogDate] = useState(todayIso());
+  // EVERY field starts BLANK — no seeded date, no seeded time, no pre-selected
+  // shift, no "0" already sitting in the reject box. A seeded value is a value
+  // nobody typed: an operator booking last night's second shift this morning
+  // would submit today's date and the day shift simply by not noticing them,
+  // and the record would be wrong with nothing on screen ever having looked
+  // wrong. The data-entry operator states the facts of THIS entry, from the
+  // date picker and the dropdowns, on his own accord. Mandatory fields carry a
+  // ★ on their label and are checked before any request goes out.
+  const [logDate, setLogDate] = useState<string>('');
   // Clock time of the entry, editable on BOTH tabs. Start already accepted a
-  // client time (startOpInputSchema) but the form hard-coded nowHHMM();
+  // client time (startOpInputSchema) but the form hard-coded "now";
   // completion and QC logs had no time field at all and the service wrote
   // start_time: null, so an operator logging a shift late could never record
-  // when the work actually happened. Seeded to "now" so the common case is
-  // still one click.
-  const [entryTime, setEntryTime] = useState(nowHHMM());
-  const [shift, setShift] = useState<Shift>('day');
+  // when the work actually happened.
+  const [entryTime, setEntryTime] = useState<string>('');
+  // '' is the un-answered state, which is why this is Shift | '' and the
+  // dropdown opens on a "Select shift" placeholder rather than on 'day'.
+  const [shift, setShift] = useState<Shift | ''>('');
   const [qty, setQty] = useState<string>('');
-  const [rejectQty, setRejectQty] = useState<string>('0');
+  const [rejectQty, setRejectQty] = useState<string>('');
   const [operatorName, setOperatorName] = useState<string>('');
   // Master operators FK — resolved only when the typed operator/inspector name
   // (or code) exactly matches a master operator. Left undefined for free text so
@@ -96,10 +95,11 @@ export function OpEntryForm({
   // OSP auto-PR result/error message (ADR-039) — only used on the outsource panel.
   const [ospMsg, setOspMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
-  // Reset when the selected op changes.
+  // Reset when the selected op changes. Quantities and notes belong to the op
+  // that was on screen, never to the next one.
   useEffect(() => {
     setQty('');
-    setRejectQty('0');
+    setRejectQty('');
     setRemarks('');
     setRemarksExpanded(false);
     setErrorMessage(null);
@@ -126,6 +126,34 @@ export function OpEntryForm({
     setOperatorId(match ? match.id : undefined);
   }
 
+  /** The one mandatory-field gate for every action on this form.
+   *
+   *  Because nothing is pre-filled any more, no handler may assume a date, a
+   *  time or a shift is present — so each one calls this first. It names what
+   *  is missing in a single inline message instead of letting the request go
+   *  out and come back as a server validation error the operator has to guess
+   *  at.
+   *
+   *  It returns the chosen shift rather than a boolean so the caller also gets
+   *  it narrowed from `Shift | ''` down to `Shift` for the request body; null
+   *  means "something is missing, the message is already on screen, stop". */
+  function requireMandatory(opts: { qtyRequired: boolean; personLabel: string }): Shift | null {
+    const missing: string[] = [];
+    if (!logDate) missing.push('Date');
+    if (!entryTime) missing.push('Time');
+    if (!shift) missing.push('Shift');
+    if (!operatorId && !operatorName.trim()) missing.push(opts.personLabel);
+    // An EMPTY quantity box is the blocker, never the number in it: 0 is a
+    // perfectly good answer on a stop ("this session made nothing") and must
+    // still be typed out loud rather than assumed.
+    if (opts.qtyRequired && qty.trim() === '') missing.push('Qty');
+    if (missing.length > 0 || !shift) {
+      setErrorMessage(`Fill in the mandatory ★ fields before continuing — missing: ${missing.join(', ')}.`);
+      return null;
+    }
+    return shift;
+  }
+
   const isOutsource = op.opType === 'outsource';
   // T-040d: QC-bearing op = dedicated QC op OR process op with qc_required.
   const isQcOp = op.opType === 'qc';
@@ -146,19 +174,26 @@ export function OpEntryForm({
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setErrorMessage(null);
+    // Date, time, shift, operator AND quantity are all mandatory on a
+    // completion — a booked piece with no shift or no name against it is not
+    // an audit trail.
+    const chosenShift = requireMandatory({ qtyRequired: true, personLabel: 'Operator' });
+    if (!chosenShift) return;
     const qtyNum = Number(qty);
     if (!Number.isInteger(qtyNum) || qtyNum <= 0) {
-      setErrorMessage('Qty must be a positive integer.');
+      setErrorMessage('Qty must be a positive whole number.');
       return;
     }
+    // Blank reject box means none were scrapped; it is the one number here
+    // that is allowed to go unanswered.
     const rejNum = Number(rejectQty || '0');
     const input: SubmitOpLogInput = {
       jcOpId: op.id,
       qty: qtyNum,
       rejectQty: Number.isFinite(rejNum) && rejNum >= 0 ? rejNum : 0,
       logDate,
-      ...(entryTime ? { logTime: entryTime } : {}),
-      shift,
+      logTime: entryTime,
+      shift: chosenShift,
       ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
@@ -166,7 +201,7 @@ export function OpEntryForm({
     try {
       await submit.mutateAsync(input);
       setQty('');
-      setRejectQty('0');
+      setRejectQty('');
       setRemarks('');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Submit failed');
@@ -178,6 +213,11 @@ export function OpEntryForm({
   async function handleSubmitQc(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setErrorMessage(null);
+    // The inspection's own date, time, shift and inspector are mandatory. The
+    // accepted/reject pair is NOT covered by the gate: QC's rule is "at least
+    // one of the two is above zero", checked just below.
+    const chosenShift = requireMandatory({ qtyRequired: false, personLabel: 'Inspector' });
+    if (!chosenShift) return;
     const qtyNum = Number(qty || '0');
     const rejNum = Number(rejectQty || '0');
     if (!Number.isInteger(qtyNum) || qtyNum < 0 || !Number.isInteger(rejNum) || rejNum < 0) {
@@ -197,8 +237,8 @@ export function OpEntryForm({
       qty: qtyNum,
       rejectQty: rejNum,
       logDate,
-      ...(entryTime ? { logTime: entryTime } : {}),
-      shift,
+      logTime: entryTime,
+      shift: chosenShift,
       ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
@@ -207,7 +247,7 @@ export function OpEntryForm({
     try {
       await submitQc.mutateAsync(input);
       setQty('');
-      setRejectQty('0');
+      setRejectQty('');
       setRemarks('');
       setQcReportPath(null);
       setQcReportName(null);
@@ -218,11 +258,15 @@ export function OpEntryForm({
 
   async function handleStart(): Promise<void> {
     setErrorMessage(null);
+    // Starting asks for when the work began and who is running it — date,
+    // time, shift and operator. No quantity: nothing has been made yet.
+    const chosenShift = requireMandatory({ qtyRequired: false, personLabel: 'Operator' });
+    if (!chosenShift) return;
     const input: StartOpInput = {
       jcOpId: op.id,
       startDate: logDate,
       startTime: entryTime,
-      shift,
+      shift: chosenShift,
       ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
@@ -237,10 +281,44 @@ export function OpEntryForm({
   async function handleStop(): Promise<void> {
     if (!activeRunningId) return;
     setErrorMessage(null);
+    // Stop is a PRODUCTION ENTRY that also frees the machine. It writes the
+    // very same completion row Log writes — same qty, same rejects, same
+    // date/time/shift/operator, same downstream cascades — and then releases
+    // the machine for the next job; Log books the pieces but keeps the machine
+    // held. Nothing is inherited from the running session (a night-shift
+    // session can be stopped next morning by somebody else), so the operator
+    // states the facts of THIS entry in the fields above and they are sent
+    // here: the server's stopOpInputSchema now refuses a bare { id }.
+    const chosenShift = requireMandatory({ qtyRequired: true, personLabel: 'Operator' });
+    if (!chosenShift) return;
+    // 0 is a valid stop quantity — the session made nothing — so the only
+    // number this refuses is a negative or non-whole one. The empty box was
+    // already caught by the gate above.
+    const qtyNum = Number(qty);
+    if (!Number.isInteger(qtyNum) || qtyNum < 0) {
+      setErrorMessage('Qty must be 0 or a positive whole number.');
+      return;
+    }
+    const rejNum = Number(rejectQty || '0');
+    if (!Number.isInteger(rejNum) || rejNum < 0) {
+      setErrorMessage('Reject qty must be 0 or a positive whole number.');
+      return;
+    }
     try {
-      // No body: this form's own Stop button is unchanged — the operator logs
-      // the quantity in the fields above it, not in the stop call.
-      await stop.mutateAsync({ id: activeRunningId });
+      await stop.mutateAsync({
+        id: activeRunningId,
+        qty: qtyNum,
+        rejectQty: rejNum,
+        logDate,
+        logTime: entryTime,
+        shift: chosenShift,
+        ...(operatorId ? { operatorId } : {}),
+        ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
+        ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
+      });
+      setQty('');
+      setRejectQty('');
+      setRemarks('');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Stop failed');
     }
@@ -401,38 +479,44 @@ export function OpEntryForm({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
               <div className="form-grp" style={{ width: 140 }}>
                 <label className="form-label" htmlFor="opf-date">
-                  Date
+                  Date<span className="req">★</span>
                 </label>
                 <input
                   id="opf-date"
                   className="innovic-input"
                   type="date"
+                  required
                   value={logDate}
                   onChange={(e) => setLogDate(e.target.value)}
                 />
               </div>
               <div className="form-grp" style={{ width: 110 }}>
                 <label className="form-label" htmlFor="opf-time">
-                  Time
+                  Time<span className="req">★</span>
                 </label>
                 <input
                   id="opf-time"
                   className="innovic-input"
                   type="time"
+                  required
                   value={entryTime}
                   onChange={(e) => setEntryTime(e.target.value)}
                 />
               </div>
               <div className="form-grp" style={{ width: 120 }}>
                 <label className="form-label" htmlFor="opf-shift">
-                  Shift
+                  Shift<span className="req">★</span>
                 </label>
+                {/* The empty first option IS the starting state — no shift is
+                    pre-selected, so the inspector has to choose one. */}
                 <select
                   id="opf-shift"
                   className="innovic-select"
+                  required
                   value={shift}
-                  onChange={(e) => setShift(e.target.value as Shift)}
+                  onChange={(e) => setShift(e.target.value as Shift | '')}
                 >
+                  <option value="">Select shift</option>
                   {SHIFTS.map((s) => (
                     <option key={s} value={s}>
                       {SHIFT_LABELS[s]}
@@ -476,12 +560,13 @@ export function OpEntryForm({
               </div>
               <div className="form-grp" style={{ flex: '1 1 180px', minWidth: 160 }}>
                 <label className="form-label" htmlFor="opf-op">
-                  Inspector
+                  Inspector<span className="req">★</span>
                 </label>
                 <input
                   id="opf-op"
                   className="innovic-input"
                   list="opf-op-list"
+                  required
                   value={operatorName}
                   onChange={(e) => handleOperatorNameChange(e.target.value)}
                   placeholder="QC inspector name"
@@ -596,6 +681,12 @@ export function OpEntryForm({
   // form with no button having been pressed.
   const canComplete = Boolean(activeRunningId);
   const isStart = !canComplete || mode === 'start';
+  // The quantity boxes follow the buttons, not the tab. Stopping a session is
+  // now a production entry in its own right, and the Stop button also appears
+  // on the Start tab while a session is open — so wherever Stop can be pressed
+  // the operator must have somewhere to type what the session made. Without
+  // this, Start-tab Stop would demand a Qty the form never showed him.
+  const showQtyFields = !isStart || Boolean(activeRunningId);
   const modeToggle = onModeChange ? (
     <div style={{ display: 'flex', gap: 4 }}>
       <button
@@ -651,38 +742,44 @@ export function OpEntryForm({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
             <div className="form-grp" style={{ width: 140 }}>
               <label className="form-label" htmlFor="opf-date">
-                Date
+                Date<span className="req">★</span>
               </label>
               <input
                 id="opf-date"
                 className="innovic-input"
                 type="date"
+                required
                 value={logDate}
                 onChange={(e) => setLogDate(e.target.value)}
               />
             </div>
             <div className="form-grp" style={{ width: 110 }}>
               <label className="form-label" htmlFor="opf-time">
-                Time
+                Time<span className="req">★</span>
               </label>
               <input
                 id="opf-time"
                 className="innovic-input"
                 type="time"
+                required
                 value={entryTime}
                 onChange={(e) => setEntryTime(e.target.value)}
               />
             </div>
             <div className="form-grp" style={{ width: 120 }}>
               <label className="form-label" htmlFor="opf-shift">
-                Shift
+                Shift<span className="req">★</span>
               </label>
+              {/* The empty first option IS the starting state — no shift is
+                  pre-selected, so the operator has to choose one. */}
               <select
                 id="opf-shift"
                 className="innovic-select"
+                required
                 value={shift}
-                onChange={(e) => setShift(e.target.value as Shift)}
+                onChange={(e) => setShift(e.target.value as Shift | '')}
               >
+                <option value="">Select shift</option>
                 {SHIFTS.map((s) => (
                   <option key={s} value={s}>
                     {SHIFT_LABELS[s]}
@@ -701,22 +798,30 @@ export function OpEntryForm({
                 value={op.machineCode ?? op.machineCodeText ?? '—'}
               />
             </div>
-            {!isStart ? (
+            {showQtyFields ? (
               <>
                 <div className="form-grp" style={{ width: 100 }}>
                   <label className="form-label" htmlFor="opf-qty">
-                    Qty done
+                    Qty done<span className="req">★</span>
                   </label>
+                  {/* min is 0, not 1: a Stop that made nothing is a real and
+                      required answer. The completion path still refuses 0 in
+                      handleSubmit, where that rule belongs.
+                      `required` is native only on the Complete tab, whose
+                      submit button IS this form's submit. On the Start tab the
+                      box is here for Stop (a plain button), and marking it
+                      required would block an ordinary ▶ Start on Enter — the
+                      JS gate in handleStop enforces it there instead. */}
                   <input
                     id="opf-qty"
                     className="innovic-input"
                     type="number"
                     inputMode="numeric"
-                    min={1}
+                    min={0}
                     max={op.available}
+                    required={!isStart}
                     value={qty}
                     onChange={(e) => setQty(e.target.value)}
-                    placeholder="0"
                     disabled={blockedReason !== null}
                   />
                 </div>
@@ -724,6 +829,7 @@ export function OpEntryForm({
                   <label className="form-label" htmlFor="opf-rej">
                     Reject
                   </label>
+                  {/* Optional — left blank it counts as none scrapped. */}
                   <input
                     id="opf-rej"
                     className="innovic-input"
@@ -739,12 +845,13 @@ export function OpEntryForm({
             ) : null}
             <div className="form-grp" style={{ flex: '1 1 200px', minWidth: 180 }}>
               <label className="form-label" htmlFor="opf-op">
-                Operator
+                Operator<span className="req">★</span>
               </label>
               <input
                 id="opf-op"
                 className="innovic-input"
                 list="opf-op-list"
+                required
                 value={operatorName}
                 onChange={(e) => handleOperatorNameChange(e.target.value)}
                 placeholder="Operator name"
@@ -853,6 +960,7 @@ export function OpEntryForm({
                     className="btn btn-ghost"
                     onClick={() => void handleStop()}
                     disabled={stop.isPending}
+                    title="Books the quantity above AND frees the machine for the next job"
                   >
                     <Square size={14} />
                     Stop ({stop.isPending ? 'stopping…' : 'running'})
@@ -884,6 +992,7 @@ export function OpEntryForm({
                       className="btn btn-ghost"
                       onClick={() => void handleStop()}
                       disabled={stop.isPending}
+                      title="Books the quantity above AND frees the machine for the next job"
                     >
                       <Square size={14} />
                       Stop ({stop.isPending ? 'stopping…' : 'running'})

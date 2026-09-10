@@ -14,7 +14,6 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
@@ -52,13 +51,29 @@ export function MachineOpEntryView(): React.JSX.Element {
   // to-this-machine test below is load-bearing — without it a re-routed op
   // would offer a ▶ Start on the machine it no longer runs on and production
   // would be logged against the wrong machine.
+  //
+  // This list used to also demand computedStatus 'available' or 'waiting', and
+  // that quietly hid half the shop floor's work. computedStatus answers a
+  // QUANTITY question — is there anything left here — and it flips to
+  // 'in_progress' the moment the FIRST piece is booked and stays there for the
+  // rest of the op's life. So an operation that had produced 30 of 100 pcs
+  // dropped off its own machine's pending list with 70 pcs still owed and no
+  // way back to it. On live data CNC-1 had 5 operations with work left and
+  // showed 1: four of them, 187 pcs, were invisible, including
+  // IN-JC-26-00017 Op 1 with 70 of 100 pcs still to run.
+  //
+  // The two questions that actually decide whether a ▶ Start belongs here are:
+  // is somebody running this op right now (activeRunningOpId — the session
+  // question, which computedStatus cannot answer), and is it blocked waiting
+  // on QC. Nothing else.
   const pendingOps = useMemo<JcOpEnriched[]>(() => {
     const code = selectedMachine?.code;
     if (!code) return [];
     return (machineOps.data ?? []).filter(
       (o) =>
         o.available > 0 &&
-        (o.computedStatus === 'available' || o.computedStatus === 'waiting') &&
+        o.activeRunningOpId === null && // not being run right now by anybody
+        o.computedStatus !== 'qc_pending' && // blocked waiting on QC, not startable
         (o.machineCode === code || o.machineCodeText === code),
     );
   }, [machineOps.data, selectedMachine]);
@@ -214,9 +229,18 @@ function PendingOpsSection({
   // Starting a session records shop-floor work → op_entry entry (Production).
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
-  const [startDate, setStartDate] = useState(todayLocal());
-  const [startTime, setStartTime] = useState(() => new Date().toTimeString().slice(0, 5));
-  const [shift, setShift] = useState<Shift>('day');
+  // EVERY field starts BLANK — no today's date, no clock time, no pre-selected
+  // shift. A seeded value is a value nobody typed, and it is submitted as fact:
+  // a night-shift job started at 22:40 and entered the next morning would carry
+  // this morning's date and the day shift purely because the boxes came
+  // pre-filled and nothing on screen ever looked wrong. The operator states
+  // when the work actually began. Mandatory fields carry a ★ and are checked
+  // before the Start request goes out.
+  const [startDate, setStartDate] = useState<string>('');
+  const [startTime, setStartTime] = useState<string>('');
+  // '' is the un-answered state, hence Shift | '' and the "Select shift"
+  // placeholder as the first option.
+  const [shift, setShift] = useState<Shift | ''>('');
   // Operator is REQUIRED by startOpInputSchema (operatorId OR operatorName).
   // This view used to post neither, so every ▶ Start was rejected 400 by the
   // server and — because the click swallowed the rejection — the button simply
@@ -241,8 +265,19 @@ function PendingOpsSection({
 
   async function handleStart(opId: string): Promise<void> {
     setErrorMessage(null);
-    if (!operatorId && !operatorName.trim()) {
-      setErrorMessage('Enter the operator name before starting this operation.');
+    // Nothing is pre-filled any more, so every mandatory box is checked here
+    // and named in ONE message — start date, start time, shift and operator.
+    // Without this the blank fields would simply be rejected by the server
+    // (startOpInputSchema) with a message written for a developer.
+    const missing: string[] = [];
+    if (!startDate) missing.push('Start Date');
+    if (!startTime) missing.push('Start Time');
+    if (!shift) missing.push('Shift');
+    if (!operatorId && !operatorName.trim()) missing.push('Operator');
+    if (missing.length > 0 || !shift) {
+      setErrorMessage(
+        `Fill in the mandatory ★ fields before starting this operation — missing: ${missing.join(', ')}.`,
+      );
       return;
     }
     const input: StartOpInput = {
@@ -281,38 +316,44 @@ function PendingOpsSection({
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
             <div className="form-grp" style={{ margin: 0 }}>
               <label className="form-label" htmlFor="mach-start-date">
-                Start Date
+                Start Date<span className="req">★</span>
               </label>
               <input
                 id="mach-start-date"
                 className="innovic-input"
                 type="date"
+                required
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
             <div className="form-grp" style={{ margin: 0 }}>
               <label className="form-label" htmlFor="mach-start-time">
-                Start Time
+                Start Time<span className="req">★</span>
               </label>
               <input
                 id="mach-start-time"
                 className="innovic-input"
                 type="time"
+                required
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
               />
             </div>
             <div className="form-grp" style={{ margin: 0 }}>
               <label className="form-label" htmlFor="mach-start-shift">
-                Shift
+                Shift<span className="req">★</span>
               </label>
+              {/* The empty first option IS the starting state — no shift is
+                  pre-selected, so the operator has to choose one. */}
               <select
                 id="mach-start-shift"
                 className="innovic-select"
+                required
                 value={shift}
-                onChange={(e) => setShift(e.target.value as Shift)}
+                onChange={(e) => setShift(e.target.value as Shift | '')}
               >
+                <option value="">Select shift</option>
                 {SHIFTS.map((s) => (
                   <option key={s} value={s}>
                     {SHIFT_LABELS[s]}
@@ -322,12 +363,13 @@ function PendingOpsSection({
             </div>
             <div className="form-grp" style={{ margin: 0, minWidth: 180 }}>
               <label className="form-label" htmlFor="mach-start-operator">
-                Operator
+                Operator<span className="req">★</span>
               </label>
               <input
                 id="mach-start-operator"
                 className="innovic-input"
                 list="mach-start-operator-list"
+                required
                 value={operatorName}
                 onChange={(e) => handleOperatorNameChange(e.target.value)}
                 placeholder="Operator name"
@@ -386,8 +428,9 @@ function PendingOpsSection({
         </>
       ) : (
         <div className="empty-state" style={{ padding: 20 }}>
-          No pending jobs for this machine. All operations assigned to {machineCode} are either
-          complete or waiting for input.
+          No pending jobs for this machine. Every operation assigned to {machineCode} is either
+          complete, still waiting for input from the previous operation, already running on
+          another session, or held up in QC.
         </div>
       )}
       {/* MADE ON THIS MACHINE — history, not work. An op lands here because the

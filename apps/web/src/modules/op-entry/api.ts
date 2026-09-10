@@ -311,8 +311,9 @@ export function useGenerateOspPr() {
 }
 
 /** Variables for useStopOp: the running session's id, plus the OPTIONAL
- *  production body. `{ id }` on its own posts no body at all — the breakdown
- *  case, identical to what Stop posted before the quantity boxes existed. */
+ *  production entry that goes with it. There is no bodyless shape any more:
+ *  every stop states a date, time, shift, operator and quantity, and a quantity
+ *  of 0 is how an operator says the machine made nothing. */
 export type StopOpVars = { id: string } & StopOpInput;
 
 // The single Stop path for the whole app. Both tabs of the Live Operations
@@ -323,10 +324,7 @@ export function useStopOp() {
     mutationFn: ({ id, ...body }) =>
       apiFetch<RunningOp>(`/op-entry/running-ops/${id}/stop`, {
         method: 'POST',
-        // Only send a body when there is something to say. An empty object
-        // would still set content-type and post "{}"; keeping it undefined
-        // means the no-quantity stop is byte-for-byte the old request.
-        ...(Object.keys(body).length > 0 ? { json: body } : {}),
+        json: body,
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
