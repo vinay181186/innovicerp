@@ -385,10 +385,6 @@ function openPoTestPrint(
     title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
-    // The same skin the real purchase order prints on (print-po.ts) — Times
-    // New Roman and the tight spacing. Without it the editor would preview a
-    // sheet no real order produces, which is the whole point of this function.
-    sheetVariant: 'po',
     blocks: templatesToBlocks(doc, templates),
     data,
     company: {

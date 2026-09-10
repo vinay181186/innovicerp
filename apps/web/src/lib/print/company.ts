@@ -20,10 +20,17 @@ import type { DocCompany } from './doc-print';
  *  done this constant can be deleted and the PO can go back to reading the
  *  row like every other document. Introduced 2026-09-09 on the user's
  *  instruction, from a photograph of the card. */
+//  NO trailing commas on these lines. They are DATA, not a picture of the card.
+//  The card prints a comma at each line end because the address is broken over
+//  four lines there; carrying that punctuation into the data broke every place
+//  that joins the lines with ", " -- the {companyAddress} token and the Print
+//  Templates sample both rendered "Plot No. 12, Phase-II,, G.I.D.C., ...".
+//  Stacked on the letterhead they read correctly without it; joined they now
+//  read correctly too.
 export const COMPANY_CARD_ADDRESS_LINES: readonly string[] = [
-  'Plot No. 12, Phase-II,',
-  'G.I.D.C., Vitthal Udhyog Nagar,',
-  'Anand - 388 325,',
+  'Plot No. 12, Phase-II',
+  'G.I.D.C., Vitthal Udhyog Nagar',
+  'Anand - 388 325',
   'Gujarat, INDIA',
 ];
 
