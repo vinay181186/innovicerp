@@ -190,11 +190,6 @@ export function printPurchaseOrder(args: {
     title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
-    // The purchase order's own skin -- Times New Roman throughout, tight
-    // vertical spacing, GSTIN ending its own letterhead line. It is a SEPARATE
-    // flag from `columns` on purpose: the JW Invoice also prints the 'po'
-    // column set, and it must keep the shared look.
-    sheetVariant: 'po',
     blocks: templatesToBlocks(doc, templates),
     data,
     // Letterhead address comes from the business card rather than the
