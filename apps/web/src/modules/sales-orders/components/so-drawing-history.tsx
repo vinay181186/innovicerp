@@ -7,10 +7,17 @@
 // last month were made to the OLD print, so "which drawing was on this line in
 // June" has to stay answerable, not just "which drawing is on it today".
 //
-// So the Rev number here belongs to the DRAWING FILE, not to the line and not
-// to the item. A line is born at Rev 0 and climbs by one only when the file
-// actually changes; re-saving the SO changes nothing. The server owns that
-// number — this screen only reads it.
+// Two different things used to share one number here, so read the columns
+// carefully. The '#' column is a SEQUENCE POSITION: how many times this line's
+// drawing file has changed, this row being the Nth. The server owns it, it
+// climbs by one only when the file actually changes, and re-saving the SO does
+// nothing to it. The 'Rev' column is the CUSTOMER'S drawing revision — free text
+// a human typed on the SO line ('A', 'B', 'R1', '0') — snapshotted onto the row
+// as it stood when that drawing change was recorded. Since migration 0119 the
+// two are independent: a revision can move on without any upload, and three
+// files can be uploaded under one revision. Rows the 0119 backfill could not
+// reach carry no snapshot at all, and this screen leaves that blank rather than
+// dressing the sequence number up as a revision it never was.
 //
 // Layout is two levels of tabs on purpose: the parent Related Documents strip
 // picks "Drawing History", then a lighter second strip picks the item code,
@@ -137,24 +144,32 @@ export function SoDrawingHistory({ salesOrderId }: { salesOrderId: string }): Re
           <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
             Line {active.lineNo} · {active.partName}
             {active.drawingNo ? ` · Drawing ${active.drawingNo}` : ''} · current Rev{' '}
+            {/* The Rev typed on the SO line TODAY. A string since 0119, printed
+                as-is — never compared with or counted against the sequence
+                numbers below, which measure a different thing entirely. */}
             <span className="mono" style={{ color: 'var(--text2)' }}>{active.currentRevision}</span>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table tbl-ctr" style={{ width: '100%' }}>
               <thead>
+                {/* Two columns where there used to be one, because the old single
+                    "Rev 3" cell was printing a drawing-change count under the name of
+                    the customer's revision. '#' is the change count; 'Rev' is what was
+                    written on the paper. */}
                 <tr>
-                  <th style={{ width: '14%' }}>Rev</th>
+                  <th style={{ width: '9%' }}>#</th>
+                  <th style={{ width: '10%' }}>Rev</th>
                   <th style={{ width: '12%' }}>Change</th>
-                  <th style={{ width: '34%' }}>File</th>
+                  <th style={{ width: '31%' }}>File</th>
                   <th style={{ width: '16%' }}>By</th>
                   <th style={{ width: '18%' }}>When</th>
-                  <th style={{ width: '6%' }} />
+                  <th style={{ width: '4%' }} />
                 </tr>
               </thead>
               <tbody>
                 {active.revisions.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="empty-state">No revisions on this line.</td>
+                    <td colSpan={7} className="empty-state">No revisions on this line.</td>
                   </tr>
                 ) : (
                   // Rendered in the order the API sent — newest first. Not re-sorted
@@ -163,11 +178,36 @@ export function SoDrawingHistory({ salesOrderId }: { salesOrderId: string }): Re
                     const path = r.drawingFilePath;
                     return (
                       <tr key={r.id}>
-                        <td className="mono" style={{ fontWeight: 700, color: 'var(--text2)' }}>
-                          Rev {r.revisionNo}
+                        {/* Where this drawing sits in the line's own sequence of
+                            drawings — the 3rd file it has had, written '#3'. Never
+                            labelled "Rev": that is the mislabelling this column was
+                            split to end. Newest first, so row 0 is the drawing on the
+                            line today. */}
+                        <td className="mono" style={{ fontWeight: 700, color: 'var(--text3)' }}>
+                          #{r.revisionNo}
                           {i === 0 ? (
                             <span className="badge b-blue" style={{ marginLeft: 6 }}>current</span>
                           ) : null}
+                        </td>
+                        {/* The customer's revision as it stood when this drawing change
+                            was recorded. Null means the row predates 0119 and its
+                            revision was never captured — that is unknown, not zero, so
+                            it is left blank (the house's "no value" dash) and the hover
+                            says why rather than inventing a number. */}
+                        <td
+                          className="mono"
+                          style={{ fontWeight: 700, color: 'var(--text2)' }}
+                          title={
+                            r.lineRevisionText === null
+                              ? 'Revision not recorded for this drawing change.'
+                              : `Line Rev ${r.lineRevisionText} at this drawing change`
+                          }
+                        >
+                          {r.lineRevisionText === null ? (
+                            <span className="text3">—</span>
+                          ) : (
+                            r.lineRevisionText
+                          )}
                         </td>
                         <td>
                           <span className={`badge ${ACTION_CLASS[r.action]}`}>{ACTION_LABEL[r.action]}</span>

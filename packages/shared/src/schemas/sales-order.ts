@@ -50,11 +50,17 @@ export const salesOrderLineSchema = z.object({
   partName: z.string(),
   material: z.string().nullable(),
   drawingNo: z.string().nullable(),
-  // The drawing file's revision number, owned by the server. A line is born at
-  // Rev 0 and the number climbs by one each time the drawing file itself
-  // changes (replaced or cleared) — never on an ordinary re-save. Every step is
-  // kept in so_line_drawing_revisions; see schemas/so-drawing-history.ts.
-  revision: z.number().int().nonnegative().default(0),
+  // The CUSTOMER'S drawing revision, exactly as written on the drawing they
+  // sent — 'A', 'B', 'R1', '0'. Typed on the SO line and compulsory on the form
+  // (migration 0119). Text, because a revision is not arithmetic: it is a label
+  // printed on a drawing, and it is a letter as often as a number.
+  //
+  // INDEPENDENT of drawingFilePath. Until 0119 the server owned this and bumped
+  // it whenever the drawing FILE changed, which welded two separate facts
+  // together — a revision could not be recorded without an upload, and
+  // re-uploading invented a revision that does not exist on paper. Nothing on
+  // the server computes it now.
+  revision: z.string().default('0'),
   // Uploaded drawing document's storage path (qc-docs bucket, folder
   // `so-line-drawings`; view via a short-lived signed URL). Nullable.
   drawingFilePath: z.string().nullable().default(null),
@@ -183,12 +189,18 @@ export const salesOrderLineInputSchema = z
     partName: z.string().min(1).max(255),
     material: z.string().max(255).optional(),
     drawingNo: z.string().max(64).optional(),
+    // COMPULSORY, and nothing else on the line changes it. The customer's
+    // drawing revision is a fact about the paper, so the person entering the
+    // order is the only one who knows it — the server used to derive it from
+    // whether a file had been uploaded, which is a different fact entirely.
+    //
+    // Required rather than optional: "compulsory" has to bite somewhere, and the
+    // API boundary is the only place that catches a client which skips the form.
+    // Server paths that insert a line without going through this schema (the BOM
+    // cascade, JW-sourced lines) fall back to the column default.
+    revision: z.string().trim().min(1, 'Rev is required').max(32),
     // Uploaded-drawing storage path, set by the web upload flow (qc-docs bucket).
     //
-    // There is deliberately NO `revision` here. Rev belongs to the drawing file
-    // and is decided by the server: it compares this path against the stored
-    // one and bumps only on a real change. A client-supplied number could
-    // rewrite history, so the client does not get to send one.
     // Nullable, not merely optional: an ABSENT key means "the payload does not
     // mention the drawing, leave it alone", while an explicit null means "the
     // user cleared it". Those are different intentions and the Rev logic acts

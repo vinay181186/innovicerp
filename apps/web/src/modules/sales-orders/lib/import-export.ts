@@ -98,12 +98,20 @@ export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<voi
 }
 
 // ── In-form line-items import (adds lines to the SO being created/edited) ──
-const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'CPO Line', 'Qty', 'Rate', 'Due Date'] as const;
+// 'Rev' sits next to 'Drawing No' because that is what it describes: the
+// revision printed on the customer's drawing. It is compulsory on the form, so a
+// sheet that omits the column leaves every imported line on the '0' default and
+// the person then has to type each one by hand — which is the whole reason the
+// column is here.
+const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'Rev', 'CPO Line', 'Qty', 'Rate', 'Due Date'] as const;
 
 export interface SoLineImportRow {
   itemCodeText: string;
   material?: string | undefined;
   drawingNo?: string | undefined;
+  /** Blank in the sheet means "not supplied" — the form falls back to its own
+   *  default rather than writing an empty Rev, which the API would reject. */
+  revision?: string | undefined;
   clientPoLineNo?: string | undefined;
   orderQty: number;
   rate: number;
@@ -111,7 +119,7 @@ export interface SoLineImportRow {
 }
 
 export function downloadSoLineTemplate(): void {
-  const sample = ['ITM-001', 'EN8', 'DRG-001', '1', '100', '250', '2026-07-01'];
+  const sample = ['ITM-001', 'EN8', 'DRG-001', 'A', '1', '100', '250', '2026-07-01'];
   const ws = XLSX.utils.aoa_to_sheet([LINE_COLUMNS as unknown as string[], sample]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'SO Lines');
@@ -143,6 +151,7 @@ export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportR
       itemCodeText,
       material: String(r['Material'] ?? '').trim() || undefined,
       drawingNo: String(r['Drawing No'] ?? '').trim() || undefined,
+      revision: String(r['Rev'] ?? '').trim() || undefined,
       clientPoLineNo: String(r['CPO Line'] ?? '').trim() || undefined,
       orderQty,
       rate: Number(r['Rate']) || 0,

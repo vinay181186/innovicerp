@@ -210,12 +210,25 @@ function gstToString(g: number): string {
 
 // ─── Drawing revisions ────────────────────────────────────────────────────
 //
-// The Rev on an SO line belongs to the DRAWING FILE, not to the line and not
-// to the item. A line is born at Rev 0 and climbs by exactly one every time
-// the file it points at genuinely changes; an ordinary re-save that leaves the
-// drawing alone must change nothing at all. Same "skip when unchanged" rule
-// route-card revisions follow, for the same reason — a revision log that
-// counts saves instead of changes is noise.
+// Two separate facts live here, and migration 0119 pulled them apart.
+//
+// 1. The line's Rev (`sales_order_lines.revision`, text since 0119) is the
+//    CUSTOMER'S drawing revision — the label printed on the drawing they sent,
+//    often a letter. The user types it; the server never invents, derives or
+//    bumps it. It can change without any file being uploaded, and a file can
+//    be re-uploaded without the customer's Rev moving.
+// 2. `so_line_drawing_revisions.revision_no` counts how many times THIS LINE'S
+//    DRAWING FILE has changed — "this is the 3rd drawing this line has had".
+//    It is a plain per-line counter, climbing by exactly one per recorded
+//    change, and it is what the (so_line_id, revision_no) unique index guards.
+//    Each history row also snapshots the line's typed Rev in
+//    `line_revision_text`, so the trail can still say which customer revision
+//    a given drawing belonged to.
+//
+// A drawing change is only recorded when the file GENUINELY differs from what
+// is stored; an ordinary re-save that leaves the drawing alone writes nothing.
+// Same "skip when unchanged" rule route-card revisions follow, for the same
+// reason — a revision log that counts saves instead of changes is noise.
 
 type DrawingRevisionInsert = typeof soLineDrawingRevisions.$inferInsert;
 
@@ -252,12 +265,59 @@ function toDrawingAction(v: string): SoDrawingAction {
   return v === 'replaced' || v === 'removed' ? v : 'added';
 }
 
-/** Rev-0 'added' rows for freshly-inserted lines that arrived carrying a
- *  drawing. A line inserted without one just sits at Rev 0 with no history —
- *  that is what lets the UI hide the tab on an SO that has no drawings. */
+/** Hands out the next `revision_no` for a line, remembering every number it
+ *  has already given away. One save can record more than one drawing change
+ *  (a payload may name the same line twice, and freshly-inserted lines write
+ *  their birth row in the same transaction), and the table carries a UNIQUE
+ *  index on (so_line_id, revision_no) — so the counter has to live in memory
+ *  for the whole save rather than being re-read from the row each time. */
+type RevisionNoAllocator = (soLineId: string) => number;
+
+/** Seed the allocator with the highest `revision_no` each line already has.
+ *  A line with no history yet starts at 0, which is why the map returns -1 for
+ *  a miss. `revision_no` can no longer be derived from the line's Rev — that
+ *  is the customer's text label now — so the history is its own authority. */
+function makeRevisionNoAllocator(lastByLine: Map<string, number>): RevisionNoAllocator {
+  return (soLineId: string): number => {
+    const next = (lastByLine.get(soLineId) ?? -1) + 1;
+    lastByLine.set(soLineId, next);
+    return next;
+  };
+}
+
+/** Highest `revision_no` already recorded against each line of this SO, in one
+ *  grouped query, so the update loop below never has to go back to the DB. */
+async function loadLastRevisionNos(
+  tx: DbTransaction,
+  salesOrderId: string,
+  companyId: string,
+): Promise<Map<string, number>> {
+  const rows = await tx
+    .select({
+      soLineId: soLineDrawingRevisions.soLineId,
+      lastNo: sql<number>`max(${soLineDrawingRevisions.revisionNo})`,
+    })
+    .from(soLineDrawingRevisions)
+    .where(
+      and(
+        eq(soLineDrawingRevisions.salesOrderId, salesOrderId),
+        eq(soLineDrawingRevisions.companyId, companyId),
+      ),
+    )
+    .groupBy(soLineDrawingRevisions.soLineId);
+  return new Map(rows.map((r) => [r.soLineId, Number(r.lastNo)]));
+}
+
+/** First 'added' rows for freshly-inserted lines that arrived carrying a
+ *  drawing. A line inserted without one gets no history at all — that is what
+ *  lets the UI hide the tab on an SO that has no drawings. The row records the
+ *  line's typed Rev as `lineRevisionText`; `revisionNo` comes from the shared
+ *  allocator, so a brand-new line's birth row cannot collide with anything
+ *  else written in the same save. */
 function birthDrawingRevisions(
   lines: Array<typeof salesOrderLines.$inferSelect>,
   user: AuthContext,
+  nextRevisionNo: RevisionNoAllocator,
 ): PendingDrawingRevision[] {
   return lines
     .filter((l) => normalizeDrawingPath(l.drawingFilePath) !== null)
@@ -268,7 +328,8 @@ function birthDrawingRevisions(
         companyId: l.companyId,
         salesOrderId: l.salesOrderId,
         soLineId: l.id,
-        revisionNo: l.revision,
+        revisionNo: nextRevisionNo(l.id),
+        lineRevisionText: l.revision,
         action: 'added',
         drawingFilePath: l.drawingFilePath,
         drawingNo: l.drawingNo,
@@ -1007,8 +1068,9 @@ export async function getSalesOrderDrawingHistory(
 
     // One pass over every revision row of every live line. The line's identity
     // (item code, part name, current Rev) is joined LIVE — the item_code_text
-    // on the revision row is the snapshot of what it was at that revision, and
-    // belongs to the trail, not to the header of the group.
+    // and line_revision_text on the revision row are snapshots of what they
+    // were at that drawing change, and belong to the trail, not to the header
+    // of the group.
     const rows = await tx
       .select({
         soLineId: salesOrderLines.id,
@@ -1020,6 +1082,7 @@ export async function getSalesOrderDrawingHistory(
         currentRevision: salesOrderLines.revision,
         revisionId: soLineDrawingRevisions.id,
         revisionNo: soLineDrawingRevisions.revisionNo,
+        lineRevisionText: soLineDrawingRevisions.lineRevisionText,
         action: soLineDrawingRevisions.action,
         drawingFilePath: soLineDrawingRevisions.drawingFilePath,
         drawingNo: soLineDrawingRevisions.drawingNo,
@@ -1059,6 +1122,7 @@ export async function getSalesOrderDrawingHistory(
       line.revisions.push({
         id: r.revisionId,
         revisionNo: r.revisionNo,
+        lineRevisionText: r.lineRevisionText,
         action: toDrawingAction(r.action),
         drawingFilePath: r.drawingFilePath,
         drawingNo: r.drawingNo,
@@ -1330,9 +1394,11 @@ export async function createSalesOrder(
             partName: l.partName,
             material: l.material ?? null,
             drawingNo: l.drawingNo ?? null,
-            // Rev is server-owned: every line is born at 0 regardless of what
-            // the payload says (the input schema no longer carries one).
-            revision: 0,
+            // The customer's drawing Rev, exactly as the user typed it. The
+            // input schema makes it compulsory, so there is nothing to default
+            // here — a line is born holding the Rev printed on the drawing,
+            // not at some number the server made up.
+            revision: l.revision,
             drawingFilePath: l.drawingFilePath ?? null,
             uom: l.uom,
             orderQty: l.orderQty,
@@ -1346,10 +1412,16 @@ export async function createSalesOrder(
           };
         });
         insertedLines = await tx.insert(salesOrderLines).values(lineValues).returning();
-        // A line born holding a drawing starts its trail at Rev 0 with an
-        // 'added' row — without it, the drawing the SO shipped with would be
-        // the one drawing missing from the history.
-        await insertDrawingRevisions(tx, birthDrawingRevisions(insertedLines, user), companyId);
+        // A line born holding a drawing starts its trail at revision_no 0 with
+        // an 'added' row — without it, the drawing the SO shipped with would be
+        // the one drawing missing from the history. Every line here is brand
+        // new, so the allocator starts from an empty map: nothing can already
+        // have a history row.
+        await insertDrawingRevisions(
+          tx,
+          birthDrawingRevisions(insertedLines, user, makeRevisionNoAllocator(new Map())),
+          companyId,
+        );
       }
 
       await emitActivityLog(
@@ -1602,8 +1674,11 @@ async function mergeLines(
     .select({
       id: salesOrderLines.id,
       lineNo: salesOrderLines.lineNo,
-      // The drawing AS STORED. The Rev bump is decided by comparing this
-      // against the payload — never by anything the client sends.
+      // The drawing AS STORED. Whether a drawing change gets recorded is
+      // decided by comparing this against the payload — never by anything the
+      // client sends. `revision` is the line's stored customer Rev, kept here
+      // only so a history row written by a payload that does not mention the
+      // Rev can still snapshot the value the line actually carries.
       drawingFilePath: salesOrderLines.drawingFilePath,
       drawingNo: salesOrderLines.drawingNo,
       revision: salesOrderLines.revision,
@@ -1646,6 +1721,13 @@ async function mergeLines(
   // History rows for every drawing that actually changed in this save,
   // written in one insert once the loops below are done.
   const pendingRevisions: PendingDrawingRevision[] = [];
+  // One allocator for the whole save, seeded from what the DB already holds.
+  // Both loops below draw from it, so an updated line and a newly-inserted
+  // line — or the same line touched twice by one payload — can never land on
+  // the same (so_line_id, revision_no) and trip the unique index.
+  const nextRevisionNo = makeRevisionNoAllocator(
+    await loadLastRevisionNos(tx, salesOrderId, companyId),
+  );
 
   // Apply updates.
   for (const u of toUpdate) {
@@ -1659,19 +1741,22 @@ async function mergeLines(
     if (u.data.partName !== undefined) lineUpdate['partName'] = u.data.partName;
     if (u.data.material !== undefined) lineUpdate['material'] = u.data.material ?? null;
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
+    // The customer's Rev is written like any other field the user typed. It is
+    // deliberately NOT inside the drawing block below: the Rev is a fact about
+    // the paper the customer sent, so it moves when they say it moved, not
+    // when somebody uploads a file.
+    if (u.data.revision !== undefined) lineUpdate['revision'] = u.data.revision;
     if (u.data.drawingFilePath !== undefined) {
       lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
-      // Rev climbs by exactly one, and only when the file genuinely differs
-      // from what is stored. Clearing a drawing counts: the drawing record
-      // changed, so it gets its own revision — one that points at no file.
+      // A history row is written only when the file genuinely differs from
+      // what is stored. Clearing a drawing counts: the drawing record changed,
+      // so it gets its own row — one that points at no file.
       const stored = existingById.get(u.id)!;
       const action = drawingTransition(
         normalizeDrawingPath(stored.drawingFilePath),
         normalizeDrawingPath(u.data.drawingFilePath),
       );
       if (action !== null) {
-        const nextRevision = stored.revision + 1;
-        lineUpdate['revision'] = nextRevision;
         pendingRevisions.push({
           itemId: refs.itemId,
           itemCodeText: refs.itemCodeText,
@@ -1679,13 +1764,20 @@ async function mergeLines(
             companyId,
             salesOrderId,
             soLineId: u.id,
-            revisionNo: nextRevision,
+            // Just a counter of this line's drawing changes, one higher than
+            // the last one recorded. It says nothing about the customer's Rev.
+            revisionNo: nextRevisionNo(u.id),
             action,
             drawingFilePath: normalizeDrawingPath(u.data.drawingFilePath),
             // Snapshot the drawing number as it stands after this save, not
             // as it was stored, so the row describes the drawing it records.
             drawingNo:
               u.data.drawingNo !== undefined ? (u.data.drawingNo ?? null) : stored.drawingNo,
+            // Same rule for the Rev: the value the line carries AFTER this
+            // save, so the trail says which customer revision this drawing
+            // belonged to. Falls back to the stored Rev when the payload does
+            // not mention one.
+            lineRevisionText: u.data.revision !== undefined ? u.data.revision : stored.revision,
             createdBy: user.id,
           },
         });
@@ -1722,8 +1814,9 @@ async function mergeLines(
         partName: l.partName,
         material: l.material ?? null,
         drawingNo: l.drawingNo ?? null,
-        // Server-owned, same as the create path: a new line is born at Rev 0.
-        revision: 0,
+        // Same as the create path: the Rev is whatever the user typed on the
+        // new line, never a number the server chose.
+        revision: l.revision,
         drawingFilePath: l.drawingFilePath ?? null,
         uom: l.uom,
         orderQty: l.orderQty,
@@ -1737,7 +1830,7 @@ async function mergeLines(
       };
     });
     const addedLines = await tx.insert(salesOrderLines).values(values).returning();
-    pendingRevisions.push(...birthDrawingRevisions(addedLines, user));
+    pendingRevisions.push(...birthDrawingRevisions(addedLines, user, nextRevisionNo));
   }
 
   await insertDrawingRevisions(tx, pendingRevisions, companyId);
