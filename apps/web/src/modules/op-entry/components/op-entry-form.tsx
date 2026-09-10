@@ -31,10 +31,9 @@ interface Props {
   op: JcOpEnriched;
   // Active running session id for this op, if any (for the Stop button).
   activeRunningId: string | null;
-  // Legacy _opEntryMode (renderOpEntry L5210): 'start' shows the Mark-as-Running
-  // sub-form, 'complete' shows the Qty-Completed form. Only the production path
-  // honours it (QC / outsource have their own dedicated flows). Defaulted so
-  // callers that don't care keep the current combined behaviour.
+  /** Kept for the callers that still pass it; the production path no longer
+   *  reads it. Which half of the form shows is decided by `activeRunningId`
+   *  alone -- see the note beside `isStart`. */
   mode?: 'start' | 'complete';
   onModeChange?: (mode: 'start' | 'complete') => void;
   /** Called after a write of ANY kind lands -- start, completion, QC, stop.
@@ -57,7 +56,6 @@ const FUTURE_DATE_MESSAGE =
 export function OpEntryForm({
   op,
   activeRunningId,
-  mode = 'complete',
   onModeChange,
   onSubmitted,
 }: Props): React.JSX.Element {
@@ -362,11 +360,12 @@ export function OpEntryForm({
     }
   }
 
-  // Production form submit dispatches by mode (legacy submitStartOp vs
-  // submitOpEntry). In 'start' mode Enter/primary marks the op running; in
-  // 'complete' mode it logs a completion.
+  // Production form submit dispatches on the same fact the form is showing
+  // (legacy submitStartOp vs submitOpEntry): no session -> Enter starts the op,
+  // a live session -> Enter logs a completion against it. Reading `mode` here
+  // instead let a stale ?mode=start send a running op down the start path.
   async function handleProductionSubmit(e: React.FormEvent): Promise<void> {
-    if (mode === 'start') {
+    if (isStart) {
       e.preventDefault();
       if (!activeRunningId) await handleStart();
       return;
@@ -713,13 +712,21 @@ export function OpEntryForm({
   // Production form for non-QC / non-outsource ops. Legacy renderOpEntry
   // (L5277-5331) switches between a Start and a Complete sub-form via
   // _opEntryMode; the header toggle mirrors legacy L5278-5283.
-  // No open session means there is nothing to complete, so Complete is not
-  // offered at all -- neither as a button nor as a form. `mode` is forced back
-  // to 'start' rather than trusted, because it can also arrive from ?mode= in
-  // the URL (a bookmark, a shared link) and would otherwise reach the Complete
-  // form with no button having been pressed.
+  // WHICH HALF SHOWS IS A FACT ABOUT THE MACHINE, NOT A CHOICE.
+  //
+  // A live session means there is nothing to start; no session means there is
+  // nothing to complete. The two are mutually exclusive, so the form reads the
+  // session and neither the caller nor the URL can put it in the other state.
+  //
+  // It used to be `!canComplete || mode === 'start'`, and IN-JC-26-00017 Op 1
+  // showed what that costs. The op was genuinely running -- 90 of 100 done, 10
+  // left, session open since 11:43 -- and pressing the Start tab put the panel
+  // into Start: the heading read "Start Operation", an amber box promised to
+  // "mark this operation as Running on CNC-1" when it already was, and the only
+  // button underneath was Stop. The screen contradicted itself. `?mode=start`
+  // from a bookmark or the back button reached the same state without a click.
   const canComplete = Boolean(activeRunningId);
-  const isStart = !canComplete || mode === 'start';
+  const isStart = !canComplete;
   // The quantity boxes follow the buttons, not the tab. Stopping a session is
   // now a production entry in its own right, and the Stop button also appears
   // on the Start tab while a session is open — so wherever Stop can be pressed
@@ -728,19 +735,24 @@ export function OpEntryForm({
   const showQtyFields = !isStart || Boolean(activeRunningId);
   const modeToggle = onModeChange ? (
     <div style={{ display: 'flex', gap: 4 }}>
-      <button
-        type="button"
-        className="btn btn-sm"
-        onClick={() => onModeChange('start')}
-        style={{
-          borderColor: isStart ? 'var(--amber)' : 'var(--border2)',
-          background: isStart ? 'var(--amber3)' : 'transparent',
-          color: isStart ? 'var(--amber)' : 'var(--text2)',
-          fontWeight: 700,
-        }}
-      >
-        ▶ Start
-      </button>
+      {/* Gated exactly the way ✓ Complete below always was. That asymmetry was
+          the whole bug: Complete asked whether it was possible and Start never
+          did, so a running operation was offered a Start it could not do. */}
+      {canComplete ? null : (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => onModeChange('start')}
+          style={{
+            borderColor: isStart ? 'var(--amber)' : 'var(--border2)',
+            background: isStart ? 'var(--amber3)' : 'transparent',
+            color: isStart ? 'var(--amber)' : 'var(--text2)',
+            fontWeight: 700,
+          }}
+        >
+          ▶ Start
+        </button>
+      )}
       {canComplete ? (
         <button
           type="button"
