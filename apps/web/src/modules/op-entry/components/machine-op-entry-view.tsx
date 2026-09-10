@@ -15,11 +15,19 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { todayIst } from '@/lib/date';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps, useStartOp } from '../api';
 import { MachineCard } from './machine-card';
 import { OpEntryForm } from './op-entry-form';
+
+/** The one wording used wherever this view refuses a future start date. An
+ *  operation cannot have been started on a day that has not happened yet, and
+ *  a real entry was booked a day into the future within an hour of the date
+ *  boxes being changed to open blank. */
+const FUTURE_DATE_MESSAGE =
+  'Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.';
 
 export function MachineOpEntryView(): React.JSX.Element {
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
@@ -237,6 +245,13 @@ function PendingOpsSection({
   // when the work actually began. Mandatory fields carry a ★ and are checked
   // before the Start request goes out.
   const [startDate, setStartDate] = useState<string>('');
+  // Upper bound for the Start Date box. NOT a default — the box still opens
+  // blank; `max` only greys out the days after today in the native picker.
+  // todayIst() is the same "today" the rest of the app uses, so a shop-floor
+  // PC (which runs on IST, as the server records) greys out tomorrow onwards.
+  // Read on each render so a strip left open past midnight moves with the
+  // clock instead of freezing on yesterday.
+  const maxStartDate = todayIst();
   const [startTime, setStartTime] = useState<string>('');
   // '' is the un-answered state, hence Shift | '' and the "Select shift"
   // placeholder as the first option.
@@ -278,6 +293,16 @@ function PendingOpsSection({
       setErrorMessage(
         `Fill in the mandatory ★ fields before starting this operation — missing: ${missing.join(', ')}.`,
       );
+      return;
+    }
+    // The picker's `max` greys future days out, but several browsers still let
+    // a date be TYPED straight into the box, which is how a future entry got
+    // booked in the first place. The same rule is therefore re-checked here
+    // before the Start request goes out. Both sides are `YYYY-MM-DD`, which
+    // compares correctly as plain text. The server refuses it as well — this
+    // only stops the operator before they submit rather than after.
+    if (startDate > maxStartDate) {
+      setErrorMessage(FUTURE_DATE_MESSAGE);
       return;
     }
     const input: StartOpInput = {
@@ -322,6 +347,7 @@ function PendingOpsSection({
                 id="mach-start-date"
                 className="innovic-input"
                 type="date"
+                max={maxStartDate}
                 required
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}

@@ -38,6 +38,7 @@
 import { SHIFTS, SHIFT_LABELS, type Shift, type StopOpInput } from '@innovic/shared';
 import { Loader2, X } from 'lucide-react';
 import { useState } from 'react';
+import { todayIst } from '@/lib/date';
 import { useOperatorsList } from '@/modules/operators/api';
 
 /** The one row being stopped, flattened so both tabs can build it from their
@@ -84,6 +85,13 @@ export function StopOpModal({
   // Every one of these starts empty on purpose. See the note at the top of the
   // file — nothing here is inherited from the session or from the clock.
   const [logDate, setLogDate] = useState('');
+  // Upper bound for the date box. NOT a default — the box still opens blank;
+  // `max` only greys out the days after today in the native picker.
+  // todayIst() is the same "today" the rest of the app uses, so a shop-floor
+  // PC (which runs on IST, as the server records) greys out tomorrow onwards.
+  // Read on each render so a modal left open past midnight moves with the
+  // clock instead of freezing on yesterday.
+  const maxLogDate = todayIst();
   const [logTime, setLogTime] = useState('');
   // '' is a real state, not a placeholder for 'day': the <select> opens on
   // "Select shift" so no shift is ever recorded by accident.
@@ -123,6 +131,12 @@ export function StopOpModal({
   const qtyIsJunk = !qtyBlank && qtyNum === null;
   const rejIsJunk = !rejBlank && rejNum === null;
   const overCap = qtyNum !== null && qtyNum > target.availableQty;
+  // The picker's `max` greys future days out, but several browsers still let a
+  // date be TYPED straight into the box, which is how a future entry got
+  // booked in the first place. Both sides are `YYYY-MM-DD`, which compares
+  // correctly as plain text. A blank box is not "in the future" — that case is
+  // already covered by the missing-field list below.
+  const dateInFuture = logDate !== '' && logDate > maxLogDate;
 
   // Mandatory: date, time, shift, operator, quantity. A quantity of 0 satisfies
   // this — an EMPTY box does not.
@@ -134,7 +148,13 @@ export function StopOpModal({
   if (qtyBlank) missing.push('Quantity made');
 
   const canSubmit =
-    missing.length === 0 && !qtyIsJunk && !rejIsJunk && !overCap && !pending && qtyNum !== null;
+    missing.length === 0 &&
+    !qtyIsJunk &&
+    !rejIsJunk &&
+    !overCap &&
+    !dateInFuture &&
+    !pending &&
+    qtyNum !== null;
 
   function handleStop(): void {
     if (!canSubmit || qtyNum === null || rejNum === null || !shift) return;
@@ -226,6 +246,7 @@ export function StopOpModal({
                 id="stop-op-date"
                 className="innovic-input"
                 type="date"
+                max={maxLogDate}
                 required
                 value={logDate}
                 autoFocus
@@ -353,6 +374,12 @@ export function StopOpModal({
           {overCap ? (
             <div style={{ fontSize: 11, color: 'var(--red)' }}>
               Only {target.availableQty} pcs can be logged on this operation right now.
+            </div>
+          ) : null}
+          {dateInFuture ? (
+            <div style={{ fontSize: 11, color: 'var(--red)' }}>
+              Date cannot be in the future — an operation cannot be worked on a day that has not
+              happened yet.
             </div>
           ) : null}
           {qtyIsJunk || rejIsJunk ? (

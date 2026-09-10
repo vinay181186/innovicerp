@@ -9,6 +9,23 @@ export function todayLocal(): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Today's calendar date IN IST as `YYYY-MM-DD`, whatever the browser's own
+ *  timezone happens to be.
+ *
+ *  This is the upper bound on every Op Entry date box. `todayLocal()` is the
+ *  browser's day, which is right on a shop-floor PC set to IST and wrong on a
+ *  laptop that is not -- and the server records and validates in IST, so a
+ *  browser-local bound would either offer a day IST has not reached or refuse
+ *  one it has. `en-CA` is used only because it formats as YYYY-MM-DD. */
+export function todayIst(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 /** A `YYYY-MM-DD` calendar date split into its three numbers, or null when the
  *  string is not one. Blank, half-typed and malformed dates all return null so
  *  callers can treat "no usable date" as one case. */

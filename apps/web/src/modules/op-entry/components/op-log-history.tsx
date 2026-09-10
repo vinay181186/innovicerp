@@ -14,6 +14,7 @@
 import type { OpLog, OpLogTimeChangeRequest } from '@innovic/shared';
 import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
+import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests, useUpdateOpLogTiming } from '../api';
 
@@ -75,6 +76,14 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
   }
 
   function save(id: string): void {
+    // The fourth date box in this module, and the one that corrects the other
+    // three. A retime can push a row into the future exactly as an original
+    // entry can, so it is bounded the same way. The server refuses it too
+    // (assertNotFutureDate in op-entry/service.ts) -- this is the early word.
+    if (draftDate > todayIst()) {
+      setNotice('Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.');
+      return;
+    }
     retime.mutate(
       { id, logDate: draftDate, logTime: draftTime || null, ...(reason ? { reason } : {}) },
       {
@@ -177,6 +186,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                         className="innovic-input"
                         type="date"
                         aria-label="Entry date"
+                        max={todayIst()}
                         value={draftDate}
                         onChange={(e) => setDraftDate(e.target.value)}
                         style={{ fontSize: 11, padding: '2px 4px', width: 130 }}

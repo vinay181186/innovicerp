@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useOperatorsList } from '@/modules/operators/api';
 import {
@@ -37,6 +38,14 @@ interface Props {
   mode?: 'start' | 'complete';
   onModeChange?: (mode: 'start' | 'complete') => void;
 }
+
+/** The one wording used wherever this form refuses a future date, so the QC
+ *  sub-form, the production form, Start and Stop all say exactly the same
+ *  thing. An hour after the date boxes were changed to open blank, a real
+ *  entry was booked dated a day into the future because "11" was typed instead
+ *  of "10"; work cannot have happened on a day that has not happened yet. */
+const FUTURE_DATE_MESSAGE =
+  'Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.';
 
 export function OpEntryForm({
   op,
@@ -69,6 +78,13 @@ export function OpEntryForm({
   // date picker and the dropdowns, on his own accord. Mandatory fields carry a
   // ★ on their label and are checked before any request goes out.
   const [logDate, setLogDate] = useState<string>('');
+  // Upper bound for every date box on this form. It is NOT a default: the box
+  // still opens blank, `max` only greys out the days after today in the native
+  // picker. todayIst() is the same "today" the rest of the app uses, so a
+  // shop-floor PC (which runs on IST, as the server records) greys out
+  // tomorrow onwards. Read on each render so a form left open past midnight
+  // moves with the clock rather than freezing on yesterday.
+  const maxLogDate = todayIst();
   // Clock time of the entry, editable on BOTH tabs. Start already accepted a
   // client time (startOpInputSchema) but the form hard-coded "now";
   // completion and QC logs had no time field at all and the service wrote
@@ -149,6 +165,16 @@ export function OpEntryForm({
     if (opts.qtyRequired && qty.trim() === '') missing.push('Qty');
     if (missing.length > 0 || !shift) {
       setErrorMessage(`Fill in the mandatory ★ fields before continuing — missing: ${missing.join(', ')}.`);
+      return null;
+    }
+    // The picker's `max` greys future days out, but several browsers still let
+    // a date be TYPED straight into the box, which is exactly how a future
+    // entry got booked in the first place. So the same rule is enforced again
+    // here, before any request goes out. Both sides are `YYYY-MM-DD`, which
+    // compares correctly as plain text. The server refuses it too — this only
+    // stops the operator before they submit rather than after.
+    if (logDate > maxLogDate) {
+      setErrorMessage(FUTURE_DATE_MESSAGE);
       return null;
     }
     return shift;
@@ -485,6 +511,7 @@ export function OpEntryForm({
                   id="opf-date"
                   className="innovic-input"
                   type="date"
+                  max={maxLogDate}
                   required
                   value={logDate}
                   onChange={(e) => setLogDate(e.target.value)}
@@ -748,6 +775,7 @@ export function OpEntryForm({
                 id="opf-date"
                 className="innovic-input"
                 type="date"
+                max={maxLogDate}
                 required
                 value={logDate}
                 onChange={(e) => setLogDate(e.target.value)}
