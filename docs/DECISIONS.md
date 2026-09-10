@@ -8511,3 +8511,53 @@ One shared helper (`apps/web/src/lib/item-code.ts`) writes it as a single string
 - The join is cast `::text`, so it behaves identically on a database where 0119 has not landed yet.
 - The SO detail's separate "Rev 1" line is gone: it is the same value the Item Code cell now carries, and one fact printed twice in one row reads as two facts that might disagree.
 - Job Card list search does not match a typed revision — the search runs server-side and that column is not in the query. Left as a known gap rather than filtered on the client, which would hide rows the server never sent.
+
+## ADR-160: The drawing revision follows the item code everywhere downstream — and the exact places it must not
+
+**Date:** 2026-09-10
+**Status:** Accepted. Extends ADR-159, which stopped at five screens.
+
+### Context
+
+ADR-159 put `CODE/REV` on the SO's own screens and the Job Card, and listed the remaining ~60 locations as waiting on the user to choose. The user chose all of them: *"downstream document must be 100% updated with itemcode/revision . all downstram document . not only this ... all doc"*.
+
+Separately: a new SO line's Rev was pre-filled with '0'. That made a revision nobody had read off a drawing look like one somebody had confirmed, and a box already holding a plausible value is a box people tab straight past.
+
+### Decision
+
+Rev starts EMPTY on a new line — the compulsory check then forces the question to be asked once per line, which is the entire point of making it compulsory. An imported sheet with no Rev column leaves those boxes empty for the same reason.
+
+The revision travels with the item code as `IN-IT-0007/B` through the whole chain, cut into seven independent vertical slices (contract → API → screens → print/export), written by ONE shared helper (`apps/web/src/lib/item-code.ts`) so the separator and the empty cases cannot drift apart across a hundred screens.
+
+**120 files, +1494/−121.** Procurement · Dispatch & billing · Planning · SO-scoped views · Quality · Production floor · Reports.
+
+### Alternatives Considered
+
+- **Snapshot the revision onto each downstream record** — rejected. If the customer re-issues at Rev C, every document against that line should say Rev C. Read live through the join each service already had.
+- **`CODE/REV` in spreadsheet cells** — rejected. Every xlsx export keeps its item-code cell clean and gains a separate `Drawing Rev` column: people filter and VLOOKUP that column against Item Master, and `IN-IT-0007/B` matches nothing while splitting one item into as many "items" as it has revisions.
+- **Widen the server-side search to match a typed revision** — rejected for now. A one-letter revision like `B` would match half the board. Screens that filter an already-loaded list DID get the revision added to what they match; screens that search server-side did not, because filtering in the browser instead would silently hide rows the server never sent.
+
+### Consequences — where it is deliberately ABSENT, and why
+
+This list is the valuable half of this ADR. Each of these would have stated something false.
+
+- **`items.revision` is a DIFFERENT column** about the item itself and is never substituted. A plausible-looking wrong revision in front of a machinist is worse than a blank.
+- **No SO behind the row ⇒ the bare code**, no slash, no placeholder: a JW-sourced job card, a plan for job-work, a PR raised without an SO, a vendor's GRN receipt sitting in the Incoming QC queue beside OSP returns that DO have one.
+- **BOM children and Equipment drills** — the customer ordered the equipment, not the child part.
+- **Stock rollups, Rejection Pareto, FPY** — these group ONE item across many orders at once; a single revision on that aggregate is a lie.
+- **Anything typed or submitted** — `itemCodeText`, NC free-text prefills, every form input. A suffix there would be WRITTEN into the record as if it were part of the code.
+- **NC Register** shows the revision only on the LIVE joined code; where the item is gone and the screen falls back to the reporter's typed snapshot, it stays bare.
+
+### Consequences — two judgement calls not to re-litigate
+
+- **OSP delivery challans.** The challan links to the SO on its HEADER while each line is copied from a purchase-order line. On an OSP challan that line genuinely IS the customer's part; on a buying challan it is raw material or bought-in hardware. Rather than guess, the join insists the challan line's item MATCHES the SO line's item — same item means it really is the part. Everything else stays bare, and the header carries the SO's revision as a labelled field beside the SO number. Never as `IN-SO-0012/B`: a slash after a sales-order number reads as a revision of the order, which is not a thing that exists.
+- **JC Status Summary now returns one row per (status, item, revision).** Totals unchanged; the same part at Rev A and Rev B is two lines, because two revisions are two different pieces of work. **Item Tracker deliberately did NOT do this** — its `In Stock` is one figure per item, so splitting by revision would repeat that figure on every row and inflate the total. It aggregates to `A` or `A, B` instead.
+
+### Two independent faults found on the way
+
+- **The PO knew its SO only at HEADER level**, taking the first line that had one. One PO can cover several orders, so the revision is now joined PER LINE.
+- **Incoming QC's COMPLETED list had no trace back to the SO at all**, so a finished OSP inspection could never have shown a revision. That trace now exists.
+
+### Deploy
+
+Depends on migration 0119, applied to TEST and verified. **Not applied to production** — this must not ship there until it is, or the SO screens break.
