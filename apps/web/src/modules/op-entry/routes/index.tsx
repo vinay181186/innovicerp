@@ -1,6 +1,6 @@
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -12,12 +12,11 @@ import {
   useOpMachineOutput,
   useRealtimeOpLog,
   useRealtimeRunningOps,
-  useRunningOps,
 } from '../api';
 import { JcOpsTable } from '../components/jc-ops-table';
 import { MachineOpEntryView } from '../components/machine-op-entry-view';
 import { MachineOutputPanel } from '../components/machine-output-panel';
-import { OpEntryForm } from '../components/op-entry-form';
+import { OpEntryModal, type OpEntryModalTarget } from '../components/op-entry-modal';
 import { OpLogHistory } from '../components/op-log-history';
 
 const searchSchema = z.object({
@@ -25,8 +24,12 @@ const searchSchema = z.object({
   op: z.string().uuid().optional(),
   // Legacy `window._opEntryMode` (renderOpEntry L5210). JC Status enters Op
   // Entry via goToOpEntryStart / goToOpEntryComplete (L11013 / L11007), which
-  // set this intent. Optional; absent = 'complete' (legacy default L5210),
-  // which preserves the current combined form behaviour.
+  // set this intent, as does the Job Queue. It is now the DEEP LINK's intent
+  // only: its PRESENCE is what tells this page the URL is a request to open the
+  // entry popup (rather than a row the user merely selected), and its value
+  // decides which half of the popup opens first. It is consumed — removed from
+  // the URL — as soon as the popup opens. Switching halves inside the popup no
+  // longer writes here either; that choice lives and dies with the popup.
   mode: z.enum(['start', 'complete']).optional(),
   // By Job Card / By Machine switch — 'machine' is the former standalone
   // /op-entry/machines screen. Absent = 'jc' (the default JC-wise entry).
@@ -90,10 +93,6 @@ function OpEntryPage() {
     [search.jc],
   );
   const ops = useJcOpsEnriched(jcQuery, { enabled: Boolean(search.jc) });
-  const running = useRunningOps({ status: 'running' });
-
-  // Start vs Complete intent (legacy _opEntryMode). Default 'complete' matches
-  // legacy L5210 and preserves the current form. Toggling writes it to the URL.
 
   const selectedOp = useMemo(
     () => ops.data?.find((o) => o.id === search.op) ?? null,
@@ -109,21 +108,63 @@ function OpEntryPage() {
     { enabled: Boolean(selectedOp) },
   );
 
-  const activeRunningId = useMemo(() => {
-    if (!selectedOp || !running.data) return null;
-    return (
-      running.data.find((r) => r.jcOpId === selectedOp.id && r.status === 'running')?.id ?? null
-    );
-  }, [running.data, selectedOp]);
-
-  // Open on the action that applies: Start when nothing is running on this
-  // operation, Complete once a session is open. An explicit ?mode in the URL
-  // always wins, so the toggle and a shared link still work.
+  // THE ONE ENTRY POPUP for this tab. The Date / Time / Shift / Operator /
+  // Qty fields used to sit permanently beside the table, belonging to whichever
+  // row was selected — and the operator could not see which row that was while
+  // typing a quantity into them. There are now no fields on screen until an
+  // operation has been named by pressing its own button, and the popup states
+  // the job card, the operation and the machine above every field.
   //
-  // While the running list is still loading this reads Start. That is the
-  // right way round to be wrong: Start is the harmless one, and an op with no
-  // session is much the commoner case.
-  const mode = search.mode ?? (activeRunningId ? 'complete' : 'start');
+  // Held here, once, rather than per row: one target, so only one form can
+  // exist and it always belongs to the row that opened it.
+  const [entryTarget, setEntryTarget] = useState<OpEntryModalTarget | null>(null);
+
+  // Which operation the ?op= deep link has already been honoured for. Without
+  // it the effect below would re-open the popup every time the ops list
+  // refetches (realtime does that on every running_ops and op_log change) and
+  // again the instant the operator closed the box, because ?op= is still in the
+  // URL. It is also stamped by the ordinary click handlers, so selecting or
+  // logging a row by hand never counts as an unhandled deep link.
+  const autoOpenedOpRef = useRef<string | null>(null);
+
+  function handleOpenEntry(target: OpEntryModalTarget): void {
+    autoOpenedOpRef.current = target.op.id;
+    setEntryTarget(target);
+    // Also make it the selected row, so the Machine-wise output / Recent log
+    // panel underneath is showing the operation being logged.
+    void navigate({
+      search: (prev) => ({ ...prev, op: target.op.id }),
+      replace: true,
+    });
+  }
+
+  // DEEP LINK — the Job Card page (jc-status-content.tsx onStart / onLog) and
+  // the Job Queue both navigate here with ?jc=<code>&op=<uuid>&mode=start or
+  // complete, meaning "open the entry for this operation". The ops for that job
+  // card are fetched on THIS page, so the operation the link names does not
+  // exist yet on the first render — open the popup the moment the list
+  // resolves, and only then.
+  //
+  // `mode` is what marks the URL as a link rather than a selection: every
+  // caller that names an op also names an intent (four call sites, all
+  // checked), while an ?op= the page wrote itself when a row was clicked
+  // carries none. That is the difference between "take me to this entry" and
+  // "I am looking at this row", and without it a plain page refresh would
+  // throw a data-entry box over the screen.
+  useEffect(() => {
+    const opId = search.op;
+    if (!opId || !search.mode || autoOpenedOpRef.current === opId) return;
+    const op = ops.data?.find((o) => o.id === opId);
+    // Still loading, or the id belongs to a different job card. Leave the ref
+    // alone so a later fetch can still honour the link.
+    if (!op) return;
+    autoOpenedOpRef.current = opId;
+    setEntryTarget({ op, activeRunningId: op.activeRunningOpId, mode: search.mode });
+    // The link has now been acted on, so take the intent back out of the URL.
+    // The op stays (it is the selected row), but a refresh is not a second
+    // request to open the box.
+    void navigate({ search: (prev) => ({ ...prev, mode: undefined }), replace: true });
+  }, [ops.data, search.op, search.mode, navigate]);
 
   function handleJcSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -135,15 +176,12 @@ function OpEntryPage() {
   }
 
   function handleSelectOp(opId: string) {
+    // Selecting a row is a READ action now — it points the history panel
+    // underneath at this operation and nothing else. Stamp the ref so the
+    // deep-link effect does not mistake this for a link it has to open.
+    autoOpenedOpRef.current = opId;
     void navigate({
       search: (prev) => ({ ...prev, op: opId }),
-      replace: true,
-    });
-  }
-
-  function handleModeChange(next: 'start' | 'complete') {
-    void navigate({
-      search: (prev) => ({ ...prev, mode: next }),
       replace: true,
     });
   }
@@ -251,55 +289,35 @@ function OpEntryPage() {
             ) : null}
           </div>
 
-          {/* Row 1 — two columns side by side: LEFT = Operations table,
-              RIGHT = Log Entry form (it sits NEXT TO the table, not under it).
-              Row 2 = the Machine-wise output / Recent log tabs, full width
-              underneath the Operations table. Applies to production AND QC
-              inspection ops. */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
-              gap: 16,
-              alignItems: 'start',
-              marginBottom: 16,
-            }}
-          >
-            <div className="panel">
-              <div className="panel-hdr">
-                <span className="panel-title">Operations — click a row to log entries</span>
+          {/* Row 1 — the Operations table, now FULL WIDTH. The Log Entry form
+              used to take the right-hand half of this row permanently; it is
+              now the popup at the bottom of this file, opened from a row's own
+              button, so the table gets the whole width back and no field is on
+              screen without the job it belongs to written above it.
+              Row 2 = the Machine-wise output / Recent log tabs, unchanged,
+              underneath. Applies to production AND QC inspection ops. */}
+          <div className="panel" style={{ marginBottom: 16 }}>
+            <div className="panel-hdr">
+              <span className="panel-title">
+                Operations — press ▶ Start / ✚ Log on the row you are booking against
+              </span>
+            </div>
+            {ops.isError ? (
+              <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
+                {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
               </div>
-              {ops.isError ? (
-                <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
-                  {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
-                </div>
-              ) : ops.isLoading ? (
-                <div className="empty-state">
-                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
-                </div>
-              ) : (
-                <JcOpsTable
-                  ops={ops.data ?? []}
-                  selectedOpId={search.op ?? null}
-                  onSelect={handleSelectOp}
-                />
-              )}
-            </div>
-
-            <div>
-              {selectedOp ? (
-                <OpEntryForm
-                  op={selectedOp}
-                  activeRunningId={activeRunningId}
-                  mode={mode}
-                  onModeChange={handleModeChange}
-                />
-              ) : ops.data && ops.data.length > 0 ? (
-                <div className="text3" style={{ fontSize: 13 }}>
-                  Select an op on the left to log entries.
-                </div>
-              ) : null}
-            </div>
+            ) : ops.isLoading ? (
+              <div className="empty-state">
+                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
+              </div>
+            ) : (
+              <JcOpsTable
+                ops={ops.data ?? []}
+                selectedOpId={search.op ?? null}
+                onSelect={handleSelectOp}
+                onOpenEntry={handleOpenEntry}
+              />
+            )}
           </div>
 
           {selectedOp ? (
@@ -350,6 +368,20 @@ function OpEntryPage() {
           <div className="empty-state">Enter a job card number to load its ops.</div>
         </div>
       )}
+
+      {/* Rendered ONCE for the whole tab, never once per row — one target
+          means one form, and it always belongs to the row that opened it.
+          The popup closes itself on a successful save (it hands OpEntryForm
+          its onSubmitted), so clearing the target here covers the ✕ and the
+          overlay click. Switching between the Start and Complete halves inside
+          the box updates the target so the choice sticks while it is open. */}
+      {entryTarget ? (
+        <OpEntryModal
+          target={entryTarget}
+          onClose={() => setEntryTarget(null)}
+          onModeChange={(m) => setEntryTarget((t) => (t ? { ...t, mode: m } : t))}
+        />
+      ) : null}
         </>
       )}
     </div>

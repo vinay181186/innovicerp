@@ -1,40 +1,46 @@
 // Machine Op Entry — folded in as the "By Machine" view of Op Entry (formerly the
-// standalone /op-entry/machines route). Pick a machine → see its running op (with
-// the log-entry form) or its pending jobs (with a quick ▶ Start). Uses local
+// standalone /op-entry/machines route). Pick a machine → see its running op or
+// its pending jobs, and press an action on the ROW you mean. Uses local
 // component state for the selected machine (the standalone route drove it off the
 // URL). Reuses the same start-op / op-entry-form write path.
+//
+// WHY THERE ARE NO ENTRY FIELDS ON THIS SCREEN ANY MORE. The Date / Time /
+// Shift / Operator boxes used to sit in ONE strip above the pending-jobs table.
+// That strip belonged to whichever row you eventually pressed ▶ Start on, and
+// which row that was is not something the screen could show. On 10-Sep an
+// operator meant to book against IN-JC-26-00017 Op 1 and booked against
+// IN-JC-26-00005 Op 1 instead — JC 0005 is the first row, JC 0017 the fourth.
+// Every field now lives inside `OpEntryModal`, which is opened FROM a row and
+// states that row's job card, operation and machine above the first field. One
+// popup exists at a time, and it was opened from the operation it belongs to,
+// so there is no longer a way to type into a form meant for a different job.
 
-import {
-  type JcOpEnriched,
-  type RunningOp,
-  SHIFTS,
-  SHIFT_LABELS,
-  type Shift,
-  type StartOpInput,
-} from '@innovic/shared';
+import { type JcOpEnriched, type RunningOp } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayIst } from '@/lib/date';
 import { useMachinesList } from '@/modules/machines/api';
-import { useOperatorsList } from '@/modules/operators/api';
-import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps, useStartOp } from '../api';
+import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps } from '../api';
 import { MachineCard } from './machine-card';
-import { OpEntryForm } from './op-entry-form';
-
-/** The one wording used wherever this view refuses a future start date. An
- *  operation cannot have been started on a day that has not happened yet, and
- *  a real entry was booked a day into the future within an hour of the date
- *  boxes being changed to open blank. */
-const FUTURE_DATE_MESSAGE =
-  'Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.';
+import { OpEntryModal, type OpEntryModalTarget } from './op-entry-modal';
 
 export function MachineOpEntryView(): React.JSX.Element {
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
+  // THE one open popup for this whole view — both the running-machine card and
+  // every pending row set this same piece of state. Deliberately one, not one
+  // modal per row: a modal per row is a form per row again, which is the bug
+  // this screen was rebuilt to remove.
+  const [entryTarget, setEntryTarget] = useState<OpEntryModalTarget | null>(null);
 
   useRealtimeRunningOps();
   const machines = useMachinesList({ limit: 200, offset: 0 });
   const running = useRunningOps({ status: 'running' });
+
+  // Logging or stopping shop-floor work is op_entry entry (Production) — the
+  // same right the inline entry form used to check for itself. It is checked
+  // here now because the buttons that open the form live here.
+  const { data: eff } = useMyAccess();
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
 
   const selectedMachine = useMemo(
     () => machines.data?.machines.find((m) => m.id === selectedMachineId) ?? null,
@@ -182,7 +188,45 @@ export function MachineOpEntryView(): React.JSX.Element {
                 </div>
               </div>
             </div>
-            <OpEntryForm op={runningOpRow} activeRunningId={selectedRunning.id} />
+            {/* The entry form used to sit open right here. It is now behind these
+                two buttons so that every entry on this screen — running machine
+                or pending row — is made in the same popup, headed by the job it
+                belongs to. Both open the SAME popup on the SAME running session:
+                Stop needs the quantity boxes just as much as Log does (the
+                session's output is stated when it is closed), and the form shows
+                its own Stop button whenever a session is open, which is why both
+                buttons ask for 'complete'. */}
+            {canOpEntry ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() =>
+                    setEntryTarget({
+                      op: runningOpRow,
+                      activeRunningId: selectedRunning.id,
+                      mode: 'complete',
+                    })
+                  }
+                >
+                  ✚ Log
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  title="Books the quantity you enter AND frees the machine for the next job"
+                  onClick={() =>
+                    setEntryTarget({
+                      op: runningOpRow,
+                      activeRunningId: selectedRunning.id,
+                      mode: 'complete',
+                    })
+                  }
+                >
+                  ■ Stop
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : selectedRunning ? (
           <div className="text3" style={{ fontSize: 13 }}>
@@ -195,6 +239,9 @@ export function MachineOpEntryView(): React.JSX.Element {
             ops={pendingOps}
             producedOps={producedOps}
             isLoading={machineOps.isLoading}
+            onStart={(op) =>
+              setEntryTarget({ op, activeRunningId: op.activeRunningOpId, mode: 'start' })
+            }
           />
         )
       ) : (
@@ -207,6 +254,13 @@ export function MachineOpEntryView(): React.JSX.Element {
           </div>
         </div>
       )}
+
+      {/* Rendered ONCE for the whole view, never once per row. The popup closes
+          itself on a successful save (it hands OpEntryForm its onSubmitted), so
+          clearing the target here is only for the ✕ / overlay click. */}
+      {entryTarget ? (
+        <OpEntryModal target={entryTarget} onClose={() => setEntryTarget(null)} />
+      ) : null}
     </div>
   );
 }
@@ -224,6 +278,9 @@ interface PendingOpsSectionProps {
   ops: JcOpEnriched[];
   producedOps: MadeHereRow[];
   isLoading: boolean;
+  /** Asks the view to open the entry popup for THIS row. The section holds no
+   *  entry state of its own any more — that is the whole point. */
+  onStart: (op: JcOpEnriched) => void;
 }
 
 function PendingOpsSection({
@@ -232,95 +289,11 @@ function PendingOpsSection({
   ops,
   producedOps,
   isLoading,
+  onStart,
 }: PendingOpsSectionProps) {
-  const start = useStartOp();
   // Starting a session records shop-floor work → op_entry entry (Production).
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
-  // EVERY field starts BLANK — no today's date, no clock time, no pre-selected
-  // shift. A seeded value is a value nobody typed, and it is submitted as fact:
-  // a night-shift job started at 22:40 and entered the next morning would carry
-  // this morning's date and the day shift purely because the boxes came
-  // pre-filled and nothing on screen ever looked wrong. The operator states
-  // when the work actually began. Mandatory fields carry a ★ and are checked
-  // before the Start request goes out.
-  const [startDate, setStartDate] = useState<string>('');
-  // Upper bound for the Start Date box. NOT a default — the box still opens
-  // blank; `max` only greys out the days after today in the native picker.
-  // todayIst() is the same "today" the rest of the app uses, so a shop-floor
-  // PC (which runs on IST, as the server records) greys out tomorrow onwards.
-  // Read on each render so a strip left open past midnight moves with the
-  // clock instead of freezing on yesterday.
-  const maxStartDate = todayIst();
-  const [startTime, setStartTime] = useState<string>('');
-  // '' is the un-answered state, hence Shift | '' and the "Select shift"
-  // placeholder as the first option.
-  const [shift, setShift] = useState<Shift | ''>('');
-  // Operator is REQUIRED by startOpInputSchema (operatorId OR operatorName).
-  // This view used to post neither, so every ▶ Start was rejected 400 by the
-  // server and — because the click swallowed the rejection — the button simply
-  // did nothing. Same datalist picker as the By Job Card form: free text always
-  // works, and an exact name/code match resolves the master FK.
-  const [operatorName, setOperatorName] = useState('');
-  const [operatorId, setOperatorId] = useState<string | undefined>(undefined);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const operatorsQuery = useOperatorsList({ isActive: true, limit: 200, offset: 0 });
-  const operators = operatorsQuery.data?.operators ?? [];
-
-  function handleOperatorNameChange(value: string): void {
-    setOperatorName(value);
-    const needle = value.trim().toLowerCase();
-    const match = needle
-      ? operators.find(
-          (o) => o.name.trim().toLowerCase() === needle || o.code.trim().toLowerCase() === needle,
-        )
-      : undefined;
-    setOperatorId(match ? match.id : undefined);
-  }
-
-  async function handleStart(opId: string): Promise<void> {
-    setErrorMessage(null);
-    // Nothing is pre-filled any more, so every mandatory box is checked here
-    // and named in ONE message — start date, start time, shift and operator.
-    // Without this the blank fields would simply be rejected by the server
-    // (startOpInputSchema) with a message written for a developer.
-    const missing: string[] = [];
-    if (!startDate) missing.push('Start Date');
-    if (!startTime) missing.push('Start Time');
-    if (!shift) missing.push('Shift');
-    if (!operatorId && !operatorName.trim()) missing.push('Operator');
-    if (missing.length > 0 || !shift) {
-      setErrorMessage(
-        `Fill in the mandatory ★ fields before starting this operation — missing: ${missing.join(', ')}.`,
-      );
-      return;
-    }
-    // The picker's `max` greys future days out, but several browsers still let
-    // a date be TYPED straight into the box, which is how a future entry got
-    // booked in the first place. The same rule is therefore re-checked here
-    // before the Start request goes out. Both sides are `YYYY-MM-DD`, which
-    // compares correctly as plain text. The server refuses it as well — this
-    // only stops the operator before they submit rather than after.
-    if (startDate > maxStartDate) {
-      setErrorMessage(FUTURE_DATE_MESSAGE);
-      return;
-    }
-    const input: StartOpInput = {
-      jcOpId: opId,
-      startDate,
-      startTime,
-      shift,
-      ...(operatorId ? { operatorId } : {}),
-      ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
-    };
-    try {
-      await start.mutateAsync(input);
-    } catch (err) {
-      // Availability / client-material / machine-busy refusals all land here.
-      // They used to vanish silently.
-      setErrorMessage(err instanceof Error ? err.message : 'Could not start this operation.');
-    }
-  }
   return (
     <div style={{ background: 'var(--bg3)', border: '2px solid var(--border)', borderRadius: 10, padding: 16 }}>
       <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)', marginBottom: 4 }}>
@@ -338,84 +311,10 @@ function PendingOpsSection({
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 8 }}>
             Pending Jobs for this Machine ({ops.length})
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
-            <div className="form-grp" style={{ margin: 0 }}>
-              <label className="form-label" htmlFor="mach-start-date">
-                Start Date<span className="req">★</span>
-              </label>
-              <input
-                id="mach-start-date"
-                className="innovic-input"
-                type="date"
-                max={maxStartDate}
-                required
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp" style={{ margin: 0 }}>
-              <label className="form-label" htmlFor="mach-start-time">
-                Start Time<span className="req">★</span>
-              </label>
-              <input
-                id="mach-start-time"
-                className="innovic-input"
-                type="time"
-                required
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-              />
-            </div>
-            <div className="form-grp" style={{ margin: 0 }}>
-              <label className="form-label" htmlFor="mach-start-shift">
-                Shift<span className="req">★</span>
-              </label>
-              {/* The empty first option IS the starting state — no shift is
-                  pre-selected, so the operator has to choose one. */}
-              <select
-                id="mach-start-shift"
-                className="innovic-select"
-                required
-                value={shift}
-                onChange={(e) => setShift(e.target.value as Shift | '')}
-              >
-                <option value="">Select shift</option>
-                {SHIFTS.map((s) => (
-                  <option key={s} value={s}>
-                    {SHIFT_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-grp" style={{ margin: 0, minWidth: 180 }}>
-              <label className="form-label" htmlFor="mach-start-operator">
-                Operator<span className="req">★</span>
-              </label>
-              <input
-                id="mach-start-operator"
-                className="innovic-input"
-                list="mach-start-operator-list"
-                required
-                value={operatorName}
-                onChange={(e) => handleOperatorNameChange(e.target.value)}
-                placeholder="Operator name"
-                autoComplete="off"
-              />
-              <datalist id="mach-start-operator-list">
-                {operators.map((o) => (
-                  <option key={o.id} value={o.name}>
-                    {o.code}
-                    {o.department ? ` · ${o.department}` : ''}
-                  </option>
-                ))}
-              </datalist>
-            </div>
+          <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
+            Press ▶ Start on the row you are booking against — the date, time, shift and
+            operator are asked for inside, under that job card's own heading.
           </div>
-          {errorMessage ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginBottom: 10 }}>
-              {errorMessage}
-            </div>
-          ) : null}
           <div className="tbl-wrap">
             <table className="innovic-table">
               <thead>
@@ -430,17 +329,21 @@ function PendingOpsSection({
               <tbody>
                 {ops.map((op) => (
                   <tr key={op.id}>
+                    {/* Job card, op number and operation name are all set bold:
+                        picking the wrong row is the exact mistake this screen
+                        was rebuilt around, so the three things that identify a
+                        row have to be readable at a glance rather than the
+                        code alone standing out. */}
                     <td className="mono fw-700 cyan">{op.jobCardCode}</td>
-                    <td className="mono">Op{op.opSeq}</td>
-                    <td>{op.operation}</td>
+                    <td className="mono fw-700">Op {op.opSeq}</td>
+                    <td className="fw-700">{op.operation}</td>
                     <td className="mono fw-700 amber">{op.available}</td>
                     <td>
                       {canOpEntry ? (
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
-                          onClick={() => void handleStart(op.id)}
-                          disabled={start.isPending}
+                          onClick={() => onStart(op)}
                         >
                           ▶ Start
                         </button>

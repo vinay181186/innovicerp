@@ -37,6 +37,13 @@ interface Props {
   // callers that don't care keep the current combined behaviour.
   mode?: 'start' | 'complete';
   onModeChange?: (mode: 'start' | 'complete') => void;
+  /** Called after a write of ANY kind lands -- start, completion, QC, stop.
+   *  The form itself has no opinion about what should happen next; when it is
+   *  hosted in a popup (op-entry-modal.tsx) the host closes on this, so the
+   *  operator is returned to the list they picked the operation from rather
+   *  than left staring at a box they have already submitted. Absent when the
+   *  form is rendered inline, where nothing should close. */
+  onSubmitted?: () => void;
 }
 
 /** The one wording used wherever this form refuses a future date, so the QC
@@ -52,6 +59,7 @@ export function OpEntryForm({
   activeRunningId,
   mode = 'complete',
   onModeChange,
+  onSubmitted,
 }: Props): React.JSX.Element {
   const submit = useSubmitOpLog();
   const submitQc = useSubmitQcLog();
@@ -227,6 +235,7 @@ export function OpEntryForm({
     try {
       await submit.mutateAsync(input);
       setQty('');
+      onSubmitted?.();
       setRejectQty('');
       setRemarks('');
     } catch (err) {
@@ -273,6 +282,7 @@ export function OpEntryForm({
     try {
       await submitQc.mutateAsync(input);
       setQty('');
+      onSubmitted?.();
       setRejectQty('');
       setRemarks('');
       setQcReportPath(null);
@@ -299,6 +309,7 @@ export function OpEntryForm({
     };
     try {
       await start.mutateAsync(input);
+      onSubmitted?.();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Start failed');
     }
@@ -345,6 +356,7 @@ export function OpEntryForm({
       setQty('');
       setRejectQty('');
       setRemarks('');
+      onSubmitted?.();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Stop failed');
     }
