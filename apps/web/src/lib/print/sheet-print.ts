@@ -116,6 +116,12 @@ export interface SheetPrintModel {
   data: Record<string, string>;
   company: DocCompany;
   recipient: { label: string; fields: SheetField[] };
+  /** An optional SECOND section inside the recipient (left) box, under a rule.
+   *  The Purchase Order uses it for "Ship to": where the goods must actually be
+   *  delivered. It lives in the left column on purpose — the right-hand Order
+   *  box keeps its own fields and its alignment, and the two boxes stay the
+   *  same two boxes. Documents that do not set it render exactly as before. */
+  shipTo?: { label: string; fields: SheetField[] };
   document: { label: string; fields: SheetField[] };
   lines: SheetLine[];
   /** Pre-formatted total, e.g. "3563.00". */
@@ -217,6 +223,14 @@ const SHEET_STYLE = `
   .bt{font-family:var(--f-label);font-weight:700;font-size:8pt;letter-spacing:.13em;
       text-transform:uppercase;color:#3A3A3A;margin:0 0 2mm;padding-bottom:1mm;
       border-bottom:1px solid var(--paper-rule-soft)}
+  /* Divider between a box's own fields and a second section under it (the PO's
+     Ship to). It starts at the box's LEFT BORDER and stops at the box's
+     horizontal middle: the -5mm cancels the column's 5mm left padding, and
+     "50% + 5mm" is half the content width plus that same padding, i.e. exactly
+     half the box. Deliberately not full width -- it separates without closing
+     the box off, which a full rule reads as. */
+  .boxdiv{border-top:1px solid var(--paper-rule);width:calc(50% + 5mm);
+          margin:2.5mm 0 2.5mm -5mm;height:0}
   .kv{display:grid;grid-template-columns:28mm 1fr;gap:1.2mm 3mm;font-size:9.5pt;margin:0}
   .kv dt{font-family:var(--f-label);font-weight:700;font-size:8.5pt;letter-spacing:.05em;
          text-transform:uppercase;color:#3A3A3A}
@@ -490,10 +504,22 @@ function fieldHtml(f: SheetField): string {
   return `<dt>${esc(f.label)}</dt><dd${cls}>${inner}</dd>`;
 }
 
-function boxHtml(box: { label: string; fields: SheetField[] }, extraRows = ''): string {
+function boxHtml(
+  box: { label: string; fields: SheetField[] },
+  extraRows = '',
+  section?: { label: string; fields: SheetField[] },
+): string {
+  // A second section closes the first list and opens its own, separated by the
+  // half-width rule, so the two read as one box with two parts rather than one
+  // long run of fields. The heading reuses `.bt`, so it is the same label
+  // treatment as the box's own title.
+  const sectionHtml = section
+    ? `<div class="boxdiv"></div><p class="bt">${esc(section.label)}</p>` +
+      `<dl class="kv">${section.fields.map(fieldHtml).join('')}</dl>`
+    : '';
   return `<p class="bt">${esc(box.label)}</p><dl class="kv">${box.fields
     .map(fieldHtml)
-    .join('')}${extraRows}</dl>`;
+    .join('')}${extraRows}</dl>${sectionHtml}`;
 }
 
 // "Page 1 of 4", inside the Order / Document box, on the user's instruction
@@ -684,10 +710,8 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       <tfoot><tr><td class="pgfoot" colspan="${COLS}"><div></div></td></tr></tfoot>
       <tbody>
         ${sectionRow(
-          `<div class="split"><div>${boxHtml(model.recipient)}</div><div>${boxHtml(
-            model.document,
-            PAGE_OF_ROW,
-          )}</div></div>`,
+          `<div class="split"><div>${boxHtml(model.recipient, '', model.shipTo)}</div>` +
+            `<div>${boxHtml(model.document, PAGE_OF_ROW)}</div></div>`,
         )}
         <tr>${columnHeads}</tr>
         ${itemRows}
