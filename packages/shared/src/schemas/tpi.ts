@@ -21,6 +21,10 @@ export const tpiPendingRowSchema = z.object({
    *  given the wrong drawing revision is the exact failure this field exists
    *  to prevent. */
   itemRevision: z.string().nullable().default(null),
+  /** The part being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemName: z.string().nullable().default(null),
   operation: z.string(),
   orderQty: z.number().int(),
   qcPending: z.number().int().nonnegative(),
@@ -40,6 +44,10 @@ export const tpiCompletedRowSchema = z.object({
    *  sales_order_lines.revision). Null for JW-sourced and standalone cards,
    *  which render the bare item code. Never items.revision. */
   itemRevision: z.string().nullable().default(null),
+  /** The part being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemName: z.string().nullable().default(null),
   operation: z.string(),
   accepted: z.number().int().nonnegative(),
   rejected: z.number().int().nonnegative(),

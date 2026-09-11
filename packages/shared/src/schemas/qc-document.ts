@@ -34,6 +34,18 @@ export const qcDocumentSchema = z.object({
   companyId: z.string().uuid(),
   jobCardId: z.string().uuid().nullable(),
   jcCodeText: z.string().nullable(),
+  /** WHAT is being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemCode: z.string().nullable().default(null),
+  /** The customer's drawing revision behind that card, read live off the SO line
+   *  it was raised against (job_cards.source_so_line_id ->
+   *  sales_order_lines.revision) and rendered beside the code as `CODE/REV`.
+   *  Never items.revision, which describes the item master and would misname the
+   *  drawing being worked to. Null on a JW-sourced or standalone card, which
+   *  then shows the bare code. */
+  itemRevision: z.string().nullable().default(null),
+  itemName: z.string().nullable().default(null),
   salesOrderId: z.string().uuid().nullable(),
   soCodeText: z.string().nullable(),
   category: z.string(),

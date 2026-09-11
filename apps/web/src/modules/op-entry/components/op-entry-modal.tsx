@@ -27,6 +27,7 @@
 
 import type { JcOpEnriched } from '@innovic/shared';
 import { X } from 'lucide-react';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { OpEntryForm } from './op-entry-form';
 
 /** What the popup was opened against. Which half of the entry form shows is
@@ -70,6 +71,10 @@ export function OpEntryModal({
   const { op, activeRunningId } = target;
   const isQc = op.opType === 'qc' || op.qcRequired;
   const machine = op.machineCode ?? op.machineCodeText ?? '—';
+  // `CODE/REV` for the part, or '' when the join brought no item back. Empty
+  // rather than a dash: a dash would read as "this card has no item", and every
+  // job card has one.
+  const itemCode = itemCodeWithRev(op.itemCode, op.itemRevision, '');
 
   // The title names what the box is actually for, read off the SESSION rather
   // than off what the caller asked for. A running operation cannot be started,
@@ -147,6 +152,45 @@ export function OpEntryModal({
               {op.jobCardCode}
             </div>
           </div>
+          {/* WHICH PART. The job card number above it says which JOB, and that is
+              not the same question — an operator can read IN-JC-26-00017 back
+              correctly and still be booking the wrong component, because the
+              number carries no part in it. This is the box production is
+              actually typed into, so the part belongs here more than anywhere
+              else on the screen. It sits immediately after the job card because
+              the two are read as one fact.
+
+              Width: the panel is min(720px, 96vw) and the grid is auto-fit at
+              minmax(110px, 1fr), so five facts still sit on one row on a
+              shop-floor monitor (5 x 110 = 550 inside ~660px of content) and
+              wrap by themselves on a phone. */}
+          {itemCode || op.itemName ? (
+            <div>
+              <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
+                ITEM
+              </div>
+              <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--purple)' }}>
+                {itemCode}
+              </div>
+              {/* The name is the only free-text value in the strip, so it is
+                  held to one line with the whole of it on hover rather than
+                  being allowed to make this fact three lines tall. */}
+              {op.itemName ? (
+                <div
+                  className="text3"
+                  style={{
+                    fontSize: 10,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={op.itemName}
+                >
+                  {op.itemName}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <Fact label="OPERATION" value={`Op ${op.opSeq} · ${op.operation}`} />
           <Fact label="MACHINE" value={machine} />
           <div>

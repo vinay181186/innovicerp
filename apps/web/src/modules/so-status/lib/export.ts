@@ -38,6 +38,12 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
       'JC No': jc.code,
       'Item Code': jc.itemCode ?? '',
       'Drawing Rev': jc.itemRevision ?? '',
+      // WHAT the job card makes. A JC number says which job, not which part, and
+      // this sheet is read away from the screen where nothing else names the
+      // item. Its OWN column for the same reason Drawing Rev has one: people
+      // VLOOKUP the Item Code column against Item Master, so nothing may be
+      // glued into that cell.
+      'Item Name': jc.itemName ?? '',
       'JC Qty': jc.orderQty,
       Completed: jc.doneQty,
       Remaining: jc.remainingQty,

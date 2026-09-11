@@ -17,6 +17,7 @@ import { Link } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useOperatorsList } from '@/modules/operators/api';
 import {
@@ -74,6 +75,12 @@ export function OpEntryForm({
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const canQcSubmit = effectiveFormPerms(eff, 'qc_submit').entry;
+
+  // `CODE/REV` for the part this operation is on, or '' when the join brought no
+  // item back. '' rather than a dash, because a dash would assert that the card
+  // has no item; and it is tested rather than printed blind, so a missing code
+  // shows nothing at all instead of an empty "Item:" label.
+  const itemCodeLabel = itemCodeWithRev(op.itemCode, op.itemRevision, '');
 
   // EVERY field starts BLANK — no seeded date, no seeded time, no pre-selected
   // shift, no "0" already sitting in the reject box. A seeded value is a value
@@ -996,6 +1003,34 @@ export function OpEntryForm({
                 </b>{' '}
                 as Running on <b>{op.machineCode ?? op.machineCodeText ?? '—'}</b>.
               </div>
+              {/* The part. The sentence above names the job, the operation and
+                  the machine, which is everything except WHAT is being made —
+                  and a job card number does not carry the part in it, so an
+                  operator could read that line back word for word and still be
+                  about to run the wrong component. This panel is full width
+                  inside the popup, so there is room for the name as well as the
+                  code; it is still held to one line, with the whole of it on
+                  hover, because a wrapped line here pushes the Start button
+                  down and this is a screen people press quickly. */}
+              {itemCodeLabel ? (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text2)',
+                    marginTop: 4,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={op.itemName ? `${itemCodeLabel} — ${op.itemName}` : itemCodeLabel}
+                >
+                  Item:{' '}
+                  <b className="mono" style={{ color: 'var(--purple)' }}>
+                    {itemCodeLabel}
+                  </b>
+                  {op.itemName ? ` — ${op.itemName}` : ''}
+                </div>
+              ) : null}
               <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
                 Available qty to process: <b style={{ color: 'var(--cyan)' }}>{op.available} pcs</b>
               </div>

@@ -52,6 +52,20 @@ export const jcOpEnrichedSchema = z.object({
   id: z.string().uuid(),
   jobCardId: z.string().uuid(),
   jobCardCode: z.string(), // joined from job_cards.code
+  /** WHAT is being made. A job-card number says WHICH JOB; it does not say
+   *  which part, and every screen built on this shape printed the number alone
+   *  and left the reader to look the part up elsewhere. Joined from the card's
+   *  item (job_cards.item_id → items), which is NOT NULL, so a null here means
+   *  the query did not ask for it rather than that the card has no item. */
+  itemCode: z.string().nullable().default(null),
+  /** The customer's drawing revision behind this card, read live off the SO line
+   *  it was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision) and rendered beside the code as `CODE/REV`.
+   *  Never items.revision, which describes the item master and would misname the
+   *  drawing an operator is about to cut. Null on a JW-sourced or standalone
+   *  card — common on these screens — and those rows show the bare code. */
+  itemRevision: z.string().nullable().default(null),
+  itemName: z.string().nullable().default(null),
   soCode: z.string().nullable().optional(), // source SO/JW order code (T27)
   opSeq: z.number().int().positive(),
   machineCode: z.string().nullable(), // joined from machines.code; null for OSP / QC
@@ -191,6 +205,18 @@ export const opLogTimeChangeRequestSchema = z.object({
   opSeq: z.number().int().positive(),
   operation: z.string(),
   logType: opLogTypeSchema,
+  /** WHAT is being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemCode: z.string().nullable().default(null),
+  /** The customer's drawing revision behind that card, read live off the SO line
+   *  it was raised against (job_cards.source_so_line_id ->
+   *  sales_order_lines.revision) and rendered beside the code as `CODE/REV`.
+   *  Never items.revision, which describes the item master and would misname the
+   *  drawing being worked to. Null on a JW-sourced or standalone card, which
+   *  then shows the bare code. */
+  itemRevision: z.string().nullable().default(null),
+  itemName: z.string().nullable().default(null),
   machineCode: z.string().nullable(),
   /** The entry's qty, shown so the approver can see it is NOT part of the ask. */
   qty: z.number().int().nonnegative(),

@@ -226,6 +226,13 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             operation: stopRow.operation,
             machineLabel: stopRow.machineCode ?? (stopRow.isOsp ? 'OSP' : '—'),
             availableQty: stopRow.availableQty,
+            // The Stop box names the part as well as the job. `RunningOp`
+            // carries all three, and the box is where an operator checks they
+            // are stopping the right row before typing a quantity — the one
+            // moment a wrong job card costs real pieces.
+            itemCode: stopRow.itemCode,
+            itemRevision: stopRow.itemRevision,
+            itemName: stopRow.itemName,
           }}
           pending={stop.isPending}
           errorText={stopError}

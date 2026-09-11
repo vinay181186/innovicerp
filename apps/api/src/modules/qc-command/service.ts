@@ -62,6 +62,7 @@ interface PendingDbRow {
   operation: string | null;
   itemCode: string | null;
   itemRevision: string | null;
+  itemName: string | null;
   soCode: string | null;
   customer: string | null;
   dueDate: unknown;
@@ -123,6 +124,12 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           -- that has not it is still the old integer and would arrive here as a
           -- number wearing a string type. The cast is a no-op once 0119 is in.
           sol.revision::text AS "itemRevision",
+          -- WHAT is being made. A job-card number says which job, not which
+          -- part, so the item name rides along beside the code off the items
+          -- LEFT JOIN that is already here for i.code. The QC-log query below
+          -- has selected it all along; the queue was the one place it was
+          -- missing, which is why the board could show a JC with no part.
+          i.name AS "itemName",
           so.code AS "soCode",
           so.customer_name AS "customer", jc.due_date AS "dueDate",
           vos.qc_pending AS "qcPending",
@@ -231,6 +238,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         operation: r.operation ?? '',
         itemCode: r.itemCode ?? null,
         itemRevision: r.itemRevision ?? null,
+        itemName: r.itemName ?? null,
         soCode: r.soCode ?? null,
         customer: r.customer ?? null,
         pendingQty: Number(r.qcPending ?? 0),
@@ -304,6 +312,9 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           operation: g.operation,
           itemCode: g.itemCode,
           itemRevision: g.itemRevision,
+          // The per-op group has carried the item name since it was added for
+          // the FPY by-item table; the Rework tab simply never passed it on.
+          itemName: g.itemName,
           soCode: g.soCode,
           attempts: g.entries.length,
           totalRejected: g.entries.reduce((s, e) => s + Number(e.rejectQty), 0),

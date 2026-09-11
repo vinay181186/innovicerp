@@ -15,6 +15,9 @@ export const productionScheduleBarSchema = z.object({
   opSeq: z.number().int().positive(),
   operation: z.string(),
   itemCode: z.string().nullable(),
+  /** The part's name, for the hover tooltip. The Gantt bar itself is too small
+   *  to carry it -- see the layout note where it is rendered. */
+  itemName: z.string().nullable().default(null),
   plannedStart: z.string(),
   plannedEnd: z.string(),
   dueDate: z.string().nullable(),

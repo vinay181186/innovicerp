@@ -27,6 +27,14 @@ export const opLogListItemSchema = z.object({
   logDate: z.string(), // YYYY-MM-DD
   jcNo: z.string(),
   itemCode: z.string().nullable(),
+  /** WHAT the logged operation was making. A JC number says WHICH JOB, not WHICH
+   *  PART, so the register names the item beside the number. */
+  itemName: z.string().nullable(),
+  /** The CUSTOMER'S drawing revision off the SO line behind the card
+   *  (`job_cards.source_so_line_id` -> `sales_order_lines.revision`), rendered
+   *  with the code as `CODE/REV`. Null on a card with no SO line behind it —
+   *  which then shows the bare code. NOT `items.revision`. */
+  itemRevision: z.string().nullable(),
   opSeq: z.number().int(),
   operation: z.string().nullable(),
   machineCode: z.string().nullable(),

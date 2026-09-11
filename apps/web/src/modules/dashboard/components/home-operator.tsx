@@ -26,6 +26,26 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--cyan)' }}>{r.jcCode} · Op {r.opSeq}</div>
                   <div style={{ fontSize: 12, color: 'var(--text2)' }}>{r.operation} on <b>{r.machine ?? '—'}</b></div>
+                  {/* WHAT is on the machine -- the JC number alone says which
+                      JOB, not which part. This row is a flexWrap strip of
+                      minWidth-200 blocks and a fifth sibling block wraps the
+                      whole card on a phone-width panel, so the item goes INSIDE
+                      the block that already carries the JC number: a third line,
+                      no new flex child, card exactly as wide as before. A long
+                      part name ellipsises on one line and carries its full text
+                      in the title. No item at all renders nothing, not a dash. */}
+                  {r.itemCode !== null || r.itemName !== null ? (
+                    <div
+                      title={[itemCodeWithRev(r.itemCode, r.itemRevision, ''), r.itemName ?? '']
+                        .filter((t) => t !== '')
+                        .join(' · ')}
+                      style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    >
+                      <span className="mono">{itemCodeWithRev(r.itemCode, r.itemRevision, '')}</span>
+                      {r.itemCode !== null && r.itemName !== null ? ' · ' : ''}
+                      {r.itemName ?? ''}
+                    </div>
+                  ) : null}
                 </div>
                 <div><div style={{ fontSize: 10, color: 'var(--text3)' }}>ELAPSED</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)' }}>{elapsedStr(r.elapsedMin)}</div></div>
                 <div><div style={{ fontSize: 10, color: 'var(--text3)' }}>PROGRESS</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)' }}>{r.completed}/{r.orderQty}</div></div>
@@ -75,11 +95,13 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
         <div className="tbl-wrap" style={{ maxHeight: '50vh' }}>
           <table className="innovic-table">
             <thead>
-              <tr><th>JC</th><th>Op</th><th>Machine</th><th>Item</th><th className="td-ctr">Available</th><th>Due</th><th /></tr>
+              {/* Item Name sits beside the code it belongs to: the code names the
+                  drawing, the name is what the operator recognises on the rack. */}
+              <tr><th>JC</th><th>Op</th><th>Machine</th><th>Item</th><th>Item Name</th><th className="td-ctr">Available</th><th>Due</th><th /></tr>
             </thead>
             <tbody>
               {o.ready.length === 0 ? (
-                <tr><td colSpan={7} className="empty-state">No operations ready. Check back soon or speak to your supervisor.</td></tr>
+                <tr><td colSpan={8} className="empty-state">No operations ready. Check back soon or speak to your supervisor.</td></tr>
               ) : (
                 o.ready.map((r, i) => (
                   <tr key={i}>
@@ -87,6 +109,11 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                     <td className="td-ctr mono">{r.opSeq}</td>
                     <td><b>{r.machine ?? '—'}</b></td>
                     <td className="td-code" style={{ color: 'var(--text2)', fontSize: 11 }}>{itemCodeWithRev(r.itemCode, r.itemRevision, '')}</td>
+                    {/* A part name can run long, so it truncates on one line and
+                        keeps the whole thing in the tooltip. A card with no SO
+                        line behind it has no name to show and the cell stays
+                        blank rather than printing a dash. */}
+                    <td style={{ fontSize: 11, color: 'var(--text2)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.itemName ?? ''}>{r.itemName ?? ''}</td>
                     <td className="td-ctr mono" style={{ fontSize: 15, fontWeight: 800, color: 'var(--sig-warn)' }}>{r.available}</td>
                     <td style={{ fontSize: 11, color: r.isOverdue ? 'var(--sig-critical)' : 'var(--text2)', fontWeight: r.isOverdue ? 700 : 400 }}>
                       {r.dueDate ?? '—'}{r.isOverdue ? ' ⚠' : ''}

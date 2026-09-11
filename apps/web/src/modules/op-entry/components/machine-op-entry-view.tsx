@@ -16,9 +16,11 @@
 // so there is no longer a way to type into a form meant for a different job.
 
 import { type JcOpEnriched, type RunningOp } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useMachinesList } from '@/modules/machines/api';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps } from '../api';
 import { MachineCard } from './machine-card';
@@ -54,6 +56,13 @@ export function MachineOpEntryView(): React.JSX.Element {
     return map;
   }, [running.data]);
   const selectedRunning = selectedMachineId ? (runningByMachine.get(selectedMachineId) ?? null) : null;
+  // `CODE/REV` for the part on the selected machine right now — '' when nothing
+  // is running there or the running-op join brought no item back. Tested rather
+  // than printed blind so the ITEM tile can be left out entirely instead of
+  // standing on the card as an empty bordered box.
+  const runningItemCode = selectedRunning
+    ? itemCodeWithRev(selectedRunning.itemCode, selectedRunning.itemRevision, '')
+    : '';
 
   const machineOps = useJcOpsEnriched(
     selectedMachineId && !selectedRunning ? { machineId: selectedMachineId } : { machineId: '' },
@@ -171,6 +180,43 @@ export function MachineOpEntryView(): React.JSX.Element {
                 </div>
                 <div className="mono fw-700 cyan">{selectedRunning.jobCardCode}</div>
               </div>
+              {/* WHAT IS ON THE MACHINE. The tile beside it names the job and the
+                  one after it names the operation, and until now nothing on this
+                  card named the part — so "CNC-1 is running IN-JC-26-00017 Op 1"
+                  still left the supervisor to look up which component that is.
+                  A fourth tile rather than a second line in the JOB CARD tile,
+                  because the code and the name are one fact and they need the
+                  width of their own track; auto-fit at minmax(120px, 1fr) keeps
+                  all four on one row on a shop-floor monitor and drops them to
+                  two rows on a tablet on its own. */}
+              {runningItemCode || selectedRunning.itemName ? (
+                <div style={{ background: 'var(--bg)', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
+                  <div className="text3" style={{ fontSize: 9 }}>
+                    ITEM
+                  </div>
+                  <div className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    {runningItemCode}
+                  </div>
+                  {/* Clipped to the tile with the full name on hover — a
+                      free-text part name is the one value here that can run
+                      long, and letting it wrap would push AVAILABLE off the
+                      row. */}
+                  {selectedRunning.itemName ? (
+                    <div
+                      className="text3"
+                      style={{
+                        fontSize: 10,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={selectedRunning.itemName}
+                    >
+                      {selectedRunning.itemName}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div style={{ background: 'var(--bg)', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
                 <div className="text3" style={{ fontSize: 9 }}>
                   OPERATION
@@ -265,6 +311,55 @@ export function MachineOpEntryView(): React.JSX.Element {
   );
 }
 
+/** The ITEM CODE and ITEM NAME cells that follow the JC No. column in both
+ *  tables on this screen. A job-card number says WHICH JOB; it does not say
+ *  WHICH PART, and the operator standing at the machine needs the part. Written
+ *  once because both tables carry the same pair and the clipping rule has to be
+ *  identical in them — a name that clips in one table and stretches the other is
+ *  how a shop-floor list stops being scannable. */
+function ItemCells({
+  code,
+  revision,
+  name,
+}: {
+  code: string | null;
+  revision: string | null;
+  name: string | null;
+}): React.JSX.Element {
+  return (
+    <>
+      {/* Purple mono is how `CODE/REV` is written wherever an item code sits
+          beside a document number (Job Cards list, Daily Report), so the eye
+          finds the same colour on every screen. Blank rather than a dash when
+          the join brought nothing back: a dash reads as "this part has no
+          code", which is never true of a job card's item. */}
+      <td className="mono" style={{ color: 'var(--purple)' }}>
+        {itemCodeWithRev(code, revision, '')}
+      </td>
+      <td>
+        {/* Free text, so it is clipped to one line and carries the whole name in
+            its tooltip. A row that wraps to two lines costs a shop-floor screen
+            more than the few characters the ellipsis hides. */}
+        <span
+          className="text2"
+          style={{
+            fontSize: 11,
+            maxWidth: 200,
+            display: 'inline-block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            verticalAlign: 'bottom',
+          }}
+          title={name ?? ''}
+        >
+          {name ?? ''}
+        </span>
+      </td>
+    </>
+  );
+}
+
 /** One op that this machine actually produced on, with THAT machine's share of
  *  the completed qty pulled out of the op's per-machine breakdown. */
 interface MadeHereRow {
@@ -320,6 +415,8 @@ function PendingOpsSection({
               <thead>
                 <tr>
                   <th>JC No.</th>
+                  <th>Item Code</th>
+                  <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
                   <th style={{ color: 'var(--amber)' }}>Avail</th>
@@ -333,8 +430,23 @@ function PendingOpsSection({
                         picking the wrong row is the exact mistake this screen
                         was rebuilt around, so the three things that identify a
                         row have to be readable at a glance rather than the
-                        code alone standing out. */}
-                    <td className="mono fw-700 cyan">{op.jobCardCode}</td>
+                        code alone standing out.
+
+                        The number is also a LINK to the card itself. Naming a
+                        job card an operator cannot open from here made them
+                        re-find it by hand in Job Cards, which on this screen is
+                        one more chance to land on the wrong one. */}
+                    <td className="mono fw-700 cyan">
+                      <Link
+                        to="/job-cards/$id"
+                        params={{ id: op.jobCardId }}
+                        style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                        title="Open this job card"
+                      >
+                        {op.jobCardCode}
+                      </Link>
+                    </td>
+                    <ItemCells code={op.itemCode} revision={op.itemRevision} name={op.itemName} />
                     <td className="mono fw-700">Op {op.opSeq}</td>
                     <td className="fw-700">{op.operation}</td>
                     <td className="mono fw-700 amber">{op.available}</td>
@@ -385,6 +497,8 @@ function PendingOpsSection({
               <thead>
                 <tr>
                   <th>JC No.</th>
+                  <th>Item Code</th>
+                  <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
                   <th style={{ color: 'var(--green)' }}>Qty Made Here</th>
@@ -393,7 +507,24 @@ function PendingOpsSection({
               <tbody>
                 {producedOps.map((row) => (
                   <tr key={row.op.id}>
-                    <td className="mono fw-700 cyan">{row.op.jobCardCode}</td>
+                    {/* Same link as the pending table above: this is history, and
+                        the first thing anybody asks of a history row is to go
+                        and look at the card it came from. */}
+                    <td className="mono fw-700 cyan">
+                      <Link
+                        to="/job-cards/$id"
+                        params={{ id: row.op.jobCardId }}
+                        style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                        title="Open this job card"
+                      >
+                        {row.op.jobCardCode}
+                      </Link>
+                    </td>
+                    <ItemCells
+                      code={row.op.itemCode}
+                      revision={row.op.itemRevision}
+                      name={row.op.itemName}
+                    />
                     <td className="mono">Op{row.op.opSeq}</td>
                     <td>{row.op.operation}</td>
                     <td className="mono fw-700 green">{row.qty}</td>

@@ -2,13 +2,15 @@
 //
 // Paginated, filterable, read-only. Filters: JC, log type, shift, date range.
 // Columns mirror legacy: Log No, JC, Date, Op, Shift, Machine, Operation,
-// Qty, Reject, Operator, Remarks. TPI rows tagged. No delete (see service.ts
-// note — legacy `delLog` violates CLAUDE.md Rule #8).
+// Qty, Reject, Operator, Remarks — plus an Item column legacy never had, because
+// a JC number says WHICH JOB and not WHICH PART. TPI rows tagged. No delete
+// (see service.ts note — legacy `delLog` violates CLAUDE.md Rule #8).
 
 import { createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useOpLog, type ListOpLogQuery } from '../api';
 
@@ -180,6 +182,9 @@ function OpLogListPage(): React.JSX.Element {
               <tr>
                 <th>Log No.</th>
                 <th>JC No.</th>
+                {/* The item the card makes. A JC number identifies the JOB; only
+                    this column says which PART the logged qty belongs to. */}
+                <th>Item</th>
                 <th>Date</th>
                 <th className="td-ctr">Op</th>
                 <th>Type</th>
@@ -196,26 +201,46 @@ function OpLogListPage(): React.JSX.Element {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={13} className="empty-state">
+                  <td colSpan={14} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={13} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={14} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error ? error.message : 'Failed to load op log'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="empty-state">No log entries match these filters.</td>
+                  <td colSpan={14} className="empty-state">No log entries match these filters.</td>
                 </tr>
               ) : (
                 items.map((r) => (
                   <tr key={r.id}>
                     <td className="mono text3" style={{ fontSize: 11 }}>{r.logNo}</td>
                     <td className="td-code cyan">{r.jcNo}</td>
+                    <td className="text2" style={{ fontSize: 11 }}>
+                      <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+                        {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
+                      </span>
+                      {r.itemName ? (
+                        <div
+                          className="text3"
+                          style={{
+                            fontSize: 10,
+                            maxWidth: 160,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={r.itemName}
+                        >
+                          {r.itemName}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="text2">{fmtDate(r.logDate)}</td>
                     <td className="td-ctr mono">{r.opSeq}</td>
                     <td>

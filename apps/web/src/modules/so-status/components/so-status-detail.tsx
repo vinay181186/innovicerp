@@ -513,7 +513,12 @@ function LinePanel({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>JC No.</th><th>Item Code</th><th>JC Qty</th><th>Completed</th>
+              {/* Item Name gets its own column rather than being glued under the
+                  code: a JC number says WHICH JOB and not WHICH PART, and on an
+                  SO with several similar parts the code alone is not enough to
+                  tell two cards apart. `itemName` was already on SoStatusJc and
+                  unused. */}
+              <th>JC No.</th><th>Item Code</th><th>Item Name</th><th>JC Qty</th><th>Completed</th>
               <th style={{ color: 'var(--red)' }}>Remaining</th><th>Priority</th><th>Due Date</th>
               <th>JC Status</th><th>Operations</th><th></th>
             </tr>
@@ -521,7 +526,7 @@ function LinePanel({
           <tbody>
             {line.jobCards.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text3" style={{ padding: '10px 14px', fontSize: 12, fontStyle: 'italic' }}>
+                <td colSpan={11} className="text3" style={{ padding: '10px 14px', fontSize: 12, fontStyle: 'italic' }}>
                   No Job Cards linked to this SO line.
                 </td>
               </tr>
@@ -616,7 +621,13 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
         <Link to="/job-cards/$id" params={{ id: jc.id }} style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', textDecoration: 'underline dotted' }}>{jc.code}</Link>
         {runCount > 0 ? <span style={{ fontSize: 10, color: 'var(--amber)', marginLeft: 4 }}>▶{runCount} running</span> : null}
       </td>
-      <td style={{ fontSize: 12 }}>{itemCodeWithRev(jc.itemCode, jc.itemRevision)}</td>
+      <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{itemCodeWithRev(jc.itemCode, jc.itemRevision)}</td>
+      {/* Null name renders nothing rather than a dash — the code beside it already
+          says the item is known. A long part name clips with the full text on
+          hover so it cannot widen an already wide register. */}
+      <td className="text2" style={{ fontSize: 11, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={jc.itemName ?? ''}>
+        {jc.itemName ?? ''}
+      </td>
       <td className="td-ctr" style={{ fontSize: 12 }}>{jc.orderQty}</td>
       <td className="td-ctr">
         <span style={{ fontSize: 13, fontWeight: 700, color: jcColor }}>{jc.doneQty}</span>

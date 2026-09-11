@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrdersList } from '@/modules/job-work-orders/api';
@@ -118,6 +119,12 @@ export function PartyMaterialIssueView(): React.JSX.Element {
                   <th>Date</th>
                   <th>JWSO</th>
                   <th>Job Card</th>
+                  {/* TWO different items sit side by side here and the headers
+                      have to keep them apart. "Item Made" is OUR produced part,
+                      off the job card; "Material" is the CLIENT'S supplied
+                      stock this issue debits. A JC number alone says WHICH JOB,
+                      not WHICH PART, which is why the first column now exists. */}
+                  <th>Item Made</th>
                   <th>Material</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
                     Qty
@@ -129,7 +136,7 @@ export function PartyMaterialIssueView(): React.JSX.Element {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={canCancel ? 8 : 7} className="empty-state">
+                    <td colSpan={canCancel ? 9 : 8} className="empty-state">
                       No party material issues — click + New Issue
                     </td>
                   </tr>
@@ -149,6 +156,30 @@ export function PartyMaterialIssueView(): React.JSX.Element {
                     </td>
                     <td className="mono text2" style={{ fontSize: 11 }}>
                       {it.jcCodeText ?? '—'}
+                    </td>
+                    {/* The job card's PRODUCED part — not the party material in
+                        the next cell. Null renders nothing: an issue raised
+                        without a job card has no part to name, and a dash here
+                        would read as "no item" on a row that does have one. */}
+                    <td style={{ fontSize: 11 }}>
+                      <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+                        {itemCodeWithRev(it.jcItemCode, it.jcItemRevision, '')}
+                      </span>
+                      {it.jcItemName ? (
+                        <div
+                          className="text3"
+                          style={{
+                            fontSize: 10,
+                            maxWidth: 160,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={it.jcItemName}
+                        >
+                          {it.jcItemName}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="fw-700">
                       <span style={{ color: 'var(--purple)' }}>

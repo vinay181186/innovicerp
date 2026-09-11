@@ -39,6 +39,7 @@ import { SHIFTS, SHIFT_LABELS, type Shift, type StopOpInput } from '@innovic/sha
 import { Loader2, X } from 'lucide-react';
 import { useState } from 'react';
 import { todayIst } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useOperatorsList } from '@/modules/operators/api';
 
 /** The one row being stopped, flattened so both tabs can build it from their
@@ -48,6 +49,23 @@ export interface StopOpTarget {
   /** running_ops.id — the :id in the POST. */
   runningOpId: string;
   jobCardCode: string;
+  /** WHAT was being made. The job card code above says WHICH JOB and nothing
+   *  about which part, so the "is this the right row" check the box exists for
+   *  was being asked without the one fact an operator recognises a job by.
+   *
+   *  OPTIONAL, all three, and deliberately so. Each tab flattens this target
+   *  out of its own row type, and a required field would force a tab whose row
+   *  does not carry the item to invent one — the `?? ''` or `?? '—'` that
+   *  satisfies the compiler prints an item line asserting the part is unknown,
+   *  which is a worse answer than silence on a box an operator is checking a
+   *  row against. Omitted means "this caller does not know the part", and the
+   *  box then shows no item line at all rather than an empty one. */
+  itemCode?: string | null;
+  /** The customer's drawing revision, rendered with the code as `CODE/REV`.
+   *  Null is ordinary — a JW-sourced or standalone card has no SO line behind
+   *  it — and those show the bare code, never a trailing slash. */
+  itemRevision?: string | null;
+  itemName?: string | null;
   opSeq: number;
   operation: string;
   /** Machine code, or 'OSP'/'—' when there is no machine. Display only. */
@@ -107,6 +125,12 @@ export function StopOpModal({
   const [operatorId, setOperatorId] = useState<string | undefined>(undefined);
   const operatorsQuery = useOperatorsList({ isActive: true, limit: 200, offset: 0 });
   const operators = operatorsQuery.data?.operators ?? [];
+
+  // `CODE/REV` for the part, or '' when this caller did not supply an item. ''
+  // is tested rather than printed, so an unwired caller shows no item line at
+  // all instead of an empty "Item" label or a dash that would read as "this job
+  // has no part".
+  const itemCode = itemCodeWithRev(target.itemCode, target.itemRevision, '');
 
   function handleOperatorNameChange(value: string): void {
     setOperatorName(value);
@@ -229,6 +253,28 @@ export function StopOpModal({
               </b>{' '}
               · Op <b className="mono">{target.opSeq}</b> · {target.operation}
             </div>
+            {/* The part, directly under the job card number, because "is this
+                the right row" is the question this whole box is here to let the
+                operator answer and the number alone does not answer it. One
+                line with the full text on hover: this box is 520px wide and a
+                wrapped part name would push the date field down. */}
+            {itemCode ? (
+              <div
+                style={{
+                  marginTop: 4,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={target.itemName ? `${itemCode} — ${target.itemName}` : itemCode}
+              >
+                Item{' '}
+                <b className="mono" style={{ color: 'var(--purple)' }}>
+                  {itemCode}
+                </b>
+                {target.itemName ? <span className="text3"> — {target.itemName}</span> : null}
+              </div>
+            ) : null}
             <div className="text3" style={{ marginTop: 4 }}>
               Machine <b className="mono">{target.machineLabel}</b>
             </div>

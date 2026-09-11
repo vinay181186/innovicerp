@@ -50,6 +50,18 @@ export const productionDashboardReadyOpSchema = z.object({
   jobCardCode: z.string(),
   opSeq: z.number().int(),
   operation: z.string(),
+  /** WHAT is being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemCode: z.string().nullable().default(null),
+  /** The customer's drawing revision behind that card, read live off the SO line
+   *  it was raised against (job_cards.source_so_line_id ->
+   *  sales_order_lines.revision) and rendered beside the code as `CODE/REV`.
+   *  Never items.revision, which describes the item master and would misname the
+   *  drawing being worked to. Null on a JW-sourced or standalone card, which
+   *  then shows the bare code. */
+  itemRevision: z.string().nullable().default(null),
+  itemName: z.string().nullable().default(null),
   /** The machine the REMAINING qty runs on — forward-looking. Not who made
    *  `completedQty`: an op re-routed mid-flight made pieces elsewhere (ADR-126). */
   machineCode: z.string().nullable(),

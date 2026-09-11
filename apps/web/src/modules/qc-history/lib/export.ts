@@ -3,10 +3,12 @@
 // (xlsx — an existing dependency). Dates are formatted DD-MM-YYYY (IST-safe via
 // fmtDate, no timezone shift) to match the on-screen tables.
 //
-// The customer's drawing revision gets its own "Drawing Rev" column rather than
-// being glued onto Item as CODE/REV the way the screen shows it. A spreadsheet
-// is filtered and VLOOKUP-ed against Item Master, and a slashed code matches
-// nothing there. Same call as the Job Card export (export-job-card-excel.ts).
+// Item Code, Drawing Rev and Item Name are three separate columns rather than
+// one glued "CODE/REV" cell the way the screen shows it. A spreadsheet is
+// filtered and VLOOKUP-ed against Item Master, and neither a slashed code nor a
+// code with a name appended matches anything there. Same call as the Job Card
+// export (export-job-card-excel.ts). The name is on the sheet at all because a
+// job-card number says WHICH JOB and never which part.
 
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import * as XLSX from 'xlsx';
@@ -28,8 +30,9 @@ export function exportCompletedQc(logs: QcHistoryLogRow[]): void {
     JC: l.jcCode,
     Op: `Op${l.opSeq}`,
     SO: l.soCode ?? '',
-    Item: l.itemCode ?? '',
+    'Item Code': l.itemCode ?? '',
     'Drawing Rev': l.itemRevision ?? '',
+    'Item Name': l.itemName ?? '',
     Operation: l.operation,
     Accepted: l.accepted,
     Rejected: l.rejected,
@@ -47,8 +50,9 @@ export function exportPendingQc(pending: QcHistoryPendingRow[]): void {
     JC: o.jcCode,
     Op: `Op${o.opSeq}`,
     SO: o.soCode ?? '',
-    Item: o.itemCode ?? '',
+    'Item Code': o.itemCode ?? '',
     'Drawing Rev': o.itemRevision ?? '',
+    'Item Name': o.itemName ?? '',
     Operation: o.operation,
     Order: o.orderQty,
     Done: o.completed,

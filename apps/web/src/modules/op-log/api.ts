@@ -8,6 +8,12 @@ export interface OpLogListItem {
   logDate: string;
   jcNo: string;
   itemCode: string | null;
+  // WHAT was being made. A JC number says WHICH JOB, not WHICH PART, so the
+  // register names the item beside the number. `itemRevision` is the CUSTOMER'S
+  // drawing revision off the SO line behind the card — never items.revision —
+  // and pairs with the code as `CODE/REV` via itemCodeWithRev().
+  itemName: string | null;
+  itemRevision: string | null;
   opSeq: number;
   operation: string | null;
   machineCode: string | null;

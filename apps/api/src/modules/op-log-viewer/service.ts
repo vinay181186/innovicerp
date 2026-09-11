@@ -10,7 +10,7 @@
 // later, restore the action behind admin-only RLS.
 
 import { and, asc, count, desc, eq, gte, ilike, lte, type SQL, sql } from 'drizzle-orm';
-import { items, jcOps, jobCards, machines, opLog, users } from '../../db/schema';
+import { items, jcOps, jobCards, machines, opLog, salesOrderLines, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import type { ListOpLogQuery, ListOpLogResponse, OpLogListItem } from './schema';
@@ -59,6 +59,19 @@ export async function listOpLog(
           logDate: opLog.logDate,
           jcNo: jobCards.code,
           itemCode: items.code,
+          // WHAT was being made. The register printed a JC number and an item
+          // code and nothing else, and a JC number says WHICH JOB, not WHICH
+          // PART — two cards for two similar parts read identically. The item
+          // was already joined for the code; the name costs nothing more.
+          itemName: items.name,
+          // The CUSTOMER'S drawing revision, read live off the SO line the card
+          // was raised against rather than snapshotted, so a reissued drawing
+          // shows its new revision on every log row against that card. LEFT
+          // JOIN: a JW-sourced or standalone card has no SO line and must still
+          // appear in the log, with a null revision and the bare code. Never
+          // items.revision — that column describes the item master and would
+          // print a plausible-looking lie in the drawing's place.
+          itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
           opSeq: jcOps.opSeq,
           operation: jcOps.operation,
           machineCode: machines.code,
@@ -80,6 +93,7 @@ export async function listOpLog(
         .innerJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
         .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
         .innerJoin(items, eq(items.id, jobCards.itemId))
+        .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
         .leftJoin(machines, sql`${machines.id} = ${logMachine}`)
         .leftJoin(users, eq(users.id, opLog.createdBy))
         .where(where)
@@ -101,6 +115,8 @@ export async function listOpLog(
       logDate: r.logDate,
       jcNo: r.jcNo,
       itemCode: r.itemCode ?? null,
+      itemName: r.itemName ?? null,
+      itemRevision: r.itemRevision ?? null,
       opSeq: r.opSeq,
       operation: r.operation,
       // Live master code first, then the LOG's snapshot, then the OP's snapshot.

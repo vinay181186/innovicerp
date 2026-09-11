@@ -42,6 +42,10 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         -- that has not it is still the old integer, and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         sol.revision::text AS "itemRevision",
+        -- WHAT is being made. A job-card number says which job, not which part,
+        -- so the item name rides along beside the code off the items LEFT JOIN
+        -- that is already here for i.code.
+        i.name AS "itemName",
         jo.operation, jc.order_qty AS "orderQty",
         vos.completed_qty AS "completed", vos.qc_accepted_qty AS "qcAccepted",
         vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
@@ -74,6 +78,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         soCode: (r['soCode'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        itemName: (r['itemName'] as string | null) ?? null,
         operation: (r['operation'] as string | null) ?? '',
         orderQty: Number(r['orderQty'] ?? 0),
         completed: Number(r['completed'] ?? 0),
@@ -97,6 +102,9 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         -- them, and is cast to text so a pre-0119 database cannot hand the UI a
         -- number. Never items.revision.
         sol.revision::text AS "itemRevision",
+        -- The part that was inspected, named beside its code so the completed
+        -- feed can be read back without opening each job card in turn.
+        i.name AS "itemName",
         jo.operation,
         ol.qty AS "accepted", ol.reject_qty AS "rejected",
         ol.log_date AS "logDate", ol.created_at AS "loggedAt", ol.shift, ol.operator_name AS "inspector", ol.remarks,
@@ -123,6 +131,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         soCode: (r['soCode'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        itemName: (r['itemName'] as string | null) ?? null,
         operation: (r['operation'] as string | null) ?? '',
         accepted: Number(r['accepted'] ?? 0),
         rejected: Number(r['rejected'] ?? 0),

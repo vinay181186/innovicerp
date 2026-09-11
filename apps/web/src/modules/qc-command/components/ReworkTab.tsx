@@ -61,6 +61,33 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                       <span style={{ color: '#8B5CF6', fontWeight: 600 }}>
                         {itemCodeWithRev(g.itemCode, g.itemRevision)}
                       </span>
+                      {/* The Item column named the drawing but never the part.
+                          Whoever chases a root cause off this list reads the
+                          part name, not the code, so it sits directly under the
+                          code in the column that already claims to be the item.
+                          The cell is no-wrap, so the name is capped and
+                          truncated with the full text on hover rather than
+                          stretching the table sideways; a row with no item name
+                          shows nothing extra. */}
+                      {g.itemName ? (
+                        <>
+                          <br />
+                          <span
+                            className="fw-700"
+                            style={{
+                              display: 'inline-block',
+                              maxWidth: 200,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              verticalAlign: 'bottom',
+                            }}
+                            title={g.itemName}
+                          >
+                            {g.itemName}
+                          </span>
+                        </>
+                      ) : null}
                       <br />
                       <span className="text3">{g.operation}</span>
                     </td>

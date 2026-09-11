@@ -43,10 +43,12 @@ function QcHistoryPage(): React.JSX.Element {
   const pending = useMemo(
     () =>
       (data?.pending ?? []).filter((o) =>
-        // The revision is part of what the Item column shows, so it has to be
-        // part of what the box searches — this filter runs over rows already in
-        // the browser, so nothing can be hidden by widening it.
-        matchText(o.soCode, o.jcCode, o.itemCode, o.itemRevision),
+        // The revision is part of what the Item column shows, and the part name
+        // now has a column of its own, so both have to be part of what the box
+        // searches — an inspector hunting "plunger" should not have to know its
+        // code. This filter runs over rows already in the browser, so nothing
+        // can be hidden by widening it.
+        matchText(o.soCode, o.jcCode, o.itemCode, o.itemRevision, o.itemName),
       ),
     [data?.pending, t],
   );
@@ -54,7 +56,9 @@ function QcHistoryPage(): React.JSX.Element {
     () =>
       (data?.logs ?? []).filter(
         (l) =>
-          matchText(l.soCode, l.jcCode, l.itemCode, l.itemRevision) &&
+          // Same widening as the pending list: the Item Name column is on
+          // screen, so typing a part name has to find the row.
+          matchText(l.soCode, l.jcCode, l.itemCode, l.itemRevision, l.itemName) &&
           (dateFrom === '' || l.logDate >= dateFrom) &&
           (dateTo === '' || l.logDate <= dateTo),
       ),
@@ -156,7 +160,9 @@ function QcHistoryPage(): React.JSX.Element {
           >
             <div>
               <label className="text3" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>
-                SO / JC / Item
+                {/* The label names what the box actually matches, and it now
+                    matches the part name too, so it has to say so. */}
+                SO / JC / Item / Name
               </label>
               <input
                 className="innovic-input"
@@ -238,6 +244,10 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>Op</th>
                       <th>SO</th>
                       <th>Item</th>
+                      {/* The code says which part number is waiting; it does not
+                          say what the part is. The name gets its own column so
+                          the code column stays a clean key. */}
+                      <th>Item Name</th>
                       <th>Operation</th>
                       <th>Order</th>
                       <th>Done</th>
@@ -251,7 +261,7 @@ function QcHistoryPage(): React.JSX.Element {
                   <tbody>
                     {pending.length === 0 ? (
                       <tr>
-                        <td colSpan={12} className="empty-state">
+                        <td colSpan={13} className="empty-state">
                           ✅ No pending QC
                         </td>
                       </tr>
@@ -279,6 +289,10 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>Op</th>
                       <th>SO</th>
                       <th>Item</th>
+                      {/* Same reason as the pending table above: reading a QC
+                          entry back months later, the part number alone does not
+                          tell you what was inspected. */}
+                      <th>Item Name</th>
                       <th>Operation</th>
                       <th style={{ color: 'var(--green)' }}>Accepted</th>
                       <th style={{ color: 'var(--red)' }}>Rejected</th>
@@ -292,7 +306,7 @@ function QcHistoryPage(): React.JSX.Element {
                   <tbody>
                     {logs.length === 0 ? (
                       <tr>
-                        <td colSpan={12} className="empty-state">
+                        <td colSpan={13} className="empty-state">
                           No QC entries
                         </td>
                       </tr>
@@ -320,6 +334,23 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
       </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
         {itemCodeWithRev(o.itemCode, o.itemRevision)}
+      </td>
+      {/* Free text of any length, so it clips to a fixed width and keeps the
+          full name on hover rather than stretching a twelve-column row. An
+          unresolved item prints nothing — a dash would read as a part that was
+          deliberately left unnamed. */}
+      <td
+        className="fw-700"
+        style={{
+          fontSize: 12,
+          maxWidth: 200,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        {...(o.itemName ? { title: o.itemName } : {})}
+      >
+        {o.itemName ? o.itemName : null}
       </td>
       <td style={{ fontSize: 11 }}>{o.operation}</td>
       <td className="td-ctr mono fw-700">{o.orderQty}</td>
@@ -360,6 +391,22 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
       </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
         {itemCodeWithRev(l.itemCode, l.itemRevision)}
+      </td>
+      {/* Clipped with the full name on hover, the same as the pending table, so
+          a long part name cannot widen the log row. Nothing is printed when the
+          item did not resolve. */}
+      <td
+        className="fw-700"
+        style={{
+          fontSize: 12,
+          maxWidth: 200,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        {...(l.itemName ? { title: l.itemName } : {})}
+      >
+        {l.itemName ? l.itemName : null}
       </td>
       <td style={{ fontSize: 11 }}>{l.operation}</td>
       <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>

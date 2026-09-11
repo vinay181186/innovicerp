@@ -232,8 +232,31 @@ function Row({
           o.jcCode
         )}
       </td>
+      {/* A job-card number says WHICH JOB, not WHICH PART, so the board names the
+          item next to the code. `jcItemName` has always been on this row
+          (packages/shared/src/schemas/jc-ops.ts) and was simply never drawn —
+          the board asked an operator to pick an op by job number alone. The
+          code keeps its own line; a long part name clips and carries the full
+          text on hover, so one wordy item cannot stretch the board sideways. */}
       <td className="text2" style={{ fontSize: 11 }}>
-        {itemCodeWithRev(o.jcItemCode, o.itemRevision, '')}
+        <span style={{ whiteSpace: 'nowrap' }}>
+          {itemCodeWithRev(o.jcItemCode, o.itemRevision, '')}
+        </span>
+        {o.jcItemName ? (
+          <div
+            className="text3"
+            style={{
+              fontSize: 10,
+              maxWidth: 160,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={o.jcItemName}
+          >
+            {o.jcItemName}
+          </div>
+        ) : null}
       </td>
       <td className="td-ctr mono fw-700">{o.opSeq}</td>
       <td>

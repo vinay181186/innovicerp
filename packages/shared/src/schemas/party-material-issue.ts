@@ -16,7 +16,32 @@ export const partyMaterialIssueSchema = z.object({
   jwCodeText: z.string().nullable(),
   jobCardId: z.string().uuid().nullable(),
   jcCodeText: z.string().nullable(),
+  /** THE PART THE JOB CARD MAKES — our produced component, joined from
+   *  `job_cards.item_id -> items`.
+   *
+   *  READ THIS BEFORE USING IT. There are TWO different items on every row of
+   *  this register and they must never be swapped:
+   *    · `partyMaterialCodeText` / `partyMaterialName` (below) = the CLIENT'S
+   *      SUPPLIED MATERIAL — the raw stock the customer sent us, which this
+   *      issue debits off party stock.
+   *    · `jcItemCode` / `jcItemRevision` / `jcItemName` (here) = OUR PRODUCED
+   *      ITEM — the part machined out of that material.
+   *  The `jc` prefix is deliberate and carries the distinction in the name
+   *  itself, so neither set can be mistaken for the other at a call site.
+   *
+   *  `party_material_issues.job_card_id` is NULLABLE, so everything behind
+   *  these three is a LEFT JOIN and all three are null on an issue raised
+   *  without a job card. Null renders NOTHING, not a dash. */
+  jcItemCode: z.string().nullable().default(null),
+  /** The CUSTOMER'S drawing revision for that produced part, read live off the
+   *  SO line the job card was raised against (`job_cards.source_so_line_id ->
+   *  sales_order_lines.revision`) and shown with the code as `CODE/REV`. Never
+   *  `items.revision`, which is a different column about the item master. */
+  jcItemRevision: z.string().nullable().default(null),
+  jcItemName: z.string().nullable().default(null),
   partyMaterialId: z.string().uuid(),
+  /** THE CLIENT'S SUPPLIED MATERIAL — see the note on `jcItemCode` above. This
+   *  is what the issue debits off party stock, NOT what the job card makes. */
   partyMaterialCodeText: z.string().nullable(),
   partyMaterialName: z.string().nullable(),
   qty: z.number().int().positive(),
