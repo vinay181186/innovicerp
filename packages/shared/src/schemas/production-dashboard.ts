@@ -43,6 +43,10 @@ export type ProductionDashboardJc = z.infer<typeof productionDashboardJcSchema>;
 
 export const productionDashboardReadyOpSchema = z.object({
   jcOpId: z.string().uuid(),
+  /** The card behind this op, so its JC column can link at /job-cards/$id. The
+   *  row carried only the code, so the board could name a job card it had no way
+   *  to open. */
+  jobCardId: z.string().uuid(),
   jobCardCode: z.string(),
   opSeq: z.number().int(),
   operation: z.string(),

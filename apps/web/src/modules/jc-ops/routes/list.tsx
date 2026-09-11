@@ -212,7 +212,25 @@ function Row({
   return (
     <tr style={{ background: bg }}>
       <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
-        {o.jcCode}
+        {/* The JC number opens that card. `jcId` is nullable on this board's row
+            (jc-ops.ts) — an op can be listed whose job card is not resolvable,
+            and /job-cards/$id with a missing id would be a dead link to a route
+            that cannot load. So the code only becomes a link when there is a
+            card to reach; otherwise it renders exactly as it always has. The
+            link inherits the cell's colour and mono weight so a reachable code
+            looks no different from an unreachable one. */}
+        {o.jcId ? (
+          <Link
+            to="/job-cards/$id"
+            params={{ id: o.jcId }}
+            title="View job card status"
+            style={{ color: 'inherit', textDecoration: 'none', whiteSpace: 'nowrap' }}
+          >
+            {o.jcCode}
+          </Link>
+        ) : (
+          o.jcCode
+        )}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
         {itemCodeWithRev(o.jcItemCode, o.itemRevision, '')}

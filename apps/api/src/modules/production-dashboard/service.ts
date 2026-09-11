@@ -111,7 +111,14 @@ export async function getProductionDashboard(
     // ── Ready to process now (available > 0 or in progress, non-outsource) ──
     const readyRows = await tx.execute(sql`
       SELECT
-        jo.id AS "jcOpId", jc.code AS "jobCardCode", jo.op_seq AS "opSeq",
+        jo.id AS "jcOpId",
+        -- The card's id as well as its code, so the dashboard's JC column can
+        -- link straight at /job-cards/$id. It came back with the code alone,
+        -- which named a job card the screen had no way to open. Never null: the
+        -- join to job_cards below is an inner join on jc_ops.job_card_id, which
+        -- is NOT NULL.
+        jc.id AS "jobCardId",
+        jc.code AS "jobCardCode", jo.op_seq AS "opSeq",
         jo.operation, m.code AS "machineCode",
         jc.order_qty AS "orderQty", vos.completed_qty AS "completedQty",
         vos.available, vos.computed_status AS "computedStatus",
@@ -144,6 +151,7 @@ export async function getProductionDashboard(
       readyRows as unknown as Array<Record<string, unknown>>
     ).map((r) => ({
       jcOpId: r['jcOpId'] as string,
+      jobCardId: r['jobCardId'] as string,
       jobCardCode: r['jobCardCode'] as string,
       opSeq: Number(r['opSeq']),
       operation: (r['operation'] as string | null) ?? '',

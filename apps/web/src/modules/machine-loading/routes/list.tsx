@@ -4,7 +4,7 @@
 // (.mach-card not ported to theme).
 
 import type { MachineLoadCard, MachineLoadOp, MachineLoadStatus } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
@@ -366,7 +366,19 @@ function OpRow({
 function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
   return (
     <>
-      <td className="td-code cyan">{op.jobCardCode}</td>
+      {/* The JC number opens that card. The cell keeps its mono + cyan identity
+          and the link inherits it, so a reachable code does not read as a
+          different kind of value from the one that was here before. */}
+      <td className="td-code cyan">
+        <Link
+          to="/job-cards/$id"
+          params={{ id: op.jobCardId }}
+          title="View job card status"
+          style={{ color: 'inherit', textDecoration: 'none', whiteSpace: 'nowrap' }}
+        >
+          {op.jobCardCode}
+        </Link>
+      </td>
       <td style={{ fontSize: 11 }}>
         {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
         {op.itemName ? ` — ${op.itemName}` : ''}
