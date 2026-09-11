@@ -24,6 +24,7 @@
 
 import {
   type CreatePurchaseOrderInput,
+  poCodePrefix,
   PO_TYPES,
   type PurchaseOrderDetail,
   type PurchaseOrderLineInput,
@@ -102,15 +103,36 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // ── PO number. Built inline rather than via the shared <DocNumberInput>: the
   //    10px label / 36px control / "✕ Already used" wording is local to this
   //    screen, and restyling the shared component would move every other form.
+  //
+  //    The number depends on the PO TYPE (user, 2026-09-11): a material buy is
+  //    IN-MPO-, job work IN-JWPO-, a service IN-SPO-, outsourcing IN-OPO-, and
+  //    each series counts on its own. So the type goes to the backend with the
+  //    request for the next number, and changing the dropdown asks again.
   const code = watch('header.code') ?? '';
-  const docNo = useDocNumber('purchase_order', isEdit ? '' : code);
-  const prefilled = useRef(isEdit);
+  const poType = watch('header.poType');
+  const docNo = useDocNumber('purchase_order', isEdit ? '' : code, poType);
+  // `suggestedFor` is the type we last filled the box for; `suggested` is what
+  // we put in it. Switching the type re-fills the box ONLY while it still holds
+  // our suggestion — a number the buyer typed is theirs and is never replaced,
+  // and an old series' number is never left sitting under a new type.
+  const suggestedFor = useRef<string | null>(null);
+  const suggested = useRef('');
   useEffect(() => {
-    if (!prefilled.current && docNo.nextCode && getValues('header.code').trim() === '') {
-      setValue('header.code', docNo.nextCode);
-      prefilled.current = true;
-    }
-  }, [docNo.nextCode, getValues, setValue]);
+    // Edit never renumbers: the PO number is permanent once the PO exists.
+    if (isEdit) return;
+    const next = docNo.nextCode;
+    if (!next) return;
+    const current = getValues('header.code').trim();
+    const firstFill = suggestedFor.current === null && current === '';
+    const typeChanged =
+      suggestedFor.current !== null &&
+      suggestedFor.current !== poType &&
+      (current === '' || current === suggested.current);
+    if (!firstFill && !typeChanged) return;
+    suggestedFor.current = poType;
+    suggested.current = next;
+    if (current !== next) setValue('header.code', next);
+  }, [isEdit, docNo.nextCode, poType, getValues, setValue]);
 
   // ── Item Master, for the per-line code suggestions + name courtesy fill.
   const { data: itemsData, isSuccess: itemsLoaded } = useItemsList({ limit: 1000, offset: 0 });
@@ -575,6 +597,10 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               }`}
               autoComplete="off"
               readOnly={isEdit}
+              // The shape the box expects follows the TYPE chosen beside it, so
+              // an emptied box says "IN-JWPO-00000" on a job-work PO rather than
+              // the retired single IN-PO- series.
+              placeholder={isEdit ? undefined : `${poCodePrefix(poType)}00000`}
               title={isEdit ? 'The PO number is permanent once the PO exists' : undefined}
               value={code}
               onChange={(e) => setValue('header.code', e.target.value)}

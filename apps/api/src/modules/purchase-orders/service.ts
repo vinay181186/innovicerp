@@ -46,6 +46,13 @@ import {
 import { emitActivityLog } from '../activity-log/service';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 import { loadPrBalances } from '../purchase-requests/service';
+import {
+  type PoType,
+  bumpDocRevision,
+  parseDocRevision,
+  poCodePrefix,
+  withDocRevision,
+} from '@innovic/shared';
 import type { DocumentTraceability } from '@innovic/shared';
 import type {
   CreatePurchaseOrderFromPrInput,
@@ -784,19 +791,54 @@ function toPurchaseOrderLine(
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
-/** Next IN-PO-##### code in the company series (mirrors nextSoCode). Used when
- *  the create payload omits a code (document-number override: blank = auto). */
-async function nextPoCode(tx: DbTransaction, companyId: string): Promise<string> {
+/** Escape a literal string for use inside a RegExp. The series prefixes are
+ *  constants today, so nothing here needs escaping — it is here so that a
+ *  prefix gaining a '.' or '+' later cannot silently turn into a wildcard. */
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A code the CALLER typed, stored the way every other PO is stored: at a
+ *  revision. `IN-MPO-00005` becomes `IN-MPO-00005/R1`; one that already carries
+ *  a revision is kept exactly as typed. Without this a hand-numbered PO would
+ *  be the only one in the system without a /R, and its first edit would jump it
+ *  straight to /R2. */
+function codeWithRevision(supplied: string): string {
+  const { base, revision } = parseDocRevision(supplied);
+  return withDocRevision(base, revision);
+}
+
+/** Next code in ONE purchase-order series — IN-MPO-##### for a material buy,
+ *  IN-JWPO- for job work, IN-SPO- for a service, IN-OPO- for outsourcing
+ *  (user, 2026-09-11). Used when the create payload omits a code
+ *  (document-number override: blank = auto).
+ *
+ *  Each series counts on its own, so the scan is anchored to the EXACT prefix
+ *  of the series being numbered. That anchoring is the point of the function:
+ *  the legacy IN-PO- rows must not feed the IN-MPO- counter — they would hand a
+ *  new material PO a number the old series already used, and vice versa — and a
+ *  loose "ends with digits" match would pour all five series into one count.
+ *
+ *  The optional `/R<n>` tail is matched and then ignored, because the running
+ *  number is the part in FRONT of it: IN-MPO-00005/R3 is still order 5. Miss
+ *  that and the counter would skip every revised PO and re-issue its number.
+ *
+ *  A brand-new PO is born at revision 1 — IN-MPO-00006/R1. */
+async function nextPoCode(
+  tx: DbTransaction,
+  companyId: string,
+  poType: PoType,
+): Promise<string> {
+  const prefix = poCodePrefix(poType);
   const rows = await tx
     .select({ code: purchaseOrders.code })
     .from(purchaseOrders)
     .where(eq(purchaseOrders.companyId, companyId));
+  const re = new RegExp(`^${escapeRe(prefix)}(\\d+)(?:\\/R\\d+)?$`, 'i');
   let max = 0;
   for (const r of rows) {
-    const m = (r.code || '').match(/IN-PO-(\d+)\s*$/i);
+    const m = (r.code || '').trim().match(re);
     if (m) max = Math.max(max, Number(m[1]));
   }
-  return `IN-PO-${String(max + 1).padStart(5, '0')}`;
+  return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
 }
 
 /**
@@ -831,7 +873,15 @@ export async function createPurchaseOrder(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const code = input.header.code?.trim() || (await nextPoCode(tx, companyId));
+    // The PO type decides WHICH SERIES numbers this order, so it is resolved
+    // before the code. Same expression (and same default) the insert below
+    // writes to the po_type column — the two must never drift apart, or a PO
+    // would be filed in one series and numbered in another.
+    const headerType = input.header.poType ?? 'standard';
+    const suppliedCode = input.header.code?.trim();
+    const code = suppliedCode
+      ? codeWithRevision(suppliedCode)
+      : await nextPoCode(tx, companyId, headerType);
     const dup = await tx
       .select({ id: purchaseOrders.id })
       .from(purchaseOrders)
@@ -942,7 +992,6 @@ export async function createPurchaseOrder(
     // so `!input.header.status` was never true and the config was never read.
     // Opening straight at 'open' is now the deliberate rule, not an accident.
     const headerStatus = 'open' as const;
-    const headerType = input.header.poType ?? 'standard';
     const totals = computePoTotals(
       input.lines,
       input.header.sgstPct ?? 0,
@@ -1168,34 +1217,30 @@ async function poGoodsMovementDoc(
  *  MEANINGFUL differs: a line added, a line dropped, or a line's item, name,
  *  quantity or rate changed.
  *
- *  Deliberately NOT compared: per-line due date and remarks. They are paperwork,
- *  like the header's due date, and stay editable after the freeze.
- *
  *  Item refs are resolved the same way mergeLines resolves them, so a line
  *  stored against a master item and posted back as its item CODE reads as
- *  unchanged instead of looking like an edit. */
+ *  unchanged instead of looking like an edit.
+ *
+ *  `includePaperwork` is what separates the two callers:
+ *   - the goods-movement LOCK passes false and asks the narrow question — a
+ *     line added, dropped, or its item / name / qty / rate changed. Per-line due
+ *     date and remarks are paperwork, like the header's due date, and stay
+ *     editable after the freeze.
+ *   - the REVISION check passes true. Due date and line remarks are printed on
+ *     the vendor's copy, so moving them does produce a new revision of the
+ *     document even though it does not change what was bought. */
 async function poLinesWouldChange(
   tx: DbTransaction,
   companyId: string,
-  poId: string,
   inputLines: PurchaseOrderLineInput[],
+  /** The PO's lines as they stand before this save — loaded once by the caller
+   *  (loadStoredPoLines) and shared with the revision check. */
+  stored: StoredPoLine[],
   /** False when the caller may not see money: their `rate` is ignored on save,
    *  so it must not count as a change here either. */
   showMoney: boolean,
+  includePaperwork: boolean,
 ): Promise<boolean> {
-  const stored = await tx
-    .select({
-      id: purchaseOrderLines.id,
-      itemId: purchaseOrderLines.itemId,
-      itemCodeText: purchaseOrderLines.itemCodeText,
-      itemName: purchaseOrderLines.itemName,
-      qty: purchaseOrderLines.qty,
-      rate: purchaseOrderLines.rate,
-    })
-    .from(purchaseOrderLines)
-    .where(
-      and(eq(purchaseOrderLines.purchaseOrderId, poId), isNull(purchaseOrderLines.deletedAt)),
-    );
   if (inputLines.length !== stored.length) return true; // a line added or dropped
   const storedById = new Map(stored.map((s) => [s.id, s]));
 
@@ -1213,9 +1258,180 @@ async function poLinesWouldChange(
     if ((refs.itemCodeText ?? null) !== (s.itemCodeText ?? null)) return true;
     if (l.itemName !== s.itemName) return true;
     if (l.qty !== s.qty) return true;
-    if (showMoney && Number(l.rate) !== Number(s.rate)) return true;
+    // Money as NUMBERS: Postgres hands back '10.00' where the form posts 10, and
+    // a string compare would call that an edit on every save.
+    if (showMoney && l.rate !== undefined && Number(l.rate) !== Number(s.rate)) return true;
+    if (includePaperwork) {
+      // Only when the form actually sent the field — mergeLines leaves an
+      // omitted field alone, so an omission is not a change.
+      if (l.dueDate !== undefined && (l.dueDate ?? null) !== (s.dueDate ?? null)) return true;
+      if (l.lineRemarks !== undefined && (l.lineRemarks ?? null) !== (s.lineRemarks ?? null)) {
+        return true;
+      }
+    }
   }
   return false;
+}
+
+/** The shape of a PO line as it stands BEFORE a save. */
+type StoredPoLine = {
+  id: string;
+  itemId: string | null;
+  itemCodeText: string | null;
+  itemName: string;
+  qty: number;
+  rate: string;
+  dueDate: string | null;
+  lineRemarks: string | null;
+};
+
+/** This PO's live lines, loaded ONCE per update. Both readers below — the
+ *  goods-movement lock and the revision check — ask their questions of these
+ *  same rows, so one round trip answers both. */
+async function loadStoredPoLines(
+  tx: DbTransaction,
+  companyId: string,
+  poId: string,
+): Promise<StoredPoLine[]> {
+  return tx
+    .select({
+      id: purchaseOrderLines.id,
+      itemId: purchaseOrderLines.itemId,
+      itemCodeText: purchaseOrderLines.itemCodeText,
+      itemName: purchaseOrderLines.itemName,
+      qty: purchaseOrderLines.qty,
+      rate: purchaseOrderLines.rate,
+      dueDate: purchaseOrderLines.dueDate,
+      lineRemarks: purchaseOrderLines.lineRemarks,
+    })
+    .from(purchaseOrderLines)
+    .where(
+      and(
+        eq(purchaseOrderLines.companyId, companyId),
+        eq(purchaseOrderLines.purchaseOrderId, poId),
+        isNull(purchaseOrderLines.deletedAt),
+      ),
+    );
+}
+
+/** The header fields a REVISION hangs on: everything the vendor reads off the
+ *  printed order. Anything not in this list is not the document changing —
+ *  `updated_by`, the recomputed totals (which follow the lines and the tax
+ *  percentages that ARE listed), the approval remarks and the PR reference. */
+const REVISION_HEADER_FIELDS = [
+  'vendorId',
+  // The free-text vendor counts too: a PO raised against a vendor that has no
+  // master row carries the name HERE, so without this a change of supplier on
+  // such a PO would slip through without a revision.
+  'vendorCodeText',
+  'poDate',
+  'dueDate',
+  'poType',
+  'taxType',
+  'sgstPct',
+  'cgstPct',
+  'igstPct',
+  'remarks',
+] as const;
+
+/** The ones stored as numeric. Compared with Number(): the column comes back as
+ *  '10.00' where the form posts 10 — identical figures, and a plain compare
+ *  would read them as an edit and bump the revision on a save that changed
+ *  nothing. */
+const REVISION_NUMERIC_FIELDS: ReadonlySet<string> = new Set(['sgstPct', 'cgstPct', 'igstPct']);
+
+/** Does this save ACTUALLY change the purchase order?
+ *
+ *  The revision in a PO's number only means something if it moves when the
+ *  document moves — the user was explicit that opening a PO and pressing Save
+ *  must not bump it. So what is ABOUT TO BE WRITTEN (the `updates` object, after
+ *  the money-visibility rules have had their say) is compared against what is
+ *  stored, field by field, plus the lines. No extra read: both sides are already
+ *  in hand inside the transaction. */
+async function poEditWouldChange(
+  tx: DbTransaction,
+  companyId: string,
+  existingHdr: typeof purchaseOrders.$inferSelect,
+  updates: Record<string, unknown>,
+  inputLines: PurchaseOrderLineInput[] | undefined,
+  storedLines: StoredPoLine[],
+  showMoney: boolean,
+): Promise<boolean> {
+  for (const f of REVISION_HEADER_FIELDS) {
+    // A field the payload did not carry is not being written at all.
+    if (!(f in updates)) continue;
+    const next = updates[f];
+    const current = existingHdr[f];
+    if (REVISION_NUMERIC_FIELDS.has(f)) {
+      if (Number(next ?? 0) !== Number(current ?? 0)) return true;
+    } else if ((next ?? null) !== (current ?? null)) {
+      return true;
+    }
+  }
+  if (inputLines === undefined) return false; // header-only save, header unchanged
+  return poLinesWouldChange(tx, companyId, inputLines, storedLines, showMoney, true);
+}
+
+/** Rewrite every stored TEXT COPY of a purchase-order number when that number
+ *  changes — which, now the revision lives inside the code, happens on every
+ *  real edit.
+ *
+ *  Documents that came out of a PO snapshot its number as plain text so they
+ *  still print the order they belong to even if the PO row is later gone. Those
+ *  snapshots are the price of putting the revision in the code itself: leave
+ *  them behind and a GRN prints IN-MPO-00005 for an order that is now
+ *  IN-MPO-00005/R2, and the two stop looking like the same document.
+ *
+ *  The four columns, and why each one holds a PO number:
+ *    goods_receipt_notes.po_code_text   — the PO the goods were received against
+ *    delivery_challans.po_code_text     — the PO the material went out under
+ *    jw_dc_outward.jwpo_code_text       — the same, on the job-work outward challan
+ *    delivery_challans.vendor_code_text — named for the vendor, but on every
+ *        production challan it actually holds the PO NUMBER (see the note in
+ *        apps/web/src/modules/delivery-challans/lib/print-ospdc.ts) and the
+ *        printed challan reads it, so it has to move with the code. The equality
+ *        guard is what makes including it safe: a row that really does hold a
+ *        vendor code cannot match the old PO number, so it is left alone.
+ *
+ *  ANYONE ADDING ANOTHER COLUMN THAT SNAPSHOTS A PO NUMBER MUST ADD IT HERE.
+ *
+ *  Three rules, each deliberate:
+ *   - every statement is guarded by company_id AND an EXACT match on the old
+ *     code. Equality, never LIKE: a row holding anything else is untouched.
+ *   - deleted_at is NOT filtered. A soft-deleted GRN still points at this PO and
+ *     should keep pointing at it; left on the old number it would come back
+ *     referring to a code that no longer exists anywhere.
+ *   - activity_log is NOT rewritten. Its ref_id is history — what the document
+ *     was called when that happened — and rewriting history is how an audit
+ *     trail stops being one. */
+async function renamePoCodeEverywhere(
+  tx: DbTransaction,
+  companyId: string,
+  oldCode: string,
+  newCode: string,
+): Promise<void> {
+  await tx
+    .update(goodsReceiptNotes)
+    .set({ poCodeText: newCode })
+    .where(
+      and(eq(goodsReceiptNotes.companyId, companyId), eq(goodsReceiptNotes.poCodeText, oldCode)),
+    );
+  await tx
+    .update(deliveryChallans)
+    .set({ poCodeText: newCode })
+    .where(
+      and(eq(deliveryChallans.companyId, companyId), eq(deliveryChallans.poCodeText, oldCode)),
+    );
+  await tx
+    .update(deliveryChallans)
+    .set({ vendorCodeText: newCode })
+    .where(
+      and(eq(deliveryChallans.companyId, companyId), eq(deliveryChallans.vendorCodeText, oldCode)),
+    );
+  await tx
+    .update(jwDcOutward)
+    .set({ jwpoCodeText: newCode })
+    .where(and(eq(jwDcOutward.companyId, companyId), eq(jwDcOutward.jwpoCodeText, oldCode)));
 }
 
 export async function updatePurchaseOrder(
@@ -1249,6 +1465,11 @@ export async function updatePurchaseOrder(
       .limit(1);
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError(`Purchase order ${id} not found`);
+
+    // The lines as they stand BEFORE this save. Loaded here, once, because both
+    // the goods-movement lock below and the revision check further down compare
+    // against them — asking the database twice for the same rows would be waste.
+    const storedLines = await loadStoredPoLines(tx, companyId, id);
 
     // ── Money lock (0100, retriggered 2026-08-31) ───────────────────
     // The figures on a PO stop being the buyer's to change once the goods they
@@ -1284,7 +1505,7 @@ export async function updatePurchaseOrder(
       const lockedChanges: string[] = [];
       if (
         input.lines !== undefined &&
-        (await poLinesWouldChange(tx, companyId, id, input.lines, showMoney))
+        (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))
       ) {
         lockedChanges.push('lines / rates');
       }
@@ -1341,7 +1562,37 @@ export async function updatePurchaseOrder(
     if (h.approvalRemarks !== undefined) updates['approvalRemarks'] = h.approvalRemarks ?? null;
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
 
+    // ── Revision bump (user, 2026-09-11) ───────────────────
+    // A PO carries its revision IN ITS NUMBER — IN-MPO-00005/R1 when it is
+    // raised, /R2 after the first real change. The vendor may be holding two
+    // printed copies of the same order, and the suffix is how they tell which
+    // one is current. Only a save that ACTUALLY alters the document moves it:
+    // opening a PO and pressing Save with nothing touched leaves it alone.
+    //
+    // The SERIES never moves, not even when this save changes the PO type. A PO
+    // born IN-MPO-00005 stays IN-MPO-00005 after being retyped to job work;
+    // renumbering it into IN-JWPO- would hand it a number another job-work PO
+    // may already own. Only the /R goes up — which is equally true of the legacy
+    // IN-PO- rows, which keep their old prefix for life.
+    const oldCode = existingHdr.code;
+    const bumpRevision = await poEditWouldChange(
+      tx,
+      companyId,
+      existingHdr,
+      updates,
+      input.lines,
+      storedLines,
+      showMoney,
+    );
+    const newCode = bumpRevision ? bumpDocRevision(oldCode) : oldCode;
+    if (bumpRevision) updates['code'] = newCode;
+
     await tx.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, id));
+
+    // The snapshots move with the code, in the SAME transaction as the code
+    // itself — a GRN pointing at a PO number that no longer exists, even for an
+    // instant, is exactly what this must not create.
+    if (bumpRevision) await renamePoCodeEverywhere(tx, companyId, oldCode, newCode);
 
     if (input.lines !== undefined) {
       // Same quantity cap as the create paths (ADR-152 phase 2). Runs BEFORE
@@ -1639,8 +1890,31 @@ export async function createPurchaseOrderFromPr(
       overrideVendorCode = vRows[0]?.code ?? null;
     }
 
-    // Blank code ⇒ auto-generate the next PO code (same as the main create path).
-    const code = input.header.code?.trim() || (await nextPoCode(tx, companyId));
+    // Derive the PO type from the SOURCE PR, not the form: an OSP/job-work PR
+    // (jw_osp, or linked to a JC op) → job_work; a service PR → service; a plain
+    // buy (e.g. a direct_purchase plan's standard PR with no JC op) → standard.
+    // Prevents a buy being mistyped job_work — which wrongly exposed the
+    // outward-DC flow and hid the Receive/GRN action (IN-PO-00004 / PLN-0006
+    // case). 'service' was previously unreachable: it fell out of the two-way
+    // test as 'standard', so a service PR became a buying PO.
+    //
+    // Resolved HERE, above the code, because it also picks the series the new
+    // PO is numbered in: a job-work PR converts into IN-JWPO-…, a service PR
+    // into IN-SPO-…. It is the same value written to po_type below.
+    const fromPrType =
+      pr.prType === 'jw_osp' || pr.sourceJcOpId
+        ? 'job_work'
+        : pr.prType === 'service'
+          ? 'service'
+          : 'standard';
+
+    // Blank code ⇒ auto-generate the next code in that series (same as the main
+    // create path). A code typed by hand is kept, with /R1 stamped on it when it
+    // arrives without a revision.
+    const suppliedFromPrCode = input.header.code?.trim();
+    const code = suppliedFromPrCode
+      ? codeWithRevision(suppliedFromPrCode)
+      : await nextPoCode(tx, companyId, fromPrType);
 
     // Code uniqueness on the new PO
     const dup = await tx
@@ -1672,19 +1946,9 @@ export async function createPurchaseOrderFromPr(
         companyId,
         code,
         poDate: input.header.poDate,
-        // Derive the PO type from the SOURCE PR, not the form: an OSP/job-work PR
-        // (jw_osp, or linked to a JC op) → job_work; a service PR → service; a
-        // plain buy (e.g. a direct_purchase plan's standard PR with no JC op) →
-        // standard. Prevents a buy being mistyped job_work — which wrongly exposed
-        // the outward-DC flow and hid the Receive/GRN action (IN-PO-00004 /
-        // PLN-0006 case). 'service' was previously unreachable: it fell out of the
-        // two-way test as 'standard', so a service PR became a buying PO.
-        poType:
-          pr.prType === 'jw_osp' || pr.sourceJcOpId
-            ? 'job_work'
-            : pr.prType === 'service'
-              ? 'service'
-              : 'standard',
+        // Type derived from the source PR above — it also chose the series this
+        // PO's code was drawn from, so the two cannot disagree.
+        poType: fromPrType,
         // The PR's vendor is the default, not a fixed rule: an OSP-generated PR
         // carries the `(vendor TBD)` sentinel in vendorCodeText with no
         // vendor_id, so without an override the PO inherited a placeholder
@@ -2126,6 +2390,12 @@ export async function createPurchaseOrderFromPrBatch(
     )[0];
     const vendorCodeText = vendorRow?.code ?? null;
 
+    // This path ALWAYS receives a code from the caller (the shared schema makes
+    // it mandatory here, unlike the other two create paths), so there is nothing
+    // to auto-generate — only a revision to stamp. /R1 goes on when the caller
+    // sent a bare number, so a batch PO is stored like every other PO.
+    const code = codeWithRevision(input.header.code);
+
     // Code uniqueness on the new PO.
     const dup = await tx
       .select({ id: purchaseOrders.id })
@@ -2133,13 +2403,13 @@ export async function createPurchaseOrderFromPrBatch(
       .where(
         and(
           eq(purchaseOrders.companyId, companyId),
-          eq(purchaseOrders.code, input.header.code),
+          eq(purchaseOrders.code, code),
           isNull(purchaseOrders.deletedAt),
         ),
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase order code "${input.header.code}" already exists`);
+      throw new ConflictError(`Purchase order code "${code}" already exists`);
     }
 
     // Load all PRs.
@@ -2204,7 +2474,7 @@ export async function createPurchaseOrderFromPrBatch(
       .insert(purchaseOrders)
       .values({
         companyId,
-        code: input.header.code,
+        code,
         poDate: input.header.poDate,
         // Same rule as the single convert: job_work only when EVERY PR in the
         // batch is OSP/job-work (jw_osp or JC-op linked), service only when EVERY

@@ -111,7 +111,10 @@ describe('doc-numbers routes', () => {
     app = await buildApp(admin);
     const po = await app.inject({ method: 'GET', url: '/doc-numbers/check?type=purchase_order' });
     const grn = await app.inject({ method: 'GET', url: '/doc-numbers/check?type=grn' });
-    expect(po.json().nextCode).toMatch(/^IN-PO-\d{5}$/);
+    // No `poType` on the query, so the suggestion comes from the legacy IN-PO-
+    // series (that is what an older client gets), and it carries /R1 because a
+    // purchase-order number now holds its revision. GRN has no revision.
+    expect(po.json().nextCode).toMatch(/^IN-PO-\d{5}\/R1$/);
     expect(grn.json().nextCode).toMatch(/^IN-GRN-\d{5}$/);
     await app.close();
   });

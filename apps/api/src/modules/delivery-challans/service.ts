@@ -37,6 +37,7 @@ import {
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
+import { parseDocRevision, withDocRevision } from '@innovic/shared';
 import type { DocumentTraceability } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
@@ -910,7 +911,14 @@ function assignLineNos(
 }
 
 /** Next IN-DC-NNNNN for the company (highest numeric suffix + 1, 5-digit),
- *  mirroring nextPoCode. Used when the create form leaves the code blank. */
+ *  mirroring nextPoCode. Used when the create form leaves the code blank.
+ *
+ *  The challan number carries a revision like the PO number does, so the scan
+ *  tolerates a `/R<n>` tail and then ignores it: the running number is the part
+ *  in FRONT of it, and IN-DC-00005/R2 is still challan 5. Without that, a
+ *  revised challan would drop out of the count and its number be re-issued.
+ *
+ *  A new challan is born at revision 1 — IN-DC-00006/R1. */
 async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string> {
   const prefix = 'IN-DC-';
   const rows = await tx
@@ -925,10 +933,13 @@ async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string>
     );
   let max = 0;
   for (const r of rows) {
-    const m = r.code.slice(prefix.length).match(/^(\d+)$/);
+    const m = r.code
+      .trim()
+      .slice(prefix.length)
+      .match(/^(\d+)(?:\/R\d+)?$/i);
     if (m) max = Math.max(max, parseInt(m[1]!, 10));
   }
-  return `${prefix}${String(max + 1).padStart(5, '0')}`;
+  return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
 }
 
 export async function createDeliveryChallan(
@@ -941,8 +952,22 @@ export async function createDeliveryChallan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    // Blank code ⇒ auto-generate the next IN-DC-##### (canonical, like PO/GRN).
-    const code = input.header.code?.trim() || (await nextDcCode(tx, companyId));
+    // Blank code ⇒ auto-generate the next IN-DC-#####/R1 (canonical, like the
+    // PO). A code typed by hand is kept as typed, with /R1 stamped on it when it
+    // arrives without a revision — otherwise a hand-numbered challan would be
+    // the only one in the system without one.
+    //
+    // WHERE THE BUMP WOULD GO: there is no edit/PATCH route for a delivery
+    // challan — create, cancel and receive are the only writes — so a challan's
+    // revision is stamped here at create and nothing moves it afterwards. If an
+    // edit path is ever added, it must bump the code the way updatePurchaseOrder
+    // does: bumpDocRevision, and rewrite every stored text copy of the old
+    // number in the same transaction.
+    const supplied = input.header.code?.trim();
+    const suppliedRev = supplied ? parseDocRevision(supplied) : null;
+    const code = suppliedRev
+      ? withDocRevision(suppliedRev.base, suppliedRev.revision)
+      : await nextDcCode(tx, companyId);
     const dup = await tx
       .select({ id: deliveryChallans.id })
       .from(deliveryChallans)
