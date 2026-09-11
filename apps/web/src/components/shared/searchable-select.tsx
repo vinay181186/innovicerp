@@ -23,6 +23,11 @@ export interface SearchableOption {
   code?: string | null;
   /** Human label, e.g. the customer or vendor name. */
   name: string;
+  /** Extra words that should FIND this row but are never shown. Optional: when
+   *  omitted, matching is exactly what it always was (the rendered label alone).
+   *  Added for the QC "QC By" pickers, which display the short form "Jinal R."
+   *  but must still be found by typing the surname "Rohit". */
+  searchText?: string | null;
 }
 
 export interface SearchableSelectProps {
@@ -51,6 +56,14 @@ export interface SearchableSelectProps {
 
 function optionLabel(o: SearchableOption): string {
   return o.code ? `${o.code} — ${o.name}` : o.name;
+}
+
+/** What typing is matched against: the label the user can see, plus the caller's
+ *  optional hidden `searchText`. Nothing here is ever rendered, and a row with no
+ *  `searchText` matches on exactly the same string as before. */
+function matchText(o: SearchableOption): string {
+  const label = optionLabel(o);
+  return (o.searchText ? `${label} ${o.searchText}` : label).toLowerCase();
 }
 
 export function SearchableSelect({
@@ -222,7 +235,7 @@ export function SearchableSelect({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
-    return options.filter((o) => optionLabel(o).toLowerCase().includes(q));
+    return options.filter((o) => matchText(o).includes(q));
   }, [options, query]);
 
   useEffect(() => {

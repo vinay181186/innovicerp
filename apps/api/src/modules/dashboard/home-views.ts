@@ -9,6 +9,7 @@ import type {
   SpecialistKpi,
   SpecialistPanel,
 } from '@innovic/shared';
+import { shortName } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
 
@@ -25,6 +26,20 @@ export async function buildOperator(
   myName: string,
 ): Promise<HomeOperator> {
   const safeName = myName.replace(/'/g, "''");
+  // QC entries made through the QC Call Register stamp the SHORT name
+  // ("Jinal Jayantibhai Rohit" -> "Jinal R.") into op_log.operator_name. Every
+  // row written before that -- and every shop-floor entry -- still carries the
+  // full name. So match EITHER spelling: today's QC work counts, and nothing
+  // already in the table stops counting. This is not a migration; both forms
+  // live side by side.
+  //
+  // Escaped exactly like safeName above, because it is derived from the same
+  // user-entered text.
+  const safeShort = shortName(myName).replace(/'/g, "''");
+  // A one-word name (or a blank one) shortens to itself — then there is only
+  // one literal to look for, and IN () of a single value is the same query.
+  const nameList =
+    safeShort && safeShort !== safeName ? `'${safeName}','${safeShort}'` : `'${safeName}'`;
 
   // Currently running (this operator, or unattributed).
   const runningRows = await q(
@@ -38,7 +53,7 @@ export async function buildOperator(
      JOIN v_jc_op_status vs ON vs.jc_op_id = o.id
      LEFT JOIN machines m ON m.id = ro.machine_id
      WHERE ro.company_id='${cid}'::uuid AND ro.status='running'
-       AND (ro.operator_name = '${safeName}' OR ro.operator_name IS NULL)
+       AND (ro.operator_name IN (${nameList}) OR ro.operator_name IS NULL)
      ORDER BY ro.start_date, ro.start_time`,
   );
   const running: RunningOpRow[] = runningRows.map((r) => ({
@@ -98,7 +113,7 @@ export async function buildOperator(
     `SELECT COALESCE(SUM(qty),0)::int AS qty, COUNT(*)::int AS entries
      FROM op_log
      WHERE company_id='${cid}'::uuid AND log_date='${today}' AND log_type='complete'
-       AND (operator_name = '${safeName}' OR operator_name IS NULL)`,
+       AND (operator_name IN (${nameList}) OR operator_name IS NULL)`,
   );
 
   return {

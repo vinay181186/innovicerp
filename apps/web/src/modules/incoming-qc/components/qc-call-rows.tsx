@@ -4,7 +4,7 @@
 // Extracted so the QC Call Register can show incoming-material QC alongside
 // process (JC-op) QC on a single approval screen.
 
-import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
+import { shortName, type IncomingQcCompletedRow, type IncomingQcPendingRow } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
@@ -45,7 +45,7 @@ export function IncomingPendingRow(props: {
   // Both halves are kept: `qcBy` is the name that has always been saved on the
   // record, `qcById` is the user it now links to. They only ever move together,
   // in the picker's onChange below.
-  const [qcBy, setQcBy] = useState(session?.fullName ?? session?.email ?? '');
+  const [qcBy, setQcBy] = useState(shortName(session?.fullName ?? session?.email ?? ''));
   const [qcById, setQcById] = useState<string | null>(null);
   const qcUsers = useQcUserOptions();
   const qcOptions = useMemo(
@@ -249,7 +249,11 @@ export function IncomingPendingRow(props: {
                 value={qcById}
                 onChange={(id) => {
                   setQcById(id);
-                  setQcBy(qcUsers.data?.options.find((u) => u.id === id)?.name ?? '');
+                  // Read the SHORTENED list, not the raw one, so the field and
+                  // the dropdown agree -- and so the name stamped on the record
+                  // is the one the person actually saw.
+                  const picked = qcOptions.find((u) => u.id === id);
+                  setQcBy(picked ? qcSelectedLabel(picked) : '');
                 }}
                 options={qcOptions}
                 onSearch={NO_SERVER_SEARCH}
