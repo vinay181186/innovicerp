@@ -260,8 +260,13 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                           trailing slash. Same helper as Job Cards and the Sales
                           Order screens so the three cannot spell it differently.
                           nowrap because a short code must never break across two
-                          lines in a list row. */}
-                      <div style={{ whiteSpace: 'nowrap' }}>
+                          lines in a list row. Mono and bold because the item
+                          code is the primary value on every screen in this
+                          system; its colour already comes from the cell's own
+                          default text, the darkest token, so only the family
+                          and the weight were missing. The part name under it
+                          keeps its `text3` and stays quiet. */}
+                      <div className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
                         {itemCodeWithRev(row.itemCode ?? row.itemCodeText, row.itemRevision)}
                       </div>
                       {row.itemName ?? row.itemNameText ? (

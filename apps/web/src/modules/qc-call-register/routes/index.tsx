@@ -520,7 +520,14 @@ function PendingCall(props: {
             ) : null}
           </div>
           <div className="text2" style={{ fontSize: 11 }}>
-            {itemCodeWithRev(o.itemCode, o.itemRevision)} — {o.operation}
+            {/* The item code identifies the batch on the inspector's table, so
+                it takes the darkest text token and the bold weight. The line
+                stays `text2` so the operation name after it reads as the quiet
+                half of the pair — only the code is promoted. */}
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {itemCodeWithRev(o.itemCode, o.itemRevision)}
+            </span>{' '}
+            — {o.operation}
           </div>
           {/* WHAT is being inspected, under WHICH job. The card number and the
               code above it both identify the job and the drawing, not the part
@@ -737,7 +744,14 @@ function CompletedLog({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
             Op{l.opSeq} — {l.operation}
           </span>
           <div className="text2" style={{ fontSize: 11 }}>
-            {itemCodeWithRev(l.itemCode, l.itemRevision)} · {l.soCode ?? '—'}
+            {/* Same rule as the open-call card above: the item code is what
+                identifies the inspected batch when the log is read back, so it
+                is the darkest token and bold. The SO code after it keeps the
+                muted line colour. */}
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {itemCodeWithRev(l.itemCode, l.itemRevision)}
+            </span>{' '}
+            · {l.soCode ?? '—'}
           </div>
           {/* The part this entry passed or rejected, named in words. Reading
               the completed log back, the job-card number says which job and the

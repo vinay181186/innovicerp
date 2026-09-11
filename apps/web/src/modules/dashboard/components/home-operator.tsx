@@ -112,7 +112,12 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                     <td className="td-code" style={{ color: 'var(--cyan)', fontWeight: 700 }}>{r.jcCode}</td>
                     <td className="td-ctr mono">{r.opSeq}</td>
                     <td><b>{r.machine ?? '—'}</b></td>
-                    <td className="td-code" style={{ color: 'var(--text2)', fontSize: 11 }}>{itemCodeWithRev(r.itemCode, r.itemRevision, '')}</td>
+                    {/* The item code is how an operator finds the drawing, so it
+                        gets the darkest text token and the bold weight rather
+                        than the muted grey it used to carry. The part name in
+                        the next cell stays muted on purpose — a quiet name
+                        beside a strong code is what makes the code findable. */}
+                    <td className="td-code fw-700" style={{ color: 'var(--text)', fontSize: 11 }}>{itemCodeWithRev(r.itemCode, r.itemRevision, '')}</td>
                     {/* A part name can run long, so it truncates on one line and
                         keeps the whole thing in the tooltip. A card with no SO
                         line behind it has no name to show and the cell stays

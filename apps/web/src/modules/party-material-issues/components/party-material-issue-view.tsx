@@ -162,7 +162,12 @@ export function PartyMaterialIssueView(): React.JSX.Element {
                         without a job card has no part to name, and a dash here
                         would read as "no item" on a row that does have one. */}
                     <td style={{ fontSize: 11 }}>
-                      <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {/* The item code is the primary value on any row that
+                          carries one, so it takes the bold weight to match the
+                          rest of the system. Its colour already comes from the
+                          cell's own default text, which is the darkest token,
+                          so only the weight was missing. */}
+                      <span className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
                         {itemCodeWithRev(it.jcItemCode, it.jcItemRevision, '')}
                       </span>
                       {it.jcItemName ? (
