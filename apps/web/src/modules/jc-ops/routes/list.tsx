@@ -788,7 +788,11 @@ function CreatePrModal({
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
             Vendor: {row.outsourceVendorName ?? row.outsourceVendorCode ?? '—'} · Item:{' '}
-            {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
+            {/* The code carries weight even on a muted context line -- it is the
+                value someone checks before acting in this modal. */}
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
+            </span>
           </div>
         </div>
 
@@ -978,7 +982,9 @@ function OutsourceBalanceModal({
             Operation: <b>{row.operation}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            Item: {itemCodeWithRev(row.jcItemCode, row.itemRevision)} · Available:{' '}
+            Item: <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
+            </span> · Available:{' '}
             <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs. Sends the balance to a
             vendor as a JW OSP purchase request.
           </div>
