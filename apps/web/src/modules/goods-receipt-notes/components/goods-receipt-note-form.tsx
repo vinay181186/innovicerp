@@ -567,9 +567,14 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       value={watch(`lines.${idx}.qcInspectedByUserId`) ?? null}
                       onChange={(id) => {
                         setValue(`lines.${idx}.qcInspectedByUserId`, id, { shouldDirty: true });
+                        // Read the SHORTENED list, not the raw one, so the box and
+                        // the dropdown agree -- and so the name stamped on the GRN
+                        // line is the one the person actually saw. Null, not '',
+                        // because this field is nullable.
+                        const picked = qcOptions.find((u) => u.id === id);
                         setValue(
                           `lines.${idx}.qcInspectedByName`,
-                          qcUsers.data?.options.find((u) => u.id === id)?.name ?? null,
+                          picked ? qcSelectedLabel(picked) : null,
                           { shouldDirty: true },
                         );
                       }}

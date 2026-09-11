@@ -7,7 +7,7 @@
 // page title lives in the topbar (#pageTitle, legacy L2232/L2322). Same shape as
 // so-planning/workflow.tsx (legacy L9427).
 
-import { SHIFTS, SHIFT_LABELS, type Shift, type SubmitQcLogInput } from '@innovic/shared';
+import { SHIFTS, SHIFT_LABELS, shortName, type Shift, type SubmitQcLogInput } from '@innovic/shared';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -415,7 +415,7 @@ function PendingCall(props: {
   // screen is the one inspecting). `inspectorId` is the Access Control user
   // behind that name once it is picked from the dropdown; the two are only ever
   // set together.
-  const [inspector, setInspector] = useState(session?.fullName ?? session?.email ?? '');
+  const [inspector, setInspector] = useState(shortName(session?.fullName ?? session?.email ?? ''));
   const [inspectorId, setInspectorId] = useState<string | null>(null);
   const [remarks, setRemarks] = useState('');
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);

@@ -31,6 +31,7 @@ import type {
   QcPickUpInput,
   QcReworkRow,
 } from '@innovic/shared';
+import { shortName } from '@innovic/shared';
 import { qcAssignments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -427,13 +428,22 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
   });
 }
 
-/** Resolves a user's display name (full_name, falling back to email). */
+/**
+ * Resolves a user's display name, SHORT (`Jinal Jayantibhai Rohit` → `Jinal R.`).
+ *
+ * The SQL is untouched on purpose — the e-mail fallback still happens in the
+ * database, and `shortName` hands an address back unchanged — so there is one
+ * rule for the stored form and it is the same rule the web side applies.
+ * Inspector Performance keys on this TEXT (it matches `op_log.operator_name`
+ * against `qc_assignments.inspector_name`), so a long name written here would
+ * split one person into two rows.
+ */
 async function userName(tx: DbTransaction, userId: string): Promise<string> {
   const rows = (await tx.execute(sql`
     SELECT COALESCE(NULLIF(full_name, ''), email) AS "name"
     FROM public.users WHERE id = ${userId}::uuid
   `)) as unknown as Array<{ name: string }>;
-  return rows[0]?.name ?? 'Unknown';
+  return shortName(rows[0]?.name) || 'Unknown';
 }
 
 /** Verifies the jc_op exists in the caller's company; throws NotFound otherwise. */
@@ -547,7 +557,9 @@ export async function assignQc(
         AND company_id = ${companyId}::uuid AND deleted_at IS NULL
     `)) as unknown as Array<{ name: string }>;
     if (inspectorRows.length === 0) throw new NotFoundError('Inspector not found');
-    const inspectorName = inspectorRows[0]!.name;
+    // Short, for the same reason as userName above: this is what lands in
+    // qc_assignments.inspector_name and what the performance table matches on.
+    const inspectorName = shortName(inspectorRows[0]!.name) || 'Unknown';
     const assignedBy = await userName(tx, user.id);
     await upsertAssignment(tx, {
       companyId,
