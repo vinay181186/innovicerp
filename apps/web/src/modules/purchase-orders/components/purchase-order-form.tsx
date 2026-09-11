@@ -177,6 +177,9 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
           value={watch('header.code') ?? ''}
           onChange={(v) => setValue('header.code', v)}
           onValidityChange={setDocNoValid}
+          // The series follows the type chosen below (IN-MPO- / IN-JWPO- /
+          // IN-SPO- / IN-OPO-), so the suggested number changes with it.
+          poType={watch('header.poType')}
         />
         <div className="form-grp">
           <label className="form-label" htmlFor="poDate">

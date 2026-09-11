@@ -14,7 +14,12 @@ import {
   type CheckDocNumberResponse,
   DOC_NUMBER_FORMATS,
   type DocNumberType,
+  PO_LEGACY_PREFIX,
+  type PoType,
+  docNumberHasRevision,
   docNumberPattern,
+  poCodePrefix,
+  withDocRevision,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -37,23 +42,44 @@ const TABLE_NAME: Record<DocNumberType, string> = {
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** MAX+1 next code in the company series (mirrors nextSoCode). */
+/** MAX+1 next code in the company series (mirrors nextSoCode).
+ *
+ *  Two things the plain "prefix + digits" version could not do:
+ *
+ *  1. PURCHASE ORDERS COUNT PER TYPE. A material buy is numbered IN-MPO-, job
+ *     work IN-JWPO-, a service IN-SPO-, outsourcing IN-OPO-, and each series
+ *     runs on its own — so the suggestion depends on which type the form is
+ *     currently on. A client that sends no `poType` gets the legacy IN-PO-
+ *     series, which is exactly what it has always been shown; nothing new is
+ *     numbered there, so an older client suggests a number in a dead series
+ *     rather than a wrong number in a live one.
+ *  2. CODES NOW CARRY A `/R<n>` TAIL. The running number is the part in FRONT
+ *     of it, so the scan matches the tail and ignores it. Anchoring on digits
+ *     alone (the old `\d+\s*$`) missed every revised document, and once the
+ *     highest PO was revised the suggestion fell back towards 00001 — straight
+ *     into a duplicate. */
 async function computeNext(
   tx: DbTransaction,
   type: DocNumberType,
   companyId: string,
+  poType: PoType | undefined,
 ): Promise<string> {
   const f = DOC_NUMBER_FORMATS[type];
+  const prefix =
+    type === 'purchase_order' ? (poType ? poCodePrefix(poType) : PO_LEGACY_PREFIX) : f.prefix;
   const rows = (await tx.execute(
     sql`SELECT code FROM ${sql.identifier(TABLE_NAME[type])} WHERE company_id = ${companyId}::uuid`,
   )) as unknown as Array<{ code: string | null }>;
-  const re = new RegExp(`^${escapeRe(f.prefix)}(\\d+)\\s*$`, 'i');
+  const re = new RegExp(`^${escapeRe(prefix)}(\\d+)(?:\\/R\\d+)?\\s*$`, 'i');
   let max = 0;
   for (const r of rows) {
     const m = (r.code || '').match(re);
     if (m) max = Math.max(max, Number(m[1]));
   }
-  return `${f.prefix}${String(max + 1).padStart(f.digits, '0')}`;
+  const next = `${prefix}${String(max + 1).padStart(f.digits, '0')}`;
+  // POs and delivery challans are born at revision 1; everything else has no
+  // revision in its number at all.
+  return docNumberHasRevision(type) ? withDocRevision(next, 1) : next;
 }
 
 /** Is this code already taken by an active row for the company? */
@@ -78,7 +104,7 @@ export async function checkDocNumber(
   const companyId = requireCompany(user);
   const { type } = query;
   return withUserContext(user, async (tx) => {
-    const nextCode = await computeNext(tx, type, companyId);
+    const nextCode = await computeNext(tx, type, companyId, query.poType);
     const code = query.code?.trim();
     if (!code) {
       return { exists: false, nextCode, formatValid: false };

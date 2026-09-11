@@ -14,6 +14,7 @@
 // (pr.po_id set ⇒ pr.status='po_created'), unlike legacy which keeps the PR
 // 'Pending'.
 
+import { poCodePrefix, withDocRevision } from '@innovic/shared';
 import type { GenerateOspPrResult } from '@innovic/shared';
 import { and, eq, isNull, like } from 'drizzle-orm';
 import {
@@ -56,7 +57,16 @@ export function matchOspProcess<T extends { processName: string }>(
 }
 
 /** Next IN-JWPR-NNNNN / IN-JWPO-NNNNN per company. Highest numeric suffix + 1,
- *  zero-padded to 5 digits (legacy _nextSeriesNo, 5-digit width). */
+ *  zero-padded to 5 digits (legacy _nextSeriesNo, 5-digit width).
+ *
+ *  The scan tolerates a `/R<n>` tail on the stored code. A purchase-order
+ *  number now carries its revision (IN-JWPO-00005/R2), and the running number
+ *  is the part in FRONT of it — without this, every revised PO would drop out
+ *  of the count and its number be handed to the next one. Purchase requests
+ *  have no revision, so for them the tail simply never appears.
+ *
+ *  The REVISION itself is not added here: the PR caller must not get one. The
+ *  PO caller stamps /R1 on what comes back (see below). */
 export async function nextSeriesCode(
   tx: DbTransaction,
   kind: 'pr' | 'po',
@@ -87,7 +97,10 @@ export async function nextSeriesCode(
           );
   let max = 0;
   for (const r of rows) {
-    const m = r.code.slice(prefix.length).match(/^(\d+)$/);
+    const m = r.code
+      .trim()
+      .slice(prefix.length)
+      .match(/^(\d+)(?:\/R\d+)?$/i);
     if (m) max = Math.max(max, parseInt(m[1]!, 10));
   }
   return `${prefix}${String(max + 1).padStart(5, '0')}`;
@@ -241,7 +254,13 @@ export async function generateOspPrForOp(
   let poId: string | null = null;
   let poCode: string | null = null;
   if (matched.vendorId && matched.autoPo) {
-    poCode = await nextSeriesCode(tx, 'po', companyId, 'IN-JWPO-');
+    // The job-work series, taken from the shared map rather than typed again
+    // here, so this auto-PO and a hand-raised job-work PO can never be numbered
+    // in two different series. Born at revision 1, like every other new PO.
+    poCode = withDocRevision(
+      await nextSeriesCode(tx, 'po', companyId, poCodePrefix('job_work')),
+      1,
+    );
     const poInserted = await tx
       .insert(purchaseOrders)
       .values({

@@ -38,7 +38,8 @@
 
 import type { ListPurchaseRequestsQuery, PurchaseRequestListItem } from '@innovic/shared';
 import { Loader2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useDocNumber } from '@/lib/use-doc-number';
+import { useEffect, useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -123,6 +124,18 @@ export function OutsourceJobsView(): React.JSX.Element {
   const [vendorId, setVendorId] = useState('');
   const [poDate, setPoDate] = useState<string>(() => todayLocal());
   const [poCode, setPoCode] = useState('');
+  // Every PO this screen raises is a JOB WORK po, so the number comes from the
+  // IN-JWPO- series (2026-09-11). The box used to be blank with the series only
+  // hinted in grey placeholder text, which left the buyer to type the whole
+  // number — and nothing stopped them typing one from another series.
+  const jwpoNumber = useDocNumber('purchase_order', poCode, 'job_work');
+  // Suggest it ONCE, into an empty box. Whatever the buyer types afterwards is
+  // theirs; this never overwrites it. (The modal opens and closes without
+  // unmounting, so the guard is the empty box, not a mount effect.)
+  const suggested = jwpoNumber.nextCode;
+  useEffect(() => {
+    if (modalOpen && suggested && poCode === '') setPoCode(suggested);
+  }, [modalOpen, suggested, poCode]);
   const [rateOverrides, setRateOverrides] = useState<Record<string, number>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Legacy `searchBox('ospSearch','ospTable',…)` (L27104) filters the rendered
@@ -492,7 +505,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                     className="innovic-input"
                     value={poCode}
                     onChange={(e) => setPoCode(e.target.value)}
-                    placeholder="IN-JWPO-00001"
+                    placeholder="IN-JWPO-00001/R1"
                   />
                 </div>
                 <div className="form-grp">

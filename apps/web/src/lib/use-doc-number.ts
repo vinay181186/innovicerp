@@ -13,6 +13,7 @@ import {
   type DocNumberType,
   docNumberError,
   evaluateDocNumber,
+  type PoType,
 } from '@innovic/shared';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -37,25 +38,35 @@ export interface DocNumberState {
   error: string | null;
 }
 
-export function useDocNumber(type: DocNumberType, value: string): DocNumberState {
+export function useDocNumber(
+  type: DocNumberType,
+  value: string,
+  /** PURCHASE ORDERS ONLY. Each PO type is its own series with its own running
+   *  number (IN-MPO- / IN-JWPO- / IN-SPO- / IN-OPO-), so the suggested next
+   *  code depends on the type the form is currently on. It is part of the query
+   *  key too: switching the dropdown must ask again, not reuse the old series'
+   *  answer. Omitted for every other document type. */
+  poType?: PoType,
+): DocNumberState {
   const evalNow = evaluateDocNumber(type, value);
   const debounced = useDebounce(value.trim(), 500);
   const debouncedEval = evaluateDocNumber(type, debounced);
+  const poTypeParam = poType ? `&poType=${poType}` : '';
 
-  // Default / suggested next code (code omitted) — always fetched once per type.
+  // Default / suggested next code (code omitted) — fetched once per type+series.
   const nextQ = useQuery<CheckDocNumberResponse>({
-    queryKey: ['doc-number', type, '__next__'],
-    queryFn: () => apiFetch<CheckDocNumberResponse>(`/doc-numbers/check?type=${type}`),
+    queryKey: ['doc-number', type, poType ?? null, '__next__'],
+    queryFn: () => apiFetch<CheckDocNumberResponse>(`/doc-numbers/check?type=${type}${poTypeParam}`),
     staleTime: 0,
   });
 
   // Duplicate check — only for a non-empty, well-formatted value (spec: no
   // backend call for invalid formats).
   const checkQ = useQuery<CheckDocNumberResponse>({
-    queryKey: ['doc-number', type, debounced],
+    queryKey: ['doc-number', type, poType ?? null, debounced],
     queryFn: () =>
       apiFetch<CheckDocNumberResponse>(
-        `/doc-numbers/check?type=${type}&code=${encodeURIComponent(debounced)}`,
+        `/doc-numbers/check?type=${type}&code=${encodeURIComponent(debounced)}${poTypeParam}`,
       ),
     enabled: debouncedEval.shouldCheck,
     staleTime: 0,
@@ -68,7 +79,13 @@ export function useDocNumber(type: DocNumberType, value: string): DocNumberState
   const checking =
     evalNow.shouldCheck && (pendingDebounce || (debouncedEval.shouldCheck && checkQ.isFetching));
   const formatInvalid = evalNow.formatInvalid;
-  const error = docNumberError(type, { formatInvalid, duplicate: Boolean(duplicate) });
+  // poType goes through so the wording names the series the form is on —
+  // "expected IN-JWPO-NNNNN/R1" on a job-work PO, not the retired IN-PO-.
+  const error = docNumberError(type, {
+    formatInvalid,
+    duplicate: Boolean(duplicate),
+    ...(poType ? { poType } : {}),
+  });
   const valid = !formatInvalid && !duplicate && !checking;
 
   return {
