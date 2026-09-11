@@ -238,8 +238,12 @@ function Row({
           the board asked an operator to pick an op by job number alone. The
           code keeps its own line; a long part name clips and carries the full
           text on hover, so one wordy item cannot stretch the board sideways. */}
-      <td className="text2" style={{ fontSize: 11 }}>
-        <span style={{ whiteSpace: 'nowrap' }}>
+      <td style={{ fontSize: 11 }}>
+        {/* The code carries weight; the NAME under it stays muted. The cell used
+            to be text2 throughout, which left the board reading fainter than the
+            two modals it launches -- and the code is what someone scans this
+            board for. */}
+        <span className="mono fw-700" style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
           {itemCodeWithRev(o.jcItemCode, o.itemRevision, '')}
         </span>
         {o.jcItemName ? (
