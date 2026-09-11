@@ -1,15 +1,69 @@
 // Live operations board — legacy chrome (.panel / .innovic-table / .btn).
 
 import type { RunningOp, StopOpInput } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { Square } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useStopOp } from '../api';
 import { RunningOpStatusBadge } from './status-badge';
 import { StopOpModal } from './stop-op-modal';
 
 interface Props {
   rows: RunningOp[];
+}
+
+/** The JC number, as a way INTO that card rather than a code to copy and hunt
+ *  for on another screen. Colour, mono face and weight are inherited from the
+ *  cell it sits in, so the code keeps exactly the identity it has on every other
+ *  board — making it reachable is not meant to make it look like a new kind of
+ *  thing, hence no underline and no link colour of its own. A JC number is
+ *  short, so it stays on one line on these dense boards. */
+function JcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
+  return (
+    <Link
+      to="/job-cards/$id"
+      params={{ id }}
+      title="View job card status"
+      style={{ color: 'inherit', textDecoration: 'none', whiteSpace: 'nowrap' }}
+    >
+      {code}
+    </Link>
+  );
+}
+
+/** Item Code + Item Name — what the running operation is actually making. The
+ *  board used to name only a JC code, which meant looking the part up elsewhere
+ *  before you could tell whether the right thing was on the machine.
+ *
+ *  The code carries the customer's drawing revision as `CODE/REV` through the
+ *  one shared helper, so the separator cannot drift from the other boards. A
+ *  JW-sourced or standalone card has no SO line behind it and therefore no
+ *  revision: those rows show the bare code, with no trailing slash.
+ *
+ *  The name is long free text, so it truncates with the full value on hover; the
+ *  code is short and never wraps. */
+function ItemCells({ r }: { r: RunningOp }): React.JSX.Element {
+  return (
+    <>
+      <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+        {itemCodeWithRev(r.itemCode, r.itemRevision)}
+      </td>
+      <td
+        title={r.itemName ?? ''}
+        style={{
+          fontSize: 12,
+          maxWidth: 180,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {r.itemName ?? '—'}
+      </td>
+    </>
+  );
 }
 
 export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
@@ -49,6 +103,8 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             <thead>
               <tr>
                 <th>JC</th>
+                <th>Item Code</th>
+                <th>Item Name</th>
                 <th>Op</th>
                 <th>Operation</th>
                 <th>Machine</th>
@@ -61,14 +117,19 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             <tbody>
               {running.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  {/* Ten columns since Item Code and Item Name were added — the
+                      empty row must span the whole table or it draws short. */}
+                  <td colSpan={10} className="empty-state">
                     No ops currently running.
                   </td>
                 </tr>
               ) : (
                 running.map((r) => (
                   <tr key={r.id}>
-                    <td className="td-code cyan">{r.jobCardCode}</td>
+                    <td className="td-code cyan">
+                      <JcLink id={r.jobCardId} code={r.jobCardCode} />
+                    </td>
+                    <ItemCells r={r} />
                     <td className="mono">{r.opSeq}</td>
                     <td>{r.operation}</td>
                     <td className="mono text3" style={{ fontSize: 11 }}>
@@ -117,6 +178,8 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
               <thead>
                 <tr>
                   <th>JC</th>
+                  <th>Item Code</th>
+                  <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
                   <th>Machine</th>
@@ -128,7 +191,12 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
               <tbody>
                 {recent.map((r) => (
                   <tr key={r.id}>
-                    <td className="td-code">{r.jobCardCode}</td>
+                    {/* Same treatment as Running now: a finished session is the
+                        one you most often want to open the card for. */}
+                    <td className="td-code">
+                      <JcLink id={r.jobCardId} code={r.jobCardCode} />
+                    </td>
+                    <ItemCells r={r} />
                     <td className="mono">{r.opSeq}</td>
                     <td>{r.operation}</td>
                     <td className="mono text3" style={{ fontSize: 11 }}>

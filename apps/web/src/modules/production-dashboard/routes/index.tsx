@@ -20,7 +20,7 @@ import type {
   ProductionDashboardLowStockItem,
   ProductionDashboardReadyOp,
 } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -372,8 +372,22 @@ function MachineCard({
               const dueSoon = o.dueDate != null && o.dueDate <= DUE_SOON_ISO;
               return (
                 <tr key={o.jcOpId}>
+                  {/* The JC number opens that card. Colour and mono face are
+                      inherited from the cell so the code looks exactly as it
+                      did before it became reachable. */}
                   <td className="mono cyan" style={{ fontSize: 11 }}>
-                    {o.jobCardCode}
+                    <Link
+                      to="/job-cards/$id"
+                      params={{ id: o.jobCardId }}
+                      title="View job card status"
+                      style={{
+                        color: 'inherit',
+                        textDecoration: 'none',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {o.jobCardCode}
+                    </Link>
                   </td>
                   <td
                     style={{
@@ -563,12 +577,17 @@ function MachineTag({ code }: { code: string }): React.JSX.Element {
 function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element {
   return (
     <tr>
+      {/* DESTINATION CHANGED (user request, 2026-09-11): this code used to open
+          Op Entry pre-filtered to the card. Everywhere in the app a JC number
+          now goes to the job card itself, and one code that jumped somewhere
+          else was the inconsistency. Op Entry is still reachable from its own
+          menu entry; only this link moved. */}
       <td className="td-code cyan">
         <Link
-          to="/op-entry"
-          search={{ jc: op.jobCardCode }}
-          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          title="Open in Op Entry"
+          to="/job-cards/$id"
+          params={{ id: op.jobCardId }}
+          style={{ color: 'var(--cyan)', textDecoration: 'none', whiteSpace: 'nowrap' }}
+          title="View job card status"
         >
           {op.jobCardCode}
         </Link>
@@ -607,19 +626,24 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
 }
 
 function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
+  const navigate = useNavigate();
   const pct = jc.totalOps > 0 ? Math.round((jc.doneOps / jc.totalOps) * 100) : 0;
+  // The whole card still opens Op Entry for this card, exactly as before; only
+  // the JC number inside it now goes to the job card. An <a> cannot legally
+  // contain another <a> — the browser silently breaks the nesting apart — so the
+  // card becomes a clickable div with the same destination and the code becomes
+  // the real link. Same shape as the Job Cards list (job-cards/routes/list.tsx),
+  // where the band is a click handler and the code inside it is a <Link>.
   return (
-    <Link
-      to="/op-entry"
-      search={{ jc: jc.code }}
+    <div
+      onClick={() => void navigate({ to: '/op-entry', search: { jc: jc.code } })}
       style={{
-        textDecoration: 'none',
-        color: 'inherit',
         display: 'block',
         padding: '10px 12px',
         background: 'var(--bg3)',
         borderRadius: 8,
         border: '1px solid var(--border)',
+        cursor: 'pointer',
       }}
     >
       <div
@@ -630,9 +654,20 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
           marginBottom: 4,
         }}
       >
-        <span className="mono fw-700 cyan" style={{ fontSize: 12 }}>
+        {/* stopPropagation so the code wins over the card's own click: without
+            it the card would navigate to Op Entry at the same moment the link
+            navigates to the job card. `.cyan` keeps the colour, so only the
+            browser's underline has to be undone inline. */}
+        <Link
+          to="/job-cards/$id"
+          params={{ id: jc.jobCardId }}
+          title="View job card status"
+          className="mono fw-700 cyan"
+          style={{ fontSize: 12, textDecoration: 'none', whiteSpace: 'nowrap' }}
+          onClick={(e) => e.stopPropagation()}
+        >
           {jc.code}
-        </span>
+        </Link>
         {/* Legacy badge(jc.priority) (L3723): High→b-amber, Normal→b-grey */}
         <div style={{ display: 'flex', gap: 4 }}>
           <span className={`badge ${jc.priority === 'high' ? 'b-amber' : 'b-grey'}`}>
@@ -677,6 +712,6 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
           Due: {jc.dueDate}
         </div>
       ) : null}
-    </Link>
+    </div>
   );
 }

@@ -283,7 +283,22 @@ export type ListOpMachineOutputQuery = z.infer<typeof listOpMachineOutputQuerySc
 export const runningOpSchema = z.object({
   id: z.string().uuid(),
   jcOpId: z.string().uuid(),
+  /** The card the code belongs to, so the Live Operations board can link its JC
+   *  column straight at /job-cards/$id. Carrying only the CODE meant the board
+   *  named a job card it could not open. */
+  jobCardId: z.string().uuid(),
   jobCardCode: z.string(), // joined
+  /** What is being made, joined from the job card's item. A running-ops board
+   *  that names only a JC code makes the reader look the part up elsewhere. */
+  itemCode: z.string().nullable().default(null),
+  /** The customer's drawing revision behind this card, read live off the SO line
+   *  it was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision) and shown as `CODE/REV`. Never items.revision,
+   *  which describes the item master and would misname the drawing being cut.
+   *  Null is ordinary: a JW-sourced or standalone card has no SO line, and those
+   *  rows show the bare code. */
+  itemRevision: z.string().nullable().default(null),
+  itemName: z.string().nullable().default(null),
   opSeq: z.number().int().positive(), // joined
   operation: z.string(), // joined
   machineId: z.string().uuid().nullable(),

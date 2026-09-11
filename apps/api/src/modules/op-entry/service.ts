@@ -21,12 +21,14 @@
 import { and, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import {
   approvalConfig,
+  items,
   jcOps,
   jobCards,
   machines,
   opLog,
   opLogTimeChangeRequests,
   runningOps,
+  salesOrderLines,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -420,7 +422,27 @@ export async function listRunningOps(
       SELECT
         r.id,
         r.jc_op_id          AS "jcOpId",
+        -- The card's id alongside its code, so the Live Operations board's JC
+        -- column can link straight at /job-cards/$id. The row used to carry the
+        -- code only, which named a job card the board had no way to open. Never
+        -- null: job_cards is joined INNER on jc_ops.job_card_id, a NOT NULL column.
+        jc.id               AS "jobCardId",
         jc.code             AS "jobCardCode",
+        -- What is actually being made. A board that shows only a JC code forces
+        -- the reader to look the part up on another screen before they can act.
+        i.code              AS "itemCode",
+        i.name              AS "itemName",
+        -- The CUSTOMER's drawing revision, off the SO line this card was raised
+        -- against -- not items.revision, which is a different column describing
+        -- the item master and would misname the drawing on the machine. The sol
+        -- join below is a LEFT JOIN, so a JW-sourced or standalone card comes
+        -- back null and renders as the bare code; that is common here and is the
+        -- correct answer, not a gap to fill.
+        --
+        -- ::text on purpose: the contract types this as a string, but a database
+        -- without migration 0119 still holds an integer here and would hand the
+        -- board a number. The cast is a no-op once 0119 is applied.
+        sol.revision::text  AS "itemRevision",
         o.op_seq            AS "opSeq",
         o.operation,
         r.machine_id        AS "machineId",
@@ -439,6 +461,11 @@ export async function listRunningOps(
       FROM public.running_ops r
       JOIN public.jc_ops o    ON o.id = r.jc_op_id
       JOIN public.job_cards jc ON jc.id = o.job_card_id
+      -- LEFT, although job_cards.item_id is NOT NULL: this is a live board and
+      -- an unresolvable item must never silently drop a running session off it.
+      LEFT JOIN public.items i ON i.id = jc.item_id
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = r.machine_id
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = r.jc_op_id
       WHERE r.company_id = ${companyId}::uuid
@@ -450,6 +477,12 @@ export async function listRunningOps(
       ...r,
       opSeq: Number(r['opSeq']),
       availableQty: Number(r['availableQty'] ?? 0),
+      // Pinned to null rather than left to the spread: the contract types these
+      // three as `string | null`, and a row that resolved no item or no SO line
+      // must arrive as an explicit null, never as an absent key.
+      itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
+      itemName: (r['itemName'] as string | null) ?? null,
       startDate:
         r['startDate'] instanceof Date
           ? (r['startDate'] as Date).toISOString().slice(0, 10)
@@ -1772,11 +1805,33 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     });
 
     const row = inserted[0]!;
-    // Resolve job card code for the response shape.
+    // Resolve the job card and what is being made, for the response shape. The
+    // id, item and drawing revision are carried here as well as the code so the
+    // object this returns is a complete RunningOp: the Live Operations board
+    // renders the started session straight from it and would otherwise show a
+    // JC it cannot link and a part it cannot name until the next refetch.
     const jc = await tx
-      .select({ code: jobCards.code, opSeq: jcOps.opSeq, operation: jcOps.operation })
+      .select({
+        jobCardId: jcOps.jobCardId,
+        code: jobCards.code,
+        opSeq: jcOps.opSeq,
+        operation: jcOps.operation,
+        itemCode: items.code,
+        itemName: items.name,
+        // The CUSTOMER's drawing revision off the SO line the card was raised
+        // against — never items.revision, a different column about the item
+        // master. Left-joined, so a JW-sourced or standalone card is null here
+        // and shows the bare code. ::text because a database without migration
+        // 0119 still holds an integer in this column.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+      })
       .from(jcOps)
       .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+      .leftJoin(items, eq(items.id, jobCards.itemId))
+      .leftJoin(
+        salesOrderLines,
+        and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+      )
       .where(eq(jcOps.id, input.jcOpId))
       .limit(1);
     const meta = jc[0]!;
@@ -1800,7 +1855,11 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     return {
       id: row.id,
       jcOpId: row.jcOpId,
+      jobCardId: meta.jobCardId,
       jobCardCode: meta.code,
+      itemCode: meta.itemCode,
+      itemRevision: meta.itemRevision,
+      itemName: meta.itemName,
       opSeq: meta.opSeq,
       operation: meta.operation,
       machineId: row.machineId,
@@ -1932,12 +1991,24 @@ export async function stopOp(
 
     const meta = await tx
       .select({
+        jobCardId: jcOps.jobCardId,
         code: jobCards.code,
         opSeq: jcOps.opSeq,
         operation: jcOps.operation,
+        itemCode: items.code,
+        itemName: items.name,
+        // Same rule as startOp: the customer's drawing revision off the SO line,
+        // left-joined (null for JW-sourced and standalone cards), cast to text
+        // for databases that predate migration 0119. Never items.revision.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
       })
       .from(jcOps)
       .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+      .leftJoin(items, eq(items.id, jobCards.itemId))
+      .leftJoin(
+        salesOrderLines,
+        and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+      )
       .where(eq(jcOps.id, r.jcOpId))
       .limit(1);
     const m = meta[0]!;
@@ -1975,7 +2046,11 @@ export async function stopOp(
     return {
       id: r.id,
       jcOpId: r.jcOpId,
+      jobCardId: m.jobCardId,
       jobCardCode: m.code,
+      itemCode: m.itemCode,
+      itemRevision: m.itemRevision,
+      itemName: m.itemName,
       opSeq: m.opSeq,
       operation: m.operation,
       machineId: r.machineId,
