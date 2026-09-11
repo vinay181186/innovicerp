@@ -330,10 +330,19 @@ function RightPane({
           {so.lines.length > 0 ? (
             <div className="text3" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
               {/* `CODE/REV` — the customer's drawing revision from this SO line.
-                  A JW's lines have no customer revision and keep the bare code. */}
-              {so.lines[0]!.itemCode
-                ? `${itemCodeWithRev(so.lines[0]!.itemCode, so.lines[0]!.itemRevision)} — `
-                : ''}
+                  A JW's lines have no customer revision and keep the bare code.
+                  The code is the value a planner searched by to land here, so it
+                  is pulled out of the muted line into the darkest text token and
+                  bold; the part name and the "+N more" tail stay on the line's
+                  own `text3` so the code is the thing the eye lands on. */}
+              {so.lines[0]!.itemCode ? (
+                <>
+                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {itemCodeWithRev(so.lines[0]!.itemCode, so.lines[0]!.itemRevision)}
+                  </span>
+                  {' — '}
+                </>
+              ) : null}
               {so.lines[0]!.itemName ?? ''}
               {so.lines.length > 1 ? ` +${so.lines.length - 1} more` : ''}
             </div>

@@ -457,7 +457,15 @@ function PendingTpi(props: {
             </span>
           ) : null}
           <div className="text2" style={{ fontSize: 11 }}>
-            {o.soCode ?? '—'} • {itemCodeWithRev(o.itemCode, o.itemRevision)}
+            {o.soCode ?? '—'} •{' '}
+            {/* The item code is the value the inspector matches against the
+                drawing, so it is the darkest text token and bold. The rest of
+                the line — the SO code, the part name, the order quantity —
+                stays on the muted line colour, which is what makes the code
+                stand out at a glance. */}
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {itemCodeWithRev(o.itemCode, o.itemRevision)}
+            </span>
             {/* The inspector reads this line to know what is on the table in
                 front of him, and a job-card number plus a part number does not
                 tell him that — the part has to be named. It is `inline-block`

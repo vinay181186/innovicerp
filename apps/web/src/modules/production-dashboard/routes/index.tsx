@@ -654,6 +654,10 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
 function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
   const navigate = useNavigate();
   const pct = jc.totalOps > 0 ? Math.round((jc.doneOps / jc.totalOps) * 100) : 0;
+  // Resolved once, with an empty fallback, so the card can tell a real item code
+  // from the part-name stand-in it falls back to. Only a genuine code gets the
+  // promoted treatment below; a part name is allowed to stay quiet.
+  const itemCode = itemCodeWithRev(jc.itemCode, jc.itemRevision, '');
   // The whole card still opens Op Entry for this card, exactly as before; only
   // the JC number inside it now goes to the job card. An <a> cannot legally
   // contain another <a> — the browser silently breaks the nesting apart — so the
@@ -711,7 +715,18 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
           textOverflow: 'ellipsis',
         }}
       >
-        {itemCodeWithRev(jc.itemCode, jc.itemRevision, jc.itemName ?? '—')} —{' '}
+        {/* The item code is the primary value on this card — it is how the part
+            gets matched to its drawing — so it takes the darkest text token and
+            the bold weight. When there is no code the line still falls back to
+            the part name, and a name stays on the muted line colour. */}
+        {itemCode ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {itemCode}
+          </span>
+        ) : (
+          (jc.itemName ?? '—')
+        )}{' '}
+        —{' '}
         <b>{jc.orderQty} pcs</b>
       </div>
       {/* Legacy progBar(pct,'#3b82f6') (L1972-1974, called L3728). The literal

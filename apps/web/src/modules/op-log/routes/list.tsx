@@ -221,8 +221,14 @@ function OpLogListPage(): React.JSX.Element {
                   <tr key={r.id}>
                     <td className="mono text3" style={{ fontSize: 11 }}>{r.logNo}</td>
                     <td className="td-code cyan">{r.jcNo}</td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+                    {/* The item code is the value anyone scans this log for — it
+                        is how the drawing and the batch get identified — so it
+                        carries the darkest text token and the bold weight. The
+                        cell used to be `text2` throughout, which muted the code
+                        along with the part name under it; the name keeps its own
+                        `text3` and stays quiet, which is the intended contrast. */}
+                    <td style={{ fontSize: 11 }}>
+                      <span className="mono fw-700" style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
                         {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
                       </span>
                       {r.itemName ? (
