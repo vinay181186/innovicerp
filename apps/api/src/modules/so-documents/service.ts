@@ -15,7 +15,23 @@ import type {
 } from '@innovic/shared';
 import { fileRegistry } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+
+// ── Which permission gates this screen ─────────────────────────────────────
+//
+// `so_create` ("SO Master", Sales department). There is no `so_docs` key in the
+// form registry and inventing one is not this task's to do — but the choice is
+// not a fallback either. SO Documents IS a sales-order screen: everything on it
+// hangs off one sales order, it is reached from the SO, and the drawings and
+// certificates it holds are the order's paperwork. Somebody who may not open
+// the Sales Order has no business reading the files attached to it.
+//
+// Until now this module had NO matrix check anywhere, and `deleteSoDocument`
+// had no check AT ALL — not even a role guard — so any authenticated user could
+// permanently remove any document in their company. The browser hid the button;
+// the endpoint accepted the call.
+const SO_DOCS_FORM = 'so_create' as const;
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -40,6 +56,8 @@ function isoLike(v: unknown): string {
 export async function listSoDocumentOverview(
   user: AuthContext,
 ): Promise<SoDocumentOverviewResponse> {
+  // Reading the register of every SO's paperwork is reading the sales orders.
+  await requireFormAccess(user, SO_DOCS_FORM, 'view');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rs = await tx.execute(sql`
@@ -92,6 +110,8 @@ export async function getSoDocumentDetail(
   salesOrderId: string,
   user: AuthContext,
 ): Promise<SoDocumentDetailResponse> {
+  // Same right as the overview — this is the same information, for one order.
+  await requireFormAccess(user, SO_DOCS_FORM, 'view');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const soRows = await tx.execute(sql`
@@ -286,6 +306,13 @@ export async function createSoDocument(
 /** Soft-delete a registered file (file_registry only; QC docs are managed in
  *  the QC module and cannot be deleted here). */
 export async function deleteSoDocument(id: string, user: AuthContext): Promise<{ id: string }> {
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // only L5 Department Admin and above hold: edit AND approve. L3 Editor has
+  // edit but not approve; L4 Approver has approve but not edit. Exactly how
+  // deleteQcDocument states it, and for the same reason — removing a document
+  // from the record is a department-admin act, not an everyday edit.
+  await requireFormAccess(user, SO_DOCS_FORM, 'edit');
+  await requireFormAccess(user, SO_DOCS_FORM, 'approve');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const updated = await tx

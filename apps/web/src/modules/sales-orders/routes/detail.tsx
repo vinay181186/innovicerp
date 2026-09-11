@@ -1,6 +1,6 @@
 // Sales Order detail (UI-003-05).
 
-import type { SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
+import type { DrawingSource, SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
@@ -33,6 +33,13 @@ type PreviewFile = {
   storagePath: string;
   fileName?: string;
   fileType?: string | null;
+  /** `drawing` for the per-line drawings: the server mints those links, logs
+   *  every open, and hides Download from anyone without the tick. The client PO
+   *  and the email references are ordinary files and leave this unset, so they
+   *  keep the behaviour they have always had. */
+  kind?: 'file' | 'drawing';
+  source?: DrawingSource;
+  refCode?: string;
 };
 
 export const salesOrderDetailRoute = createRoute({
@@ -269,7 +276,13 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 </tr>
               ) : (
                 detail.lines.map((l) => (
-                  <LineRow key={l.id} line={l} priceHidden={priceHidden} onPreview={setPreview} />
+                  <LineRow
+                    key={l.id}
+                    line={l}
+                    soCode={detail.code}
+                    priceHidden={priceHidden}
+                    onPreview={setPreview}
+                  />
                 ))
               )}
             </tbody>
@@ -318,7 +331,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             // Zero hides the tab, so an SO whose lines never carried a drawing
             // looks exactly as it did before.
             count: drawingHistory?.lines.length ?? 0,
-            render: () => <SoDrawingHistory salesOrderId={detail.id} />,
+            render: () => <SoDrawingHistory salesOrderId={detail.id} soCode={detail.code} />,
           },
         ]}
       />
@@ -478,10 +491,13 @@ function ClientPoFileBar({
 
 function LineRow(props: {
   line: SalesOrderLine;
+  /** Carried down only so the drawing access log reads "IN-SO-26-00521 L3"
+   *  instead of a storage path nobody recognises. */
+  soCode: string;
   priceHidden: boolean;
   onPreview: (file: PreviewFile) => void;
 }): React.JSX.Element {
-  const { line: l, priceHidden, onPreview } = props;
+  const { line: l, soCode, priceHidden, onPreview } = props;
   const drawingFilePath = l.drawingFilePath ?? null;
   return (
     <tr>
@@ -506,7 +522,14 @@ function LineRow(props: {
               type="button"
               className="btn btn-ghost btn-sm"
               style={{ padding: '1px 6px', fontSize: 11, alignSelf: 'flex-start' }}
-              onClick={() => onPreview({ storagePath: drawingFilePath })}
+              onClick={() =>
+                onPreview({
+                  storagePath: drawingFilePath,
+                  kind: 'drawing',
+                  source: 'so_line',
+                  refCode: `${soCode} L${l.lineNo}`,
+                })
+              }
               title="Preview drawing"
             >
               📎 Drawing

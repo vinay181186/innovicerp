@@ -14,12 +14,26 @@
 // (see `download` on @/lib/storage signedUrl). Two actions, two links, no
 // browser-setting roulette.
 //
+// TWO KINDS OF FILE PASS THROUGH HERE, and since 2026-09-11 they are not
+// treated alike. `kind="drawing"` means the file is a production drawing: its
+// links are minted by the server (`@/lib/drawing-url`), every open is logged,
+// and the Download button RENDERS ONLY for people who hold the per-person
+// "Can download drawing files" tick — not greyed out, not there at all. Anything
+// else (client PO, QC report, email reference) is `kind="file"`, the default,
+// and behaves exactly as it always has: browser-signed link, Download for all.
+// Defaulting to the old behaviour is deliberate — a caller that forgets the prop
+// gets today's app, not a silently locked file.
+//
 // Styling is the existing .overlay / .modal.modal-lg / .modal-hdr theme —
 // nothing invented.
 
+import type { DrawingSource } from '@innovic/shared';
 import { Download, Loader2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { canDownloadDrawings, useMyAccess } from '@/lib/access-control';
+import { drawingDownloadUrl, drawingViewUrl } from '@/lib/drawing-url';
+import { useSession } from '@/lib/session';
 import { signedUrl } from '@/lib/storage';
 
 /** What we can render in-page. Driven by extension first (always present) and
@@ -46,6 +60,9 @@ export function FilePreviewModal({
   fileName,
   fileType,
   bucket,
+  kind = 'file',
+  source,
+  refCode,
   onClose,
 }: {
   storagePath: string;
@@ -54,10 +71,25 @@ export function FilePreviewModal({
   fileName?: string;
   fileType?: string | null;
   bucket?: string;
+  /** `drawing` routes both links through the server and gates Download on the
+   *  per-person tick. Defaults to `file` — the pre-2026-09-11 behaviour — so no
+   *  existing caller changes by accident. */
+  kind?: 'file' | 'drawing';
+  /** Drawings only: which document this file hangs off, for the access log. */
+  source?: DrawingSource;
+  /** Drawings only: that document's own code (SO/JWSO/JC number, item code). */
+  refCode?: string | null;
   onClose: () => void;
 }): React.JSX.Element {
   const name = fileName ?? fileNameFromPath(storagePath);
-  const kind = previewKind(name, fileType);
+  const preview = previewKind(name, fileType);
+  const isDrawing = kind === 'drawing';
+
+  // Who is asking. Only consulted for drawings; for every other file the
+  // Download button is unconditional, as it has always been.
+  const { data: eff } = useMyAccess();
+  const { data: me } = useSession();
+  const mayDownload = !isDrawing || canDownloadDrawings(eff, me?.role);
 
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -68,10 +100,19 @@ export function FilePreviewModal({
   // link mid-read shows a blank frame.
   useEffect(() => {
     let alive = true;
-    if (kind === 'none') return;
+    if (preview === 'none') return;
     void (async () => {
       try {
-        const u = await signedUrl(storagePath, { expiresIn: 600, ...(bucket ? { bucket } : {}) });
+        // Opening the preview is a VIEW and is asked for as one. Never mint a
+        // `download` link to fill an <img>/<iframe>: the log would record a save
+        // that never happened, and the server would refuse it for most people.
+        const u = isDrawing
+          ? await drawingViewUrl({
+              path: storagePath,
+              ...(source ? { source } : {}),
+              ...(refCode ? { refCode } : {}),
+            })
+          : await signedUrl(storagePath, { expiresIn: 600, ...(bucket ? { bucket } : {}) });
         if (alive) setUrl(u);
       } catch (e) {
         if (alive) setErr(e instanceof Error ? e.message : 'Could not open file');
@@ -80,7 +121,7 @@ export function FilePreviewModal({
     return () => {
       alive = false;
     };
-  }, [storagePath, bucket, kind]);
+  }, [storagePath, bucket, preview, isDrawing, source, refCode]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -101,10 +142,17 @@ export function FilePreviewModal({
     setSaving(true);
     setErr(null);
     try {
-      const u = await signedUrl(storagePath, {
-        download: name,
-        ...(bucket ? { bucket } : {}),
-      });
+      const u = isDrawing
+        ? await drawingDownloadUrl({
+            path: storagePath,
+            fileName: name,
+            ...(source ? { source } : {}),
+            ...(refCode ? { refCode } : {}),
+          })
+        : await signedUrl(storagePath, {
+            download: name,
+            ...(bucket ? { bucket } : {}),
+          });
       const a = document.createElement('a');
       a.href = u;
       a.download = name;
@@ -132,19 +180,24 @@ export function FilePreviewModal({
             📎 {name}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => void onDownload()}
-              disabled={saving}
-            >
-              {saving ? (
-                <Loader2 size={13} className="inline animate-spin" />
-              ) : (
-                <Download size={13} />
-              )}{' '}
-              Download
-            </button>
+            {/* Absent, not disabled. A greyed-out Download reads as "ask someone
+                and you can have it"; the owner asked for the button simply not
+                to exist for people who may only look. */}
+            {mayDownload ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => void onDownload()}
+                disabled={saving}
+              >
+                {saving ? (
+                  <Loader2 size={13} className="inline animate-spin" />
+                ) : (
+                  <Download size={13} />
+                )}{' '}
+                Download
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn-ghost btn-sm btn-icon"
@@ -161,21 +214,23 @@ export function FilePreviewModal({
             <div className="empty-state" style={{ color: 'var(--red)' }}>
               {err}
             </div>
-          ) : kind === 'none' ? (
+          ) : preview === 'none' ? (
             // Nothing the browser renders in-page (.eml, .xlsx, .docx …).
             // Say so plainly rather than silently downloading it.
             <div className="empty-state" style={{ padding: 40, textAlign: 'center' }}>
               <div style={{ fontSize: 30, marginBottom: 8 }}>📁</div>
               <div className="text2">This file type cannot be previewed in the browser.</div>
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                Use Download above to save it and open it on your computer.
+                {mayDownload
+                  ? 'Use Download above to save it and open it on your computer.'
+                  : 'You can view drawings but not save them. Ask an administrator if you need a copy.'}
               </div>
             </div>
           ) : !url ? (
             <div className="empty-state" style={{ padding: 40 }}>
               <Loader2 className="inline animate-spin" size={16} /> Loading preview…
             </div>
-          ) : kind === 'pdf' ? (
+          ) : preview === 'pdf' ? (
             <iframe
               src={url}
               title={name}

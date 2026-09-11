@@ -232,6 +232,19 @@ function UserAccessRow({
       </td>
       <td className="td-ctr">
         {u.fullAccess ? <>✅ All</> : `${u.formCount}/${u.totalForms}`}
+        {/* The drawing-download tick is a whole-account switch, not one of the
+            form extras counted above, so it would otherwise be invisible from
+            the list — and "who can take our drawings home" is exactly the
+            question this screen gets opened to answer. L6 has it implicitly. */}
+        {u.fullAccess || u.drawingDownload ? (
+          <div
+            className="badge b-cyan"
+            style={{ fontSize: 9, marginTop: 3, display: 'inline-block' }}
+            title="Can download drawing files"
+          >
+            📐 Drawings
+          </div>
+        ) : null}
       </td>
       <td>
         <button

@@ -46,6 +46,13 @@ export const jobWorkOrderLineSchema = z.object({
   partName: z.string(),
   material: z.string().nullable(),
   drawingNo: z.string().nullable(),
+  /** The customer's DRAWING REVISION and the drawing FILE (migration 0120) —
+   *  the sales-order line's two fields, so a JWSO line and an SO line are the
+   *  same shape and one screen can serve both. `revision` is free text, what is
+   *  printed on the drawing ('A', 'B', '2'), and is independent of the file.
+   *  `drawingFilePath` is a path in the private `qc-docs` bucket. */
+  revision: z.string().default('0'),
+  drawingFilePath: z.string().nullable().default(null),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
   /** Σ finished parts delivered back to the client (job_work_order_lines.returned_qty).
@@ -152,6 +159,12 @@ export const jobWorkOrderLineInputSchema = z
     partName: z.string().min(1).max(255),
     material: z.string().max(255).optional(),
     drawingNo: z.string().max(64).optional(),
+    // Compulsory on the FORM (the only layer that can ask a human), optional
+    // here so the server paths that insert a JWSO line without asking anyone —
+    // the BOM cascade and the SO-to-JW conversions — still work. Same split the
+    // sales-order line makes.
+    revision: z.string().max(32).optional(),
+    drawingFilePath: z.string().max(512).nullable().optional(),
     uom: uomSchema.default('NOS'),
     orderQty: z.number().int().positive(), // CHECK > 0 in DB too
     rate: z.coerce.number().nonnegative().optional(),

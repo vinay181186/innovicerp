@@ -1696,6 +1696,20 @@ export const jobWorkOrderLines = pgTable(
     partName: text('part_name').notNull(),
     material: text('material'),
     drawingNo: text('drawing_no'),
+    // The customer's DRAWING REVISION and the drawing FILE (migration 0120),
+    // the sales-order line's two columns copied deliberately so a JWSO line and
+    // an SO line are the same shape and one screen can serve both. Before this
+    // a Job Card raised from a JWSO line had no drawing to show, while the same
+    // card raised from an SO line did.
+    //
+    // Free text, independent of the file, exactly as on the SO line since 0119:
+    // it is what is printed on the customer's drawing, not a counter the server
+    // owns. The default backfills existing lines; "compulsory" is enforced on
+    // the form, the only layer that can ask a human.
+    revision: text('revision').notNull().default('0'),
+    // Storage path inside the private `qc-docs` bucket, under
+    // <company_id>/jw-line-drawings/. Null when the line has no drawing.
+    drawingFilePath: text('drawing_file_path'),
     uom: uomEnum('uom').notNull().default('NOS'),
     orderQty: integer('order_qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
@@ -5610,6 +5624,17 @@ export const userAccess = pgTable(
     // L7 Auditor (0100) — read EVERY department, write nothing. Distinct
     // from full_access, which also grants write.
     auditor: boolean('auditor').notNull().default(false),
+    // "Can download drawing files" (migration 0121). A whole-account switch,
+    // not a per-page tick: a drawing shows up on Items, Sales Orders, JWSOs,
+    // Job Cards and QC Documents, so a per-page permission would have to be set
+    // five times and forgotten once.
+    //
+    // Anyone who can open the ERP may LOOK at a drawing; only the people with
+    // this may take a copy away. FALSE for everybody on day one. `admin`
+    // bypasses it and `full_access` implies it; `auditor` deliberately does
+    // NOT — reading everything and being handed the company's drawings are two
+    // different decisions.
+    drawingDownload: boolean('drawing_download').notNull().default(false),
     // Which department this person belongs to (0101). Picking it seeds that
     // department's tier; changing it clears the old one and seeds the new.
     // Stored rather than derived because "main" and "extra" departments look

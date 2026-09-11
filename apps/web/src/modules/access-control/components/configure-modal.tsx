@@ -176,6 +176,12 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const [approvalLimit, setApprovalLimit] = useState('');
   const [fullAccess, setFullAccess] = useState(false);
   const [auditor, setAuditor] = useState(false);
+  // "Can download drawing files" — a WHOLE-ACCOUNT switch, which is why it sits
+  // up here with Full Access and Auditor and not in the per-form checklist
+  // below. Drawings hang off sales orders, job cards, the item master and the
+  // QC pages; as a per-page permission it would have to be set five times and
+  // forgotten once.
+  const [drawingDownload, setDrawingDownload] = useState(false);
   const [departments, setDepartments] = useState<DeptTiers>({});
   const [forms, setForms] = useState<Record<string, FormPerms>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -207,6 +213,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     if (!data) return;
     setFullAccess(data.fullAccess);
     setAuditor(data.auditor);
+    setDrawingDownload(data.drawingDownload);
     setMainDept(data.mainDept ?? '');
     const tiers = loadDeptTiers(data.departments);
     setDepartments(tiers);
@@ -399,7 +406,14 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
 
   // Export the current matrix as a pretty JSON string + copy to clipboard.
   function handleCopyJson(): void {
-    const payload = { fullAccess, auditor, mainDept: mainDept || null, departments, forms };
+    const payload = {
+      fullAccess,
+      auditor,
+      drawingDownload,
+      mainDept: mainDept || null,
+      departments,
+      forms,
+    };
     // confirmAdminChange is an action, not part of a matrix — never cloned.
     const text = JSON.stringify(payload, null, 2);
     void navigator.clipboard?.writeText(text).then(
@@ -440,6 +454,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     const m = result.data;
     setFullAccess(m.fullAccess);
     setAuditor(m.auditor);
+    setDrawingDownload(m.drawingDownload);
     setMainDept(m.mainDept ?? '');
     const tiers = loadDeptTiers(m.departments);
     setDepartments(tiers);
@@ -470,6 +485,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         input: {
           fullAccess,
           auditor,
+          drawingDownload,
           mainDept: mainDept || null,
           confirmAdminChange,
           departments,
@@ -712,6 +728,47 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               <span className="text3" style={{ fontSize: 11, marginLeft: 'auto', fontFamily: 'var(--mono)' }}>
                 {grantedCount} of {ACCESS_DEPTS.length} departments granted
               </span>
+            </div>
+
+            {/* ── Drawing downloads: one whole-account tick ──
+                Ticked and locked for L6, because Full Access already grants it
+                and an unticked box beside "everything, everywhere" reads as a
+                contradiction. L7 Auditor is NOT implied — reading every
+                department is one decision, being allowed to keep the company's
+                drawings is another, and it has to be ticked on purpose. */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                marginBottom: 14,
+                padding: '8px 12px',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                background: 'var(--bg3)',
+              }}
+            >
+              <input
+                id="ac-drawing-download"
+                type="checkbox"
+                checked={fullAccess || drawingDownload}
+                disabled={fullAccess}
+                onChange={(e) => setDrawingDownload(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <div>
+                <label
+                  htmlFor="ac-drawing-download"
+                  style={{ fontSize: 12, fontWeight: 700, cursor: fullAccess ? 'default' : 'pointer' }}
+                >
+                  Can download drawing files
+                </label>
+                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                  {fullAccess
+                    ? 'Included in L6 Super Admin — everyone at this level can save drawings.'
+                    : 'Everyone can view drawings. Only ticked users can save a copy — every view and download is logged.'}
+                </div>
+              </div>
             </div>
 
             {/* ── Department worksheet ── */}

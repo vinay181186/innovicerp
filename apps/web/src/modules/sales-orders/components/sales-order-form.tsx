@@ -1027,6 +1027,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                           <SoLineDrawingCell
                             value={watch(`lines.${idx}.drawingFilePath` as const)}
                             onChange={(p) => setValue(`lines.${idx}.drawingFilePath` as const, p, { shouldDirty: true })}
+                            // For the drawing access log only. On a brand-new SO
+                            // the code is still blank, so the row number is all
+                            // there is to say — better than nothing.
+                            refCode={`${watch('header.code') || 'new SO'} L${idx + 1}`}
                           />
                         </td>
                         {/* The customer's drawing revision, typed exactly as it reads on

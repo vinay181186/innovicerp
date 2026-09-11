@@ -111,6 +111,8 @@ export const userAccessSchema = z.object({
   companyId: z.string().uuid(),
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
+  /** "Can download drawing files" (migration 0121). See canDownloadDrawings. */
+  drawingDownload: z.boolean().default(false),
   // Which department this person belongs to. Seeds that department's tier and
   // is what the screens show in place of the old role dropdown. Null for L6 /
   // L7 accounts, which are not departmental, and for anyone not set up yet.
@@ -126,6 +128,8 @@ export type UserAccess = z.infer<typeof userAccessSchema>;
 export const saveUserAccessInputSchema = z.object({
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
+  /** "Can download drawing files" (migration 0121). See canDownloadDrawings. */
+  drawingDownload: z.boolean().default(false),
   mainDept: z.string().nullable().default(null),
   // Explicit intent to drop someone out of admin. The derived role makes it
   // possible to demote an admin by saving an empty box, which is a one-click
@@ -146,6 +150,8 @@ export const userAccessListItemSchema = z.object({
   isActive: z.boolean(),
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
+  /** "Can download drawing files" (migration 0121). See canDownloadDrawings. */
+  drawingDownload: z.boolean().default(false),
   mainDept: z.string().nullable().default(null),
   // What the access below WOULD derive to. `role` above is what is stored and
   // enforced right now; they differ for anyone whose access has never been
@@ -173,6 +179,8 @@ export type ListUserAccessResponse = z.infer<typeof listUserAccessResponseSchema
 export const effectiveAccessSchema = z.object({
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
+  /** "Can download drawing files" (migration 0121). See canDownloadDrawings. */
+  drawingDownload: z.boolean().default(false),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
 });
@@ -415,4 +423,40 @@ export function hasDeptAccess(
   if (!eff) return false;
   if (eff.fullAccess || eff.auditor) return true;
   return normalizeDeptsMap(eff.departments)[dept] !== undefined;
+}
+
+// ── Drawing downloads ──────────────────────────────────────────────────────
+//
+// Drawings are the company's intellectual property. ANYONE who can open the
+// ERP may LOOK at one; only named people may take a copy away (user, 2026-09-11).
+//
+// This is deliberately NOT one of ACCESS_ACTIONS and not a per-form tick. A
+// drawing surfaces on Items, Sales Orders, JWSOs, Job Cards and QC Documents —
+// a per-page permission would have to be set five times and forgotten once. It
+// is a whole-account switch, like fullAccess and auditor, and it is granted,
+// never assumed.
+//
+// ONE function, read by the server route that mints the link AND by the screens
+// that decide whether to render a Download button, so the two can never
+// disagree about who may download.
+//
+// HONEST LIMIT, stated here so nobody mistakes this for a seal: whoever can see
+// a drawing on screen can save it — Ctrl+S, right-click, or a phone camera. No
+// software prevents that. What this buys is a deliberate Download button
+// restricted to chosen people, a server that refuses a hand-crafted download
+// request from anyone else, and an activity_log row for every view and every
+// download. The log is the part that actually changes behaviour.
+export function canDownloadDrawings(
+  eff: Pick<EffectiveAccess, 'fullAccess' | 'drawingDownload'> | null | undefined,
+  role?: string | null,
+): boolean {
+  // `admin` bypasses this as it bypasses every other check (requireFormAccess
+  // returns early for admins), and L6 Full Access means everything, everywhere.
+  if (role === 'admin') return true;
+  if (!eff) return false;
+  if (eff.fullAccess) return true;
+  // NOTE: `auditor` (L7) is deliberately absent. L7 reads every department and
+  // writes nothing; handing an auditor the company's drawings to keep is a
+  // different decision and has to be ticked on purpose.
+  return eff.drawingDownload === true;
 }

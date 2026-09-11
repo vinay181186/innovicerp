@@ -29,6 +29,11 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'jw_create');
   const softDelete = useSoftDeleteJobWorkOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // The line drawing the user asked to look at, or null when nothing is open.
+  // The click only records WHICH file; FilePreviewModal fetches and shows it
+  // inside the app, so a look never becomes a silent download (the same slot the
+  // Documents panel below uses for its own files).
+  const [linePreview, setLinePreview] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -231,7 +236,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                detail.lines.map((l) => <LineRow key={l.id} line={l} priceHidden={priceHidden} />)
+                detail.lines.map((l) => (
+                  <LineRow key={l.id} line={l} priceHidden={priceHidden} onPreview={setLinePreview} />
+                ))
               )}
             </tbody>
           </table>
@@ -241,6 +248,16 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
       <JwDocumentsPanel jwId={detail.id} canDelete={me?.role !== 'viewer'} />
 
       <RelatedDocsTabs module="job-work-orders" id={detail.id} />
+
+      {linePreview ? (
+        <FilePreviewModal
+          storagePath={linePreview}
+          kind="drawing"
+          source="jw_line"
+          refCode={detail.code}
+          onClose={() => setLinePreview(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -260,6 +277,7 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
     storagePath: string;
     fileName: string;
     fileType: string | null;
+    category: string;
   } | null>(null);
 
   // fileType comes straight from file_registry: the JWSO Client PO uploads are
@@ -270,6 +288,7 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
       storagePath: file.storagePath,
       fileName: file.fileName,
       fileType: file.fileType,
+      category: file.category,
     });
   };
 
@@ -316,10 +335,18 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
       </div>
 
       {preview ? (
+        /* Only the rows actually filed as a drawing are gated. A client PO, an
+           inspection report or an .eml keeps its unconditional Download — the
+           restriction is on the company's drawings, not on every piece of
+           paperwork that happens to share this panel. Same rule as SO
+           Documents. */
         <FilePreviewModal
           storagePath={preview.storagePath}
           fileName={preview.fileName}
           fileType={preview.fileType}
+          {...(preview.category === 'drawing'
+            ? { kind: 'drawing' as const, source: 'jw_line' as const }
+            : {})}
           onClose={() => setPreview(null)}
         />
       ) : null}
@@ -369,8 +396,14 @@ function DocRow(props: {
   );
 }
 
-function LineRow(props: { line: JobWorkOrderLine; priceHidden: boolean }): React.JSX.Element {
-  const { line: l, priceHidden } = props;
+function LineRow(props: {
+  line: JobWorkOrderLine;
+  priceHidden: boolean;
+  onPreview: (storagePath: string) => void;
+}): React.JSX.Element {
+  const { line: l, priceHidden, onPreview } = props;
+  const drawingFilePath = l.drawingFilePath ?? null;
+  const revision = (l.revision ?? '').trim();
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
@@ -381,8 +414,27 @@ function LineRow(props: { line: JobWorkOrderLine; priceHidden: boolean }): React
       <td className="text3" style={{ fontSize: 11 }}>
         {l.material ?? '—'}
       </td>
+      {/* Drawing No. + the client's Rev + the attached drawing file, the way the
+          Sales Order detail shows them. The 📎 records which file was asked for;
+          the shared preview modal fetches it. */}
       <td className="mono" style={{ fontSize: 11 }}>
-        {l.drawingNo ?? '—'}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+          <span>
+            {l.drawingNo ?? '—'}
+            {revision ? <span className="text3"> · Rev {revision}</span> : null}
+          </span>
+          {drawingFilePath ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ padding: '1px 6px', fontSize: 11 }}
+              onClick={() => onPreview(drawingFilePath)}
+              title="Preview drawing"
+            >
+              📎 Drawing
+            </button>
+          ) : null}
+        </div>
       </td>
       <td className="mono">{l.orderQty}</td>
       <td>{l.uom}</td>

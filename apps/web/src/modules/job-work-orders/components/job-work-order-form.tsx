@@ -31,6 +31,7 @@ import { inrFormat } from '@/lib/print/doc-print';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
 import { downloadJwLineTemplate, parseJwLineFile } from '../lib/import-export';
+import { JwLineDrawingCell } from './jw-line-drawing-cell';
 
 interface LineFormValue {
   id?: string | undefined;
@@ -39,6 +40,14 @@ interface LineFormValue {
   partName: string;
   material?: string | undefined;
   drawingNo?: string | undefined;
+  /** The revision printed on the client's drawing ('A', 'B', '2'). Compulsory on
+   *  this form (onValid refuses a blank one), free text, and independent of the
+   *  file beside it — a client re-issues a revision without sending a new file,
+   *  and the same revision can be re-uploaded after a bad scan. (Migration 0120;
+   *  the sales-order line carries the same pair.) */
+  revision: string;
+  /** Path of the uploaded drawing in the private docs bucket, or null/absent. */
+  drawingFilePath?: string | null | undefined;
   uom: Uom;
   orderQty: number;
   rate: number;
@@ -74,7 +83,7 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   status: 'open',
   gstPercent: 18,
 };
-const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0 };
+const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: '' };
 
 type CreateMode = {
   mode: 'create';
@@ -267,6 +276,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const [emailFileName, setEmailFileName] = useState<string | null>(null);
   const [emailFileUrl, setEmailFileUrl] = useState<string | null>(null);
   const [poEmailError, setPoEmailError] = useState<string | null>(null);
+  // Line-level rules that react-hook-form cannot express per field (currently the
+  // compulsory Rev). Shown as one strip above the Save button, naming the line,
+  // so the user is told which row is wrong instead of meeting the API's raw
+  // schema rejection. Mirrors the SO form.
+  const [lineError, setLineError] = useState<string | null>(null);
   function onPickEmailFile(e: React.ChangeEvent<HTMLInputElement>): void {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -341,6 +355,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           partName: master.name,
           material: r.material ?? master.material ?? '',
           drawingNo: r.drawingNo ?? master.drawingNo ?? '',
+          // Set explicitly AFTER the `...r` spread, never through it: an absent
+          // Rev column spreads `revision: undefined` over the value below. A
+          // sheet with no Rev column leaves the box EMPTY, exactly like a
+          // hand-added line — the compulsory check then makes the person fill it
+          // in rather than letting fifty imported lines inherit a revision that
+          // nobody read off a drawing.
+          revision: r.revision?.trim() || NEW_LINE.revision,
           uom: master.uom,
         });
       }
@@ -379,10 +400,22 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
   const onValid = async (values: FormValues): Promise<void> => {
     setPoEmailError(null);
+    setLineError(null);
     // Require proof of the client order: a Client PO No. OR an attached email
     // reference (create form only; edit keeps whatever the JWSO already has).
     if (isCreate && !values.header.clientPoNo?.trim() && !emailFileName) {
       setPoEmailError('Enter a Client PO No. or attach an Email Ref — at least one is required.');
+      return;
+    }
+
+    // Rev is compulsory (migration 0120), exactly as on the Sales Order line.
+    // Caught here so the message names the line. Lines loaded for EDIT are never
+    // blocked by this: every pre-existing row was backfilled to '0' in the
+    // database, and detailToFormValues keeps that '0' (falling back to '0' again
+    // if the API has not started sending the column yet) — '0' is non-blank.
+    const badRev = values.lines.findIndex((l) => !String(l.revision ?? '').trim());
+    if (badRev >= 0) {
+      setLineError(`Line ${badRev + 1}: enter the drawing Rev — the revision printed on the client's drawing.`);
       return;
     }
 
@@ -423,6 +456,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         partName: l.partName.trim(),
         material: l.material?.trim() || undefined,
         drawingNo: l.drawingNo?.trim() || undefined,
+        // Always sent, and trimmed. The check above guarantees it is non-blank.
+        revision: String(l.revision ?? '').trim(),
+        // null, not undefined: JSON.stringify drops undefined keys, so clearing a
+        // drawing would send nothing at all and the server would keep the old
+        // file. An explicit null is what says the drawing was removed.
+        drawingFilePath: l.drawingFilePath || null,
         uom: l.uom,
         orderQty: Number(l.orderQty),
         rate: Number(l.rate) || 0,
@@ -665,80 +704,103 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         );
       })() : null}
 
-      {fields.length === 0 ? (
-        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>No lines yet — click <strong>+ Add Line</strong>. At least one is required.</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {fields.map((field, idx) => {
-            const amt = (Number(watchedLines?.[idx]?.orderQty) || 0) * (Number(watchedLines?.[idx]?.rate) || 0);
-            // On-master item → name is derived + read-only; off-master (free
-            // text code with no master match) keeps the name editable.
-            const lineItemCode = (watchedLines?.[idx]?.itemCodeText ?? '').trim().toUpperCase();
-            const lineOnMaster = lineItemCode ? itemsByCode.has(lineItemCode) : false;
-            return (
-              <div key={field.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, background: 'var(--bg2)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', fontWeight: 700 }}>
-                  <span>Line {idx + 1}</span>
-                  <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <span style={{ color: 'var(--green)' }}>Amount ₹{inrFormat(amt)}</span>
-                    <button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button>
-                  </span>
-                </div>
-                <div className="form-grid form-grid-4">
-                  <div className="form-grp">
-                    <label className="form-label">Item Code</label>
-                    <input className="innovic-input" autoComplete="off" list="dlJwItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const, { onChange: (e) => fillLineFromItem(idx, e.target.value) })} />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">Part Name<span className="req">★</span></label>
-                    <input className="innovic-input" autoComplete="off" readOnly={lineOnMaster} title={lineOnMaster ? 'Auto-filled from Item Master (item code is the key)' : undefined} style={lineOnMaster ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined} {...register(`lines.${idx}.partName` as const, { required: 'Part name is required' })} />
-                    {errors.lines?.[idx]?.partName?.message ? <div className="form-error">{errors.lines[idx]?.partName?.message}</div> : null}
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">Material</label>
-                    <input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.material` as const)} />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">Drawing No.</label>
-                    <input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.drawingNo` as const)} />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">UOM</label>
-                    <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
-                      {UOMS.map((u) => <option key={u} value={u}>{u}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">Qty<span className="req">★</span></label>
-                    <input type="number" min={1} className="innovic-input" {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label" style={{ color: 'var(--green)' }}>Rate ₹</label>
-                    <input type="number" step="0.01" min={0} className="innovic-input" {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} />
-                  </div>
-                  {/* Assembly (0086). Picking a BOM turns this line into an
-                      assembly: one Job Card is raised per component on save,
-                      and readiness/return then follow the WEAKEST component
-                      rather than this line's own output. Only BOMs made
-                      entirely of machined/outsourced parts are offered — job
-                      work runs on client-supplied material, so a BOM with a
-                      bought part is rejected server-side anyway. */}
-                  <div className="form-grp">
-                    <label className="form-label">Assembly BOM</label>
-                    <select className="innovic-select" {...register(`lines.${idx}.sourceBomMasterId` as const)}>
-                      <option value="">— none (plain machining) —</option>
-                      {jwUsableBoms.map((b) => (
-                        <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName}</option>
-                      ))}
-                    </select>
-                    <div className="form-hint">Leave blank unless the client ships parts for you to assemble.</div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* The Assembly-BOM note, once above the table instead of under every
+          line's select — the column is narrow and the rule is the same on every
+          row. (0086: picking a BOM turns the line into an assembly — one Job
+          Card per component on save, and readiness/return then follow the
+          WEAKEST component rather than this line's own output. A BOM holding a
+          bought part is refused server-side: job work runs on client-supplied
+          material.) */}
+      <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
+        Assembly BOM — leave blank unless the client ships parts for you to assemble.
+      </div>
+
+      {/* Same shape as the SO line editor: one row per line in a fixed-layout
+          table, so the columns line up down the page instead of every line being
+          its own bordered card. `overflow: visible` keeps the native datalist
+          drop-down from being clipped. */}
+      <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
+        <table className="innovic-table tbl-ctr" style={{ width: '100%', tableLayout: 'fixed', minWidth: 1180 }}>
+          <thead>
+            <tr>
+              <th style={{ width: '3%' }}>#</th>
+              <th style={{ width: '12%' }}>Item Code</th>
+              <th style={{ width: '12%' }}>Part Name <span className="req">★</span></th>
+              <th style={{ width: '8%' }}>Material</th>
+              <th style={{ width: '8%' }}>Drawing No.</th>
+              <th style={{ width: '11%' }}>Drawing File</th>
+              <th style={{ width: '5%' }}>Rev <span className="req">★</span></th>
+              <th style={{ width: '5%' }}>UOM</th>
+              <th style={{ width: '6%' }}>Qty <span className="req">★</span></th>
+              <th style={{ width: '6%', color: 'var(--green)' }}>Rate ₹</th>
+              <th style={{ width: '7%', color: 'var(--green)' }}>Amount</th>
+              <th style={{ width: '14%' }}>Assembly BOM</th>
+              <th style={{ width: '3%' }} />
+            </tr>
+          </thead>
+          <tbody>
+            {fields.length === 0 ? (
+              <tr>
+                <td colSpan={13} className="empty-state" style={{ padding: 14 }}>
+                  No lines yet — click <strong>+ Add Line</strong>. At least one is required.
+                </td>
+              </tr>
+            ) : (
+              fields.map((field, idx) => {
+                const amt = (Number(watchedLines?.[idx]?.orderQty) || 0) * (Number(watchedLines?.[idx]?.rate) || 0);
+                // On-master item → name is derived + read-only; off-master (free
+                // text code with no master match) keeps the name editable.
+                const lineItemCode = (watchedLines?.[idx]?.itemCodeText ?? '').trim().toUpperCase();
+                const lineOnMaster = lineItemCode ? itemsByCode.has(lineItemCode) : false;
+                return (
+                  <tr key={field.id}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{idx + 1}</td>
+                    <td>
+                      <input className="innovic-input" autoComplete="off" list="dlJwItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const, { onChange: (e) => fillLineFromItem(idx, e.target.value) })} />
+                    </td>
+                    <td>
+                      <input className="innovic-input" autoComplete="off" placeholder="Part name" readOnly={lineOnMaster} title={lineOnMaster ? 'Auto-filled from Item Master (item code is the key)' : undefined} style={lineOnMaster ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined} {...register(`lines.${idx}.partName` as const, { required: 'Part name is required' })} />
+                      {errors.lines?.[idx]?.partName?.message ? <div className="form-error" style={{ fontSize: 10 }}>{errors.lines[idx]?.partName?.message}</div> : null}
+                    </td>
+                    <td><input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.material` as const)} /></td>
+                    <td><input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.drawingNo` as const)} /></td>
+                    <td>
+                      <JwLineDrawingCell
+                        value={watch(`lines.${idx}.drawingFilePath` as const)}
+                        onChange={(p) => setValue(`lines.${idx}.drawingFilePath` as const, p ?? null, { shouldDirty: true })}
+                      />
+                    </td>
+                    {/* The client's drawing revision, typed exactly as it reads on
+                        their print ('A', 'B', 'R1', '0'). Independent of the Drawing
+                        File cell beside it in BOTH directions. Compulsory — onValid
+                        refuses the save when it is blank. */}
+                    <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} {...register(`lines.${idx}.revision` as const)} /></td>
+                    <td>
+                      <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
+                        {UOMS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </td>
+                    <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} /></td>
+                    <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
+                    <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
+                    <td>
+                      <select className="innovic-select" title="Leave blank unless the client ships parts for you to assemble." {...register(`lines.${idx}.sourceBomMasterId` as const)}>
+                        <option value="">— none (plain machining) —</option>
+                        {jwUsableBoms.map((b) => (
+                          <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {/* JWSO Totals (parity with the SO form) */}
       <div style={{ marginTop: 12, border: '2px solid var(--green)', borderRadius: 8, padding: '10px 16px', background: 'rgba(34,197,94,0.03)' }}>
@@ -751,6 +813,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       </div>
 
       <div style={{ marginTop: 16 }}>
+        {lineError ? (
+          <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{lineError}</div>
+        ) : null}
         {props.submitError ? (
           <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{props.submitError}</div>
         ) : null}
@@ -887,6 +952,11 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
             partName: l.partName,
             ...(l.material ? { material: l.material } : {}),
             ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
+            // '0' fallback for a JWSO saved before migration 0120 (and for the
+            // window before the API starts sending the column). Non-blank, so
+            // editing an old JWSO is never blocked by the compulsory-Rev rule.
+            revision: l.revision ?? '0',
+            drawingFilePath: l.drawingFilePath ?? null,
             uom: l.uom,
             orderQty: l.orderQty,
             rate: Number(l.rate),

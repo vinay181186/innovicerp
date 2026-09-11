@@ -187,10 +187,23 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
       ) : null}
 
       {preview ? (
+        // Only files filed under the `drawing` category are drawings. Everything
+        // else in this panel — client POs, test certificates, emails, "other" —
+        // is an ordinary document nobody asked to lock down, so it keeps its
+        // unconditional Download. Getting this wrong in either direction is
+        // visible: too wide and people lose files they always could save; too
+        // narrow and a drawing walks out unlogged.
         <FilePreviewModal
           storagePath={preview.storagePath}
           fileName={preview.fileName}
           fileType={preview.fileType}
+          {...(preview.category === 'drawing'
+            ? {
+                kind: 'drawing' as const,
+                source: 'so_document' as const,
+                ...(data?.so.code ? { refCode: data.so.code } : {}),
+              }
+            : {})}
           onClose={() => setPreview(null)}
         />
       ) : null}

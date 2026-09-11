@@ -1,12 +1,18 @@
 // Drawing-file upload field for the item form. Uploads the chosen file to
 // Storage via the shared @/lib/storage helper (folder `item-drawings`) and
-// reports the resulting path back to the form's `drawingFilePath`. View opens a
-// short-lived signed URL. Self-contained — reads companyId from the session.
+// reports the resulting path back to the form's `drawingFilePath`.
+//
+// Viewing goes through the shared preview modal in `drawing` mode: the link is
+// minted by the server, the look is logged, and Download only appears for people
+// holding the drawing-download tick. It used to be `window.open(signedUrl)`,
+// which both skipped that check and let Chrome's "download PDFs" setting save
+// the file. Self-contained — reads companyId from the session.
 
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { useSession } from '@/lib/session';
-import { signedUrl, uploadFile } from '@/lib/storage';
+import { uploadFile } from '@/lib/storage';
 
 export function DrawingUploadField({
   value,
@@ -18,6 +24,7 @@ export function DrawingUploadField({
   const { data: me } = useSession();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   async function onPick(file: File | null): Promise<void> {
     if (!file) return;
@@ -34,16 +41,6 @@ export function DrawingUploadField({
       setErr(e instanceof Error ? e.message : 'Upload failed');
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function view(): Promise<void> {
-    if (!value) return;
-    try {
-      const url = await signedUrl(value);
-      window.open(url, '_blank', 'noopener');
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not open file');
     }
   }
 
@@ -67,7 +64,11 @@ export function DrawingUploadField({
         </div>
       ) : value ? (
         <div className="form-help" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void view()}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setPreviewOpen(true)}
+          >
             📎 {fileName}
           </button>
           <button type="button" className="btn btn-danger btn-sm" onClick={() => onChange(undefined)}>
@@ -78,6 +79,14 @@ export function DrawingUploadField({
         <div className="form-help">Stored privately; opened via a short-lived link.</div>
       )}
       {err ? <div className="form-error">{err}</div> : null}
+      {previewOpen && value ? (
+        <FilePreviewModal
+          storagePath={value}
+          kind="drawing"
+          source="item"
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

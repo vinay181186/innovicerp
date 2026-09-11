@@ -38,6 +38,7 @@ let viewerOriginalRole: string | null = null;
 let viewerOriginalAccess: {
   fullAccess: boolean;
   auditor: boolean;
+  drawingDownload: boolean;
   mainDept: string | null;
   departments: Record<string, boolean | AccessTierKey>;
   forms: Record<string, AccessFormPerms>;
@@ -73,6 +74,7 @@ beforeAll(async () => {
     viewerOriginalAccess = {
       fullAccess: ac.fullAccess,
       auditor: ac.auditor,
+      drawingDownload: ac.drawingDownload,
       mainDept: ac.mainDept,
       departments: (ac.departments as Record<string, boolean | AccessTierKey>) ?? {},
       forms: (ac.forms as Record<string, AccessFormPerms>) ?? {},
@@ -89,6 +91,7 @@ afterAll(async () => {
       .set({
         fullAccess: viewerOriginalAccess.fullAccess,
         auditor: viewerOriginalAccess.auditor,
+        drawingDownload: viewerOriginalAccess.drawingDownload,
         mainDept: viewerOriginalAccess.mainDept,
         departments: viewerOriginalAccess.departments,
         forms: viewerOriginalAccess.forms,
@@ -143,6 +146,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        drawingDownload: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3', qc: 'L2' },
@@ -173,6 +177,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        drawingDownload: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: true },
@@ -194,6 +199,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        drawingDownload: false,
         mainDept: 'design',
         confirmAdminChange: false,
         departments: { design: 'L3', sales: 'L1' },
@@ -212,7 +218,7 @@ describe('access-control service', () => {
     // no longer backs.
     const saved = await service.saveUserAccess(
       viewer.id,
-      { fullAccess: false, auditor: false, mainDept: 'design', confirmAdminChange: false, departments: { sales: 'L1' }, forms: {} },
+      { fullAccess: false, auditor: false, drawingDownload: false, mainDept: 'design', confirmAdminChange: false, departments: { sales: 'L1' }, forms: {} },
       admin,
     );
     expect(saved.mainDept).toBeNull();
@@ -222,7 +228,7 @@ describe('access-control service', () => {
     const save = (departments: Record<string, 'L1' | 'L2' | 'L3' | 'L4' | 'L5'>) =>
       service.saveUserAccess(
         viewer.id,
-        { fullAccess: false, auditor: false, mainDept: null, confirmAdminChange: false, departments, forms: {} },
+        { fullAccess: false, auditor: false, drawingDownload: false, mainDept: null, confirmAdminChange: false, departments, forms: {} },
         admin,
       );
 
@@ -244,14 +250,14 @@ describe('access-control service', () => {
   it('derives admin only from Full Access, and viewer from Auditor', async () => {
     await service.saveUserAccess(
       viewer.id,
-      { fullAccess: true, auditor: false, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
+      { fullAccess: true, auditor: false, drawingDownload: false, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
       admin,
     );
     expect(await roleOf()).toBe('admin');
 
     await service.saveUserAccess(
       viewer.id,
-      { fullAccess: false, auditor: true, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
+      { fullAccess: false, auditor: true, drawingDownload: false, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
       admin,
     );
     expect(await roleOf()).toBe('viewer');
@@ -263,6 +269,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        drawingDownload: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3', fictional_dept: 'L3' },
@@ -282,7 +289,7 @@ describe('access-control service', () => {
   it('saveUserAccess fullAccess=true overrides cleanly and clears auditor', async () => {
     const saved = await service.saveUserAccess(
       viewer.id,
-      { fullAccess: true, auditor: true, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
+      { fullAccess: true, auditor: true, drawingDownload: false, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
       admin,
     );
     expect(saved.fullAccess).toBe(true);
@@ -295,7 +302,7 @@ describe('access-control service', () => {
   it('saveUserAccess stores the L7 auditor flag on its own', async () => {
     const saved = await service.saveUserAccess(
       viewer.id,
-      { fullAccess: false, auditor: true, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
+      { fullAccess: false, auditor: true, drawingDownload: false, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
       admin,
     );
     expect(saved.auditor).toBe(true);
@@ -306,7 +313,7 @@ describe('access-control service', () => {
     await expect(
       service.saveUserAccess(
         viewer.id,
-        { fullAccess: false, auditor: false, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
+        { fullAccess: false, auditor: false, drawingDownload: false, mainDept: null, confirmAdminChange: false, departments: {}, forms: {} },
         viewer,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
@@ -318,6 +325,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        drawingDownload: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3' },
@@ -341,6 +349,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        drawingDownload: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3' },

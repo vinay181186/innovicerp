@@ -573,9 +573,43 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         jc.raw_material_grade_id AS "rawMaterialGradeId",
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_id AS "rawMaterialSizeId",
-        jc.raw_material_size_text AS "rawMaterialSizeText"
+        jc.raw_material_size_text AS "rawMaterialSizeText",
+        -- THE ORDER'S drawing, resolved LIVE from the line this card was raised
+        -- from — never copied onto the card. A copy would freeze whatever file
+        -- was current the day the card was raised, so the shop floor would go on
+        -- reading a superseded drawing the moment sales uploaded a corrected
+        -- one. Joining on every read is what makes the card show the drawing the
+        -- order is ACTUALLY against.
+        --
+        -- Two separate columns, no COALESCE between them: a card has at most one
+        -- source, so at most one is ever non-null, and keeping them apart lets
+        -- the screen say WHICH document the file it is showing came from. A
+        -- COALESCE would hand back a path with no way to label it.
+        --
+        -- jc.drawing_file_path above is untouched and still means something
+        -- different: a file somebody attached to THIS card.
+        -- ::text on both revisions for the same reason the JC list casts
+        -- sol.revision: the contract types it as a string, and on a database
+        -- that has not had migration 0119 the SO column is still an integer and
+        -- would arrive as a number wearing a string type. No-op once 0119/0120
+        -- are in, and it keeps the two sources the same shape.
+        sol.drawing_file_path AS "soLineDrawingFilePath",
+        sol.revision::text    AS "soLineRevision",
+        jwl.drawing_file_path AS "jwLineDrawingFilePath",
+        jwl.revision::text    AS "jwLineRevision",
+        -- Last fallback: the item master's own drawing. Covers a hand-raised
+        -- card with no source line at all, and a JWSO line that predates
+        -- migration 0120 and so never had a file to carry.
+        i.drawing_file_path   AS "itemDrawingFilePath"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
+      -- Soft deletes respected exactly as the JC list queries above do it: a
+      -- deleted line is a line that no longer exists, and its drawing goes with
+      -- it rather than lingering on the card.
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines jwl
+        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
       WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
       LIMIT 1
     `)) as unknown as Array<Record<string, unknown>>;
@@ -640,6 +674,14 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
       priority: h['priority'] as JobCardEditModel['priority'],
       dueDate: h['dueDate'] != null ? dateLike(h['dueDate']) : null,
       drawingFilePath: (h['drawingFilePath'] as string | null) ?? null,
+      // The order's drawing, live from the source line (see the joins above).
+      // At most one of the two line paths is ever set; the screen picks the
+      // order it prefers and labels which file it is showing.
+      soLineDrawingFilePath: (h['soLineDrawingFilePath'] as string | null) ?? null,
+      jwLineDrawingFilePath: (h['jwLineDrawingFilePath'] as string | null) ?? null,
+      itemDrawingFilePath: (h['itemDrawingFilePath'] as string | null) ?? null,
+      soLineRevision: (h['soLineRevision'] as string | null) ?? null,
+      jwLineRevision: (h['jwLineRevision'] as string | null) ?? null,
       remarks: (h['remarks'] as string | null) ?? null,
       rawMaterialGradeId: (h['rawMaterialGradeId'] as string | null) ?? null,
       rawMaterialGradeText: (h['rawMaterialGradeText'] as string | null) ?? null,

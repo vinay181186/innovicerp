@@ -5,10 +5,22 @@
 // the upload + signed-URL dance.
 //
 // All files currently live in the one private `qc-docs` bucket, namespaced by
-// `${companyId}/<folder>/` path prefix. NOTE: the bucket's storage.objects
-// policies grant read to ANY authenticated user (not per-company) — path prefix
-// is organisational, not a security boundary. Hardening that (path-prefix RLS
-// keyed to the JWT company) is a separate org-wide task; see DECISIONS ADR-032.
+// `${companyId}/<folder>/` path prefix. Migration 0041 tightened the bucket's
+// storage.objects policies to PER-COMPANY (the old note here, that read was
+// granted to any authenticated user regardless of company, has been stale since
+// then — see DECISIONS ADR-032). So the prefix is now a real boundary between
+// companies, and only between companies.
+//
+// Which is exactly why DRAWINGS NO LONGER COME THROUGH HERE. "Same company" is
+// the whole rule this bucket knows, so signing a drawing link in the browser
+// let every colleague fetch every drawing, and left no record of who did. Since
+// 2026-09-11 drawing links are minted by the server — `GET /drawing-files/url`,
+// wrapped for the UI by `@/lib/drawing-url` — which checks the per-person
+// download tick and writes an activity-log row for every view and every save.
+//
+// `signedUrl` below stays for the files that are NOT drawings and carry no such
+// rule: QC report attachments, client PO files, email reference files. If you
+// are reaching for it to open a drawing, reach for `@/lib/drawing-url` instead.
 
 import { supabase } from './supabase';
 

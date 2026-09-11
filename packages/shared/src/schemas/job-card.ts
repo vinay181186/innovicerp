@@ -315,6 +315,26 @@ export const jobCardEditModelSchema = z.object({
   priority: jcPrioritySchema,
   dueDate: z.string().nullable(),
   drawingFilePath: z.string().nullable(),
+  /** THE ORDER'S drawing, resolved live from the line this card was raised
+   *  from — the file the customer's drawing was uploaded as during SO (or
+   *  JWSO) creation. NOT copied onto the card: a card must show the drawing
+   *  the order is actually against, and copying it would freeze a stale file
+   *  the day someone uploads a corrected one on the line.
+   *
+   *  Exactly one of these is ever set, decided by which source line the card
+   *  carries. `itemDrawingFilePath` is the item master's own drawing, the last
+   *  fallback for a card with no line drawing at all (a JWSO line that predates
+   *  migration 0120, or a hand-raised card). `drawingFilePath` above stays what
+   *  it always was: a file somebody attached to THIS card.
+   *
+   *  The shop floor reads them in order — SO line, JW line, this card's own,
+   *  item master — and says on screen which one it is showing. */
+  soLineDrawingFilePath: z.string().nullable().default(null),
+  jwLineDrawingFilePath: z.string().nullable().default(null),
+  itemDrawingFilePath: z.string().nullable().default(null),
+  /** The revision printed on that drawing, for the label beside the preview. */
+  soLineRevision: z.string().nullable().default(null),
+  jwLineRevision: z.string().nullable().default(null),
   remarks: z.string().nullable(),
   rawMaterialGradeId: z.string().uuid().nullable(),
   rawMaterialGradeText: z.string().nullable(),

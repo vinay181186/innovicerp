@@ -1,11 +1,14 @@
-// Compact drawing-file upload for a single SO line, sized to live inside an
-// ~11%-wide table cell. Mirrors items/DrawingUploadField's logic (upload via the
-// shared @/lib/storage helper, view in the shared file-preview modal) but trades
-// the full-width layout for tiny inline controls. Reads companyId from session.
+// Compact drawing-file upload for a single JWSO line, sized to live inside an
+// ~11%-wide table cell.
 //
-// The preview is opened in `drawing` mode: the link comes from the server, the
-// look is logged against this SO line, and Download shows only for people who
-// hold the drawing-download tick.
+// A copy of sales-orders/components/so-line-drawing-cell.tsx rather than an
+// import of it: that component hard-codes its Storage folder ('so-line-drawings')
+// and takes no prop to change it, and the sales-orders module is owned by another
+// session, so it could not be generalised. The only difference here is the folder
+// — JWSO drawings land in 'jw-line-drawings', so a job-work drawing is never
+// filed among the sales-order ones. Everything else (upload via the shared
+// @/lib/storage helper, view in the shared file-preview modal, companyId off the
+// session) is identical, deliberately.
 
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -13,17 +16,12 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
 
-export function SoLineDrawingCell({
+export function JwLineDrawingCell({
   value,
   onChange,
-  refCode,
 }: {
   value: string | null | undefined;
   onChange: (path: string | undefined) => void;
-  /** What the access log should call this line — the SO code plus line number
-   *  where the form knows them. Optional: on a brand-new SO there is no code
-   *  yet, and the log falls back to the storage path. */
-  refCode?: string;
 }): React.JSX.Element {
   const { data: me } = useSession();
   const [busy, setBusy] = useState(false);
@@ -42,7 +40,7 @@ export function SoLineDrawingCell({
     setErr(null);
     setBusy(true);
     try {
-      const path = await uploadFile(file, me.companyId, { folder: 'so-line-drawings' });
+      const path = await uploadFile(file, me.companyId, { folder: 'jw-line-drawings' });
       onChange(path);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Upload failed');
@@ -61,7 +59,7 @@ export function SoLineDrawingCell({
 
   if (value) {
     return (
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center', whiteSpace: 'nowrap' }}>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -82,11 +80,13 @@ export function SoLineDrawingCell({
           ✕
         </button>
         {previewOpen ? (
+          /* kind="drawing" routes the link through the server, which checks
+             the download permission and logs the access. Without it the modal
+             would sign the link in the browser and show Download to everyone. */
           <FilePreviewModal
             storagePath={value}
             kind="drawing"
-            source="so_line"
-            {...(refCode ? { refCode } : {})}
+            source="jw_line"
             onClose={() => setPreviewOpen(false)}
           />
         ) : null}

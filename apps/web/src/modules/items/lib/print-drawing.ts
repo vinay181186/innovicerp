@@ -5,14 +5,17 @@
 //
 // DELTA vs legacy: legacy embedded a base64 `data:` URL held in
 // `item.drawingData`. The new model stores the file in the private `qc-docs`
-// bucket (path `item.drawingFilePath`); we mint a short-lived signed URL via
-// `@/lib/storage` and embed that. The signed URL is fetched by the new window's
-// own <img>/<iframe>, so the ~120s expiry covers the open. We reuse the shared
-// `printWindow` util (company header + Print/Close bar) so the printed sheet
-// carries the company letterhead like the other P3 documents.
+// bucket (path `item.drawingFilePath`); we ask the SERVER for a short-lived
+// link (`@/lib/drawing-url`, view mode) and embed that. The link is fetched by
+// the new window's own <img>/<iframe>, so the short expiry covers the open. We
+// reuse the shared `printWindow` util (company header + Print/Close bar) so the
+// printed sheet carries the company letterhead like the other P3 documents.
+//
+// Print asks for `view`, not `download`: putting the drawing on paper is a look
+// at it, not a copy of the file saved to disk, and the log should say so.
 
 import type { Company, Item } from '@innovic/shared';
-import { signedUrl } from '@/lib/storage';
+import { drawingViewUrl } from '@/lib/drawing-url';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow } from '@/lib/print/print-window';
 
@@ -32,7 +35,11 @@ export async function printItemDrawing(args: {
     throw new Error('No drawing attached to this item');
   }
 
-  const url = await signedUrl(item.drawingFilePath);
+  const url = await drawingViewUrl({
+    path: item.drawingFilePath,
+    source: 'item',
+    refCode: item.code,
+  });
   const isPdf = isPdfPath(item.drawingFilePath);
 
   const titleLine = `${item.drawingNo ?? item.code} — ${item.name} (Rev ${item.revision})`;

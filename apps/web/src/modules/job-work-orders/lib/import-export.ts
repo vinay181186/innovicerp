@@ -10,12 +10,16 @@
 
 import * as XLSX from 'xlsx';
 
-const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'Qty', 'Rate', 'Due Date'] as const;
+// 'Rev' = the revision printed on the client's drawing (migration 0120). It is
+// compulsory on the form, so it is offered in the sheet too; a sheet without the
+// column still imports and leaves the Rev box empty for the person to fill in.
+const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'Rev', 'Qty', 'Rate', 'Due Date'] as const;
 
 export interface JwLineImportRow {
   itemCodeText: string;
   material?: string | undefined;
   drawingNo?: string | undefined;
+  revision?: string | undefined;
   orderQty: number;
   rate: number;
   dueDate?: string | undefined;
@@ -29,7 +33,7 @@ function toDate(v: unknown): string | undefined {
 }
 
 export function downloadJwLineTemplate(): void {
-  const sample = ['ITM-001', 'EN8', 'DRG-001', '10', '35.50', '2026-07-01'];
+  const sample = ['ITM-001', 'EN8', 'DRG-001', 'A', '10', '35.50', '2026-07-01'];
   const ws = XLSX.utils.aoa_to_sheet([LINE_COLUMNS as unknown as string[], sample]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'JW Lines');
@@ -62,6 +66,7 @@ export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportR
       itemCodeText,
       material: String(r['Material'] ?? '').trim() || undefined,
       drawingNo: String(r['Drawing No'] ?? '').trim() || undefined,
+      revision: String(r['Rev'] ?? '').trim() || undefined,
       orderQty,
       rate: Number(r['Rate']) || 0,
       dueDate: toDate(r['Due Date']),

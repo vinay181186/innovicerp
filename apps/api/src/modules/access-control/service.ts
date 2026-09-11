@@ -21,6 +21,7 @@ import {
   type AccessDeptsMap,
   type AccessFormKey,
   type AccessFormsMap,
+  canDownloadDrawings,
   cascadeFormsMap,
   effectiveFormPerms,
   type EffectiveAccess,
@@ -60,6 +61,7 @@ function rowToUserAccess(r: {
   companyId: string;
   fullAccess: boolean;
   auditor: boolean;
+  drawingDownload: boolean;
   mainDept: string | null;
   departments: unknown;
   forms: unknown;
@@ -71,6 +73,11 @@ function rowToUserAccess(r: {
     userId: r.userId,
     companyId: r.companyId,
     auditor: r.auditor,
+    // "Can download drawing files" (migration 0121). A whole-account switch
+    // like fullAccess and auditor, so it rides alongside them rather than
+    // living in the per-form map. Reported raw — whether it actually GRANTS a
+    // download is canDownloadDrawings' decision, made in one place.
+    drawingDownload: r.drawingDownload,
     mainDept: r.mainDept,
     fullAccess: r.fullAccess,
     departments: asDeptsMap(r.departments),
@@ -141,11 +148,23 @@ export async function getMyAccess(user: AuthContext): Promise<EffectiveAccess> {
       .limit(1);
     const row = rows[0];
     if (!row) {
-      return { fullAccess: false, auditor: false, departments: {}, forms: {} };
+      return {
+        fullAccess: false,
+        auditor: false,
+        // Fail closed, like every other flag here: nobody set this person up,
+        // so they may look at a drawing but not take a copy away.
+        drawingDownload: false,
+        departments: {},
+        forms: {},
+      };
     }
     return {
       fullAccess: row.fullAccess,
       auditor: row.auditor,
+      // Carried on /access-control/me so the screens can decide whether to
+      // render a Download button. The button is only the courtesy half — the
+      // refusal that holds is on the drawing-link route (drawing-files).
+      drawingDownload: row.drawingDownload,
       departments: normalizeDeptsMap(asDeptsMap(row.departments)),
       forms: cascadeFormsMap(asFormsMap(row.forms)),
     };
@@ -167,6 +186,7 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
         isActive: users.isActive,
         acFullAccess: userAccess.fullAccess,
         acAuditor: userAccess.auditor,
+        acDrawingDownload: userAccess.drawingDownload,
         acMainDept: userAccess.mainDept,
         acDepartments: userAccess.departments,
         acForms: userAccess.forms,
@@ -194,6 +214,12 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
         isActive: r.isActive,
         fullAccess,
         auditor,
+        // The STORED tick, not the effective answer. The list is the admin's
+        // editing view: it has to show what is actually saved on the row, so a
+        // Full Access account reads "download: off, but covered by L6" rather
+        // than pretending someone ticked a box nobody ticked. What a person may
+        // really do is canDownloadDrawings' answer, asked at the point of use.
+        drawingDownload: r.acDrawingDownload ?? false,
         mainDept: r.acMainDept ?? null,
         derivedRole: roleForAccess({ fullAccess, auditor, departments: normalizeDeptsMap(depts) }),
         deptCount: fullAccess || auditor ? totalDepts : countDepts(depts),
@@ -318,6 +344,10 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
       const eff: EffectiveAccess = {
         fullAccess,
         auditor: r.acAuditor ?? false,
+        // Irrelevant to who may sign off an inspection, but the shape is the
+        // shape — leaving it out would make this a different object from the
+        // one getMyAccess builds, which is the whole point of building it here.
+        drawingDownload: false,
         departments: normalizeDeptsMap(asDeptsMap(r.acDepartments)),
         forms: cascadeFormsMap(asFormsMap(r.acForms)),
       };
@@ -394,6 +424,9 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
       companyId,
       fullAccess: false,
       auditor: false,
+      // Granted, never assumed — an un-configured account opens with the box
+      // unticked, same as every other switch on this shape.
+      drawingDownload: false,
       mainDept: null,
       departments: {},
       forms: {},
@@ -419,6 +452,12 @@ export async function saveUserAccess(
   // AND writes, so an account marked both is really just a Super Admin.
   // Resolving it here means the stored row can never say two things at once.
   const auditor = input.fullAccess ? false : input.auditor;
+  // "Can download drawing files" (0121) is stored EXACTLY as the admin ticked
+  // it — deliberately not forced true for Full Access and not forced false for
+  // anything. L6 covering downloads is canDownloadDrawings' rule, and writing a
+  // second copy of it into this row is how the two would come to disagree: an
+  // account demoted out of L6 later would keep a tick nobody meant to give.
+  const drawingDownload = input.drawingDownload;
   // The main department has to be a real department that this person actually
   // holds a tier in. A stale value — the admin picked Design, then cleared the
   // Design row by hand — would leave the screen claiming a department the
@@ -505,6 +544,7 @@ export async function saveUserAccess(
         .set({
           fullAccess: input.fullAccess,
           auditor,
+          drawingDownload,
           mainDept,
           departments: cleanDepts,
           forms: cleanForms,
@@ -522,6 +562,7 @@ export async function saveUserAccess(
           companyId,
           fullAccess: input.fullAccess,
           auditor,
+          drawingDownload,
           mainDept,
           departments: cleanDepts,
           forms: cleanForms,
@@ -548,6 +589,15 @@ export async function saveUserAccess(
               : `main dept ${mainDept ?? 'none'}; ` +
                 (tierSummary(cleanDepts) || 'no departments') +
                 `; ${countForms(cleanForms)} form override(s)`) +
+          // Say whether this person can now take a copy of a drawing away, and
+          // ask the app's OWN function rather than reading the tick — L6 and
+          // admin pass without a tick, so the raw column would make the audit
+          // trail say "no" about someone who can. One rule, one place.
+          `; drawing download ${
+            canDownloadDrawings({ fullAccess: input.fullAccess, drawingDownload }, derivedRole)
+              ? 'YES'
+              : 'no'
+          }` +
           ` [role → ${derivedRole}]`,
         refId: userId,
       },
