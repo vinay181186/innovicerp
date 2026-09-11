@@ -45,6 +45,19 @@ export async function buildOperator(
   const runningRows = await q(
     tx,
     `SELECT jc.code AS jc_code, o.op_seq, o.operation, m.code AS machine,
+        -- WHAT is on the machine. A job-card number says WHICH JOB, not which
+        -- part, so the running tile names the item beside the code. Both halves
+        -- come off the card's own item (job_cards.item_id), never one from here
+        -- and one from somewhere else, so the code and the name can only ever
+        -- describe the same part.
+        i.code AS item_code, i.name AS item_name,
+        -- The customer's drawing revision for that card, read off the SO line it
+        -- was raised against -- the same source the Ready tile below already
+        -- uses. Never items.revision, which is a different column about the item
+        -- master and would misname the drawing being worked to. Cast to text
+        -- because the contract types it as a string and the column is only text
+        -- on a database that has had migration 0119.
+        sol.revision::text AS item_revision,
         EXTRACT(EPOCH FROM (now() - (ro.start_date::timestamp + ro.start_time)))/60 AS elapsed_min,
         vs.completed_qty, jc.order_qty
      FROM running_ops ro
@@ -52,12 +65,21 @@ export async function buildOperator(
      JOIN job_cards jc ON jc.id = o.job_card_id
      JOIN v_jc_op_status vs ON vs.jc_op_id = o.id
      LEFT JOIN machines m ON m.id = ro.machine_id
+     -- Both LEFT, and deliberately so. An op whose item or SO line cannot be
+     -- resolved is still running on a machine right now; dropping it from the
+     -- operator's own tile because we could not name the part would hide work
+     -- in progress, which is far worse than showing it unnamed.
+     LEFT JOIN items i ON i.id = jc.item_id
+     LEFT JOIN sales_order_lines sol ON sol.id = jc.source_so_line_id
      WHERE ro.company_id='${cid}'::uuid AND ro.status='running'
        AND (ro.operator_name IN (${nameList}) OR ro.operator_name IS NULL)
      ORDER BY ro.start_date, ro.start_time`,
   );
   const running: RunningOpRow[] = runningRows.map((r) => ({
     jcCode: String(r['jc_code'] ?? ''),
+    itemCode: (r['item_code'] as string) ?? null,
+    itemRevision: (r['item_revision'] as string) ?? null,
+    itemName: (r['item_name'] as string) ?? null,
     opSeq: num(r['op_seq']),
     operation: String(r['operation'] ?? ''),
     machine: (r['machine'] as string) ?? null,
@@ -76,6 +98,16 @@ export async function buildOperator(
     tx,
     `SELECT jc.code AS jc_code, o.op_seq, o.operation, m.code AS machine,
         sol.item_code_text AS item_code,
+        -- The part's NAME, taken off the SO line and NOT off the item master.
+        -- The code above is sol.item_code_text, so the name has to come from the
+        -- same row or the tile could pair one order's code with a different
+        -- item's name -- the SO line carries its own free-typed code and part
+        -- name, and nothing forces either to match items.code / items.name for
+        -- jc.item_id. part_name is NOT NULL on the line, so wherever the code
+        -- prints, the name prints with it, and on a JW-sourced or standalone
+        -- card (no SO line at all) both go null together and the tile shows
+        -- neither. That is the only pairing that cannot lie.
+        sol.part_name AS item_name,
         -- The customer's drawing revision off the same SO line the item code
         -- already comes from, so the operator reads CODE/REV on one line. The
         -- sol join below is a LEFT JOIN, so a JW-sourced or standalone card
@@ -102,6 +134,7 @@ export async function buildOperator(
     machine: (r['machine'] as string) ?? null,
     itemCode: (r['item_code'] as string) ?? null,
     itemRevision: (r['item_revision'] as string) ?? null,
+    itemName: (r['item_name'] as string) ?? null,
     available: num(r['available']),
     dueDate: (r['due_date'] as string) ?? null,
     isOverdue: !!r['due_date'] && String(r['due_date']) < today,

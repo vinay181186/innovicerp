@@ -301,6 +301,13 @@ export function ShopFloorView(): React.JSX.Element {
           target={{
             runningOpId: stopRow.row.runningOpId,
             jobCardCode: stopRow.row.jcCode,
+            // The row already carries the part — it is a column in the table
+            // above — so the Stop box names it too rather than asking the
+            // operator to confirm a job card number and trust that it was the
+            // right part.
+            itemCode: stopRow.row.itemCode,
+            itemRevision: stopRow.row.itemRevision,
+            itemName: stopRow.row.itemName,
             opSeq: stopRow.row.opSeq,
             operation: stopRow.row.operation,
             machineLabel: stopRow.machineCode,

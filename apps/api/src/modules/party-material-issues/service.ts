@@ -13,11 +13,13 @@ import type {
   PartyMaterialIssue,
 } from '@innovic/shared';
 import {
+  items,
   jobCards,
   jobWorkOrderLines,
   jobWorkOrders,
   partyMaterialIssues,
   partyMaterials,
+  salesOrderLines,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -52,7 +54,29 @@ async function nextIssueCode(tx: DbTransaction, companyId: string): Promise<stri
   return `${prefix}${String(max + 1).padStart(5, '0')}`;
 }
 
-function rowToIssue(row: typeof partyMaterialIssues.$inferSelect): PartyMaterialIssue {
+/** The job card's PRODUCED item, carried separately because
+ *  `party_material_issues` stores nothing about it — it is joined per query.
+ *  Not to be confused with the party material, which IS on the row: that is the
+ *  CLIENT'S SUPPLIED MATERIAL, this is the part we machine out of it. */
+interface JcProducedItem {
+  jcItemCode: string | null;
+  jcItemRevision: string | null;
+  jcItemName: string | null;
+}
+
+/** What a caller that has not joined the job card's item passes. `job_card_id`
+ *  is nullable here anyway, so "unknown" and "no job card" render identically —
+ *  nothing. */
+const NO_JC_ITEM: JcProducedItem = {
+  jcItemCode: null,
+  jcItemRevision: null,
+  jcItemName: null,
+};
+
+function rowToIssue(
+  row: typeof partyMaterialIssues.$inferSelect,
+  jcItem: JcProducedItem = NO_JC_ITEM,
+): PartyMaterialIssue {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -62,6 +86,12 @@ function rowToIssue(row: typeof partyMaterialIssues.$inferSelect): PartyMaterial
     jwCodeText: row.jwCodeText,
     jobCardId: row.jobCardId,
     jcCodeText: row.jcCodeText,
+    // OUR produced part (what the card makes) — kept next to the job card
+    // fields it belongs to, and deliberately above the partyMaterial* fields,
+    // which are the CLIENT'S material this issue debits.
+    jcItemCode: jcItem.jcItemCode,
+    jcItemRevision: jcItem.jcItemRevision,
+    jcItemName: jcItem.jcItemName,
     partyMaterialId: row.partyMaterialId,
     partyMaterialCodeText: row.partyMaterialCodeText,
     partyMaterialName: row.partyMaterialName,
@@ -456,7 +486,12 @@ export async function listPartyMaterialIssues(
       // Search covers every column the Party Material Issue register
       // (apps/web/src/modules/party-material-issues/components/
       // party-material-issue-view.tsx) shows: Issue No., Date, JWSO, Job Card,
-      // the Material cell (code — name, both halves) and Remarks.
+      // the Item Made cell (the job card's produced part — code and name), the
+      // Material cell (the CLIENT'S supplied material — code and name, both
+      // halves) and Remarks. Note that Item Made and Material are two DIFFERENT
+      // items and both are searched; a term matching either brings the row back.
+      // The produced item's DRAWING REVISION is deliberately not searched — it
+      // is a single character like 'A', so it would match almost every row.
       // Deliberately NOT searched:
       //  - Qty, and the live party stock qty — numbers, so "5" would hit nearly
       //    every issue.
@@ -471,6 +506,11 @@ export async function listPartyMaterialIssues(
         sql`${partyMaterialIssues.issueDate}::text ILIKE ${term}`,
         ilike(partyMaterialIssues.jwCodeText, term),
         ilike(partyMaterialIssues.jcCodeText, term),
+        // The job card's PRODUCED item — the new "Item Made" column. Reached
+        // through the job-card LEFT JOIN, which BOTH queries below carry so
+        // this one predicate stays valid for the page and for the count.
+        ilike(items.code, term),
+        ilike(items.name, term),
         ilike(partyMaterialIssues.partyMaterialCodeText, term),
         ilike(partyMaterialIssues.partyMaterialName, term),
         ilike(partyMaterialIssues.remarks, term),
@@ -486,19 +526,50 @@ export async function listPartyMaterialIssues(
         .select({
           issue: partyMaterialIssues,
           materialStockQty: partyMaterials.stockQty,
+          // WHAT THE JOB CARD MAKES. The register printed a job-card number and
+          // no produced part, and a JC number says WHICH JOB, not WHICH PART.
+          // These are NOT the party material columns already on the row: those
+          // are the CLIENT'S SUPPLIED MATERIAL this issue debits, these are the
+          // component machined out of it.
+          jcItemCode: items.code,
+          jcItemName: items.name,
+          // The CUSTOMER'S drawing revision for that part, read live off the SO
+          // line the card was raised against. Never items.revision, which is
+          // about the item master and would misname the drawing.
+          jcItemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
         })
         .from(partyMaterialIssues)
         .leftJoin(partyMaterials, eq(partyMaterials.id, partyMaterialIssues.partyMaterialId))
+        // LEFT JOIN the whole way down: `party_material_issues.job_card_id` is
+        // nullable, the card's SO line may be absent on a JW-sourced card, and
+        // an issue must never drop out of its own register because the produced
+        // item could not be resolved.
+        .leftJoin(jobCards, eq(jobCards.id, partyMaterialIssues.jobCardId))
+        .leftJoin(items, eq(items.id, jobCards.itemId))
+        .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
         .where(where)
         .orderBy(desc(partyMaterialIssues.issueDate), desc(partyMaterialIssues.code))
         .limit(input.limit)
         .offset(input.offset),
-      tx.select({ value: count() }).from(partyMaterialIssues).where(where),
+      // The count carries the same job-card/item LEFT JOINs as the page query
+      // because the search predicate can now reference `items`. Both joins are
+      // on a primary key, so at most one row matches and the total cannot be
+      // inflated by joining.
+      tx
+        .select({ value: count() })
+        .from(partyMaterialIssues)
+        .leftJoin(jobCards, eq(jobCards.id, partyMaterialIssues.jobCardId))
+        .leftJoin(items, eq(items.id, jobCards.itemId))
+        .where(where),
     ]);
 
     return {
       items: rows.map((r) => ({
-        ...rowToIssue(r.issue),
+        ...rowToIssue(r.issue, {
+          jcItemCode: r.jcItemCode ?? null,
+          jcItemRevision: r.jcItemRevision ?? null,
+          jcItemName: r.jcItemName ?? null,
+        }),
         materialStockQty: r.materialStockQty ?? null,
       })),
       total: totals[0]?.value ?? 0,

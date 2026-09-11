@@ -105,14 +105,17 @@ function QcCallRegisterPage(): React.JSX.Element {
   const matchP = (o: QcHistoryPendingRow): boolean =>
     pt === '' ||
     // The revision is part of what the row shows, so it is part of what the box
-    // searches. This filter runs over rows already loaded, so widening it cannot
-    // hide anything the server did send.
-    [o.jcCode, o.soCode, o.itemCode, o.itemRevision, o.operation].some((v) =>
+    // searches. The part name is on the row now too, and an inspector is far
+    // likelier to remember "plunger" than the code, so it searches on the same
+    // footing as the incoming-QC rows below already do. This filter runs over
+    // rows already loaded, so widening it cannot hide anything the server did
+    // send.
+    [o.jcCode, o.soCode, o.itemCode, o.itemRevision, o.itemName, o.operation].some((v) =>
       (v ?? '').toLowerCase().includes(pt),
     );
   const matchC = (l: QcHistoryLogRow): boolean =>
     ct === '' ||
-    [l.jcCode, l.soCode, l.itemCode, l.itemRevision, l.operation].some((v) =>
+    [l.jcCode, l.soCode, l.itemCode, l.itemRevision, l.itemName, l.operation].some((v) =>
       (v ?? '').toLowerCase().includes(ct),
     );
   const matchIncP = (o: IncomingQcPendingRow): boolean =>
@@ -519,6 +522,29 @@ function PendingCall(props: {
           <div className="text2" style={{ fontSize: 11 }}>
             {itemCodeWithRev(o.itemCode, o.itemRevision)} — {o.operation}
           </div>
+          {/* WHAT is being inspected, under WHICH job. The card number and the
+              code above it both identify the job and the drawing, not the part
+              in words, so an inspector had to look the part up on another
+              screen before deciding what to check. A part name is free text, so
+              it truncates on one line with the full name on hover rather than
+              pushing the pending figure out of the row, and a row whose item
+              did not come back drops the line entirely and reads exactly as it
+              always has. */}
+          {o.itemName ? (
+            <div
+              className="fw-700"
+              style={{
+                fontSize: 11,
+                maxWidth: 240,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={o.itemName}
+            >
+              {o.itemName}
+            </div>
+          ) : null}
           <div className="text3" style={{ fontSize: 10 }}>
             🏭 In-house · SO <b className="mono">{o.soCode ?? '—'}</b>
           </div>
@@ -713,6 +739,28 @@ function CompletedLog({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
           <div className="text2" style={{ fontSize: 11 }}>
             {itemCodeWithRev(l.itemCode, l.itemRevision)} · {l.soCode ?? '—'}
           </div>
+          {/* The part this entry passed or rejected, named in words. Reading
+              the completed log back, the job-card number says which job and the
+              code says which drawing; neither says which part, which is what
+              anyone auditing an acceptance actually wants to see. Truncated on
+              one line with the full name on hover so a long part name cannot
+              push the accepted/rejected figures off the row, and omitted whole
+              when the item name is missing. */}
+          {l.itemName ? (
+            <div
+              className="fw-700"
+              style={{
+                fontSize: 11,
+                maxWidth: 240,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={l.itemName}
+            >
+              {l.itemName}
+            </div>
+          ) : null}
           {l.qcCallDate ? (
             <div style={{ fontSize: 10, marginTop: 2 }}>
               <span className="text3">

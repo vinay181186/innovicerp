@@ -13,6 +13,7 @@
 import type { OpLogChangeStatus, OpLogTimeChangeRequest } from '@innovic/shared';
 import { Check, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests } from '@/modules/op-entry/api';
 
 const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '');
@@ -165,6 +166,32 @@ function RequestCard({
           }}
         >
           <span className="mono fw-700 cyan">{req.jobCardCode}</span>
+          {/* WHAT was being made. The card used to show a job number and nothing
+              else, and a job number says WHICH JOB, not WHICH PART — an approver
+              cannot judge a retiming without knowing the part. `CODE/REV` where
+              the card traces back to an SO line; the bare code otherwise. Null
+              renders nothing at all, not a dash, so the row of chips stays
+              clean when the item cannot be resolved. */}
+          {req.itemCode ? (
+            <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+              {itemCodeWithRev(req.itemCode, req.itemRevision, '')}
+            </span>
+          ) : null}
+          {req.itemName ? (
+            <span
+              className="text3"
+              style={{
+                fontSize: 11,
+                maxWidth: 220,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={req.itemName}
+            >
+              {req.itemName}
+            </span>
+          ) : null}
           <span className="mono">Op{req.opSeq}</span>
           <span>{req.operation}</span>
           <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>

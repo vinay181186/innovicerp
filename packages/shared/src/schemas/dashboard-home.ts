@@ -37,6 +37,18 @@ export type AttnItem = z.infer<typeof attnItemSchema>;
 // ── Operator layout rows ──
 export const runningOpRowSchema = z.object({
   jcCode: z.string(),
+  /** WHAT is being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemCode: z.string().nullable().default(null),
+  /** The customer's drawing revision behind that card, read live off the SO line
+   *  it was raised against (job_cards.source_so_line_id ->
+   *  sales_order_lines.revision) and rendered beside the code as `CODE/REV`.
+   *  Never items.revision, which describes the item master and would misname the
+   *  drawing being worked to. Null on a JW-sourced or standalone card, which
+   *  then shows the bare code. */
+  itemRevision: z.string().nullable().default(null),
+  itemName: z.string().nullable().default(null),
   opSeq: z.number().int(),
   operation: z.string(),
   machine: z.string().nullable(),
@@ -59,6 +71,10 @@ export const readyOpRowSchema = z.object({
    *  drawing behind it — and null shows the bare code, never a bare slash. It
    *  is not items.revision, which is a different column about the item. */
   itemRevision: z.string().nullable().default(null),
+  /** The part being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemName: z.string().nullable().default(null),
   available: z.number().int(),
   dueDate: z.string().nullable(),
   isOverdue: z.boolean(),

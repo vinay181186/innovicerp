@@ -40,6 +40,10 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         sol.revision::text AS "itemRevision",
+        -- WHAT is being made. A job-card number tells the inspector which job,
+        -- not which part, so the item name rides along beside the code off the
+        -- items LEFT JOIN that is already here for i.code.
+        i.name AS "itemName",
         jo.operation,
         jc.order_qty AS "orderQty", vos.qc_pending AS "qcPending",
         jo.qc_call_date AS "callDate",
@@ -67,6 +71,7 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
       soCode: (r['soCode'] as string | null) ?? null,
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
+      itemName: (r['itemName'] as string | null) ?? null,
       operation: (r['operation'] as string | null) ?? '',
       orderQty: Number(r['orderQty'] ?? 0),
       qcPending: Number(r['qcPending'] ?? 0),
@@ -84,6 +89,9 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
         -- them, and is cast to text so a pre-0119 database cannot hand the UI a
         -- number. Never items.revision.
         sol.revision::text AS "itemRevision",
+        -- The part the third party actually signed off, named beside its code so
+        -- a completed TPI record can be read back without opening the job card.
+        i.name AS "itemName",
         jo.operation,
         ol.qty AS "accepted", ol.reject_qty AS "rejected",
         jo.qc_call_date AS "callDate", ol.log_date AS "attendedDate",
@@ -113,6 +121,7 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
       soCode: (r['soCode'] as string | null) ?? null,
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
+      itemName: (r['itemName'] as string | null) ?? null,
       operation: (r['operation'] as string | null) ?? '',
       accepted: Number(r['accepted'] ?? 0),
       rejected: Number(r['rejected'] ?? 0),

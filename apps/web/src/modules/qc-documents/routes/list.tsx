@@ -1268,6 +1268,11 @@ function RegisterView(): React.JSX.Element {
                 <th>File Name</th>
                 <th>Category</th>
                 <th>JC</th>
+                {/* A job-card number says WHICH JOB, not which part, so the
+                    register names the item right beside the JC it belongs to —
+                    same pairing the matrix tab and the line-detail modal use. */}
+                <th>Item Code</th>
+                <th>Item Name</th>
                 <th>SO</th>
                 <th>Uploaded By</th>
                 <th>Date</th>
@@ -1277,19 +1282,19 @@ function RegisterView(): React.JSX.Element {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={10} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={8} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={10} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error ? error.message : 'Failed to load QC documents'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={10} className="empty-state">
                     No QC documents. Click 📎 Upload Document to attach MIR / MCR / inspection
                     reports.
                   </td>
@@ -1306,6 +1311,38 @@ function RegisterView(): React.JSX.Element {
                     </td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                       {d.jcCodeText ?? '—'}
+                    </td>
+                    {/* `CODE/REV` via the one helper, so the separator and the
+                        empty cases cannot drift from the other QC screens. The
+                        revision is the customer's drawing revision off the SO
+                        line behind the card, never items.revision. A document
+                        with no card behind it gets the helper's dash, which is
+                        what the JC and SO cells either side already show. */}
+                    <td className="td-code" style={{ color: 'var(--purple)' }}>
+                      {itemCodeWithRev(d.itemCode, d.itemRevision)}
+                    </td>
+                    <td style={{ fontSize: 11 }}>
+                      {d.itemName ? (
+                        /* A part name is free text; it truncates rather than
+                           wrapping this dense register onto two lines, and the
+                           full name stays on hover. Narrower than the op-entry
+                           header's 320px because this row already carries a
+                           file name. A null name prints nothing at all — not a
+                           dash — so the eye is not drawn to an absent value. */
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            maxWidth: 200,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            verticalAlign: 'bottom',
+                          }}
+                          title={d.itemName}
+                        >
+                          {d.itemName}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                       {d.soCodeText ?? '—'}

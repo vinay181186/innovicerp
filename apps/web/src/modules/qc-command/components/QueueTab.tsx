@@ -153,6 +153,37 @@ export function QueueTab({
                           <span className="text3" style={{ fontSize: 10 }}>
                             {itemCodeWithRev(it.itemCode, it.itemRevision)}
                           </span>
+                          {/* The part in words, under the code that identifies
+                              its drawing. The queue told an inspector which job
+                              and which drawing revision to fetch but never what
+                              the thing is called, so picking work off this list
+                              meant opening the job card to find out. It lives in
+                              the same cell as the code rather than in a new
+                              column so the queue keeps its column count. The
+                              cell is no-wrap, so the name is capped and
+                              truncated with the full text on hover — otherwise
+                              one long part name would stretch the whole table
+                              sideways. Missing name, no line. */}
+                          {it.itemName ? (
+                            <>
+                              <br />
+                              <span
+                                className="fw-700"
+                                style={{
+                                  fontSize: 11,
+                                  display: 'inline-block',
+                                  maxWidth: 200,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  verticalAlign: 'bottom',
+                                }}
+                                title={it.itemName}
+                              >
+                                {it.itemName}
+                              </span>
+                            </>
+                          ) : null}
                         </td>
                         <td style={{ fontSize: 12 }}>
                           <span style={{ color: 'var(--cyan)' }}>{it.soCode ?? '—'}</span>

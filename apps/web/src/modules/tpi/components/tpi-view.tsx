@@ -44,11 +44,16 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'JC',
       'OP',
       'SO',
-      'Item',
-      // The drawing revision gets its own column instead of riding inside Item
-      // as CODE/REV. This sheet is filtered and VLOOKUP-ed against Item Master,
-      // where a slashed code matches nothing. Same call as the Job Card export.
+      'Item Code',
+      // The drawing revision gets its own column instead of riding inside the
+      // item code as CODE/REV. This sheet is filtered and VLOOKUP-ed against
+      // Item Master, where a slashed code matches nothing. Same call as the Job
+      // Card export.
       'Drawing Rev',
+      // The part name is a column of its own for the same reason, and it earns
+      // its place because a job-card number says WHICH JOB and not which part —
+      // whoever reads this sheet back needs the part named, not just coded.
+      'Item Name',
       'Operation',
       'Acc',
       'Rej',
@@ -65,6 +70,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       l.soCode ?? '',
       l.itemCode ?? '',
       l.itemRevision ?? '',
+      l.itemName ?? '',
       l.operation,
       l.accepted,
       l.rejected,
@@ -204,6 +210,10 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                     <th>OP</th>
                     <th>SO</th>
                     <th>Item</th>
+                    {/* The item code says which part number was inspected but not
+                        what the part IS, so the name gets its own column next to
+                        it rather than being crammed into the same cell. */}
+                    <th>Item Name</th>
                     <th>Operation</th>
                     <th>Acc</th>
                     <th>Rej</th>
@@ -219,7 +229,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                 <tbody>
                   {completed.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="empty-state">
+                      <td colSpan={15} className="empty-state">
                         No TPI records yet
                       </td>
                     </tr>
@@ -240,6 +250,25 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{l.soCode ?? '—'}</td>
                         <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                           {itemCodeWithRev(l.itemCode, l.itemRevision)}
+                        </td>
+                        {/* A part name is free text of any length, so it is capped
+                            and clipped rather than allowed to stretch a row that
+                            already carries thirteen other columns; the full name
+                            stays available on hover. An item the join could not
+                            resolve prints nothing at all — a dash here would read
+                            as a part deliberately left unnamed. */}
+                        <td
+                          className="fw-700"
+                          style={{
+                            fontSize: 11,
+                            maxWidth: 180,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          {...(l.itemName ? { title: l.itemName } : {})}
+                        >
+                          {l.itemName ? l.itemName : null}
                         </td>
                         <td style={{ fontSize: 11 }}>{l.operation}</td>
                         <td className="mono fw-700" style={{ color: 'var(--green)' }}>
@@ -428,8 +457,34 @@ function PendingTpi(props: {
             </span>
           ) : null}
           <div className="text2" style={{ fontSize: 11 }}>
-            {o.soCode ?? '—'} • {itemCodeWithRev(o.itemCode, o.itemRevision)} • Order:{' '}
-            {o.orderQty} pcs
+            {o.soCode ?? '—'} • {itemCodeWithRev(o.itemCode, o.itemRevision)}
+            {/* The inspector reads this line to know what is on the table in
+                front of him, and a job-card number plus a part number does not
+                tell him that — the part has to be named. It is `inline-block`
+                because this line is ordinary flowing text, and an inline span
+                ignores a width cap and would let a long name push "Order: N pcs"
+                onto a second line. A name the join could not resolve prints
+                nothing, leaving the line exactly as it has always read. */}
+            {o.itemName ? (
+              <>
+                {' • '}
+                <span
+                  className="fw-700"
+                  style={{
+                    display: 'inline-block',
+                    maxWidth: 260,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    verticalAlign: 'bottom',
+                  }}
+                  title={o.itemName}
+                >
+                  {o.itemName}
+                </span>
+              </>
+            ) : null}{' '}
+            • Order: {o.orderQty} pcs
           </div>
           {o.callDate ? (
             <div style={{ fontSize: 10, color: 'var(--amber)' }}>Called: {o.callDate}</div>

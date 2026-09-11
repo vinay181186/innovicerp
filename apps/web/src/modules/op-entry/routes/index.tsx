@@ -1,9 +1,10 @@
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -93,6 +94,14 @@ function OpEntryPage() {
     [search.jc],
   );
   const ops = useJcOpsEnriched(jcQuery, { enabled: Boolean(search.jc) });
+
+  // This whole screen is about ONE job card, so every row of `ops` carries the
+  // same card id, the same item and the same source order. The first row is
+  // therefore the header's data source — the `SO:` chip already read it that
+  // way, and naming it once stops the header line re-indexing the array for
+  // every value it prints. Null only while the ops are still loading (or the
+  // typed code matched nothing), never because a field is missing.
+  const jcHead = ops.data?.[0] ?? null;
 
   const selectedOp = useMemo(
     () => ops.data?.find((o) => o.id === search.op) ?? null,
@@ -270,16 +279,73 @@ function OpEntryPage() {
 
       {search.jc ? (
         <div>
+          {/* Wraps because this line now carries the part as well as the
+              number: on a narrow screen the SO chip drops underneath instead
+              of being pushed off the edge. At normal widths it is still one
+              line. */}
           <div
-            style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}
+            style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}
           >
-            <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
-              {search.jc}
-            </span>
-            {ops.data?.[0]?.soCode ? (
+            {/* The job card number is this screen's subject and was dead text:
+                an operator reading an entry screen had no way back to the card
+                it belongs to. `jobCardId` is NOT NULL on this shape (jc_ops
+                inner-joins job_cards), so the only reason to fall back to plain
+                text is that the ops have not arrived yet — there is no such
+                thing as an op without a card. Same target and same underlined
+                treatment as the code on the Job Cards list. */}
+            {jcHead ? (
+              <Link
+                to="/job-cards/$id"
+                params={{ id: jcHead.jobCardId }}
+                className="mono fw-700"
+                style={{ color: 'var(--cyan)', fontSize: 15 }}
+                title="Open this job card"
+              >
+                {search.jc}
+              </Link>
+            ) : (
+              <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
+                {search.jc}
+              </span>
+            )}
+            {/* WHAT is being made, beside WHICH job — the number alone left the
+                operator to look the part up on another screen before booking
+                against it. Built as chips like the `SO:` one below rather than
+                as a new treatment, and each is dropped entirely when its value
+                is null, so a card whose item did not come back reads exactly as
+                this line always has. */}
+            {jcHead?.itemCode ? (
+              /* `CODE/REV` through the one helper — the customer's drawing
+                 revision from the SO line this card was raised against. A
+                 JW-sourced or standalone card has none and keeps the bare
+                 code, with no trailing slash. */
+              <span className="text3" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
+                Item: {itemCodeWithRev(jcHead.itemCode, jcHead.itemRevision)}
+              </span>
+            ) : null}
+            {jcHead?.itemName ? (
+              /* A part name is free text, so it truncates rather than pushing
+                 the SO chip off the line; the full name stays on hover. Same
+                 weight and size the Job Cards list gives an item name next to
+                 a card code. */
+              <span
+                className="fw-700"
+                style={{
+                  fontSize: 13,
+                  maxWidth: 320,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={jcHead.itemName}
+              >
+                {jcHead.itemName}
+              </span>
+            ) : null}
+            {jcHead?.soCode ? (
               /* T27: surface the source SO/JW order on Op Entry too. */
               <span className="text3" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
-                SO: {ops.data[0].soCode}
+                SO: {jcHead.soCode}
               </span>
             ) : null}
             {ops.isFetching && !ops.isLoading ? (

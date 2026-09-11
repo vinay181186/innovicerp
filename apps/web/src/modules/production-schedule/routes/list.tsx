@@ -436,11 +436,25 @@ function Bar({
   );
   const widthPx = spanDays * COL_WIDTH - 4;
   const c = BAR_PALETTE[bar.colorKind];
+  // A JC number says WHICH JOB, not which part, so the item has to appear beside
+  // it -- but it cannot go ON the bar. The bar is a fixed 48px-per-day box with
+  // two 9-10px lines that are already ellipsised, and a third line does not fit
+  // at any width the grid allows. The hover tooltip is the only surface here
+  // that can grow, so the item code and name go there instead.
+  //
+  // The code is written bare, not as CODE/REV: this payload carries no SO-line
+  // revision, and items.revision is a different column about the item master
+  // that must never stand in for the customer's drawing revision.
+  const itemLabel = [bar.itemCode ?? '', bar.itemName ?? ''].filter((t) => t !== '').join(' · ');
   return (
     <div
       draggable={canWrite}
       onDragStart={(e) => e.dataTransfer.setData('text/jc-op-id', bar.jcOpId)}
-      title={`${bar.jcCode} Op${bar.opSeq} ${bar.operation}${bar.dueDate ? ` (Due ${bar.dueDate})` : ''}`}
+      title={
+        `${bar.jcCode} Op${bar.opSeq} ${bar.operation}` +
+        (bar.dueDate ? ` (Due ${bar.dueDate})` : '') +
+        (itemLabel ? `\n${itemLabel}` : '')
+      }
       style={{
         position: 'absolute',
         left: 2,

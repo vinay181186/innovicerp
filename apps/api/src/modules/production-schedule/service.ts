@@ -121,6 +121,11 @@ export async function getProductionSchedule(
         op.operation,
         op.machine_id AS "machineId",
         i.code AS "itemCode",
+        -- The part's NAME as well as its code. A JC number says WHICH JOB, not
+        -- which part, and the bar is far too small to carry the name, so it is
+        -- fetched for the bar's hover tooltip -- see the note at the Bar
+        -- component. Same items join as the code, so the two always agree.
+        i.name AS "itemName",
         op.planned_start AS "plannedStart",
         op.planned_end AS "plannedEnd",
         jc.due_date AS "dueDate",
@@ -179,6 +184,7 @@ export async function getProductionSchedule(
         opSeq: Number(r['opSeq'] ?? 0),
         operation: String(r['operation'] ?? ''),
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemName: (r['itemName'] as string | null) ?? null,
         plannedStart,
         plannedEnd,
         dueDate,

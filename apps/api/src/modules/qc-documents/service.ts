@@ -17,7 +17,7 @@ import type {
   QcMatrixResponse,
   QcMatrixRow,
 } from '@innovic/shared';
-import { qcDocuments } from '../../db/schema';
+import { items, jobCards, qcDocuments, salesOrderLines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
@@ -28,6 +28,42 @@ function requireCompany(user: AuthContext): string {
 }
 
 type Row = typeof qcDocuments.$inferSelect;
+
+/** Exactly the qc_documents columns `toItem` reads. Narrower than the whole
+ *  row on purpose: the register's list query now joins three more tables, so it
+ *  names its columns explicitly instead of selecting everything, and this type
+ *  is what makes the compiler prove the two shapes still agree. */
+type DocRow = Pick<
+  Row,
+  | 'id'
+  | 'companyId'
+  | 'jobCardId'
+  | 'jcCodeText'
+  | 'salesOrderId'
+  | 'soCodeText'
+  | 'category'
+  | 'docType'
+  | 'fileName'
+  | 'storagePath'
+  | 'uploadedByText'
+  | 'createdAt'
+>;
+
+/** The item facts that belong beside a JC number. A job-card number says WHICH
+ *  JOB, not which part, so every list that prints one names the part too. They
+ *  are passed in rather than read off the qc_documents row because the table
+ *  holds no item at all — they come from the joined job card. */
+interface DocItem {
+  itemCode: string | null;
+  itemRevision: string | null;
+  itemName: string | null;
+}
+
+/** Used when there is no joined job card to read the item from — the register
+ *  row for a document filed against an SO only, and the echo returned by the
+ *  upload registration, which the browser discards in favour of refetching the
+ *  list. Nulls here mean "not known on this path", never "no item". */
+const NO_DOC_ITEM: DocItem = { itemCode: null, itemRevision: null, itemName: null };
 
 /** Escape the ILIKE metacharacters in a user's search term. Without this a
  *  user typing "a_b" — or a bare "%", which listed every registered document —
@@ -41,12 +77,15 @@ function escapeLikeTerm(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-function toItem(r: Row): QcDocument {
+function toItem(r: DocRow, item: DocItem = NO_DOC_ITEM): QcDocument {
   return {
     id: r.id,
     companyId: r.companyId,
     jobCardId: r.jobCardId ?? null,
     jcCodeText: r.jcCodeText ?? null,
+    itemCode: item.itemCode ?? null,
+    itemRevision: item.itemRevision ?? null,
+    itemName: item.itemName ?? null,
     salesOrderId: r.salesOrderId ?? null,
     soCodeText: r.soCodeText ?? null,
     category: r.category,
@@ -70,7 +109,11 @@ export async function listQcDocuments(
     if (input.search) {
       // Search covers every column the QC document register (the Register view
       // in apps/web/src/modules/qc-documents/routes/list.tsx) actually shows:
-      // Doc Type, File Name, Category, JC, SO, Uploaded By and Date.
+      // Doc Type, File Name, Category, JC, Item Code, Item Name, SO, Uploaded
+      // By and Date. Item Code and Item Name arrived with the joins below, and
+      // a column the register puts on screen has to be a column the box finds —
+      // the alternative is a register that visibly shows "plunger" and then
+      // hides the row when someone types it.
       // Deliberately NOT searched:
       //  - storage path, and the matrix link columns (jc op, QC op name, serial
       //    from/to): none of them is on this table;
@@ -87,6 +130,12 @@ export async function listQcDocuments(
           OR ${qcDocuments.category} ILIKE ${term} ESCAPE '\\'
           OR ${qcDocuments.jcCodeText} ILIKE ${term} ESCAPE '\\'
           OR ${qcDocuments.soCodeText} ILIKE ${term} ESCAPE '\\'
+          -- The item behind the job card, reached through the joins added
+          -- below. A LEFT-joined column is NULL for a document with no card,
+          -- and NULL ILIKE anything is NULL, so those documents simply do not
+          -- match on these two terms — they are not excluded from the list.
+          OR ${items.code} ILIKE ${term} ESCAPE '\\'
+          OR ${items.name} ILIKE ${term} ESCAPE '\\'
           OR ${qcDocuments.uploadedByText} ILIKE ${term} ESCAPE '\\'
           -- The Date cell prints createdAt.slice(0,10) — the calendar day, not
           -- the timestamp — so match the date, not "…T09:14:22.981Z".
@@ -94,12 +143,71 @@ export async function listQcDocuments(
         )`,
       );
     }
+    // The register prints a JC number, so it must name the part too — and
+    // qc_documents holds no item at all, so the item comes off the job card.
+    // Every one of these joins is LEFT and every one of them has to be:
+    //  - job_cards, because qc_documents.job_card_id is NULLABLE. A document
+    //    filed against an SO with no job card behind it is legitimate and must
+    //    still appear in the register; an inner join would silently hide it.
+    //    The deleted_at test lives in the ON clause, not the WHERE, so a
+    //    soft-deleted card blanks the item instead of dropping the document.
+    //  - items, for the same reason: never lose a document row because its
+    //    card's item went missing.
+    //  - sales_order_lines, because a JW-sourced or standalone card has no SO
+    //    line at all. A null drawing revision is correct and common there, and
+    //    the UI renders the bare item code for it.
+    // The clause shapes are copied from the TPI read (apps/api/src/modules/
+    // tpi/service.ts) so the two cannot drift apart. Each join matches on a
+    // primary key, so none of them can multiply the document rows.
+    //
+    // Columns are named one by one rather than left as a bare .select(): on a
+    // joined query that would return each table nested under its own key and
+    // change the shape this function's mapper reads. `DocRow` is what keeps the
+    // list and the create path feeding `toItem` the same thing.
     const rows = await tx
-      .select()
+      .select({
+        id: qcDocuments.id,
+        companyId: qcDocuments.companyId,
+        jobCardId: qcDocuments.jobCardId,
+        jcCodeText: qcDocuments.jcCodeText,
+        salesOrderId: qcDocuments.salesOrderId,
+        soCodeText: qcDocuments.soCodeText,
+        category: qcDocuments.category,
+        docType: qcDocuments.docType,
+        fileName: qcDocuments.fileName,
+        storagePath: qcDocuments.storagePath,
+        uploadedByText: qcDocuments.uploadedByText,
+        createdAt: qcDocuments.createdAt,
+        itemCode: items.code,
+        itemName: items.name,
+        // The CUSTOMER's drawing revision, read live off the SO line the card
+        // was raised against. Cast to text on purpose: the contract types this
+        // as a string, and the column is only text on a database that has had
+        // migration 0119 — on one that has not it is still the old integer and
+        // would arrive wearing a string type. It is emphatically NOT
+        // items.revision, a different column about the item master; handing a
+        // plausible-looking wrong revision to an inspector is worse than
+        // handing them a blank.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+      })
       .from(qcDocuments)
+      .leftJoin(jobCards, and(eq(jobCards.id, qcDocuments.jobCardId), isNull(jobCards.deletedAt)))
+      .leftJoin(items, eq(items.id, jobCards.itemId))
+      .leftJoin(
+        salesOrderLines,
+        and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+      )
       .where(and(...conds))
       .orderBy(desc(qcDocuments.createdAt));
-    return { items: rows.map(toItem) };
+    return {
+      items: rows.map((r) =>
+        toItem(r, {
+          itemCode: r.itemCode,
+          itemRevision: r.itemRevision,
+          itemName: r.itemName,
+        }),
+      ),
+    };
   });
 }
 

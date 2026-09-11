@@ -120,6 +120,18 @@ export async function getProductionDashboard(
         jc.id AS "jobCardId",
         jc.code AS "jobCardCode", jo.op_seq AS "opSeq",
         jo.operation, m.code AS "machineCode",
+        -- WHAT is being made. A job-card number says WHICH JOB, not which part,
+        -- so the board names the item beside the code. Identical clauses to the
+        -- open-job-cards query above -- same columns, same joins, copied rather
+        -- than re-derived so the two panels on one screen cannot drift into
+        -- naming the same card's item differently.
+        i.code AS "itemCode", i.name AS "itemName",
+        -- The customer's drawing revision for this card, read live off the SO
+        -- line it was raised against rather than items.revision, which is a
+        -- different column about the item master. Cast to text for the same
+        -- reason as above: the contract types it as a string and a database
+        -- without migration 0119 still holds an integer there.
+        sol.revision::text AS "itemRevision",
         jc.order_qty AS "orderQty", vos.completed_qty AS "completedQty",
         vos.available, vos.computed_status AS "computedStatus",
         ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs",
@@ -131,6 +143,13 @@ export async function getProductionDashboard(
       FROM public.jc_ops jo
       JOIN public.v_jc_op_status vos ON vos.jc_op_id = jo.id
       JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+      -- LEFT, both of them, exactly as in the query above: a JW-sourced or
+      -- standalone card has no SO line, and an op must never fall off the
+      -- "ready to process" list because its item could not be resolved -- that
+      -- would hide work the floor still owes.
+      LEFT JOIN public.items i ON i.id = jc.item_id
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = jo.machine_id
       LEFT JOIN LATERAL (
         SELECT json_agg(
@@ -155,6 +174,9 @@ export async function getProductionDashboard(
       jobCardCode: r['jobCardCode'] as string,
       opSeq: Number(r['opSeq']),
       operation: (r['operation'] as string | null) ?? '',
+      itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
+      itemName: (r['itemName'] as string | null) ?? null,
       machineCode: (r['machineCode'] as string | null) ?? null,
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),

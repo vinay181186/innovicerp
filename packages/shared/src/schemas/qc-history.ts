@@ -22,6 +22,10 @@ export const qcHistoryPendingRowSchema = z.object({
    *  an inspector would be a plausible-looking lie about which drawing to
    *  check against. */
   itemRevision: z.string().nullable().default(null),
+  /** The part being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemName: z.string().nullable().default(null),
   operation: z.string(),
   orderQty: z.number().int(),
   completed: z.number().int().nonnegative(),
@@ -49,6 +53,10 @@ export const qcHistoryLogRowSchema = z.object({
    *  describes the item master and would put the wrong drawing revision in
    *  front of whoever reads the QC log back. */
   itemRevision: z.string().nullable().default(null),
+  /** The part being made. A job-card number says WHICH JOB, not which part, so
+   *  every screen that prints a JC number names the item beside it. Joined from
+   *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
+  itemName: z.string().nullable().default(null),
   operation: z.string(),
   accepted: z.number().int().nonnegative(),
   rejected: z.number().int().nonnegative(),

@@ -146,6 +146,23 @@ export async function listJcOpsEnriched(
         o.id,
         o.job_card_id          AS "jobCardId",
         jc.code                AS "jobCardCode",
+        -- WHAT is being made, next to WHICH JOB. Every screen built on this
+        -- shape -- Op Entry, the JC Ops table, the machine-wise op list --
+        -- printed the card number on its own and left the reader to look the
+        -- part up on another screen before they could act on the row.
+        i.code                 AS "itemCode",
+        i.name                 AS "itemName",
+        -- The CUSTOMER's drawing revision, off the SO line this card was raised
+        -- against -- not items.revision, which is a different column describing
+        -- the item master and would misname the drawing an operator is about to
+        -- cut. The sol join below is a LEFT JOIN, so a JW-sourced or standalone
+        -- card comes back null and renders as the bare code; that is common on
+        -- these screens and is the correct answer, not a gap to fill.
+        --
+        -- ::text on purpose: the contract types this as a string, but a database
+        -- without migration 0119 still holds an integer here and would hand the
+        -- screen a number. The cast is a no-op once 0119 is applied.
+        sol.revision::text     AS "itemRevision",
         COALESCE(so.code, jw.code) AS "soCode",
         o.op_seq               AS "opSeq",
         m.code                 AS "machineCode",
@@ -199,6 +216,11 @@ export async function listJcOpsEnriched(
         COALESCE(mo.machines, '[]'::json) AS "machines"
       FROM public.jc_ops o
       JOIN public.job_cards jc ON jc.id = o.job_card_id
+      -- LEFT, although job_cards.item_id is NOT NULL: an item row that cannot be
+      -- resolved (deleted master, cross-company data) must cost this op its item
+      -- NAME, never its place on the Op Entry list -- dropping the operation
+      -- would hide work that is still owed. Matches listRunningOps below.
+      LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
@@ -237,6 +259,12 @@ export async function listJcOpsEnriched(
       reworkRaisedQty: Number(r['reworkRaisedQty'] ?? 0),
       reworkRaisedToOps: (r['reworkRaisedToOps'] as string | null) ?? null,
       activeRunningOpId: (r['activeRunningOpId'] as string | null) ?? null,
+      // Pinned to null rather than left to the spread above: the contract types
+      // these three as `string | null`, and a row that resolved no item or no SO
+      // line must arrive as an explicit null, never as an absent key.
+      itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
+      itemName: (r['itemName'] as string | null) ?? null,
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
       ),
@@ -1555,6 +1583,17 @@ async function selectTimeChangeRequests(
       o.op_seq                          AS "opSeq",
       o.operation                       AS "operation",
       l.log_type::text                  AS "logType",
+      -- WHAT was being made. A job-card number says WHICH JOB, not WHICH PART,
+      -- and an approver retiming an entry has to be able to see the part. Both
+      -- joins are LEFT: a correction request must never vanish from the inbox
+      -- because an item or an SO line could not be resolved.
+      i.code                            AS "itemCode",
+      -- The CUSTOMER'S drawing revision, read live off the SO line the card was
+      -- raised against. Null on a JW-sourced or standalone card, which then
+      -- shows the bare code. NEVER items.revision — that column is about the
+      -- item master and would print a plausible-looking lie in its place.
+      sol.revision::text                AS "itemRevision",
+      i.name                            AS "itemName",
       COALESCE(m.code, l.machine_code_text) AS "machineCode",
       l.qty                             AS "qty",
       l.reject_qty                      AS "rejectQty",
@@ -1577,7 +1616,18 @@ async function selectTimeChangeRequests(
     JOIN public.op_log l ON l.id = r.op_log_id
     JOIN public.jc_ops o ON o.id = r.jc_op_id AND o.deleted_at IS NULL
     JOIN public.job_cards jc ON jc.id = o.job_card_id
+    -- The m alias is still read by the machineCode column above. It was briefly
+    -- lost when the item joins were added on this line, which made every call
+    -- raise "missing FROM-clause entry for table m" -- invisible to typecheck
+    -- and lint, because this query is a template string. Do not remove it
+    -- without also removing COALESCE(m.code, ...) from the SELECT.
+    -- (No backticks in comments inside a template literal: one ends the string.)
     LEFT JOIN public.machines m ON m.id = l.machine_id AND m.deleted_at IS NULL
+    -- No deleted_at filter on items on purpose: a retired item master row still
+    -- named the part this entry was logged against, and blanking it would leave
+    -- the approver with a bare job number.
+    LEFT JOIN public.items i ON i.id = jc.item_id
+    LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
     LEFT JOIN public.users ru ON ru.id = r.requested_by
     LEFT JOIN public.users du ON du.id = r.decided_by
     WHERE r.company_id = ${companyId}::uuid
@@ -1591,6 +1641,12 @@ async function selectTimeChangeRequests(
   return (result as unknown as Array<Record<string, unknown>>).map((r) => ({
     ...r,
     opSeq: Number(r['opSeq']),
+    // Named one by one rather than left to the spread above: the return is a
+    // double cast, which TypeScript does not check for missing properties, so a
+    // typo'd alias would silently ship an item-less approval card.
+    itemCode: (r['itemCode'] as string | null) ?? null,
+    itemRevision: (r['itemRevision'] as string | null) ?? null,
+    itemName: (r['itemName'] as string | null) ?? null,
     qty: Number(r['qty'] ?? 0),
     rejectQty: Number(r['rejectQty'] ?? 0),
     prevStartTime: r['prevStartTime'] ? String(r['prevStartTime']).slice(0, 8) : null,

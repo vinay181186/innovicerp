@@ -189,6 +189,12 @@ function ProductionDashboardPage(): React.JSX.Element {
                   <thead>
                     <tr>
                       <th>JC No.</th>
+                      {/* A JC number says WHICH JOB, not which part. This panel
+                          is the full-width work list, so unlike the 110px
+                          machine-load cell the code and the name each get their
+                          own column instead of sharing one token. */}
+                      <th>Item Code</th>
+                      <th>Item Name</th>
                       <th>Op</th>
                       <th>Operation</th>
                       <th>Machine</th>
@@ -591,6 +597,26 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
         >
           {op.jobCardCode}
         </Link>
+      </td>
+      {/* The item the card is for. The code leads because it carries the drawing
+          revision (CODE/REV) the operator works to; a card with no SO line
+          behind it has no revision and prints the bare code. */}
+      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
+        {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
+      </td>
+      {/* Part names run long, so the name truncates on one line and carries the
+          full text in its tooltip. Nothing to show renders empty, not a dash. */}
+      <td
+        style={{
+          fontSize: 11,
+          maxWidth: 180,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        title={op.itemName ?? ''}
+      >
+        {op.itemName ?? ''}
       </td>
       <td className="td-ctr mono">{op.opSeq}</td>
       <td>{op.operation}</td>
