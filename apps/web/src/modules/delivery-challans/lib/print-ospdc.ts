@@ -28,6 +28,7 @@ import {
   challanEndDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 
@@ -91,6 +92,14 @@ export function printOspDc(args: {
     // production challan today, so this normally prints as a blank rule.
     { label: 'SO No.', value: dc.soCode ?? dc.soRefText ?? '', variant: 'mono' },
     { label: 'PO No.', value: linkedPo, variant: 'mono' },
+    // The customer's DRAWING revision for the SO line this challan hangs off,
+    // printed as its own labelled field rather than appended to the SO number:
+    // "IN-SO-0012/B" on a gate pass reads as a revision of the sales order,
+    // which is not a thing that exists. Omitted entirely when there is none —
+    // a blank "Drawing Rev" rule on a challan invites someone to pencil one in.
+    ...(dc.soLineRevision
+      ? [{ label: 'Drawing Rev', value: dc.soLineRevision, variant: 'mono' as const }]
+      : []),
     // Not a stored field — challan date + 3 months, which is the return window
     // the printed conditions promise.
     { label: 'Challan end date', value: challanEndDate(dc.dcDate), variant: 'mono', strong: true },
@@ -112,7 +121,11 @@ export function printOspDc(args: {
       // LIVE master code/name first, issue-time snapshot only as the fallback.
       // itemCodeText is filled with the item NAME when the source line had no
       // code, so printing it alone put a part name under the item code.
-      itemCode: l.itemCode ?? l.itemCodeText,
+      // Plus the customer's drawing revision — "IN-IT-0007/B" — but only on a
+      // line the API could prove IS the customer's part. On a raw-material or
+      // bought-in line the revision is null and the code prints bare, because
+      // a drawing revision beside a bar of steel would say something untrue.
+      itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
       itemName: l.itemName ?? l.itemNameText,
       uom: l.uom,
       // HSN lives on the item master and the challan line does not carry it,

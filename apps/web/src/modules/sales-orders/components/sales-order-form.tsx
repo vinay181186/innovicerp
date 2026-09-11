@@ -67,9 +67,14 @@ interface LineFormValue {
   partName: string;
   material?: string | undefined;
   drawingNo?: string | undefined;
-  /** The drawing file's revision number. Server-owned: it bumps when the
-   *  uploaded drawing actually changes, so the form only ever displays it. */
-  revision: number;
+  /** The CUSTOMER'S drawing revision, exactly as printed on the drawing they
+   *  sent — 'A', 'B', 'R1', '0'. Text and not a number, because a revision is a
+   *  label on a piece of paper and is a letter as often as a digit. Typed by the
+   *  person entering the order and compulsory. It says nothing about whether a
+   *  drawing FILE is attached: migration 0119 split the two, because while the
+   *  server owned this it bumped on every upload and so invented revisions that
+   *  were never printed on any drawing. */
+  revision: string;
   drawingFilePath?: string | undefined;
   uom: Uom;
   orderQty: number;
@@ -115,7 +120,12 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   status: 'open',
   gstPercent: SO_GST_DEFAULT,
 };
-const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: 0 };
+// A fresh line starts with an EMPTY Rev, deliberately. Pre-filling '0' made a
+// revision nobody had read off a drawing look like one somebody had confirmed,
+// and a box that already holds a plausible value is a box people tab straight
+// past. Empty plus the compulsory check below forces the question to be asked
+// once per line, which is the whole point of making it compulsory.
+const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: '' };
 const NEW_MILESTONE: MilestoneFormValue = { lotNo: 1, qty: 0 };
 
 /** Chrome for the form's own action bar. The Back link, title and breadcrumb are
@@ -421,6 +431,13 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           partName: master.name,
           material: r.material ?? master.material ?? '',
           drawingNo: r.drawingNo ?? master.drawingNo ?? '',
+          // Set explicitly AFTER the `...r` spread, never through it: an absent
+          // Rev column spreads `revision: undefined` over the value below.
+          // A sheet with no Rev column leaves the box EMPTY, exactly like a
+          // hand-added line — the compulsory check then makes the person fill it
+          // in rather than letting fifty imported lines inherit a revision that
+          // nobody read off a drawing.
+          revision: r.revision?.trim() || NEW_LINE.revision,
           uom: master.uom,
         });
       }
@@ -496,6 +513,14 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         setLineError(`Line ${badQty + 1}: Qty must be ≥ 1.`);
         return;
       }
+      // Rev is compulsory since migration 0119. Caught here, in the same
+      // lineError strip as the two rules above, so the user is told which line
+      // is wrong instead of being handed the API's raw schema rejection.
+      const badRev = values.lines.findIndex((l) => !String(l.revision ?? '').trim());
+      if (badRev >= 0) {
+        setLineError(`Line ${badRev + 1}: enter the drawing Rev — the revision printed on the customer's drawing.`);
+        return;
+      }
     }
 
     const headerOut = {
@@ -529,6 +554,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         // explicit null is what tells it the drawing was removed — and what
         // makes the removal show up in the drawing history.
         drawingFilePath: l.drawingFilePath || null,
+        // Trimmed and always sent; the form is the only source of it and the API
+        // requires a non-empty string. The '0' fallback is unreachable for a
+        // component line — the compulsory check above has already refused the
+        // save — and exists only for the EQUIPMENT path, which has no Rev box of
+        // its own and so has nobody to ask.
+        revision: String(l.revision ?? '').trim() || '0',
         uom: l.uom,
         orderQty: Number(l.orderQty),
         rate: Number(l.rate),
@@ -998,11 +1029,13 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             onChange={(p) => setValue(`lines.${idx}.drawingFilePath` as const, p, { shouldDirty: true })}
                           />
                         </td>
-                        {/* Rev is the DRAWING FILE's number, not a field of the line. The
-                            server bumps it when the uploaded drawing actually changes, so a
-                            typed-over value here would just be a lie about which drawing this
-                            line ships against. Display only; new lines start at 0. */}
-                        <td><input className="innovic-input" autoComplete="off" readOnly value={ln?.revision ?? 0} /></td>
+                        {/* The customer's drawing revision, typed exactly as it reads on
+                            their print ('A', 'B', 'R1', '0'). Independent of the Drawing File
+                            cell beside it in BOTH directions: a customer re-issues a revision
+                            without sending a new file, and the same revision can be re-uploaded
+                            after a bad scan. Compulsory — onValid refuses the save when it is
+                            blank, and the API rejects a blank one too. */}
+                        <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} {...register(`lines.${idx}.revision` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
@@ -1231,9 +1264,12 @@ function LineItemCascade({
       `lines.${idx}.itemId`,
       `lines.${idx}.itemCodeText`,
       // The drawing file is line-specific, uploaded by the user — never
-      // auto-filled from the item master. (Rev is not listed: nobody enters it,
-      // the server derives it from the drawing file.)
+      // auto-filled from the item master. Rev is a fact of the same kind: it is
+      // the revision printed on the customer's drawing for THIS order, not a
+      // property of the item, so re-picking the item code must never overwrite
+      // what was typed there.
       `lines.${idx}.drawingFilePath`,
+      `lines.${idx}.revision`,
     ],
     setValueOptions: { shouldDirty: true },
   });

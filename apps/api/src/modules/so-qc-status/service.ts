@@ -152,6 +152,11 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
       SELECT
         sol.id AS "soLineId", sol.line_no AS "lineNo",
         COALESCE(i.code, sol.item_code_text) AS "itemCode", sol.part_name AS "partName",
+        -- The customer's drawing revision typed on this line (migration 0119),
+        -- cast to text: the contract types it as a string, but a database that has
+        -- not had 0119 still holds the old integer here and would hand the UI a
+        -- number. Never items.revision, which describes the item master instead.
+        sol.revision::text AS "itemRevision",
         sol.order_qty AS "orderQty",
         COUNT(DISTINCT jc.id)::int AS "jcCount",
         COUNT(vos.jc_op_id) FILTER (WHERE vos.qc_required OR vos.op_type = 'qc')::int AS "qcOpsTotal",
@@ -423,6 +428,7 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         soLineId,
         lineNo: num(r['lineNo']),
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         partName: (r['partName'] as string | null) ?? null,
         orderQty: num(r['orderQty']),
         jcCount: num(r['jcCount']),

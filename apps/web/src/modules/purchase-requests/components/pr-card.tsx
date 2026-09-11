@@ -29,6 +29,7 @@
 import type { PurchaseRequestListItem } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { itemCodeWithRev } from '@/lib/item-code';
 import {
   type PrOrderBalance,
   prBalanceBadgeClass,
@@ -175,7 +176,10 @@ export function PrCard({
           </Link>
           <span style={{ fontSize: 12 }}>
             <span className="mono" style={{ color: 'var(--purple)' }}>
-              {pr.itemCode ?? pr.itemCodeText ?? '—'}
+              {/* CODE/REV — the customer's drawing revision off the SO line this
+                  request was raised against. A PR with no SO behind it has no
+                  revision and keeps the bare code. */}
+              {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)}
             </span>{' '}
             <span className="fw-700">{pr.itemName ?? ''}</span>
           </span>

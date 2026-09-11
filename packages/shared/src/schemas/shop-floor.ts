@@ -13,6 +13,13 @@ export const shopFloorRunningRowSchema = z.object({
   opSeq: z.number().int().positive(),
   operation: z.string(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for this job card, read off the SO line it
+   *  was raised against (job_cards.source_so_line_id → sales_order_lines.revision).
+   *  Null is normal on this board, not an error: a card raised from a job-work
+   *  line or standalone has no SO line behind it, and those run on the machines
+   *  alongside SO work. Null renders as the bare item code — never a trailing
+   *  slash, and never items.revision, which describes the item master instead. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
   orderQty: z.number().int().nonnegative(),

@@ -9,6 +9,7 @@ import { Loader2, Printer } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
 import { MachineSplitLines } from '@/components/shared/machine-split';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '../../settings/api';
 import { useMachineLoading } from '../api';
@@ -367,7 +368,7 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
     <>
       <td className="td-code cyan">{op.jobCardCode}</td>
       <td style={{ fontSize: 11 }}>
-        {op.itemCode ?? ''}
+        {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
         {op.itemName ? ` — ${op.itemName}` : ''}
       </td>
       <td className="td-ctr mono text3" style={{ fontSize: 11 }}>

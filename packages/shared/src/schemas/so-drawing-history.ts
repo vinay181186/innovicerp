@@ -1,10 +1,17 @@
 // Per-SO-line drawing revision history.
 //
-// The Rev number on a sales-order line belongs to the DRAWING FILE, not to the
-// line and not to the item. A line is born at Rev 0 and climbs by one every
-// time its drawing file actually changes — a new file uploaded over an old one,
-// or the drawing cleared away. Re-saving the SO without touching the drawing
-// changes nothing, so the history is a record of drawings, not of saves.
+// This is a record of DRAWINGS, not of saves: a row is written only when a
+// line's drawing file actually changes — a new file uploaded over an old one, or
+// the drawing cleared away. Re-saving the SO without touching the drawing writes
+// nothing.
+//
+// `revisionNo` counts those changes — "the 3rd drawing this line has had". Since
+// migration 0119 it is NOT the line's Rev. The line's Rev is the customer's
+// drawing revision, free text a human types ('A', 'B', 'R1'), independent of
+// whether anything was uploaded; it is snapshotted onto each row as
+// `lineRevisionText` so a history entry can still say which revision it belonged
+// to. Before 0119 the two were the same number, and the backfill reflects that
+// exactly.
 //
 // The child rows are append-only and never updated: each one is the drawing as
 // it stood at that revision, with the file it pointed at. Nothing is ever
@@ -27,7 +34,12 @@ export type SoDrawingAction = z.infer<typeof soDrawingActionSchema>;
  *  no file to open. */
 export const soDrawingRevisionSchema = z.object({
   id: z.string().uuid(),
+  /** How many times this line's drawing has changed, this being the Nth. Not
+   *  the line's Rev — see the file header. */
   revisionNo: z.number().int().nonnegative(),
+  /** The line's typed Rev when this drawing change was recorded. Null only on a
+   *  row the 0119 backfill could not reach. */
+  lineRevisionText: z.string().nullable(),
   action: soDrawingActionSchema,
   drawingFilePath: z.string().nullable(),
   /** Drawing number as typed on the line when this revision was recorded. */
@@ -47,9 +59,11 @@ export const soDrawingHistoryLineSchema = z.object({
   itemCode: z.string().nullable(),
   partName: z.string(),
   drawingNo: z.string().nullable(),
-  /** The line's current Rev — equal to revisions[0].revisionNo when any
-   *  revision exists. */
-  currentRevision: z.number().int().nonnegative(),
+  /** The line's current Rev, as typed on the SO line today. Text since 0119,
+   *  and no longer tied to revisions[0].revisionNo — the drawing may have
+   *  changed three times under one revision, or the revision may have moved on
+   *  without the drawing changing at all. */
+  currentRevision: z.string(),
   /** Newest revision FIRST. Empty when the line never had a drawing. */
   revisions: z.array(soDrawingRevisionSchema),
 });

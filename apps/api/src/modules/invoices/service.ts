@@ -20,6 +20,7 @@ import {
   invoiceLines,
   invoicePayments,
   invoices,
+  salesOrderLines,
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -182,14 +183,30 @@ async function getInvoiceInternal(
       qty: invoiceLines.qty,
       rate: invoiceLines.rate,
       lineAmount: invoiceLines.lineAmount,
+      // The customer's drawing revision, off the SO line this invoice line was
+      // raised against. The one exception to the freeze rule above, and not a
+      // choice: no snapshot column for it exists, so the SO line is the only
+      // place it can be read. It is NOT items.revision, which describes the
+      // item master and would print a different, plausible-looking number.
+      //
+      // Cast to text on purpose. The contract types it as a string, and the
+      // column is only text on a database that has had migration 0119; on one
+      // that has not it is still the old integer, and a bare select would hand
+      // the UI a number wearing a string type. The cast is a no-op once 0119 is
+      // in.
+      itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
     })
     .from(invoiceLines)
+    // LEFT, never inner: invoice_lines.sales_order_line_id is nullable, and a
+    // line with no SO behind it must still come back — with a null revision.
+    .leftJoin(salesOrderLines, eq(salesOrderLines.id, invoiceLines.salesOrderLineId))
     .where(and(eq(invoiceLines.invoiceId, id), isNull(invoiceLines.deletedAt)))
     .orderBy(asc(invoiceLines.lineNo));
   const lines: InvoiceLineRow[] = lineRows.map((l) => ({
     id: l.id,
     lineNo: l.lineNo,
     itemCode: l.itemCodeText,
+    itemRevision: l.itemRevision ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemNameText,
     qty: l.qty,
@@ -341,6 +358,7 @@ type InvLineRow = {
   so_line_id: string;
   line_no: number;
   item_code: string | null;
+  item_revision: string | null;
   item_name: string;
   order_qty: string | number;
   dispatched_qty: string | number;
@@ -359,6 +377,12 @@ async function loadInvoiceableLines(
     sql.raw(`
         SELECT sol.id AS so_line_id, sol.line_no,
           COALESCE(i.code, sol.item_code_text) AS item_code,
+          -- The customer's drawing revision, typed on this SO line itself. Cast
+          -- to text because the contract types it as a string and the column is
+          -- only text on a database that has had migration 0119 — without the
+          -- cast a pre-0119 database hands the UI a number. Never i.revision:
+          -- that is a different column, about the item rather than the order.
+          sol.revision::text AS item_revision,
           sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
           COALESCE((
             SELECT SUM(il.qty) FROM invoice_lines il
@@ -378,6 +402,7 @@ async function loadInvoiceableLines(
       salesOrderLineId: r.so_line_id,
       lineNo: Number(r.line_no) || 0,
       itemCode: r.item_code,
+      itemRevision: r.item_revision ?? null,
       itemName: r.item_name,
       orderQty: Math.round(n(r.order_qty)),
       dispatchedQty: dispatched,

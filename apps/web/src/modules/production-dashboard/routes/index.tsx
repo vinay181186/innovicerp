@@ -23,6 +23,7 @@ import type {
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachineLoading } from '@/modules/machine-loading/api';
 import { useProductionDashboard } from '../api';
@@ -383,7 +384,11 @@ function MachineCard({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {o.itemName ?? o.itemCode ?? ''}
+                    {/* The cell is capped at 110px and ellipsised, so it holds one
+                        token and no more. The code carries the drawing revision
+                        the operator is being asked to check, so the code leads
+                        and the name is only the fallback for a card with none. */}
+                    {itemCodeWithRev(o.itemCode, o.itemRevision, o.itemName ?? '')}
                   </td>
                   <td style={{ fontSize: 11 }}>{o.operation}</td>
                   <td className="td-ctr">
@@ -645,7 +650,8 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
           textOverflow: 'ellipsis',
         }}
       >
-        {jc.itemName ?? jc.itemCode ?? '—'} — <b>{jc.orderQty} pcs</b>
+        {itemCodeWithRev(jc.itemCode, jc.itemRevision, jc.itemName ?? '—')} —{' '}
+        <b>{jc.orderQty} pcs</b>
       </div>
       {/* Legacy progBar(pct,'#3b82f6') (L1972-1974, called L3728). The literal
           is a dark-theme blue → mapped to the nearest token, var(--blue).

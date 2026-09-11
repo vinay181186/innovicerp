@@ -41,6 +41,7 @@ import { Loader2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useCreatePurchaseOrderFromPrBatch } from '@/modules/purchase-orders/api';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
@@ -150,6 +151,9 @@ export function OutsourceJobsView(): React.JSX.Element {
             pr.sourceJcOpSeq,
             pr.itemCode,
             pr.itemCodeText,
+            // The drawing revision is on screen beside the code, so it is
+            // searchable too — a planner hunting "Rev B" work can type it.
+            pr.itemRevision,
             pr.itemName,
             pr.operation,
             pr.vendorName,
@@ -546,7 +550,11 @@ export function OutsourceJobsView(): React.JSX.Element {
                             {pr.sourceJcCode ?? '—'}
                           </td>
                           <td style={{ fontSize: 11 }}>
-                            {pr.itemCode ?? pr.itemCodeText ?? '—'} — {pr.itemName ?? '—'}
+                            {/* CODE/REV — the drawing revision off the SO line
+                                behind this request; blank-free bare code when
+                                the request has no SO behind it. */}
+                            {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)} —{' '}
+                            {pr.itemName ?? '—'}
                           </td>
                           <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                             {pr.operation ?? '—'}
@@ -670,7 +678,8 @@ function OspRow({
         {pr.sourceJcCode ? `${pr.sourceJcCode}${pr.sourceJcOpSeq ? ' op' + pr.sourceJcOpSeq : ''}` : '—'}
       </td>
       <td style={{ fontSize: 11 }}>
-        {pr.itemCode ?? pr.itemCodeText ?? '—'}{' '}
+        {/* CODE/REV — same rule as the review table above. */}
+        {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)}{' '}
         <span className="text3">{pr.itemName ?? ''}</span>
       </td>
       <td style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>

@@ -17,6 +17,13 @@ export const jcStatusSummaryReport: RegisteredReport = {
     columns: [
       { key: 'computed_status', label: 'Status', type: 'text' },
       { key: 'item_code', label: 'Item code', type: 'text' },
+      // Customer drawing revision of the SO line the job cards were raised
+      // from. It is part of the grouping key, not just a display column: two
+      // batches of the same item cut to revision A and revision B are two
+      // different pieces of work and must not be counted as one line. Kept
+      // separate from item_code so the sheet still VLOOKUPs against Item
+      // Master. Blank for JW-sourced or standalone JCs.
+      { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
       { key: 'item_name', label: 'Item name', type: 'text' },
       { key: 'jc_count', label: 'JC count', type: 'number' },
       { key: 'total_order_qty', label: 'Order qty (total)', type: 'number' },
@@ -29,6 +36,11 @@ export const jcStatusSummaryReport: RegisteredReport = {
       SELECT
         v.computed_status,
         i.code AS item_code,
+        -- ::text because production has not had migration 0119 applied and
+        -- still holds an integer here. COALESCE to '' so JW-sourced and
+        -- standalone JCs land in one clearly blank bucket instead of a NULL
+        -- group that reads as a dash in the sheet.
+        COALESCE(sol.revision::text, '') AS so_revision,
         i.name AS item_name,
         COUNT(*)::int AS jc_count,
         COALESCE(SUM(jc.order_qty), 0)::int AS total_order_qty,
@@ -37,8 +49,12 @@ export const jcStatusSummaryReport: RegisteredReport = {
       FROM public.v_jc_status v
       JOIN public.job_cards jc ON jc.id = v.job_card_id
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
+      -- LEFT, never inner: a JC raised from a JW line or by hand has no source
+      -- SO line, and this summary is the whole open-work picture — those JCs
+      -- must keep their row, with a blank revision.
+      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
       WHERE v.company_id = ${companyId}::uuid
-      GROUP BY v.computed_status, i.code, i.name
+      GROUP BY v.computed_status, i.code, COALESCE(sol.revision::text, ''), i.name
       ORDER BY
         CASE v.computed_status
           WHEN 'qc_pending' THEN 1
@@ -48,12 +64,16 @@ export const jcStatusSummaryReport: RegisteredReport = {
           WHEN 'closed' THEN 5
           ELSE 99
         END,
-        i.code
+        i.code,
+        COALESCE(sol.revision::text, '')
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       computed_status: String(r['computed_status'] ?? ''),
       item_code: (r['item_code'] as string | null) ?? null,
+      // Always a string here — the SQL already COALESCEs to '' — but keep the
+      // guard so the cell is blank rather than "null" if the shape ever moves.
+      so_revision: String(r['so_revision'] ?? ''),
       item_name: (r['item_name'] as string | null) ?? null,
       jc_count: Number(r['jc_count'] ?? 0),
       total_order_qty: Number(r['total_order_qty'] ?? 0),

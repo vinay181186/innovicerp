@@ -64,6 +64,13 @@ export const soStatusJcSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision, read live off `sales_order_lines.revision`
+   *  on the SO line this job card was raised against (`job_cards.source_so_line_id`).
+   *  Null when the card has no SO line behind it — a JW-sourced or standalone card,
+   *  or a line since deleted — and null must render as the bare item code, never a
+   *  trailing slash and never `items.revision`, which is a different column about
+   *  the item master and would be a plausible-looking lie on every row. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   orderQty: z.number().int().positive(),
   doneQty: z.number().int().nonnegative(),
@@ -127,6 +134,12 @@ export const soStatusLineSchema = z.object({
   lineNo: z.number().int().positive(),
   clientPoLineNo: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision typed on this very SO line
+   *  (`sales_order_lines.revision`, migration 0119). Nullable only because a
+   *  database that has not had 0119 has nothing to give; on a migrated one every
+   *  line carries a value. Never `items.revision` — a different column about the
+   *  item itself. */
+  itemRevision: z.string().nullable().default(null),
   itemCodeText: z.string().nullable(),
   partName: z.string().nullable(),
   orderQty: z.number().int().positive(),

@@ -6,6 +6,7 @@
 // data and the DC-line lookup the receipt rows resolve their item against.
 
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 export function DcReceiptsPanel({
   receipts,
@@ -75,7 +76,15 @@ export function DcReceiptsPanel({
                           {/* Live master code/name first, issue-time snapshot as
                               the fallback — the Lines table already did this, so
                               a renamed item read two ways on one page. */}
-                          <span className="mono">{ll?.itemCode ?? ll?.itemCodeText ?? '—'}</span>
+                          {/* And the drawing revision the same way, so a part
+                              does not read as "IN-IT-0007/B" in the Lines table
+                              and as bare "IN-IT-0007" here. */}
+                          <span className="mono">
+                            {itemCodeWithRev(
+                              ll?.itemCode ?? ll?.itemCodeText,
+                              ll?.itemRevision,
+                            )}
+                          </span>
                           {ll?.itemName ?? ll?.itemNameText ? (
                             <span className="text3" style={{ marginLeft: 6 }}>
                               {ll?.itemName ?? ll?.itemNameText}

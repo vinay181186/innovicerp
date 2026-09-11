@@ -264,6 +264,7 @@ type DispatchableRow = {
   so_line_id: string;
   line_no: number;
   item_code: string | null;
+  item_revision: string | null;
   item_name: string;
   order_qty: string | number;
   dispatched_qty: string | number;
@@ -327,6 +328,12 @@ async function loadDispatchable(
     sql.raw(`
       SELECT sol.id AS so_line_id, sol.line_no,
         COALESCE(i.code, sol.item_code_text) AS item_code,
+        -- The customer's drawing revision, typed on this SO line itself. Cast to
+        -- text because the contract types it as a string and the column is only
+        -- text on a database that has had migration 0119; on one that has not it
+        -- is still the old integer. Never i.revision — a different column, about
+        -- the item rather than about this order's drawing.
+        sol.revision::text AS item_revision,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
         CASE
           -- Assembly / equipment line: read the parent finished-good's on-hand
@@ -429,6 +436,7 @@ async function loadDispatchable(
       salesOrderLineId: r.so_line_id,
       lineNo: Number(r.line_no) || 0,
       itemCode: r.item_code,
+      itemRevision: r.item_revision ?? null,
       itemName: r.item_name,
       orderQty,
       readyQty: ready,
@@ -606,6 +614,7 @@ type RegisterRow = {
   so_no: string | null;
   client_po_line_no: string | null;
   item_code: string | null;
+  item_revision: string | null;
   item_code_text: string | null;
   item_name: string;
   qty: number;
@@ -634,6 +643,14 @@ export async function listDispatchRegister(
         h.customer_text AS customer, h.remarks,
         i.code AS item_code, l.item_code_text AS item_code_text,
         l.item_name, l.qty,
+        -- The customer's drawing revision, off the SO line this dispatch line
+        -- shipped against — the same LEFT JOIN that already supplies the CPO
+        -- line no. and UOM below, so a line with no SO behind it still comes
+        -- back, with a null revision. Cast to text: the contract types it as a
+        -- string, and the column is only text on a database that has had
+        -- migration 0119. Never items.revision (i.revision above) — a different
+        -- column, about the item master rather than this order's drawing.
+        sol.revision::text AS item_revision,
         sol.client_po_line_no, sol.uom::text AS uom,
         u.full_name AS dispatched_by,
         st.stock_before, st.stock_after,
@@ -688,6 +705,7 @@ export async function listDispatchRegister(
         soNo: r.so_no,
         clientPoLineNo: r.client_po_line_no,
         itemCode: r.item_code,
+        itemRevision: r.item_revision ?? null,
         itemCodeText: r.item_code_text,
         itemName: r.item_name,
         qty: Math.round(n(r.qty)),
@@ -728,6 +746,11 @@ async function getDispatchInternal(
       lineNo: customerDispatchLines.lineNo,
       salesOrderLineId: customerDispatchLines.salesOrderLineId,
       itemCode: items.code,
+      // The customer's drawing revision, off the SO line this dispatch line
+      // shipped against. Cast to text because the contract types it as a string
+      // and the column is only text on a database that has had migration 0119.
+      // Never items.revision — a different column, about the item master.
+      itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
       itemCodeText: customerDispatchLines.itemCodeText,
       itemName: customerDispatchLines.itemName,
       qty: customerDispatchLines.qty,
@@ -737,6 +760,10 @@ async function getDispatchInternal(
       items,
       and(eq(items.id, customerDispatchLines.itemId), isNull(items.deletedAt)),
     )
+    // LEFT, never inner: customer_dispatch_lines.sales_order_line_id is
+    // nullable, and a line with no SO behind it must still come back — with a
+    // null revision rather than vanishing from the dispatch.
+    .leftJoin(salesOrderLines, eq(salesOrderLines.id, customerDispatchLines.salesOrderLineId))
     .where(
       and(
         eq(customerDispatchLines.customerDispatchId, id),
@@ -750,6 +777,7 @@ async function getDispatchInternal(
     lineNo: l.lineNo,
     salesOrderLineId: l.salesOrderLineId,
     itemCode: l.itemCode,
+    itemRevision: l.itemRevision ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemName,
     qty: l.qty,

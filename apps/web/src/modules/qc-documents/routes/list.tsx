@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoQcStatusView } from '@/modules/so-qc-status/components/so-qc-status-view';
@@ -181,7 +182,16 @@ function MatrixView(): React.JSX.Element {
           ? 'No JC'
           : 'No QC';
   const filteredRows = rowsAll.filter((r) => {
-    if (fCode && !(r.itemCode ?? '').toLowerCase().includes(fCode.toLowerCase())) return false;
+    // Match on the code as printed (CODE/REV) as well as on the bare code, so
+    // "IN-IT-0007/B" typed straight off the screen finds its row while a plain
+    // "IN-IT-0007" still finds every revision of it.
+    if (
+      fCode &&
+      !`${r.itemCode ?? ''} ${itemCodeWithRev(r.itemCode, r.itemRevision, '')}`
+        .toLowerCase()
+        .includes(fCode.toLowerCase())
+    )
+      return false;
     if (fName && !(r.itemName ?? '').toLowerCase().includes(fName.toLowerCase())) return false;
     if (fJc && !(r.jcCode ?? '').toLowerCase().includes(fJc.toLowerCase())) return false;
     if (fOverall && overallLabel(r.overall) !== fOverall) return false;
@@ -422,7 +432,7 @@ function MatrixView(): React.JSX.Element {
                       {r.clientPoLineNo ?? '—'}
                     </td>
                     <td className="td-code" style={{ color: 'var(--purple)' }}>
-                      {r.itemCode ?? ''}
+                      {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
                     </td>
                     <td style={{ fontSize: 11 }}>{r.itemName ?? ''}</td>
                     <td className="mono fw-700">{r.orderQty}</td>
@@ -574,6 +584,10 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
     'Ln',
     'CPO Ln',
     'Item Code',
+    // The drawing revision rides its own column instead of being glued into Item
+    // Code. People filter and VLOOKUP this sheet against Item Master, where
+    // "IN-IT-0007/B" matches nothing. Same call as the Job Card export.
+    'Drawing Rev',
     'Item Name',
     'Qty',
     'JC No',
@@ -595,6 +609,7 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
       r.lineNo,
       r.clientPoLineNo ?? '',
       r.itemCode ?? '',
+      r.itemRevision ?? '',
       r.itemName ?? '',
       r.orderQty,
       r.jcCode ?? '—',
@@ -678,7 +693,8 @@ function LineDetailModal({
       >
         <div className="panel-hdr">
           <span className="panel-title">
-            📄 QC Documents {data ? `— ${data.itemCode ?? ''} (${data.jcCode})` : ''}
+            📄 QC Documents{' '}
+            {data ? `— ${itemCodeWithRev(data.itemCode, data.itemRevision, '')} (${data.jcCode})` : ''}
           </span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
@@ -739,7 +755,10 @@ function LineDetailBody({
         <div>
           <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
           <br />
-          <b style={{ color: 'var(--purple)' }}>{data.itemCode ?? ''}</b> {data.itemName ?? ''}
+          <b style={{ color: 'var(--purple)' }}>
+            {itemCodeWithRev(data.itemCode, data.itemRevision, '')}
+          </b>{' '}
+          {data.itemName ?? ''}
         </div>
         <div>
           <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC</span>

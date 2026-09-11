@@ -1443,11 +1443,20 @@ export const salesOrderLines = pgTable(
     partName: text('part_name').notNull(),
     material: text('material'),
     drawingNo: text('drawing_no'),
-    // The DRAWING FILE's revision number, owned by the server (migration 0112).
-    // Born at 0; +1 only when drawing_file_path actually changes. Every step is
-    // archived in so_line_drawing_revisions below. Was free text until 0112 —
-    // the only three values in the wild were '1', so the cast was lossless.
-    revision: integer('revision').notNull().default(0),
+    // The customer's DRAWING REVISION, as written on the drawing they sent —
+    // often a letter ('A', 'B'), sometimes a number. Typed on the SO line and
+    // compulsory on the form (migration 0119).
+    //
+    // Independent of drawingFilePath. 0112 had made this an integer the server
+    // owned, climbing by one whenever the drawing FILE changed; that welded two
+    // separate facts together, so a revision could not be recorded without an
+    // upload and re-uploading invented one that does not exist on paper. Nothing
+    // on the server computes this value any more.
+    //
+    // The default exists for the server paths that insert a line without naming
+    // a revision (BOM cascade, JW-sourced lines); "compulsory" is enforced on
+    // the form, the only layer that can ask a human.
+    revision: text('revision').notNull().default('0'),
     drawingFilePath: text('drawing_file_path'),
     uom: uomEnum('uom').notNull().default('NOS'),
     orderQty: integer('order_qty').notNull(),
@@ -1529,7 +1538,15 @@ export const soLineDrawingRevisions = pgTable(
     soLineId: uuid('so_line_id')
       .notNull()
       .references(() => salesOrderLines.id, { onDelete: 'cascade' }),
+    /** "the Nth time this line's drawing changed" — NOT the line's Rev, which
+     *  since 0119 is free text a human types. This stays an integer because it
+     *  orders the history and backs a (so_line_id, revision_no) unique index. */
     revisionNo: integer('revision_no').notNull(),
+    /** The line's typed Rev at the moment this drawing change was recorded, so a
+     *  history row can still say which drawing revision it belonged to. Null on
+     *  rows written before 0119 only if the backfill could not reach them — the
+     *  backfill is exact, because until 0119 the two were the same number. */
+    lineRevisionText: text('line_revision_text'),
     /** 'added' | 'replaced' | 'removed' — kept as text, not an enum: this is a
      *  descriptive label, and a new kind of change should not need a migration
      *  to the type graph. */

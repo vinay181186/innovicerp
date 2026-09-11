@@ -16,6 +16,15 @@ export const jcOpsBoardRowSchema = z.object({
   jcId: z.string().uuid().nullable(),
   jcCode: z.string(),
   jcItemCode: z.string().nullable(),
+  /** The customer's drawing revision for the JC's item, taken from the SO line
+   *  the card was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision) and rendered as `CODE/REV`. Never
+   *  items.revision, which describes the item master and would misname the
+   *  drawing an operator is about to cut. Null on every op of a JW-sourced or
+   *  standalone card — common on this board — and those rows show the bare
+   *  code. Named without the `jc` prefix on purpose: it is the same
+   *  `itemRevision` field every other board carries. */
+  itemRevision: z.string().nullable().default(null),
   jcItemName: z.string().nullable(),
   jcOrderQty: z.number().int().nonnegative(),
   opSeq: z.number().int().positive(),

@@ -9,6 +9,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useIncomingQc } from '../api';
 
@@ -270,7 +271,10 @@ function PendingRow({ r }: { r: IncomingQcPendingRow }): React.JSX.Element {
       </td>
       <td>{r.vendorName ?? '—'}</td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
-        {r.itemCode ?? '—'}
+        {/* An OSP return traces back to an SO line and shows CODE/REV; a vendor's
+            raw-material receipt has no SO behind it and shows the bare code. Half
+            this queue being unslashed is the truth, not a missing value. */}
+        {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>
       <td className="td-ctr mono fw-700">{r.receivedQty}</td>
@@ -321,7 +325,7 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
       </td>
       <td>{r.vendorName ?? '—'}</td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
-        {r.itemCode ?? '—'}
+        {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>
       <td className="td-ctr mono fw-700">{r.receivedQty}</td>

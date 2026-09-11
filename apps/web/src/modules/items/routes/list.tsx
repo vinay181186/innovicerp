@@ -1,10 +1,19 @@
 // Item Master list (UI-003-01 + UI-003-02).
 // Ports legacy renderItems (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
 // L11481-11521) to the Innovic chrome (.panel + .innovic-table + .badge + .btn).
-// Columns match legacy header order: Item Code | Name | Description | Drawing No.
-// | Rev | Material | UOM | Drw | Actions. Uses TanStack Table for column
-// defs (preserved per user direction 2026-05-20) but renders via plain
-// <table className="innovic-table"> so the legacy CSS lights up.
+// Columns: Item Code | Name | Description | Drawing No. | Material | UOM | Drw |
+// Actions. Uses TanStack Table for column defs (preserved per user direction
+// 2026-05-20) but renders via plain <table className="innovic-table"> so the
+// legacy CSS lights up.
+//
+// NO Rev column, deliberately, and it must not come back (user direction
+// 2026-09-10). Legacy had one here and `items.revision` still exists, but a
+// revision is not a property of an ITEM — it is the revision of the drawing the
+// customer sent for ONE order, which is why it is entered per SO line
+// (`sales_order_lines.revision`, migration 0119 / ADR-158) and travels downstream
+// as CODE/REV (ADR-160). Showing an item-level Rev beside those made the master
+// look like the authority on a number it does not own, and the two disagreeing
+// on screen is worse than one of them being absent.
 //
 // Styled to the `styling` skill, same as the SO Master list:
 //  - Counts are ONE <StatStrip> (Rule 3) — All / Component / Assembly, each a
@@ -295,12 +304,6 @@ function ItemsListPage(): React.JSX.Element {
             {row.original.drawingNo ?? '—'}
           </span>
         ),
-      },
-      {
-        header: 'Rev',
-        accessorKey: 'revision',
-        meta: { tdClass: 'td-ctr' },
-        cell: ({ row }) => row.original.revision,
       },
       {
         header: 'Material',

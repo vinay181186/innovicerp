@@ -25,6 +25,13 @@ export const productionDashboardJcSchema = z.object({
   jobCardId: z.string().uuid(),
   code: z.string(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision behind this card, read live off the SO
+   *  line it was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision). Shown beside the code as `CODE/REV` so the
+   *  board names the exact drawing being made. Null is ordinary here, not an
+   *  error: a JW-sourced or standalone card has no SO line at all, and the
+   *  card then shows the bare code. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   priority: z.enum(JC_PRIORITIES),
   orderQty: z.number().int(),

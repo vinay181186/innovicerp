@@ -44,7 +44,15 @@ export function exportJobCardExcel(args: {
   const headerAoa: (string | number)[][] = [
     ['JOB CARD', jc.code],
     ['Date', jc.jcDate],
+    // The item code is kept CLEAN here — no `/REV` suffix — and the customer's
+    // drawing revision gets its own row. This sheet is read in Excel, not looked
+    // at as a picture of the screen: the code is the value people filter on and
+    // VLOOKUP against the Items master, and writing "IN-IT-0007/B" into it would
+    // break every one of those lookups. A separate cell keeps both usable, and
+    // stays blank for a JW-sourced or standalone card that has no SO line behind
+    // it (rather than printing a dash into a column someone will sort).
     ['Item Code', jc.itemCode],
+    ['Drawing Rev', jc.itemRevision ?? ''],
     ['Item Name', jc.itemName || ''],
     ['SO / WO', jc.sourceLink?.code ?? ''],
     ['SO / WO Line', jc.sourceLink?.lineNo ?? ''],

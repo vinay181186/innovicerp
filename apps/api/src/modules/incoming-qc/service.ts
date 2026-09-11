@@ -108,6 +108,18 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         so.code AS "soCode",
         jc.code AS "jcCode", jco.op_seq AS "opSeq", jco.operation AS "opName",
         COALESCE(i.code, l.item_code_text) AS "itemCode",
+        -- The customer's drawing revision, off the same PO line -> jc_op -> JC ->
+        -- SO line trace that yields soCode above. This queue mixes two kinds of
+        -- row: an OSP return reaches an SO line and carries a revision, while a
+        -- raw-material receipt from a vendor has no SO behind it and is null here
+        -- -- correctly, since there is no customer drawing for it. It is NOT
+        -- items.revision, a different column about the item master.
+        --
+        -- Cast to text on purpose: the contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119. On one
+        -- that has not it is still the old integer and would arrive here as a
+        -- number wearing a string type. The cast is a no-op once 0119 is in.
+        sol.revision::text AS "itemRevision",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) AS "pendingQty",
@@ -147,6 +159,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       opSeq: r['opSeq'] != null ? Number(r['opSeq']) : null,
       opName: (r['opName'] as string | null) ?? null,
       itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       receivedQty: Number(r['receivedQty'] ?? 0),
       pendingQty: Number(r['pendingQty'] ?? 0),
@@ -161,6 +174,11 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         CASE WHEN l.qc_date IS NOT NULL THEN (l.qc_date - h.grn_date)::int ELSE NULL END AS "respDays",
         COALESCE(v.name, h.vendor_code_text) AS "vendorName",
         COALESCE(i.code, l.item_code_text) AS "itemCode",
+        -- The drawing revision the receipt was inspected against, traced exactly
+        -- as on the pending query: PO line -> jc_op -> JC -> SO line. Null on a
+        -- raw-material receipt, which has no SO behind it. Cast to text so a
+        -- pre-0119 database cannot hand the UI a number. Never items.revision.
+        sol.revision::text AS "itemRevision",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
@@ -171,6 +189,13 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       FROM public.goods_receipt_note_lines l
       JOIN public.goods_receipt_notes h ON h.id = l.goods_receipt_note_id AND h.deleted_at IS NULL
       LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
+      -- The completed feed carried no SO trace before the drawing revision needed
+      -- one. These are the same four LEFT JOINs the pending query uses, and they
+      -- stay LEFT so a raw-material receipt still appears with a null revision.
+      LEFT JOIN public.purchase_order_lines pol ON pol.id = l.purchase_order_line_id
+      LEFT JOIN public.jc_ops jco ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
+      LEFT JOIN public.job_cards jc ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id
       LEFT JOIN public.users u ON u.id = l.qc_inspected_by
       -- Any line that has had QC activity (accepted and/or rejected), incl.
@@ -196,6 +221,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         respDays: r['respDays'] != null ? Number(r['respDays']) : null,
         vendorName: (r['vendorName'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         receivedQty: Number(r['receivedQty'] ?? 0),
         acceptedQty,

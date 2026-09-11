@@ -42,6 +42,13 @@ const salesOrdersSource: RegisteredSource = {
       { key: 'so_type', label: 'SO Type', type: 'text', filterable: true, groupable: true },
       { key: 'line_no', label: 'Line No.', type: 'number', filterable: true, groupable: false },
       { key: 'item_code', label: 'Item Code', type: 'text', filterable: true, groupable: true },
+      // The customer's drawing revision typed on the SO line. It gets its own
+      // column rather than being glued onto item_code, because this source is
+      // exported to Excel and people VLOOKUP item_code against Item Master —
+      // "IN-IT-0007/B" would break every one of those lookups. Aliased
+      // `so_revision` (not `revision`) so it can never be confused with the
+      // items-stock source's `revision`, which is the item's own revision.
+      { key: 'so_revision', label: 'Drawing Rev', type: 'text', filterable: true, groupable: true },
       { key: 'item_name', label: 'Item name', type: 'text', filterable: true, groupable: true },
       { key: 'qty', label: 'Order qty', type: 'number', filterable: true, groupable: false },
       { key: 'uom', label: 'UOM', type: 'text', filterable: true, groupable: true },
@@ -61,6 +68,9 @@ const salesOrdersSource: RegisteredSource = {
       so.type::text                     AS so_type,
       sol.line_no                       AS line_no,
       COALESCE(it.code, sol.item_code_text) AS item_code,
+      -- Cast to text: production has not had migration 0119 applied yet and
+      -- still stores an integer here, so the report must not assume the type.
+      sol.revision::text                AS so_revision,
       COALESCE(it.name, sol.part_name)  AS item_name,
       sol.order_qty                     AS qty,
       sol.uom::text                     AS uom,
@@ -102,6 +112,17 @@ const purchaseOrdersSource: RegisteredSource = {
         groupable: true,
       },
       {
+        // The drawing revision of the SO line this PO line was raised to
+        // serve. Separate column, never appended to item_code — buyers sort
+        // and VLOOKUP that column against Item Master. Blank on a PO line
+        // bought to stock, which has no SO line behind it.
+        key: 'so_revision',
+        label: 'Drawing Rev',
+        type: 'text',
+        filterable: true,
+        groupable: true,
+      },
+      {
         key: 'item_name',
         label: 'Item name',
         type: 'text',
@@ -137,6 +158,10 @@ const purchaseOrdersSource: RegisteredSource = {
       vd.name                                       AS vendor_name,
       pol.line_no                                   AS line_no,
       COALESCE(it.code, pol.item_code_text)         AS item_code,
+      -- COALESCE to '' rather than leaving NULL so a stock-buy PO line shows a
+      -- blank cell in the spreadsheet, not a dash somebody would then sort on.
+      -- ::text because production still holds an integer here (pre-0119).
+      COALESCE(sol.revision::text, '')              AS so_revision,
       COALESCE(it.name, pol.item_name)              AS item_name,
       pol.qty                                       AS qty,
       pol.rate                                      AS rate,
@@ -146,6 +171,9 @@ const purchaseOrdersSource: RegisteredSource = {
     FROM public.purchase_order_lines pol
     JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
     LEFT JOIN public.items it ON it.id = pol.item_id
+    -- LEFT, never inner: a PO line bought straight to stock has no source SO
+    -- line, and dropping those rows would hide half the buyer's workload.
+    LEFT JOIN public.sales_order_lines sol ON sol.id = pol.source_so_line_id
     LEFT JOIN public.vendors vd ON vd.id = po.vendor_id
     WHERE pol.company_id = ${companyId}::uuid
       AND pol.deleted_at IS NULL
@@ -165,6 +193,10 @@ const jobCardsSource: RegisteredSource = {
       { key: 'jc_code', label: 'JC No.', type: 'text', filterable: true, groupable: true },
       { key: 'jc_date', label: 'JC Date', type: 'date', filterable: true, groupable: true },
       { key: 'item_code', label: 'Item Code', type: 'text', filterable: true, groupable: true },
+      // Drawing revision of the SO line this JC was raised from. Blank on a JC
+      // raised from a JW line or standalone — those rows still belong in the
+      // report, they simply have no customer drawing revision behind them.
+      { key: 'so_revision', label: 'Drawing Rev', type: 'text', filterable: true, groupable: true },
       { key: 'item_name', label: 'Item name', type: 'text', filterable: true, groupable: true },
       { key: 'qty', label: 'Order qty', type: 'number', filterable: true, groupable: false },
       { key: 'priority', label: 'Priority', type: 'text', filterable: true, groupable: true },
@@ -192,6 +224,10 @@ const jobCardsSource: RegisteredSource = {
       jc.code              AS jc_code,
       jc.jc_date           AS jc_date,
       it.code              AS item_code,
+      -- Rides the sales_order_lines join that already exists below for
+      -- source_so_code — no second join needed. ::text because production is
+      -- still pre-0119 and holds an integer here.
+      COALESCE(sol.revision::text, '') AS so_revision,
       it.name              AS item_name,
       jc.order_qty         AS qty,
       jc.priority::text    AS priority,
@@ -261,6 +297,13 @@ const ncRegisterSource: RegisteredSource = {
       { key: 'nc_date', label: 'NC Date', type: 'date', filterable: true, groupable: true },
       { key: 'jc_code', label: 'JC No.', type: 'text', filterable: true, groupable: true },
       { key: 'item_code', label: 'Item Code', type: 'text', filterable: true, groupable: true },
+      // Reachable in one hop: nc.job_card_id is NOT NULL, and the job card
+      // carries source_so_line_id. That is a single nullable link, not a chain
+      // of them, so the revision is genuinely knowable for an NC raised on a
+      // JC that came from an SO. Blank for an NC on a JW-sourced or standalone
+      // JC. nc.item_code_text is free text on the NC and never carries a
+      // revision, so it is not a substitute.
+      { key: 'so_revision', label: 'Drawing Rev', type: 'text', filterable: true, groupable: true },
       { key: 'item_name', label: 'Item name', type: 'text', filterable: true, groupable: true },
       {
         key: 'rejected_qty',
@@ -282,6 +325,7 @@ const ncRegisterSource: RegisteredSource = {
       nc.nc_date            AS nc_date,
       jc.code               AS jc_code,
       it.code               AS item_code,
+      COALESCE(sol.revision::text, '') AS so_revision,
       it.name               AS item_name,
       nc.rejected_qty       AS rejected_qty,
       nc.reason_category::text AS reason_category,
@@ -292,6 +336,9 @@ const ncRegisterSource: RegisteredSource = {
     FROM public.nc_register nc
     JOIN public.job_cards jc ON jc.id = nc.job_card_id
     JOIN public.items it ON it.id = nc.item_id
+    -- LEFT, never inner: an NC raised on a JW-sourced or standalone JC has no
+    -- SO line, and quality must still see every NC it has logged.
+    LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
     WHERE nc.company_id = ${companyId}::uuid
       AND nc.deleted_at IS NULL
   `,

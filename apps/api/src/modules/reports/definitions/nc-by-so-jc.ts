@@ -7,6 +7,14 @@
 // count into Pending (status === 'Pending') vs Closed (everything else).
 // We mirror that with so_code_text → job_cards.code → 'Unknown', and treat
 // any non-'pending' status (disposed / rework_done / closed) as "closed".
+//
+// Deliberately carries NO Drawing Rev column. The grain here is one row per
+// SO/JC *group*, and the group key is an SO HEADER code (nc.so_code_text) —
+// one header covers many SO lines, each of which may sit at a different
+// customer drawing revision, so there is no single revision to print. Adding
+// one would mean folding it into the group key, which splits each SO into one
+// row per revision and silently changes the counts this report exists to
+// give. The per-NC revision belongs on the line-level NC reports instead.
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';

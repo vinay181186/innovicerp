@@ -9,6 +9,13 @@ export const dailyReportRowSchema = z.object({
   logId: z.string().uuid(),
   jcCode: z.string(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision behind this log entry, followed from the
+   *  job card to its SO line (job_cards.source_so_line_id →
+   *  sales_order_lines.revision). Null whenever there is no SO line to read —
+   *  job-work and standalone cards produce log entries too — and null must show
+   *  as the plain item code. Not items.revision, which is a different column
+   *  about the item master and would misreport the drawing to the shop. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   opSeq: z.number().int().positive(),
   operation: z.string(),

@@ -41,6 +41,11 @@ export function printDispatchRegister(args: {
 }): boolean {
   const { rows, summary, filterLabel, company } = args;
 
+  // The SO cell carries the customer's DRAWING revision on a second line under
+  // the SO number, said in words rather than as "IN-SO-0012/B": a slash after a
+  // sales-order number would read as a revision of the order itself. This is a
+  // HEADER-grain register, so there is no item code here to hang it off — the
+  // SO number is where the revision belongs. Nothing prints when there is none.
   const tableRows = rows
     .map(
       (d) => `<tr>
@@ -48,7 +53,7 @@ export function printDispatchRegister(args: {
       <td>${esc(fmtDate(d.dcDate))}</td>
       <td>${esc(d.vendorName ?? d.vendorCodeText ?? '—')}</td>
       <td style="font-family:monospace">${esc(d.poCode ?? d.poCodeText ?? '—')}</td>
-      <td style="font-family:monospace;font-size:10px">${esc(d.soCode ?? d.soRefText ?? '—')}</td>
+      <td style="font-family:monospace;font-size:10px">${esc(d.soCode ?? d.soRefText ?? '—')}${d.soLineRevision ? `<div style="font-family:inherit;color:#64748b">Rev ${esc(d.soLineRevision)}</div>` : ''}</td>
       <td style="text-align:center;font-weight:700">${d.lineCount}</td>
       <td style="text-align:right;font-weight:700;color:#dc2626">${Number(d.totalQty).toFixed(2)}</td>
       <td style="text-align:center">${statusBadge(d.status)}</td>

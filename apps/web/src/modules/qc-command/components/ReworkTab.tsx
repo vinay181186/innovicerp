@@ -2,6 +2,7 @@
 // once, or once with rejects — these directly impact project timeline.
 
 import type { QcReworkRow } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 function fmt(d: string | null): string {
   return d ?? '—';
@@ -57,7 +58,9 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                     </td>
                     <td style={{ fontSize: 11 }}>
                       {/* Legacy L18939 hardcodes #8B5CF6, not var(--purple). */}
-                      <span style={{ color: '#8B5CF6', fontWeight: 600 }}>{g.itemCode ?? '—'}</span>
+                      <span style={{ color: '#8B5CF6', fontWeight: 600 }}>
+                        {itemCodeWithRev(g.itemCode, g.itemRevision)}
+                      </span>
                       <br />
                       <span className="text3">{g.operation}</span>
                     </td>

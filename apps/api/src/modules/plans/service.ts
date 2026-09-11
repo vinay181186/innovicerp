@@ -118,6 +118,18 @@ function detail(plan: { code: string; planType: string; itemNameText: string | n
   return `${plan.code} — ${plan.itemNameText ?? plan.planType}`;
 }
 
+/** The customer's drawing revision for whichever SO line a plan hangs on.
+ *
+ *  Cast to text on purpose. The contract types this as a string and the column
+ *  is only text on a database that has had migration 0119; on one that has not,
+ *  it is still the old integer and would arrive at the UI as a number wearing a
+ *  string type. The cast is a no-op once 0119 is in.
+ *
+ *  Every use of it sits behind a LEFT JOIN on sales_order_lines, so a plan with
+ *  no SO line (JW-sourced or ad-hoc) correctly reports null. It is never
+ *  items.revision, which describes the item master and means something else. */
+const SO_LINE_REVISION = sql<string | null>`${salesOrderLines.revision}::text`;
+
 // ─── Reads ────────────────────────────────────────────────────────────────
 
 export async function listPlans(
@@ -144,9 +156,16 @@ export async function listPlans(
         plan: plans,
         itemCode: items.code,
         itemName: items.name,
+        itemRevision: SO_LINE_REVISION,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
+      // LEFT, never inner: a JW-sourced or ad-hoc plan has no SO line and must
+      // still appear in the list, with a null revision.
+      .leftJoin(
+        salesOrderLines,
+        and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+      )
       .where(and(...conditions))
       .orderBy(desc(plans.planDate), asc(plans.code))
       .limit(query.limit)
@@ -174,6 +193,9 @@ export async function listPlans(
       items: rows.map((r) => ({
         ...toPlan(r.plan),
         itemCode: r.itemCode ?? null,
+        // Null passed through, not coerced to a blank string: the UI has to be
+        // able to tell "this plan has no SO line" from "the revision is empty".
+        itemRevision: r.itemRevision ?? null,
         itemName: r.itemName ?? null,
         opsCount: opsCounts.get(r.plan.id) ?? 0,
       })),
@@ -206,9 +228,16 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         plan: plans,
         itemCode: items.code,
         itemName: items.name,
+        itemRevision: SO_LINE_REVISION,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
+      // LEFT, never inner: a JW-sourced or ad-hoc plan has no SO line and must
+      // still open, with a null revision.
+      .leftJoin(
+        salesOrderLines,
+        and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+      )
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const row = headers[0];
@@ -223,6 +252,9 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
     const detail: PlanDetail = {
       ...toPlan(row.plan),
       itemCode: row.itemCode ?? null,
+      // Null passed through, not coerced to a blank string: the UI has to be
+      // able to tell "this plan has no SO line" from "the revision is empty".
+      itemRevision: row.itemRevision ?? null,
       itemName: row.itemName ?? null,
       ops: opRows.map(toPlanOp),
       priceVisible: showMoney,
@@ -1340,9 +1372,16 @@ export async function getPlanningDashboard(
           plan: plans,
           itemCode: items.code,
           itemName: items.name,
+          itemRevision: SO_LINE_REVISION,
         })
         .from(plans)
         .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
+        // LEFT, never inner: a JW-sourced or ad-hoc plan has no SO line and must
+        // still count towards, and appear on, the dashboard.
+        .leftJoin(
+          salesOrderLines,
+          and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+        )
         .where(and(eq(plans.companyId, companyId), isNull(plans.deletedAt)))
         .orderBy(desc(plans.planDate), asc(plans.code))
         .limit(50),
@@ -1398,6 +1437,9 @@ export async function getPlanningDashboard(
       recentPlans: recentRows.map((r) => ({
         ...toPlan(r.plan),
         itemCode: r.itemCode ?? null,
+        // Null passed through, not coerced to a blank string: the UI has to be
+        // able to tell "this plan has no SO line" from "the revision is empty".
+        itemRevision: r.itemRevision ?? null,
         itemName: r.itemName ?? null,
         opsCount: opsCounts.get(r.plan.id) ?? 0,
       })),
@@ -1431,6 +1473,12 @@ export async function getUnplannedOrders(
         so.code           AS so_code,
         sol.line_no       AS line_no,
         sol.item_code_text AS item_code,
+        -- The customer's drawing revision typed on this very SO line — every row
+        -- here IS an SO line, so no join is needed and it is never
+        -- items.revision, a different column about the item master. Cast to text
+        -- because the contract types it as a string and a database that has not
+        -- had migration 0119 still holds the old integer here.
+        sol.revision::text AS item_revision,
         sol.part_name     AS part_name,
         so.customer_name  AS customer_name,
         sol.due_date::text AS due_date,
@@ -1455,6 +1503,7 @@ export async function getUnplannedOrders(
       so_code: string;
       line_no: number;
       item_code: string | null;
+      item_revision: string | null;
       part_name: string | null;
       customer_name: string | null;
       due_date: string | null;
@@ -1472,6 +1521,10 @@ export async function getUnplannedOrders(
         soCode: r.so_code,
         lineNo: Number(r.line_no),
         itemCode: r.item_code,
+        // Null passed through rather than blanked: on a database that predates
+        // migration 0119 the line may genuinely have no revision, and the table
+        // must then show the bare code instead of a trailing slash.
+        itemRevision: r.item_revision,
         partName: r.part_name,
         customerName: r.customer_name,
         dueDate: r.due_date,
@@ -1531,9 +1584,16 @@ async function getPlanInTx(
       plan: plans,
       itemCode: items.code,
       itemName: items.name,
+      itemRevision: SO_LINE_REVISION,
     })
     .from(plans)
     .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
+    // LEFT, never inner: a JW-sourced or ad-hoc plan has no SO line, and a
+    // write-back that dropped such a plan would fail the write it just made.
+    .leftJoin(
+      salesOrderLines,
+      and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+    )
     .where(and(eq(plans.id, id), eq(plans.companyId, companyId)))
     .limit(1);
   const row = headers[0];
@@ -1546,6 +1606,9 @@ async function getPlanInTx(
   return {
     ...toPlan(row.plan),
     itemCode: row.itemCode ?? null,
+    // Null passed through, not coerced to a blank string: the UI has to be able
+    // to tell "this plan has no SO line" from "the revision is empty".
+    itemRevision: row.itemRevision ?? null,
     itemName: row.itemName ?? null,
     ops: opRows.map(toPlanOp),
     // Write-back shape: the caller re-applies the money gate before returning

@@ -61,6 +61,12 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         op.op_seq AS "opSeq",
         op.operation,
         i.code AS "itemCode",
+        -- The customer's drawing revision, taken live off the SO line the card was
+        -- raised against via the sol LEFT JOIN below. Left as a LEFT JOIN so a
+        -- JW-sourced or standalone card still appears on its machine with a null
+        -- revision. Cast to text because the contract types this as a string and
+        -- a database without migration 0119 still holds the old integer here.
+        sol.revision::text AS "itemRevision",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         jc.order_qty AS "orderQty",
@@ -102,6 +108,7 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         opSeq: num(r['opSeq']),
         operation: String(r['operation'] ?? ''),
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         soCode: (r['soCode'] as string | null) ?? null,
         orderQty: num(r['orderQty']),

@@ -10,6 +10,7 @@ import { Activity, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
 import { usePlanningSoDetail, usePlanningSoList } from '../api';
@@ -328,7 +329,11 @@ function RightPane({
               after searching by item (not only inside the per-line cards). */}
           {so.lines.length > 0 ? (
             <div className="text3" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
-              {so.lines[0]!.itemCode ? `${so.lines[0]!.itemCode} — ` : ''}
+              {/* `CODE/REV` — the customer's drawing revision from this SO line.
+                  A JW's lines have no customer revision and keep the bare code. */}
+              {so.lines[0]!.itemCode
+                ? `${itemCodeWithRev(so.lines[0]!.itemCode, so.lines[0]!.itemRevision)} — `
+                : ''}
               {so.lines[0]!.itemName ?? ''}
               {so.lines.length > 1 ? ` +${so.lines.length - 1} more` : ''}
             </div>
@@ -438,8 +443,12 @@ function RightPane({
                       [CPO:{line.clientPoLineNo}]
                     </span>
                   ) : null}
-                  <span style={{ fontWeight: 700, color: 'var(--purple)' }}>
-                    {line.itemCode ?? ''}
+                  {/* `CODE/REV` — the customer's drawing revision from this SO
+                      line; a JW line has none and keeps the bare code, with no
+                      trailing slash. nowrap so a short code never breaks across
+                      two lines in the line header. */}
+                  <span style={{ fontWeight: 700, color: 'var(--purple)', whiteSpace: 'nowrap' }}>
+                    {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
                   </span>
                   <span style={{ fontSize: 12 }}>{line.itemName ?? ''}</span>
                 </div>

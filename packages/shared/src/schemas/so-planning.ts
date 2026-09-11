@@ -66,6 +66,16 @@ export const planningLineSchema = z.object({
   clientPoLineNo: z.string().nullable(),
   itemId: z.string().uuid().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for this line, read off
+   *  `sales_order_lines.revision` — the text the sales user typed against the
+   *  customer's drawing, never `items.revision` (a different column about the
+   *  item master, which would be a plausible-looking lie here).
+   *
+   *  Null is a correct answer, not a gap: this same shape carries the lines of a
+   *  Job Work Order too, and a JW line has no customer SO line behind it and so
+   *  no revision. Null renders as the bare item code — no trailing slash, no
+   *  placeholder. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   orderQty: z.number().int().nonnegative(),
   dueDate: z.string().nullable(),

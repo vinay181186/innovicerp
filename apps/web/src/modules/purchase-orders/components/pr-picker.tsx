@@ -36,6 +36,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { type SearchableOption, SearchableSelect } from '@/components/shared/searchable-select';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import { prBalanceText } from '@/modules/purchase-requests/lib/pr-balance';
 
@@ -167,7 +168,11 @@ export function PrPicker({
   // original qty on its own. <SearchableSelect> renders this after the code, so
   // the row reads "IN-PR-00012 — Shaft 50mm · 90 of 100 left".
   const labelFor = (pr: (typeof convertible)[number]): string => {
-    const item = pr.itemName ?? pr.itemCodeText ?? 'item';
+    // The name is what a buyer recognises, so it wins. Only when there is no
+    // name does the option fall back to the CODE — and a code carries the
+    // customer's drawing revision with it, `CODE/REV`, exactly as the PR card
+    // and the PO line do. The revision is never appended to a NAME.
+    const item = pr.itemName ?? itemCodeWithRev(pr.itemCodeText, pr.itemRevision, 'item');
     return `${item} · ${prBalanceText(pr)}`;
   };
 

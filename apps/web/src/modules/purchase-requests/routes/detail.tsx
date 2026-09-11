@@ -27,6 +27,7 @@ import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useClosePurchaseRequestBalance,
@@ -153,7 +154,10 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
     ? `${detail.sourceJcCode}${detail.sourceJcOpSeq ? ` · Op ${detail.sourceJcOpSeq}` : ''}`
     : '—';
   const vendorCode = detail.vendorCode ?? detail.vendorCodeText ?? '—';
-  const itemCode = detail.itemCode ?? detail.itemCodeText ?? '—';
+  // CODE/REV. The revision is the customer's drawing revision on the SO line
+  // this request was raised against, so it only appears when there is one; a
+  // hand-raised PR shows the bare code.
+  const itemCode = itemCodeWithRev(detail.itemCode ?? detail.itemCodeText, detail.itemRevision);
 
   return (
     <div>

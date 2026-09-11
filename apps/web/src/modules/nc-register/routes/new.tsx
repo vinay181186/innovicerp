@@ -55,6 +55,12 @@ function NcRegisterNewPage(): React.JSX.Element {
   // What the op card handed over, mapped onto the form's own field names
   // (operation → operationText, itemCode → itemCodeText, …). Absent keys are
   // left out entirely so the form's own defaults still apply.
+  //
+  // itemCode arrives BARE and must stay bare. It seeds itemCodeText, which is
+  // submitted and stored as the NC's durable snapshot of the part — a customer's
+  // drawing revision appended here would be written into the record as if it
+  // were part of the code. The revision is shown on the NC's READ screens, where
+  // it is joined live off the SO line, never carried in through this seed.
   const opSeq = toInt(search.opSeq);
   const rejectedQty = toInt(search.rejectedQty);
   const seed = {

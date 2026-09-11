@@ -14,6 +14,7 @@ import {
 import { Loader2, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import {
   uploadSoDocFile,
@@ -246,7 +247,7 @@ function LinePanel({
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="panel-hdr" style={{ background: 'rgba(34,197,94,0.06)' }}>
         <span className="panel-title" style={{ color: 'var(--green)' }}>
-          📦 Line {line.lineNo}: {line.itemCode ?? ''} — {line.itemName ?? ''}
+          📦 Line {line.lineNo}: {itemCodeWithRev(line.itemCode, line.itemRevision, '')} — {line.itemName ?? ''}
           {line.orderQty ? ` (Qty: ${line.orderQty})` : ''}
         </span>
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -473,7 +474,7 @@ function UploadDialog({
               <option value="">SO Level (no specific line)</option>
               {lines.map((l) => (
                 <option key={l.soLineId} value={l.soLineId}>
-                  Line {l.lineNo}: {l.itemCode ?? ''} — {l.itemName ?? ''}
+                  Line {l.lineNo}: {itemCodeWithRev(l.itemCode, l.itemRevision, '')} — {l.itemName ?? ''}
                 </option>
               ))}
             </select>

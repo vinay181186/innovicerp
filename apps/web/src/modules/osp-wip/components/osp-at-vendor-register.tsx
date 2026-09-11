@@ -7,6 +7,7 @@
 import type { ListOspWipResponse, OspWipRow } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useOspWip } from '../api';
 
 type FilterKey = 'all' | 'at_vendor' | 'not_sent' | 'ready_to_send';
@@ -149,7 +150,7 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
         {row.jcCode}
       </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
-        {row.itemCode ?? '—'}
+        {itemCodeWithRev(row.itemCode, row.itemRevision)}
       </td>
       <td className="fw-700">{row.itemName ?? '—'}</td>
       <td className="mono text2" style={{ fontSize: 11 }}>

@@ -27,7 +27,20 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
     const pendingRows = await tx.execute(sql`
       SELECT
         vos.jc_op_id AS "jcOpId", jc.code AS "jcCode", vos.op_seq AS "opSeq",
-        so.code AS "soCode", i.code AS "itemCode", jo.operation,
+        so.code AS "soCode", i.code AS "itemCode",
+        -- The customer's drawing revision the third party will inspect against,
+        -- read live off the SO line the card was raised against. It rides the sol
+        -- LEFT JOIN that already produces soCode, so a JW-sourced or standalone
+        -- card comes back null and renders as the bare code. It is NOT
+        -- items.revision, which describes the item master and would send the
+        -- inspector to the wrong drawing.
+        --
+        -- Cast to text on purpose: the contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119. On one
+        -- that has not it is still the old integer and would arrive here as a
+        -- number wearing a string type. The cast is a no-op once 0119 is in.
+        sol.revision::text AS "itemRevision",
+        jo.operation,
         jc.order_qty AS "orderQty", vos.qc_pending AS "qcPending",
         jo.qc_call_date AS "callDate",
         GREATEST(0, (CURRENT_DATE - COALESCE(jo.qc_call_date, jc.jc_date)))::int AS "waitDays"
@@ -53,6 +66,7 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
       opSeq: Number(r['opSeq']),
       soCode: (r['soCode'] as string | null) ?? null,
       itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
       operation: (r['operation'] as string | null) ?? '',
       orderQty: Number(r['orderQty'] ?? 0),
       qcPending: Number(r['qcPending'] ?? 0),
@@ -64,7 +78,13 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
     const compRows = await tx.execute(sql`
       SELECT
         ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
-        so.code AS "soCode", i.code AS "itemCode", jo.operation,
+        so.code AS "soCode", i.code AS "itemCode",
+        -- Same live SO-line read as the pending query above: the drawing revision
+        -- rides the existing sol LEFT JOIN, is null for cards with no SO behind
+        -- them, and is cast to text so a pre-0119 database cannot hand the UI a
+        -- number. Never items.revision.
+        sol.revision::text AS "itemRevision",
+        jo.operation,
         ol.qty AS "accepted", ol.reject_qty AS "rejected",
         jo.qc_call_date AS "callDate", ol.log_date AS "attendedDate",
         CASE WHEN jo.qc_call_date IS NOT NULL THEN (ol.log_date - jo.qc_call_date)::int ELSE NULL END AS "respDays",
@@ -92,6 +112,7 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
       opSeq: Number(r['opSeq']),
       soCode: (r['soCode'] as string | null) ?? null,
       itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
       operation: (r['operation'] as string | null) ?? '',
       accepted: Number(r['accepted'] ?? 0),
       rejected: Number(r['rejected'] ?? 0),

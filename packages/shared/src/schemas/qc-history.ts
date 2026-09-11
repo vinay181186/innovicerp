@@ -13,6 +13,15 @@ export const qcHistoryPendingRowSchema = z.object({
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for this op's part, read off the SO line
+   *  the job card was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision). Null whenever the card has no SO behind it —
+   *  a JW-sourced or standalone card, or an SO line since deleted — and null
+   *  must render as the bare item code, never as a dangling slash. It is never
+   *  items.revision, a different column about the item master: showing that to
+   *  an inspector would be a plausible-looking lie about which drawing to
+   *  check against. */
+  itemRevision: z.string().nullable().default(null),
   operation: z.string(),
   orderQty: z.number().int(),
   completed: z.number().int().nonnegative(),
@@ -33,6 +42,13 @@ export const qcHistoryLogRowSchema = z.object({
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for the inspected part, read off the SO
+   *  line the job card was raised against (job_cards.source_so_line_id →
+   *  sales_order_lines.revision). Null on a JW-sourced or standalone card, and
+   *  null renders as the bare item code. Never items.revision — that column
+   *  describes the item master and would put the wrong drawing revision in
+   *  front of whoever reads the QC log back. */
+  itemRevision: z.string().nullable().default(null),
   operation: z.string(),
   accepted: z.number().int().nonnegative(),
   rejected: z.number().int().nonnegative(),

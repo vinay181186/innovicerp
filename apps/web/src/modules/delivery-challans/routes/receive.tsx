@@ -11,6 +11,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
 
@@ -24,6 +25,11 @@ interface LineDraft {
   dcLineId: string;
   lineNo: number;
   itemCodeText: string;
+  /** The customer's drawing revision, carried through so the code on this
+   *  screen reads the same as on the challan it is booking back. Null on every
+   *  line the API could not prove is the customer's part — raw material and
+   *  bought-in lines — and those show the bare code. */
+  itemRevision: string | null;
   itemNameText: string | null;
   sentQty: number;
   alreadyReceived: number;
@@ -59,6 +65,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           dcLineId: l.id,
           lineNo: l.lineNo,
           itemCodeText: l.itemCodeText,
+          itemRevision: l.itemRevision,
           itemNameText: l.itemNameText,
           sentQty: sent,
           alreadyReceived: already,
@@ -256,7 +263,9 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                     <tr key={d.dcLineId}>
                       <td className="mono">{d.lineNo}</td>
                       <td>
-                        <span className="mono">{d.itemCodeText}</span>
+                        <span className="mono">
+                          {itemCodeWithRev(d.itemCodeText, d.itemRevision)}
+                        </span>
                         {d.itemNameText ? (
                           <div className="text3" style={{ fontSize: 11 }}>
                             {d.itemNameText}

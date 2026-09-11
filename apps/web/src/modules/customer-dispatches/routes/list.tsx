@@ -22,6 +22,7 @@ import { useMemo, useState } from 'react';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
@@ -108,6 +109,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
           r.clientPoLineNo,
           r.itemCode,
           r.itemCodeText,
+          // The line shows "IN-IT-0007/B", so pasting that back into the search
+          // box has to find it. The bare code stays searchable above.
+          itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision, ''),
           r.itemName,
           r.uom,
           r.customer,
@@ -129,6 +133,11 @@ function CustomerDispatchListPage(): React.JSX.Element {
       string,
       { code: string; name: string; total: number; count: number; stock: number | null }
     >();
+    // Item-wise rollup: one row per ITEM, with its current on-hand stock beside
+    // it. The drawing revision is deliberately left out of both the key and the
+    // code shown — Rev A and Rev B of a part are one item holding one stock
+    // figure, and splitting them here would double the rows and halve neither
+    // stock number correctly. The per-dispatch line tables carry the revision.
     for (const r of active) {
       const key = r.itemCode ?? r.itemCodeText ?? r.itemName;
       const cur = m.get(key) ?? {

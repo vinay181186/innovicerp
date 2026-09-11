@@ -86,6 +86,7 @@ describe('sales-orders service', () => {
         lines: [
           {
             partName: 'Widget Alpha',
+            revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 10,
@@ -93,6 +94,7 @@ describe('sales-orders service', () => {
           },
           {
             partName: 'Widget Beta',
+            revision: 'A',
             itemCodeText: 'NONEXISTENT-CODE',
             uom: 'NOS',
             orderQty: 5,
@@ -128,7 +130,16 @@ describe('sales-orders service', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [{ partName: 'Coded', itemId: firstItemId, uom: 'NOS', orderQty: 3, rate: 10 }],
+        lines: [
+          {
+            partName: 'Coded',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 3,
+            rate: 10,
+          },
+        ],
       },
       admin,
     );
@@ -151,7 +162,16 @@ describe('sales-orders service', () => {
             status: 'open',
             gstPercent: 18,
           },
-          lines: [{ partName: 'Auto', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+          lines: [
+            {
+              partName: 'Auto',
+              revision: 'A',
+              itemId: firstItemId,
+              uom: 'NOS',
+              orderQty: 1,
+              rate: 0,
+            },
+          ],
         },
         admin,
       );
@@ -183,7 +203,9 @@ describe('sales-orders service', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+        lines: [
+          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+        ],
       },
       admin,
     );
@@ -198,7 +220,9 @@ describe('sales-orders service', () => {
             status: 'open',
             gstPercent: 18,
           },
-          lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+          lines: [
+            { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          ],
         },
         admin,
       ),
@@ -217,7 +241,9 @@ describe('sales-orders service', () => {
             status: 'open',
             gstPercent: 18,
           },
-          lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+          lines: [
+            { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          ],
         },
         admin,
       ),
@@ -237,8 +263,22 @@ describe('sales-orders service', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'Line One', itemId: firstItemId, uom: 'NOS', orderQty: 3, rate: 0 },
-          { partName: 'Line Two', itemId: firstItemId, uom: 'NOS', orderQty: 7, rate: 0 },
+          {
+            partName: 'Line One',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 3,
+            rate: 0,
+          },
+          {
+            partName: 'Line Two',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 7,
+            rate: 0,
+          },
         ],
       },
       admin,
@@ -268,8 +308,22 @@ describe('sales-orders service', () => {
           gstPercent: 12,
         },
         lines: [
-          { partName: 'Equip', itemId: firstItemId, uom: 'NOS', orderQty: 4, rate: 0 },
-          { partName: 'Spare', itemId: firstItemId, uom: 'NOS', orderQty: 6, rate: 0 },
+          {
+            partName: 'Equip',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 4,
+            rate: 0,
+          },
+          {
+            partName: 'Spare',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 6,
+            rate: 0,
+          },
         ],
       },
       admin,
@@ -298,7 +352,16 @@ describe('sales-orders service', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [{ partName: 'Stay', itemId: firstItemId, uom: 'NOS', orderQty: 9, rate: 0 }],
+        lines: [
+          {
+            partName: 'Stay',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 9,
+            rate: 0,
+          },
+        ],
       },
       admin,
     );
@@ -327,8 +390,22 @@ describe('sales-orders service', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'Keep+Update', itemId: firstItemId, uom: 'NOS', orderQty: 10, rate: 0 },
-          { partName: 'Drop Me', itemId: firstItemId, uom: 'NOS', orderQty: 20, rate: 0 },
+          {
+            partName: 'Keep+Update',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 10,
+            rate: 0,
+          },
+          {
+            partName: 'Drop Me',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 20,
+            rate: 0,
+          },
         ],
       },
       admin,
@@ -344,13 +421,21 @@ describe('sales-orders service', () => {
           {
             id: keptId,
             partName: 'Keep+Updated',
+            revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 11,
             rate: 0,
           },
           // New line — should get auto-assigned lineNo above the surviving max
-          { partName: 'Brand New', itemId: firstItemId, uom: 'NOS', orderQty: 30, rate: 0 },
+          {
+            partName: 'Brand New',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 30,
+            rate: 0,
+          },
           // The "Drop Me" line above is omitted — should be soft-deleted
         ],
       },
@@ -388,8 +473,8 @@ describe('sales-orders service', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
-          { partName: 'L2', itemId: firstItemId, uom: 'NOS', orderQty: 2, rate: 0 },
+          { partName: 'L1', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          { partName: 'L2', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 2, rate: 0 },
         ],
       },
       admin,
@@ -415,7 +500,9 @@ describe('sales-orders service', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [{ partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+        lines: [
+          { partName: 'L1', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+        ],
       },
       admin,
     );
@@ -453,7 +540,9 @@ describe('sales-orders service', () => {
             status: 'open',
             gstPercent: 18,
           },
-          lines: [{ partName: 'L', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+          lines: [
+            { partName: 'L', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          ],
         },
         noCompanyUser,
       ),
@@ -472,7 +561,9 @@ describe('sales-orders service', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [{ partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+        lines: [
+          { partName: 'L1', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+        ],
       },
       admin,
     );

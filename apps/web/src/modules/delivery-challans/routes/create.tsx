@@ -14,6 +14,7 @@ import { useDebounce } from '@/lib/use-debounce';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateDeliveryChallan, useDcSendable } from '../api';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 const newSearchSchema = z.object({
   poId: z.string().uuid().optional(),
@@ -30,6 +31,11 @@ interface LineDraft {
   purchaseOrderLineId: string;
   itemId: string;
   itemCodeText: string;
+  /** The customer's drawing revision carried down from the PO line's own SO
+   *  link. DISPLAY ONLY — it is deliberately kept out of `itemCodeText`, which
+   *  is submitted and must stay the bare code. Null on a PO line bought without
+   *  an SO behind it (raw material, bought-in hardware), which is common here. */
+  itemRevision: string | null;
   itemNameText: string | null;
   uom: Uom;
   poLineQty: number;
@@ -109,6 +115,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         // T13: fall back to the item name so a PO line missing a code doesn't
         // send an empty itemCodeText (the schema requires min length 1).
         itemCodeText: l.itemCodeText ?? l.itemCode ?? l.itemName ?? '',
+        itemRevision: l.itemRevision,
         itemNameText: l.itemName ?? null,
         uom: 'NOS',
         poLineQty: Number(l.qty ?? 0),
@@ -376,8 +383,11 @@ function DeliveryChallanNewPage(): React.JSX.Element {
                       <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
                         {idx + 1}
                       </td>
-                      <td className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                        {l.itemCodeText}
+                      {/* CODE/REV while raising the challan, so this screen agrees
+                          with the saved challan and its printout instead of showing
+                          a bare code that gains a revision the moment it is saved. */}
+                      <td className="mono" style={{ color: 'var(--purple)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {itemCodeWithRev(l.itemCodeText, l.itemRevision)}
                       </td>
                       <td>{l.itemNameText}</td>
                       <td className="mono">{l.poLineQty}</td>

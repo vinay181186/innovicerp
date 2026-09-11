@@ -117,7 +117,16 @@ describe('sales-orders routes', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [{ partName: 'Routed Part', itemId: firstItemId, uom: 'NOS', orderQty: 5, rate: 0 }],
+        lines: [
+          {
+            partName: 'Routed Part',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 5,
+            rate: 0,
+          },
+        ],
       },
     });
     expect(res.statusCode).toBe(201);
@@ -140,7 +149,9 @@ describe('sales-orders routes', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+        lines: [
+          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+        ],
       },
     });
     expect(res.statusCode).toBe(400);
@@ -163,7 +174,9 @@ describe('sales-orders routes', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+        lines: [
+          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+        ],
       },
     });
     expect(res.statusCode).toBe(403);

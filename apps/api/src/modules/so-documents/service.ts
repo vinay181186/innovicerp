@@ -108,6 +108,12 @@ export async function getSoDocumentDetail(
         sol.id AS "soLineId", sol.line_no AS "lineNo",
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE(i.code, sol.item_code_text) AS "itemCode",
+        -- The customer's drawing revision typed on this line (migration 0119).
+        -- It is independent of any drawing FILE uploaded against the line, and it
+        -- is never items.revision, a different column about the item master. Cast
+        -- to text so a database still on the pre-0119 integer cannot hand the UI a
+        -- number where the contract promises a string.
+        sol.revision::text AS "itemRevision",
         COALESCE(i.name, sol.part_name) AS "itemName",
         sol.order_qty AS "orderQty"
       FROM public.sales_order_lines sol
@@ -119,6 +125,7 @@ export async function getSoDocumentDetail(
       soLineId: r['soLineId'] as string,
       lineNo: num(r['lineNo']),
       itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       orderQty: num(r['orderQty']),
       clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,

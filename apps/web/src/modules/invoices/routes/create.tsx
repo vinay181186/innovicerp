@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
@@ -277,7 +278,16 @@ function InvoiceNewPage(): React.JSX.Element {
                 );
                 const opts = lines
                   .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
-                  .map((l) => ({ id: l.salesOrderLineId, code: l.itemCode, name: l.itemName }));
+                  // The dropdown labels each option with the drawing revision —
+                  // "IN-IT-0007/B" — because two SO lines for the same part at
+                  // different revisions are otherwise indistinguishable here.
+                  // What the picker SUBMITS is still the SO line id, so this is
+                  // a label only; a line with no revision keeps the bare code.
+                  .map((l) => ({
+                    id: l.salesOrderLineId,
+                    code: itemCodeWithRev(l.itemCode, l.itemRevision, '') || null,
+                    name: l.itemName,
+                  }));
                 return (
                   <div
                     key={card.id}
@@ -310,7 +320,11 @@ function InvoiceNewPage(): React.JSX.Element {
                       // Name field carries the name. The open dropdown still
                       // renders "CODE — Name" so you can search by either.
                       selectedLabel={(o) => o.code ?? o.name}
-                      valueLabel={line ? (line.itemCode ?? line.itemName) : undefined}
+                      valueLabel={
+                        line
+                          ? itemCodeWithRev(line.itemCode, line.itemRevision, line.itemName)
+                          : undefined
+                      }
                     />
                     <input
                       className="innovic-input"

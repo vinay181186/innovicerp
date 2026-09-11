@@ -31,6 +31,17 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
       SELECT
         vos.jc_op_id AS "jcOpId", jc.id AS "jobCardId", jc.code AS "jcCode",
         vos.op_seq AS "opSeq", so.code AS "soCode", i.code AS "itemCode",
+        -- The customer's drawing revision, read live off the SO line the card was
+        -- raised against. It rides the sol LEFT JOIN that already produces soCode,
+        -- so a JW-sourced or standalone card comes back null and renders as the
+        -- bare code. It is NOT items.revision, which describes the item master and
+        -- would tell the inspector to check against the wrong drawing.
+        --
+        -- Cast to text on purpose: the contract types this as a string, and the
+        -- column is only text on a database that has had migration 0119. On one
+        -- that has not it is still the old integer, and would arrive here as a
+        -- number wearing a string type. The cast is a no-op once 0119 is in.
+        sol.revision::text AS "itemRevision",
         jo.operation, jc.order_qty AS "orderQty",
         vos.completed_qty AS "completed", vos.qc_accepted_qty AS "qcAccepted",
         vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
@@ -62,6 +73,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         opSeq: Number(r['opSeq']),
         soCode: (r['soCode'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         operation: (r['operation'] as string | null) ?? '',
         orderQty: Number(r['orderQty'] ?? 0),
         completed: Number(r['completed'] ?? 0),
@@ -79,7 +91,13 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
     const logRows = await tx.execute(sql`
       SELECT
         ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
-        so.code AS "soCode", i.code AS "itemCode", jo.operation,
+        so.code AS "soCode", i.code AS "itemCode",
+        -- Same live SO-line read as the pending query above: the drawing revision
+        -- rides the existing sol LEFT JOIN, is null for cards with no SO behind
+        -- them, and is cast to text so a pre-0119 database cannot hand the UI a
+        -- number. Never items.revision.
+        sol.revision::text AS "itemRevision",
+        jo.operation,
         ol.qty AS "accepted", ol.reject_qty AS "rejected",
         ol.log_date AS "logDate", ol.created_at AS "loggedAt", ol.shift, ol.operator_name AS "inspector", ol.remarks,
         ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate",
@@ -104,6 +122,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         opSeq: Number(r['opSeq']),
         soCode: (r['soCode'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         operation: (r['operation'] as string | null) ?? '',
         accepted: Number(r['accepted'] ?? 0),
         rejected: Number(r['rejected'] ?? 0),

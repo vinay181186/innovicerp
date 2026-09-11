@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -137,7 +138,10 @@ export function IncomingPendingRow(props: {
               INCOMING
             </span>
             <b className="cyan" style={{ fontSize: 13 }}>
-              {o.itemCode ?? '—'}
+              {/* An OSP return traces to an SO line and shows CODE/REV; a vendor's
+                  raw-material receipt has no SO behind it and correctly shows the
+                  bare code. The "NO JOB CARD" tag below says which is which. */}
+              {itemCodeWithRev(o.itemCode, o.itemRevision)}
             </b>{' '}
             <span className="text2" style={{ fontSize: 12 }}>
               {o.itemName ?? ''}
@@ -188,7 +192,7 @@ export function IncomingPendingRow(props: {
           }}
         >
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
-            ✅ Inspect — {o.itemCode ?? o.itemName ?? 'Item'} ·{' '}
+            ✅ Inspect — {itemCodeWithRev(o.itemCode, o.itemRevision, o.itemName ?? 'Item')} ·{' '}
             <span
               style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}
             >
@@ -372,7 +376,7 @@ export function IncomingCompletedRow({ l }: { l: IncomingQcCompletedRow }): Reac
           >
             INCOMING
           </span>
-          <b className="cyan">{l.itemCode ?? '—'}</b>{' '}
+          <b className="cyan">{itemCodeWithRev(l.itemCode, l.itemRevision)}</b>{' '}
           <span className="text3" style={{ fontSize: 10 }}>
             {l.itemName ?? ''}
           </span>

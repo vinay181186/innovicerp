@@ -52,6 +52,13 @@ export const readyOpRowSchema = z.object({
   operation: z.string(),
   machine: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for the job card this op belongs to
+   *  (job_cards.source_so_line_id → sales_order_lines.revision). The operator
+   *  is the person who most needs it, so it rides alongside the item code on
+   *  this tile. Null on a JW-sourced or standalone card — there is no customer
+   *  drawing behind it — and null shows the bare code, never a bare slash. It
+   *  is not items.revision, which is a different column about the item. */
+  itemRevision: z.string().nullable().default(null),
   available: z.number().int(),
   dueDate: z.string().nullable(),
   isOverdue: z.boolean(),

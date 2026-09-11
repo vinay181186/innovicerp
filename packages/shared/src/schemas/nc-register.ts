@@ -44,6 +44,16 @@ export const ncRegisterSchema = z.object({
   // Live item master values resolved via LEFT JOIN on items (null if the item
   // was deleted). Prefer these over the *Text snapshot columns for display.
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision the rejected part was made to, read off
+   *  the SO line behind this NC's job card (job_cards.source_so_line_id →
+   *  sales_order_lines.revision). It is a display-only join, exactly like
+   *  itemCode above: it is never written to the NC and never appended to
+   *  itemCodeText, which is the durable snapshot of what the reporter typed.
+   *  Null when the card has no SO line behind it (JW-sourced or standalone, or
+   *  an SO line since deleted), and null renders as the bare item code. Never
+   *  items.revision, a different column about the item master — a wrong
+   *  revision on a rejection record is worse than no revision at all. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCodeText: z.string().nullable(),
   machineCodeText: z.string().nullable(),

@@ -11,6 +11,13 @@ export const jobQueueRowSchema = z.object({
   jcId: z.string().uuid(),
   jcCode: z.string(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision, taken from the SO line the job card was
+   *  raised against (job_cards.source_so_line_id → sales_order_lines.revision).
+   *  Null when there is no SO line to read — a JW-sourced or standalone card —
+   *  which is ordinary here, and shows as the bare item code. Not
+   *  `items.revision`: that column is about the item master, not this order's
+   *  drawing. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
   soCustomer: z.string().nullable(),

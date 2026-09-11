@@ -13,6 +13,7 @@ import type { ShopFloorRunningRow, StopOpInput } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useStopOp } from '@/modules/op-entry/api';
 import { StopOpModal } from '@/modules/op-entry/components/stop-op-modal';
@@ -240,7 +241,7 @@ export function ShopFloorView(): React.JSX.Element {
                         <td className="td-ctr mono fw-700 amber">{r.opSeq}</td>
                         <td className="fw-700">{r.operation}</td>
                         <td className="td-code" style={{ color: 'var(--purple)' }}>
-                          {r.itemCode ?? '—'}
+                          {itemCodeWithRev(r.itemCode, r.itemRevision)}
                         </td>
                         <td>{r.itemName ?? '—'}</td>
                         <td className="mono text2" style={{ fontSize: 11 }}>

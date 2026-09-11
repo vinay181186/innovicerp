@@ -23,6 +23,7 @@ import type {
   MachineSplit,
 } from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
 // Legacy printable op status → label + badge class. Legacy printJobCard used a
@@ -125,6 +126,13 @@ export function printJobCard(args: {
     )
     .join('');
 
+  // The printed Item Code carries the customer's drawing revision from the SO
+  // line behind this card (`CODE/REV`), because a card in a shop-floor operator's
+  // hand that disagrees with the Job Card view on screen is worse than one that
+  // says nothing. A JW-sourced or standalone card has no SO line, so the helper
+  // prints the bare code with no trailing slash.
+  const itemCodeLine = itemCodeWithRev(jc.itemCode, jc.itemRevision);
+
   // SO/WO No. from the source link (so/jw code); "—" for source-less JCs.
   const soWoNo = jc.sourceLink?.code ?? '—';
   const priorityHigh = jc.priority === 'high';
@@ -137,7 +145,7 @@ export function printJobCard(args: {
   const body = `
     <div class="doc-title"><h1>JOB CARD — ${esc(jc.code)}</h1><span class="print-meta">${printedMeta()}</span></div>
     <div class="info-grid">
-      <div class="info-box"><div class="info-lbl">Item Code</div><div class="info-val" style="color:#7c3aed">${esc(jc.itemCode)}</div></div>
+      <div class="info-box"><div class="info-lbl">Item Code</div><div class="info-val" style="color:#7c3aed">${esc(itemCodeLine)}</div></div>
       <div class="info-box"><div class="info-lbl">Item Name</div><div class="info-val">${esc(jc.itemName || '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Grade</div><div class="info-val">${esc(jc.rawMaterialGradeText || '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Size</div><div class="info-val">${esc(jc.rawMaterialSizeText || '—')}</div></div>

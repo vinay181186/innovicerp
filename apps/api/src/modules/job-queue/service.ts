@@ -63,6 +63,15 @@ export async function getJobQueue(
         op.machine_code_text AS "machineCodeText",
         op.op_type AS "opType",
         i.code AS "itemCode",
+        -- The customer's drawing revision, read live off the SO line the card was
+        -- raised against. Deliberately not items.revision, which describes the item
+        -- master. sol is LEFT JOINed below, so JW-sourced and standalone cards
+        -- return null and print as the bare code.
+        --
+        -- Cast to text deliberately: this is typed as a string, yet a database that
+        -- has not had migration 0119 still stores an integer and would send the
+        -- queue a number. Harmless once 0119 is in.
+        sol.revision::text AS "itemRevision",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         COALESCE(cl_so.name, cl_jw.name, so.customer_name, jw.customer_name) AS "soCustomer",
@@ -136,6 +145,7 @@ export async function getJobQueue(
         jcId: r['jcId'] as string,
         jcCode: String(r['jcCode'] ?? ''),
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         soCode: (r['soCode'] as string | null) ?? null,
         soCustomer: (r['soCustomer'] as string | null) ?? null,

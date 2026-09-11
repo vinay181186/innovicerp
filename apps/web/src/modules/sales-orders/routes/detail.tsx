@@ -7,6 +7,7 @@ import { Activity, ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -485,8 +486,10 @@ function LineRow(props: {
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
+      {/* CODE/REV. The Rev is the customer's drawing revision, typed on this
+          line, and it travels with the item code wherever an SO line is shown. */}
       <td className="mono" style={{ fontSize: 11 }}>
-        {l.itemCode ?? l.itemCodeText ?? '—'}
+        {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision)}
       </td>
       <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.partName}</td>
       <td className="text3" style={{ fontSize: 11 }}>
@@ -495,9 +498,9 @@ function LineRow(props: {
       <td className="mono" style={{ fontSize: 11 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span>{l.drawingNo ?? '—'}</span>
-          {/* Always shown: Rev is a server-owned number, and Rev 0 (the drawing
-              the line was born with) is a real value a falsy check would hide. */}
-          <span className="text3" style={{ fontSize: 10 }}>Rev {l.revision}</span>
+          {/* No Rev line here any more. It is the same value the Item Code cell
+              now carries as CODE/REV, and printing one fact twice in one row
+              reads as two facts that might disagree. */}
           {drawingFilePath ? (
             <button
               type="button"

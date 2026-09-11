@@ -10,6 +10,7 @@ import type {
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlan, useReleaseReservations, useReserveStock } from '@/modules/plans/api';
 import { Modal } from './modal';
@@ -171,12 +172,15 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     </>
   );
 
+  // `CODE/REV` — the customer's drawing revision from this SO line, so the
+  // planner can see which drawing they are planning against. A JW line has no
+  // customer revision, and then this is the bare code with no trailing slash.
+  const lineLabel = line.itemCode
+    ? itemCodeWithRev(line.itemCode, line.itemRevision)
+    : (line.itemName ?? `Line ${line.lineNo}`);
+
   return (
-    <Modal
-      title={`Create Plan — ${line.itemCode ?? line.itemName ?? `Line ${line.lineNo}`}`}
-      onClose={onClose}
-      footer={footer}
-    >
+    <Modal title={`Create Plan — ${lineLabel}`} onClose={onClose} footer={footer}>
       <div
         style={{
           background: 'var(--bg3)',
@@ -197,7 +201,11 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           <div>
             <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
             <br />
-            <b style={{ color: 'var(--purple)' }}>{line.itemCode ?? '—'}</b>
+            {/* `CODE/REV` — see the modal title. nowrap so a short code never
+                breaks across two lines in this summary strip. */}
+            <b style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}>
+              {itemCodeWithRev(line.itemCode, line.itemRevision)}
+            </b>
           </div>
           <div>
             <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO QTY</span>

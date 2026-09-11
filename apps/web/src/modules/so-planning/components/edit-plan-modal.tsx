@@ -21,6 +21,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { addDaysLocal, todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import {
   MaterialGradePicker,
@@ -583,9 +584,16 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // there the field genuinely does not apply.
   const naDash = <span style={{ color: 'var(--text3)', fontSize: 11 }}>—</span>;
 
+  // `CODE/REV` — the customer's drawing revision from the SO line this plan was
+  // raised against. A JW-sourced or ad-hoc plan has none and keeps the bare code,
+  // with no trailing slash.
+  const planItemLabel = plan.itemCode
+    ? itemCodeWithRev(plan.itemCode, plan.itemRevision)
+    : (plan.itemNameText ?? '');
+
   return (
     <Modal
-      title={`✏ Plan: ${plan.code} — ${plan.itemCode ?? plan.itemNameText ?? ''}`}
+      title={`✏ Plan: ${plan.code} — ${planItemLabel}`}
       size="lg"
       onClose={onClose}
       footer={footer}
@@ -618,7 +626,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div>
             <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
             <br />
-            <b style={{ color: 'var(--purple)' }}>{plan.itemCode ?? plan.itemCodeText ?? ''}</b>{' '}
+            {/* `CODE/REV` — see planItemLabel. nowrap so a short code never
+                breaks across two lines in this summary strip. */}
+            <b style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}>
+              {itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision, '')}
+            </b>{' '}
             {plan.itemName ?? plan.itemNameText ?? ''}
           </div>
           <div>

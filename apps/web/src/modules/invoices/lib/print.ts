@@ -20,6 +20,7 @@
 
 import type { Company, InvoiceDetail } from '@innovic/shared';
 import { companyAddressLines } from '@/lib/print/company';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { inrFormat } from '@/lib/print/doc-print';
 import { letterheadFooterHtml, letterheadHeaderHtml } from '@/lib/print/letterhead';
 
@@ -99,7 +100,10 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
         // one cell and push the row height around, and there was no column to
         // run the names down. An em dash where a name is missing: a blank cell
         // on a tax invoice reads as something having gone wrong.
-        `<td style="${TD}">${esc(l.itemCode ?? l.itemCodeText ?? '') || '&mdash;'}</td>` +
+        // The code carries the customer's drawing revision — "IN-IT-0007/B" —
+        // so the tax invoice states the same revision as the job card and the
+        // dispatch note. No revision on the SO line leaves the code bare.
+        `<td style="${TD}">${esc(itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, '')) || '&mdash;'}</td>` +
         `<td style="${TD}">${esc(l.itemName) || '&mdash;'}</td>` +
         `<td style="${TD};text-align:right">${l.qty.toFixed(1)}</td>` +
         `<td style="${TD};text-align:center;font-size:10px">NOS</td>` +

@@ -117,6 +117,13 @@ export const soOverviewChildRowSchema = z.object({
   lineNo: z.number().int().positive().nullable(),
   clientPoLineNo: z.string().nullable(),
   itemCode: z.string(),
+  /** The customer's drawing revision, and ONLY on a Component drill, where the row
+   *  IS an SO line and the value is that line's `sales_order_lines.revision`
+   *  (migration 0119). An Equipment drill row is a BOM child of the ordered
+   *  assembly: the customer ordered the equipment, not the child, so the child has
+   *  no drawing revision of its own and this stays null rather than borrowing the
+   *  parent's. It is never `items.revision`, a different column about the item. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string(),
   stage: soOverviewItemStageEnum,
   status: soOverallStatusEnum,

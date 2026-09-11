@@ -5,6 +5,7 @@
 import type { QcCommandQueueRow } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 type Sort = 'age' | 'due' | 'customer';
 const SORTS: { id: Sort; label: string }[] = [
@@ -150,7 +151,7 @@ export function QueueTab({
                           <b style={{ color: 'var(--red)' }}>{it.operation}</b>
                           <br />
                           <span className="text3" style={{ fontSize: 10 }}>
-                            {it.itemCode ?? '—'}
+                            {itemCodeWithRev(it.itemCode, it.itemRevision)}
                           </span>
                         </td>
                         <td style={{ fontSize: 12 }}>

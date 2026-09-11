@@ -10,6 +10,12 @@ export const dispatchableLineSchema = z.object({
   salesOrderLineId: z.string().uuid(),
   lineNo: z.number().int(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision typed on this very SO line
+   *  (sales_order_lines.revision, migration 0119). It describes the order's
+   *  drawing, not the item, so it is never items.revision — that is a different
+   *  column and substituting it would put a plausible-looking wrong revision on
+   *  the dispatch. Null is correct and renders as the bare code. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string(),
   orderQty: z.number().int().nonnegative(),
   readyQty: z.number().int().nonnegative(), // produced + QC-accepted (final op)
@@ -53,6 +59,14 @@ export const customerDispatchLineRowSchema = z.object({
   lineNo: z.number().int(),
   salesOrderLineId: z.string().uuid().nullable(),
   itemCode: z.string().nullable(), // resolved from items master (items.code)
+  /** The customer's drawing revision, read live off the SO line this dispatch
+   *  line ships against (customer_dispatch_lines.sales_order_line_id →
+   *  sales_order_lines.revision, migration 0119). Never items.revision, which
+   *  is a different column about the item master. The salesOrderLineId above is
+   *  nullable and the join is a LEFT JOIN, so null arrives here whenever there
+   *  is genuinely no SO line behind the shipment — and null must render as the
+   *  bare item code, with no slash and no placeholder. */
+  itemRevision: z.string().nullable().default(null),
   itemCodeText: z.string().nullable(), // stored snapshot alias (fallback only)
   itemName: z.string(),
   qty: z.number().int(),
@@ -97,6 +111,12 @@ export const customerDispatchRegisterRowSchema = z.object({
   soNo: z.string().nullable(),
   clientPoLineNo: z.string().nullable(),
   itemCode: z.string().nullable(), // resolved from items master (items.code)
+  /** The customer's drawing revision for this register row, read off the SO
+   *  line the dispatch line ships against (sales_order_lines.revision,
+   *  migration 0119) — the same LEFT JOIN that already supplies clientPoLineNo
+   *  and uom below. Never items.revision. Null is correct wherever the line has
+   *  no SO line behind it, and renders as the bare item code. */
+  itemRevision: z.string().nullable().default(null),
   itemCodeText: z.string().nullable(), // stored snapshot alias (fallback only)
   itemName: z.string(),
   qty: z.number().int(),

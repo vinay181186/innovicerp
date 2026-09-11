@@ -180,6 +180,7 @@ type DetailLineRow = {
   so_line_id: string;
   line_no: number;
   item_code: string | null;
+  item_revision: string | null;
   item_name: string;
   order_qty: number;
   material_cost: string | number;
@@ -232,6 +233,11 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
       sql.raw(`
         SELECT sol.id AS so_line_id, sol.line_no,
           sol.item_code_text AS item_code, sol.part_name AS item_name, sol.order_qty,
+          -- The customer's drawing revision typed on this line (migration 0119).
+          -- Cast to text because the contract types it as a string and a database
+          -- without 0119 still holds the old integer here; the cast is a no-op once
+          -- 0119 is in. Never items.revision, a different column about the item.
+          sol.revision::text AS item_revision,
           COALESCE((
             SELECT SUM(pol.qty * pol.rate) FROM purchase_order_lines pol
             JOIN purchase_orders po ON po.id = pol.purchase_order_id
@@ -333,6 +339,7 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
         salesOrderLineId: r.so_line_id,
         lineNo: Number(r.line_no) || 0,
         itemCode: r.item_code,
+        itemRevision: r.item_revision ?? null,
         itemName: r.item_name,
         orderQty: Number(r.order_qty) || 0,
         materialCost,

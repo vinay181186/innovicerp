@@ -107,6 +107,11 @@ export const soQcLineSchema = z.object({
   soLineId: z.string().uuid(),
   lineNo: z.number().int(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for this SO line, read off
+   *  `sales_order_lines.revision` (migration 0119) via `soLineId` above. Null only
+   *  where 0119 has not been applied; never `items.revision`, a different column
+   *  about the item master that would put a wrong revision on every QC row. */
+  itemRevision: z.string().nullable().default(null),
   partName: z.string().nullable(),
   orderQty: z.number().int(),
   jcCount: z.number().int().nonnegative(),

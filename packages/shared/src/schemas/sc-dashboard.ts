@@ -58,6 +58,15 @@ export const scPendingLineSchema = z.object({
   vendorName: z.string().nullable(),
   soCode: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision for this line, read off the SO line the
+   *  purchase order line was raised against
+   *  (purchase_order_lines.source_so_line_id → sales_order_lines.revision).
+   *  Null whenever the PO line has no SO behind it — a stock-replenishment or
+   *  consumable line is bought against no customer drawing — and null must
+   *  render as the bare item code, never as a trailing slash. It is never
+   *  items.revision, which describes the item master and means something
+   *  else entirely. */
+  itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   qty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),

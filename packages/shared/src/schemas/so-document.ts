@@ -97,6 +97,11 @@ export interface SoDocumentLine {
   soLineId: string;
   lineNo: number;
   itemCode: string | null;
+  /** The customer's drawing revision for this SO line, from
+   *  `sales_order_lines.revision` (migration 0119) via `soLineId` above. Null on a
+   *  database that has not had 0119 applied; never `items.revision`, which is a
+   *  different column describing the item master. */
+  itemRevision: string | null;
   itemName: string | null;
   orderQty: number;
   clientPoLineNo: string | null;

@@ -60,7 +60,15 @@ export async function buildOperator(
   const readyRows = await q(
     tx,
     `SELECT jc.code AS jc_code, o.op_seq, o.operation, m.code AS machine,
-        sol.item_code_text AS item_code, vs.available, jc.due_date
+        sol.item_code_text AS item_code,
+        -- The customer's drawing revision off the same SO line the item code
+        -- already comes from, so the operator reads CODE/REV on one line. The
+        -- sol join below is a LEFT JOIN, so a JW-sourced or standalone card
+        -- still lists, with a null revision. Cast to text because the contract
+        -- types it as a string and the column is only text on a database that
+        -- has had migration 0119; without it, it is still an integer.
+        sol.revision::text AS item_revision,
+        vs.available, jc.due_date
      FROM v_jc_op_status vs
      JOIN jc_ops o ON o.id = vs.jc_op_id AND o.deleted_at IS NULL
      JOIN job_cards jc ON jc.id = o.job_card_id AND jc.deleted_at IS NULL
@@ -78,6 +86,7 @@ export async function buildOperator(
     operation: String(r['operation'] ?? ''),
     machine: (r['machine'] as string) ?? null,
     itemCode: (r['item_code'] as string) ?? null,
+    itemRevision: (r['item_revision'] as string) ?? null,
     available: num(r['available']),
     dueDate: (r['due_date'] as string) ?? null,
     isOverdue: !!r['due_date'] && String(r['due_date']) < today,

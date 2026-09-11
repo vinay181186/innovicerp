@@ -26,6 +26,7 @@ import { SortableHead } from '@/components/shared/sortable-head';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { CapaView } from '@/modules/capa/components/capa-view';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
@@ -160,7 +161,16 @@ function NcRegisterListPage(): React.JSX.Element {
         accessorFn: (r) => r.itemCode ?? r.itemCodeText ?? '',
         cell: ({ row }) => (
           <span style={{ fontSize: 11 }}>
-            <span className="mono">{row.original.itemCode ?? row.original.itemCodeText}</span>
+            {/* The drawing revision is a live read off the SO line behind the NC's
+                job card, so it only rides the LIVE item code. When the item has
+                been deleted and we fall back to itemCodeText — the snapshot of
+                what the reporter typed — the code stays bare: nothing typed ever
+                gets a revision glued onto it. */}
+            <span className="mono">
+              {row.original.itemCode
+                ? itemCodeWithRev(row.original.itemCode, row.original.itemRevision)
+                : row.original.itemCodeText}
+            </span>
             <span className="text3" style={{ marginLeft: 6 }}>
               {row.original.itemName ?? row.original.itemNameText ?? ''}
             </span>
