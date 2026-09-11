@@ -14,7 +14,8 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { signedUrl } from '@/lib/storage';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { drawingViewUrl } from '@/lib/drawing-url';
 import { useItemsList } from '@/modules/items/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -34,6 +35,11 @@ import { OutsourceBalanceModal } from './outsource-balance-modal';
 import { buildJcWriteInput } from '../lib/build-jc-write-input';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
+
+/** Which stored drawings have a thumbnail worth auto-loading. Anything else
+ *  (PDF, DWG, a stray .zip) gets a file chip and an Open button instead of a
+ *  broken image. */
+const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 
 // Legacy disposition icon/colour ladder (viewJCStatus L11115-11116). Legacy
 // keyed Title-Case strings ('Rework', 'Scrap', …); our nc_disposition enum is
@@ -139,21 +145,26 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
   };
 }
 
-// QC document card (legacy L11253-54). storagePath resolves to a signed URL on
-// click (legacy embedded base64 fileData directly; we stream from Storage).
+// QC document card (legacy L11253-54). Clicking resolves a short-lived link
+// (legacy embedded base64 fileData directly; we stream from Storage). The link
+// is minted by the SERVER in view mode since 2026-09-11, so the open is logged
+// and no attachment disposition is handed out by the browser's own session.
 function QcDocCard({
   docType,
   fileName,
   storagePath,
   uploadDate,
+  jcCode,
 }: {
   docType: string;
   fileName: string;
   storagePath: string;
   uploadDate: string | null;
+  /** Display only — what the file access log should call this job card. */
+  jcCode?: string;
 }): React.JSX.Element {
   const open = (): void => {
-    void signedUrl(storagePath).then((url) => window.open(url, '_blank', 'noopener'));
+    void drawingViewUrl({ path: storagePath, source: 'qc_document', ...(jcCode ? { refCode: jcCode } : {}) }).then((url) => window.open(url, '_blank', 'noopener'));
   };
   return (
     <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border)', minWidth: 190 }}>
@@ -206,11 +217,69 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const { data: extras } = useJobCardStatusExtras(id);
   const { data: company } = useMyCompany();
   const [detailOpen, setDetailOpen] = useState(true);
-  const drawingPath = jc?.drawingFilePath ?? null;
+  const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
+
+  // WHICH DRAWING THIS SCREEN SHOWS — and the panel says so on screen, because
+  // up to FOUR different files can sit behind one job card and they are not
+  // interchangeable. The print the customer sent with the order is what the
+  // part must be made to; the item master's drawing is the generic one for that
+  // part number and can easily be a revision behind. Showing one without naming
+  // it is how a part gets made to the wrong print.
+  //
+  // Order, first one that exists wins:
+  //   1. the SALES ORDER line's drawing   (soLineDrawingFilePath)
+  //   2. the JWSO line's drawing          (jwLineDrawingFilePath)
+  //   3. this job card's own upload       (jc.drawingFilePath)
+  //   4. the item master's drawing        (itemDrawingFilePath)
+  //
+  // The first, second and fourth come from the edit model, where the API
+  // resolves them LIVE off the source line on every read rather than copying
+  // them onto the card. That is the whole point: upload a corrected print
+  // against the order and the shop floor sees it on the next refresh, instead
+  // of building to a file frozen at the moment the card was raised. A card has
+  // at most one source, so 1 and 2 are never both set.
+  const { data: model } = useJobCardEditModel(id);
+  /** Caption suffix for the revision printed on that drawing, when there is
+   *  one. Blank rather than "Rev —": an empty revision is not a fact. */
+  const revSuffix = (rev: string | null | undefined): string => (rev ? ` · Rev ${rev}` : '');
+  const drawing = model?.soLineDrawingFilePath
+    ? {
+        path: model.soLineDrawingFilePath,
+        label: `Sales order drawing${revSuffix(model.soLineRevision)}`,
+        source: 'so_line' as const,
+      }
+    : model?.jwLineDrawingFilePath
+      ? {
+          path: model.jwLineDrawingFilePath,
+          label: `Job work order drawing${revSuffix(model.jwLineRevision)}`,
+          source: 'jw_line' as const,
+        }
+      : jc?.drawingFilePath
+        ? {
+            path: jc.drawingFilePath,
+            label: 'Attached to this Job Card',
+            source: 'job_card' as const,
+          }
+        : model?.itemDrawingFilePath
+          ? {
+              path: model.itemDrawingFilePath,
+              label: `Item master · ${jc?.itemCode ?? ''}`.trim(),
+              source: 'item' as const,
+            }
+          : null;
+
+  // Auto-loaded on open, and asked for as a VIEW. Never `download`: the page
+  // opening a thumbnail is nobody deciding to keep a copy, and logging it as one
+  // would make the access log useless for the question it exists to answer.
   const { data: drawingUrl } = useQuery({
-    queryKey: ['jc-drawing', drawingPath],
-    queryFn: () => signedUrl(drawingPath as string),
-    enabled: Boolean(drawingPath),
+    queryKey: ['jc-drawing', drawing?.path ?? null],
+    queryFn: () =>
+      drawingViewUrl({
+        path: drawing?.path ?? '',
+        source: drawing?.source ?? 'job_card',
+        ...(jc?.code ? { refCode: jc.code } : {}),
+      }),
+    enabled: Boolean(drawing),
     staleTime: 60_000,
   });
 
@@ -302,18 +371,57 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
 
       {/* Legacy _jcDrwSec (L11263). Legacy pairs the header with a
           `🖨 Drawing` button (printDrawingFile(id,'jc')); we have no drawing-only
-          print path on this page, so the header carries the label alone. */}
-      {drawingUrl ? (
+          print path on this page, so the header carries the label alone.
+
+          The badge beside it names WHICH file this is — see the drawing
+          selection above. Clicking opens the shared preview rather than the
+          browser's own tab, which is what gives us one Download button in one
+          place, shown only to people who may save a copy. */}
+      {drawing ? (
         <div style={{ marginBottom: 14, padding: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8, flexWrap: 'wrap' }}>
             <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>▸ DRAWING</span>
+            <span className="badge b-grey" style={{ fontSize: 10 }}>{drawing.label}</span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 'auto', fontSize: 11 }}
+              onClick={() => setDrawingPreviewOpen(true)}
+            >
+              👁 Open drawing
+            </button>
           </div>
-          <img
-            src={drawingUrl}
-            alt="JC drawing"
-            style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 4, border: '1px solid var(--border2)', display: 'block' }}
-          />
+          {drawingUrl && IMAGE_RE.test(drawing.path) ? (
+            <button
+              type="button"
+              onClick={() => setDrawingPreviewOpen(true)}
+              title="Open this drawing"
+              style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', display: 'block' }}
+            >
+              <img
+                src={drawingUrl}
+                alt={`${drawing.label} drawing`}
+                style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 4, border: '1px solid var(--border2)', display: 'block' }}
+              />
+            </button>
+          ) : (
+            // PDFs (and anything else) have no thumbnail. The old bare <img>
+            // rendered a broken-image icon here; say what the file is instead.
+            <div className="text3" style={{ fontSize: 11 }}>
+              📄 {drawing.path.split('/').pop()?.replace(/^\d{10,}-/, '') ?? 'drawing'} — open it to
+              view.
+            </div>
+          )}
         </div>
+      ) : null}
+      {drawingPreviewOpen && drawing ? (
+        <FilePreviewModal
+          storagePath={drawing.path}
+          kind="drawing"
+          source={drawing.source}
+          refCode={jc.code}
+          onClose={() => setDrawingPreviewOpen(false)}
+        />
       ) : null}
 
       {/* Consolidated summary card (item · SO/WO · quantity · status · route
@@ -395,6 +503,7 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                 fileName={d.fileName}
                 storagePath={d.storagePath}
                 uploadDate={d.uploadDate}
+                jcCode={jc.code}
               />
             ))}
           </div>

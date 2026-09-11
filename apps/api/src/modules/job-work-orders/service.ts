@@ -676,6 +676,12 @@ function toJobWorkOrderLine(
     partName: row.partName,
     material: row.material,
     drawingNo: row.drawingNo,
+    // Migration 0120 — the customer's drawing Rev and the drawing FILE, read
+    // back exactly as the sales-order line reads them. Both selects that feed
+    // this mapper are whole-row `select()`s, so the columns arrive on their own;
+    // what was missing was this mapper putting them on the wire.
+    revision: row.revision,
+    drawingFilePath: row.drawingFilePath,
     uom: row.uom,
     orderQty: row.orderQty,
     returnedQty: row.returnedQty,
@@ -779,6 +785,17 @@ export async function createJobWorkOrder(
           partName: l.partName,
           material: l.material ?? null,
           drawingNo: l.drawingNo ?? null,
+          // The customer's drawing Rev, exactly as the user typed it (0120).
+          // The sales-order line's input makes this compulsory and so has
+          // nothing to default; the JWSO line's input leaves it OPTIONAL,
+          // because the server paths that raise a JWSO line without asking a
+          // human — the BOM cascade, the SO→JW conversions — have no Rev to
+          // give. Those land on '0', the same value the column's DB default
+          // carries, written explicitly here so the row does not depend on
+          // drizzle's undefined-means-DEFAULT behaviour. The server never
+          // invents or bumps a Rev; "compulsory" is a rule the FORM enforces.
+          revision: l.revision ?? '0',
+          drawingFilePath: l.drawingFilePath ?? null,
           uom: l.uom,
           orderQty: l.orderQty,
           rate: (l.rate ?? 0).toFixed(2),
@@ -1002,6 +1019,19 @@ async function mergeLines(
     if (u.data.partName !== undefined) lineUpdate['partName'] = u.data.partName;
     if (u.data.material !== undefined) lineUpdate['material'] = u.data.material ?? null;
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
+    // Rev and drawing file are written like any other field the user typed
+    // (0120). Absent from the payload means "not mentioned", so the stored
+    // value survives; an explicit null on the file means the user CLEARED the
+    // drawing and has to be written through, which is why `?? null` is here and
+    // the `!== undefined` test is outside it.
+    //
+    // Unlike the sales-order line there is no history table to feed: drawing
+    // revisions are logged per SO line (so_line_drawing_revisions) and job-work
+    // lines have no equivalent. Nothing to compare against, so nothing is read
+    // back first.
+    if (u.data.revision !== undefined) lineUpdate['revision'] = u.data.revision;
+    if (u.data.drawingFilePath !== undefined)
+      lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
     if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
     if (u.data.rate !== undefined && showMoney)
@@ -1039,6 +1069,10 @@ async function mergeLines(
         partName: l.partName,
         material: l.material ?? null,
         drawingNo: l.drawingNo ?? null,
+        // Same as the create path: a line added on edit is still a new line,
+        // and it takes the Rev the user typed, or '0' when nobody was asked.
+        revision: l.revision ?? '0',
+        drawingFilePath: l.drawingFilePath ?? null,
         uom: l.uom,
         orderQty: l.orderQty,
         rate: (l.rate ?? 0).toFixed(2),

@@ -58,6 +58,7 @@ import { soQcStatusRoutes } from './modules/so-qc-status/routes';
 import { qcDocumentsRoutes } from './modules/qc-documents/routes';
 import { soDocumentsRoutes } from './modules/so-documents/routes';
 import { jwsoDocumentsRoutes } from './modules/jwso-documents/routes';
+import { drawingFilesRoutes } from './modules/drawing-files/routes';
 import { qcCommandRoutes } from './modules/qc-command/routes';
 import { qcProcessesRoutes } from './modules/qc-processes/routes';
 import { tpiMastersRoutes } from './modules/tpi-masters/routes';
@@ -215,6 +216,9 @@ await app.register(soQcStatusRoutes);
 await app.register(qcDocumentsRoutes);
 await app.register(soDocumentsRoutes);
 await app.register(jwsoDocumentsRoutes);
+// Server-minted links to drawing files (0120/0121). The browser no longer signs
+// its own Storage URLs — this route checks who is asking and logs every one.
+await app.register(drawingFilesRoutes);
 await app.register(qcCommandRoutes);
 await app.register(reportsRoutes);
 await app.register(savedReportsRoutes);

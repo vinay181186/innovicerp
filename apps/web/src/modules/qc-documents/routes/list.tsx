@@ -24,14 +24,15 @@ import * as XLSX from 'xlsx';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDownloadDrawings, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoQcStatusView } from '@/modules/so-qc-status/components/so-qc-status-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
-  signedUrlFor,
+  qcDocViewUrl,
+  saveQcDoc,
   uploadQcFile,
   useCreateQcDocument,
   useDeleteQcDocument,
@@ -59,6 +60,16 @@ function fmtDate(iso: string | null): string {
   const d = iso.slice(0, 10);
   const [y, m, day] = d.split('-');
   return y && m && day ? `${day}-${m}-${y}` : d;
+}
+
+/** "May this person SAVE a copy of a QC file?" — the whole-account tick, read
+ *  the same way on every button on this page. Looking is never gated; only the
+ *  bulk Download actions consult this, and they disappear when it is false
+ *  rather than sitting there greyed out. */
+function useMaySaveFiles(): boolean {
+  const { data: eff } = useMyAccess();
+  const { data: me } = useSession();
+  return canDownloadDrawings(eff, me?.role);
 }
 
 function QcDocumentsPage(): React.JSX.Element {
@@ -138,6 +149,7 @@ function QcDocumentsPage(): React.JSX.Element {
 // ─── Matrix view (legacy renderQCDocuments L23039) ──────────────────────────
 
 function MatrixView(): React.JSX.Element {
+  const maySave = useMaySaveFiles();
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
   const [soSearch, setSoSearch] = useState('');
@@ -227,19 +239,25 @@ function MatrixView(): React.JSX.Element {
         >
           ⬇ Export Excel
         </button>
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{
-            background: 'rgba(34,197,94,0.1)',
-            color: 'var(--green)',
-            border: '1px solid rgba(34,197,94,0.3)',
-          }}
-          disabled={!matrix}
-          onClick={() => matrix && void downloadAllReports(matrix)}
-        >
-          ⬇ Download All Reports
-        </button>
+        {/* Absent, not greyed, for anyone without the download tick — and the
+            server would refuse the links anyway. Export Excel beside it is a
+            spreadsheet this page builds itself, not a stored file, so it is
+            untouched. */}
+        {maySave ? (
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{
+              background: 'rgba(34,197,94,0.1)',
+              color: 'var(--green)',
+              border: '1px solid rgba(34,197,94,0.3)',
+            }}
+            disabled={!matrix}
+            onClick={() => matrix && void downloadAllReports(matrix)}
+          >
+            ⬇ Download All Reports
+          </button>
+        ) : null}
       </div>
 
       {/* SO selector (legacy L23042-23047) */}
@@ -569,9 +587,12 @@ function OverallTd({
   );
 }
 
-async function openStoragePath(path: string): Promise<void> {
+// A LOOK at one file. Deliberately still a view, not a save: this is how
+// everyone on the page reaches a report, and the restricted act is keeping a
+// copy, not reading one. The server logs it either way.
+async function openStoragePath(path: string, refCode?: string | null): Promise<void> {
   try {
-    const url = await signedUrlFor(path);
+    const url = await qcDocViewUrl(path, refCode);
     window.open(url, '_blank', 'noopener');
   } catch (e) {
     window.alert(e instanceof Error ? e.message : 'Could not open file');
@@ -639,10 +660,10 @@ async function downloadAllReports(matrix: QcMatrixResponse): Promise<void> {
   }
   for (const p of paths) {
     try {
-      const url = await signedUrlFor(p);
-      window.open(url, '_blank', 'noopener');
+      await saveQcDoc(p, null, matrix.so.code);
     } catch {
-      // skip files that fail to sign
+      // Skip anything the server refuses or cannot sign. One bad file must not
+      // stop the rest of the batch arriving.
     }
   }
 }
@@ -737,6 +758,7 @@ function LineDetailBody({
   canDelete: boolean;
   companyId: string | null;
 }): React.JSX.Element {
+  const maySave = useMaySaveFiles();
   return (
     <div>
       {/* Header (legacy L23263-23269) */}
@@ -775,20 +797,22 @@ function LineDetailBody({
           <br />
           <b>{data.batches.length}</b>
         </div>
-        <div style={{ marginLeft: 'auto' }}>
-          <button
-            type="button"
-            className="btn btn-sm"
-            style={{
-              background: 'rgba(34,197,94,0.1)',
-              color: 'var(--green)',
-              border: '1px solid rgba(34,197,94,0.3)',
-            }}
-            onClick={() => void downloadAllLine(data)}
-          >
-            ⬇ Download All
-          </button>
-        </div>
+        {maySave ? (
+          <div style={{ marginLeft: 'auto' }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{
+                background: 'rgba(34,197,94,0.1)',
+                color: 'var(--green)',
+                border: '1px solid rgba(34,197,94,0.3)',
+              }}
+              onClick={() => void downloadAllLine(data)}
+            >
+              ⬇ Download All
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* QC Inspection Batches (legacy L23271-23290) */}
@@ -841,6 +865,7 @@ function LineDetailBody({
         <DocSection
           key={section.docType}
           jobCardId={jobCardId}
+          jcCode={data.jcCode}
           section={section}
           totalNeeded={data.totalAccepted}
           canUpload={canUpload}
@@ -854,6 +879,7 @@ function LineDetailBody({
 
 function DocSection({
   jobCardId,
+  jcCode,
   section,
   totalNeeded,
   canUpload,
@@ -861,12 +887,15 @@ function DocSection({
   companyId,
 }: {
   jobCardId: string;
+  /** Display only — what the file access log should call this job card. */
+  jcCode: string;
   section: QcLineDetailResponse['sections'][number];
   totalNeeded: number;
   canUpload: boolean;
   canDelete: boolean;
   companyId: string | null;
 }): React.JSX.Element {
+  const maySave = useMaySaveFiles();
   const del = useDeleteQcDocument();
   const create = useCreateQcDocument();
   const uploads = [...section.docs].sort((a, b) => (a.srFrom ?? 0) - (b.srFrom ?? 0));
@@ -967,12 +996,13 @@ function DocSection({
           </span>
         </div>
         <span style={{ fontWeight: 700, fontSize: 11, color: statusColor }}>{statusLabel}</span>
-        {uploads.length > 0 ? (
+        {uploads.length > 0 && maySave ? (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             style={{ fontSize: 10, marginLeft: 6, color: 'var(--green)' }}
-            onClick={() => void downloadDocs(uploads)}
+            onClick={() => void downloadDocs(uploads, jcCode)}
+            title="Save every file in this section"
           >
             ⬇
           </button>
@@ -1015,7 +1045,7 @@ function DocSection({
                 fontWeight: 700,
                 color: 'var(--green)',
               }}
-              onClick={() => void openStoragePath(up.storagePath)}
+              onClick={() => void openStoragePath(up.storagePath, jcCode)}
             >
               👁 View
             </button>
@@ -1105,8 +1135,7 @@ async function downloadAllLine(data: QcLineDetailResponse): Promise<void> {
   }
   for (const p of paths) {
     try {
-      const url = await signedUrlFor(p);
-      window.open(url, '_blank', 'noopener');
+      await saveQcDoc(p, null, data.jcCode);
     } catch {
       // skip
     }
@@ -1114,16 +1143,18 @@ async function downloadAllLine(data: QcLineDetailResponse): Promise<void> {
 }
 
 // Download every upload in one doc-type section (legacy _qcDocDownloadType
-// L23430, reached from the section header's ⬇ at L23320). Same fidelity as this
-// page's other download actions: opens each signed URL rather than forcing a
-// save, because signedUrlFor() issues no download disposition (see ISSUE-037).
-async function downloadDocs(docs: QcLineDetailResponse['sections'][number]['docs']): Promise<void> {
+// L23430, reached from the section header's ⬇ at L23320). This now really does
+// download — the server mints an attachment link — which closes ISSUE-037: the
+// old code re-opened inline links, so a button marked ⬇ left nothing on disk.
+async function downloadDocs(
+  docs: QcLineDetailResponse['sections'][number]['docs'],
+  jcCode?: string | null,
+): Promise<void> {
   for (const d of docs) {
     try {
-      const url = await signedUrlFor(d.storagePath);
-      window.open(url, '_blank', 'noopener');
+      await saveQcDoc(d.storagePath, d.fileName, jcCode);
     } catch {
-      // skip files that fail to sign
+      // skip files the server refuses or cannot sign
     }
   }
 }
@@ -1161,7 +1192,7 @@ function RegisterView(): React.JSX.Element {
 
   async function openFile(d: QcDocument): Promise<void> {
     try {
-      const url = await signedUrlFor(d.storagePath);
+      const url = await qcDocViewUrl(d.storagePath, d.soCodeText);
       window.open(url, '_blank', 'noopener');
     } catch (e) {
       window.alert(e instanceof Error ? e.message : 'Could not open file');

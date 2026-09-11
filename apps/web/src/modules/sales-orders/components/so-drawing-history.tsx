@@ -80,7 +80,15 @@ function chipLabels(lines: SoDrawingHistoryLine[]): Map<string, string> {
   return out;
 }
 
-export function SoDrawingHistory({ salesOrderId }: { salesOrderId: string }): React.JSX.Element {
+export function SoDrawingHistory({
+  salesOrderId,
+  soCode,
+}: {
+  salesOrderId: string;
+  /** Only so the drawing access log reads "IN-SO-26-00521 L3" rather than a
+   *  storage path. Optional — the history stands on its own without it. */
+  soCode?: string;
+}): React.JSX.Element {
   const { data, isLoading, isError } = useSoDrawingHistory(salesOrderId);
   // Which item-code chip is open, and which file the user asked to look at.
   // One modal for the whole tab — every 👁 feeds the same slot.
@@ -97,6 +105,10 @@ export function SoDrawingHistory({ salesOrderId }: { salesOrderId: string }): Re
   // Fall back to the first line if the stored id no longer exists (the line was
   // removed from the SO between refetches).
   const active = data.lines.find((l) => l.soLineId === activeLineId) ?? data.lines[0] ?? null;
+  // What the access log should call whatever the user opens from this tab.
+  const previewRefCode = active
+    ? `${soCode ? `${soCode} ` : ''}L${active.lineNo}`.trim()
+    : soCode;
 
   return (
     <div>
@@ -249,7 +261,16 @@ export function SoDrawingHistory({ salesOrderId }: { salesOrderId: string }): Re
       ) : null}
 
       {previewPath ? (
-        <FilePreviewModal storagePath={previewPath} onClose={() => setPreviewPath(null)} />
+        // A superseded drawing is still a drawing: same server-minted link, same
+        // log row, same gate on Download. If anything, an OLD print is the one
+        // you most want a record of somebody taking a copy of.
+        <FilePreviewModal
+          storagePath={previewPath}
+          kind="drawing"
+          source="so_line"
+          {...(previewRefCode ? { refCode: previewRefCode } : {})}
+          onClose={() => setPreviewPath(null)}
+        />
       ) : null}
     </div>
   );

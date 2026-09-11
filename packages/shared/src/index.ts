@@ -60,6 +60,7 @@ export * from './schemas/machine-split';
 export * from './schemas/op-entry';
 export * from './schemas/sales-order';
 export * from './schemas/so-drawing-history';
+export * from './schemas/drawing-file';
 export * from './schemas/job-work-order';
 export * from './schemas/job-card';
 export * from './schemas/purchase-request';

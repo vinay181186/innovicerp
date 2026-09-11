@@ -30,6 +30,10 @@ export function useMyAccess() {
 export {
   canViewForm,
   canEntryForm,
+  // Whole-account switch, not a per-form one: "may this person SAVE a copy of a
+  // drawing". Read by the Download buttons AND by the server route that mints
+  // the link, so a hidden button and a refused request can never disagree.
+  canDownloadDrawings,
   canEditForm,
   canApproveForm,
   effectiveFormPerms,

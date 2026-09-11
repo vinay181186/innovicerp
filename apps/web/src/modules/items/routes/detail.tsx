@@ -28,8 +28,8 @@ import type { Company, Item } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { signedUrl } from '@/lib/storage';
 import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
@@ -356,15 +356,12 @@ function DrawingFilePair({
   company: Company | undefined;
 }): React.JSX.Element {
   const path = item.drawingFilePath;
-  async function view(): Promise<void> {
-    if (!path) return;
-    try {
-      const url = await signedUrl(path);
-      window.open(url, '_blank', 'noopener');
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not open file');
-    }
-  }
+  // Viewing happens in the shared preview, not `window.open(signedUrl)`. Two
+  // reasons, and only the first is new: the link is now minted by the server so
+  // the look is logged and a save is a separate, permissioned act; and handing
+  // the file to the browser let Chrome's "download PDFs" setting save a drawing
+  // the user only meant to glance at.
+  const [previewOpen, setPreviewOpen] = useState(false);
   async function print(): Promise<void> {
     if (!path) return;
     try {
@@ -380,7 +377,11 @@ function DrawingFilePair({
       <div style={{ fontWeight: 600, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {path ? (
           <>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void view()}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setPreviewOpen(true)}
+            >
               📎 View drawing
             </button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void print()}>
@@ -391,6 +392,15 @@ function DrawingFilePair({
           '—'
         )}
       </div>
+      {previewOpen && path ? (
+        <FilePreviewModal
+          storagePath={path}
+          kind="drawing"
+          source="item"
+          refCode={item.code}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
