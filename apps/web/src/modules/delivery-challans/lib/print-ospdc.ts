@@ -92,14 +92,12 @@ export function printOspDc(args: {
     // production challan today, so this normally prints as a blank rule.
     { label: 'SO No.', value: dc.soCode ?? dc.soRefText ?? '', variant: 'mono' },
     { label: 'PO No.', value: linkedPo, variant: 'mono' },
-    // The customer's DRAWING revision for the SO line this challan hangs off,
-    // printed as its own labelled field rather than appended to the SO number:
-    // "IN-SO-0012/B" on a gate pass reads as a revision of the sales order,
-    // which is not a thing that exists. Omitted entirely when there is none —
-    // a blank "Drawing Rev" rule on a challan invites someone to pencil one in.
-    ...(dc.soLineRevision
-      ? [{ label: 'Drawing Rev', value: dc.soLineRevision, variant: 'mono' as const }]
-      : []),
+    // NO "Drawing Rev" field. It used to print here, beside the SO and PO
+    // numbers, and was removed on the user's instruction (2026-09-11): the
+    // revision belongs to the customer's drawing, and a challan's Document box
+    // is about the challan. The revision still prints where it means something
+    // — appended to the item code on each line below — and still shows on the
+    // challan detail screen, which is not paper the vendor keeps.
     // Not a stored field — challan date + 3 months, which is the return window
     // the printed conditions promise.
     { label: 'Challan end date', value: challanEndDate(dc.dcDate), variant: 'mono', strong: true },
