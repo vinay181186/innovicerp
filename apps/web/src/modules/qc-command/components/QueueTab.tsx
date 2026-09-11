@@ -150,7 +150,10 @@ export function QueueTab({
                         <td style={{ fontSize: 12 }}>
                           <b style={{ color: 'var(--red)' }}>{it.operation}</b>
                           <br />
-                          <span className="text3" style={{ fontSize: 10 }}>
+                          {/* An inspector reads the code to find the drawing, so
+                              it carries weight rather than sitting in the faintest
+                              token on the page. */}
+                          <span className="mono fw-700" style={{ fontSize: 11, color: 'var(--text)' }}>
                             {itemCodeWithRev(it.itemCode, it.itemRevision)}
                           </span>
                           {/* The part in words, under the code that identifies

@@ -319,8 +319,16 @@ function OpEntryPage() {
                  revision from the SO line this card was raised against. A
                  JW-sourced or standalone card has none and keeps the bare
                  code, with no trailing slash. */
-              <span className="text3" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
-                Item: {itemCodeWithRev(jcHead.itemCode, jcHead.itemRevision)}
+              /* The CODE is the darkest thing on this line, not the faintest.
+                 It was --text3, the weakest token in the system, while the part
+                 name beside it was full-strength bold -- so the one value people
+                 actually read was the hardest to. The "Item:" label stays quiet
+                 and the code itself carries the weight. */
+              <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>
+                <span className="text3">Item: </span>
+                <span className="fw-700" style={{ color: 'var(--text)' }}>
+                  {itemCodeWithRev(jcHead.itemCode, jcHead.itemRevision)}
+                </span>
               </span>
             ) : null}
             {jcHead?.itemName ? (

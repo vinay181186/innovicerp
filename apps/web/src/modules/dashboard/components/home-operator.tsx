@@ -41,7 +41,11 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                         .join(' · ')}
                       style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                     >
-                      <span className="mono">{itemCodeWithRev(r.itemCode, r.itemRevision, '')}</span>
+                      {/* The code is the readable part of this line; the name
+                          after it may stay muted. See the item-code rule. */}
+                      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                        {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
+                      </span>
                       {r.itemCode !== null && r.itemName !== null ? ' · ' : ''}
                       {r.itemName ?? ''}
                     </div>
