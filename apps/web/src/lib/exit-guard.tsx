@@ -65,7 +65,7 @@ export interface ExitConfirm {
 // not ours: the picker closes on it without stopping propagation, so the guard
 // has to look for the open state itself. `aria-expanded` is set by the shared
 // SearchableSelect on its combobox input.
-function escapeBelongsToAnOpenPicker(target: EventTarget | null): boolean {
+export function escapeBelongsToAnOpenPicker(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   const box = target.closest('[role="combobox"]');
   return box?.getAttribute('aria-expanded') === 'true';
@@ -181,7 +181,19 @@ function ExitGuardMount({
 
 // The popup. Same overlay and modal chrome as every other dialog in the app,
 // sized down: a question needs a card, not a workspace.
-function ExitConfirmDialog({ onExit, onStay }: { onExit: () => void; onStay: () => void }) {
+//
+// Exported for the modal forms, which do not navigate and so cannot use the
+// router blocker above -- they ask the same question on ESC and on a click
+// outside, and call it with a `zIndex` above their own overlay.
+export function ExitConfirmDialog({
+  onExit,
+  onStay,
+  zIndex = 600,
+}: {
+  onExit: () => void;
+  onStay: () => void;
+  zIndex?: number;
+}) {
   const stayRef = useRef<HTMLButtonElement>(null);
   // Cancel takes focus, so a stray Enter keeps the form rather than losing it.
   useEffect(() => {
@@ -190,7 +202,7 @@ function ExitConfirmDialog({ onExit, onStay }: { onExit: () => void; onStay: () 
   return (
     <div
       className="overlay"
-      style={{ alignItems: 'center', justifyContent: 'center', zIndex: 600 }}
+      style={{ alignItems: 'center', justifyContent: 'center', zIndex }}
       role="presentation"
       onMouseDown={(e) => {
         // Clicking the dim background is the same as Cancel: stay.
