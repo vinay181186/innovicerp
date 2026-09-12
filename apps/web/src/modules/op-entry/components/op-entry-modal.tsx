@@ -26,10 +26,10 @@
 // close button, so the two boxes an operator meets read as one thing.
 
 import type { JcOpEnriched } from '@innovic/shared';
+import { useNavigate } from '@tanstack/react-router';
 import { AlertTriangle, X } from 'lucide-react';
-import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useJcOpsEnriched, useRunningOps } from '../api';
+import { useRunningOps } from '../api';
 import { OpEntryForm } from './op-entry-form';
 
 /** What the popup was opened against. Which half of the entry form shows is
@@ -70,28 +70,31 @@ export function OpEntryModal({
    *  the same row does not throw the choice away. Optional. */
   onModeChange?: (mode: 'start' | 'complete') => void;
 }): React.JSX.Element {
-  // "Open Current Operation" on the Machine-busy panel re-points THIS popup at
-  // the op actually running on the machine, in Log-production mode — the exact
-  // box the operator would have reached had they clicked that running op. It is
-  // local state, not a new route, so every caller (Job Card page, Job Queue,
-  // By-Machine, By-JC, deep link) gets the same behaviour through the one modal.
-  const [override, setOverride] = useState<OpEntryModalTarget | null>(null);
-  const { op, activeRunningId } = override ?? target;
+  const { op, activeRunningId } = target;
   const isQc = op.opType === 'qc' || op.qcRequired;
   const machine = op.machineCode ?? op.machineCodeText ?? '—';
+  const navigate = useNavigate();
 
-  // MACHINE-BUSY GATE. Starting an op inserts a running_ops row, and a partial
-  // unique index refuses a second running op on the same non-OSP machine — the
-  // "machine busy" ConflictError. That refusal used to arrive only AFTER the
-  // operator filled and submitted the Start form. Catch it up front instead:
-  // the moment the Start box would open, look for another op already running on
-  // this op's machine, and if there is one show the busy notice in place of the
-  // form. Only relevant when THIS op is not itself running (activeRunningId is
-  // null → Start) and it is a real machine op (OSP holds no machine lock).
-  // A JcOpEnriched names its machine by CODE (`machine`, above); the running_ops
-  // row carries the machine's id as well. Match on the code an operator would
-  // read — unique in the machine master — and reuse the id off the running row
-  // for the retarget query below.
+  // MACHINE-BUSY GATE — the ONE new behaviour. Starting an op inserts a
+  // running_ops row, and a partial unique index refuses a second running op on
+  // the same non-OSP machine — the "machine busy" ConflictError. That refusal
+  // used to arrive only AFTER the operator filled and submitted the Start form.
+  // Catch it up front: the moment the Start box would open, look for another op
+  // already running on this op's machine, and if there is one show a purely
+  // informational notice in place of the form. Only relevant when THIS op is
+  // not itself running (activeRunningId null → Start) and it targets a real
+  // machine (OSP holds no machine lock).
+  //
+  // This popup is a signpost, nothing more. It starts nothing, completes
+  // nothing and remembers nothing: "Open Current Operation" navigates to the
+  // running op's existing Log-production screen and closes this box, leaving no
+  // reference to the op the operator tried to start. Completing or stopping the
+  // running op there behaves EXACTLY as it always has (partial quantities and
+  // all) and does NOT auto-start anything — the operator returns and clicks
+  // Start on the new op themselves.
+  //
+  // A JcOpEnriched names its machine by CODE (`machine`, above); match on the
+  // code an operator would read — unique in the machine master.
   const machineKey = op.machineCode ?? op.machineCodeText ?? null;
   const runningOps = useRunningOps({ status: 'running' });
   const busy =
@@ -100,12 +103,7 @@ export function OpEntryModal({
           (r) => r.machineCode === machineKey && !r.isOsp && r.jcOpId !== op.id,
         ) ?? null)
       : null;
-  // The running op as a full row, fetched only when the machine is busy, so
-  // "Open Current Operation" can hand OpEntryForm the JcOpEnriched it needs.
-  // Keyed by the running row's machineId; on a free machine this never fires.
-  const machineOps = useJcOpsEnriched(busy?.machineId ? { machineId: busy.machineId } : {});
-  const currentOp = busy ? (machineOps.data?.find((o) => o.id === busy.jcOpId) ?? null) : null;
-  const showBusy = Boolean(busy) && !override;
+  const showBusy = Boolean(busy);
   // `CODE/REV` for the part, or '' when the join brought no item back. Empty
   // rather than a dash: a dash would read as "this card has no item", and every
   // job card has one.
@@ -200,22 +198,25 @@ export function OpEntryModal({
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
-                disabled={!currentOp}
-                title={
-                  currentOp
-                    ? 'Open the running operation to Complete or Stop it'
-                    : 'Loading the running operation…'
-                }
+                title="Open the running operation to Complete or Stop it"
                 onClick={() => {
-                  if (!currentOp) return;
-                  // Re-point THIS popup at the running op in Log-production mode.
-                  // activeRunningId comes off the running op's own row, so the
-                  // form shows Complete and Stop, exactly as ✚ Log would.
-                  setOverride({
-                    op: currentOp,
-                    activeRunningId: currentOp.activeRunningOpId ?? busy.id,
-                    mode: 'complete',
+                  // Go to the running op's EXISTING Log-production screen via the
+                  // same deep link the Job Card page and Job Queue already use,
+                  // then close this box. mode:'complete' opens the running op
+                  // (its own running session shows Complete and Stop). Nothing
+                  // about the op the operator tried to start is carried across —
+                  // this popup neither starts nor completes anything itself.
+                  void navigate({
+                    to: '/op-entry',
+                    search: (prev) => ({
+                      ...prev,
+                      jc: busy.jobCardCode,
+                      op: busy.jcOpId,
+                      mode: 'complete',
+                      view: undefined,
+                    }),
                   });
+                  onClose();
                 }}
               >
                 ✚ Open Current Operation
