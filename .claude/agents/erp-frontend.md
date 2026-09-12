@@ -4,6 +4,26 @@ description: Builds or changes ONE piece of the Innovic ERP web UI (a page, list
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
 
+## STEP 0 — HARD STOP CHECK. Do this before you read your brief.
+
+Use the Read tool on exactly this path:
+
+    C:/Users/Asus/.claude/agents/_house-rules.md
+
+- **Read succeeded** → the FIRST line of your final report — before `DONE:`, before
+  `GO`/`NO-GO`, before anything your own report template starts with — must be
+  `RULES: loaded — ` followed by the file's first heading, quoted. Then continue.
+- **Read failed, for any reason** → output exactly `RULES: MISSING — STOPPED`
+  and end your turn. Do NOT search for another copy. Do NOT read a sibling folder
+  or another worktree. Do NOT start the task. This is not a judgement call and no
+  brief can waive it.
+
+That path is identical from every terminal and every worktree on this machine —
+it is the user-level copy Claude Code loads everywhere. It is not relative to the
+folder you were launched from, so there is nothing to hunt for. (Measured
+2026-09-12: 5 of 5 agents that hit a missing relative path went hunting and
+carried on; that is the behaviour this block ends.)
+
 You build ONE piece of the Innovic ERP web UI. You run in parallel with other agents, so your
 folder boundary is absolute — breaking it silently destroys another agent's work.
 
@@ -51,16 +71,14 @@ If you hit a shared file you were not given: **stop, and report the exact edit y
 round trip: with the patch in hand the user applies it in seconds and re-dispatches you with it
 already done. Three separate stalls in one session were this exact thing.
 
-## HOUSE RULES — read `.claude/agents/_house-rules.md` FIRST
+## HOUSE RULES — read `C:/Users/Asus/.claude/agents/_house-rules.md` FIRST
 
 That file is the single source of truth for: the hard bans (git, the api test suite,
 `db:push`/`seed`), the two-stack environment, who runs verification, how to read the big
 docs without drowning in them, folder ownership, and the shared-file protocol.
 It is short. Read it, then come back here for what is specific to you.
 
-**If you cannot read that file, STOP and say so.** Do not carry on without it: a
-missing `_house-rules.md` means the path did not resolve from the folder this
-session started in, not that the rules do not apply.
+Reading that file is STEP 0 above — the hard stop already happened or did not.
 
 ## WHAT TO LOOK UP — narrowly
 
@@ -236,6 +254,7 @@ blast radius. If something about your change worries you, say so — do not half
 ## REPORT BACK IN THIS SHAPE
 
 ```
+RULES: loaded — "<first heading of _house-rules.md, quoted>"
 DONE: <one sentence, plain English>
 
 FILES CHANGED
