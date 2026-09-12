@@ -3,7 +3,8 @@
 import type { CreateSalesOrderInput, UpdateSalesOrderInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -33,6 +34,8 @@ function SalesOrderNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
+  const goBack = useCallback(() => void navigate({ to: '/sales-orders' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: CreateSalesOrderInput): Promise<void> => {
     setSubmitError(null);
@@ -77,7 +80,7 @@ function SalesOrderNewPage(): React.JSX.Element {
           // Non-fatal: SO is saved; the email ref can be attached on the detail page.
         }
       }
-      await navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true });
+      exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create sales order');
     }
@@ -93,26 +96,29 @@ function SalesOrderNewPage(): React.JSX.Element {
   }
 
   return (
-    <div className="panel">
-      <div className="panel-body">
-        <SalesOrderForm
-          mode="create"
-          headerBack={
-            <Link to="/sales-orders" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          }
-          /* Legacy addSO L12425 modal title. */
-          headerTitle="New SO / WO"
-          headerCrumb="Sales & CRM › SO Master › New"
-          onSubmit={onSubmit}
-          onPoFileChange={(f) => { poFileRef.current = f; }}
-          onEmailFileChange={(f) => { emailFileRef.current = f; }}
-          submitError={submitError}
-          onCancel={() => void navigate({ to: '/sales-orders' })}
-        />
+    <>
+      {exit.dialog}
+      <div className="panel">
+        <div className="panel-body">
+          <SalesOrderForm
+            mode="create"
+            headerBack={
+              <Link to="/sales-orders" className="btn btn-ghost btn-sm">
+                <ArrowLeft size={14} /> Back
+              </Link>
+            }
+            /* Legacy addSO L12425 modal title. */
+            headerTitle="New SO / WO"
+            headerCrumb="Sales & CRM › SO Master › New"
+            onSubmit={onSubmit}
+            onPoFileChange={(f) => { poFileRef.current = f; }}
+            onEmailFileChange={(f) => { emailFileRef.current = f; }}
+            submitError={submitError}
+            onCancel={() => exit.leave(goBack)}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -125,6 +131,11 @@ function SalesOrderEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useSalesOrder(id);
   const update = useUpdateSalesOrder(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(
+    () => void navigate({ to: '/sales-orders/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
 
   // Access matrix: edit access to SO Master is required (also enforced server-side).
   if (eff && !perms.edit) {
@@ -158,7 +169,7 @@ function SalesOrderEditPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
-      await navigate({ to: '/sales-orders/$id', params: { id }, replace: true });
+      exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update sales order');
     }
@@ -190,25 +201,28 @@ function SalesOrderEditPage(): React.JSX.Element {
   }
 
   return (
-    <div className="panel">
-      <div className="panel-body">
-        <SalesOrderForm
-          mode="edit"
-          detail={detail}
-          headerBack={
-            <Link to="/sales-orders/$id" params={{ id }} className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          }
-          /* Legacy _editFullSO L12549 modal title — this route is the all-lines
-             editor, so it mirrors that title, not editSOLine's. */
-          headerTitle={`Edit SO — ${detail.code} (${detail.lines.length} lines)`}
-          headerCrumb="Sales & CRM › SO Master › Edit"
-          onSubmit={onSubmit}
-          submitError={submitError}
-          onCancel={() => void navigate({ to: '/sales-orders/$id', params: { id } })}
-        />
+    <>
+      {exit.dialog}
+      <div className="panel">
+        <div className="panel-body">
+          <SalesOrderForm
+            mode="edit"
+            detail={detail}
+            headerBack={
+              <Link to="/sales-orders/$id" params={{ id }} className="btn btn-ghost btn-sm">
+                <ArrowLeft size={14} /> Back
+              </Link>
+            }
+            /* Legacy _editFullSO L12549 modal title — this route is the all-lines
+               editor, so it mirrors that title, not editSOLine's. */
+            headerTitle={`Edit SO — ${detail.code} (${detail.lines.length} lines)`}
+            headerCrumb="Sales & CRM › SO Master › Edit"
+            onSubmit={onSubmit}
+            submitError={submitError}
+            onCancel={() => exit.leave(goBack)}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 }

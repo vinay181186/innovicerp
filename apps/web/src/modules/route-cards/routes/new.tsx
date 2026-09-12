@@ -1,6 +1,7 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateRouteCard } from '../api';
 import {
@@ -24,6 +25,8 @@ function RouteCardNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
+  const goBack = useCallback(() => void navigate({ to: '/route-cards' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const submit = async (
     header: RouteCardFormHeaderDraft,
@@ -38,7 +41,7 @@ function RouteCardNewPage(): React.JSX.Element {
         notes: header.notes.trim() || null,
         ops: opsToInput(ops),
       });
-      void navigate({ to: '/route-cards/$id', params: { id: created.id } });
+      exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Failed to create route card.');
     }
@@ -54,23 +57,26 @@ function RouteCardNewPage(): React.JSX.Element {
   }
 
   return (
-    <RouteCardForm
-      mode="create"
-      initialHeader={{
-        code: '',
-        itemId: '',
-        itemCodeText: '',
-        rawMaterialGradeId: null,
-        rawMaterialGradeText: null,
-        rawMaterialSizeId: null,
-        rawMaterialSizeText: null,
-        notes: '',
-      }}
-      initialOps={[emptyProcessOp()]}
-      onSubmit={submit}
-      submitting={create.isPending}
-      submitError={submitError}
-      onCancel={() => void navigate({ to: '/route-cards' })}
-    />
+    <>
+      {exit.dialog}
+      <RouteCardForm
+        mode="create"
+        initialHeader={{
+          code: '',
+          itemId: '',
+          itemCodeText: '',
+          rawMaterialGradeId: null,
+          rawMaterialGradeText: null,
+          rawMaterialSizeId: null,
+          rawMaterialSizeText: null,
+          notes: '',
+        }}
+        initialOps={[emptyProcessOp()]}
+        onSubmit={submit}
+        submitting={create.isPending}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
+    </>
   );
 }

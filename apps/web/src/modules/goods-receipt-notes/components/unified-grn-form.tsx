@@ -20,7 +20,8 @@
 import { GRN_INWARD_TYPES, type CreateGoodsReceiptNoteInput, type GrnInwardType } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
-import { useState, type CSSProperties } from 'react';
+import { useCallback, useState, type CSSProperties } from 'react';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useCreateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from './goods-receipt-note-form';
 import { JobWorkReturnSection } from './job-work-return-section';
@@ -49,6 +50,13 @@ export function UnifiedGrnForm({
 }): React.JSX.Element {
   const navigate = useNavigate();
   const [inwardType, setInwardType] = useState<GrnInwardType>('purchase');
+  // ONE exit guard for the whole inward screen, both tabs. Where Cancel goes is
+  // where ESC → Exit goes; every other way off the screen (Back link,
+  // breadcrumb, browser Back) gets "Are you sure?". The Job Work Return tab
+  // has no Cancel of its own and lives inside this component, so it is handed
+  // `exit.leave` (as `onLeave`) for its save rather than a second guard.
+  const goBack = useCallback(() => void navigate({ to: '/goods-receipt-notes' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   // Purchase branch — reuses the existing create endpoint + form unchanged.
   const createPurchase = useCreateGoodsReceiptNote();
@@ -57,11 +65,10 @@ export function UnifiedGrnForm({
     setPurchaseErr(null);
     try {
       const created = await createPurchase.mutateAsync(values);
-      await navigate({
-        to: '/goods-receipt-notes/$id',
-        params: { id: created.id },
-        replace: true,
-      });
+      exit.leave(
+        () =>
+          void navigate({ to: '/goods-receipt-notes/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (e) {
       setPurchaseErr(e instanceof Error ? e.message : 'Failed to create GRN');
     }
@@ -69,6 +76,7 @@ export function UnifiedGrnForm({
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to GRN list
       </Link>
@@ -114,10 +122,10 @@ export function UnifiedGrnForm({
               {...(initialPurchaseOrderId ? { initialPurchaseOrderId } : {})}
               onSubmit={onPurchaseSubmit}
               submitError={purchaseErr}
-              onCancel={() => void navigate({ to: '/goods-receipt-notes' })}
+              onCancel={() => exit.leave(goBack)}
             />
           ) : null}
-          {inwardType === 'job_work_return' ? <JobWorkReturnSection /> : null}
+          {inwardType === 'job_work_return' ? <JobWorkReturnSection onLeave={exit.leave} /> : null}
         </div>
       </div>
     </div>

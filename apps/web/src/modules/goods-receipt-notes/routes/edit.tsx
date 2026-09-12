@@ -3,9 +3,10 @@
 import type { UpdateGoodsReceiptNoteInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNote, useUpdateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from '../components/goods-receipt-note-form';
@@ -79,12 +80,21 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
   // L2 Data Entry clerk, who deliberately cannot change a saved record.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'grn_create');
+  // Where Cancel goes, and where ESC → Exit goes. Every other way off the
+  // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
+  const goBack = useCallback(
+    () => void navigate({ to: '/goods-receipt-notes/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: UpdateGoodsReceiptNoteInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
-      await navigate({ to: '/goods-receipt-notes/$id', params: { id }, replace: true });
+      exit.leave(
+        () => void navigate({ to: '/goods-receipt-notes/$id', params: { id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update GRN');
     }
@@ -134,6 +144,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/goods-receipt-notes/$id"
         params={{ id }}
@@ -162,7 +173,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
             detail={detail}
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/goods-receipt-notes/$id', params: { id } })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>

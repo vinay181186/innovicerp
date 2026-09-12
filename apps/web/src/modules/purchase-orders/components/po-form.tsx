@@ -37,6 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { addDaysLocal, daysBetweenLocal, todayLocal } from '@/lib/date';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useItemsList } from '@/modules/items/api';
@@ -76,6 +77,18 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const createPo = useCreatePurchaseOrder();
   const updatePo = useUpdatePurchaseOrder(props.mode === 'edit' ? props.detail.id : '');
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Where Cancel goes — and therefore where ESC → Exit goes too. The exit guard
+  // asks "Are you sure?" on every other way off this screen (Back link,
+  // breadcrumb, browser Back); Save and Cancel pass through `exit.leave`.
+  const detailId = props.mode === 'edit' ? props.detail.id : null;
+  const goBack = useCallback(
+    () =>
+      detailId
+        ? void navigate({ to: '/purchase-orders/$id', params: { id: detailId } })
+        : void navigate({ to: '/purchase-orders' }),
+    [navigate, detailId],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
 
   const form = useForm<PoFormValues>({
     defaultValues:
@@ -511,11 +524,10 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       if (props.mode === 'edit') {
         const payload: UpdatePurchaseOrderInput = { header, lines: outLines };
         await updatePo.mutateAsync(payload);
-        await navigate({
-          to: '/purchase-orders/$id',
-          params: { id: props.detail.id },
-          replace: true,
-        });
+        const editedId = props.detail.id;
+        exit.leave(
+          () => void navigate({ to: '/purchase-orders/$id', params: { id: editedId }, replace: true }),
+        );
       } else {
         // `status` is deliberately NOT sent. A new PO's status is the server's
         // to stamp, and shipping one silently disables its approval-config
@@ -532,7 +544,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           lines: outLines,
         } as CreatePurchaseOrderInput;
         const created = await createPo.mutateAsync(payload);
-        await navigate({ to: '/purchase-orders/$id', params: { id: created.id }, replace: true });
+        exit.leave(
+          () => void navigate({ to: '/purchase-orders/$id', params: { id: created.id }, replace: true }),
+        );
       }
     } catch (err) {
       setSubmitError(
@@ -554,6 +568,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
   return (
     <div className="pof-page pof-root">
+      {exit.dialog}
       <style>{PO_FORM_CSS}</style>
 
       {props.mode === 'edit' ? (
@@ -911,11 +926,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             <button
               type="button"
               className="pof-btn pof-btn-cancel"
-              onClick={() =>
-                props.mode === 'edit'
-                  ? void navigate({ to: '/purchase-orders/$id', params: { id: props.detail.id } })
-                  : void navigate({ to: '/purchase-orders' })
-              }
+              onClick={() => exit.leave(goBack)}
             >
               Cancel
             </button>

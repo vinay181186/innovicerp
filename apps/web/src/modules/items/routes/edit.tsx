@@ -8,7 +8,8 @@
 import type { CreateItemInput, UpdateItemInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateItem, useItem, useUpdateItem } from '../api';
@@ -36,12 +37,16 @@ function ItemNewPage(): React.JSX.Element {
   // Approver). Same guard shape as the edit page below.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'item_create');
+  const goBack = useCallback(() => void navigate({ to: '/items' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: CreateItemInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      await navigate({ to: '/items/$id', params: { id: created.id }, replace: true });
+      exit.leave(
+        () => void navigate({ to: '/items/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create item');
     }
@@ -75,6 +80,7 @@ function ItemNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/items" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Item Master
       </Link>
@@ -86,7 +92,7 @@ function ItemNewPage(): React.JSX.Element {
           mode="create"
           onSubmit={onSubmit}
           submitError={submitError}
-          onCancel={() => void navigate({ to: '/items' })}
+          onCancel={() => exit.leave(goBack)}
         />
       </div>
     </div>
@@ -104,11 +110,17 @@ function ItemEditPage(): React.JSX.Element {
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'item_create');
 
+  const goBack = useCallback(
+    () => void navigate({ to: '/items/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
+
   const onSubmit = async (values: UpdateItemInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
-      await navigate({ to: '/items/$id', params: { id }, replace: true });
+      exit.leave(() => void navigate({ to: '/items/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update item');
     }
@@ -159,6 +171,7 @@ function ItemEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/items/$id"
         params={{ id }}
@@ -176,7 +189,7 @@ function ItemEditPage(): React.JSX.Element {
           item={item}
           onSubmit={onSubmit}
           submitError={submitError}
-          onCancel={() => void navigate({ to: '/items/$id', params: { id } })}
+          onCancel={() => exit.leave(goBack)}
         />
       </div>
     </div>

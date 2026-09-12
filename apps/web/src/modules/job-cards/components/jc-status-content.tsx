@@ -12,10 +12,11 @@ import type {
 } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { drawingViewUrl } from '@/lib/drawing-url';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useItemsList } from '@/modules/items/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -708,6 +709,11 @@ function JcStatusEditForm({
   extras: JobCardStatusExtras | undefined;
 }): React.JSX.Element {
   const navigate = useNavigate();
+  const goBack = useCallback(
+    () => void navigate({ to: '/job-cards/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
   const queryClient = useQueryClient();
   const update = useUpdateJobCard(id);
 
@@ -900,7 +906,7 @@ function JcStatusEditForm({
       await update.mutateAsync(result.payload);
       void queryClient.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
       void queryClient.invalidateQueries({ queryKey: opEntryKeys.all });
-      void navigate({ to: '/job-cards/$id', params: { id } });
+      exit.leave(goBack);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     }
@@ -911,6 +917,7 @@ function JcStatusEditForm({
 
   return (
     <div>
+      {exit.dialog}
       <RecoveryBanner jc={jc} />
       <datalist id="dlJcEditItem">
         {items.map((i) => (
@@ -1181,7 +1188,7 @@ function JcStatusEditForm({
       ) : null}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <Link to="/job-cards/$id" params={{ id }} className="btn btn-ghost">
+        <Link to="/job-cards/$id" params={{ id }} className="btn btn-ghost" onClick={exit.allow}>
           Cancel
         </Link>
         <button

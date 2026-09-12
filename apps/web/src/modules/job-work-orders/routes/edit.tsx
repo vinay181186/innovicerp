@@ -3,7 +3,8 @@
 import type { CreateJobWorkOrderInput, UpdateJobWorkOrderInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { uploadJwDocFile, useCreateJwDocument } from '@/modules/jwso-documents/api';
@@ -64,6 +65,8 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
+  const goBack = useCallback(() => void navigate({ to: '/job-work-orders' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: CreateJobWorkOrderInput): Promise<void> => {
     setSubmitError(null);
@@ -73,7 +76,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
       // (best-effort — the JWSO is already saved).
       await registerJwDoc(poFileRef.current, me?.companyId, created.id, created.code, createDoc, 'po-docs', 'Client PO');
       await registerJwDoc(emailFileRef.current, me?.companyId, created.id, created.code, createDoc, 'email_reference', 'Email Reference');
-      await navigate({ to: '/job-work-orders/$id', params: { id: created.id }, replace: true });
+      exit.leave(() => void navigate({ to: '/job-work-orders/$id', params: { id: created.id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create job-work order');
     }
@@ -89,31 +92,34 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   }
 
   return (
-    <div>
-      <Link to="/job-work-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to JWSO Master
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">+ New JWSO Order</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Customer-supplied raw material → we machine and deliver.
+    <>
+      {exit.dialog}
+      <div>
+        <Link to="/job-work-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+          <ArrowLeft size={14} /> Back to JWSO Master
+        </Link>
+        <div className="panel">
+          <div className="panel-hdr">
+            <div>
+              <div className="panel-title">+ New JWSO Order</div>
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                Customer-supplied raw material → we machine and deliver.
+              </div>
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <JobWorkOrderForm
-            mode="create"
-            onSubmit={onSubmit}
-            onPoFileChange={(f) => { poFileRef.current = f; }}
-            onEmailFileChange={(f) => { emailFileRef.current = f; }}
-            submitError={submitError}
-            onCancel={() => void navigate({ to: '/job-work-orders' })}
-          />
+          <div className="panel-body">
+            <JobWorkOrderForm
+              mode="create"
+              onSubmit={onSubmit}
+              onPoFileChange={(f) => { poFileRef.current = f; }}
+              onEmailFileChange={(f) => { emailFileRef.current = f; }}
+              submitError={submitError}
+              onCancel={() => exit.leave(goBack)}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -129,6 +135,11 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
+  const goBack = useCallback(
+    () => void navigate({ to: '/job-work-orders/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: UpdateJobWorkOrderInput): Promise<void> => {
     setSubmitError(null);
@@ -138,7 +149,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
       // (best-effort).
       await registerJwDoc(poFileRef.current, me?.companyId, id, saved.code, createDoc, 'po-docs', 'Client PO');
       await registerJwDoc(emailFileRef.current, me?.companyId, id, saved.code, createDoc, 'email_reference', 'Email Reference');
-      await navigate({ to: '/job-work-orders/$id', params: { id }, replace: true });
+      exit.leave(() => void navigate({ to: '/job-work-orders/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update job-work order');
     }
@@ -179,38 +190,41 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   }
 
   return (
-    <div>
-      <Link
-        to="/job-work-orders/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to JWSO
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Job-Work Order
+    <>
+      {exit.dialog}
+      <div>
+        <Link
+          to="/job-work-orders/$id"
+          params={{ id }}
+          className="btn btn-ghost btn-sm"
+          style={{ marginBottom: 10 }}
+        >
+          <ArrowLeft size={14} /> Back to JWSO
+        </Link>
+        <div className="panel">
+          <div className="panel-hdr">
+            <div>
+              <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
+                {detail.code}
+              </div>
+              <div className="panel-title" style={{ marginTop: 2 }}>
+                Edit Job-Work Order
+              </div>
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <JobWorkOrderForm
-            mode="edit"
-            detail={detail}
-            onSubmit={onSubmit}
-            onPoFileChange={(f) => { poFileRef.current = f; }}
-            onEmailFileChange={(f) => { emailFileRef.current = f; }}
-            submitError={submitError}
-            onCancel={() => void navigate({ to: '/job-work-orders/$id', params: { id } })}
-          />
+          <div className="panel-body">
+            <JobWorkOrderForm
+              mode="edit"
+              detail={detail}
+              onSubmit={onSubmit}
+              onPoFileChange={(f) => { poFileRef.current = f; }}
+              onEmailFileChange={(f) => { emailFileRef.current = f; }}
+              submitError={submitError}
+              onCancel={() => exit.leave(goBack)}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

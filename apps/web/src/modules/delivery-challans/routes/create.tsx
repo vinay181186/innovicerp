@@ -5,11 +5,12 @@ import type { CreateDeliveryChallanInput, DcSendableLine, Uom } from '@innovic/s
 import { poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useDebounce } from '@/lib/use-debounce';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -94,6 +95,13 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   // an L1 Viewer got the whole form and failed only at the API.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
+  // ONE exit guard for both steps (PO picker, then the form). Where Cancel goes
+  // is where ESC -> Exit goes; every other way off the screen (Back link,
+  // breadcrumb, browser Back) gets "Are you sure?". Step 1's "Select" is a
+  // same-route navigation (it sets ?poId=), not an exit, so it is handed
+  // `exit.allow` to pass through unasked.
+  const goBack = useCallback(() => void navigate({ to: '/delivery-challans' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
@@ -167,7 +175,14 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   // Step 1 of the same form: the DC needs a PO to source lines from, so when
   // none was passed the form asks for it here instead of bouncing the user to
   // the PO list. Picking a PO sets ?poId= and the form continues below.
-  if (!poId) return <PoPickerStep />;
+  if (!poId) {
+    return (
+      <>
+        {exit.dialog}
+        <PoPickerStep onSelectAllow={exit.allow} />
+      </>
+    );
+  }
 
   if (poLoading) {
     return (
@@ -227,7 +242,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         lines,
       };
       const created = await create.mutateAsync(input);
-      void navigate({ to: '/delivery-challans/$id', params: { id: created.id } });
+      exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Failed to create DC.');
     } finally {
@@ -237,6 +252,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <div className="section-hdr" style={{ marginBottom: 8 }}>
         📦 OSP Delivery Challan &amp; Outward
       </div>
@@ -544,7 +560,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           <button
             type="button"
             className="btn btn-ghost"
-            onClick={() => void navigate({ to: '/delivery-challans' })}
+            onClick={() => exit.leave(goBack)}
           >
             Cancel
           </button>
@@ -561,7 +577,14 @@ function DeliveryChallanNewPage(): React.JSX.Element {
 // Only POs that actually send material out are offered (job work + service,
 // per poSendsMaterialOut). A draft PO is excluded because material cannot
 // leave against an unissued order, and cancelled ones are dead.
-function PoPickerStep(): React.JSX.Element {
+function PoPickerStep({
+  onSelectAllow,
+}: {
+  /** The parent's exit-guard `allow`: picking a PO navigates to this same
+   *  route with ?poId=, which is a step forward, not an exit -- so the Select
+   *  link opens the door for that one navigation. */
+  onSelectAllow: () => void;
+}): React.JSX.Element {
   const [search, setSearch] = useState('');
   const debounced = useDebounce(search.trim(), 300);
   const { data, isLoading, isError } = usePurchaseOrdersList({
@@ -656,6 +679,7 @@ function PoPickerStep(): React.JSX.Element {
                         search={{ poId: p.id }}
                         className="btn btn-primary btn-sm"
                         style={{ fontSize: 11 }}
+                        onClick={onSelectAllow}
                       >
                         Select
                       </Link>

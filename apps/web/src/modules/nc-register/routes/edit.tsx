@@ -3,8 +3,9 @@
 import type { UpdateNcRegisterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useNcRegister, useUpdateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
@@ -21,6 +22,11 @@ function NcRegisterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useNcRegister(id);
   const update = useUpdateNcRegister(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(
+    () => void navigate({ to: '/nc-register/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
   // Tier-driven, per department (QC). This screen had no gate at all — typing
   // the URL handed the form to anyone, including an L1 Viewer, an L2 Data Entry
   // hand (who may raise an NC but not rewrite a saved one) and an L4 Approver.
@@ -99,6 +105,7 @@ function NcRegisterEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/nc-register/$id"
         params={{ id: detail.id }}
@@ -131,12 +138,12 @@ function NcRegisterEditPage(): React.JSX.Element {
             detail={detail}
             submitError={submitError}
             submitLabel="Save changes"
-            onCancel={() => void navigate({ to: '/nc-register/$id', params: { id: detail.id } })}
+            onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: UpdateNcRegisterInput) => {
               setSubmitError(null);
               try {
                 await update.mutateAsync(values);
-                void navigate({ to: '/nc-register/$id', params: { id: detail.id } });
+                exit.leave(goBack);
               } catch (e) {
                 setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
               }

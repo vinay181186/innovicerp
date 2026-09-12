@@ -2,6 +2,7 @@ import type { AdHocSpec } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { apiDownload } from '@/lib/api';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateSavedReport, usePreviewSpec, useSourceCatalog } from '../api';
 import { Builder, type SaveInput } from '../components/builder';
@@ -19,6 +20,7 @@ function SavedReportNewPage() {
   const createMutation = useCreateSavedReport();
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [excelLoading, setExcelLoading] = useState(false);
+  const exit = useExitConfirm();
 
   const onExcel = async (spec: AdHocSpec) => {
     setExcelLoading(true);
@@ -41,7 +43,9 @@ function SavedReportNewPage() {
       },
       {
         onSuccess: (created) => {
-          void navigate({ to: '/saved-reports/$id', params: { id: created.id } });
+          exit.leave(
+            () => void navigate({ to: '/saved-reports/$id', params: { id: created.id } }),
+          );
         },
         onError: (e) => setSaveError(e instanceof Error ? e.message : String(e)),
       },
@@ -50,6 +54,7 @@ function SavedReportNewPage() {
 
   return (
     <div>
+      {exit.dialog}
       {/* Legacy header — renderReportBuilder L17554-59 */}
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="section-hdr m-0">📄 Excel Report Builder</div>

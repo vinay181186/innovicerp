@@ -1,8 +1,9 @@
 import type { UpdateCostCenterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCenter, useUpdateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
@@ -19,6 +20,11 @@ function CostCenterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useCostCenter(id);
   const update = useUpdateCostCenter(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(
+    () => void navigate({ to: '/cost-centers/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
   // Changing a saved record is `edit` on cc_create (Finance), so L2 Data Entry
   // (create-only) is correctly refused. Checked here too because the route is
   // reachable by URL, not just from the Edit button.
@@ -60,6 +66,7 @@ function CostCenterEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/cost-centers/$id"
         params={{ id: detail.id }}
@@ -85,14 +92,12 @@ function CostCenterEditPage(): React.JSX.Element {
             detail={detail}
             submitError={submitError}
             submitLabel="Save"
-            onCancel={() =>
-              void navigate({ to: '/cost-centers/$id', params: { id: detail.id } })
-            }
+            onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: UpdateCostCenterInput) => {
               setSubmitError(null);
               try {
                 await update.mutateAsync(values);
-                void navigate({ to: '/cost-centers/$id', params: { id: detail.id } });
+                exit.leave(goBack);
               } catch (e) {
                 setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
               }

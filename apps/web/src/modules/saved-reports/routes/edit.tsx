@@ -2,6 +2,7 @@ import type { AdHocSpec } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { apiDownload } from '@/lib/api';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePreviewSpec, useSavedReport, useSourceCatalog, useUpdateSavedReport } from '../api';
 import { Builder, type SaveInput } from '../components/builder';
@@ -21,6 +22,7 @@ function SavedReportEditPage() {
   const updateMutation = useUpdateSavedReport(id);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [excelLoading, setExcelLoading] = useState(false);
+  const exit = useExitConfirm();
 
   const onExcel = async (spec: AdHocSpec) => {
     setExcelLoading(true);
@@ -43,7 +45,7 @@ function SavedReportEditPage() {
       },
       {
         onSuccess: () => {
-          void navigate({ to: '/saved-reports/$id', params: { id } });
+          exit.leave(() => void navigate({ to: '/saved-reports/$id', params: { id } }));
         },
         onError: (e) => setSaveError(e instanceof Error ? e.message : String(e)),
       },
@@ -61,6 +63,7 @@ function SavedReportEditPage() {
 
   return (
     <div>
+      {exit.dialog}
       {/* Legacy header — renderReportBuilder L17554-59. Legacy serves both new and edit
           from the one renderReportBuilder, so this matches routes/new.tsx exactly. */}
       <div className="mb-3 flex items-center justify-between gap-3">

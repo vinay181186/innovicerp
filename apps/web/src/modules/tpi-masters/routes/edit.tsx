@@ -1,8 +1,9 @@
 import type { UpdateTpiMasterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useTpiMaster, useUpdateTpiMaster } from '../api';
 import { TpiMasterForm } from '../components/tpi-master-form';
@@ -19,6 +20,11 @@ function TpiMasterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useTpiMaster(id);
   const update = useUpdateTpiMaster(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(
+    () => void navigate({ to: '/tpi-masters/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
   // Tier-driven, per department (QC) — without this the URL alone would hand
   // the form to an L1 Viewer or an L4 Approver, who deliberately cannot change
   // a saved record.
@@ -68,6 +74,7 @@ function TpiMasterEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/tpi-masters/$id"
         params={{ id: detail.id }}
@@ -93,12 +100,12 @@ function TpiMasterEditPage(): React.JSX.Element {
             detail={detail}
             submitError={submitError}
             submitLabel="Save"
-            onCancel={() => void navigate({ to: '/tpi-masters/$id', params: { id: detail.id } })}
+            onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: UpdateTpiMasterInput) => {
               setSubmitError(null);
               try {
                 await update.mutateAsync(values);
-                void navigate({ to: '/tpi-masters/$id', params: { id: detail.id } });
+                exit.leave(goBack);
               } catch (e) {
                 setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
               }

@@ -1,6 +1,7 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateBomMaster } from '../api';
 import {
@@ -22,6 +23,8 @@ function BomMasterNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'bom_create');
+  const goBack = useCallback(() => void navigate({ to: '/bom-masters' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const submit = async (header: BomFormHeaderDraft, lines: BomFormLineDraft[]): Promise<void> => {
     setSubmitError(null);
@@ -33,7 +36,7 @@ function BomMasterNewPage(): React.JSX.Element {
         status: header.status,
         lines: linesToInput(lines),
       });
-      void navigate({ to: '/bom-masters/$id', params: { id: created.id } });
+      exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Failed to create BOM.');
     }
@@ -49,24 +52,27 @@ function BomMasterNewPage(): React.JSX.Element {
   }
 
   return (
-    // A new BOM is usable straight away, so it opens as 'active' — nobody has
-    // to remember to promote it out of Draft.
-    <BomForm
-      mode="create"
-      initialHeader={{
-        bomNo: '',
-        bomName: '',
-        parentItemId: '',
-        parentItemCodeText: '',
-        status: 'active',
-      }}
-      // Start with no part rows: the parent has to be chosen first, and an
-      // empty row sitting under a locked list only invites confusion.
-      initialLines={[]}
-      onSubmit={submit}
-      submitting={create.isPending}
-      submitError={submitError}
-      onCancel={() => void navigate({ to: '/bom-masters' })}
-    />
+    <>
+      {exit.dialog}
+      {/* A new BOM is usable straight away, so it opens as 'active' — nobody has
+          to remember to promote it out of Draft. */}
+      <BomForm
+        mode="create"
+        initialHeader={{
+          bomNo: '',
+          bomName: '',
+          parentItemId: '',
+          parentItemCodeText: '',
+          status: 'active',
+        }}
+        // Start with no part rows: the parent has to be chosen first, and an
+        // empty row sitting under a locked list only invites confusion.
+        initialLines={[]}
+        onSubmit={submit}
+        submitting={create.isPending}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
+    </>
   );
 }

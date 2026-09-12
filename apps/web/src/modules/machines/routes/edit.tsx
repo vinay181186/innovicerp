@@ -3,7 +3,8 @@
 import type { CreateMachineInput, UpdateMachineInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
@@ -24,12 +25,16 @@ function MachineNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateMachine();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(() => void navigate({ to: '/machines' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: CreateMachineInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      await navigate({ to: '/machines/$id', params: { id: created.id }, replace: true });
+      exit.leave(
+        () => void navigate({ to: '/machines/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create machine');
     }
@@ -37,6 +42,7 @@ function MachineNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/machines" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Machine Master
       </Link>
@@ -52,7 +58,7 @@ function MachineNewPage(): React.JSX.Element {
             mode="create"
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/machines' })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>
@@ -67,11 +73,17 @@ function MachineEditPage(): React.JSX.Element {
   const update = useUpdateMachine(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const goBack = useCallback(
+    () => void navigate({ to: '/machines/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
+
   const onSubmit = async (values: UpdateMachineInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
-      await navigate({ to: '/machines/$id', params: { id }, replace: true });
+      exit.leave(() => void navigate({ to: '/machines/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update machine');
     }
@@ -104,6 +116,7 @@ function MachineEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/machines/$id"
         params={{ id }}
@@ -132,7 +145,7 @@ function MachineEditPage(): React.JSX.Element {
             machine={machine}
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/machines/$id', params: { id } })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>

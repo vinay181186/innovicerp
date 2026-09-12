@@ -17,8 +17,9 @@
 import type { JobCardEditModel, JobCardSourceOption } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
 import { useItemsList } from '@/modules/items/api';
@@ -105,6 +106,8 @@ export function JobCardForm({
 }): React.JSX.Element {
   const isEdit = Boolean(model);
   const navigate = useNavigate();
+  const goBack = useCallback(() => void navigate({ to: '/job-cards' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
   const { data: me } = useSession();
   const companyId = me?.companyId ?? '';
 
@@ -395,7 +398,7 @@ export function JobCardForm({
     try {
       if (isEdit && model) await update.mutateAsync(result.payload);
       else await create.mutateAsync(result.payload);
-      void navigate({ to: '/job-cards' });
+      exit.leave(goBack);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     }
@@ -403,6 +406,7 @@ export function JobCardForm({
 
   return (
     <div>
+      {exit.dialog}
       <datalist id="dlJcItem">
         {items.map((i) => (
           <option key={i.id} value={i.code}>
@@ -884,7 +888,7 @@ export function JobCardForm({
         <button
           type="button"
           className="btn btn-ghost"
-          onClick={() => void navigate({ to: '/job-cards' })}
+          onClick={() => exit.leave(goBack)}
         >
           Cancel
         </button>

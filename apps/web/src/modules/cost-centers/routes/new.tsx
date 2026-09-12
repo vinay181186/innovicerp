@@ -1,8 +1,9 @@
 import type { CreateCostCenterInput, ListCostCentersQuery } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useCreateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
@@ -17,6 +18,8 @@ function CostCenterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateCostCenter();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(() => void navigate({ to: '/cost-centers' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
   // Creating a master record is `entry` on cc_create (Finance). Checked here as
   // well as on the list button — the route is reachable by URL, so without this
   // an L1 Viewer got the whole form and failed only at the API.
@@ -43,6 +46,7 @@ function CostCenterNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/cost-centers" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Cost Center Master
       </Link>
@@ -62,12 +66,14 @@ function CostCenterNewPage(): React.JSX.Element {
             suggestedCode={suggestedCode}
             submitError={submitError}
             submitLabel="Save"
-            onCancel={() => void navigate({ to: '/cost-centers' })}
+            onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateCostCenterInput) => {
               setSubmitError(null);
               try {
                 const created = await create.mutateAsync(values);
-                void navigate({ to: '/cost-centers/$id', params: { id: created.id } });
+                exit.leave(
+                  () => void navigate({ to: '/cost-centers/$id', params: { id: created.id } }),
+                );
               } catch (e) {
                 setSubmitError(e instanceof Error ? e.message : 'Failed to create cost center.');
               }

@@ -1,7 +1,8 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBomMaster, useUpdateBomMaster } from '../api';
 import {
@@ -25,6 +26,11 @@ function BomMasterEditPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'bom_create');
+  const goBack = useCallback(
+    () => void navigate({ to: '/bom-masters/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
 
   const initialLines = useMemo<BomFormLineDraft[]>(
     () =>
@@ -59,7 +65,7 @@ function BomMasterEditPage(): React.JSX.Element {
         lines: linesToInput(lines),
         revisionNote,
       });
-      void navigate({ to: '/bom-masters/$id', params: { id: updated.id } });
+      exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: updated.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Failed to save BOM revision.');
     }
@@ -99,23 +105,26 @@ function BomMasterEditPage(): React.JSX.Element {
   }
 
   return (
-    <BomForm
-      mode="edit"
-      bom={detail}
-      initialHeader={{
-        bomNo: detail.bomNo,
-        bomName: detail.bomName,
-        // Blank for the BOMs that predate migration 0085 — the form then locks
-        // the part list until one is chosen, which is how they get backfilled.
-        parentItemId: detail.parentItemId ?? '',
-        parentItemCodeText: detail.parentItemCode ?? '',
-        status: detail.status,
-      }}
-      initialLines={initialLines}
-      onSubmit={submit}
-      submitting={update.isPending}
-      submitError={submitError}
-      onCancel={() => void navigate({ to: '/bom-masters/$id', params: { id } })}
-    />
+    <>
+      {exit.dialog}
+      <BomForm
+        mode="edit"
+        bom={detail}
+        initialHeader={{
+          bomNo: detail.bomNo,
+          bomName: detail.bomName,
+          // Blank for the BOMs that predate migration 0085 — the form then locks
+          // the part list until one is chosen, which is how they get backfilled.
+          parentItemId: detail.parentItemId ?? '',
+          parentItemCodeText: detail.parentItemCode ?? '',
+          status: detail.status,
+        }}
+        initialLines={initialLines}
+        onSubmit={submit}
+        submitting={update.isPending}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
+    </>
   );
 }

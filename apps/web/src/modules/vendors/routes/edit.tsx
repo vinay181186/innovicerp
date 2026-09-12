@@ -3,7 +3,8 @@
 import type { CreateVendorInput, UpdateVendorInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateVendor, useUpdateVendor, useVendor } from '../api';
@@ -30,12 +31,16 @@ function VendorNewPage(): React.JSX.Element {
   // without this an L1 Viewer got the whole form and failed only at the API.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'vendor_create');
+  const goBack = useCallback(() => void navigate({ to: '/vendors' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: CreateVendorInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      await navigate({ to: '/vendors/$id', params: { id: created.id }, replace: true });
+      exit.leave(
+        () => void navigate({ to: '/vendors/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create vendor');
     }
@@ -53,6 +58,7 @@ function VendorNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/vendors" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Vendor Master
       </Link>
@@ -70,7 +76,7 @@ function VendorNewPage(): React.JSX.Element {
             mode="create"
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/vendors' })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>
@@ -90,11 +96,17 @@ function VendorEditPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'vendor_create');
 
+  const goBack = useCallback(
+    () => void navigate({ to: '/vendors/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
+
   const onSubmit = async (values: UpdateVendorInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
-      await navigate({ to: '/vendors/$id', params: { id }, replace: true });
+      exit.leave(() => void navigate({ to: '/vendors/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update vendor');
     }
@@ -137,6 +149,7 @@ function VendorEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/vendors/$id"
         params={{ id }}
@@ -165,7 +178,7 @@ function VendorEditPage(): React.JSX.Element {
             vendor={vendor}
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/vendors/$id', params: { id } })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>
