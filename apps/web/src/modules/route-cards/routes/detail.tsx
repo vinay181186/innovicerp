@@ -95,7 +95,11 @@ function RouteCardDetailPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to Route Cards
       </Link>
 
-      <div className="panel">
+      {/* SO-Planning left-accent identity card: the cyan stripe + banded header
+          (panel-hdr already paints a --bg3 band) is the same card composition SO
+          Planning gives each line — code in cyan mono, item code in purple, and a
+          small tinted revision pill in place of a plain label. */}
+      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="panel-hdr">
           <div>
             <div className="td-code cyan" style={{ fontSize: 16, fontWeight: 800 }}>
@@ -108,8 +112,14 @@ function RouteCardDetailPage(): React.JSX.Element {
               <span style={{ color: 'var(--purple)' }}>{detail.itemCode ?? '—'}</span>
               <span className="text2">{detail.itemName ?? '— unknown item —'}</span>
               <span
-                className="mono"
-                style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}
+                className="mono fw-700"
+                style={{
+                  fontSize: 10,
+                  padding: '2px 8px',
+                  borderRadius: 3,
+                  background: 'rgba(0,136,187,0.12)',
+                  color: 'var(--cyan)',
+                }}
               >
                 Rev {detail.currentRevision}
               </span>
@@ -189,7 +199,7 @@ function RouteCardDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel">
+      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="panel-hdr">
           <div className="panel-title">⚙️ Operation Sequence ({detail.ops.length})</div>
         </div>
@@ -366,8 +376,10 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
   // as one long undifferentiated list, which is worse than showing neither.
   const [openId, setOpenId] = useState<string | null>(null);
 
+  // Amber stripe: the revision trail carries the amber accent its own "Rev N"
+  // cells use, the same way SO Planning colours a card by its status.
   return (
-    <div className="panel">
+    <div className="panel" style={{ borderLeft: '3px solid var(--amber)' }}>
       <div className="panel-hdr">
         <div className="panel-title">▸ Revision History ({revisions.length})</div>
         <div className="text3" style={{ fontSize: 11 }}>

@@ -231,7 +231,9 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={(e) => void submit(e)}>
-      <div className="panel">
+      {/* SO-Planning left-accent card composition: a cyan identity stripe + the
+          --bg3 banded header (panel-hdr) reused across every block of the form. */}
+      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="panel-hdr">
           <div className="panel-title">
             {mode === 'create'
@@ -331,7 +333,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel">
+      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="panel-hdr">
           <div className="panel-title">⚙️ Route Sequence ({ops.length})</div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -434,7 +436,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       </datalist>
 
       {mode === 'edit' ? (
-        <div className="panel">
+        <div className="panel" style={{ borderLeft: '3px solid var(--amber)' }}>
           <div className="panel-hdr">
             <div className="panel-title">📋 Revision Note</div>
           </div>

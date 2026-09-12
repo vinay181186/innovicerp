@@ -58,7 +58,17 @@ function RouteCardsListPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">Route Card Master</div>
+        {/* SO-Planning section header rhythm: the title carries a muted sub-line
+            (there it names the SO/customer; here the live card count) so the
+            heading reads as a titled block, not a bare label. */}
+        <div className="section-hdr m-0">
+          Route Card Master
+          {data ? (
+            <div className="text3" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
+              {data.items.length} card{data.items.length === 1 ? '' : 's'}
+            </div>
+          ) : null}
+        </div>
         <div className="flex items-center gap-2">
           <input
             className="innovic-input"
@@ -80,18 +90,32 @@ function RouteCardsListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            💡 Route cards define the standard manufacturing sequence for each item. A card's
-            operations are <b>loaded into the plan</b> when you plan that item, and executing that
-            plan creates the Job Card. You can also create/edit route cards directly here. Revision
-            history is tracked on every save.
-          </span>
-        </div>
+      {/* SO-Planning tinted info box (its "In Production (no plan)" note uses the
+          same shape: a cyan-tinted panel with a matching translucent border). */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'flex-start',
+          padding: '10px 14px',
+          marginBottom: 10,
+          background: 'rgba(0,136,187,0.06)',
+          border: '1px solid rgba(0,136,187,0.3)',
+          borderRadius: 6,
+        }}
+      >
+        <span style={{ fontSize: 12 }}>💡</span>
+        <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+          Route cards define the standard manufacturing sequence for each item. A card's operations
+          are <b>loaded into the plan</b> when you plan that item, and executing that plan creates
+          the Job Card. You can also create/edit route cards directly here. Revision history is
+          tracked on every save.
+        </span>
       </div>
 
-      <div className="panel">
+      {/* SO-Planning left-accent card: a coloured 3px stripe marks the block's
+          identity (cyan = the route-card surface). */}
+      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="tbl-wrap">
           <table className="innovic-table">
             <thead>
