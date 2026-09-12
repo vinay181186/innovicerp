@@ -39,6 +39,7 @@ function RouteCardNewPage(): React.JSX.Element {
         itemId: header.itemId,
         ...rawMaterialToInput(header),
         notes: header.notes.trim() || null,
+        planType: header.planType,
         ops: opsToInput(ops),
       });
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: created.id } }));
@@ -70,6 +71,7 @@ function RouteCardNewPage(): React.JSX.Element {
           rawMaterialSizeId: null,
           rawMaterialSizeText: null,
           notes: '',
+          planType: 'manufacture',
         }}
         initialOps={[emptyProcessOp()]}
         onSubmit={submit}

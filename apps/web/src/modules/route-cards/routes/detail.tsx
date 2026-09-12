@@ -158,6 +158,28 @@ function RouteCardDetailPage(): React.JSX.Element {
                 read with the item identity, not buried under Notes. Both are
                 optional — a card with neither still shows the pair as dashes,
                 because a missing grade is a gap worth seeing. */}
+            {/* Plan Type is how the item is normally made -- the same choice
+                SO Planning asks per plan, so it reads in Planning's colours. */}
+            <div className="form-grp">
+              <span className="form-label">Plan Type</span>
+              <div
+                className="fw-700"
+                style={{
+                  color:
+                    detail.planType === 'full_outsource'
+                      ? 'var(--purple)'
+                      : detail.planType === 'direct_purchase'
+                        ? 'var(--green)'
+                        : 'var(--cyan)',
+                }}
+              >
+                {detail.planType === 'full_outsource'
+                  ? '📦 Full Outsource'
+                  : detail.planType === 'direct_purchase'
+                    ? '🛒 Direct Purchase'
+                    : '🏭 Manufacture'}
+              </div>
+            </div>
             <div className="form-grp">
               <span className="form-label">RM Grade</span>
               <div className="mono fw-700">{detail.rawMaterialGradeText ?? '—'}</div>
@@ -208,7 +230,9 @@ function RouteCardDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th style={{ width: 40 }}>#</th>
-                <th>Type</th>
+                {/* Group replaces Type, as on the form: the kind of row is told
+                    by its tint and by the QC / OSP badge in this column. */}
+                <th>Group</th>
                 <th>Machine / Vendor</th>
                 <th>Operation</th>
                 <th className="td-ctr">Cycle(h)</th>
@@ -256,14 +280,9 @@ function RouteCardDetailPage(): React.JSX.Element {
                       : (op.machineCode ?? op.machineCodeText ?? '—');
                   const tagName = op.opType === 'outsource' ? op.ospVendorName : op.machineName;
                   // The machine GROUP ('VMC', 'CNC') is the word the shop floor
-                  // actually uses for a family of machines, so showing it under
-                  // the machine tells a reader what KIND of step this is without
-                  // them having to recognise the individual machine code. It
-                  // hangs off the machine, so it only ever appears on an in-house
-                  // op: an OSP row carries a vendor and a QC row carries neither,
-                  // and on those rows nothing extra is drawn at all. Null (no
-                  // machine, or a machine filed under no group) draws nothing —
-                  // no dash, no blank line.
+                  // uses for a family of machines. It hangs off the machine, so
+                  // only an in-house op has one; OSP and QC rows show a badge in
+                  // the Group column instead.
                   const groupCode =
                     op.opType === 'outsource' || op.opType === 'qc' ? null : op.machineGroupCode;
                   return (
@@ -272,9 +291,29 @@ function RouteCardDetailPage(): React.JSX.Element {
                         {op.opSeq}
                       </td>
                       <td>
-                        <span className="badge" style={{ color: accent, fontWeight: 700 }}>
-                          {op.opType.toUpperCase()}
-                        </span>
+                        {op.opType === 'qc' ? (
+                          <span className="badge b-green" style={{ fontSize: 10 }}>
+                            🔬 QC
+                          </span>
+                        ) : op.opType === 'outsource' ? (
+                          <span
+                            className="badge"
+                            style={{
+                              fontSize: 10,
+                              color: 'var(--purple)',
+                              background: 'rgba(124,58,237,0.12)',
+                              border: '1px solid rgba(124,58,237,0.3)',
+                            }}
+                          >
+                            🏭 OSP
+                          </span>
+                        ) : groupCode ? (
+                          <span className="mono fw-700" title={`Machine group: ${groupCode}`}>
+                            {groupCode}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td>
                         <span
@@ -286,28 +325,6 @@ function RouteCardDetailPage(): React.JSX.Element {
                             verticalAlign: 'top',
                           }}
                         >
-                          {groupCode ? (
-                            // The GROUP leads the cell: it is the general answer
-                            // ("this is a VMC step") and the machine code under it
-                            // is the specific one. Reading down goes from the kind
-                            // of machine to the individual machine to its name.
-                            //
-                            // Set as a small spaced label rather than at the code's
-                            // own weight, so leading the cell does not mean
-                            // outshouting the machine it belongs to.
-                            <span
-                              style={{
-                                fontSize: 9,
-                                color: 'var(--text3)',
-                                fontWeight: 700,
-                                letterSpacing: '.08em',
-                                display: 'block',
-                              }}
-                              title={`Machine group: ${groupCode}`}
-                            >
-                              {groupCode}
-                            </span>
-                          ) : null}
                           <span style={{ fontWeight: 700, display: 'block' }}>{tagCode}</span>
                           {tagName ? (
                             <span

@@ -36,6 +36,9 @@ function RouteCardEditPage(): React.JSX.Element {
   const initialOps = useMemo<RouteCardFormOpDraft[]>(
     () =>
       (detail?.ops ?? []).map((op) => ({
+        // Group is display-only; the form reads it back off the machine master
+        // once the machines list has loaded.
+        machineGroupId: null,
         machineId: op.machineId ?? '',
         machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
         operation: op.operation,
@@ -66,6 +69,7 @@ function RouteCardEditPage(): React.JSX.Element {
         itemId: header.itemId,
         ...rawMaterialToInput(header),
         notes: header.notes.trim() || null,
+        planType: header.planType,
         ops: opsToInput(ops),
         revisionNote,
       });
@@ -123,6 +127,10 @@ function RouteCardEditPage(): React.JSX.Element {
           rawMaterialSizeId: detail.rawMaterialSizeId,
           rawMaterialSizeText: detail.rawMaterialSizeText,
           notes: detail.notes ?? '',
+          planType:
+            detail.planType === 'full_outsource' || detail.planType === 'direct_purchase'
+              ? detail.planType
+              : 'manufacture',
         }}
         initialOps={initialOps}
         onSubmit={submit}

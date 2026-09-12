@@ -10,11 +10,19 @@
 // L6994) and editRouteCard() (L10169, direct call at L10198). That
 // shared renderer is why legacy's two modes are field-identical.
 
-import type { CreateRouteCardOpInput, Item, Machine, RouteCard, Vendor } from '@innovic/shared';
+import type {
+  CreateRouteCardOpInput,
+  Item,
+  Machine,
+  RouteCard,
+  RouteCardPlanType,
+  Vendor,
+} from '@innovic/shared';
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useItemsList } from '@/modules/items/api';
-import { useMachinesList } from '@/modules/machines/api';
+import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
+import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
@@ -26,6 +34,11 @@ import { useNextRouteCardCode } from '../api';
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
 
 export interface RouteCardFormOpDraft {
+  // DISPLAY-ONLY, never sent: the machine group narrows the machine list for
+  // this row, exactly as the GROUP column on SO Planning does. route_card_ops
+  // has no group column — the machine carries its group in the master, so the
+  // group is re-read from the picked machine whenever the card is opened.
+  machineGroupId: string | null;
   // Resolved on machine-code change (or null when QC/OSP).
   machineId: string;
   machineCodeText: string; // displayed value; also stored as fallback
@@ -55,6 +68,9 @@ export interface RouteCardFormHeaderDraft {
   rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
   notes: string;
+  // How this item is normally made — the same three-way choice SO Planning
+  // asks per plan, recorded once on the card as the default.
+  planType: RouteCardPlanType;
 }
 
 interface RouteCardFormProps {
@@ -72,14 +88,9 @@ interface RouteCardFormProps {
   onCancel: () => void;
 }
 
-const OP_TYPE_OPTIONS: ReadonlyArray<{ value: RouteCardOpType; label: string }> = [
-  { value: 'process', label: '⚙️ Process' },
-  { value: 'qc', label: '🔬 QC' },
-  { value: 'outsource', label: '🏭 OSP' },
-];
-
 export function emptyProcessOp(): RouteCardFormOpDraft {
   return {
+    machineGroupId: null,
     machineId: '',
     machineCodeText: '',
     operation: '',
@@ -134,6 +145,13 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   // route 400, leaving the pickers empty. Stay ≤ 200.
   const { data: machinesList } = useMachinesList({ limit: 200, offset: 0 });
   const { data: vendorsList } = useVendorsList({ limit: 200, offset: 0 });
+  // Machine groups exist only to label and narrow the machine picker; the id
+  // → code map lets a row show "VMC" for the group its machine belongs to.
+  const { data: machineGroups } = useMachineGroupsList({ limit: 200, offset: 0 });
+  const machineGroupCodeById = useMemo(
+    () => new Map((machineGroups?.groups ?? []).map((g) => [g.id, g.code])),
+    [machineGroups],
+  );
 
   // Create-mode only: prefill the RC No with the previewed next code once,
   // while the field is still blank. Keeps the field editable (user may
@@ -175,10 +193,57 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     setOps((prev) => prev.map((o, i) => (i === idx ? { ...o, ...patch } : o)));
   };
 
+  // Picking a machine that carries a group in the master fills the Group box
+  // when it is still empty — the same seeding SO Planning does — so a card
+  // opened later reads "VMC · vmc-2", not a bare machine.
   const onOpMachineChange = (idx: number, code: string): void => {
     const match = machinesByCode.get(code.trim().toUpperCase());
-    updateOp(idx, { machineCodeText: code, machineId: match?.id ?? '' });
+    const current = ops[idx];
+    updateOp(idx, {
+      machineCodeText: code,
+      machineId: match?.id ?? '',
+      ...(current && current.machineGroupId == null && match?.machineGroupId
+        ? { machineGroupId: match.machineGroupId }
+        : {}),
+    });
   };
+
+  // Picking a group narrows the machine list for that row. A machine already in
+  // the box that is NOT in the new group is cleared, so the row cannot read
+  // "VMC group, running a lathe" — the planner re-picks inside the group. Only
+  // cleared when the mismatch is PROVEN: a machine we cannot find in the loaded
+  // rows is left alone rather than blanked on a guess.
+  const onOpGroupChange = (idx: number, groupId: string | null): void => {
+    const current = ops[idx];
+    const machine = current?.machineId
+      ? (machinesList?.machines ?? []).find((m) => m.id === current.machineId)
+      : undefined;
+    const mismatch = groupId != null && machine != null && machine.machineGroupId !== groupId;
+    updateOp(idx, {
+      machineGroupId: groupId,
+      ...(mismatch ? { machineId: '', machineCodeText: '' } : {}),
+    });
+  };
+
+  // Group is display-only and is not stored, so a card opened for editing has
+  // every row's group empty even though its machine belongs to one. Read it
+  // back off the master once the machine list is in, for rows that have a
+  // machine but no group yet.
+  useEffect(() => {
+    const rows = machinesList?.machines;
+    if (!rows?.length) return;
+    setOps((prev) => {
+      let changed = false;
+      const next = prev.map((o) => {
+        if (o.opType !== 'process' || o.machineGroupId != null || !o.machineId) return o;
+        const m = rows.find((x) => x.id === o.machineId);
+        if (!m?.machineGroupId) return o;
+        changed = true;
+        return { ...o, machineGroupId: m.machineGroupId };
+      });
+      return changed ? next : prev;
+    });
+  }, [machinesList]);
 
   const onOpVendorChange = (idx: number, code: string): void => {
     const match = vendorsByCode.get(code.trim().toUpperCase());
@@ -229,6 +294,38 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     );
   };
 
+  // One Plan Type card. Lifted from SO Planning's typeBtn so the two screens
+  // draw the same control; a <label> so the whole tile is the click target.
+  const planTypeCard = (
+    val: RouteCardPlanType,
+    icon: string,
+    label: string,
+    help: string,
+    color: string,
+    activeBg: string,
+  ): React.JSX.Element => {
+    const active = header.planType === val;
+    return (
+      <label
+        key={val}
+        style={{
+          flex: 1,
+          cursor: 'pointer',
+          padding: '10px 14px',
+          borderRadius: 8,
+          border: `2px solid ${active ? color : 'var(--border)'}`,
+          background: active ? activeBg : 'var(--bg)',
+          textAlign: 'center',
+        }}
+        onClick={() => setHeader((prev) => ({ ...prev, planType: val }))}
+      >
+        <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
+        <div style={{ fontSize: 10, color: 'var(--text3)' }}>{help}</div>
+      </label>
+    );
+  };
+
   return (
     <form onSubmit={(e) => void submit(e)}>
       {/* SO-Planning left-accent card composition: a cyan identity stripe + the
@@ -272,6 +369,44 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                   ⚠ not found in item master
                 </div>
               ) : null}
+            </div>
+            {/* Plan Type — the same three-way choice SO Planning asks for every
+                plan, recorded once here as the item's default. Same cards, same
+                colours, so the planner recognises it. `assembly` is not offered:
+                it needs a BOM behind an order line and is decided at planning. */}
+            <div className="form-full">
+              <span
+                className="form-label"
+                style={{ fontWeight: 700, display: 'block', marginBottom: 6 }}
+              >
+                Plan Type<span className="req">★</span>
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {planTypeCard(
+                  'manufacture',
+                  '🏭',
+                  'Manufacture',
+                  'Job Card + Operations',
+                  'var(--cyan)',
+                  'rgba(34,211,238,0.08)',
+                )}
+                {planTypeCard(
+                  'full_outsource',
+                  '📦',
+                  'Full Outsource',
+                  'Our material, vendor does all',
+                  'var(--purple)',
+                  'rgba(124,58,237,0.08)',
+                )}
+                {planTypeCard(
+                  'direct_purchase',
+                  '🛒',
+                  'Direct Purchase',
+                  'Buy finished item (with material)',
+                  'var(--green)',
+                  'rgba(34,197,94,0.08)',
+                )}
+              </div>
             </div>
             {/* Raw material — Grade + Size under one bracket, both optional
                 (no ★ on either). Same two pickers Planning and the Job Card
@@ -371,7 +506,13 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             <thead>
               <tr>
                 <th style={{ width: 36 }}>#</th>
-                <th style={{ width: 100 }}>Type</th>
+                {/* Group replaces the old Type dropdown. The KIND of a row is
+                    decided by which Add button raised it (Op / OSP / QC) and is
+                    shown by the row's tint and by the QC / OSP badge in this
+                    column, exactly as SO Planning does — a second control for
+                    the same fact invited rows whose Type disagreed with their
+                    machine. */}
+                <th style={{ width: 140 }}>Group</th>
                 <th style={{ width: 150 }}>Machine / Vendor ★</th>
                 <th>Operation ★</th>
                 <th className="text3" style={{ width: 90 }}>
@@ -400,9 +541,11 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                     idx={idx}
                     op={op}
                     machinesList={machinesList?.machines ?? []}
+                    machineGroupCodeById={machineGroupCodeById}
                     vendorsList={vendorsList?.vendors ?? []}
                     onChange={(patch) => updateOp(idx, patch)}
                     onMachineChange={(code) => onOpMachineChange(idx, code)}
+                    onGroupChange={(gid) => onOpGroupChange(idx, gid)}
                     onVendorChange={(code) => onOpVendorChange(idx, code)}
                     onRemove={() => removeOp(idx)}
                   />
@@ -417,13 +560,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         {(itemsList?.items ?? []).map((i) => (
           <option key={i.id} value={i.code}>
             {i.name}
-          </option>
-        ))}
-      </datalist>
-      <datalist id="rc-machines-dl">
-        {(machinesList?.machines ?? []).map((m) => (
-          <option key={m.id} value={m.code}>
-            {m.name}
           </option>
         ))}
       </datalist>
@@ -475,9 +611,11 @@ interface RouteCardOpRowProps {
   idx: number;
   op: RouteCardFormOpDraft;
   machinesList: Machine[];
+  machineGroupCodeById: Map<string, string>;
   vendorsList: Vendor[];
   onChange: (patch: Partial<RouteCardFormOpDraft>) => void;
   onMachineChange: (code: string) => void;
+  onGroupChange: (groupId: string | null) => void;
   onVendorChange: (code: string) => void;
   onRemove: () => void;
 }
@@ -487,12 +625,20 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
     idx,
     op,
     machinesList,
+    machineGroupCodeById,
     vendorsList,
     onChange,
     onMachineChange,
+    onGroupChange,
     onVendorChange,
     onRemove,
   } = props;
+  // The machines this row may offer: the whole list until a group is chosen,
+  // then only that group's — narrowed in the browser, as SO Planning does.
+  const rowMachines = op.machineGroupId
+    ? machinesList.filter((m) => m.machineGroupId === op.machineGroupId)
+    : machinesList;
+  const groupCode = op.machineGroupId ? (machineGroupCodeById.get(op.machineGroupId) ?? null) : null;
   const rowBg =
     op.opType === 'qc'
       ? 'rgba(34,197,94,0.06)'
@@ -521,18 +667,30 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
         {idx + 1}
       </td>
       <td>
-        <select
-          className="innovic-select"
-          value={op.opType}
-          onChange={(e) => onChange({ opType: e.target.value as RouteCardOpType })}
-          style={{ fontSize: 11 }}
-        >
-          {OP_TYPE_OPTIONS.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+        {op.opType === 'qc' ? (
+          <span className="badge b-green" style={{ fontSize: 10 }}>
+            🔬 QC
+          </span>
+        ) : op.opType === 'outsource' ? (
+          <span
+            className="badge"
+            style={{
+              fontSize: 10,
+              color: 'var(--purple)',
+              background: 'rgba(124,58,237,0.12)',
+              border: '1px solid rgba(124,58,237,0.3)',
+            }}
+          >
+            🏭 OSP
+          </span>
+        ) : (
+          <MachineGroupPicker
+            id={`rc-mgrp-${idx}`}
+            valueId={op.machineGroupId}
+            valueText={groupCode}
+            onChange={onGroupChange}
+          />
+        )}
       </td>
       <td>
         {op.opType === 'outsource' ? (
@@ -559,12 +717,19 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           <>
             <input
               className="innovic-input"
-              list="rc-machines-dl"
+              list={`rc-machines-dl-${idx}`}
               value={op.machineCodeText}
               onChange={(e) => onMachineChange(e.target.value)}
-              placeholder="🔍 Machine code"
+              placeholder={op.machineGroupId ? '🔍 Machine in group' : '🔍 Machine code'}
               style={{ fontSize: 12 }}
             />
+            <datalist id={`rc-machines-dl-${idx}`}>
+              {rowMachines.map((m) => (
+                <option key={m.id} value={m.code}>
+                  {m.name}
+                </option>
+              ))}
+            </datalist>
             {machineLabel ? (
               <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
                 {machineLabel}

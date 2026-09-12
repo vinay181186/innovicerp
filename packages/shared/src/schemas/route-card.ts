@@ -18,6 +18,7 @@
 
 import { z } from 'zod';
 import { OP_TYPES } from '../enums/op-type';
+import { PLAN_TYPES } from '../enums/plan-type';
 
 // Note: opTypeSchema is exported from op-entry.ts; we use a local
 // alias to avoid the duplicate-export collision when both files are
@@ -25,6 +26,14 @@ import { OP_TYPES } from '../enums/op-type';
 const rcOpTypeSchema = z.enum(OP_TYPES);
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
+
+/** The plan types a route card may carry. `assembly` is a Planning-only value
+ *  (it needs a BOM behind an order line), so the card offers the three that
+ *  describe how an item is made in general. */
+export const ROUTE_CARD_PLAN_TYPES = ['manufacture', 'full_outsource', 'direct_purchase'] as const;
+export const routeCardPlanTypeSchema = z.enum(ROUTE_CARD_PLAN_TYPES);
+export type RouteCardPlanType = z.infer<typeof routeCardPlanTypeSchema>;
+const planTypeSchema = z.enum(PLAN_TYPES);
 
 export const routeCardSchema = z.object({
   id: z.string().uuid(),
@@ -46,6 +55,10 @@ export const routeCardSchema = z.object({
   rawMaterialSizeId: z.string().uuid().nullable(),
   rawMaterialSizeText: z.string().nullable(),
   notes: z.string().nullable(),
+  /** How this item is normally made — Manufacture / Full Outsource / Direct
+   *  Purchase, the same choice SO Planning asks per plan. Defaults to
+   *  manufacture; `assembly` is a planning-only value never stored here. */
+  planType: planTypeSchema.default('manufacture'),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -218,6 +231,7 @@ export const createRouteCardInputSchema = z.object({
   rawMaterialSizeId: z.string().uuid().nullable().optional(),
   rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
 });
 export type CreateRouteCardInput = z.infer<typeof createRouteCardInputSchema>;
@@ -235,6 +249,7 @@ export const updateRouteCardInputSchema = z.object({
   rawMaterialSizeId: z.string().uuid().nullable().optional(),
   rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
   revisionNote: z.string().max(2000).nullable().optional(),
 });
