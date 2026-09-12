@@ -7,7 +7,10 @@
 //   1. recalcPoLineReceivedQty(tx, poLineId)
 //        Recompute purchase_order_lines.received_qty as the sum of
 //        goods_receipt_note_lines.received_qty across non-deleted GRN lines
-//        whose purchase_order_line_id = poLineId.
+//        whose purchase_order_line_id = poLineId — EXCLUDING replacement
+//        receipts (GRN header carries nc_id) — LESS the return-to-vendor
+//        quantity still owed on this line (QC–NC handling §12.2 / §12.6,
+//        docs/QC-NC-HANDLING-DESIGN.md §5). See the function for the rule.
 //
 //   2. recalcPoHeaderStatus(tx, poId)
 //        Recompute purchase_orders.status based on aggregate state of its
@@ -28,9 +31,8 @@
 //        owed to a downstream op, and store is credited once by the JC's
 //        final QC op instead. See isMidRouteOutsourceReturn below.
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
-  goodsReceiptNoteLines,
   goodsReceiptNotes,
   purchaseOrderLines,
   purchaseOrders,
@@ -43,19 +45,44 @@ export async function recalcPoLineReceivedQty(
   poLineId: string,
   adminUserId: string,
 ): Promise<void> {
-  // Sum of received_qty across non-deleted GRN lines for this PO line.
-  const result = await tx
-    .select({
-      total: sql<number>`COALESCE(SUM(${goodsReceiptNoteLines.receivedQty}), 0)::int`,
-    })
-    .from(goodsReceiptNoteLines)
-    .where(
-      and(
-        eq(goodsReceiptNoteLines.purchaseOrderLineId, poLineId),
-        isNull(goodsReceiptNoteLines.deletedAt),
-      ),
-    );
-  const total = Number(result[0]?.total ?? 0);
+  // received_qty is RECOMPUTED here, never adjusted in place, so the
+  // return-to-vendor accounting the QC–NC document asks for (§12.2 subtract
+  // at return, §12.6 add back on clearance) has to live in this one formula --
+  // an additive "-= / +=" elsewhere would be overwritten the next time any
+  // GRN on the line fired this recalc.
+  //
+  //   received = Σ received_qty of ORDINARY GRN lines on the line
+  //            − Σ (rejected_qty − cleared_qty) of every NC on one of this
+  //              line's ops that has had its return challan issued
+  //
+  // Replacement receipts (GRN header nc_id set) are excluded from the first
+  // term: the pieces were already counted when they first arrived, and the
+  // document says they rejoin the supplied qty only as they CLEAR QC -- which
+  // is exactly what the second term does as cleared_qty rises. A piece that
+  // fails again stays subtracted, and the follow-on NC carries it.
+  const result = await tx.execute(sql`
+    SELECT
+      COALESCE((
+        SELECT SUM(grl.received_qty)
+        FROM public.goods_receipt_note_lines grl
+        JOIN public.goods_receipt_notes grn ON grn.id = grl.goods_receipt_note_id
+        WHERE grl.purchase_order_line_id = ${poLineId}::uuid
+          AND grl.deleted_at IS NULL
+          AND grn.nc_id IS NULL
+      ), 0)
+      -
+      COALESCE((
+        SELECT SUM(nc.rejected_qty - nc.cleared_qty)
+        FROM public.nc_register nc
+        JOIN public.jc_ops o ON o.id = nc.jc_op_id
+        WHERE o.outsource_po_line_id = ${poLineId}::uuid
+          AND nc.disposition = 'return_to_vendor'
+          AND nc.delivery_challan_id IS NOT NULL
+          AND nc.deleted_at IS NULL
+      ), 0) AS total
+  `);
+  const row = (result as unknown as Array<{ total: unknown }>)[0];
+  const total = Math.max(0, Math.round(Number(row?.total ?? 0)));
   await tx
     .update(purchaseOrderLines)
     .set({ receivedQty: total, updatedBy: adminUserId })

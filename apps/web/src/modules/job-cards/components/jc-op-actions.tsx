@@ -23,7 +23,7 @@
 //
 //   ▶ Start / ✚ Log   available > 0        (startOp / submitOpLog refuse at 0)
 //   🔬 QC / 📋 TPI     qcPending > 0        (nothing waiting to be inspected)
-//   ⚠ NC              qcRejectedQty > 0    (nothing was rejected)
+//   ⚠ NC              qcRejectedQty > 0    (nothing was rejected → no NC to open)
 //   🚚 Gen DC         readyToSendQty > 0   (nothing cleared to send)
 //   📥 Receive        an open challan exists
 //   🔬 Incoming QC    inQcQty > 0          (nothing back awaiting inspection)
@@ -249,8 +249,8 @@ export function JcOpFooter({
   onLog,
   onQc,
 }: {
-  /** The whole Job Card row: the OSP ladder needs its code, and the ⚠ NC link
-   *  seeds the NC form with the JC + item it is raised against. */
+  /** The whole Job Card row: the OSP ladder and the ⚠ NC link both need its
+   *  code (the latter to filter the NC register to this job card). */
   jc: JobCardListItem;
   op: JcOpEnriched;
   onStart: (opId: string) => void;
@@ -270,12 +270,12 @@ export function JcOpFooter({
   // exactly when the server would refuse the entry.
   const canTpi =
     effectiveFormPerms(eff, 'qc_submit').entry && effectiveFormPerms(eff, 'tpi_submit').entry;
-  // ⚠ NC opens /nc-register/new, which guards on nc_dispose.entry.
-  // It is now shown ONLY on a QC operation that actually rejected something:
-  // the QC op is what finds the fault and raises the NC, and with no rejects
-  // there is nothing to report. (No QC op in the live data has rejects today,
-  // so the button is correctly invisible everywhere right now.)
-  const showNc = isQc && op.qcRejectedQty > 0 && effectiveFormPerms(eff, 'nc_dispose').entry;
+  // ⚠ NC opens the NC register list, which guards on nc_dispose.view (it used
+  // to open /nc-register/new → .entry; see the link itself for why it moved).
+  // Shown ONLY on a QC operation that actually rejected something: the QC op
+  // is what finds the fault and raises the NC, and with no rejects there is
+  // nothing to look at.
+  const showNc = isQc && op.qcRejectedQty > 0 && effectiveFormPerms(eff, 'nc_dispose').view;
 
   // A button only appears when the action behind it can actually be PERFORMED
   // right now. `available` is the op's workable qty (upstream cleared − already
@@ -417,27 +417,24 @@ export function JcOpFooter({
           📋 TPI
         </Link>
       ) : null}
-      {/* Report NC — the QC operation that rejected pieces is where the fault is
-          found, so the button only appears there, labelled with the reject
-          count like the 🔬 QC (5) button beside it. The link carries the JC,
-          the item and the operation into the form, so the inspector lands on a
-          part-filled NC instead of a blank one. Last in the strip and quiet: it
-          is the exception path, not the next step. */}
+      {/* NC — the QC operation that rejected pieces is where the fault was
+          found, so the link only appears there, labelled with the reject count
+          like the 🔬 QC (5) button beside it. Last in the strip and quiet: it
+          is the exception path, not the next step.
+
+          It opens the NC REGISTER filtered to this job card, not the new-NC
+          form it used to. A QC reject already raises its NC automatically
+          (autoCreateNcFromQcReject), so a "report" link here invited a second,
+          duplicate NC for the same pieces; what the inspector needs is to SEE
+          and dispose the one that exists. The register has no dedicated
+          job-card filter — its `search` param is matched server-side against
+          the JC code (nc-register/service.ts), so that is the filter used. */}
       {showNc ? (
         <Link
-          to="/nc-register/new"
-          search={{
-            jobCardId: jc.id,
-            itemId: jc.itemId,
-            itemCode: jc.itemCode,
-            itemName: jc.itemName,
-            jcOpId: op.id,
-            opSeq: String(op.opSeq),
-            operation: op.operation,
-            rejectedQty: String(op.qcRejectedQty),
-          }}
+          to="/nc-register"
+          search={{ search: jc.code }}
           className="btn btn-sm btn-ghost"
-          title="Report a non-conformance for the pieces this QC operation rejected"
+          title="Open the NC register filtered to this job card — the NC for these rejected pieces was raised automatically at QC"
         >
           ⚠ NC ({op.qcRejectedQty})
         </Link>

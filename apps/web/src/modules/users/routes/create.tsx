@@ -12,8 +12,9 @@
 import type { CreateUserInput } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateUser } from '../api';
@@ -48,6 +49,8 @@ function UserCreatePage(): React.JSX.Element {
       isActive: true,
     },
   });
+  const goBack = useCallback(() => void navigate({ to: '/users' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   if (!isAdmin) {
     return (
@@ -78,7 +81,7 @@ function UserCreatePage(): React.JSX.Element {
       // Straight into that user's Access Control box. Creating an account and
       // granting it access is one job; making the admin navigate and find the
       // row again is how people end up with unconfigured users.
-      void navigate({ to: '/access-control', search: { configure: created.id } });
+      exit.leave(() => void navigate({ to: '/access-control', search: { configure: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Failed to create user.');
     }
@@ -86,6 +89,7 @@ function UserCreatePage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <button
         type="button"
         className="btn btn-ghost btn-sm"
@@ -227,7 +231,7 @@ function UserCreatePage(): React.JSX.Element {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => void navigate({ to: '/users' })}
+                  onClick={() => exit.leave(goBack)}
                 >
                   Cancel
                 </button>

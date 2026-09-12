@@ -1,9 +1,18 @@
 // Minimal portal-backed modal using the legacy .modal / .modal-lg styles.
 // Built inline because the web app doesn't ship @radix-ui/react-dialog yet —
 // keeps the PL-4b scope from blowing up.
+//
+// ESC AND A CLICK OUTSIDE ASK FIRST (user, 2026-09-12). This modal holds the
+// Create Plan / Edit Plan / BOM Planning forms, and it used to close on ESC
+// the instant the key was pressed -- the user, half-way through adding
+// operations, was "out of the screen" with everything gone. Both of those
+// exits now raise the same "Are you sure you want to exit?" every create /
+// edit screen raises. The × button is the form's own Close and stays as it
+// was, per the user's rule that Save / Close / Cancel are already right.
 
-import { useEffect, type PropsWithChildren, type ReactNode } from 'react';
+import { useEffect, useState, type PropsWithChildren, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 
 interface ModalProps {
   title: string;
@@ -19,9 +28,14 @@ export function Modal({
   footer,
   children,
 }: PropsWithChildren<ModalProps>): JSX.Element {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // ESC with a type-to-search dropdown open is that dropdown's key.
+      if (escapeBelongsToAnOpenPicker(e.target)) return;
+      setConfirmOpen(true);
     };
     window.addEventListener('keydown', handler);
     document.body.style.overflow = 'hidden';
@@ -29,12 +43,12 @@ export function Modal({
       window.removeEventListener('keydown', handler);
       document.body.style.overflow = '';
     };
-  }, [onClose]);
+  }, []);
 
   return createPortal(
     <div
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) setConfirmOpen(true);
       }}
       style={{
         position: 'fixed',
@@ -65,6 +79,18 @@ export function Modal({
         <div className="modal-body">{children}</div>
         {footer ? <div className="modal-footer">{footer}</div> : null}
       </div>
+      {confirmOpen ? (
+        // Above this modal's own overlay (zIndex 1000), or it would sit
+        // behind the very form it is asking about.
+        <ExitConfirmDialog
+          zIndex={1100}
+          onStay={() => setConfirmOpen(false)}
+          onExit={() => {
+            setConfirmOpen(false);
+            onClose();
+          }}
+        />
+      ) : null}
     </div>,
     document.body,
   );

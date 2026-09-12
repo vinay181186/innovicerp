@@ -8,9 +8,10 @@
 import type { CreateDeliveryChallanReceiptInput, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
@@ -46,6 +47,13 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   // that raised the DC. Checked here too because the route is reachable by URL.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
+  // Where the Cancel link goes, and where ESC -> Exit goes. Every other way
+  // off the screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
+  const goBack = useCallback(
+    () => void navigate({ to: '/delivery-challans/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
 
   const [receiptDate, setReceiptDate] = useState(todayLocal());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
@@ -112,7 +120,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
         lines: linesPayload,
       };
       await receive.mutateAsync({ dcId: id, input });
-      void navigate({ to: '/delivery-challans/$id', params: { id } });
+      exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id } }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to record receipt.');
     } finally {
@@ -156,6 +164,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/delivery-challans/$id"
         params={{ id }}
@@ -313,7 +322,12 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
         ) : null}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          <Link to="/delivery-challans/$id" params={{ id }} className="btn btn-ghost">
+          <Link
+            to="/delivery-challans/$id"
+            params={{ id }}
+            className="btn btn-ghost"
+            onClick={exit.allow}
+          >
             Cancel
           </Link>
           <button type="submit" className="btn btn-primary" disabled={!canSubmit}>

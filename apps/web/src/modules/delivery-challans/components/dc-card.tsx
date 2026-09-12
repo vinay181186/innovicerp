@@ -69,6 +69,23 @@ function QtyBox({
  *  amber + a trailing `*` = only the issue-time text snapshot, which will
  *  mismatch if that PO is ever renumbered. Both tooltips are the originals. */
 function PoChip({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Element {
+  // Return-to-vendor challan raised from an NC (design §5). There is no PO —
+  // the server stores the NC code in po_code_text because that column is NOT
+  // NULL — so without this branch the card showed "IN-NC-26-00012*" in the
+  // amber "snapshot PO" chip, i.e. a rejected-pieces return dressed up as a
+  // badly-linked purchase order. Red, and prefixed NC, so it reads as what it
+  // is; the tooltip names the job card the pieces came from.
+  if (dc.ncId) {
+    return (
+      <span
+        className="badge b-red"
+        title={`Return to vendor — NC ${dc.ncCode ?? dc.poCodeText}${dc.jobCardCode ? ` · JC ${dc.jobCardCode}` : ''}`}
+        style={{ fontSize: 11 }}
+      >
+        NC {dc.ncCode ?? dc.poCodeText}
+      </span>
+    );
+  }
   if (dc.poCode) {
     return (
       <span className="badge b-green" title={`Linked PO ${dc.poCode}`} style={{ fontSize: 11 }}>
@@ -207,6 +224,16 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
             <span>
               SO <span className="text2">{dc.soCode ?? dc.soRefText ?? '—'}</span>
             </span>
+            {/* The job card the returned pieces belong to — only an NC challan
+                has one, an ordinary OSP DC is scoped by its PO. */}
+            {dc.ncId && dc.jobCardCode ? (
+              <>
+                <span>·</span>
+                <span>
+                  JC <span className="text2">{dc.jobCardCode}</span>
+                </span>
+              </>
+            ) : null}
             {/* Said in words, not as "IN-SO-0012/B" — a slash after an SO number
                 would read as a revision of the sales order rather than of the
                 customer's drawing. Hidden entirely when there is none. */}

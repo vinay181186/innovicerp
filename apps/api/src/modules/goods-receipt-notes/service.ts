@@ -753,6 +753,10 @@ export async function insertGrnForOspReceipt(
     deliveryChallanId?: string;
     invoiceNo?: string | null;
     remarks: string | null;
+    /** The return-to-vendor NC this receipt is the replacement for (design
+     *  §5, migration 0122). Incoming QC reads it off the GRN header to settle
+     *  the NC instead of raising a fresh one. Absent on an ordinary OSP DC. */
+    ncId?: string | null;
     lines: Array<{
       purchaseOrderLineId: string | null;
       itemId: string | null;
@@ -777,6 +781,7 @@ export async function insertGrnForOspReceipt(
       deliveryChallanId: args.deliveryChallanId ?? null,
       invoiceNo: args.invoiceNo ?? null,
       remarks: args.remarks,
+      ncId: args.ncId ?? null,
       createdBy: user.id,
       updatedBy: user.id,
     })

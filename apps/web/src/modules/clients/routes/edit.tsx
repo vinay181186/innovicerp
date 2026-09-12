@@ -4,7 +4,8 @@
 import type { CreateClientInput, UpdateClientInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClient, useCreateClient, useUpdateClient } from '../api';
@@ -28,12 +29,16 @@ function ClientNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'client_create');
+  const goBack = useCallback(() => void navigate({ to: '/clients' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: CreateClientInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      await navigate({ to: '/clients/$id', params: { id: created.id }, replace: true });
+      exit.leave(
+        () => void navigate({ to: '/clients/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create client');
     }
@@ -50,6 +55,7 @@ function ClientNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/clients" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Client Master
       </Link>
@@ -67,7 +73,7 @@ function ClientNewPage(): React.JSX.Element {
             mode="create"
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/clients' })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>
@@ -84,11 +90,17 @@ function ClientEditPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'client_create');
 
+  const goBack = useCallback(
+    () => void navigate({ to: '/clients/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
+
   const onSubmit = async (values: UpdateClientInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
-      await navigate({ to: '/clients/$id', params: { id }, replace: true });
+      exit.leave(() => void navigate({ to: '/clients/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update client');
     }
@@ -130,6 +142,7 @@ function ClientEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/clients/$id"
         params={{ id }}
@@ -158,7 +171,7 @@ function ClientEditPage(): React.JSX.Element {
             client={client}
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/clients/$id', params: { id } })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>

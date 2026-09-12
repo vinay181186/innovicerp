@@ -8,10 +8,11 @@
 import type { InvoiceableLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Plus, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
@@ -47,6 +48,10 @@ function InvoiceNewPage(): React.JSX.Element {
   const create = useCreateInvoice();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
+  // Where Cancel goes, and where ESC -> Exit goes. Every other way off the
+  // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
+  const goBack = useCallback(() => void navigate({ to: '/invoices' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const [soId, setSoId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayStr());
@@ -157,7 +162,7 @@ function InvoiceNewPage(): React.JSX.Element {
         remarks: remarks || undefined,
         lines: payloadLines,
       });
-      void navigate({ to: '/invoices/$id', params: { id: created.id } });
+      exit.leave(() => void navigate({ to: '/invoices/$id', params: { id: created.id } }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to create invoice');
     }
@@ -174,6 +179,7 @@ function InvoiceNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/invoices" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Invoices
       </Link>
@@ -390,7 +396,7 @@ function InvoiceNewPage(): React.JSX.Element {
           {err ? <div className="form-error" style={{ marginTop: 10 }}>{err}</div> : null}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-ghost" onClick={() => void navigate({ to: '/invoices' })}>Cancel</button>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>Cancel</button>
             <button type="button" className="btn btn-success" disabled={create.isPending} onClick={() => void submit()}>
               {create.isPending ? 'Saving…' : '✓ Create Invoice'}
             </button>

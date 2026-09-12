@@ -14,7 +14,14 @@ import type {
   IncomingQcResponse,
   SubmitIncomingQcInput,
 } from '@innovic/shared';
-import { goodsReceiptNoteLines, jcOps, jobCards, purchaseOrderLines } from '../../db/schema';
+import {
+  goodsReceiptNoteLines,
+  goodsReceiptNotes,
+  jcOps,
+  jobCards,
+  opLog,
+  purchaseOrderLines,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
@@ -31,10 +38,29 @@ import {
   recalcPoLineReceivedQty,
 } from '../goods-receipt-notes/cascades';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
+import { onNcReplacementQc } from '../nc-register/recovery';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
+}
+
+/** Today's date in IST (fixed UTC+5:30, no DST) — the shop's calendar day,
+ *  matching op-entry's own `istToday`. A UTC slice would date a late-evening
+ *  inspection on yesterday. */
+function istToday(): string {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Same marker op-entry's nextLogNo() writes: not unique by spec (ADR-011 #4),
+ *  the uuid PK is the addressable id. Copied rather than imported so this
+ *  module does not pull the whole op-entry service in for one string. */
+function nextLogNo(): string {
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:T.Z]/g, '')
+    .slice(0, 14);
+  return `LOG-${stamp}`;
 }
 
 function dispositionOf(
@@ -91,6 +117,86 @@ async function creditOutsourceReturn(
       updatedBy: userId,
     })
     .where(eq(jcOps.id, op.id));
+}
+
+/**
+ * §7 OSP QC de-duplication (docs/QC-NC-HANDLING-DESIGN.md §6).
+ *
+ * The procedure forbids inspecting the same pieces twice: when an outsourced
+ * op is followed by a QC op on the route, the vendor's returned pieces get ONE
+ * inspection — Incoming QC — and that inspection IS the route's QC. Before
+ * this, the QC op still showed the whole returned qty as "QC pending" and the
+ * inspector had to key the identical accept/reject a second time, raising a
+ * second NC for the same rejects.
+ *
+ * So after the GRN line result is written, mirror THIS submission's delta
+ * (accepted, rejected — never the line's running totals, because a line can be
+ * inspected in several sittings) as one qc op_log row on the very next op of
+ * the same job card when that op is a QC op. Written directly, not through
+ * submitQcLog: that path would raise a second NC for the reject, and the NC
+ * for these pieces was already raised by the Incoming QC reject above. The QC
+ * op then reads qc_pending = 0 for those pieces and the accepted ones flow on.
+ *
+ * Only op_seq + 1 qualifies, and only op_type = 'qc'. A QC op two steps down
+ * inspects something else (another process has happened in between), and a
+ * process op next in line needs no mirror — the outsource op's own output
+ * already feeds it. No-op when the source op is not an outsource op.
+ */
+async function mirrorIncomingQcOntoNextQcOp(
+  tx: DbTransaction,
+  companyId: string,
+  sourceJcOpId: string | null,
+  acceptedDelta: number,
+  rejectedDelta: number,
+  user: AuthContext,
+): Promise<void> {
+  // Only the ACCEPTED pieces are mirrored. The following QC op's input is the
+  // outsource op's output, which is the GRN-accepted qty alone -- a piece
+  // rejected at Incoming QC never reaches the next op, so writing its reject
+  // there too would make that op's inspected qty exceed its input and count
+  // the same reject twice (once on the outsource op via the GRN line, once
+  // here). The reject is already fully recorded: on the GRN line, and as the
+  // NC raised against the outsource op.
+  if (!sourceJcOpId || acceptedDelta <= 0) return;
+  const srcRows = await tx
+    .select({ jobCardId: jcOps.jobCardId, opSeq: jcOps.opSeq, opType: jcOps.opType })
+    .from(jcOps)
+    .where(
+      and(eq(jcOps.id, sourceJcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)),
+    )
+    .limit(1);
+  const src = srcRows[0];
+  if (!src || src.opType !== 'outsource') return;
+  const nextRows = await tx
+    .select({ id: jcOps.id, opType: jcOps.opType })
+    .from(jcOps)
+    .where(
+      and(
+        eq(jcOps.jobCardId, src.jobCardId),
+        eq(jcOps.opSeq, src.opSeq + 1),
+        eq(jcOps.companyId, companyId),
+        isNull(jcOps.deletedAt),
+      ),
+    )
+    .limit(1);
+  const next = nextRows[0];
+  if (!next || next.opType !== 'qc') return;
+  await tx.insert(opLog).values({
+    companyId,
+    jcOpId: next.id,
+    logNo: nextLogNo(),
+    logType: 'qc',
+    logDate: istToday(),
+    shift: 'day',
+    qty: acceptedDelta,
+    rejectQty: 0,
+    operatorId: null,
+    operatorName: user.fullName ?? user.email,
+    // No machine on QC: inspection is not machining (op-entry, ISSUE-010).
+    machineId: null,
+    remarks: 'Incoming QC (auto — same inspection)',
+    createdBy: user.id,
+  });
 }
 
 export async function getIncomingQc(user: AuthContext): Promise<IncomingQcResponse> {
@@ -305,8 +411,15 @@ export async function submitIncomingQc(
         acceptedQty: goodsReceiptNoteLines.qcAcceptedQty,
         rejectedQty: goodsReceiptNoteLines.qcRejectedQty,
         poLineId: goodsReceiptNoteLines.purchaseOrderLineId,
+        // Set when this GRN is the vendor's REPLACEMENT for a return-to-vendor
+        // NC (design §5): the inspection then settles that NC, not a fresh one.
+        ncId: goodsReceiptNotes.ncId,
       })
       .from(goodsReceiptNoteLines)
+      .innerJoin(
+        goodsReceiptNotes,
+        eq(goodsReceiptNotes.id, goodsReceiptNoteLines.goodsReceiptNoteId),
+      )
       .where(
         and(
           eq(goodsReceiptNoteLines.id, grnLineId),
@@ -336,6 +449,9 @@ export async function submitIncomingQc(
     const newAccepted = priorAccepted + input.acceptedQty;
     const newRejected = priorRejected + input.rejectedQty;
     const fullyDone = line.receivedQty - newAccepted - newRejected <= 0;
+    // One inspection date for the line stamp, the NC and the replacement
+    // cascade, so the three can never disagree about when this happened.
+    const qcDate = input.qcDate ?? istToday();
 
     await tx
       .update(goodsReceiptNoteLines)
@@ -343,7 +459,7 @@ export async function submitIncomingQc(
         qcStatus: fullyDone ? 'completed' : 'in_progress',
         qcAcceptedQty: newAccepted,
         qcRejectedQty: newRejected,
-        qcDate: input.qcDate ?? new Date().toISOString().slice(0, 10),
+        qcDate,
         // WHO INSPECTED vs WHO TYPED IT IN — routinely two different people.
         // `qc_inspected_by` is the inspector picked from the QC user list; it
         // falls back to the submitter only when no user was picked (import, or
@@ -386,8 +502,49 @@ export async function submitIncomingQc(
         await recalcPoHeaderStatus(tx, poRows[0].poId, user.id);
         // Step 6: record the accepted qty on the source outsource op so partial
         // returns become visible to the JC (and dispatchable — see Change 2).
+        //
+        // Also run for a return-to-vendor REPLACEMENT (line.ncId set). It is
+        // not a double credit: outsource_returned_qty only ever counted pieces
+        // ACCEPTED at Incoming QC, so the pieces this NC covers were rejected
+        // and never credited — the vendor still owed them against the op's
+        // sent qty. The replacement's accepted pieces are that debt being
+        // paid, and without this credit `returned` could never reach `sent`
+        // and the op would sit at 'sent' with the material in the building.
         await creditOutsourceReturn(tx, poRows[0].sourceJcOpId, input.acceptedQty, user.id);
+        if (!line.ncId) {
+          await mirrorIncomingQcOntoNextQcOp(
+            tx,
+            companyId,
+            poRows[0].sourceJcOpId,
+            input.acceptedQty,
+            input.rejectedQty,
+            user,
+          );
+        }
       }
+    }
+
+    // Return-to-vendor replacement (design §5): this inspection settles the
+    // NC that sent the pieces back — cleared/failed on the NC, close when the
+    // gate is met, and for an in-house-origin NC the accepted pieces re-enter
+    // the origin op. That re-injection is why the §7 mirror above is skipped
+    // here: the cascade already puts the pieces back where they belong, and a
+    // second qc row on the following QC op would inspect them twice on paper.
+    // Rejected pieces raise their follow-on NC below through the same auto-NC
+    // path as any other Incoming QC reject.
+    if (line.ncId) {
+      await onNcReplacementQc(
+        tx,
+        {
+          ncId: line.ncId,
+          acceptedQty: input.acceptedQty,
+          rejectedQty: input.rejectedQty,
+          grnLineId: line.id,
+          logDate: qcDate,
+        },
+        companyId,
+        user,
+      );
     }
 
     // A reject at Incoming QC raises a defect record (NC), mirroring production
@@ -428,9 +585,12 @@ export async function submitIncomingQc(
             opSeq: src.opSeq,
             operationText: src.operation,
             rejectedQty: input.rejectedQty,
-            ncDate: input.qcDate ?? new Date().toISOString().slice(0, 10),
+            ncDate: qcDate,
             reportedByText: input.qcInspectedByName ?? null,
             remarks: input.qcRemarks ?? null,
+            // The GRN line this reject was found on (design §3,
+            // nc_register.grn_line_id) — the receipt end of the trail.
+            grnLineId: line.id,
           },
           user,
         );

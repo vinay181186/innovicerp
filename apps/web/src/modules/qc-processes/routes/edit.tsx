@@ -1,8 +1,9 @@
 import type { UpdateQcProcessInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcProcess, useUpdateQcProcess } from '../api';
 import { QcProcessForm } from '../components/qc-process-form';
@@ -19,6 +20,11 @@ function QcProcessEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useQcProcess(id);
   const update = useUpdateQcProcess(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(
+    () => void navigate({ to: '/qc-processes/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
   // Tier-driven, per department (QC). This screen had no gate at all — typing
   // the URL handed the form to anyone, including an L1 Viewer and an L4
   // Approver, who deliberately cannot change a saved record.
@@ -69,6 +75,7 @@ function QcProcessEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/qc-processes/$id"
         params={{ id: detail.id }}
@@ -94,12 +101,12 @@ function QcProcessEditPage(): React.JSX.Element {
             detail={detail}
             submitError={submitError}
             submitLabel="Save"
-            onCancel={() => void navigate({ to: '/qc-processes/$id', params: { id: detail.id } })}
+            onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: UpdateQcProcessInput) => {
               setSubmitError(null);
               try {
                 await update.mutateAsync(values);
-                void navigate({ to: '/qc-processes/$id', params: { id: detail.id } });
+                exit.leave(goBack);
               } catch (e) {
                 setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
               }

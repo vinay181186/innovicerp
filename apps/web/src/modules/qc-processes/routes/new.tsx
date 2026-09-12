@@ -1,8 +1,9 @@
 import type { CreateQcProcessInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateQcProcess } from '../api';
 import { QcProcessForm } from '../components/qc-process-form';
@@ -17,6 +18,8 @@ function QcProcessNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateQcProcess();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(() => void navigate({ to: '/qc-processes' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
   // Tier-driven, per department (QC). The + Add QC Process button is hidden
   // from anyone without entry rights, but this screen had no gate of its own —
   // typing the URL still handed over the create form (an L1 Viewer, an L4
@@ -53,6 +56,7 @@ function QcProcessNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/qc-processes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to QC Process Master
       </Link>
@@ -70,12 +74,14 @@ function QcProcessNewPage(): React.JSX.Element {
             mode="create"
             submitError={submitError}
             submitLabel="Save"
-            onCancel={() => void navigate({ to: '/qc-processes' })}
+            onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateQcProcessInput) => {
               setSubmitError(null);
               try {
                 const created = await create.mutateAsync(values);
-                void navigate({ to: '/qc-processes/$id', params: { id: created.id } });
+                exit.leave(
+                  () => void navigate({ to: '/qc-processes/$id', params: { id: created.id } }),
+                );
               } catch (e) {
                 setSubmitError(e instanceof Error ? e.message : 'Failed to create QC process.');
               }

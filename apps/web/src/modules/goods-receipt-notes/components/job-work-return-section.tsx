@@ -25,7 +25,14 @@ interface LineDraft {
   rejectedQty: string;
 }
 
-export function JobWorkReturnSection(): React.JSX.Element {
+export function JobWorkReturnSection({
+  onLeave,
+}: {
+  /** The parent screen's exit-guard `leave`: runs the post-save navigation
+   *  without the "Are you sure you want to exit?" question. The guard itself
+   *  lives in <UnifiedGrnForm>, which owns this tab — one screen, one guard. */
+  onLeave: (go: () => void) => void;
+}): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateJwDcInward();
 
@@ -99,7 +106,7 @@ export function JobWorkReturnSection(): React.JSX.Element {
     };
     try {
       await create.mutateAsync(input);
-      await navigate({ to: '/jw-dc' });
+      onLeave(() => void navigate({ to: '/jw-dc' }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to record job-work return.');
     }

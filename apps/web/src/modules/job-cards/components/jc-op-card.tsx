@@ -38,6 +38,68 @@ import { OP_STATUS, opAccentColor } from '../lib/jc-op-labels';
 import { JcOpFooter, OutsourceInfo } from './jc-op-actions';
 import { QtyTile, SetupChip, secLabel } from './jc-op-card-parts';
 
+// §6 of docs/QC-NC-HANDLING-DESIGN.md: an op that rejected pieces shows a
+// QUANTITY BREAKUP, not one overall status — 10 inspected, 8 accepted, 2
+// rejected → "8 accepted" in the DONE tile AND "NC raised 2" here, at the same
+// time. Every figure comes from v_nc_op_breakup (op.ncBreakup); the card adds
+// nothing up itself. Order and wording are the design's, so the strip reads
+// the same as the NC register's status column. Amber = still ours to fix,
+// blue = at/back from the vendor, red = lost, text3 = finished.
+const NC_BREAKUP_ROWS: ReadonlyArray<{
+  key: keyof JcOpEnriched['ncBreakup'];
+  label: string;
+  color: string;
+}> = [
+  { key: 'ncRaisedQty', label: 'NC raised', color: 'var(--amber)' },
+  { key: 'underReworkQty', label: 'Under rework', color: 'var(--amber)' },
+  { key: 'underRepairQty', label: 'Under repair', color: 'var(--amber)' },
+  { key: 'sentToVendorQty', label: 'Sent to vendor', color: 'var(--blue)' },
+  { key: 'receivedQcPendingQty', label: 'Received – QC pending', color: 'var(--blue)' },
+  { key: 'scrapQty', label: 'Scrap', color: 'var(--red)' },
+  { key: 'ncClosedQty', label: 'NC closed', color: 'var(--text3)' },
+];
+
+/** One-line strip under the header tags. Renders nothing while the op has no
+ *  NC history at all, so the ordinary card is pixel-identical to before. */
+function NcBreakupStrip({ nc }: { nc: JcOpEnriched['ncBreakup'] }): React.JSX.Element | null {
+  if (!(nc.openNcCount > 0 || nc.scrapQty > 0 || nc.ncClosedQty > 0)) return null;
+  const rows = NC_BREAKUP_ROWS.filter((r) => nc[r.key] > 0);
+  if (rows.length === 0) return null;
+  const open = nc.openNcCount > 0;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '2px 6px',
+        marginTop: -4,
+        marginBottom: 10,
+        padding: '3px 8px',
+        fontSize: 11,
+        background: open ? 'var(--amber3)' : 'var(--bg3)',
+        border: `1px solid ${open ? 'var(--amber)' : 'var(--border)'}`,
+        borderRadius: 6,
+      }}
+      title={
+        open
+          ? `${nc.openNcCount} open non-conformance(s) on this operation — ${nc.ncOpenQty} piece(s) still to be recovered, scrapped or closed.`
+          : 'Every non-conformance on this operation is closed.'
+      }
+    >
+      <span className="fw-700" style={{ color: open ? 'var(--amber2)' : 'var(--text3)' }}>
+        ⚠ NC
+      </span>
+      {rows.map((r, i) => (
+        <span key={r.key} style={{ color: r.color, whiteSpace: 'nowrap' }}>
+          {i > 0 ? <span style={{ color: 'var(--text3)', marginRight: 6 }}>·</span> : null}
+          {r.label} <b className="mono">{nc[r.key]}</b>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function JcOpCard({
   jc,
   op,
@@ -173,6 +235,9 @@ export function JcOpCard({
           <span style={{ flex: 1 }} />
           <span className={`badge ${st.cls}`}>{st.label}</span>
         </div>
+
+        {/* ── NC BREAKUP (§6): where this op's rejected pieces are right now ── */}
+        <NcBreakupStrip nc={op.ncBreakup} />
 
         {/* ── BODY: quantities · setup · outsource ── */}
         <div

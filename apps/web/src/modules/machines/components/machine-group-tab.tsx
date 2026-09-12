@@ -16,6 +16,7 @@
 import type { ListMachineGroupsQuery, MachineGroup } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import {
@@ -320,14 +321,21 @@ function MachineGroupModal({
   const [isActive, setIsActive] = useState(row?.isActive ?? true);
   const [err, setErr] = useState<string | null>(null);
 
-  // Esc closes, matching every other modal on the app.
+  // ESC and a click outside ASK before closing (user, 2026-09-12) -- the same
+  // "Are you sure you want to exit?" every create / edit screen raises. This
+  // modal used to close the instant ESC was pressed, taking the half-typed row
+  // with it. The form's own Cancel button is untouched.
+  const [confirmOpen, setConfirmOpen] = useState(false);
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // ESC with a type-to-search dropdown open is that dropdown's key.
+      if (escapeBelongsToAnOpenPicker(e.target)) return;
+      setConfirmOpen(true);
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   async function submit(): Promise<void> {
     setErr(null);
@@ -359,8 +367,20 @@ function MachineGroupModal({
         padding: 24,
         overflowY: 'auto',
       }}
-      onClick={onClose}
+      onClick={(e) => {
+        // Only the dim backdrop itself -- not the popup rendered inside it.
+        if (e.target === e.currentTarget) setConfirmOpen(true);
+      }}
     >
+      {confirmOpen ? (
+        <ExitConfirmDialog
+          onStay={() => setConfirmOpen(false)}
+          onExit={() => {
+            setConfirmOpen(false);
+            onClose();
+          }}
+        />
+      ) : null}
       <div
         className="panel"
         style={{ width: 'min(620px, 96vw)' }}

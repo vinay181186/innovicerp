@@ -3,7 +3,8 @@
 import type { CreateOperatorInput, UpdateOperatorInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateOperator, useOperator, useUpdateOperator } from '../api';
@@ -30,12 +31,16 @@ function OperatorNewPage(): React.JSX.Element {
   // own. The server refuses the save either way; this stops the form appearing.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'operator_create');
+  const goBack = useCallback(() => void navigate({ to: '/operators' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: CreateOperatorInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      await navigate({ to: '/operators/$id', params: { id: created.id }, replace: true });
+      exit.leave(
+        () => void navigate({ to: '/operators/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create operator');
     }
@@ -69,6 +74,7 @@ function OperatorNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Operator Master
       </Link>
@@ -86,7 +92,7 @@ function OperatorNewPage(): React.JSX.Element {
             mode="create"
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/operators' })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>
@@ -104,11 +110,17 @@ function OperatorEditPage(): React.JSX.Element {
   const update = useUpdateOperator(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const goBack = useCallback(
+    () => void navigate({ to: '/operators/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
+
   const onSubmit = async (values: UpdateOperatorInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
-      await navigate({ to: '/operators/$id', params: { id }, replace: true });
+      exit.leave(() => void navigate({ to: '/operators/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update operator');
     }
@@ -167,6 +179,7 @@ function OperatorEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/operators/$id"
         params={{ id }}
@@ -195,7 +208,7 @@ function OperatorEditPage(): React.JSX.Element {
             operator={operator}
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/operators/$id', params: { id } })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>

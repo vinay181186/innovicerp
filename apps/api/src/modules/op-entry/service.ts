@@ -41,6 +41,7 @@ import {
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
+import { onRecoveryJobCardQc } from '../nc-register/recovery';
 import { generateOspPrForOp } from './osp-cascade';
 import { tryApplyQcStockCascade } from './qc-stock-cascade';
 import { tryCascadeJcComplete } from './sales-cascade';
@@ -213,7 +214,21 @@ export async function listJcOpsEnriched(
         -- The machine columns above are the op's CURRENT machine — where the
         -- REMAINING qty runs — so on a re-routed op they name a machine that
         -- may have produced nothing. This is the honest breakdown.
-        COALESCE(mo.machines, '[]'::json) AS "machines"
+        COALESCE(mo.machines, '[]'::json) AS "machines",
+        -- The §6 NC breakup for this op (docs/QC-NC-HANDLING-DESIGN.md §7),
+        -- read from v_nc_op_breakup so the op card, the NC register and the
+        -- gates all count the same pieces the same way. LEFT JOIN: an op that
+        -- has never had an NC has no row there and must read as all zeros,
+        -- not vanish from the list.
+        COALESCE(b.nc_raised_qty, 0)           AS "ncRaisedQty",
+        COALESCE(b.under_rework_qty, 0)        AS "underReworkQty",
+        COALESCE(b.under_repair_qty, 0)        AS "underRepairQty",
+        COALESCE(b.sent_to_vendor_qty, 0)      AS "sentToVendorQty",
+        COALESCE(b.received_qc_pending_qty, 0) AS "receivedQcPendingQty",
+        COALESCE(b.scrap_qty, 0)               AS "scrapQty",
+        COALESCE(b.nc_closed_qty, 0)           AS "ncClosedQty",
+        COALESCE(b.nc_open_qty, 0)             AS "ncOpenQty",
+        COALESCE(b.open_nc_count, 0)           AS "openNcCount"
       FROM public.jc_ops o
       JOIN public.job_cards jc ON jc.id = o.job_card_id
       -- LEFT, although job_cards.item_id is NOT NULL: an item row that cannot be
@@ -228,6 +243,7 @@ export async function listJcOpsEnriched(
       LEFT JOIN public.machines m ON m.id = o.machine_id
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = o.id
       LEFT JOIN public.v_osp_wip w ON w.jc_op_id = o.id
+      LEFT JOIN public.v_nc_op_breakup b ON b.jc_op_id = o.id
       LEFT JOIN LATERAL (
         SELECT json_agg(
                  json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
@@ -268,6 +284,20 @@ export async function listJcOpsEnriched(
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
       ),
+      // Nested, not spread: the flat aliases above are an implementation
+      // detail of the query, and the contract (ncOpBreakupSchema) wants one
+      // object so a screen can hand the whole breakup to one component.
+      ncBreakup: {
+        ncRaisedQty: Number(r['ncRaisedQty'] ?? 0),
+        underReworkQty: Number(r['underReworkQty'] ?? 0),
+        underRepairQty: Number(r['underRepairQty'] ?? 0),
+        sentToVendorQty: Number(r['sentToVendorQty'] ?? 0),
+        receivedQcPendingQty: Number(r['receivedQcPendingQty'] ?? 0),
+        scrapQty: Number(r['scrapQty'] ?? 0),
+        ncClosedQty: Number(r['ncClosedQty'] ?? 0),
+        ncOpenQty: Number(r['ncOpenQty'] ?? 0),
+        openNcCount: Number(r['openNcCount'] ?? 0),
+      },
     })) as unknown as JcOpEnriched[];
   });
 }
@@ -1216,14 +1246,27 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // Look up JC code once — used for cascade audit, OP_QC audit detail, and
     // the auto-NC code prefix (T-040e).
     const jcMeta = await tx
-      .select({ code: jobCards.code })
+      .select({
+        code: jobCards.code,
+        // Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4): the two
+        // fields the recovery cascade and the stock guard below key off.
+        recoveryKind: jobCards.recoveryKind,
+        parentJobCardId: jobCards.parentJobCardId,
+        originOpSeq: jobCards.originOpSeq,
+      })
       .from(jobCards)
       .where(eq(jobCards.id, op.jobCardId))
       .limit(1);
     const jcCode = jcMeta[0]?.code;
+    const recoveryKind = jcMeta[0]?.recoveryKind ?? null;
 
     // T-040e: auto-create NC when this QC log rejects qty > 0. Mirrors legacy
     // _autoCreateNC at HTML L3946. Same tx — rollback unwinds both.
+    //
+    // Runs BEFORE the recovery cascade on purpose: on a rework/repair child the
+    // cascade books this inspection's reject as `failed_qty` on the parent NC,
+    // and the follow-on NC for those very pieces must already exist by then so
+    // the trail reads reject → NC → child JC → reject → NC without a gap.
     if (input.rejectQty > 0 && jcCode) {
       await autoCreateNcFromQcReject(
         tx,
@@ -1238,16 +1281,62 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
           ncDate: input.logDate,
           reportedByText: input.operatorName ?? null,
           remarks: input.remarks ?? null,
+          // The inspection row that raised the NC — the traceability link the
+          // spec's Flow 4 was missing (design §3, nc_register.qc_log_id).
+          qcLogId: row.id,
         },
         user,
       );
+    }
+
+    // Recovery QC cascade (design §4): on a rework/repair child whose LAST op
+    // this is, credit the parent NC (cleared += accepted, failed += rejected),
+    // re-inject the accepted pieces into the parent route at the origin op,
+    // and close the NC once its whole qty is accounted for. Unconditional call:
+    // the helper is a no-op for an ordinary job card and for a non-terminal
+    // op, and keeping the branch inside it means one place decides what a
+    // "recovery QC" is.
+    await onRecoveryJobCardQc(
+      tx,
+      {
+        jobCardId: op.jobCardId,
+        jcOpId: input.jcOpId,
+        acceptedQty: input.qty,
+        rejectedQty: input.rejectQty,
+        qcLogId: row.id,
+        logDate: input.logDate,
+        shift: input.shift,
+      },
+      companyId,
+      user,
+    );
+
+    // Finished stock must be credited exactly ONCE per piece (ADR-069). On a
+    // recovery child the accepted pieces do not stop here: the cascade above
+    // has just put them back into the PARENT route at the origin op, and the
+    // parent's own terminal QC will credit them when they get there. Crediting
+    // them now as well would count every recovered piece twice. The one case
+    // where the child IS the last inspection the pieces will ever get is when
+    // the origin op is the parent's terminal op — the re-injected op_log row
+    // is written directly, not through submitQcLog, so nothing else credits
+    // them and the child must.
+    let creditsStock = true;
+    if (recoveryKind && jcMeta[0]?.parentJobCardId) {
+      const parentLast = await tx
+        .select({ opSeq: jcOps.opSeq })
+        .from(jcOps)
+        .where(and(eq(jcOps.jobCardId, jcMeta[0].parentJobCardId), isNull(jcOps.deletedAt)))
+        .orderBy(desc(jcOps.opSeq))
+        .limit(1);
+      const parentLastSeq = parentLast[0]?.opSeq ?? null;
+      creditsStock = parentLastSeq != null && parentLastSeq === jcMeta[0].originOpSeq;
     }
 
     // T-040f: stock cascade — if this QC log is against the LAST op of the
     // JC AND qty (accepted) > 0, write a store_transactions IN row crediting
     // the JC's item. Mirrors legacy stock-add at HTML L3923-3940. No-op when
     // the op isn't the last or accepted qty is 0.
-    if (input.qty > 0 && jcCode) {
+    if (input.qty > 0 && jcCode && creditsStock) {
       await tryApplyQcStockCascade(
         tx,
         {
@@ -1266,6 +1355,13 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // close the source SO/JW line + header. Idempotent; no-op for source-less
     // JCs or already-closed lines.
     await tryCascadeJcComplete(tx, op.jobCardId, user);
+    // A recovery child's re-injected pieces can be the ones that bring the
+    // PARENT to complete (origin op = the parent's last op), and that op_log
+    // row was written directly by the cascade, so nothing else would run the
+    // parent's close check.
+    if (recoveryKind && jcMeta[0]?.parentJobCardId) {
+      await tryCascadeJcComplete(tx, jcMeta[0].parentJobCardId, user);
+    }
 
     // Audit emit. Single OP_QC action with both qtys in detail (one log can
     // carry both per legacy; splitting into _ACCEPT/_REJECT loses the link).

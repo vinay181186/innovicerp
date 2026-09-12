@@ -1,22 +1,27 @@
-// NC Register service (T-040a).
+// NC Register service.
 //
-// Read + create + light-update + softDelete only. Disposition workflow with
-// cascades into jc_ops.reworkQty / op_log / supplementary JC creation lands
-// in T-040b (per ADR-017 #7) — those write paths are deliberately NOT in this
-// service. Update is restricted to date / reason / reportedBy fields; status
-// stays 'pending' until T-040b's dispose action flips it. SoftDelete blocks
-// once status leaves 'pending' — disposed/closed NCs are permanent records.
+// Read + create + light-update + softDelete, plus the disposition workflow
+// (T-040b, cascades.ts) and — since the QC–NC handling procedure of
+// 2026-09-12 (docs/QC-NC-HANDLING-DESIGN.md) — the return-to-vendor challan,
+// the closure gate and the single close path every route goes through.
+// Update is restricted to date / reason / reportedBy fields; status stays
+// 'pending' until the dispose action flips it. SoftDelete blocks once status
+// leaves 'pending' — disposed/closed NCs are permanent records.
 
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
-import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
+import { type DocumentTraceability, type RelatedDoc, withDocRevision } from '@innovic/shared';
 import {
   capaRecords,
+  deliveryChallanLines,
+  deliveryChallans,
   items,
   jcOps,
   jobCards,
   ncRegister,
+  purchaseOrderLines,
   salesOrderLines,
   users,
+  vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -29,17 +34,16 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import {
-  closeNcReturnToVendorCascade,
-  closeNcReworkCascade,
-  type DisposeNcContext,
-  type DisposeNcResult,
-  disposeNcCascade,
-} from './cascades';
+import { recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
+import { type DisposeNcContext, disposeNcCascade } from './cascades';
+import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
 import type {
   CloseNcReworkInput,
+  CreateNcDcInput,
+  CreateNcDcResult,
   CreateNcRegisterInput,
   DisposeNcInput,
+  DisposeNcResult,
   ListNcRegisterQuery,
   ListNcRegisterResponse,
   NcRegister,
@@ -150,13 +154,24 @@ function maybeDateLike(v: unknown): string | null {
   return dateLike(v);
 }
 
-function toNcRegister(
-  row: typeof ncRegister.$inferSelect,
-  linkedCapaCode: string | null = null,
-  itemCode: string | null = null,
-  itemName: string | null = null,
-  itemRevision: string | null = null,
-): NcRegister {
+/** The joined values a bare nc_register row does not carry. The read paths
+ *  resolve all of them; the write paths go through readNc so they do too. */
+interface NcJoins {
+  linkedCapaCode?: string | null;
+  itemCode?: string | null;
+  itemName?: string | null;
+  itemRevision?: string | null;
+  childJobCardCode?: string | null;
+  deliveryChallanCode?: string | null;
+}
+
+function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}): NcRegister {
+  const linkedCapaCode = joins.linkedCapaCode ?? null;
+  const itemCode = joins.itemCode ?? null;
+  const itemName = joins.itemName ?? null;
+  const itemRevision = joins.itemRevision ?? null;
+  const childJobCardCode = joins.childJobCardCode ?? null;
+  const deliveryChallanCode = joins.deliveryChallanCode ?? null;
   return {
     id: row.id,
     companyId: row.companyId,
@@ -192,6 +207,23 @@ function toNcRegister(
     reworkJcCodeText: row.reworkJcCodeText,
     reworkOpSeq: row.reworkOpSeq,
     reworkDoneQty: row.reworkDoneQty,
+    // QC–NC handling ledger (design §3). openQty and closeBlockedReason are
+    // computed here, never stored, so they can never drift from the columns.
+    qcLogId: row.qcLogId,
+    grnLineId: row.grnLineId,
+    splitFromNcId: row.splitFromNcId,
+    childJobCardId: row.childJobCardId,
+    childJobCardCode,
+    deliveryChallanId: row.deliveryChallanId,
+    deliveryChallanCode,
+    rtvSentQty: row.rtvSentQty,
+    rtvReceivedQty: row.rtvReceivedQty,
+    clearedQty: row.clearedQty,
+    failedQty: row.failedQty,
+    closedAt: maybeTsLike(row.closedAt),
+    closedBy: row.closedBy,
+    openQty: ncOpenQty(row).toFixed(2),
+    closeBlockedReason: ncCloseBlockedReason({ ...row, childJobCardCode }),
     scrapCost: row.scrapCost,
     status: row.status,
     reportedByText: row.reportedByText,
@@ -323,6 +355,20 @@ export async function listNcRegister(
         nc.status,
         nc.reported_by_text AS "reportedByText",
         nc.time_logged AS "timeLogged",
+        -- QC–NC handling ledger and links (design §3).
+        nc.qc_log_id AS "qcLogId",
+        nc.grn_line_id AS "grnLineId",
+        nc.split_from_nc_id AS "splitFromNcId",
+        nc.child_job_card_id AS "childJobCardId",
+        cjc.code AS "childJobCardCode",
+        nc.delivery_challan_id AS "deliveryChallanId",
+        dc.code AS "deliveryChallanCode",
+        nc.rtv_sent_qty::text AS "rtvSentQty",
+        nc.rtv_received_qty::text AS "rtvReceivedQty",
+        nc.cleared_qty::text AS "clearedQty",
+        nc.failed_qty::text AS "failedQty",
+        nc.closed_at AS "closedAt",
+        nc.closed_by AS "closedBy",
         nc.created_at AS "createdAt", nc.created_by AS "createdBy",
         nc.updated_at AS "updatedAt", nc.updated_by AS "updatedBy",
         nc.deleted_at AS "deletedAt",
@@ -356,6 +402,12 @@ export async function listNcRegister(
       -- -- the COUNT query below deliberately does not repeat it.
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      -- The rework/repair child card and the return-to-vendor challan, both
+      -- one-per-NC FKs, so neither can multiply rows.
+      LEFT JOIN public.job_cards cjc
+        ON cjc.id = nc.child_job_card_id AND cjc.deleted_at IS NULL
+      LEFT JOIN public.delivery_challans dc
+        ON dc.id = nc.delivery_challan_id AND dc.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT c.code
         FROM public.capa_records c
@@ -424,6 +476,21 @@ export async function listNcRegister(
 }
 
 function toListItem(r: Record<string, unknown>): NcRegisterListItem {
+  const str = (k: string): string | null => (r[k] as string | null) ?? null;
+  const num = (k: string): string => String(r[k] ?? '0');
+  const childJobCardCode = str('childJobCardCode');
+  const ledger = {
+    status: r['status'] as NcRegister['status'],
+    disposition: (r['disposition'] as NcRegister['disposition']) ?? null,
+    rejectedQty: r['rejectedQty'] as string,
+    clearedQty: num('clearedQty'),
+    failedQty: num('failedQty'),
+    rtvSentQty: num('rtvSentQty'),
+    rtvReceivedQty: num('rtvReceivedQty'),
+    reworkOpSeq: r['reworkOpSeq'] != null ? Number(r['reworkOpSeq']) : null,
+    deliveryChallanId: str('deliveryChallanId'),
+    childJobCardCode,
+  };
   return {
     id: r['id'] as string,
     companyId: r['companyId'] as string,
@@ -450,8 +517,23 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     reworkJcCodeText: (r['reworkJcCodeText'] as string | null) ?? null,
     reworkOpSeq: r['reworkOpSeq'] != null ? Number(r['reworkOpSeq']) : null,
     reworkDoneQty: (r['reworkDoneQty'] as string | null) ?? null,
+    qcLogId: str('qcLogId'),
+    grnLineId: str('grnLineId'),
+    splitFromNcId: str('splitFromNcId'),
+    childJobCardId: str('childJobCardId'),
+    childJobCardCode,
+    deliveryChallanId: ledger.deliveryChallanId,
+    deliveryChallanCode: str('deliveryChallanCode'),
+    rtvSentQty: ledger.rtvSentQty,
+    rtvReceivedQty: ledger.rtvReceivedQty,
+    clearedQty: ledger.clearedQty,
+    failedQty: ledger.failedQty,
+    closedAt: maybeTsLike(r['closedAt']),
+    closedBy: str('closedBy'),
+    openQty: ncOpenQty(ledger).toFixed(2),
+    closeBlockedReason: ncCloseBlockedReason(ledger),
     scrapCost: r['scrapCost'] as string,
-    status: r['status'] as NcRegister['status'],
+    status: ledger.status,
     reportedByText: (r['reportedByText'] as string | null) ?? null,
     timeLogged: maybeTsLike(r['timeLogged']),
     linkedCapaCode: (r['linkedCapaCode'] as string | null) ?? null,
@@ -469,55 +551,67 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
   };
 }
 
+/** One NC with every join the contract carries. Used by the detail read AND
+ *  by every write path's return value, so the row a screen gets back after a
+ *  disposition already names the child card / challan it just raised. */
+async function readNc(tx: DbTransaction, id: string, companyId: string): Promise<NcRegister> {
+  const rows = await tx
+    .select({
+      nc: ncRegister,
+      itemCode: items.code,
+      itemName: items.name,
+      // Cast to text on purpose: the contract types this as a string, and the
+      // column is only text on a database that has had migration 0119. On one
+      // that has not it is still the old integer and would arrive here as a
+      // number wearing a string type. The cast is a no-op once 0119 is in.
+      itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+      // The child card and the challan live in tables joined by their own FK
+      // on the NC row, so both are plain scalar subqueries — no alias juggling
+      // on job_cards, which is already joined once for the SO line.
+      childJobCardCode: sql<string | null>`(
+        SELECT cjc.code FROM public.job_cards cjc
+        WHERE cjc.id = ${ncRegister.childJobCardId} AND cjc.deleted_at IS NULL
+      )`,
+      deliveryChallanCode: sql<string | null>`(
+        SELECT dc.code FROM public.delivery_challans dc
+        WHERE dc.id = ${ncRegister.deliveryChallanId} AND dc.deleted_at IS NULL
+      )`,
+    })
+    .from(ncRegister)
+    // Resolve item code/name from the live items master, not the stale
+    // *Text snapshot columns. Mirrors the LIST reader's join (and GRN detail).
+    .leftJoin(items, and(eq(items.id, ncRegister.itemId), isNull(items.deletedAt)))
+    // Two more LEFT hops for the customer's drawing revision: the NC's job card,
+    // then the SO line it was raised against. Both stay LEFT so an NC on a
+    // JW-sourced or standalone card still comes back, with a null revision.
+    .leftJoin(jobCards, and(eq(jobCards.id, ncRegister.jobCardId), isNull(jobCards.deletedAt)))
+    .leftJoin(
+      salesOrderLines,
+      and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+    )
+    .where(
+      and(eq(ncRegister.id, id), eq(ncRegister.companyId, companyId), isNull(ncRegister.deletedAt)),
+    )
+    .limit(1);
+  const found = rows[0];
+  if (!found) throw new NotFoundError(`NC ${id} not found`);
+  const row = found.nc;
+  const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
+  return toNcRegister(row, {
+    linkedCapaCode,
+    itemCode: found.itemCode,
+    itemName: found.itemName,
+    itemRevision: found.itemRevision,
+    childJobCardCode: found.childJobCardCode,
+    deliveryChallanCode: found.deliveryChallanCode,
+  });
+}
+
 export async function getNcRegister(id: string, user: AuthContext): Promise<NcRegister> {
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'nc_dispose');
   return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        nc: ncRegister,
-        itemCode: items.code,
-        itemName: items.name,
-        // Cast to text on purpose: the contract types this as a string, and the
-        // column is only text on a database that has had migration 0119. On one
-        // that has not it is still the old integer and would arrive here as a
-        // number wearing a string type. The cast is a no-op once 0119 is in.
-        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
-      })
-      .from(ncRegister)
-      // Resolve item code/name from the live items master, not the stale
-      // *Text snapshot columns. Mirrors the LIST reader's join (and GRN detail).
-      .leftJoin(items, and(eq(items.id, ncRegister.itemId), isNull(items.deletedAt)))
-      // Two more LEFT hops for the customer's drawing revision: the NC's job card,
-      // then the SO line it was raised against. Both stay LEFT so an NC on a
-      // JW-sourced or standalone card still comes back, with a null revision.
-      .leftJoin(jobCards, and(eq(jobCards.id, ncRegister.jobCardId), isNull(jobCards.deletedAt)))
-      .leftJoin(
-        salesOrderLines,
-        and(
-          eq(salesOrderLines.id, jobCards.sourceSoLineId),
-          isNull(salesOrderLines.deletedAt),
-        ),
-      )
-      .where(
-        and(
-          eq(ncRegister.id, id),
-          eq(ncRegister.companyId, companyId),
-          isNull(ncRegister.deletedAt),
-        ),
-      )
-      .limit(1);
-    const found = rows[0];
-    if (!found) throw new NotFoundError(`NC ${id} not found`);
-    const row = found.nc;
-    const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
-    const nc = toNcRegister(
-      row,
-      linkedCapaCode,
-      found.itemCode,
-      found.itemName,
-      found.itemRevision,
-    );
+    const nc = await readNc(tx, id, companyId);
     return showMoney ? nc : hideNcMoney(nc);
   });
 }
@@ -552,6 +646,9 @@ export async function getNcRegisterRelated(
         jcOpId: ncRegister.jcOpId,
         opSeq: ncRegister.opSeq,
         itemId: ncRegister.itemId,
+        childJobCardId: ncRegister.childJobCardId,
+        deliveryChallanId: ncRegister.deliveryChallanId,
+        splitFromNcId: ncRegister.splitFromNcId,
       })
       .from(ncRegister)
       .where(
@@ -564,6 +661,89 @@ export async function getNcRegisterRelated(
       .limit(1);
     const header = headers[0];
     if (!header) throw new NotFoundError(`NC ${id} not found`);
+
+    const ncPick = {
+      id: ncRegister.id,
+      code: ncRegister.code,
+      status: ncRegister.status,
+      date: ncRegister.ncDate,
+      rejectedQty: ncRegister.rejectedQty,
+    };
+
+    // ── Sibling NCs from a partial disposition (design §3) ──────────────────
+    // Either direction: the row this one was split from, and every row split
+    // from this one. All still the same rejection event, just different
+    // dispositions.
+    const siblingRows = await tx
+      .select(ncPick)
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.companyId, companyId),
+          isNull(ncRegister.deletedAt),
+          header.splitFromNcId
+            ? sql`(${ncRegister.id} = ${header.splitFromNcId}::uuid OR ${ncRegister.splitFromNcId} = ${id}::uuid OR (${ncRegister.splitFromNcId} = ${header.splitFromNcId}::uuid AND ${ncRegister.id} <> ${id}::uuid))`
+            : eq(ncRegister.splitFromNcId, id),
+        ),
+      )
+      .orderBy(asc(ncRegister.code));
+
+    // ── The rework / repair child card and the NCs raised on it (design §4) ─
+    const childRows = header.childJobCardId
+      ? await tx
+          .select({
+            id: jobCards.id,
+            code: jobCards.code,
+            date: jobCards.jcDate,
+            closedAt: jobCards.closedAt,
+            recoveryKind: jobCards.recoveryKind,
+          })
+          .from(jobCards)
+          .where(
+            and(
+              eq(jobCards.id, header.childJobCardId),
+              eq(jobCards.companyId, companyId),
+              isNull(jobCards.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const child = childRows[0] ?? null;
+    const followOnRows = child
+      ? await tx
+          .select(ncPick)
+          .from(ncRegister)
+          .where(
+            and(
+              eq(ncRegister.companyId, companyId),
+              isNull(ncRegister.deletedAt),
+              eq(ncRegister.jobCardId, child.id),
+            ),
+          )
+          .orderBy(asc(ncRegister.code))
+      : [];
+
+    // ── The return-to-vendor challan (design §5) ────────────────────────────
+    const dcRows = header.deliveryChallanId
+      ? await tx
+          .select({
+            id: deliveryChallans.id,
+            code: deliveryChallans.code,
+            status: deliveryChallans.status,
+            date: deliveryChallans.dcDate,
+            vendorCodeText: deliveryChallans.vendorCodeText,
+          })
+          .from(deliveryChallans)
+          .where(
+            and(
+              eq(deliveryChallans.id, header.deliveryChallanId),
+              eq(deliveryChallans.companyId, companyId),
+              isNull(deliveryChallans.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const dc = dcRows[0] ?? null;
 
     // ── Upstream: the source Job Card ───────────────────────────────────────
     const jcRows = header.jobCardId
@@ -682,15 +862,52 @@ export async function getNcRegisterRelated(
     );
 
     // ── Downstream sections ─────────────────────────────────────────────────
+    // The rework/repair child is listed by name first; the parent_nc_id scan
+    // below (make_fresh supplementaries, and the child again) is filtered so
+    // the same card is not shown twice.
+    const recoverySection = section(
+      'recovery-jc',
+      child?.recoveryKind === 'repair' ? 'Repair Job Card' : 'Rework Job Card',
+      '🔧',
+      'job-card',
+      child ? [row(child.id, child.code, child.closedAt ? 'closed' : 'open', child.date)] : [],
+    );
     const reworkSection = section(
       'rework-jc',
       'Rework Job Cards',
       '📋',
       'job-card',
-      reworkRows.map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+      reworkRows
+        .filter((r) => r.id !== child?.id)
+        .map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+    );
+    const dcSection = section(
+      'return-dc',
+      'Return-to-Vendor Challan',
+      '🚚',
+      'delivery-challan',
+      dc ? [row(dc.id, dc.code, dc.status, dc.date, { label: dc.vendorCodeText })] : [],
+    );
+    const followOnSection = section(
+      'follow-on-nc',
+      'NCs raised on the recovery card',
+      '⚠',
+      'nc',
+      followOnRows.map((r) =>
+        row(r.id, r.code, r.status, r.date, { label: `${r.rejectedQty} pcs` }),
+      ),
     );
 
     // ── Related sections (lateral soft links) ───────────────────────────────
+    const siblingSection = section(
+      'sibling-nc',
+      'Split NCs (same rejection)',
+      '⚠',
+      'nc',
+      siblingRows.map((r) =>
+        row(r.id, r.code, r.status, r.date, { label: `${r.rejectedQty} pcs` }),
+      ),
+    );
     const capaSection = section(
       'capa',
       'CAPA (referenced)',
@@ -700,8 +917,8 @@ export async function getNcRegisterRelated(
     );
 
     const upstream = [jobCardSection, itemSection];
-    const downstream = [reworkSection];
-    const related = [capaSection];
+    const downstream = [recoverySection, reworkSection, dcSection, followOnSection];
+    const related = [siblingSection, capaSection];
     return {
       self: { module: 'nc-register', code: header.code },
       upstream,
@@ -889,7 +1106,7 @@ export async function updateNcRegister(
   });
 }
 
-// ─── T-040b: dispose + close-rework actions ──────────────────────────────
+// ─── Dispose (T-040b, reshaped for design §1–§4) ─────────────────────────
 
 async function resolveUserName(tx: DbTransaction, userId: string): Promise<string> {
   const rows = await tx
@@ -908,126 +1125,404 @@ export async function disposeNcRegister(
   id: string,
   input: DisposeNcInput,
   user: AuthContext,
-): Promise<{ result: DisposeNcResult; nc: NcRegister }> {
+): Promise<DisposeNcResult> {
   requireOpEntryRole(user);
   // Disposition decides scrap vs rework and moves stock — it rewrites a saved
-  // NC, so it is `edit` (L3 Editor and above), never `entry`.
+  // NC, so it is `edit` (L3 Editor and above), never `entry`. Scrap carries a
+  // second, `approve` gate inside the cascade (§3).
   await requireFormAccess(user, 'nc_dispose', 'edit');
-  const companyId = (() => {
-    if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
-    return user.companyId;
-  })();
+  const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
     const userName = await resolveUserName(tx, user.id);
-    const ctx: DisposeNcContext = { companyId, userId: user.id, userName };
+    const ctx: DisposeNcContext = { companyId, userId: user.id, userName, user };
     const result = await disposeNcCascade(tx, id, input, ctx);
-    const nc = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
-    const row = nc[0]!;
-    // Detail captures the disposition action + key result side-effect
-    // (supplementary JC code on make_fresh, scrap cost on scrap, etc.).
-    const sideEffect =
-      input.action === 'make_fresh' && result.newJcCode
-        ? `; supplementary JC ${result.newJcCode}`
-        : input.action === 'scrap' && input.scrapCost !== undefined
-          ? `; scrapCost=${input.scrapCost}`
-          : '';
+    const nc = await readNc(tx, id, companyId);
+    // Detail captures the disposition action, the qty it covered, and the key
+    // side-effect (child card, supplementary JC, sibling, scrap cost).
+    const parts: string[] = [];
+    if (result.remainderNcCode) parts.push(`remainder ${result.remainderNcCode}`);
+    if (result.childJcCode) parts.push(`${input.action} JC ${result.childJcCode}`);
+    if (input.action === 'make_fresh' && result.newJcCode)
+      parts.push(`supplementary JC ${result.newJcCode}`);
+    if (input.action === 'scrap' && input.scrapCost !== undefined)
+      parts.push(`scrapCost=${input.scrapCost}`);
+    const sideEffect = parts.length > 0 ? `; ${parts.join('; ')}` : '';
     await emitActivityLog(
       tx,
       {
         action: 'NC_DISPOSE',
         entity: 'NonConformance',
-        detail: `${row.code} — ${input.action.toUpperCase()} qty=${row.rejectedQty}${sideEffect}`,
-        refId: row.code,
+        detail: `${nc.code} — ${input.action.toUpperCase()} qty=${result.qty}${sideEffect}`,
+        refId: nc.code,
       },
       companyId,
       user,
     );
-    // make_fresh creates a supplementary JC inside the cascade — emit a
-    // JobCard CREATE row so the new JC's audit history starts at this
-    // moment instead of empty. NC_DISPOSE detail already mentions the
-    // supplementary code; this gives the new JC a row keyed by its own
-    // code so the JC filter shows the creation event.
+    // A card raised inside the cascade gets its own CREATE row keyed by its
+    // code, so the JC filter shows the creation event instead of starting
+    // empty. NC_DISPOSE above already mentions the code in passing.
+    if (result.childJcCode) {
+      const label = input.action === 'repair' ? 'Repair' : 'Rework';
+      await emitActivityLog(
+        tx,
+        {
+          action: 'CREATE',
+          entity: 'JobCard',
+          detail: `${result.childJcCode} — ${label} for ${nc.code} (${result.qty} pcs)`,
+          refId: result.childJcCode,
+        },
+        companyId,
+        user,
+      );
+    }
     if (input.action === 'make_fresh' && result.newJcCode) {
       await emitActivityLog(
         tx,
         {
           action: 'CREATE',
           entity: 'JobCard',
-          detail: `${result.newJcCode} — Supplementary for ${row.code} (${row.rejectedQty} pcs)`,
+          detail: `${result.newJcCode} — Supplementary for ${nc.code} (${result.qty} pcs)`,
           refId: result.newJcCode,
         },
         companyId,
         user,
       );
     }
-    return { result, nc: toNcRegister(row) };
+    const remainderNc = result.remainderNcId
+      ? await readNc(tx, result.remainderNcId, companyId)
+      : null;
+    return {
+      nc,
+      remainderNc,
+      childJobCardId: result.childJcId ?? null,
+      childJobCardCode: result.childJcCode ?? null,
+    };
   });
 }
 
+// ─── Close (design §3 closure gate, Flow 9) ───────────────────────────────
+
+/**
+ * The one way an NC reaches `closed` by hand. Refuses with the gate's exact
+ * shortfall as a ConflictError; otherwise stamps closed_at/by and audits
+ * NC_CLOSE. The automatic closes (recovery.ts, from a QC write) bypass this
+ * because they have just made the gate true themselves.
+ *
+ * `reworkDoneQty` is the legacy in-route rework figure (closeNcRework); it is
+ * recorded when supplied and ignored otherwise.
+ */
+export async function closeNc(
+  id: string,
+  user: AuthContext,
+  opts: { reworkDoneQty?: number | undefined; via?: string | undefined } = {},
+): Promise<NcRegister> {
+  requireOpEntryRole(user);
+  // Closing changes an already-disposed NC — `edit`.
+  await requireFormAccess(user, 'nc_dispose', 'edit');
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const before = await readNc(tx, id, companyId);
+    if (before.status === 'closed') {
+      throw new ConflictError(`NC ${before.code} is already closed`);
+    }
+    const reason = ncCloseBlockedReason(before);
+    if (reason) throw new ConflictError(reason);
+
+    const extra: Record<string, unknown> = {};
+    const done = opts.reworkDoneQty;
+    if (done != null && Number.isFinite(done) && done >= 0) {
+      extra['reworkDoneQty'] = done.toFixed(2);
+    }
+    await markNcClosed(tx, id, user, extra);
+    const after = await readNc(tx, id, companyId);
+    await emitActivityLog(
+      tx,
+      {
+        action: 'NC_CLOSE',
+        entity: 'NonConformance',
+        detail:
+          `${after.code} — CLOSED${opts.via ? ` (${opts.via})` : ''} ` +
+          `qty=${after.rejectedQty} cleared=${after.clearedQty} failed=${after.failedQty}` +
+          (done != null ? ` reworkDone=${done}` : ''),
+        refId: after.code,
+      },
+      companyId,
+      user,
+    );
+    return after;
+  });
+}
+
+/** Legacy route: POST /nc-register/:id/close-rework. Same gate as closeNc;
+ *  the only thing it adds is the rework_done_qty figure for the audit record.
+ *  Still refuses an NC that is not on a rework path, as it always has. */
 export async function closeNcRework(
   id: string,
   input: CloseNcReworkInput,
   user: AuthContext,
 ): Promise<NcRegister> {
-  requireOpEntryRole(user);
-  // Closing the rework changes an already-disposed NC — `edit`.
-  await requireFormAccess(user, 'nc_dispose', 'edit');
-  const companyId = (() => {
-    if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
-    return user.companyId;
-  })();
-
-  return withUserContext(user, async (tx) => {
-    const userName = await resolveUserName(tx, user.id);
-    const ctx: DisposeNcContext = { companyId, userId: user.id, userName };
-    await closeNcReworkCascade(tx, id, input.reworkDoneQty, ctx);
-    const nc = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
-    const row = nc[0]!;
-    await emitActivityLog(
-      tx,
-      {
-        action: 'NC_CLOSE_REWORK',
-        entity: 'NonConformance',
-        detail: `${row.code} — REWORK CLOSED${input.reworkDoneQty !== undefined ? ` qty=${input.reworkDoneQty}` : ''}`,
-        refId: row.code,
-      },
-      companyId,
-      user,
+  const companyId = requireCompany(user);
+  const nc = await withUserContext(user, (tx) => readNc(tx, id, companyId));
+  if (nc.disposition !== 'rework' && nc.disposition !== 'repair') {
+    throw new ConflictError(
+      `NC ${nc.code} is not on a rework path (disposition=${nc.disposition ?? 'null'})`,
     );
-    return toNcRegister(row);
-  });
+  }
+  return closeNc(id, user, { reworkDoneQty: input.reworkDoneQty, via: 'rework' });
+}
+
+/** Legacy route: POST /nc-register/:id/close-return. Same gate as closeNc —
+ *  which for a return-to-vendor NC means the challan has been issued, every
+ *  piece has come back and Incoming QC has passed judgement on all of them. */
+export async function closeNcReturnToVendor(id: string, user: AuthContext): Promise<NcRegister> {
+  const companyId = requireCompany(user);
+  const nc = await withUserContext(user, (tx) => readNc(tx, id, companyId));
+  if (nc.disposition !== 'return_to_vendor') {
+    throw new ConflictError(
+      `NC ${nc.code} is not on a return-to-vendor path (disposition=${nc.disposition ?? 'null'})`,
+    );
+  }
+  return closeNc(id, user, { via: 'return to vendor' });
+}
+
+// ─── Create the return-to-vendor challan (design §5) ──────────────────────
+
+/** The PO line's received figure, for the before/after audit around a recalc. */
+async function readPoLineReceived(
+  tx: DbTransaction,
+  poLineId: string,
+): Promise<{ receivedQty: number; lineNo: number } | undefined> {
+  const rows = await tx
+    .select({ receivedQty: purchaseOrderLines.receivedQty, lineNo: purchaseOrderLines.lineNo })
+    .from(purchaseOrderLines)
+    .where(eq(purchaseOrderLines.id, poLineId))
+    .limit(1);
+  return rows[0];
+}
+
+/** Next IN-DC-NNNNN/R1 for the company. A local copy of
+ *  delivery-challans/service.ts nextDcCode, which is not exported: highest
+ *  numeric suffix + 1, five digits, tolerating and ignoring a `/R<n>` tail so
+ *  a revised challan keeps its running number. Kept identical on purpose —
+ *  an NC challan and a PO challan share one number series. */
+async function nextNcDcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const prefix = 'IN-DC-';
+  const rows = await tx
+    .select({ code: deliveryChallans.code })
+    .from(deliveryChallans)
+    .where(
+      and(
+        eq(deliveryChallans.companyId, companyId),
+        isNull(deliveryChallans.deletedAt),
+        like(deliveryChallans.code, `${prefix}%`),
+      ),
+    );
+  let max = 0;
+  for (const r of rows) {
+    const m = r.code
+      .trim()
+      .slice(prefix.length)
+      .match(/^(\d+)(?:\/R\d+)?$/i);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
 }
 
 /**
- * Close a return-to-vendor NC — the vendor's replacement arrived, or the piece
- * was written off. Clears the at-vendor balance migration 0093 derives from the
- * open NC, which is what lets the source op complete and its Job Card close.
+ * Issue the challan that sends a return-to-vendor NC's pieces back. One
+ * transaction: DC header + one line, the NC's rtv ledger, and — when the
+ * origin op was an outsource op with a PO line — the §12.2 PO received-qty
+ * adjustment, so the PO no longer counts pieces that have left the shop.
+ *
+ * There is no purchase order behind this challan: po_code_text carries the NC
+ * code, and the existing PO-line cumulative-sent guard is not applied.
  */
-export async function closeNcReturnToVendor(id: string, user: AuthContext): Promise<NcRegister> {
+export async function createNcDc(
+  id: string,
+  input: CreateNcDcInput,
+  user: AuthContext,
+): Promise<CreateNcDcResult> {
   requireOpEntryRole(user);
-  // Clearing the at-vendor balance changes an already-disposed NC — `edit`.
+  // Two gates: it rewrites the NC (edit on NC Register) AND it raises an
+  // outward challan (entry on OSP DC & Outward).
   await requireFormAccess(user, 'nc_dispose', 'edit');
+  await requireFormAccess(user, 'ospdc_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const userName = await resolveUserName(tx, user.id);
-    const ctx: DisposeNcContext = { companyId, userId: user.id, userName };
-    await closeNcReturnToVendorCascade(tx, id, ctx);
-    const nc = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
-    const row = nc[0]!;
+    const ncRows = await tx
+      .select()
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.id, id),
+          eq(ncRegister.companyId, companyId),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .limit(1);
+    const nc = ncRows[0];
+    if (!nc) throw new NotFoundError(`NC ${id} not found`);
+    if (nc.disposition !== 'return_to_vendor') {
+      throw new ConflictError(
+        `NC ${nc.code} is not on a return-to-vendor path (disposition=${nc.disposition ?? 'null'})`,
+      );
+    }
+    if (nc.status !== 'disposed') {
+      throw new ConflictError(
+        `NC ${nc.code} is ${nc.status} — a challan can only be raised while it is disposed`,
+      );
+    }
+    if (nc.deliveryChallanId) {
+      throw new ConflictError(`NC ${nc.code} already has a return-to-vendor challan`);
+    }
+
+    if (input.vendorId) {
+      const v = await tx
+        .select({ id: vendors.id })
+        .from(vendors)
+        .where(
+          and(
+            eq(vendors.id, input.vendorId),
+            eq(vendors.companyId, companyId),
+            isNull(vendors.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (v.length === 0) throw new ValidationError(`Vendor ${input.vendorId} not found`);
+    }
+
+    // The parent card supplies the SO line; the item master the uom the line
+    // needs; the origin op tells us whether a PO line is involved.
+    const jcRows = await tx
+      .select({ sourceSoLineId: jobCards.sourceSoLineId })
+      .from(jobCards)
+      .where(and(eq(jobCards.id, nc.jobCardId), eq(jobCards.companyId, companyId)))
+      .limit(1);
+    const itemRows = await tx
+      .select({ code: items.code, name: items.name, uom: items.uom })
+      .from(items)
+      .where(and(eq(items.id, nc.itemId), eq(items.companyId, companyId)))
+      .limit(1);
+    const item = itemRows[0];
+    const originRows = nc.jcOpId
+      ? await tx
+          .select({ opType: jcOps.opType, outsourcePoLineId: jcOps.outsourcePoLineId })
+          .from(jcOps)
+          .where(and(eq(jcOps.id, nc.jcOpId), eq(jcOps.companyId, companyId)))
+          .limit(1)
+      : [];
+    const origin = originRows[0];
+    const poLineId =
+      origin && (origin.opType === 'outsource' || origin.outsourcePoLineId)
+        ? (origin.outsourcePoLineId ?? null)
+        : null;
+
+    const qty = Math.round(Number(nc.rejectedQty));
+    const code = await nextNcDcCode(tx, companyId);
+    const reason = `Return to vendor — ${nc.dispositionRemarks ?? 'rework'}`;
+
+    const insertedDc = await tx
+      .insert(deliveryChallans)
+      .values({
+        companyId,
+        code,
+        dcDate: input.dcDate,
+        purchaseOrderId: null,
+        poCodeText: nc.code,
+        vendorId: input.vendorId ?? null,
+        vendorCodeText: input.vendorCodeText,
+        salesOrderLineId: jcRows[0]?.sourceSoLineId ?? null,
+        soRefText: nc.soCodeText,
+        transport: input.transport ?? null,
+        vehicleNo: input.vehicleNo ?? null,
+        status: 'issued',
+        ncId: nc.id,
+        jobCardId: nc.jobCardId,
+        reason,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning({ id: deliveryChallans.id, code: deliveryChallans.code });
+    const dc = insertedDc[0];
+    if (!dc) throw new ValidationError('Failed to create the return-to-vendor challan');
+
+    await tx.insert(deliveryChallanLines).values({
+      companyId,
+      deliveryChallanId: dc.id,
+      lineNo: 1,
+      itemId: nc.itemId,
+      itemCodeText: item?.code ?? nc.itemCodeText,
+      itemNameText: item?.name ?? nc.itemNameText,
+      qty: qty.toFixed(2),
+      uom: item?.uom ?? 'NOS',
+      materialText: null,
+      // The NC code is always the line remark so the challan print names the
+      // rejection it serves; a note typed on the form is appended, not substituted.
+      dcRemarks: input.remarks ? `${nc.code} — ${input.remarks}` : nc.code,
+      purchaseOrderLineId: poLineId,
+      createdBy: user.id,
+      updatedBy: user.id,
+    });
+
+    await tx
+      .update(ncRegister)
+      .set({
+        rtvSentQty: qty.toFixed(2),
+        deliveryChallanId: dc.id,
+        status: 'sent_to_vendor',
+        updatedBy: user.id,
+      })
+      .where(eq(ncRegister.id, nc.id));
+
+    // §12.2 — the pieces are leaving, so the PO line no longer counts them as
+    // received. NOT an in-place "-= qty": purchase_order_lines.received_qty is
+    // recomputed from scratch by recalcPoLineReceivedQty every time any GRN on
+    // the line moves, so an adjustment written here would be overwritten by
+    // the very next receipt. The return-to-vendor term lives inside that
+    // formula instead (goods-receipt-notes/cascades.ts) and reads this NC's
+    // delivery_challan_id, which was set just above -- so recomputing now is
+    // what applies the subtraction. The audit row records the before/after.
+    if (poLineId) {
+      const before = await readPoLineReceived(tx, poLineId);
+      await recalcPoLineReceivedQty(tx, poLineId, user.id);
+      const after = await readPoLineReceived(tx, poLineId);
+      if (before && after) {
+        await emitActivityLog(
+          tx,
+          {
+            action: 'PO_RECEIVED_ADJUST',
+            entity: 'PurchaseOrderLine',
+            detail:
+              `PO line ${before.lineNo} received_qty ${before.receivedQty} → ${after.receivedQty} ` +
+              `(${qty} returned to vendor on ${dc.code} for ${nc.code})`,
+            refId: nc.code,
+          },
+          companyId,
+          user,
+        );
+      }
+    }
+
     await emitActivityLog(
       tx,
       {
-        action: 'NC_CLOSE_RETURN',
+        action: 'NC_CREATE_DC',
         entity: 'NonConformance',
-        detail: `${row.code} — RETURN TO VENDOR CLOSED (qty=${row.rejectedQty})`,
-        refId: row.code,
+        detail: `${nc.code} — ${dc.code} issued to ${input.vendorCodeText}, ${qty} pcs`,
+        refId: nc.code,
       },
       companyId,
       user,
     );
-    return toNcRegister(row);
+
+    return {
+      nc: await readNc(tx, nc.id, companyId),
+      deliveryChallanId: dc.id,
+      deliveryChallanCode: dc.code,
+    };
   });
 }
 

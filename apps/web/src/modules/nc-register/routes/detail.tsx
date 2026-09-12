@@ -1,6 +1,13 @@
 // NC detail (UI-003-06). DisposeNcPanel inlined for the pending → disposed flow.
+//
+// QC–NC handling (docs/QC-NC-HANDLING-DESIGN.md §2–§5, §8): the page now
+// carries the qty strip (rejected / cleared / failed / open), the links a
+// recovery leaves behind (child JC, RTV challan, split siblings), the
+// Create-DC form for a return-to-vendor NC, and one Close button that runs
+// under the server's closure gate. The legacy in-route rework row (one with
+// `reworkOpSeq`) keeps its old "Close rework" button.
 
-import type { NcRegister } from '@innovic/shared';
+import type { DisposeNcResult, NcRegister } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -8,25 +15,37 @@ import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
-  useCloseNcReturn,
+  useCloseNc,
   useCloseNcRework,
+  useCreateNcDc,
   useDisposeNcRegister,
   useNcRegister,
+  useNcRegisterList,
   useSoftDeleteNcRegister,
 } from '../api';
+import { CreateNcDcPanel } from '../components/create-nc-dc-panel';
 import { DisposeNcPanel } from '../components/dispose-nc-panel';
 import { NcDispositionBadge } from '../components/nc-disposition-badge';
+import { NcLinksBlock } from '../components/nc-links-block';
+import { Note } from '../components/nc-note';
 import { NcStatusBadge } from '../components/nc-status-badge';
+import { ncOpenQty } from '../nc-qty';
 
 export const ncRegisterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'nc-register/$id',
   component: NcRegisterDetailPage,
 });
+
+// Siblings are found through the list endpoint, which cannot filter by
+// splitFromNcId — but it CAN filter by job card, and every split sibling
+// shares the parent's job card. One page of the JC's NCs is bounded and small.
+const SIBLING_PAGE = 200;
 
 function NcRegisterDetailPage(): React.JSX.Element {
   const { id } = ncRegisterDetailRoute.useParams();
@@ -36,18 +55,33 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const softDelete = useSoftDeleteNcRegister();
   const dispose = useDisposeNcRegister(id);
   const closeRework = useCloseNcRework(id);
-  const closeReturn = useCloseNcReturn(id);
+  const closeNc = useCloseNc(id);
+  const createDc = useCreateNcDc(id);
   const createCapa = useCreateCapa();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showDispose, setShowDispose] = useState(false);
+  const [disposeResult, setDisposeResult] = useState<DisposeNcResult | null>(null);
   const [reworkDoneQty, setReworkDoneQty] = useState<number | ''>('');
   const [closeError, setCloseError] = useState<string | null>(null);
   const [capaError, setCapaError] = useState<string | null>(null);
 
-  // Full op list for the NC's JC — drives the dispose panel's rework-op
-  // dropdown (legacy `_disposeNC` renders every op of the JC, HTML L22637).
+  // Full op list for the NC's JC — drives the dispose panel's legacy rework-op
+  // dropdown (legacy `_disposeNC` renders every op of the JC, HTML L22637) and
+  // resolves the human JC code.
   const { data: jcOps } = useJcOpsEnriched(
     { jobCardId: detail?.jobCardId },
+    { enabled: Boolean(detail?.jobCardId) },
+  );
+
+  // The NC this row was split off (design §3) — fetched for its code.
+  const { data: splitParent } = useNcRegister(detail?.splitFromNcId ?? undefined);
+  // Rows split off THIS NC. See SIBLING_PAGE.
+  const { data: jcNcs } = useNcRegisterList(
+    {
+      ...(detail?.jobCardId ? { jobCardId: detail.jobCardId } : {}),
+      limit: SIBLING_PAGE,
+      offset: 0,
+    },
     { enabled: Boolean(detail?.jobCardId) },
   );
 
@@ -88,18 +122,28 @@ function NcRegisterDetailPage(): React.JSX.Element {
   }
 
   const isPending = detail.status === 'pending';
-  const isReworkDisposed = detail.status === 'disposed' && detail.disposition === 'rework';
-  // A return-to-vendor NC now stays `disposed` while the vendor owes a
-  // replacement (0093) — its rejected qty counts as at-vendor and holds the
-  // source op out of complete. Closing it is what says the replacement landed.
-  const isReturnDisposed =
-    detail.status === 'disposed' && detail.disposition === 'return_to_vendor';
+  const isClosed = detail.status === 'closed';
+  // A legacy in-route rework row is the one that carries rework_op_seq; only
+  // it keeps the old "Close rework" path. Every new row closes through the
+  // gate (design §3, interlock 6).
+  const isLegacyRework = detail.reworkOpSeq != null;
+  const isReworkDisposed =
+    isLegacyRework && detail.status === 'disposed' && detail.disposition === 'rework';
+  // Return-to-vendor, chosen but the challan not yet issued (design §5).
+  const awaitingDc =
+    detail.disposition === 'return_to_vendor' &&
+    detail.status === 'disposed' &&
+    !detail.deliveryChallanId;
+  const isRtv = detail.disposition === 'return_to_vendor';
   // Tier-driven, per department (QC). Was a global role string
   // (admin||manager||operator) that ignored the user's actual QC tier.
   const ncPerms = effectiveFormPerms(eff, 'nc_dispose');
-  // Dispose / close rework / close vendor return / Edit all rewrite a saved
-  // NC → `edit` (L3 Editor and above).
+  // Dispose / close / create DC / Edit all rewrite a saved NC → `edit`
+  // (L3 Editor and above).
   const canEdit = ncPerms.edit;
+  // The RTV challan is an outward DC, so it also needs the OSP DC entry right
+  // (design §5 gate: nc_dispose edit AND ospdc_create entry).
+  const canCreateDc = canEdit && effectiveFormPerms(eff, 'ospdc_create').entry;
   // Delete is not one of the four tier actions, so "L5 Department Admin and
   // above" is expressed as the pair only L5/L6 hold: L3 has edit without
   // approve, L4 has approve without edit. Was admin-only, which locked out the
@@ -110,8 +154,12 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // "Create CAPA" only once the NC is disposed/closed and has no linked CAPA
   // (legacy: button shows when status !== 'pending' && !_capaForNC(ncNo)).
   const showCreateCapa = canCreateCapaRecord && !isPending && !detail.linkedCapaCode;
+  // The gate-driven Close: any non-legacy row that has been dispositioned and
+  // is not yet closed. Disabled (never hidden) while the server says why not,
+  // so the operator sees the shortfall rather than a missing button.
+  const showClose = canEdit && !isPending && !isClosed && !isLegacyRework;
 
-  // Resolve op_seq → operation label for the rework dropdown.
+  // Resolve op_seq → operation label for the legacy rework dropdown.
   const reworkOpOptions = (jcOps ?? [])
     .slice()
     .sort((a, b) => a.opSeq - b.opSeq)
@@ -120,6 +168,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // JC code for the CAPA snapshot — the NC read shape only carries jobCardId,
   // so resolve the human code from the loaded JC ops (jobCardCode is joined).
   const jcCode = (jcOps ?? [])[0]?.jobCardCode ?? null;
+
+  const siblings = (jcNcs?.items ?? []).filter((n) => n.splitFromNcId === detail.id);
 
   const onCreateCapa = async (): Promise<void> => {
     setCapaError(null);
@@ -161,12 +211,14 @@ function NcRegisterDetailPage(): React.JSX.Element {
     }
   };
 
-  const onCloseReturn = async (): Promise<void> => {
+  // The 409 body carries the exact shortfall; apiFetch puts it on
+  // Error.message, so it is shown as-is.
+  const onClose = async (): Promise<void> => {
     setCloseError(null);
     try {
-      await closeReturn.mutateAsync();
+      await closeNc.mutateAsync();
     } catch (e) {
-      setCloseError(e instanceof Error ? e.message : 'Failed to close the vendor return.');
+      setCloseError(e instanceof Error ? e.message : 'Failed to close the NC.');
     }
   };
 
@@ -212,7 +264,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
               ) : null}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <AssignTaskButton
               linkedRef={{
                 type: 'nc',
@@ -264,24 +316,33 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 </button>
               </>
             ) : null}
-            {isReturnDisposed && canEdit ? (
+            {showClose ? (
               <>
-                <span className="text3" style={{ fontSize: 11 }}>
-                  {Number(detail.rejectedQty)} pc(s) at vendor
-                </span>
+                {detail.closeBlockedReason ? (
+                  <span
+                    className="text3"
+                    style={{ fontSize: 11, maxWidth: 360 }}
+                    title={detail.closeBlockedReason}
+                  >
+                    {detail.closeBlockedReason}
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   className="btn btn-success btn-sm"
-                  onClick={() => void onCloseReturn()}
-                  title="The vendor's replacement has arrived (or the piece is written off) — clears the at-vendor balance and lets the operation finish"
-                  disabled={closeReturn.isPending}
+                  onClick={() => void onClose()}
+                  disabled={closeNc.isPending || detail.closeBlockedReason != null}
+                  title={
+                    detail.closeBlockedReason ??
+                    'Every rejected piece is accounted for — close this NC'
+                  }
                 >
-                  {closeReturn.isPending ? (
+                  {closeNc.isPending ? (
                     <Loader2 size={13} className="animate-spin" />
                   ) : (
                     <CheckCircle2 size={13} />
                   )}
-                  Replacement received
+                  Close
                 </button>
               </>
             ) : null}
@@ -356,59 +417,114 @@ function NcRegisterDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete NC.'}
-            </div>
-          ) : null}
-          {closeError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {closeError}
-            </div>
-          ) : null}
-          {capaError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {capaError}
+          {softDelete.isError || closeError || capaError ? (
+            <div style={{ marginBottom: 10 }}>
+              {softDelete.isError ? (
+                <Note tone="red">
+                  {softDelete.error instanceof Error
+                    ? softDelete.error.message
+                    : 'Failed to delete NC.'}
+                </Note>
+              ) : null}
+              {closeError ? <Note tone="red">{closeError}</Note> : null}
+              {capaError ? <Note tone="red">{capaError}</Note> : null}
             </div>
           ) : null}
           <DetailGrid detail={detail} jcCode={jcCode} />
           {detail.disposition || detail.dispositionDate ? (
             <DispositionBlock detail={detail} />
           ) : null}
+          <NcLinksBlock detail={detail} splitParent={splitParent ?? null} siblings={siblings} />
         </div>
       </div>
+
+      {/* Where the rejected pieces stand (design §3). One strip, not cards. */}
+      <div style={{ margin: '10px 0' }}>
+        <StatStrip
+          items={[
+            {
+              key: 'rejected',
+              label: 'Rejected',
+              count: Number(detail.rejectedQty),
+              color: 'var(--red)',
+              sub: 'pcs this NC covers',
+            },
+            {
+              key: 'cleared',
+              label: 'Cleared',
+              count: Number(detail.clearedQty),
+              color: 'var(--green)',
+              sub: 'QC-accepted after recovery',
+            },
+            {
+              key: 'failed',
+              label: 'Failed',
+              count: Number(detail.failedQty),
+              color: 'var(--amber)',
+              sub: 'QC-rejected again',
+            },
+            {
+              key: 'open',
+              label: 'Open',
+              count: ncOpenQty(detail),
+              color: 'var(--blue)',
+              sub: 'rejected − cleared − failed',
+            },
+            ...(isRtv
+              ? [
+                  {
+                    key: 'sent',
+                    label: 'Sent',
+                    count: Number(detail.rtvSentQty),
+                    color: 'var(--blue)',
+                    sub: 'on the return challan',
+                  },
+                  {
+                    key: 'received',
+                    label: 'Received',
+                    count: Number(detail.rtvReceivedQty),
+                    color: 'var(--cyan)',
+                    sub: 'back from the vendor',
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </div>
+
+      {awaitingDc && canCreateDc ? (
+        <CreateNcDcPanel
+          nc={detail}
+          pending={createDc.isPending}
+          error={
+            createDc.isError
+              ? createDc.error instanceof Error
+                ? createDc.error.message
+                : 'Failed to create the delivery challan'
+              : null
+          }
+          onSubmit={async (input) => {
+            try {
+              await createDc.mutateAsync(input);
+            } catch {
+              /* inline error via panel */
+            }
+          }}
+        />
+      ) : null}
+      {createDc.isSuccess && detail.deliveryChallanId ? (
+        <Note tone="green">
+          Return challan issued:{' '}
+          <Link
+            to="/delivery-challans/$id"
+            params={{ id: detail.deliveryChallanId }}
+            className="mono fw-700"
+            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+          >
+            {detail.deliveryChallanCode ?? createDc.data?.deliveryChallanCode}
+          </Link>
+        </Note>
+      ) : null}
 
       <RelatedDocsPanel module="nc-register" id={detail.id} />
 
@@ -426,14 +542,17 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 : 'Failed to dispose NC'
               : null
           }
+          result={disposeResult}
           onCancel={() => {
             setShowDispose(false);
+            setDisposeResult(null);
             dispose.reset();
           }}
           onSubmit={async (input) => {
             try {
-              await dispose.mutateAsync(input);
-              setShowDispose(false);
+              // The panel stays open to show the child JC / remainder links;
+              // "Done" on it is what closes it.
+              setDisposeResult(await dispose.mutateAsync(input));
             } catch {
               /* inline error via panel */
             }
@@ -537,10 +656,10 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         </InlinePair>
         <InlinePair label="Date:">{detail.dispositionDate ?? '—'}</InlinePair>
         <InlinePair label="By:">{detail.dispositionByText ?? ''}</InlinePair>
-        {detail.disposition === 'rework' ? (
-          <InlinePair label="Rework Op:">
-            {detail.reworkOpSeq != null ? `Op${detail.reworkOpSeq}` : '—'}
-          </InlinePair>
+        {/* Legacy in-route rework only — a new rework raises a child JC
+            (linked below) and never sets rework_op_seq. */}
+        {detail.reworkOpSeq != null ? (
+          <InlinePair label="Rework Op:">Op{detail.reworkOpSeq}</InlinePair>
         ) : null}
         {/* Not in legacy `_viewNC`, but legacy's LIST row shows "♻ n/m done"
             (HTML L22536) and our close-rework flow captures it. Kept. */}

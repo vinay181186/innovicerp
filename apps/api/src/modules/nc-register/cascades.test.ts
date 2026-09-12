@@ -7,8 +7,9 @@ import { and, eq, like, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { activityLog, items, jcOps, jobCards, ncRegister, opLog, users } from '../../db/schema';
-import type { AuthContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { ConflictError, ValidationError } from '../../lib/errors';
+import { onRecoveryJobCardQc } from './recovery';
 import * as service from './service';
 
 const TEST_PREFIX = 'T040B-';
@@ -150,9 +151,49 @@ beforeAll(async () => {
 afterAll(async () => {
   await teardown();
 });
+/** Run one of the recovery hooks the way op-entry / incoming-qc do: inside a
+ *  transaction with the user's claims set, so RLS sees the company. */
+async function inUserTx<T>(fn: (tx: DbTransaction) => Promise<T>): Promise<T> {
+  return withUserContext(admin, fn);
+}
 
-describe('nc-register dispose cascades (T-040b)', () => {
-  it('rework: flips status=disposed, increments jc_ops.rework_qty on the picked op', async () => {
+/** Give a recovery child ONE op (a QC op), so it has a "last op" to inspect. */
+async function addSingleQcOp(jobCardId: string): Promise<string> {
+  const rows = await db
+    .insert(jcOps)
+    .values({
+      companyId: admin.companyId!,
+      jobCardId,
+      opSeq: 1,
+      operation: 'QC',
+      opType: 'qc',
+      qcRequired: true,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning({ id: jcOps.id });
+  return rows[0]!.id;
+}
+
+/** Turn a fresh NC into a LEGACY in-route rework row (rework_op_seq set), the
+ *  shape every rework disposition produced before the QC–NC handling change.
+ *  New dispositions never write this shape; the views and the close path must
+ *  keep honouring the rows that already exist. */
+async function makeLegacyReworkRow(ncId: string, reworkOpSeq: number): Promise<void> {
+  await db
+    .update(ncRegister)
+    .set({
+      status: 'disposed',
+      disposition: 'rework',
+      dispositionDate: '2026-05-04',
+      dispositionByText: 'legacy',
+      reworkOpSeq,
+    })
+    .where(eq(ncRegister.id, ncId));
+}
+
+describe('nc-register dispose cascades (T-040b, QC–NC handling design §1–§4)', () => {
+  it('rework: raises a child rework JC, status=under_rework, no rework_op_seq', async () => {
     const f = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}REW-JC`,
       ncCode: `${TEST_PREFIX}REW-NC`,
@@ -160,38 +201,99 @@ describe('nc-register dispose cascades (T-040b)', () => {
       opSeqs: [1, 2, 3],
       ncOpSeq: 3,
     });
-    const { result, nc } = await service.disposeNcRegister(
+    // reworkOpSeq is the legacy field and is ignored — a child card is raised.
+    const res = await service.disposeNcRegister(
       f.ncId,
       { action: 'rework', reworkOpSeq: 2 },
       admin,
     );
-    expect(result.status).toBe('disposed');
-    expect(result.reworkOpSeqApplied).toBe(2);
-    expect(nc.status).toBe('disposed');
-    expect(nc.disposition).toBe('rework');
-    expect(nc.reworkOpSeq).toBe(2);
+    expect(res.nc.status).toBe('under_rework');
+    expect(res.nc.disposition).toBe('rework');
+    expect(res.nc.reworkOpSeq).toBeNull();
+    expect(res.remainderNc).toBeNull();
+    expect(res.childJobCardCode).toBe(`${f.jcCode}-RW1`);
+    expect(res.nc.childJobCardId).toBe(res.childJobCardId);
+    expect(res.nc.childJobCardCode).toBe(`${f.jcCode}-RW1`);
+    expect(res.nc.reworkJcCodeText).toBe(`${f.jcCode}-RW1`);
+    expect(res.nc.openQty).toBe('5.00');
+    expect(res.nc.closeBlockedReason).toContain('5 of 5 pcs still under rework');
 
-    // Confirm rework_qty bumped on op 2 (not op 3, the NC's own op)
+    const child = await db
+      .select()
+      .from(jobCards)
+      .where(eq(jobCards.id, res.childJobCardId!))
+      .limit(1);
+    expect(child[0]!.parentNcId).toBe(f.ncId);
+    expect(child[0]!.parentJobCardId).toBe(f.jcId);
+    expect(child[0]!.originOpSeq).toBe(3);
+    expect(child[0]!.recoveryKind).toBe('rework');
+    expect(child[0]!.orderQty).toBe(5);
+    expect(child[0]!.clientMaterialGate).toBe(false);
+    expect(child[0]!.remarks).toBe(`Rework of ${f.jcCode} Op 3 — ${f.ncCode}`);
+    // No ops are copied — the user defines the recovery route (§4.3).
+    const childOps = await db
+      .select({ id: jcOps.id })
+      .from(jcOps)
+      .where(eq(jcOps.jobCardId, child[0]!.id));
+    expect(childOps).toHaveLength(0);
+    // The legacy counter on the parent's ops is untouched.
     const op2 = f.jcOpIds.find((o) => o.opSeq === 2)!;
     const reread = await db.select().from(jcOps).where(eq(jcOps.id, op2.jcOpId)).limit(1);
-    expect(reread[0]!.reworkQty).toBe(5);
+    expect(reread[0]!.reworkQty).toBe(0);
   });
 
-  it('rework defaults to NC.opSeq when reworkOpSeq is omitted', async () => {
+  it('repair: raises a -RP1 child, status=under_repair', async () => {
     const f = await createJcWithOpsAndNc({
-      jcCode: `${TEST_PREFIX}REW2-JC`,
-      ncCode: `${TEST_PREFIX}REW2-NC`,
+      jcCode: `${TEST_PREFIX}REP-JC`,
+      ncCode: `${TEST_PREFIX}REP-NC`,
       rejectedQty: 3,
       ncOpSeq: 1,
     });
-    const { nc } = await service.disposeNcRegister(f.ncId, { action: 'rework' }, admin);
-    expect(nc.reworkOpSeq).toBe(1);
-    const op1 = f.jcOpIds.find((o) => o.opSeq === 1)!;
-    const reread = await db.select().from(jcOps).where(eq(jcOps.id, op1.jcOpId)).limit(1);
-    expect(reread[0]!.reworkQty).toBe(3);
+    const res = await service.disposeNcRegister(f.ncId, { action: 'repair' }, admin);
+    expect(res.nc.status).toBe('under_repair');
+    expect(res.nc.disposition).toBe('repair');
+    expect(res.childJobCardCode).toBe(`${f.jcCode}-RP1`);
+    expect(res.nc.closeBlockedReason).toContain('under repair');
   });
 
-  it('scrap: flips status=closed, captures scrap_cost', async () => {
+  it('partial disposition splits the remainder into a pending sibling (interlock 2)', async () => {
+    const f = await createJcWithOpsAndNc({
+      jcCode: `${TEST_PREFIX}SPL-JC`,
+      ncCode: `${TEST_PREFIX}SPL-NC`,
+      rejectedQty: 5,
+    });
+    const res = await service.disposeNcRegister(f.ncId, { action: 'scrap', qty: 2 }, admin);
+    expect(res.nc.rejectedQty).toBe('2.00');
+    expect(res.nc.status).toBe('closed');
+    expect(res.remainderNc).not.toBeNull();
+    expect(res.remainderNc!.code).toBe(`${f.ncCode}/2`);
+    expect(res.remainderNc!.rejectedQty).toBe('3.00');
+    expect(res.remainderNc!.status).toBe('pending');
+    expect(res.remainderNc!.splitFromNcId).toBe(f.ncId);
+    expect(res.remainderNc!.closeBlockedReason).toBe('No disposition chosen');
+
+    const audit = await db
+      .select({ action: activityLog.action, detail: activityLog.detail })
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, f.ncCode)));
+    const actions = audit.map((r) => r.action).sort();
+    expect(actions).toEqual(['NC_DISPOSE', 'NC_SPLIT']);
+    expect(audit.find((r) => r.action === 'NC_DISPOSE')!.detail).toContain('qty=2');
+    expect(audit.find((r) => r.action === 'NC_DISPOSE')!.detail).toContain(`${f.ncCode}/2`);
+  });
+
+  it('rejects a disposition qty above the open qty (ValidationError)', async () => {
+    const f = await createJcWithOpsAndNc({
+      jcCode: `${TEST_PREFIX}OVR-JC`,
+      ncCode: `${TEST_PREFIX}OVR-NC`,
+      rejectedQty: 2,
+    });
+    await expect(
+      service.disposeNcRegister(f.ncId, { action: 'scrap', qty: 3 }, admin),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('scrap: flips status=closed, captures scrap_cost and closed_at/by', async () => {
     const f = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}SCR-JC`,
       ncCode: `${TEST_PREFIX}SCR-NC`,
@@ -206,6 +308,9 @@ describe('nc-register dispose cascades (T-040b)', () => {
     expect(nc.disposition).toBe('scrap');
     expect(nc.scrapCost).toBe('250.50');
     expect(nc.dispositionRemarks).toBe('discarded');
+    expect(nc.closedAt).not.toBeNull();
+    expect(nc.closedBy).toBe(admin.id);
+    expect(nc.closeBlockedReason).toBeNull();
   });
 
   it('use_as_is: flips status=closed, appends an op_log row with type=qc + qty=rejected', async () => {
@@ -215,22 +320,26 @@ describe('nc-register dispose cascades (T-040b)', () => {
       rejectedQty: 4,
       ncOpSeq: 1,
     });
-    const { result, nc } = await service.disposeNcRegister(f.ncId, { action: 'use_as_is' }, admin);
+    const { nc } = await service.disposeNcRegister(f.ncId, { action: 'use_as_is' }, admin);
     expect(nc.status).toBe('closed');
     expect(nc.disposition).toBe('use_as_is');
-    expect(result.opLogId).toBeDefined();
 
-    const log = await db.select().from(opLog).where(eq(opLog.id, result.opLogId!)).limit(1);
+    const log = await db
+      .select()
+      .from(opLog)
+      .where(and(eq(opLog.jcOpId, f.jcOpIds[0]!.jcOpId), eq(opLog.logType, 'qc')));
+    expect(log).toHaveLength(1);
     expect(log[0]!.qty).toBe(4);
-    expect(log[0]!.logType).toBe('qc');
     expect(log[0]!.remarks).toContain(f.ncCode);
   });
 
   // 0093 / ADR-117: this used to assert status=closed. Closing on the spot made
   // the returned piece disappear — not in stock, not at the vendor, and the op
   // it came from owed a qty nothing could satisfy. It now stays `disposed` so
-  // the views can count it as at-vendor until the replacement lands.
-  it('return_to_vendor: leaves the NC disposed (vendor owes a replacement), no op_log', async () => {
+  // the views can count it as at-vendor until the replacement lands — and since
+  // the QC–NC handling change it cannot be closed by hand until the challan has
+  // gone out and the replacement has been received and inspected.
+  it('return_to_vendor: leaves the NC disposed, awaiting the challan; close refused', async () => {
     const f = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}RTV-JC`,
       ncCode: `${TEST_PREFIX}RTV-NC`,
@@ -243,18 +352,18 @@ describe('nc-register dispose cascades (T-040b)', () => {
     const { nc } = await service.disposeNcRegister(f.ncId, { action: 'return_to_vendor' }, admin);
     expect(nc.status).toBe('disposed');
     expect(nc.disposition).toBe('return_to_vendor');
+    expect(nc.closeBlockedReason).toBe('Return-to-vendor challan not yet issued');
     const afterOpLogs = await db
       .select({ id: opLog.id })
       .from(opLog)
       .where(eq(opLog.jcOpId, f.jcOpIds[0]!.jcOpId));
     expect(afterOpLogs.length).toBe(beforeOpLogs.length); // no op_log appended
 
-    // Closing it is what says the replacement arrived.
-    const closed = await service.closeNcReturnToVendor(f.ncId, admin);
-    expect(closed.status).toBe('closed');
-
-    // Second close is refused — the balance is already cleared.
-    await expect(service.closeNcReturnToVendor(f.ncId, admin)).rejects.toThrow();
+    // No challan yet → the gate refuses, naming the shortfall.
+    await expect(service.closeNcReturnToVendor(f.ncId, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+    await expect(service.closeNc(f.ncId, admin)).rejects.toThrow('challan not yet issued');
   });
 
   it('close-return refuses an NC that is not on the return-to-vendor path', async () => {
@@ -273,13 +382,16 @@ describe('nc-register dispose cascades (T-040b)', () => {
       ncCode: `${TEST_PREFIX}MF-NC`,
       rejectedQty: 6,
     });
-    const { result, nc } = await service.disposeNcRegister(f.ncId, { action: 'make_fresh' }, admin);
+    const { nc } = await service.disposeNcRegister(f.ncId, { action: 'make_fresh' }, admin);
     expect(nc.status).toBe('closed');
     expect(nc.disposition).toBe('make_fresh');
-    expect(result.newJcCode).toBe(`${f.jcCode}-S1`);
     expect(nc.reworkJcCodeText).toBe(`${f.jcCode}-S1`);
 
-    const newJc = await db.select().from(jobCards).where(eq(jobCards.id, result.newJcId!)).limit(1);
+    const newJc = await db
+      .select()
+      .from(jobCards)
+      .where(and(eq(jobCards.companyId, admin.companyId!), eq(jobCards.code, `${f.jcCode}-S1`)))
+      .limit(1);
     expect(newJc[0]!.parentNcId).toBe(f.ncId);
     expect(newJc[0]!.itemId).toBe(testItemId);
     expect(newJc[0]!.orderQty).toBe(6);
@@ -294,7 +406,7 @@ describe('nc-register dispose cascades (T-040b)', () => {
       .where(
         and(
           eq(activityLog.companyId, admin.companyId!),
-          eq(activityLog.refId, result.newJcCode!),
+          eq(activityLog.refId, `${f.jcCode}-S1`),
           eq(activityLog.action, 'CREATE'),
         ),
       );
@@ -312,12 +424,8 @@ describe('nc-register dispose cascades (T-040b)', () => {
     // Force the second NC to point at the first JC so the supplementary
     // numbering increments cleanly.
     await db.update(ncRegister).set({ jobCardId: f.jcId }).where(eq(ncRegister.id, f2.ncId));
-    const { result: r2 } = await service.disposeNcRegister(
-      f2.ncId,
-      { action: 'make_fresh' },
-      admin,
-    );
-    expect(r2.newJcCode).toBe(`${f.jcCode}-S2`);
+    const r2 = await service.disposeNcRegister(f2.ncId, { action: 'make_fresh' }, admin);
+    expect(r2.nc.reworkJcCodeText).toBe(`${f.jcCode}-S2`);
   });
 
   it('rejects re-dispose on an already-disposed NC with ConflictError', async () => {
@@ -330,18 +438,6 @@ describe('nc-register dispose cascades (T-040b)', () => {
     await expect(
       service.disposeNcRegister(f.ncId, { action: 'scrap', scrapCost: 0 }, admin),
     ).rejects.toBeInstanceOf(ConflictError);
-  });
-
-  it('rejects rework when the picked rework op_seq does not exist on the JC', async () => {
-    const f = await createJcWithOpsAndNc({
-      jcCode: `${TEST_PREFIX}BAD-JC`,
-      ncCode: `${TEST_PREFIX}BAD-NC`,
-      rejectedQty: 1,
-      opSeqs: [1, 2],
-    });
-    await expect(
-      service.disposeNcRegister(f.ncId, { action: 'rework', reworkOpSeq: 99 }, admin),
-    ).rejects.toBeInstanceOf(ValidationError);
   });
 
   it('use_as_is requires NC to have op_seq + jc_op_id set', async () => {
@@ -358,24 +454,160 @@ describe('nc-register dispose cascades (T-040b)', () => {
   });
 });
 
-describe('nc-register close-rework (T-040b)', () => {
-  it('flips disposed+rework → closed, records rework_done_qty', async () => {
+describe('nc-register recovery QC + closure gate (design §3–§4)', () => {
+  it('child JC terminal QC credits cleared/failed, re-injects accepted into the origin op, auto-closes', async () => {
+    const f = await createJcWithOpsAndNc({
+      jcCode: `${TEST_PREFIX}RQC-JC`,
+      ncCode: `${TEST_PREFIX}RQC-NC`,
+      rejectedQty: 5,
+      opSeqs: [1, 2],
+      ncOpSeq: 2,
+    });
+    const originOpId = f.jcOpIds.find((o) => o.opSeq === 2)!.jcOpId;
+    const res = await service.disposeNcRegister(f.ncId, { action: 'rework' }, admin);
+    const childId = res.childJobCardId!;
+    const childOpId = await addSingleQcOp(childId);
+
+    // Manual close is refused while pieces are still on the child.
+    await expect(service.closeNc(f.ncId, admin)).rejects.toThrow('5 of 5 pcs still under rework');
+    await expect(service.closeNcRework(f.ncId, { reworkDoneQty: 5 }, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+
+    // First inspection: 3 good, 1 bad — still open.
+    await inUserTx((tx) =>
+      onRecoveryJobCardQc(
+        tx,
+        {
+          jobCardId: childId,
+          jcOpId: childOpId,
+          acceptedQty: 3,
+          rejectedQty: 1,
+          qcLogId: '00000000-0000-0000-0000-000000000000',
+          logDate: '2026-05-05',
+          shift: 'day',
+        },
+        admin.companyId!,
+        admin,
+      ),
+    );
+    let nc = await service.getNcRegister(f.ncId, admin);
+    expect(nc.clearedQty).toBe('3.00');
+    expect(nc.failedQty).toBe('1.00');
+    expect(nc.openQty).toBe('1.00');
+    expect(nc.status).toBe('under_rework');
+    expect(nc.closeBlockedReason).toContain('1 of 5 pcs still under rework');
+
+    // Second inspection clears the last piece → auto-closed.
+    await inUserTx((tx) =>
+      onRecoveryJobCardQc(
+        tx,
+        {
+          jobCardId: childId,
+          jcOpId: childOpId,
+          acceptedQty: 1,
+          rejectedQty: 0,
+          qcLogId: '00000000-0000-0000-0000-000000000000',
+          logDate: '2026-05-05',
+          shift: 'day',
+        },
+        admin.companyId!,
+        admin,
+      ),
+    );
+    nc = await service.getNcRegister(f.ncId, admin);
+    expect(nc.status).toBe('closed');
+    expect(nc.clearedQty).toBe('4.00');
+    expect(nc.closedAt).not.toBeNull();
+    expect(nc.closeBlockedReason).toBeNull();
+
+    // The 4 recovered pieces are back on the parent's origin op as QC-accepted.
+    const reinjected = await db
+      .select({ qty: opLog.qty, remarks: opLog.remarks })
+      .from(opLog)
+      .where(and(eq(opLog.jcOpId, originOpId), eq(opLog.logType, 'qc')));
+    expect(reinjected.reduce((s, r) => s + r.qty, 0)).toBe(4);
+    expect(reinjected[0]!.remarks).toContain(`Recovered via ${f.jcCode}-RW1`);
+
+    // Over-crediting is refused.
+    await expect(
+      inUserTx((tx) =>
+        onRecoveryJobCardQc(
+          tx,
+          {
+            jobCardId: childId,
+            jcOpId: childOpId,
+            acceptedQty: 1,
+            rejectedQty: 0,
+            qcLogId: '00000000-0000-0000-0000-000000000000',
+            logDate: '2026-05-05',
+            shift: 'day',
+          },
+          admin.companyId!,
+          admin,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    const audit = await db
+      .select({ action: activityLog.action })
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, f.ncCode)));
+    expect(audit.map((r) => r.action).sort()).toEqual([
+      'NC_DISPOSE',
+      'NC_RECOVERY_QC',
+      'NC_RECOVERY_QC',
+    ]);
+  });
+
+  it('the hook is a no-op on a card that is not a recovery child', async () => {
+    const f = await createJcWithOpsAndNc({
+      jcCode: `${TEST_PREFIX}NOP-JC`,
+      ncCode: `${TEST_PREFIX}NOP-NC`,
+      rejectedQty: 1,
+    });
+    await inUserTx((tx) =>
+      onRecoveryJobCardQc(
+        tx,
+        {
+          jobCardId: f.jcId,
+          jcOpId: f.jcOpIds[0]!.jcOpId,
+          acceptedQty: 1,
+          rejectedQty: 0,
+          qcLogId: '00000000-0000-0000-0000-000000000000',
+          logDate: '2026-05-05',
+          shift: 'day',
+        },
+        admin.companyId!,
+        admin,
+      ),
+    );
+    const nc = await service.getNcRegister(f.ncId, admin);
+    expect(nc.status).toBe('pending');
+    expect(nc.clearedQty).toBe('0.00');
+  });
+});
+
+describe('nc-register close-rework — legacy in-route rows (0088 / 0089)', () => {
+  it('flips a legacy disposed+rework row → closed, records rework_done_qty', async () => {
     const f = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}CLR-JC`,
       ncCode: `${TEST_PREFIX}CLR-NC`,
       rejectedQty: 5,
     });
-    await service.disposeNcRegister(f.ncId, { action: 'rework' }, admin);
+    await makeLegacyReworkRow(f.ncId, 1);
     const closed = await service.closeNcRework(f.ncId, { reworkDoneQty: 5 }, admin);
     expect(closed.status).toBe('closed');
     expect(closed.reworkDoneQty).toBe('5.00');
+    expect(closed.closedAt).not.toBeNull();
   });
 
   it('0088: rework counts down — outstanding is derived from the NC, so closing it clears the op', async () => {
-    // ADR-112. `jc_ops.rework_qty` only ever increments (cascades.ts:130) and
-    // closeNcRework never touched it, so a reworked op carried a permanent
-    // phantom balance in `available` — and, after 0087, in Pending too. The
-    // view now sums the outstanding qty from nc_register instead.
+    // ADR-112. `jc_ops.rework_qty` only ever increments and closeNcRework never
+    // touched it, so a reworked op carried a permanent phantom balance in
+    // `available` — and, after 0087, in Pending too. The view sums the
+    // outstanding qty from nc_register instead. Legacy rows only: a NEW rework
+    // disposition raises a child card and never sets rework_op_seq.
     const f = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}RWD-JC`,
       ncCode: `${TEST_PREFIX}RWD-NC`,
@@ -421,8 +653,8 @@ describe('nc-register close-rework (T-040b)', () => {
     const before = await readOp(op1);
     expect(before.reworkPendingQty).toBe(0);
 
-    // Send the 5 back to op 1.
-    await service.disposeNcRegister(f.ncId, { action: 'rework', reworkOpSeq: 1 }, admin);
+    // A legacy row sending the 5 back to op 1.
+    await makeLegacyReworkRow(f.ncId, 1);
     const owed = await readOp(op1);
     expect(owed.reworkPendingQty).toBe(5);
     expect(owed.available).toBe(before.available + 5);
@@ -445,15 +677,6 @@ describe('nc-register close-rework (T-040b)', () => {
     const raiserCleared = await readOp(op2);
     expect(raiserCleared.reworkRaisedQty).toBe(0);
     expect(raiserCleared.reworkRaisedToOps).toBeNull();
-
-    // The counter itself is untouched — it stays as the audit trail of what was
-    // ever raised against the op, which is why it must not drive the maths.
-    const opRow = await db
-      .select({ reworkQty: jcOps.reworkQty })
-      .from(jcOps)
-      .where(eq(jcOps.id, op1))
-      .limit(1);
-    expect(opRow[0]?.reworkQty).toBe(5);
   });
 
   it('0089: an op that owes rework is not complete, so its JC cannot auto-close', async () => {
@@ -499,9 +722,9 @@ describe('nc-register close-rework (T-040b)', () => {
     expect(await opStatus()).toBe('complete');
     expect(await jcStatus()).toBe('complete');
 
-    // Send 5 back for rework — the op is no longer finished, and neither is the
-    // JC, so the sales cascade's `jc_not_complete` guard now holds it open.
-    await service.disposeNcRegister(f.ncId, { action: 'rework', reworkOpSeq: 1 }, admin);
+    // A legacy row sending 5 back for rework — the op is no longer finished, and
+    // neither is the JC, so the sales cascade's `jc_not_complete` guard holds it.
+    await makeLegacyReworkRow(f.ncId, 1);
     expect(await opStatus()).toBe('in_progress');
     expect(await jcStatus()).not.toBe('complete');
 
@@ -521,13 +744,13 @@ describe('nc-register close-rework (T-040b)', () => {
     await expect(service.closeNcRework(f.ncId, {}, admin)).rejects.toBeInstanceOf(ConflictError);
   });
 
-  it('emits NC_DISPOSE + NC_CLOSE_REWORK activity_log rows atomic with the cascade', async () => {
+  it('emits NC_CLOSE on a manual close, atomic with the status flip', async () => {
     const f = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}AUD-JC`,
       ncCode: `${TEST_PREFIX}AUD-NC`,
       rejectedQty: 4,
     });
-    await service.disposeNcRegister(f.ncId, { action: 'rework' }, admin);
+    await makeLegacyReworkRow(f.ncId, 1);
     await service.closeNcRework(f.ncId, { reworkDoneQty: 4 }, admin);
 
     const auditRows = await db
@@ -535,19 +758,16 @@ describe('nc-register close-rework (T-040b)', () => {
       .from(activityLog)
       .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, f.ncCode)));
     const actions = auditRows.map((r) => r.action).sort();
-    expect(actions).toEqual(['NC_CLOSE_REWORK', 'NC_DISPOSE']);
+    expect(actions).toEqual(['NC_CLOSE']);
     for (const r of auditRows) {
       expect(r.entity).toBe('NonConformance');
       expect(r.userId).toBe(admin.id);
       expect(r.userName).toBe(admin.email);
       expect(r.detail).toContain(f.ncCode);
     }
-    const dispose = auditRows.find((r) => r.action === 'NC_DISPOSE')!;
-    expect(dispose.detail).toContain('REWORK');
-    const closeRework = auditRows.find((r) => r.action === 'NC_CLOSE_REWORK')!;
-    expect(closeRework.detail).toContain('qty=4');
+    expect(auditRows[0]!.detail).toContain('reworkDone=4');
+
+    // Closing twice is refused.
+    await expect(service.closeNc(f.ncId, admin)).rejects.toBeInstanceOf(ConflictError);
   });
 });
-
-// Silence unused-import false positives.
-void and;

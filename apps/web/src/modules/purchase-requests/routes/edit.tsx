@@ -3,8 +3,9 @@
 import type { CreatePurchaseRequestInput, UpdatePurchaseRequestInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseRequest, usePurchaseRequest, useUpdatePurchaseRequest } from '../api';
 import { PurchaseRequestForm } from '../components/purchase-request-form';
@@ -31,12 +32,19 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   // Approver). Same guard shape as the edit page below.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'pr_create');
+  // Where Cancel goes, and where ESC → Exit goes. Every other way off the
+  // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
+  const goBack = useCallback(() => void navigate({ to: '/purchase-requests' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: CreatePurchaseRequestInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      await navigate({ to: '/purchase-requests/$id', params: { id: created.id }, replace: true });
+      exit.leave(
+        () =>
+          void navigate({ to: '/purchase-requests/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create purchase request');
     }
@@ -70,6 +78,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/purchase-requests" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Purchase Requests
       </Link>
@@ -87,7 +96,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
             mode="create"
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/purchase-requests' })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>
@@ -106,12 +115,20 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   // L4 Approver, who deliberately cannot change a saved record.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'pr_create');
+  // Where Cancel goes, and where ESC → Exit goes.
+  const goBack = useCallback(
+    () => void navigate({ to: '/purchase-requests/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: UpdatePurchaseRequestInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
-      await navigate({ to: '/purchase-requests/$id', params: { id }, replace: true });
+      exit.leave(
+        () => void navigate({ to: '/purchase-requests/$id', params: { id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update purchase request');
     }
@@ -193,6 +210,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/purchase-requests/$id"
         params={{ id }}
@@ -221,7 +239,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
             detail={detail}
             onSubmit={onSubmit}
             submitError={submitError}
-            onCancel={() => void navigate({ to: '/purchase-requests/$id', params: { id } })}
+            onCancel={() => exit.leave(goBack)}
           />
         </div>
       </div>

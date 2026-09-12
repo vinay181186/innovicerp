@@ -1,7 +1,8 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useRouteCard, useUpdateRouteCard } from '../api';
 import {
@@ -26,6 +27,11 @@ function RouteCardEditPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
+  const goBack = useCallback(
+    () => void navigate({ to: '/route-cards/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
 
   const initialOps = useMemo<RouteCardFormOpDraft[]>(
     () =>
@@ -63,7 +69,7 @@ function RouteCardEditPage(): React.JSX.Element {
         ops: opsToInput(ops),
         revisionNote,
       });
-      void navigate({ to: '/route-cards/$id', params: { id: updated.id } });
+      exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: updated.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Failed to save route card revision.');
     }
@@ -103,24 +109,27 @@ function RouteCardEditPage(): React.JSX.Element {
   }
 
   return (
-    <RouteCardForm
-      mode="edit"
-      routeCard={detail}
-      initialHeader={{
-        code: detail.code,
-        itemId: detail.itemId,
-        itemCodeText: detail.itemCode ?? '',
-        rawMaterialGradeId: detail.rawMaterialGradeId,
-        rawMaterialGradeText: detail.rawMaterialGradeText,
-        rawMaterialSizeId: detail.rawMaterialSizeId,
-        rawMaterialSizeText: detail.rawMaterialSizeText,
-        notes: detail.notes ?? '',
-      }}
-      initialOps={initialOps}
-      onSubmit={submit}
-      submitting={update.isPending}
-      submitError={submitError}
-      onCancel={() => void navigate({ to: '/route-cards/$id', params: { id } })}
-    />
+    <>
+      {exit.dialog}
+      <RouteCardForm
+        mode="edit"
+        routeCard={detail}
+        initialHeader={{
+          code: detail.code,
+          itemId: detail.itemId,
+          itemCodeText: detail.itemCode ?? '',
+          rawMaterialGradeId: detail.rawMaterialGradeId,
+          rawMaterialGradeText: detail.rawMaterialGradeText,
+          rawMaterialSizeId: detail.rawMaterialSizeId,
+          rawMaterialSizeText: detail.rawMaterialSizeText,
+          notes: detail.notes ?? '',
+        }}
+        initialOps={initialOps}
+        onSubmit={submit}
+        submitting={update.isPending}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
+    </>
   );
 }

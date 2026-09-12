@@ -12,10 +12,11 @@ import type {
 } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { drawingViewUrl } from '@/lib/drawing-url';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useItemsList } from '@/modules/items/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -186,6 +187,68 @@ function QcDocCard({
   );
 }
 
+// Rework / repair child banner (docs/QC-NC-HANDLING-DESIGN.md §4, §8). A
+// recovery job card looks like any other JC — same item, same drawing, its own
+// ops — so without this the person opening IN-JC-26-00085-RW1 has no way to
+// tell it exists only to recover 5 pieces rejected at Op 2 of 00085, or that
+// whatever its final QC accepts goes BACK to that parent op rather than out
+// the door. Shown in both view and edit mode (edit is where the recovery ops
+// get defined). Null on an ordinary job card, so nothing else on the page
+// moves.
+function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Element | null {
+  if (!jc.recoveryKind) return null;
+  const kind = jc.recoveryKind === 'repair' ? 'REPAIR' : 'REWORK';
+  const opN = jc.originOpSeq ?? '?';
+  // Both ids are nullable in the contract; a code with no id renders as text
+  // rather than a link to nowhere (rule #8 — no dead links).
+  const parent = jc.parentJobCardId ? (
+    <Link to="/job-cards/$id" params={{ id: jc.parentJobCardId }} className="td-code">
+      {jc.parentJobCardCode ?? '—'}
+    </Link>
+  ) : (
+    <span className="td-code">{jc.parentJobCardCode ?? '—'}</span>
+  );
+  const nc = jc.parentNcId ? (
+    <Link to="/nc-register/$id" params={{ id: jc.parentNcId }} className="td-code">
+      {jc.parentNcCode ?? '—'}
+    </Link>
+  ) : (
+    <span className="td-code">{jc.parentNcCode ?? '—'}</span>
+  );
+  return (
+    <div
+      style={{
+        background: 'var(--amber3)',
+        border: '1px solid var(--amber)',
+        borderLeft: '4px solid var(--amber)',
+        borderRadius: 8,
+        padding: '8px 12px',
+        marginBottom: 12,
+      }}
+    >
+      <div
+        className="fw-700"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap',
+          fontSize: 13,
+          color: 'var(--amber2)',
+        }}
+      >
+        <span>♻ {kind} of</span>
+        {parent}
+        <span>· Op {opN} · NC</span>
+        {nc}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+        Recovered pieces return to the parent&apos;s Op {opN} after this card&apos;s final QC.
+      </div>
+    </div>
+  );
+}
+
 // Mode dispatcher. VIEW mode renders the canonical read-only status body
 // (byte-identical to before). EDIT mode renders the same sections (tiles +
 // operation flow + operations table) with the editable fields, reusing the JC
@@ -345,6 +408,7 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
 
   return (
     <div>
+      <RecoveryBanner jc={jc} />
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <button
           type="button"
@@ -645,6 +709,11 @@ function JcStatusEditForm({
   extras: JobCardStatusExtras | undefined;
 }): React.JSX.Element {
   const navigate = useNavigate();
+  const goBack = useCallback(
+    () => void navigate({ to: '/job-cards/$id', params: { id } }),
+    [navigate, id],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
   const queryClient = useQueryClient();
   const update = useUpdateJobCard(id);
 
@@ -837,7 +906,7 @@ function JcStatusEditForm({
       await update.mutateAsync(result.payload);
       void queryClient.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
       void queryClient.invalidateQueries({ queryKey: opEntryKeys.all });
-      void navigate({ to: '/job-cards/$id', params: { id } });
+      exit.leave(goBack);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     }
@@ -848,6 +917,8 @@ function JcStatusEditForm({
 
   return (
     <div>
+      {exit.dialog}
+      <RecoveryBanner jc={jc} />
       <datalist id="dlJcEditItem">
         {items.map((i) => (
           <option key={i.id} value={i.code}>
@@ -1117,7 +1188,7 @@ function JcStatusEditForm({
       ) : null}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <Link to="/job-cards/$id" params={{ id }} className="btn btn-ghost">
+        <Link to="/job-cards/$id" params={{ id }} className="btn btn-ghost" onClick={exit.allow}>
           Cancel
         </Link>
         <button

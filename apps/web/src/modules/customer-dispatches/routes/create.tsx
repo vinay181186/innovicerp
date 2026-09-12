@@ -11,9 +11,10 @@
 import type { DispatchableLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Plus } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayLocal } from '@/lib/date';
 import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions, useNextDispatchCode } from '../api';
@@ -42,6 +43,10 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   const create = useCreateDispatch();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
+  // Where Cancel goes, and where ESC -> Exit goes. Every other way off the
+  // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
+  const goBack = useCallback(() => void navigate({ to: '/customer-dispatches' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   const [soId, setSoId] = useState(preselectSo ?? '');
   const [dispatchDate, setDispatchDate] = useState(todayStr());
@@ -141,7 +146,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         remarks: remarks || undefined,
         lines: payloadLines,
       });
-      void navigate({ to: '/customer-dispatches' });
+      exit.leave(goBack);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to create dispatch');
     }
@@ -158,6 +163,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <div className="panel">
         <div className="panel-body">
           {/* Top action bar — SO Master keeps Save/Cancel here, not in a sticky
@@ -182,7 +188,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => void navigate({ to: '/customer-dispatches' })}
+                onClick={() => exit.leave(goBack)}
               >
                 Cancel
               </button>

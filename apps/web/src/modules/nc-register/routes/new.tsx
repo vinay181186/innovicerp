@@ -3,9 +3,10 @@
 import type { CreateNcRegisterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
@@ -46,6 +47,8 @@ function NcRegisterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateNcRegister();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const goBack = useCallback(() => void navigate({ to: '/nc-register' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
   // Tier-driven, per department (QC). The ❌ Report NC button is hidden from
   // anyone without entry rights, but this screen had no gate of its own —
   // typing the URL still handed over the form (an L1 Viewer, an L4 Approver).
@@ -102,6 +105,7 @@ function NcRegisterNewPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/nc-register" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to NC Register
       </Link>
@@ -120,12 +124,14 @@ function NcRegisterNewPage(): React.JSX.Element {
             initial={seed}
             submitError={submitError}
             submitLabel="Save"
-            onCancel={() => void navigate({ to: '/nc-register' })}
+            onCancel={() => exit.leave(goBack)}
             onSubmit={async (values: CreateNcRegisterInput) => {
               setSubmitError(null);
               try {
                 const created = await create.mutateAsync(values);
-                void navigate({ to: '/nc-register/$id', params: { id: created.id } });
+                exit.leave(
+                  () => void navigate({ to: '/nc-register/$id', params: { id: created.id } }),
+                );
               } catch (e) {
                 setSubmitError(e instanceof Error ? e.message : 'Failed to report NC.');
               }

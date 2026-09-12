@@ -12,8 +12,9 @@
 import type { UpdateUserInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, KeyRound, Loader2, Lock, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ACCESS_DEPTS } from '@innovic/shared';
@@ -65,6 +66,8 @@ function UserEditPage(): React.JSX.Element {
         }
       : { fullName: '', phone: '', isActive: true },
   });
+  const goBack = useCallback(() => void navigate({ to: '/users' }), [navigate]);
+  const exit = useExitConfirm({ onExit: goBack });
 
   if (!isAdmin) {
     return (
@@ -118,7 +121,7 @@ function UserEditPage(): React.JSX.Element {
     };
     try {
       await update.mutateAsync(payload);
-      void navigate({ to: '/users' });
+      exit.leave(goBack);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
     }
@@ -127,7 +130,7 @@ function UserEditPage(): React.JSX.Element {
   const onDelete = (): void => {
     softDelete.mutate(detail.id, {
       onSuccess: () => {
-        void navigate({ to: '/users', replace: true });
+        exit.leave(() => void navigate({ to: '/users', replace: true }));
       },
     });
   };
@@ -152,6 +155,7 @@ function UserEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link to="/users" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to User Management
       </Link>
@@ -321,7 +325,7 @@ function UserEditPage(): React.JSX.Element {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => void navigate({ to: '/users' })}
+                  onClick={() => exit.leave(goBack)}
                 >
                   Cancel
                 </button>

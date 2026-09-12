@@ -2,6 +2,7 @@ import type { PlanDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlan, useUpdatePlan } from '../api';
 import { PlanForm, type PlanFormValues, toCreateInput } from '../components/plan-form';
@@ -19,6 +20,8 @@ function PlanEditPage(): React.JSX.Element {
   const update = useUpdatePlan(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
+  // No Cancel button on this screen, so ESC → Exit falls back to history.
+  const exit = useExitConfirm();
 
   if (eff && !perms.edit) {
     return (
@@ -71,6 +74,7 @@ function PlanEditPage(): React.JSX.Element {
 
   return (
     <div>
+      {exit.dialog}
       <Link
         to="/plans/$id"
         params={{ id: plan.id }}
@@ -120,7 +124,7 @@ function PlanEditPage(): React.JSX.Element {
             },
             {
               onSuccess: () => {
-                void navigate({ to: '/plans/$id', params: { id: plan.id } });
+                exit.leave(() => void navigate({ to: '/plans/$id', params: { id: plan.id } }));
               },
             },
           );

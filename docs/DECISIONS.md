@@ -8561,3 +8561,86 @@ This list is the valuable half of this ADR. Each of these would have stated some
 ### Deploy
 
 Depends on migration 0119. Applied to TEST, then to PRODUCTION on 2026-09-11 immediately before this merge landed, and verified there: `revision` reads `text NOT NULL DEFAULT '0'`, all 45 live lines kept their values (41 at `0`, 4 at `1`), and `line_revision_text` was backfilled on all 8 drawing-history rows. The order is not optional — the code selects `line_revision_text`, which did not exist, and writes text into `revision`, which was an integer.
+
+## ADR-161: QC–NC handling — rejected pieces are a quantity ledger with a location, not a status flag
+
+**Date:** 2026-09-12
+**Status:** Accepted
+
+### Context
+
+The Innovic QC–NC Handling Procedure (R2) requires that every rejected piece has a
+visible location (NC raised / under rework / under repair / at vendor / received –
+QC pending / scrap / closed), that a disposition may cover part of an NC, that
+rework and repair raise a CHILD job card whose output must pass QC before it
+rejoins the parent route, that return-to-vendor raises a challan from the NC with
+no PO behind it, that an NC cannot close while any of its quantity is unresolved,
+and that an outsource op followed by a QC op produces ONE inspection, not two.
+
+The NC module before this had five dispositions, all-or-nothing (ADR-117
+"granularity is the whole NC"), rework that stayed in-route (ADR-112), a
+return-to-vendor that was a status flag with a "Replacement received" button, and
+closure as a bare status flip.
+
+### Decision
+
+1. **Every NC row is exactly one disposition.** `dispose` takes a `qty`; when it
+   is less than the open qty, the remainder is SPLIT into a sibling row
+   (`split_from_nc_id`, code `<code>/2`) that stays pending. No child table: the
+   row's `rejected_qty` is what it owes, `cleared_qty + failed_qty` is what
+   recovery has resolved, and the difference is the open qty every gate reads.
+2. **Rework and repair raise a child job card** (`<parent>-RW<n>` / `-RP<n>`,
+   `parent_job_card_id`, `parent_nc_id`, `origin_op_seq`, `recovery_kind`),
+   with NO operations — the user defines the recovery route — and a terminal
+   DIR QC is ALWAYS appended when ops are saved. The child's last-op QC credits
+   the NC's `cleared_qty` / `failed_qty` and re-injects accepted pieces into the
+   parent's origin op as an `op_log` qc row (the mechanism `use_as_is` already
+   used). Legacy in-route rework rows (`rework_op_seq` set) keep the ADR-112
+   behaviour; new rework dispositions never set `rework_op_seq`.
+3. **Return to vendor is a challan raised from the NC** (`delivery_challans.nc_id`,
+   `job_card_id`, `reason`; `po_code_text` carries the NC code). Receipt goes
+   through the existing DC-receive → auto-GRN (`goods_receipt_notes.nc_id`) →
+   Incoming QC path, which credits the NC and re-injects into the origin op
+   (through the PO line for an outsource origin, through an op_log row for an
+   in-house one).
+4. **PO received qty is recomputed, never adjusted in place.**
+   `recalcPoLineReceivedQty` now equals Σ ordinary GRN lines − Σ (rejected −
+   cleared) over NCs on the line's ops whose challan has been issued. That is
+   §12.2 and §12.6 of the procedure as one formula, and it survives every later
+   GRN on the line — an additive "-=" would have been overwritten by the next
+   recalc.
+5. **One closure gate.** `ncCloseBlockedReason` refuses closure while any qty is
+   under rework/repair, at vendor, or awaiting Incoming QC, and names the
+   shortfall. Scrap requires the `approve` tier on NC Register.
+6. **OSP de-duplication.** Incoming QC on an outsource op whose NEXT op is a QC
+   op writes that QC op's `op_log` row directly (accepted qty only — rejected
+   pieces never reach the next op), so the route shows one inspection.
+7. **The job card shows the breakup.** `v_nc_op_breakup` partitions an op's NC
+   qty into the procedure's eight locations; the op card renders the non-zero
+   rows beside the existing accepted / rejected / pending figures.
+
+### Alternatives considered
+
+- An `nc_dispositions` child table — correct in the abstract, but every screen,
+  view and cascade keys on `nc_register.id`; splitting into sibling rows reuses
+  all of it and keeps one row = one disposition, which is also how ADR-117 said
+  partials should be handled, now done by the system instead of by hand.
+- Keeping rework in-route (ADR-112) — the procedure is explicit that rework
+  raises a child job card; the in-route path is kept only for rows that already
+  use it.
+- Deriving the PO received figure on screen instead of changing `received_qty` —
+  rejected because the procedure says the PO's received/supplied qty itself is
+  adjusted, and because the recompute makes it consistent with the GRN rollup
+  rather than fighting it.
+
+### Consequences
+
+- Positive: every requirement of the procedure is enforced server-side; the
+  traceability chain SO → JC → op → inspection row → NC → child JC / DC →
+  re-inspection → closure is a set of real foreign keys.
+- Negative: a pre-existing return-to-vendor NC with no challan can no longer be
+  closed by hand — it must go Create DC → receive → Incoming QC. An L3 who
+  could scrap before now needs the approve tier.
+- Risks: `v_jc_op_status` was re-emitted (from the 0093 text, one additive
+  term); `jc-op-card.tsx` and `jc-status-content.tsx` grew past the 400-line
+  rule and want splitting.
