@@ -47,6 +47,20 @@ export const computedJcOpStatusSchema = z.enum(COMPUTED_JC_OP_STATUSES);
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
 
+/** The §6 status/location rows of the QC–NC document, per op. */
+export const ncOpBreakupSchema = z.object({
+  ncRaisedQty: z.number().int().nonnegative(),
+  underReworkQty: z.number().int().nonnegative(),
+  underRepairQty: z.number().int().nonnegative(),
+  sentToVendorQty: z.number().int().nonnegative(),
+  receivedQcPendingQty: z.number().int().nonnegative(),
+  scrapQty: z.number().int().nonnegative(),
+  ncClosedQty: z.number().int().nonnegative(),
+  ncOpenQty: z.number().int().nonnegative(),
+  openNcCount: z.number().int().nonnegative(),
+});
+export type NcOpBreakup = z.infer<typeof ncOpBreakupSchema>;
+
 export const jcOpEnrichedSchema = z.object({
   // From jc_ops
   id: z.string().uuid(),
@@ -132,6 +146,21 @@ export const jcOpEnrichedSchema = z.object({
    *
    *  Two questions, two fields. This one is the session question. */
   activeRunningOpId: z.string().uuid().nullable().default(null),
+  /** The NC quantity breakup for this op (docs/QC-NC-HANDLING-DESIGN.md §7,
+   *  from v_nc_op_breakup). Every figure is "pieces currently in that state",
+   *  so together they partition the op's NC qty. All 0 when the op has never
+   *  had an NC. */
+  ncBreakup: ncOpBreakupSchema.default({
+    ncRaisedQty: 0,
+    underReworkQty: 0,
+    underRepairQty: 0,
+    sentToVendorQty: 0,
+    receivedQcPendingQty: 0,
+    scrapQty: 0,
+    ncClosedQty: 0,
+    ncOpenQty: 0,
+    openNcCount: 0,
+  }),
 });
 export type JcOpEnriched = z.infer<typeof jcOpEnrichedSchema>;
 

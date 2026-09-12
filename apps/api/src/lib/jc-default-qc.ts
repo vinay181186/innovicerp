@@ -28,8 +28,20 @@ export const DEFAULT_FINAL_QC_OP = 'DIR';
  *      on top would DOUBLE-credit; this is exactly why SO-517 must be left
  *      alone while SPACER/IN-JC-26-00007 needs the gate).
  *  Empty routings have nothing to inspect and are left untouched. */
-export function needsDefaultQcOp(ops: ReadonlyArray<{ opType: string }>): boolean {
+export function needsDefaultQcOp(
+  ops: ReadonlyArray<{ opType: string }>,
+  opts: { recoveryKind?: string | null } = {},
+): boolean {
   if (ops.length === 0) return false;
+  // Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4.5, interlock 3):
+  // the terminal QC is ALWAYS appended when the last op is not already QC —
+  // outsource ops included. The double-credit worry above does not apply: a
+  // recovery child's terminal QC does not credit finished stock on its own
+  // (op-entry submitQcLog re-injects the cleared pieces into the parent
+  // route instead), so the only thing the gate does here is the one the
+  // procedure demands — recovered pieces can never merge back into WIP
+  // without an inspection saying they are good now.
+  if (opts.recoveryKind) return ops[ops.length - 1]!.opType !== 'qc';
   if (ops[ops.length - 1]!.opType !== 'process') return false;
   if (ops.some((o) => o.opType === 'outsource')) return false;
   return true;

@@ -80,6 +80,16 @@ export const jobCardListItemSchema = z.object({
   drawingFilePath: z.string().nullable(),
   remarks: z.string().nullable(),
   closedAt: z.string().nullable(),
+  // ── Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4) ────────────
+  /** Set when this card was raised by an NC disposition to recover rejected
+   *  pieces. The parent is the job card the pieces came from; `originOpSeq`
+   *  is the op they were rejected at and the op cleared pieces re-enter. */
+  recoveryKind: z.enum(['rework', 'repair']).nullable().default(null),
+  parentJobCardId: z.string().uuid().nullable().default(null),
+  parentJobCardCode: z.string().nullable().default(null),
+  originOpSeq: z.number().int().nullable().default(null),
+  parentNcId: z.string().uuid().nullable().default(null),
+  parentNcCode: z.string().nullable().default(null),
   // Derived from v_jc_status
   computedStatus: jcComputedStatusSchema,
   totalOps: z.number().int().nonnegative(),

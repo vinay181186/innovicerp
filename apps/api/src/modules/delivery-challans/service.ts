@@ -29,6 +29,7 @@ import {
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
+import { onNcChallanReceived } from '../nc-register/recovery';
 import {
   applyOutwardToJcOp,
   jobWorkUnlinkedRefusal,
@@ -176,6 +177,14 @@ export async function listDeliveryChallans(
         dc.so_ref_text AS "soRefText",
         dc.transport,
         dc.vehicle_no AS "vehicleNo",
+        -- Return-to-vendor challan raised from an NC (design §5). Both codes
+        -- are joined live rather than snapshotted: an NC or job card is never
+        -- renamed, and the FK is the one true link. Null on an ordinary OSP DC.
+        dc.nc_id AS "ncId",
+        nc.code AS "ncCode",
+        dc.job_card_id AS "jobCardId",
+        njc.code AS "jobCardCode",
+        dc.reason,
         dc.status,
         dc.created_at AS "createdAt", dc.created_by AS "createdBy",
         dc.updated_at AS "updatedAt", dc.updated_by AS "updatedBy",
@@ -195,6 +204,8 @@ export async function listDeliveryChallans(
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
         ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
+      LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
+      LEFT JOIN public.job_cards njc ON njc.id = dc.job_card_id AND njc.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -308,6 +319,11 @@ function toListItem(r: Record<string, unknown>): DeliveryChallanListItem {
     soRefText: (r['soRefText'] as string | null) ?? null,
     transport: (r['transport'] as string | null) ?? null,
     vehicleNo: (r['vehicleNo'] as string | null) ?? null,
+    ncId: (r['ncId'] as string | null) ?? null,
+    ncCode: (r['ncCode'] as string | null) ?? null,
+    jobCardId: (r['jobCardId'] as string | null) ?? null,
+    jobCardCode: (r['jobCardCode'] as string | null) ?? null,
+    reason: (r['reason'] as string | null) ?? null,
     status: r['status'] as DeliveryChallanListItem['status'],
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
@@ -340,6 +356,14 @@ async function loadDeliveryChallanWithLines(
         dc.so_ref_text AS "soRefText",
         dc.transport,
         dc.vehicle_no AS "vehicleNo",
+        -- Return-to-vendor challan raised from an NC (design §5). Both codes
+        -- are joined live rather than snapshotted: an NC or job card is never
+        -- renamed, and the FK is the one true link. Null on an ordinary OSP DC.
+        dc.nc_id AS "ncId",
+        nc.code AS "ncCode",
+        dc.job_card_id AS "jobCardId",
+        njc.code AS "jobCardCode",
+        dc.reason,
         dc.status,
         dc.created_at AS "createdAt", dc.created_by AS "createdBy",
         dc.updated_at AS "updatedAt", dc.updated_by AS "updatedBy",
@@ -356,6 +380,8 @@ async function loadDeliveryChallanWithLines(
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
         ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
+      LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
+      LEFT JOIN public.job_cards njc ON njc.id = dc.job_card_id AND njc.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -519,6 +545,11 @@ async function loadDeliveryChallanWithLines(
     soRefText: (headerRow['soRefText'] as string | null) ?? null,
     transport: (headerRow['transport'] as string | null) ?? null,
     vehicleNo: (headerRow['vehicleNo'] as string | null) ?? null,
+    ncId: (headerRow['ncId'] as string | null) ?? null,
+    ncCode: (headerRow['ncCode'] as string | null) ?? null,
+    jobCardId: (headerRow['jobCardId'] as string | null) ?? null,
+    jobCardCode: (headerRow['jobCardCode'] as string | null) ?? null,
+    reason: (headerRow['reason'] as string | null) ?? null,
     status: headerRow['status'] as DeliveryChallanWithLines['status'],
     createdAt: tsLike(headerRow['createdAt']),
     createdBy: headerRow['createdBy'] as string,
@@ -1446,8 +1477,32 @@ export async function receiveAgainstDeliveryChallan(
         invoiceNo: receiptHeader.vendorInvoiceText,
         remarks: receiptHeader.remarks ?? `Auto GRN from OSP receipt ${receiptCode}`,
         lines: grnLines,
+        // A return-to-vendor challan's receipt is the vendor's REPLACEMENT
+        // (design §5): the GRN carries the NC so Incoming QC can settle it.
+        ncId: dcHeader.ncId ?? null,
       });
       autoGrnCode = grn.code;
+    }
+
+    // Return-to-vendor challan (design §5): book the pieces as back from the
+    // vendor on the NC (rtv_received_qty, status received_qc_pending). This
+    // call's total, not the line's cumulative — the cascade adds. Interlock 4
+    // (cumulative received <= sent) is already enforced per line by the
+    // over-receive check above, and the NC's own DB check
+    // (rtv_received_qty <= rtv_sent_qty) backs it.
+    if (dcHeader.ncId) {
+      const totalReceivedThisCall = insertedLines.reduce(
+        (sum, rl) => sum + Math.round(Number(rl.receivedQty)),
+        0,
+      );
+      if (totalReceivedThisCall > 0) {
+        await onNcChallanReceived(
+          tx,
+          { ncId: dcHeader.ncId, receivedQty: totalReceivedThisCall, deliveryChallanId },
+          companyId,
+          user,
+        );
+      }
     }
 
     // jc_op flip per po_line.

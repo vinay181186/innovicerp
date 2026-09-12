@@ -977,6 +977,15 @@ export const jobCards = pgTable(
     parentNcId: uuid('parent_nc_id').references((): AnyPgColumn => ncRegister.id, {
       onDelete: 'set null',
     }),
+    // ── Rework / repair child (migration 0122, design §4) ──────────────────
+    // A card raised by an NC disposition to recover rejected pieces. The parent
+    // is where the pieces came from; origin_op_seq is the op they were rejected
+    // at and the op cleared pieces re-enter after the child's terminal QC.
+    parentJobCardId: uuid('parent_job_card_id').references((): AnyPgColumn => jobCards.id, {
+      onDelete: 'set null',
+    }),
+    originOpSeq: integer('origin_op_seq'),
+    recoveryKind: text('recovery_kind'),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     // ADR-103 (migration 0083). TRUE → the first op is capped at party material
     // ISSUED to this JC. FALSE → legacy ADR-096/097 cap on material RECEIVED for
@@ -2113,6 +2122,10 @@ export const goodsReceiptNotes = pgTable(
     }),
     invoiceNo: text('invoice_no'),
     remarks: text('remarks'),
+    // ── Replacement receipt for a return-to-vendor NC (migration 0122, §5).
+    // Set on the auto-GRN raised when an NC challan is received back, so
+    // Incoming QC can credit the NC's cleared/failed qty.
+    ncId: uuid('nc_id').references((): AnyPgColumn => ncRegister.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -2411,6 +2424,36 @@ export const ncRegister = pgTable(
     reworkDoneQty: numeric('rework_done_qty', { precision: 12, scale: 2 }),
     scrapCost: numeric('scrap_cost', { precision: 12, scale: 2 }).notNull().default('0'),
     status: ncStatusEnum('status').notNull().default('pending'),
+    // ── QC–NC handling (migration 0122, docs/QC-NC-HANDLING-DESIGN.md §3) ──
+    // The inspection that raised this NC, and the GRN line for an Incoming-QC
+    // reject — the two ends of the spec's traceability chain that were missing.
+    qcLogId: uuid('qc_log_id').references((): AnyPgColumn => opLog.id, { onDelete: 'set null' }),
+    grnLineId: uuid('grn_line_id').references((): AnyPgColumn => goodsReceiptNoteLines.id, {
+      onDelete: 'set null',
+    }),
+    // Sibling on a partial disposition: this row holds the remainder that is
+    // still pending, and points at the row whose disposition split it.
+    splitFromNcId: uuid('split_from_nc_id').references((): AnyPgColumn => ncRegister.id, {
+      onDelete: 'set null',
+    }),
+    childJobCardId: uuid('child_job_card_id').references((): AnyPgColumn => jobCards.id, {
+      onDelete: 'set null',
+    }),
+    deliveryChallanId: uuid('delivery_challan_id').references(
+      (): AnyPgColumn => deliveryChallans.id,
+      { onDelete: 'set null' },
+    ),
+    // The quantity ledger. rejected_qty is what this row owes; cleared+failed
+    // is what recovery has resolved; the difference is the open qty every
+    // gate reads. rtv_* track the return-to-vendor round trip.
+    rtvSentQty: numeric('rtv_sent_qty', { precision: 12, scale: 2 }).notNull().default('0'),
+    rtvReceivedQty: numeric('rtv_received_qty', { precision: 12, scale: 2 })
+      .notNull()
+      .default('0'),
+    clearedQty: numeric('cleared_qty', { precision: 12, scale: 2 }).notNull().default('0'),
+    failedQty: numeric('failed_qty', { precision: 12, scale: 2 }).notNull().default('0'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by').references(() => users.id),
     reportedByText: text('reported_by_text'),
     timeLogged: timestamp('time_logged', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2485,6 +2528,13 @@ export const deliveryChallans = pgTable(
     // the transporter's NAME. Same column name/type as jw_dc_outward,
     // jw_dc_inward, jw_return_challans and customer_dispatches.
     vehicleNo: text('vehicle_no'),
+    // ── Return-to-vendor challan raised from an NC (migration 0122, design §5)
+    // No purchase order behind it: po_code_text carries the NC code instead.
+    ncId: uuid('nc_id').references((): AnyPgColumn => ncRegister.id, { onDelete: 'set null' }),
+    jobCardId: uuid('job_card_id').references((): AnyPgColumn => jobCards.id, {
+      onDelete: 'set null',
+    }),
+    reason: text('reason'),
     status: dcStatusEnum('status').notNull().default('issued'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

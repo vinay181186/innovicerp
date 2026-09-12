@@ -198,6 +198,16 @@ export async function listJobCards(
         -- size the JC was raised with after a master row is renamed or removed.
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_text  AS "rawMaterialSizeText",
+        -- Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4). The parent
+        -- card's and the NC's codes are joined live: neither is ever renamed,
+        -- and the FK is the link the banner and the related-docs card follow.
+        -- All null on an ordinary card.
+        jc.recovery_kind      AS "recoveryKind",
+        jc.parent_job_card_id AS "parentJobCardId",
+        pjc.code              AS "parentJobCardCode",
+        jc.origin_op_seq      AS "originOpSeq",
+        jc.parent_nc_id       AS "parentNcId",
+        pnc.code              AS "parentNcCode",
         COALESCE((
           SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
                       THEN vos.qc_accepted_qty ELSE vos.completed_qty END
@@ -217,6 +227,8 @@ export async function listJobCards(
       LEFT JOIN public.route_cards rc
         ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
+      LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
+      LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -252,6 +264,8 @@ export async function listJobCards(
       LEFT JOIN public.route_cards rc
         ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
+      LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
+      LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -334,6 +348,16 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         -- size the JC was raised with after a master row is renamed or removed.
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_text  AS "rawMaterialSizeText",
+        -- Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4). The parent
+        -- card's and the NC's codes are joined live: neither is ever renamed,
+        -- and the FK is the link the banner and the related-docs card follow.
+        -- All null on an ordinary card.
+        jc.recovery_kind      AS "recoveryKind",
+        jc.parent_job_card_id AS "parentJobCardId",
+        pjc.code              AS "parentJobCardCode",
+        jc.origin_op_seq      AS "originOpSeq",
+        jc.parent_nc_id       AS "parentNcId",
+        pnc.code              AS "parentNcCode",
         COALESCE((
           SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
                       THEN vos.qc_accepted_qty ELSE vos.completed_qty END
@@ -353,6 +377,8 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       LEFT JOIN public.route_cards rc
         ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
+      LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
+      LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -428,6 +454,12 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     drawingFilePath: (r['drawingFilePath'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     closedAt: r['closedAt'] != null ? tsLike(r['closedAt']) : null,
+    recoveryKind: (r['recoveryKind'] as JobCardListItem['recoveryKind']) ?? null,
+    parentJobCardId: (r['parentJobCardId'] as string | null) ?? null,
+    parentJobCardCode: (r['parentJobCardCode'] as string | null) ?? null,
+    originOpSeq: r['originOpSeq'] != null ? Number(r['originOpSeq']) : null,
+    parentNcId: (r['parentNcId'] as string | null) ?? null,
+    parentNcCode: (r['parentNcCode'] as string | null) ?? null,
     computedStatus: r['computedStatus'] as JobCardListItem['computedStatus'],
     totalOps: Number(r['totalOps'] ?? 0),
     doneOps: Number(r['doneOps'] ?? 0),
@@ -1286,7 +1318,15 @@ async function assertLineBalance(
   companyId: string,
   excludeJcId: string | null,
   itemId: string | null,
+  opts: { recoveryKind?: string | null } = {},
 ): Promise<void> {
+  // A rework/repair child re-makes pieces the PARENT already claimed against
+  // this line (design §4), so it must neither be budgeted against the line
+  // (its cap is the NC's open qty — see updateJobCard) nor counted as a
+  // second claim when the parent or a sibling is edited. Counting it did
+  // both: the child could not be saved at all, and once it existed the parent
+  // reported "Remaining: 0" for pieces it had already been given.
+  if (opts.recoveryKind) return;
   const check = async (
     lineTable: typeof salesOrderLines | typeof jobWorkOrderLines,
     fkCol: typeof jobCards.sourceSoLineId | typeof jobCards.sourceJwLineId,
@@ -1318,6 +1358,7 @@ async function assertLineBalance(
             eq(fkCol, lineId),
             eq(jobCards.itemId, itemId!),
             isNull(jobCards.deletedAt),
+            isNull(jobCards.recoveryKind),
             excludeJcId ? sql`${jobCards.id} != ${excludeJcId}::uuid` : sql`TRUE`,
           ),
         );
@@ -1340,6 +1381,7 @@ async function assertLineBalance(
         and(
           eq(fkCol, lineId),
           isNull(jobCards.deletedAt),
+          isNull(jobCards.recoveryKind),
           excludeJcId ? sql`${jobCards.id} != ${excludeJcId}::uuid` : sql`TRUE`,
         ),
       );
@@ -1360,8 +1402,11 @@ async function assertLineBalance(
  *  the caller's last op isn't QC, append a default DIR QC stage. Idempotent on
  *  edit: once the JC ends with the DIR op it is re-submitted as the last op and
  *  no new one is added. */
-function withTerminalQcOp(ops: JcOpInput[]): JcOpInput[] {
-  if (!needsDefaultQcOp(ops)) return ops;
+function withTerminalQcOp(
+  ops: JcOpInput[],
+  opts: { recoveryKind?: string | null } = {},
+): JcOpInput[] {
+  if (!needsDefaultQcOp(ops, opts)) return ops;
   return [
     ...ops,
     { operation: DEFAULT_FINAL_QC_OP, opType: 'qc', cycleTimeMin: 0, qcRequired: true, outsourceCost: 0 },
@@ -1629,6 +1674,10 @@ export async function updateJobCard(
         sourceSoLineId: jobCards.sourceSoLineId,
         sourceJwLineId: jobCards.sourceJwLineId,
         closedAt: jobCards.closedAt,
+        // Rework / repair child (design §4): drives the always-on terminal QC
+        // and the NC-qty cap below.
+        recoveryKind: jobCards.recoveryKind,
+        parentNcId: jobCards.parentNcId,
       })
       .from(jobCards)
       .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
@@ -1636,9 +1685,36 @@ export async function updateJobCard(
     const head = headRows[0];
     if (!head) throw new NotFoundError(`Job card ${id} not found`);
 
+    // Interlock 2 on the child (design §4): a recovery card can only ever
+    // cover the pieces its NC still has open — rejected less what recovery
+    // has already cleared or failed. More than that would be inventing pieces
+    // the NC never rejected, and the NC could then close with the child still
+    // owing work.
+    if (head.recoveryKind && head.parentNcId) {
+      const ncRows = await tx
+        .select({
+          rejectedQty: ncRegister.rejectedQty,
+          clearedQty: ncRegister.clearedQty,
+          failedQty: ncRegister.failedQty,
+        })
+        .from(ncRegister)
+        .where(and(eq(ncRegister.id, head.parentNcId), eq(ncRegister.companyId, companyId)))
+        .limit(1);
+      const nc = ncRows[0];
+      if (nc) {
+        const openQty =
+          Number(nc.rejectedQty) - Number(nc.clearedQty) - Number(nc.failedQty);
+        if (input.orderQty > openQty) {
+          throw new ValidationError(
+            `Recovery job card qty ${input.orderQty} exceeds the open NC qty ${openQty}`,
+          );
+        }
+      }
+    }
+
     const item = await resolveItem(tx, input.itemCode, companyId);
-    await assertLineBalance(tx, input, companyId, id, item.id);
-    const ops = withTerminalQcOp(input.ops);
+    await assertLineBalance(tx, input, companyId, id, item.id, { recoveryKind: head.recoveryKind });
+    const ops = withTerminalQcOp(input.ops, { recoveryKind: head.recoveryKind });
     const types = validateOps(ops);
     const machineMap = await resolveCodeMap(
       tx,
@@ -2098,6 +2174,9 @@ export async function getJobCardRelated(
         sourceSoLineId: jobCards.sourceSoLineId,
         sourceJwLineId: jobCards.sourceJwLineId,
         parentNcId: jobCards.parentNcId,
+        parentJobCardId: jobCards.parentJobCardId,
+        recoveryKind: jobCards.recoveryKind,
+        originOpSeq: jobCards.originOpSeq,
       })
       .from(jobCards)
       .where(
@@ -2198,6 +2277,46 @@ export async function getJobCardRelated(
           .limit(1)
       : [];
     const parentNc = parentNcRows[0] ?? null;
+
+    // ── Upstream: parent job card (this JC is a rework/repair child, §4) ────
+    // The status comes from v_jc_status like the JC list does: job_cards has
+    // no status column of its own.
+    const parentJcRows = header.parentJobCardId
+      ? ((await tx.execute(sql`
+          SELECT jc.id, jc.code, jc.jc_date AS "jcDate",
+                 COALESCE(s.computed_status, 'no_ops') AS status
+          FROM public.job_cards jc
+          LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
+          WHERE jc.id = ${header.parentJobCardId}::uuid
+            AND jc.company_id = ${companyId}::uuid
+            AND jc.deleted_at IS NULL
+          LIMIT 1
+        `)) as unknown as Array<{ id: string; code: string; jcDate: unknown; status: string }>)
+      : [];
+    const parentJc = parentJcRows[0] ?? null;
+
+    // ── Downstream: rework / repair children raised from this JC's NCs ──────
+    // Every child hangs off parent_job_card_id, so this is one FK hop; the
+    // label names the kind and the op the pieces came from so the card reads
+    // "rework · Op 3" without opening the child.
+    const childRows = (await tx.execute(sql`
+      SELECT jc.id, jc.code, jc.jc_date AS "jcDate",
+             COALESCE(s.computed_status, 'no_ops') AS status,
+             jc.recovery_kind AS "recoveryKind", jc.origin_op_seq AS "originOpSeq"
+      FROM public.job_cards jc
+      LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
+      WHERE jc.parent_job_card_id = ${id}::uuid
+        AND jc.company_id = ${companyId}::uuid
+        AND jc.deleted_at IS NULL
+      ORDER BY jc.jc_date DESC, jc.code DESC
+    `)) as unknown as Array<{
+      id: string;
+      code: string;
+      jcDate: unknown;
+      status: string;
+      recoveryKind: string | null;
+      originOpSeq: number | null;
+    }>;
 
     // ── Downstream: NCs raised against this JC ──────────────────────────────
     const ncRows = await tx
@@ -2388,6 +2507,23 @@ export async function getJobCardRelated(
       'nc',
       parentNc ? [row(parentNc.id, parentNc.code, parentNc.status, parentNc.date)] : [],
     );
+    const parentJcSection = section(
+      'parent-job-card',
+      header.recoveryKind === 'repair' ? 'Repair of Job Card' : 'Rework of Job Card',
+      '🔁',
+      'job-card',
+      parentJc
+        ? [
+            row(
+              parentJc.id,
+              parentJc.code,
+              parentJc.status,
+              parentJc.jcDate,
+              header.originOpSeq != null ? { label: `Op ${header.originOpSeq}` } : undefined,
+            ),
+          ]
+        : [],
+    );
 
     // ── Downstream sections (generated from this JC) ────────────────────────
     const ncSection = section(
@@ -2396,6 +2532,18 @@ export async function getJobCardRelated(
       '⚠',
       'nc',
       ncRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const recoveryChildrenSection = section(
+      'recovery-job-cards',
+      'Rework / Repair Job Cards',
+      '🔁',
+      'job-card',
+      childRows.map((r) => {
+        const label = [r.recoveryKind, r.originOpSeq != null ? `Op ${r.originOpSeq}` : null]
+          .filter(Boolean)
+          .join(' · ');
+        return row(r.id, r.code, r.status, r.jcDate, label ? { label } : undefined);
+      }),
     );
     const plansSection = section(
       'plans',
@@ -2433,11 +2581,13 @@ export async function getJobCardRelated(
       grnRows.map((r) => row(r.id, r.code, null, r.date)),
     );
 
-    const upstream = [itemSection, soSection, jwSection, parentNcSection];
+    const upstream = [itemSection, soSection, jwSection, parentJcSection, parentNcSection];
     // Document order, matching the real workflow: PR raised, PO issued, material
-    // sent out on a DC, material received back on a GRN.
+    // sent out on a DC, material received back on a GRN. A recovery child sits
+    // right after the NC that raised it.
     const downstream = [
       ncSection,
+      recoveryChildrenSection,
       plansSection,
       ospPrSection,
       ospPoSection,

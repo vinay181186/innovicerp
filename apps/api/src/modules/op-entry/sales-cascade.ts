@@ -79,6 +79,12 @@ async function producedForLine(
       LEFT JOIN public.jc_ops jo
         ON jo.job_card_id = jc.id AND jo.op_seq = vs.op_seq AND jo.deleted_at IS NULL
       WHERE jc.${sql.raw(lineCol)} = ${lineId}::uuid AND jc.deleted_at IS NULL
+        -- A rework/repair child inherits the parent's line link so its own
+        -- closure cascade works, but its output is re-injected into the
+        -- PARENT's route and counted there. Summing it here as well would
+        -- close the sales line while the parent still had those pieces to
+        -- finish (docs/QC-NC-HANDLING-DESIGN.md §4).
+        AND jc.recovery_kind IS NULL
       ORDER BY jc.id, vs.op_seq DESC
     ) x
   `)) as unknown as Array<{ produced: number }>;

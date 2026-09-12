@@ -1,7 +1,10 @@
 import type {
   CloseNcReworkInput,
+  CreateNcDcInput,
+  CreateNcDcResult,
   CreateNcRegisterInput,
   DisposeNcInput,
+  DisposeNcResult,
   ListNcRegisterQuery,
   ListNcRegisterResponse,
   NcRegister,
@@ -9,6 +12,9 @@ import type {
   UpdateNcRegisterInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
+import { jobCardsKeys } from '@/modules/job-cards/api';
+import { opEntryKeys } from '@/modules/op-entry/api';
 import { apiFetch } from '@/lib/api';
 
 export const ncRegisterKeys = {
@@ -103,37 +109,58 @@ export function useSoftDeleteNcRegister() {
   });
 }
 
-interface DisposeResponse {
-  result: {
-    ncId: string;
-    status: 'disposed' | 'closed';
-    reworkOpId?: string;
-    reworkOpSeqApplied?: number;
-    newJcCode?: string;
-    newJcId?: string;
-    opLogId?: string;
+/** Every cache a QC–NC write can move (design §2–§5): the NC itself, the
+ *  parent job card (a child rework/repair JC appears under it, and the op's
+ *  NC breakup changes), the op-entry jc-ops rows (pending / at-vendor / NC
+ *  columns), and delivery challans (an RTV challan is raised from the NC). */
+function useInvalidateNcCascade(id: string) {
+  const qc = useQueryClient();
+  return (nc: NcRegister) => {
+    void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+    void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
+    qc.setQueryData(ncRegisterKeys.detail(id), nc);
+    void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
+    // Prefix of every `opEntryKeys.jcOps(q)` key, whatever the query was.
+    void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
+    void qc.invalidateQueries({ queryKey: deliveryChallansKeys.all });
   };
-  nc: NcRegister;
 }
 
 export function useDisposeNcRegister(id: string) {
-  const qc = useQueryClient();
-  return useMutation<DisposeResponse, Error, DisposeNcInput>({
+  const invalidate = useInvalidateNcCascade(id);
+  return useMutation<DisposeNcResult, Error, DisposeNcInput>({
     mutationFn: (input) =>
-      apiFetch<DisposeResponse>(`/nc-register/${id}/dispose`, {
+      apiFetch<DisposeNcResult>(`/nc-register/${id}/dispose`, {
         method: 'POST',
         json: input,
       }),
-    onSuccess: (resp) => {
-      void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
-      void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
-      qc.setQueryData(ncRegisterKeys.detail(id), resp.nc);
-      // Cascade fanout: rework bumps jc_ops.rework_qty (op-entry caches);
-      // make_fresh creates a new JC (job-cards caches); use_as_is appends
-      // an op_log row.
-      void qc.invalidateQueries({ queryKey: ['op-entry'] });
-      void qc.invalidateQueries({ queryKey: ['job-cards'] });
-    },
+    // A partial disposition also inserts a sibling NC (design §3), which the
+    // list invalidation above picks up; the child JC lands under job-cards.
+    onSuccess: (resp) => invalidate(resp.nc),
+  });
+}
+
+/** Return-to-vendor challan raised straight from the NC (design §5). */
+export function useCreateNcDc(id: string) {
+  const invalidate = useInvalidateNcCascade(id);
+  return useMutation<CreateNcDcResult, Error, CreateNcDcInput>({
+    mutationFn: (input) =>
+      apiFetch<CreateNcDcResult>(`/nc-register/${id}/create-dc`, {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: (resp) => invalidate(resp.nc),
+  });
+}
+
+/** Manual close under the closure gate (design §3, interlock 6). The server
+ *  answers 409 with the exact shortfall when the gate is not met; the thrown
+ *  Error's message is that text, so the page can show it verbatim. */
+export function useCloseNc(id: string) {
+  const invalidate = useInvalidateNcCascade(id);
+  return useMutation<NcRegister, Error, void>({
+    mutationFn: () => apiFetch<NcRegister>(`/nc-register/${id}/close`, { method: 'POST' }),
+    onSuccess: (updated) => invalidate(updated),
   });
 }
 

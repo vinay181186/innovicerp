@@ -1,13 +1,19 @@
-// NC disposition cascades (T-040b).
+// NC disposition cascades (T-040b, reshaped 2026-09-12 for the QC–NC handling
+// procedure — docs/QC-NC-HANDLING-DESIGN.md §1–§4).
 //
-// Five disposition paths from legacy `_disposeNC` (legacy line 22618). All
-// run in the same DB tx as the NC update — rollback unwinds cleanly. Mirror
-// the GRN cascade module's shape (apps/api/src/modules/goods-receipt-notes/
-// cascades.ts) for consistency.
+// Six disposition paths. All run in the same DB tx as the NC update — a
+// rollback unwinds cleanly. Mirror the GRN cascade module's shape
+// (apps/api/src/modules/goods-receipt-notes/cascades.ts) for consistency.
 //
-//   rework            → status=disposed; jc_ops.rework_qty += rejected_qty
-//                        for the picked rework op; rework_op_seq stored on NC.
-//   scrap             → status=closed; scrap_cost stored on NC.
+//   rework            → status=under_rework; a CHILD rework job card is raised
+//                        for the pieces (recovery.ts createRecoveryJobCard).
+//                        rework_op_seq is NEVER set on a new disposition: the
+//                        in-route rework it drove is the legacy path, kept
+//                        alive only for rows that already carry it.
+//   repair            → status=under_repair; same mechanics, `-RP<n>` code.
+//   scrap             → status=closed; scrap_cost stored on NC. Needs the
+//                        `approve` tier on NC Register (§3: "close only after
+//                        required authorization").
 //   use_as_is         → status=closed; append op_log row with type='qc',
 //                        qty=rejected_qty, operator resolved by name lookup,
 //                        remarks = 'Use As Is — from <ncCode> (...)'.
@@ -15,54 +21,53 @@
 //                        While it stays open, v_jc_op_status + v_osp_wip count
 //                        its rejected_qty as at_vendor and take it out of the
 //                        source op's pending, so the vendor visibly owes a
-//                        replacement and the op cannot read `complete`.
-//                        closeNcReturnToVendorCascade clears it.
+//                        replacement and the op cannot read `complete`. The
+//                        challan is a separate action (service.createNcDc).
 //   make_fresh        → status=closed; create supplementary JC inheriting
 //                        origin's source SO/JW link + parent_nc_id pointing
 //                        at this NC; rework_jc_code_text stored on NC.
 //
-// Rework qty interaction with planned-vs-actual is deliberately PASSIVE
-// (audit column only) per T-040b decision #4 — op-entry calc is not
-// re-routed through rework_qty until shop-floor reports an actual issue.
+// Partial disposition (interlock 2): `qty` below the NC's rejected qty shrinks
+// THIS row to `qty` and inserts a sibling holding the remainder, still
+// pending, linked back through split_from_nc_id. Every NC row is therefore
+// exactly one disposition — there is no child table to reconcile.
 
-import { and, eq, isNull, like, or, sql } from 'drizzle-orm';
-import { items, jcOps, jobCards, ncRegister, opLog, operators } from '../../db/schema';
+import { and, eq, isNull, like, sql } from 'drizzle-orm';
+import { items, jobCards, ncRegister, opLog, operators } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { createRecoveryJobCard, ncOpenQty } from './recovery';
+import type { DisposeNcInput } from './schema';
 
-const DISPOSITION_DATE_NOT_NULL_ACTIONS = new Set([
-  'rework',
-  'scrap',
-  'use_as_is',
-  'return_to_vendor',
-  'make_fresh',
-] as const);
-
-type DispositionAction = 'rework' | 'scrap' | 'use_as_is' | 'return_to_vendor' | 'make_fresh';
-
-export interface DisposeNcInput {
-  action: DispositionAction;
-  remarks?: string | undefined;
-  // Rework-only
-  reworkOpSeq?: number | undefined;
-  // Scrap-only
-  scrapCost?: number | undefined;
-}
+type NcRow = typeof ncRegister.$inferSelect;
 
 export interface DisposeNcContext {
   companyId: string;
   userId: string;
   userName: string; // for op_log.operator_name + nc.disposition_by_text fallback
+  user: AuthContext; // for the activity-log rows and the approve-tier gate
 }
 
-export interface DisposeNcResult {
+/** What the cascade did, for the service to phrase its audit rows and build
+ *  the API result. Distinct from the shared `DisposeNcResult`, which is the
+ *  wire shape. */
+export interface DisposeNcCascadeResult {
   ncId: string;
-  status: 'disposed' | 'closed';
-  reworkOpId?: string;
-  reworkOpSeqApplied?: number;
+  status: NcRow['status'];
+  /** The qty this disposition covered (after any split). */
+  qty: number;
+  /** The sibling holding the undispositioned remainder, when qty < rejected. */
+  remainderNcId?: string;
+  remainderNcCode?: string;
+  /** The rework / repair child job card. */
+  childJcId?: string;
+  childJcCode?: string;
+  /** make_fresh supplementary JC. */
   newJcCode?: string;
   newJcId?: string;
+  /** use_as_is op_log row. */
   opLogId?: string;
 }
 
@@ -79,7 +84,7 @@ export async function disposeNcCascade(
   ncId: string,
   input: DisposeNcInput,
   ctx: DisposeNcContext,
-): Promise<DisposeNcResult> {
+): Promise<DisposeNcCascadeResult> {
   // Re-read NC inside this tx — defends against concurrent dispose.
   const ncRows = await tx
     .select()
@@ -92,70 +97,119 @@ export async function disposeNcCascade(
       ),
     )
     .limit(1);
-  const nc = ncRows[0];
-  if (!nc) {
+  const loaded = ncRows[0];
+  if (!loaded) {
     throw new ValidationError(`NC ${ncId} not found`);
   }
-  if (nc.status !== 'pending') {
-    throw new ConflictError(`NC ${nc.code} is already ${nc.status} — cannot re-dispose`);
+  if (loaded.status !== 'pending') {
+    throw new ConflictError(`NC ${loaded.code} is already ${loaded.status} — cannot re-dispose`);
   }
 
-  if (!DISPOSITION_DATE_NOT_NULL_ACTIONS.has(input.action)) {
-    // type-system also rejects this path, but keep an explicit guard.
-    throw new ValidationError(`Unknown disposition action: ${String(input.action)}`);
+  // Interlock 2: never disposition more than the NC still owes.
+  const open = ncOpenQty(loaded);
+  const qty = input.qty ?? open;
+  if (qty > open) {
+    throw new ValidationError(`Disposition qty ${qty} exceeds the open NC qty ${open}`);
+  }
+  if (qty <= 0) {
+    throw new ValidationError(
+      `Disposition qty must be at least 1 (NC ${loaded.code} has ${open} open)`,
+    );
+  }
+
+  // Scrap is the one disposition that closes the NC with the pieces written
+  // off, so it carries the approve tier — checked before anything is written,
+  // including the split below.
+  if (input.action === 'scrap') {
+    await requireFormAccess(ctx.user, 'nc_dispose', 'approve');
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const result: DisposeNcResult = { ncId, status: 'disposed' };
+  const result: DisposeNcCascadeResult = { ncId, status: 'disposed', qty };
 
-  if (input.action === 'rework') {
-    const reworkOpSeq = input.reworkOpSeq ?? nc.opSeq;
-    if (reworkOpSeq == null) {
-      throw new ValidationError(
-        'Rework disposition requires reworkOpSeq (or NC must have opSeq set)',
-      );
-    }
-    const reworkOpRows = await tx
-      .select({ id: jcOps.id, opSeq: jcOps.opSeq, reworkQty: jcOps.reworkQty })
-      .from(jcOps)
-      .where(
-        and(
-          eq(jcOps.jobCardId, nc.jobCardId),
-          eq(jcOps.opSeq, reworkOpSeq),
-          eq(jcOps.companyId, ctx.companyId),
-          isNull(jcOps.deletedAt),
-        ),
-      )
-      .limit(1);
-    const reworkOp = reworkOpRows[0];
-    if (!reworkOp) {
-      throw new ValidationError(`Rework op_seq ${reworkOpSeq} not found on JC ${nc.jobCardId}`);
-    }
-    const rejectedQtyInt = Math.round(Number(nc.rejectedQty));
-    await tx
-      .update(jcOps)
-      .set({
-        reworkQty: (reworkOp.reworkQty ?? 0) + rejectedQtyInt,
+  // Partial disposition: this row keeps `qty`, the sibling takes the rest.
+  let nc: NcRow = loaded;
+  const rejectedBefore = Math.round(Number(loaded.rejectedQty));
+  if (qty < rejectedBefore) {
+    const remainder = rejectedBefore - qty;
+    const siblingCode = await nextSplitNcCode(tx, ctx.companyId, loaded);
+    const sibling = await tx
+      .insert(ncRegister)
+      .values({
+        companyId: loaded.companyId,
+        code: siblingCode,
+        ncDate: loaded.ncDate,
+        jobCardId: loaded.jobCardId,
+        jcOpId: loaded.jcOpId,
+        opSeq: loaded.opSeq,
+        operationText: loaded.operationText,
+        qcOperationText: loaded.qcOperationText,
+        itemId: loaded.itemId,
+        itemCodeText: loaded.itemCodeText,
+        itemNameText: loaded.itemNameText,
+        soCodeText: loaded.soCodeText,
+        machineCodeText: loaded.machineCodeText,
+        operatorText: loaded.operatorText,
+        rejectedQty: remainder.toFixed(2),
+        reasonCategory: loaded.reasonCategory,
+        reason: loaded.reason,
+        status: 'pending',
+        reportedByText: loaded.reportedByText,
+        timeLogged: loaded.timeLogged,
+        qcLogId: loaded.qcLogId,
+        grnLineId: loaded.grnLineId,
+        splitFromNcId: loaded.id,
+        createdBy: ctx.userId,
         updatedBy: ctx.userId,
       })
-      .where(eq(jcOps.id, reworkOp.id));
+      .returning({ id: ncRegister.id, code: ncRegister.code });
+    const sib = sibling[0];
+    if (!sib) throw new ValidationError('Failed to split the NC');
+    await tx
+      .update(ncRegister)
+      .set({ rejectedQty: qty.toFixed(2), updatedBy: ctx.userId })
+      .where(eq(ncRegister.id, ncId));
+    nc = { ...loaded, rejectedQty: qty.toFixed(2) };
+    result.remainderNcId = sib.id;
+    result.remainderNcCode = sib.code;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'NC_SPLIT',
+        entity: 'NonConformance',
+        detail:
+          `${loaded.code} — ${qty} of ${rejectedBefore} pcs dispositioned; ` +
+          `${remainder} pcs remain pending as ${sib.code}`,
+        refId: loaded.code,
+      },
+      ctx.companyId,
+      ctx.user,
+    );
+  }
 
+  const rejectedQtyInt = Math.round(Number(nc.rejectedQty));
+
+  if (input.action === 'rework' || input.action === 'repair') {
+    // `reworkOpSeq` in the input is the legacy in-route field; a new rework
+    // raises a child card instead, so it is deliberately ignored here.
+    const child = await createRecoveryJobCard(tx, nc, input.action, qty, ctx.user);
+    const status = input.action === 'rework' ? 'under_rework' : 'under_repair';
     await tx
       .update(ncRegister)
       .set({
-        status: 'disposed',
-        disposition: 'rework',
+        status,
+        disposition: input.action,
         dispositionDate: today,
         dispositionByText: ctx.userName,
         dispositionRemarks: input.remarks ?? null,
-        reworkOpSeq: reworkOpSeq,
+        childJobCardId: child.id,
+        reworkJcCodeText: child.code,
         updatedBy: ctx.userId,
       })
       .where(eq(ncRegister.id, ncId));
-
-    result.status = 'disposed';
-    result.reworkOpId = reworkOp.id;
-    result.reworkOpSeqApplied = reworkOpSeq;
+    result.status = status;
+    result.childJcId = child.id;
+    result.childJcCode = child.code;
     return result;
   }
 
@@ -170,6 +224,8 @@ export async function disposeNcCascade(
         dispositionByText: ctx.userName,
         dispositionRemarks: input.remarks ?? null,
         scrapCost: scrapCost.toFixed(2),
+        closedAt: new Date(),
+        closedBy: ctx.userId,
         updatedBy: ctx.userId,
       })
       .where(eq(ncRegister.id, ncId));
@@ -206,7 +262,6 @@ export async function disposeNcCascade(
       .limit(1);
     const operatorId = opRows[0]?.id ?? null;
 
-    const rejectedQtyInt = Math.round(Number(nc.rejectedQty));
     const baseRemarks = `Use As Is — from ${nc.code} (${rejectedQtyInt} pcs accepted with concession)`;
     const opLogRemarks = operatorId
       ? baseRemarks
@@ -243,6 +298,8 @@ export async function disposeNcCascade(
         dispositionDate: today,
         dispositionByText: ctx.userName,
         dispositionRemarks: input.remarks ?? null,
+        closedAt: new Date(),
+        closedBy: ctx.userId,
         updatedBy: ctx.userId,
       })
       .where(eq(ncRegister.id, ncId));
@@ -262,9 +319,8 @@ export async function disposeNcCascade(
     // at the vendor, and the op it came from owed a qty nothing could ever
     // satisfy, so the JC and its SO line could never close.
     //
-    // Cleared by closeNcReturnToVendor when the replacement lands or the piece
-    // is written off — the same close-when-resolved rule rework has had since
-    // 0088.
+    // The challan itself is raised by service.createNcDc (design §5); the PO
+    // received-qty adjustment of §12.2 happens there, at DC time, not here.
     await tx
       .update(ncRegister)
       .set({
@@ -298,7 +354,6 @@ export async function disposeNcCascade(
   }
 
   const newJcCode = await nextSupplementaryJcCode(tx, ctx.companyId, origin.code);
-  const rejectedQtyInt = Math.round(Number(nc.rejectedQty));
 
   // job_cards has no itemCodeText / remarks columns — the supplementary
   // traceability is captured via parent_nc_id + the legacy ref string.
@@ -346,6 +401,8 @@ export async function disposeNcCascade(
       dispositionByText: ctx.userName,
       dispositionRemarks: input.remarks ?? null,
       reworkJcCodeText: newJc.code,
+      closedAt: new Date(),
+      closedBy: ctx.userId,
       updatedBy: ctx.userId,
     })
     .where(eq(ncRegister.id, ncId));
@@ -354,6 +411,32 @@ export async function disposeNcCascade(
   result.newJcCode = newJc.code;
   result.newJcId = newJc.id;
   return result;
+}
+
+/**
+ * Code for the remainder row of a partial disposition: `<code>/2`, then `/3`…
+ * until nothing live carries it. When the row being split is itself a
+ * remainder (it has split_from_nc_id) its own `/n` tail is stripped first, so
+ * a second split of NC-1 reads NC-1/3 rather than NC-1/2/2. A code that
+ * merely contains a slash is left alone — only a known split tail is removed.
+ */
+async function nextSplitNcCode(tx: DbTransaction, companyId: string, nc: NcRow): Promise<string> {
+  const base = nc.splitFromNcId ? nc.code.replace(/\/\d+$/, '') : nc.code;
+  for (let i = 2; ; i++) {
+    const candidate = `${base}/${i}`;
+    const dup = await tx
+      .select({ id: ncRegister.id })
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.companyId, companyId),
+          eq(ncRegister.code, candidate),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (dup.length === 0) return candidate;
+  }
 }
 
 /**
@@ -386,100 +469,6 @@ async function nextSupplementaryJcCode(
   return `${prefix}${max + 1}`;
 }
 
-/**
- * Close-rework action: flips a `disposed` NC (with disposition='rework') →
- * `closed`, optionally capturing the rework_done_qty. Mirrors legacy
- * `_closeNCRework` (line 22708).
- */
-export async function closeNcReworkCascade(
-  tx: DbTransaction,
-  ncId: string,
-  reworkDoneQty: number | undefined,
-  ctx: DisposeNcContext,
-): Promise<{ ncId: string; status: 'closed' }> {
-  const ncRows = await tx
-    .select()
-    .from(ncRegister)
-    .where(
-      and(
-        eq(ncRegister.id, ncId),
-        eq(ncRegister.companyId, ctx.companyId),
-        isNull(ncRegister.deletedAt),
-      ),
-    )
-    .limit(1);
-  const nc = ncRows[0];
-  if (!nc) {
-    throw new ValidationError(`NC ${ncId} not found`);
-  }
-  if (nc.disposition !== 'rework') {
-    throw new ConflictError(
-      `NC ${nc.code} is not on a rework path (disposition=${nc.disposition ?? 'null'})`,
-    );
-  }
-  if (nc.status !== 'disposed' && nc.status !== 'rework_done') {
-    throw new ConflictError(`NC ${nc.code} cannot be rework-closed (status=${nc.status})`);
-  }
-
-  const updates: Record<string, unknown> = {
-    status: 'closed',
-    updatedBy: ctx.userId,
-  };
-  if (reworkDoneQty != null && Number.isFinite(reworkDoneQty) && reworkDoneQty >= 0) {
-    updates['reworkDoneQty'] = reworkDoneQty.toFixed(2);
-  }
-
-  await tx.update(ncRegister).set(updates).where(eq(ncRegister.id, ncId));
-  return { ncId, status: 'closed' };
-}
-
-/**
- * Close a `return_to_vendor` NC — the replacement arrived, or the piece was
- * written off. Until this runs, migration 0093's views count the NC's
- * rejected_qty as sitting AT THE VENDOR and hold the source op out of
- * `complete`, so the Job Card cannot close with a replacement still owed.
- *
- * Deliberately separate from closeNcReworkCascade rather than a widened guard:
- * the two clear different balances (rework_pending_qty vs returned_to_vendor_qty)
- * and rework carries a done-qty this path has no equivalent for. Same shape and
- * same transaction contract.
- */
-export async function closeNcReturnToVendorCascade(
-  tx: DbTransaction,
-  ncId: string,
-  ctx: DisposeNcContext,
-): Promise<{ ncId: string; status: 'closed' }> {
-  const ncRows = await tx
-    .select()
-    .from(ncRegister)
-    .where(
-      and(
-        eq(ncRegister.id, ncId),
-        eq(ncRegister.companyId, ctx.companyId),
-        isNull(ncRegister.deletedAt),
-      ),
-    )
-    .limit(1);
-  const nc = ncRows[0];
-  if (!nc) {
-    throw new ValidationError(`NC ${ncId} not found`);
-  }
-  if (nc.disposition !== 'return_to_vendor') {
-    throw new ConflictError(
-      `NC ${nc.code} is not on a return-to-vendor path (disposition=${nc.disposition ?? 'null'})`,
-    );
-  }
-  if (nc.status !== 'disposed') {
-    throw new ConflictError(`NC ${nc.code} cannot be return-closed (status=${nc.status})`);
-  }
-
-  await tx
-    .update(ncRegister)
-    .set({ status: 'closed', updatedBy: ctx.userId })
-    .where(eq(ncRegister.id, ncId));
-  return { ncId, status: 'closed' };
-}
-
 // ─── T-040e: auto-create NC from QC reject ───────────────────────────────
 //
 // Mirrors legacy `_autoCreateNC()` (HTML L3946 inside submitQcLog handler).
@@ -503,6 +492,11 @@ export interface AutoCreateNcContext {
   ncDate: string; // YYYY-MM-DD (matches the QC log's date)
   reportedByText: string | null;
   remarks: string | null;
+  /** The op_log inspection row that rejected the pieces (design §3). Null on
+   *  an Incoming-QC reject, which has no op_log row. */
+  qcLogId?: string | null;
+  /** The GRN line an Incoming-QC reject was raised from. Null on an op QC. */
+  grnLineId?: string | null;
 }
 
 export interface AutoCreateNcResult {
@@ -599,6 +593,8 @@ export async function autoCreateNcFromQcReject(
       status: 'pending',
       reportedByText: ctx.reportedByText,
       timeLogged: new Date(),
+      qcLogId: ctx.qcLogId ?? null,
+      grnLineId: ctx.grnLineId ?? null,
       createdBy: user.id,
       updatedBy: user.id,
     })
@@ -621,7 +617,3 @@ export async function autoCreateNcFromQcReject(
 
   return { ncId: row.id, ncCode: row.code };
 }
-
-// Silence unused-import false positives — `or` is reserved for future
-// queries, kept here to match the GRN cascade module's import pattern.
-void or;

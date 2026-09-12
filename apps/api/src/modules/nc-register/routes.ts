@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
   closeNcReworkInputSchema,
+  createNcDcInputSchema,
   createNcRegisterInputSchema,
   disposeNcInputSchema,
   listNcRegisterQuerySchema,
@@ -75,13 +76,30 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
     return service.closeNcRework(id, body, req.user);
   });
 
-  // Replacement received (or the piece written off) — clears the at-vendor
-  // balance an open return_to_vendor NC holds against its source op (0093).
-  // No body: the whole NC is outstanding or it is not, so there is no partial
-  // qty to post here.
+  // Legacy close for a return_to_vendor NC. Since the QC–NC handling change it
+  // goes through the same closure gate as /close: the challan must have been
+  // issued, every piece received back and Incoming QC recorded on all of them.
   app.post('/nc-register/:id/close-return', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.closeNcReturnToVendor(id, req.user);
+  });
+
+  // Manual close (design §3 closure gate). Refuses with the exact shortfall
+  // — the same text the detail screen shows next to the Close button.
+  app.post('/nc-register/:id/close', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.closeNc(id, req.user);
+  });
+
+  // Return-to-vendor challan raised from the NC itself (design §5).
+  app.post('/nc-register/:id/create-dc', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = createNcDcInputSchema.parse(req.body);
+    const result = await service.createNcDc(id, body, req.user);
+    reply.code(201);
+    return result;
   });
 }

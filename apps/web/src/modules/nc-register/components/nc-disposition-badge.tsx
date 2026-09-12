@@ -1,9 +1,13 @@
-// NC disposition → legacy .badge .b-* class (UI-002).
+// NC disposition → legacy .badge .b-* class (UI-002). Text comes from
+// NC_DISPOSITION_LABELS (the QC document's vocabulary — `scrap` reads
+// "Reject / Scrap"), so the badge matches the dispose panel's choices.
 
-import type { NcDisposition } from '@innovic/shared';
+import { NC_DISPOSITION_LABELS, type NcDisposition } from '@innovic/shared';
 
 const CLASSES: Record<NcDisposition, string> = {
   rework: 'b-cyan',
+  // Same mechanics as rework (a child JC), so the same colour family.
+  repair: 'b-cyan',
   scrap: 'b-red',
   use_as_is: 'b-green',
   return_to_vendor: 'b-orange',
@@ -16,7 +20,7 @@ export function NcDispositionBadge(props: { disposition: NcDisposition | null })
   }
   return (
     <span className={`badge ${CLASSES[props.disposition]}`}>
-      {props.disposition.replaceAll('_', ' ')}
+      {NC_DISPOSITION_LABELS[props.disposition]}
     </span>
   );
 }

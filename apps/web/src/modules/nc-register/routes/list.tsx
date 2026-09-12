@@ -529,7 +529,7 @@ function NcRegisterListPage(): React.JSX.Element {
           {/* Legacy L22561 tip line. */}
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
             💡 NCs are auto-created from QC Call Register. Click <b>✏ Dispose</b> to decide: Rework,
-            Scrap, Use As Is, Return to Vendor, or Make Fresh.
+            Repair, Return to Vendor, Reject / Scrap, Use As Is, or Make Fresh.
           </div>
 
           <div

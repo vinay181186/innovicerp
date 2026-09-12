@@ -219,7 +219,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <input
                   className="innovic-input"
-                  placeholder="🔍 Search DC, PO, vendor..."
+                  placeholder="🔍 Search DC, PO / NC, vendor..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   style={{ width: 240, fontSize: 12 }}

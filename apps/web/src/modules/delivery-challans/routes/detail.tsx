@@ -190,6 +190,41 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               {dc.vendorName ?? dc.vendorCodeText}
               <DcStatusBadge status={dc.status} />
             </div>
+            {/* Return-to-vendor challan raised from an NC (design §5): say so
+                in the header, with the NC and the job card one click away —
+                the receive step books the replacement against that NC, so the
+                reader must not mistake this for an ordinary OSP outward DC. */}
+            {dc.ncId ? (
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: 'var(--amber2)',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span>↩ Return to vendor —</span>
+                <span>NC</span>
+                <Link to="/nc-register/$id" params={{ id: dc.ncId }} className="td-code">
+                  {dc.ncCode ?? dc.poCodeText}
+                </Link>
+                {dc.jobCardId ? (
+                  <>
+                    <span>· JC</span>
+                    <Link to="/job-cards/$id" params={{ id: dc.jobCardId }} className="td-code">
+                      {dc.jobCardCode ?? '—'}
+                    </Link>
+                  </>
+                ) : null}
+                {dc.reason ? (
+                  <span style={{ color: 'var(--text2)', fontWeight: 400 }}>· {dc.reason}</span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
@@ -386,10 +421,22 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
     <div className="form-grid-3">
       <Pair label="DC date" value={dc.dcDate} />
       <Pair label="Vendor" value={dc.vendorName ?? dc.vendorCodeText} />
+      {/* An NC challan has no PO: po_code_text carries the NC code (the column
+          is NOT NULL), so the same cell is labelled NC and linked to the NC,
+          instead of showing that code as an amber "snapshot PO". */}
       <Pair
-        label="PO"
+        label={dc.ncId ? 'NC' : 'PO'}
         value={
-          dc.poCode ? (
+          dc.ncId ? (
+            <Link
+              to="/nc-register/$id"
+              params={{ id: dc.ncId }}
+              className="badge b-red"
+              title="Open the non-conformance this challan returns pieces for"
+            >
+              {dc.ncCode ?? dc.poCodeText}
+            </Link>
+          ) : dc.poCode ? (
             <span className="badge b-green">{dc.poCode}</span>
           ) : dc.poCodeText ? (
             <span className="badge b-amber" title="Snapshot text — no live PO linked">
@@ -408,6 +455,9 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
           This is the customer's DRAWING revision, so it is said in words. It is
           shown only when there is one; an empty "Rev —" tells nobody anything. */}
       {dc.soLineRevision ? <Pair label="Drawing Rev" value={dc.soLineRevision} /> : null}
+      {/* Written server-side at create-DC time ("Return to vendor — rework");
+          only an NC challan has one, so the cell is not shown otherwise. */}
+      {dc.ncId && dc.reason ? <Pair label="Reason" value={dc.reason} /> : null}
       <Pair label="Transport" value={dc.transport ?? '—'} />
       <Pair label="Vehicle No" value={dc.vehicleNo ?? '—'} />
       <Pair

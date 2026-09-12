@@ -38,6 +38,14 @@ export const deliveryChallanSchema = z.object({
   // Non-optional on purpose: every read path that returns `transport`
   // must return this too, and typecheck is what enforces it.
   vehicleNo: z.string().nullable(),
+  // ── Return-to-vendor challan raised from an NC (design §5) ──────────────
+  /** The NC this challan returns pieces for; null on an ordinary OSP DC. When
+   *  set there is no purchase order: `poCodeText` carries the NC code. */
+  ncId: z.string().uuid().nullable().default(null),
+  ncCode: z.string().nullable().default(null),
+  jobCardId: z.string().uuid().nullable().default(null),
+  jobCardCode: z.string().nullable().default(null),
+  reason: z.string().nullable().default(null),
   status: dcStatusSchema,
   createdAt: z.string(),
   createdBy: z.string().uuid(),
