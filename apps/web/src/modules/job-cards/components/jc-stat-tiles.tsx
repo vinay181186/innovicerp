@@ -297,13 +297,17 @@ export function JcStatTiles({
                   : next
                     ? 'var(--green3)'
                     : 'var(--bg2)';
+              // A waiting card is white on a white page, so its border is the
+              // only thing that draws it -- --border was too faint to see
+              // (user, JC-15 op 2, 2026-09-12). --border3 is a plain grey that
+              // reads without competing with the done card's grey fill.
               const bdr = done
                 ? 'var(--border2)'
                 : partial
                   ? 'var(--amber2)'
                   : next
                     ? 'var(--green2)'
-                    : 'var(--border)';
+                    : 'var(--border3)';
               const opColor = done
                 ? 'var(--text3)'
                 : partial
