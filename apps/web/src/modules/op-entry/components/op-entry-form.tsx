@@ -980,7 +980,7 @@ export function OpEntryForm({
                     title="Set at Job Card creation. Not changed by starting."
                   />
                 </div>
-                <div className="form-grp" style={{ width: 130 }}>
+                <div className="form-grp" style={{ width: 160 }}>
                   <label className="form-label" htmlFor="opf-mgrp">
                     Machine Group
                   </label>
