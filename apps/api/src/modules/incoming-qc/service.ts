@@ -38,7 +38,7 @@ import {
   recalcPoLineReceivedQty,
 } from '../goods-receipt-notes/cascades';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
-import { onNcReplacementQc } from '../nc-register/recovery';
+import { onNcReplacementQc, onRecoveryJobCardQc } from '../nc-register/recovery';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -181,22 +181,53 @@ async function mirrorIncomingQcOntoNextQcOp(
     .limit(1);
   const next = nextRows[0];
   if (!next || next.opType !== 'qc') return;
-  await tx.insert(opLog).values({
-    companyId,
-    jcOpId: next.id,
-    logNo: nextLogNo(),
-    logType: 'qc',
-    logDate: istToday(),
-    shift: 'day',
-    qty: acceptedDelta,
-    rejectQty: 0,
-    operatorId: null,
-    operatorName: user.fullName ?? user.email,
-    // No machine on QC: inspection is not machining (op-entry, ISSUE-010).
-    machineId: null,
-    remarks: 'Incoming QC (auto — same inspection)',
-    createdBy: user.id,
-  });
+  const logDate = istToday();
+  const inserted = await tx
+    .insert(opLog)
+    .values({
+      companyId,
+      jcOpId: next.id,
+      logNo: nextLogNo(),
+      logType: 'qc',
+      logDate,
+      shift: 'day',
+      qty: acceptedDelta,
+      rejectQty: 0,
+      operatorId: null,
+      operatorName: user.fullName ?? user.email,
+      // No machine on QC: inspection is not machining (op-entry, ISSUE-010).
+      machineId: null,
+      remarks: 'Incoming QC (auto — same inspection)',
+      createdBy: user.id,
+    })
+    .returning({ id: opLog.id });
+
+  // Recovery settlement (design §4): this mirrored qc row is written straight to
+  // op_log, NOT through op-entry submitQcLog, so it used to skip the recovery
+  // hook. When `next` is the TERMINAL op of a rework/repair CHILD job card, that
+  // meant the child's parent NC was never credited/closed and the parent op sat
+  // `under_rework` forever (and, with 0124, could not complete) even though the
+  // pieces had been recovered. Route the mirrored accepted pieces through the
+  // same hook op-entry uses. It is a no-op for an ordinary JC or a non-terminal
+  // op, so this only fires for a recovery child whose last op is fed by an
+  // outsource op's incoming QC.
+  const mirroredId = inserted[0]?.id;
+  if (mirroredId) {
+    await onRecoveryJobCardQc(
+      tx,
+      {
+        jobCardId: src.jobCardId,
+        jcOpId: next.id,
+        acceptedQty: acceptedDelta,
+        rejectedQty: 0,
+        qcLogId: mirroredId,
+        logDate,
+        shift: 'day',
+      },
+      companyId,
+      user,
+    );
+  }
 }
 
 export async function getIncomingQc(user: AuthContext): Promise<IncomingQcResponse> {
