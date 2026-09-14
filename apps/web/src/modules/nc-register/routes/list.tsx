@@ -166,7 +166,9 @@ function NcRegisterListPage(): React.JSX.Element {
                 been deleted and we fall back to itemCodeText — the snapshot of
                 what the reporter typed — the code stays bare: nothing typed ever
                 gets a revision glued onto it. */}
-            <span className="mono">
+            {/* SO pattern: code strong-mono (td-code) in var(--text); name quiet
+                beside it. */}
+            <span className="td-code" style={{ color: 'var(--text)' }}>
               {row.original.itemCode
                 ? itemCodeWithRev(row.original.itemCode, row.original.itemRevision)
                 : row.original.itemCodeText}
@@ -484,7 +486,9 @@ function NcRegisterListPage(): React.JSX.Element {
 
           <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              {/* tbl-ctr — the table-alignment standard, matching SO Master:
+                  data and headers share one centre line. */}
+              <table className="innovic-table tbl-ctr">
                 <SortableHead table={table} />
                 <tbody>
                   {isLoading ? (
@@ -507,7 +511,8 @@ function NcRegisterListPage(): React.JSX.Element {
                   ) : table.getRowModel().rows.length === 0 ? (
                     <tr>
                       <td colSpan={columns.length} className="empty-state">
-                        No NCs recorded. NCs are auto-created when QC rejects parts.
+                        No NCs recorded. Raise one from a QC operation that rejected pieces, or with
+                        ❌ Report NC above.
                       </td>
                     </tr>
                   ) : (
@@ -526,10 +531,12 @@ function NcRegisterListPage(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Legacy L22561 tip line. */}
+          {/* Tip line (was legacy L22561). NCs are raised MANUALLY now, from the
+              QC operation's rejected-piece pool (or ❌ Report NC). */}
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-            💡 NCs are auto-created from QC Call Register. Click <b>✏ Dispose</b> to decide: Rework,
-            Repair, Return to Vendor, Reject / Scrap, Use As Is, or Make Fresh.
+            💡 Raise an NC from a QC operation that rejected pieces (or ❌ Report NC), then click{' '}
+            <b>✏ Dispose</b> to decide: Rework, Repair, Return to Vendor, Reject / Scrap, Use As Is,
+            or Make Fresh.
           </div>
 
           <div

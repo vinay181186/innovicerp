@@ -567,6 +567,12 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
   const { detail, jcCode } = props;
   // Legacy renders "Op<seq>: <operation>" as one fused field (HTML L22729).
   const operation = detail.operationText ?? detail.qcOperationText;
+  // Operation and Machine are no longer BOTH shown — that mixed two unrelated
+  // facts on every NC. Which one is relevant follows the disposition:
+  //   • rework            → the source-op MACHINE the rework runs back on
+  //   • return_to_vendor  → the OPERATION the pieces go back out for
+  //   • anything else / not yet disposed → the OPERATION (sensible default).
+  const isReworkDisp = detail.disposition === 'rework';
   return (
     <>
       {/* Context strip — legacy `_viewNC` header block (HTML L22721-22726). */}
@@ -600,19 +606,31 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
       </div>
       <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>
         <InlinePair label="Item:">
-          {/* CODE/REV only on the live joined code; the itemCodeText fallback is
-              what the reporter typed and stays bare. */}
-          {detail.itemCode
-            ? itemCodeWithRev(detail.itemCode, detail.itemRevision)
-            : (detail.itemCodeText ?? '—')}{' '}
-          — {detail.itemName ?? detail.itemNameText ?? ''}
+          {/* SO pattern: the code strong-mono (td-code) in var(--text) so the
+              part reads as THE value; the name quiet beside it. CODE/REV only on
+              the live joined code; the itemCodeText fallback is what the reporter
+              typed and stays bare. */}
+          <span className="td-code" style={{ color: 'var(--text)' }}>
+            {detail.itemCode
+              ? itemCodeWithRev(detail.itemCode, detail.itemRevision)
+              : (detail.itemCodeText ?? '—')}
+          </span>
+          {detail.itemName ?? detail.itemNameText ? (
+            <span className="text3" style={{ marginLeft: 6, fontWeight: 400 }}>
+              {detail.itemName ?? detail.itemNameText}
+            </span>
+          ) : null}
         </InlinePair>
-        <InlinePair label="Operation:">
-          {detail.opSeq != null ? `Op${detail.opSeq}` : ''}
-          {detail.opSeq != null && operation ? ': ' : ''}
-          {operation ?? (detail.opSeq == null ? '—' : '')}
-        </InlinePair>
-        <InlinePair label="Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
+        {/* Rework XOR Operation — never both (see isReworkDisp above). */}
+        {isReworkDisp ? (
+          <InlinePair label="Rework Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
+        ) : (
+          <InlinePair label="Operation:">
+            {detail.opSeq != null ? `Op${detail.opSeq}` : ''}
+            {detail.opSeq != null && operation ? ' — ' : ''}
+            {operation ?? (detail.opSeq == null ? '—' : '')}
+          </InlinePair>
+        )}
         <InlinePair label="Rejected Qty:">
           <span className="red">{Number(detail.rejectedQty)} pcs</span>
         </InlinePair>

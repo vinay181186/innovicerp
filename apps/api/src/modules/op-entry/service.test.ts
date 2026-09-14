@@ -603,25 +603,26 @@ describe('op-entry submitQcLog (T-040d)', () => {
     expect(myRow?.detail).toContain('2 rejected');
     expect(myRow?.detail).toContain('QC-Insp');
 
-    // T-040e: rejectQty=2 should have auto-created an NC. Verify shape.
+    // NCs are MANUAL now (ADR): a QC reject creates NO NC. The rejected qty is
+    // recorded on the op_log row (asserted above via `row.rejectQty`), and the
+    // op simply carries a pending pool the user may later raise NCs from.
     const ncs = await db
       .select()
       .from(ncRegister)
-      .where(and(eq(ncRegister.jobCardId, testJcId), like(ncRegister.code, 'NC-AUTO-%')));
-    expect(ncs).toHaveLength(1);
-    expect(ncs[0]?.opSeq).toBe(2);
-    expect(ncs[0]?.rejectedQty).toBe('2.00');
-    expect(ncs[0]?.reportedByText).toBe('QC-Insp');
-    expect(ncs[0]?.status).toBe('pending');
-    expect(ncs[0]?.reasonCategory).toBe('other');
-    // CREATE NonConformance audit row emitted by the auto-create cascade.
+      .where(eq(ncRegister.jobCardId, testJcId));
+    expect(ncs).toHaveLength(0);
+    // No CREATE NonConformance audit row either — nothing was created.
     const ncAudit = await db
       .select()
       .from(activityLog)
       .where(and(eq(activityLog.action, 'CREATE'), eq(activityLog.entity, 'NonConformance')));
-    const myNcRow = ncAudit.find((r) => r.refId === ncs[0]?.code);
-    expect(myNcRow).toBeDefined();
-    expect(myNcRow?.detail).toContain('auto from QC reject');
+    expect(ncAudit.filter((r) => r.detail?.includes(testJcCode))).toHaveLength(0);
+    // The reject shows up as the op's pending pool for a manual NC: 2 rejected,
+    // 0 already on NCs → 2 remain.
+    const enriched = await service.listJcOpsEnriched({ jobCardCode: testJcCode }, admin);
+    const qcOpEnriched = enriched.find((r) => r.opSeq === 2)!;
+    expect(qcOpEnriched.qcRejectedQty).toBe(2);
+    expect(qcOpEnriched.ncBreakup.ncEligibleRemaining).toBe(2);
 
     // T-040f: op_seq=2 IS the last op on testJc → stock cascade fired.
     // qty=8 accepted → store_transactions IN row crediting testItem with 8.
@@ -697,10 +698,33 @@ describe('op-entry submitQcLog (T-040d)', () => {
     // That is exactly why the Op Entry table must not print it as "Pending".
     expect(qcOp.available).toBe(10);
 
-    // Now send the 2 rejects back to op 1 for rework by dispositioning the
-    // auto-NC the reject raised — the same row shape nc-register/cascades.ts
-    // writes. Since 0088 the view reads the outstanding qty from HERE, not
-    // from the jc_ops.rework_qty counter (which never decrements).
+    // NCs are manual now (ADR), so the QC reject above created none. Raise one
+    // by hand for the 2 rejected pieces on the QC op — the same row shape the
+    // register writes — before dispositioning it. Direct insert, matching how
+    // this suite seeds its other fixtures.
+    await db.insert(ncRegister).values({
+      companyId: admin.companyId!,
+      code: `${TEST_PREFIX}NC-0087`,
+      ncDate: '2026-05-03',
+      jobCardId: testJcId,
+      jcOpId: id,
+      opSeq: 2,
+      itemId: testItemId,
+      itemCodeText: `${TEST_PREFIX}ITEM-A`,
+      rejectedQty: '2.00',
+      reasonCategory: 'other',
+      reason: 'Rework needed',
+      status: 'pending',
+      reportedByText: 'QC-Insp',
+      timeLogged: new Date(),
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+
+    // Now send the 2 rejects back to op 1 for rework by dispositioning that NC —
+    // the same row shape nc-register/cascades.ts writes. Since 0088 the view
+    // reads the outstanding qty from HERE, not from the jc_ops.rework_qty
+    // counter (which never decrements).
     await db
       .update(ncRegister)
       .set({

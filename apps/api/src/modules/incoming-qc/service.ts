@@ -18,7 +18,6 @@ import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
   jcOps,
-  jobCards,
   opLog,
   purchaseOrderLines,
 } from '../../db/schema';
@@ -37,7 +36,6 @@ import {
   recalcPoHeaderStatus,
   recalcPoLineReceivedQty,
 } from '../goods-receipt-notes/cascades';
-import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onNcReplacementQc } from '../nc-register/recovery';
 
 function requireCompany(user: AuthContext): string {
@@ -547,55 +545,12 @@ export async function submitIncomingQc(
       );
     }
 
-    // A reject at Incoming QC raises a defect record (NC), mirroring production
-    // QC (op-entry submitQcLog, T-040e). This is the SINGLE place vendor-return
-    // rejects are captured now that the receive step no longer takes a reject
-    // qty — so the reject decision and its NC both live at QC.
-    //
-    // Phase 1 covers JOB-WORK returns only: the GRN line must trace back through
-    // its PO line to a jc_op with a job card. Raw-material rejects (no source
-    // jc_op / no job card) currently raise no NC — a job-card-less NC needs a
-    // schema change (planned as a separate phase).
-    if (input.rejectedQty > 0 && line.poLineId) {
-      const jcOpRows = await tx
-        .select({
-          jcOpId: jcOps.id,
-          jobCardId: jcOps.jobCardId,
-          opSeq: jcOps.opSeq,
-          operation: jcOps.operation,
-          jcCode: jobCards.code,
-        })
-        .from(purchaseOrderLines)
-        .innerJoin(
-          jcOps,
-          and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)),
-        )
-        .innerJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
-        .where(eq(purchaseOrderLines.id, line.poLineId))
-        .limit(1);
-      const src = jcOpRows[0];
-      if (src) {
-        await autoCreateNcFromQcReject(
-          tx,
-          {
-            companyId,
-            jobCardId: src.jobCardId,
-            jcOpId: src.jcOpId,
-            jcCode: src.jcCode,
-            opSeq: src.opSeq,
-            operationText: src.operation,
-            rejectedQty: input.rejectedQty,
-            ncDate: qcDate,
-            reportedByText: input.qcInspectedByName ?? null,
-            remarks: input.qcRemarks ?? null,
-            // The GRN line this reject was found on (design §3,
-            // nc_register.grn_line_id) — the receipt end of the trail.
-            grnLineId: line.id,
-          },
-          user,
-        );
-      }
-    }
+    // A reject at Incoming QC no longer auto-creates an NC (ADR: NCs are MANUAL
+    // now). The rejected qty stays recorded on this GRN line; the user raises
+    // an NC by hand against the source op from its pending pool. Nothing to
+    // create here — the reject decision is captured, the NC is a separate,
+    // deliberate act. (The RTV replacement branch above, keyed off line.ncId of
+    // a disposed NC, is a different mechanism and is untouched.)
 
     await emitActivityLog(
       tx,

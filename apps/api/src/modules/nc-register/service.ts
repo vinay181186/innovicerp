@@ -1013,6 +1013,48 @@ export async function createNcRegister(
     await assertItemExists(tx, input.itemId, companyId);
     if (input.jcOpId) await assertJcOpExists(tx, input.jcOpId, companyId);
 
+    // Manual-NC per-op cap (ADR: NCs are manual now, drawn from a pending pool).
+    // An NC tied to a source op may never claim more pieces than that op actually
+    // rejected: remaining = op's qc_rejected_qty − Σ(rejected_qty of the
+    // non-deleted NCs already raised on this op). This is the AUTHORITATIVE guard
+    // — the UI cap (ncEligibleRemaining on the enriched op) is only a convenience
+    // and can be bypassed by a direct call. We lock the jc_ops row FOR UPDATE
+    // first so two concurrent creates on the same op serialise and can't both
+    // read the same remaining and both slip past.
+    //
+    // When jcOpId is null the NC is not tied to any op, so there is no rejected
+    // qty to bound it by — skip the cap entirely (a job-card-level NC has no
+    // source op to draw its pool from).
+    if (input.jcOpId) {
+      await tx.execute(
+        sql`SELECT 1 FROM public.jc_ops WHERE id = ${input.jcOpId}::uuid FOR UPDATE`,
+      );
+      const capRows = await tx.execute(sql`
+        SELECT
+          GREATEST(0, COALESCE(s.qc_rejected_qty, 0) - COALESCE(n.nc_rejected_sum, 0)) AS remaining,
+          COALESCE(s.qc_rejected_qty, 0) AS rejected,
+          COALESCE(n.nc_rejected_sum, 0) AS on_ncs
+        FROM (SELECT ${input.jcOpId}::uuid AS jc_op_id) x
+        LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = x.jc_op_id
+        LEFT JOIN (
+          SELECT jc_op_id, SUM(rejected_qty) AS nc_rejected_sum
+          FROM public.nc_register
+          WHERE deleted_at IS NULL AND jc_op_id = ${input.jcOpId}::uuid
+          GROUP BY jc_op_id
+        ) n ON n.jc_op_id = x.jc_op_id
+      `);
+      const capRow = (capRows as unknown as Array<Record<string, unknown>>)[0];
+      const remaining = Math.round(Number(capRow?.['remaining'] ?? 0));
+      if (input.rejectedQty > remaining) {
+        const rejected = Math.round(Number(capRow?.['rejected'] ?? 0));
+        const onNcs = Math.round(Number(capRow?.['on_ncs'] ?? 0));
+        throw new ConflictError(
+          `Only ${remaining} piece(s) remain to raise an NC on this operation ` +
+            `(${onNcs} already on NCs of the ${rejected} rejected).`,
+        );
+      }
+    }
+
     // Snapshot itemCodeText from the items row so the durable text matches the
     // master at creation time. Same pattern as legacy auto-NC capture.
     const itemCode = await getItemCode(tx, input.itemId, companyId);

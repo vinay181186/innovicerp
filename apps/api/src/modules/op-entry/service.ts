@@ -40,7 +40,6 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
 import { generateOspPrForOp } from './osp-cascade';
 import { tryApplyQcStockCascade } from './qc-stock-cascade';
@@ -248,7 +247,18 @@ export async function listJcOpsEnriched(
         COALESCE(b.scrap_qty, 0)               AS "scrapQty",
         COALESCE(b.nc_closed_qty, 0)           AS "ncClosedQty",
         COALESCE(b.nc_open_qty, 0)             AS "ncOpenQty",
-        COALESCE(b.open_nc_count, 0)           AS "openNcCount"
+        COALESCE(b.open_nc_count, 0)           AS "openNcCount",
+        -- Pending pool for MANUAL NCs (ADR: NCs are no longer auto-created on a
+        -- QC reject; the user raises them by hand, each bounded by what is still
+        -- unclaimed). remaining = op's rejected qty - Σ(rejected_qty of every
+        -- non-deleted NC already raised on this op). GREATEST(0, ...) so a data
+        -- edge (NCs summing past the reject) shows nothing left, never a negative.
+        -- ROUND(...)::int because the contract types this as an integer count of
+        -- pieces; qc_rejected_qty / rejected_qty are numeric on the DB side.
+        GREATEST(
+          0,
+          ROUND(COALESCE(s.qc_rejected_qty, 0) - COALESCE(ncsum.nc_rejected_sum, 0))
+        )::int AS "ncEligibleRemaining"
       FROM public.jc_ops o
       JOIN public.job_cards jc ON jc.id = o.job_card_id
       -- LEFT, although job_cards.item_id is NOT NULL: an item row that cannot be
@@ -264,6 +274,16 @@ export async function listJcOpsEnriched(
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = o.id
       LEFT JOIN public.v_osp_wip w ON w.jc_op_id = o.id
       LEFT JOIN public.v_nc_op_breakup b ON b.jc_op_id = o.id
+      -- Σ rejected_qty of the NCs already raised on each op, for the manual-NC
+      -- pending pool above. Inline aggregate rather than a migration/view: it is
+      -- a single-column grouped sum this read alone consumes. deleted_at IS NULL
+      -- so a soft-deleted NC frees its pieces back into the pool.
+      LEFT JOIN (
+        SELECT jc_op_id, SUM(rejected_qty) AS nc_rejected_sum
+        FROM public.nc_register
+        WHERE deleted_at IS NULL
+        GROUP BY jc_op_id
+      ) ncsum ON ncsum.jc_op_id = o.id
       LEFT JOIN LATERAL (
         SELECT json_agg(
                  json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
@@ -320,6 +340,10 @@ export async function listJcOpsEnriched(
         ncClosedQty: Number(r['ncClosedQty'] ?? 0),
         ncOpenQty: Number(r['ncOpenQty'] ?? 0),
         openNcCount: Number(r['openNcCount'] ?? 0),
+        // Pieces still free to raise a manual NC on (see the SQL above). The
+        // DB already floored it at 0 and rounded to an integer; default 0 for
+        // an op that never had a reject (no ncsum row, qc_rejected_qty null).
+        ncEligibleRemaining: Number(r['ncEligibleRemaining'] ?? 0),
       },
     })) as unknown as JcOpEnriched[];
   });
@@ -1283,34 +1307,15 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     const jcCode = jcMeta[0]?.code;
     const recoveryKind = jcMeta[0]?.recoveryKind ?? null;
 
-    // T-040e: auto-create NC when this QC log rejects qty > 0. Mirrors legacy
-    // _autoCreateNC at HTML L3946. Same tx — rollback unwinds both.
-    //
-    // Runs BEFORE the recovery cascade on purpose: on a rework/repair child the
-    // cascade books this inspection's reject as `failed_qty` on the parent NC,
-    // and the follow-on NC for those very pieces must already exist by then so
-    // the trail reads reject → NC → child JC → reject → NC without a gap.
-    if (input.rejectQty > 0 && jcCode) {
-      await autoCreateNcFromQcReject(
-        tx,
-        {
-          companyId,
-          jobCardId: op.jobCardId,
-          jcOpId: input.jcOpId,
-          jcCode,
-          opSeq: op.opSeq,
-          operationText: op.operation,
-          rejectedQty: input.rejectQty,
-          ncDate: input.logDate,
-          reportedByText: input.operatorName ?? null,
-          remarks: input.remarks ?? null,
-          // The inspection row that raised the NC — the traceability link the
-          // spec's Flow 4 was missing (design §3, nc_register.qc_log_id).
-          qcLogId: row.id,
-        },
-        user,
-      );
-    }
+    // NCs are MANUAL now (ADR): a QC reject no longer auto-creates an NC. The
+    // rejected qty stays recorded on this op_log row (and rolls up into
+    // v_jc_op_status.qc_rejected_qty); the user raises NCs by hand from that
+    // pending pool, each bounded by ncEligibleRemaining. So there is no NC to
+    // create here, and — this matters for the recovery cascade below — the
+    // follow-on NC for a rework/repair child's reject is now whichever NC the
+    // user later raises against this op, not one this call would have made.
+    // The cascade keys off the PARENT NC (not this op's NC), so its ordering no
+    // longer depends on an NC existing at this point.
 
     // Recovery QC cascade (design §4): on a rework/repair child whose LAST op
     // this is, credit the parent NC (cleared += accepted, failed += rejected),

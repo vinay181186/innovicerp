@@ -312,7 +312,8 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Item</th>
+                  <th>Item Code</th>
+                  <th>Item Name</th>
                   <th>Ship qty</th>
                   <th>Received</th>
                   <th>Rejected</th>
@@ -322,7 +323,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               <tbody>
                 {dc.lines.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="empty-state">
+                    <td colSpan={7} className="empty-state">
                       No lines
                     </td>
                   </tr>
@@ -336,24 +337,17 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                     return (
                       <tr key={line.id}>
                         <td className="mono">{line.lineNo}</td>
-                        <td>
-                          {/* The drawing revision joins the code only on a line
-                              the API could prove IS the customer's part — an
-                              OSP line going out for a process. A raw-material
-                              or bought-in line has no revision here and stays
-                              bare; the SO's revision is on the header instead. */}
-                          <span className="mono">
-                            {itemCodeWithRev(
-                              line.itemCode ?? line.itemCodeText,
-                              line.itemRevision,
-                            )}
-                          </span>
-                          {(line.itemName ?? line.itemNameText) ? (
-                            <span className="text3" style={{ marginLeft: 6 }}>
-                              {line.itemName ?? line.itemNameText}
-                            </span>
-                          ) : null}
+                        {/* SO document format: the code is its own strong-mono
+                            column (td-code, var(--text)) and the name a second
+                            column beside it. The drawing revision joins the code
+                            only on a line the API could prove IS the customer's
+                            part — an OSP line going out for a process. A
+                            raw-material or bought-in line has no revision here
+                            and stays bare; the SO's revision is on the header. */}
+                        <td className="td-code" style={{ color: 'var(--text)' }}>
+                          {itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision)}
                         </td>
+                        <td>{line.itemName ?? line.itemNameText ?? '—'}</td>
                         <td className="mono fw-700">{ship.toFixed(2)}</td>
                         <td className="mono" style={{ color: 'var(--green2)' }}>
                           {received.toFixed(2)}
@@ -370,7 +364,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               {dc.lines.length > 0 ? (
                 <tfoot>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <td colSpan={2} style={{ fontWeight: 700 }}>
+                    <td colSpan={3} style={{ fontWeight: 700 }}>
                       Total
                     </td>
                     <td className="mono fw-700">{totals.ship.toFixed(2)}</td>
