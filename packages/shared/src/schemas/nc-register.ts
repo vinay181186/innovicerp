@@ -228,6 +228,15 @@ export const listNcRegisterQuerySchema = z.object({
   status: ncStatusSchema.optional(),
   reasonCategory: ncReasonCategorySchema.optional(),
   jobCardId: z.string().uuid().optional(),
+  /** ELIGIBLE-FOR-RTV-CHALLAN filter. When true, the list returns only NCs that
+   *  are ready for a return-to-vendor delivery challan and do not have one yet:
+   *  disposition = 'return_to_vendor' AND status = 'disposed' AND
+   *  delivery_challan_id IS NULL — the exact predicate createNcDc's guards
+   *  enforce (nc-register/service.ts). It powers the "Against NC" source on the
+   *  +New DC screen; the NC detail page raises the same challan and both go
+   *  through createNcDc, so the one-challan-per-NC lock keeps a qty from being
+   *  returned twice however it is reached. */
+  pendingRtvChallan: z.coerce.boolean().optional(),
   fromDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

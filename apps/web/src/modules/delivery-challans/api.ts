@@ -5,10 +5,13 @@ import type {
   DeliveryChallanWithLines,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
+  ListNcRegisterQuery,
+  ListNcRegisterResponse,
   ReceiveDeliveryChallanResponse,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { ncRegisterKeys } from '@/modules/nc-register/api';
 
 export const deliveryChallansKeys = {
   all: ['delivery-challans'] as const,
@@ -42,6 +45,29 @@ export function useDeliveryChallansList(
       apiFetch<ListDeliveryChallansResponse>(`/delivery-challans?${toQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
+  });
+}
+
+/** NCs eligible for a return-to-vendor challan — disposition return_to_vendor,
+ *  status disposed, no challan yet (the `pendingRtvChallan` predicate, matching
+ *  createNcDc's own guards). Powers the "Against NC" source on +New DC.
+ *
+ *  Its OWN fetch rather than nc-register's `useNcRegisterList`, on purpose: that
+ *  hook's `toQueryString` does not serialise `pendingRtvChallan`, so routing this
+ *  through it would silently return the WHOLE NC list (ineligible rows included,
+ *  which then fail server-side on submit). nc-register/api.ts is read-only to
+ *  this module, so the flag is put on the query string here instead. The query
+ *  KEY is deliberately `ncRegisterKeys.list(...)` so `useCreateNcDc`'s
+ *  `ncRegisterKeys.lists()` invalidation drops a consumed NC out of this picker. */
+export function useEligibleRtvNcs(enabled = true) {
+  // limit 200 = the schema cap; masters scroll, they do not paginate.
+  const query: ListNcRegisterQuery = { pendingRtvChallan: true, limit: 200, offset: 0 };
+  return useQuery<ListNcRegisterResponse>({
+    queryKey: ncRegisterKeys.list(query),
+    queryFn: () =>
+      apiFetch<ListNcRegisterResponse>('/nc-register?pendingRtvChallan=true&limit=200&offset=0'),
+    placeholderData: (prev) => prev,
+    enabled,
   });
 }
 

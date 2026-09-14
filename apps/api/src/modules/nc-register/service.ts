@@ -331,6 +331,18 @@ export async function listNcRegister(
     const jcFrag = input.jobCardId ? sql`AND nc.job_card_id = ${input.jobCardId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND nc.nc_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND nc.nc_date <= ${input.toDate}::date` : sql``;
+    // ELIGIBLE-FOR-RTV-CHALLAN filter, powering the "Against NC" source on the
+    // +New DC screen. This is the EXACT triple createNcDc's guards enforce
+    // (disposition guard, status guard, and the `if (nc.deliveryChallanId)`
+    // one-challan-per-NC lock, ~L1368-1380): only a disposed return-to-vendor NC
+    // with no challan yet. Kept in lock-step so the picker never offers an NC
+    // that createNcDc would then refuse, and never a double return of the same
+    // qty. Absent/false = unchanged behaviour.
+    const pendingRtvChallanFrag = input.pendingRtvChallan
+      ? sql`AND nc.disposition = 'return_to_vendor'::nc_disposition
+            AND nc.status = 'disposed'::nc_status
+            AND nc.delivery_challan_id IS NULL`
+      : sql``;
 
     const result = await tx.execute(sql`
       SELECT
@@ -425,6 +437,7 @@ export async function listNcRegister(
         ${jcFrag}
         ${fromFrag}
         ${toFrag}
+        ${pendingRtvChallanFrag}
       ORDER BY nc.nc_date DESC, nc.code DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
@@ -464,6 +477,7 @@ export async function listNcRegister(
         ${jcFrag}
         ${fromFrag}
         ${toFrag}
+        ${pendingRtvChallanFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
