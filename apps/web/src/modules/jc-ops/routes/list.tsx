@@ -10,7 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
+import { PlannedActualMachine } from '@/components/shared/machine-split';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -130,7 +130,7 @@ function JcOpsPage(): React.JSX.Element {
                   <th>JC No.</th>
                   <th>Item</th>
                   <th className="td-ctr">Op</th>
-                  <th>Machine</th>
+                  <th>Machine (Planned / Actual)</th>
                   <th>Operation</th>
                   <th className="td-ctr">Cycle(h)</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
@@ -267,15 +267,11 @@ function Row({
         {isOutsource ? (
           <span style={{ fontSize: 10, color: 'var(--amber)' }}>—</span>
         ) : (
-          <>
-            <span style={{ fontSize: 11 }}>{o.machineCode ?? '—'}</span>
-            {/* ADR-126 — this column is the machine the REMAINING qty runs on.
-                Once an op has run on more than one machine it stops matching
-                the Done figure beside it, so say so instead of implying the
-                current machine made everything. One machine (the norm) renders
-                exactly as before — MachineChip returns null. */}
-            <MachineChip machines={o.machines} plannedCode={o.machineCode} />
-          </>
+          /* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs)
+             and ACTUAL (the machine(s) that made the Done qty, else the plan).
+             Same name on both lines when nothing changed; amber when it
+             differs, with the per-machine breakdown for a 2+ machine split. */
+          <PlannedActualMachine planned={o.machineCode} machines={o.machines} />
         )}
       </td>
       <td>
@@ -359,9 +355,8 @@ function Row({
       <td className="td-ctr">{o.jcOrderQty}</td>
       <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
         {o.completed}
-        {/* The per-machine breakdown of that total (ADR-126). Renders nothing
-            unless the op ran on more than one machine. */}
-        <MachineSplitLines machines={o.machines} plannedCode={o.machineCode} />
+        {/* The per-machine breakdown of that total lives in the Planned /
+            Actual machine cell (ADR-164), so it is not repeated here. */}
         {o.qcRequired && o.qcPending > 0 ? (
           <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} QC</div>
         ) : null}
@@ -578,7 +573,8 @@ function ChangeMachineModal({
           }}
         >
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            Operation: <b>{row.operation}</b>
+            Operation: <b>{row.operation}</b> · Planned machine:{' '}
+            <b className="mono">{row.machineCode ?? '—'}</b>
           </div>
           {/* ADR-125 — this used to read "only ... operations that have not yet
               started", which 0095 made false. Spell out what actually happens
@@ -602,7 +598,7 @@ function ChangeMachineModal({
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
               {row.completed} pcs already made stay recorded against{' '}
               <b style={{ color: 'var(--text2)' }}>
-                {row.machines[0]?.machineCode ?? row.machineCode ?? 'the current machine'}
+                {row.machines[0]?.machineCode ?? row.machineCode ?? 'the planned machine'}
               </b>
               . The new machine takes the remaining{' '}
               <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
@@ -788,7 +784,8 @@ function CreatePrModal({
           }}
         >
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            Operation: <b>{row.operation}</b>
+            Operation: <b>{row.operation}</b> · Planned machine:{' '}
+            <b className="mono">{row.machineCode ?? '—'}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
             Vendor: {row.outsourceVendorName ?? row.outsourceVendorCode ?? '—'} · Item:{' '}
@@ -983,7 +980,8 @@ function OutsourceBalanceModal({
           }}
         >
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            Operation: <b>{row.operation}</b>
+            Operation: <b>{row.operation}</b> · Planned machine:{' '}
+            <b className="mono">{row.machineCode ?? '—'}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
             Item: <span className="mono fw-700" style={{ color: 'var(--text)' }}>

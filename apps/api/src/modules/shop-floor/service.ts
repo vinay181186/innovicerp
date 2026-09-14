@@ -80,11 +80,16 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         COALESCE(jc.priority::text, 'normal') AS priority,
         jc.due_date AS "dueDate",
         ro.operator_name AS "operatorName",
+        -- The PLAN beside the machine this session ACTUALLY runs on (ro.machine_id,
+        -- the tile it is grouped under): the op's own machine, or its text
+        -- snapshot when no FK resolved -- never the 'QC' type label (ADR-164).
+        COALESCE(pm.code, NULLIF(op.machine_code_text, 'QC')) AS "plannedMachineCode",
         ro.start_date AS "startDate",
         ro.start_time AS "startTime"
       FROM public.running_ops ro
       JOIN public.jc_ops op ON op.id = ro.jc_op_id AND op.deleted_at IS NULL
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.machines pm ON pm.id = op.machine_id
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
@@ -118,6 +123,7 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         priority: String(r['priority'] ?? 'normal'),
         dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
         operatorName: (r['operatorName'] as string | null) ?? null,
+        plannedMachineCode: (r['plannedMachineCode'] as string | null) ?? null,
         startDate: dateLike(r['startDate']),
         startTime: timeLike(r['startTime']),
       };

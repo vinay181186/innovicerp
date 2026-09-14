@@ -73,11 +73,18 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
   if (e.kind === 'op') {
     const label =
       e.logType === 'start' ? 'Started' : e.logType === 'qc' ? 'QC Entry' : 'Completed';
+    // ADR-164 — machineCode is the machine ACTUALLY used; plannedMachineCode is
+    // the op's plan. Name the plan only when the two differ.
     const machine = e.machineCode ?? '?';
+    const planned = e.plannedMachineCode?.trim() ?? '';
+    const machineLabel =
+      planned && e.machineCode && planned.toLowerCase() !== e.machineCode.trim().toLowerCase()
+        ? `${machine} (planned ${planned})`
+        : machine;
     const operator = e.operatorName ?? '';
     const detail =
       e.logType === 'start'
-        ? `on ${machine} by ${operator}`
+        ? `on ${machineLabel} by ${operator}`
         : e.logType === 'qc'
           ? `+${e.qty ?? 0} accepted${(e.rejectQty ?? 0) > 0 ? `, ${e.rejectQty} rejected` : ''} — ${operator}`
           : `+${e.qty ?? 0} pcs — ${operator}`;

@@ -18,7 +18,7 @@
 // log panel underneath.
 
 import type { JcOpEnriched } from '@innovic/shared';
-import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
+import { PlannedActualMachine } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import type { OpEntryModalTarget } from './op-entry-modal';
 import { JcOpStatusBadge } from './status-badge';
@@ -102,7 +102,7 @@ export function JcOpsTable({
           <tr>
             <th>Op</th>
             <th>Operation</th>
-            <th>Machine</th>
+            <th>Machine (Planned / Actual)</th>
             <th>Type</th>
             <th style={{ color: 'var(--green)' }}>Completed</th>
             <th style={{ color: 'var(--amber)' }}>Pending</th>
@@ -152,15 +152,22 @@ export function JcOpsTable({
                       </span>
                     ) : null}
                   </td>
+                  {/* ADR-164 — PLANNED (jc_ops machine, where the remaining
+                      qty is routed) and ACTUAL (the open session's machine, or
+                      whoever made the completed qty) are both named, every
+                      row; the actual turns amber only when it is not the plan.
+                      A QC op carries no machine and an outsource op names its
+                      vendor route, so those keep the plain label. */}
                   <td className="mono text3" style={{ fontSize: 11 }}>
-                    {machineLabel}
-                    {/* ADR-126 — this cell is the machine the REMAINING qty runs
-                        on. Once an op has run on more than one machine it stops
-                        matching the Completed figure beside it, so say so rather
-                        than implying the current machine made everything. One
-                        machine (the norm) renders exactly as before —
-                        MachineChip returns null. */}
-                    <MachineChip machines={op.machines} plannedCode={machineLabel} />
+                    {op.opType === 'qc' || op.opType === 'outsource' ? (
+                      machineLabel
+                    ) : (
+                      <PlannedActualMachine
+                        planned={machineLabel}
+                        activeRunningMachineCode={op.activeRunningMachineCode}
+                        machines={op.machines}
+                      />
+                    )}
                   </td>
                   <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
                     {op.opType}
@@ -193,14 +200,6 @@ export function JcOpsTable({
                       </>
                     ) : (
                       op.completedQty
-                    )}
-                    {/* The per-machine breakdown of that total (ADR-126).
-                        Renders nothing unless the op ran on more than one
-                        machine. Skipped on a pure QC op: the split describes
-                        MACHINED production, and the number above it there is
-                        the inspection's accepted count. */}
-                    {op.opType === 'qc' ? null : (
-                      <MachineSplitLines machines={op.machines} plannedCode={machineLabel} />
                     )}
                   </td>
                   <td>

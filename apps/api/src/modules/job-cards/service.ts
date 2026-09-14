@@ -866,11 +866,15 @@ export async function getJobCardStatusExtras(
         -- start on CNC-01 render "on CNC-03" the moment the op was re-routed.
         -- COALESCE keeps pre-0095 and text-only rows attributed. Same shape as
         -- daily-report/service.ts:57-58.
-        COALESCE(m.code, ol.machine_code_text, o.machine_code_text) AS "machineCode"
+        COALESCE(m.code, ol.machine_code_text, o.machine_code_text) AS "machineCode",
+        -- The PLAN beside the ACTUAL above (ADR-164): the op's own machine, or
+        -- its text snapshot when no FK resolved -- never the 'QC' type label.
+        COALESCE(pm.code, NULLIF(o.machine_code_text, 'QC')) AS "plannedMachineCode"
       FROM public.op_log ol
       JOIN public.jc_ops o ON o.id = ol.jc_op_id AND o.deleted_at IS NULL
       LEFT JOIN public.machines m
         ON m.id = COALESCE(ol.machine_id, o.machine_id) AND m.deleted_at IS NULL
+      LEFT JOIN public.machines pm ON pm.id = o.machine_id
       WHERE o.job_card_id = ${id}::uuid AND ol.company_id = ${companyId}::uuid
       ORDER BY ol.log_date DESC, ol.start_time DESC NULLS LAST, ol.created_at DESC
       LIMIT ${COMPLETION_LOG_OPLOG_CAP}
@@ -942,6 +946,7 @@ export async function getJobCardStatusExtras(
         opSeq: l['opSeq'] != null ? Number(l['opSeq']) : null,
         operation: (l['operation'] as string | null) ?? null,
         machineCode: (l['machineCode'] as string | null) ?? null,
+        plannedMachineCode: (l['plannedMachineCode'] as string | null) ?? null,
         operatorName: (l['operatorName'] as string | null) ?? null,
         shift: (l['shift'] as string | null) ?? null,
         qty: nz(l['qty']),
@@ -975,6 +980,7 @@ export async function getJobCardStatusExtras(
         opSeq: nc['opSeq'] != null ? Number(nc['opSeq']) : null,
         operation: null,
         machineCode: null,
+        plannedMachineCode: null,
         operatorName: null,
         shift: null,
         qty: null,
@@ -1003,6 +1009,7 @@ export async function getJobCardStatusExtras(
           opSeq: null,
           operation: null,
           machineCode: null,
+          plannedMachineCode: null,
           operatorName: null,
           shift: null,
           qty: null,
@@ -1035,6 +1042,7 @@ export async function getJobCardStatusExtras(
         opSeq: null,
         operation: null,
         machineCode: null,
+        plannedMachineCode: null,
         operatorName: null,
         shift: null,
         qty: null,

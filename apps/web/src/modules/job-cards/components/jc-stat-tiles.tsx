@@ -16,6 +16,7 @@ import type {
   JobCardStatusOpExtra,
 } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
 import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
 
@@ -65,6 +66,15 @@ export function JcStatTiles({
         ? 'Outsource'
         : (stuck.machineCode ?? stuck.machineCodeText ?? stuck.operation)
     : null;
+  // ADR-164 — the location above is the PLANNED machine. If the op is open on a
+  // different machine right now, say where the pieces are actually being made.
+  const stuckRunningOn =
+    stuck && stuck.opType === 'process' && stuck.activeRunningMachineCode
+      ? resolveActualMachine({
+          planned: stuck.machineCode ?? stuck.machineCodeText,
+          activeRunningMachineCode: stuck.activeRunningMachineCode,
+        })
+      : null;
 
   return (
     <div
@@ -222,6 +232,11 @@ export function JcStatTiles({
             {stuck ? (
               <>
                 Waiting at <b>Op{stuck.opSeq}</b> · {stuckWhere}
+                {stuckRunningOn?.differs ? (
+                  <>
+                    {' '}· running on <b style={{ color: 'var(--amber)' }}>{stuckRunningOn.label}</b>
+                  </>
+                ) : null}
               </>
             ) : (
               'All operations complete'
@@ -345,6 +360,25 @@ export function JcStatTiles({
                         <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--cyan)' }}>
                           {o.machineCode ?? o.machineCodeText ?? '—'}
                         </div>
+                        {/* ADR-164 — the code above is the PLANNED machine. When
+                            the pieces are (being) made elsewhere, name that
+                            machine under it; when they match, nothing is added. */}
+                        {(() => {
+                          const actual = resolveActualMachine({
+                            planned: o.machineCode ?? o.machineCodeText,
+                            activeRunningMachineCode: o.activeRunningMachineCode,
+                            machines: o.machines,
+                          });
+                          return actual.differs ? (
+                            <div
+                              className="mono"
+                              style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}
+                              title={`Actual machine: ${actual.label}`}
+                            >
+                              {actual.label}
+                            </div>
+                          ) : null;
+                        })()}
                         {opExtraById.get(o.id)?.machineName ? (
                           <div style={{ fontSize: 9, color: 'var(--text3)' }}>
                             {opExtraById.get(o.id)?.machineName}

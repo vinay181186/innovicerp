@@ -203,6 +203,10 @@ export const opLogSchema = z.object({
    *  machineCodeText snapshot, which can drift from the master. */
   machineCode: z.string().nullable(),
   machineCodeText: z.string().nullable(),
+  /** The PLANNED machine of the op this row belongs to (jc_ops.machine_id,
+   *  live code), so a board that names the machine ACTUALLY used can name the
+   *  plan beside it (ADR-164). Same name as the actual when nothing changed. */
+  plannedMachineCode: z.string().nullable().default(null),
   startTime: z.string().nullable(), // HH:MM:SS
   remarks: z.string().nullable(),
   /** When this entry's date/time was last corrected (0097). Null = as recorded.
@@ -373,6 +377,10 @@ export const runningOpSchema = z.object({
   operation: z.string(), // joined
   machineId: z.string().uuid().nullable(),
   machineCode: z.string().nullable(), // joined
+  /** The PLANNED machine of the op this row belongs to (jc_ops.machine_id,
+   *  live code), so a board that names the machine ACTUALLY used can name the
+   *  plan beside it (ADR-164). Same name as the actual when nothing changed. */
+  plannedMachineCode: z.string().nullable().default(null),
   isOsp: z.boolean(),
   operatorId: z.string().uuid().nullable(),
   operatorName: z.string().nullable(),

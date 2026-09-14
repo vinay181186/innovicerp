@@ -23,7 +23,7 @@ import type {
   MachineSplit,
 } from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
-import { splitDisagrees } from '@/components/shared/machine-split';
+import { resolveActualMachine, splitDisagrees } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -67,17 +67,24 @@ function machineSplit(op: JcOpEnriched): MachineSplit {
   return op.machines ?? [];
 }
 
-// Machine cell. One machine (the normal case) prints unchanged; a split op gets
-// a "(+N)" suffix counting the OTHER machines that made part of the done qty,
-// so a shop-floor sheet cannot be read as "this machine made all of it".
+// Machine cell (ADR-164). A process op prints BOTH machines — "Planned: X" (the
+// jc_ops machine, where the remaining qty is routed) and "Actual: Y" (the open
+// session's machine, else the machine(s) that made the done qty, else the plan
+// itself). Same name on both lines when nothing changed. QC / OSP ops have no
+// machine and keep their single label. The per-machine breakdown of a 2+
+// machine split stays under the Done figure (doneCell).
 function machineCell(op: JcOpEnriched): string {
   const label = machineLabel(op);
-  const split = machineSplit(op);
-  if (!splitDisagrees(split, label)) return esc(label);
-  const others = split.filter(
-    (m) => m.machineCode.trim().toLowerCase() !== label.trim().toLowerCase(),
-  ).length;
-  return others > 0 ? `${esc(label)} (+${others})` : esc(label);
+  if (op.opType !== 'process') return esc(label);
+  const actual = resolveActualMachine({
+    planned: label,
+    activeRunningMachineCode: op.activeRunningMachineCode,
+    machines: machineSplit(op),
+  });
+  return (
+    `<div style="white-space:nowrap">Planned: ${esc(label)}</div>` +
+    `<div style="font-size:9px;white-space:nowrap${actual.differs ? ';font-weight:700' : ''}">Actual: ${esc(actual.label)}</div>`
+  );
 }
 
 // Done cell. Split ops print the per-machine breakdown as a small second line
@@ -165,7 +172,7 @@ export function printJobCard(args: {
       <div class="info-box"><div class="info-lbl">Status</div><div class="info-val"><span class="badge ${jcStatusBadge}">${esc(jcStatusLabel)}</span></div></div>
     </div>
     <h2>Operation Routing</h2>
-    <table><thead><tr><th>#</th><th>Machine</th><th>Operation</th><th>Cycle (min)</th><th>Program</th><th>Tool No.</th><th>Order</th><th>Done</th><th>Avail</th><th>Status</th></tr></thead>
+    <table><thead><tr><th>#</th><th>Machine (Planned / Actual)</th><th>Operation</th><th>Cycle (min)</th><th>Program</th><th>Tool No.</th><th>Order</th><th>Done</th><th>Avail</th><th>Status</th></tr></thead>
     <tbody>${opRows || '<tr><td colspan="10" style="text-align:center;color:#aaa">No operations</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Prepared By</div>

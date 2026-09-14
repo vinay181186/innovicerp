@@ -265,12 +265,31 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                 </div>
               </div>
 
-              {/* Meta: machine · operator · shift */}
+              {/* Meta: machine (planned · actual, ADR-164) · operator · shift.
+                  `machineCode` is the machine this entry's qty was STAMPED
+                  with — the actual; `plannedMachineCode` is the op's jc_ops
+                  machine. A QC entry carries neither and keeps the bare dash. */}
               <div
                 className="text3"
                 style={{ fontSize: 11, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}
               >
-                <span className="mono">{l.machineCode ?? l.machineCodeText ?? '—'}</span>
+                {(() => {
+                  const actual = l.machineCode ?? l.machineCodeText ?? null;
+                  const planned = l.plannedMachineCode ?? null;
+                  if (!actual && !planned) return <span className="mono">—</span>;
+                  const differs =
+                    !!actual &&
+                    !!planned &&
+                    actual.trim().toLowerCase() !== planned.trim().toLowerCase();
+                  return (
+                    <span style={{ whiteSpace: 'nowrap' }}>
+                      Planned <b className="mono">{planned ?? '—'}</b> · Actual{' '}
+                      <b className="mono" style={{ color: differs ? 'var(--amber)' : undefined }}>
+                        {actual ?? '—'}
+                      </b>
+                    </span>
+                  );
+                })()}
                 <span>·</span>
                 <span style={{ color: 'var(--text2)' }}>{l.operatorName ?? '—'}</span>
                 <span>·</span>

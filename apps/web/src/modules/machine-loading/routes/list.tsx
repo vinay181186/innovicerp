@@ -8,7 +8,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
-import { MachineSplitLines } from '@/components/shared/machine-split';
+import { ActualMachineLine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '../../settings/api';
@@ -363,6 +363,7 @@ function OpRow({
   );
 }
 
+
 function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
   return (
     <>
@@ -399,11 +400,11 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
       <td className="td-ctr mono">{op.orderQty}</td>
       <td className="td-ctr green mono fw-700">
         {op.completedQty}
-        {/* The per-machine breakdown of that total (ADR-126). The op is listed
-            under the machine that runs the REMAINING qty, so after a re-route
-            this figure was not made there. Renders nothing unless the op ran on
-            more than one machine. */}
-        <MachineSplitLines machines={op.machines} plannedCode={op.machineCode} />
+        {/* ADR-164 — the op is listed under its PLANNED machine (the card /
+            queue names the plan), so say which machine ACTUALLY made this
+            figure: always drawn, same name when nothing changed, amber when it
+            differs, with the per-machine breakdown for a 2+ machine split. */}
+        <ActualMachineLine planned={op.machineCode} machines={op.machines} />
       </td>
       <td className="td-ctr">
         <span

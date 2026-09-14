@@ -56,6 +56,10 @@ interface Props {
   /** Closes the host popup without a write. Used by the machine-busy notice's
    *  "Open Current Operation", which navigates away from this box. */
   onClose?: () => void;
+  /** Reports the Actual Machine the operator currently has picked on the
+   *  Start tab (code, or null while none), so the host's heading strip can
+   *  show it live beside the planned machine. */
+  onActualMachineChange?: (code: string | null) => void;
 }
 
 /** The one wording used wherever this form refuses a future date, so the QC
@@ -73,6 +77,7 @@ export function OpEntryForm({
   onSubmitted,
   defaultMachineId,
   onClose,
+  onActualMachineChange,
 }: Props): React.JSX.Element {
   const navigate = useNavigate();
   const submit = useSubmitOpLog();
@@ -161,6 +166,10 @@ export function OpEntryForm({
     ? (machinesList.find((m) => m.id === actualMachineId) ?? null)
     : null;
   const plannedLabel = op.machineCode ?? op.machineCodeText ?? '—';
+  useEffect(() => {
+    onActualMachineChange?.(actualMachine?.code ?? null);
+    // The host only wants the CODE; the callback identity is not a trigger.
+  }, [actualMachine?.code]);
   // Seed on every op change: the picker must open on THIS op's plan, not on
   // whatever the previous row was started on.
   useEffect(() => {
@@ -999,30 +1008,30 @@ export function OpEntryForm({
                 </div>
               </>
             ) : (
-              <div className="form-grp" style={{ width: 130 }}>
-                <label className="form-label" htmlFor="opf-machine">
-                  Machine
-                </label>
-                {/* While a session is open this is the ACTUAL machine it runs
-                    on — the one the pieces get stamped with — with the plan
-                    beside it when the two differ. */}
-                <input
-                  id="opf-machine"
-                  className="innovic-input"
-                  readOnly
-                  value={op.activeRunningMachineCode ?? plannedLabel}
-                  title={
-                    op.activeRunningMachineCode && op.activeRunningMachineCode !== plannedLabel
-                      ? `Running on ${op.activeRunningMachineCode}; planned ${plannedLabel}`
-                      : undefined
-                  }
-                />
-                {op.activeRunningMachineCode && op.activeRunningMachineCode !== plannedLabel ? (
-                  <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
-                    planned {plannedLabel}
-                  </div>
-                ) : null}
-              </div>
+              <>
+                {/* Log / Stop: both machines, always, as two plain read-only
+                    boxes the same height as their neighbours — no sub-line
+                    under either, so the row stays level. Actual is the open
+                    session's machine (the one the pieces get stamped with);
+                    when the operator never changed it the two read the same. */}
+                <div className="form-grp" style={{ width: 110 }}>
+                  <label className="form-label" htmlFor="opf-machine">
+                    Planned Machine
+                  </label>
+                  <input id="opf-machine" className="innovic-input" readOnly value={plannedLabel} />
+                </div>
+                <div className="form-grp" style={{ width: 110 }}>
+                  <label className="form-label" htmlFor="opf-actual-machine-ro">
+                    Actual Machine
+                  </label>
+                  <input
+                    id="opf-actual-machine-ro"
+                    className="innovic-input"
+                    readOnly
+                    value={op.activeRunningMachineCode ?? plannedLabel}
+                  />
+                </div>
+              </>
             )}
             {showQtyFields ? (
               <>

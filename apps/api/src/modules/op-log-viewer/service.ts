@@ -10,6 +10,7 @@
 // later, restore the action behind admin-only RLS.
 
 import { and, asc, count, desc, eq, gte, ilike, lte, type SQL, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { items, jcOps, jobCards, machines, opLog, salesOrderLines, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
@@ -19,6 +20,10 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+// Second handle on machines for the PLANNED machine (jc_ops.machine_id); the
+// first join below is the machine the row was ACTUALLY made on (ADR-164).
+const plannedMachine = alias(machines, 'planned_machine');
 
 export async function listOpLog(
   input: ListOpLogQuery,
@@ -77,6 +82,11 @@ export async function listOpLog(
           machineCode: machines.code,
           logMachineCodeText: opLog.machineCodeText,
           machineCodeText: jcOps.machineCodeText,
+          // The PLAN beside the ACTUAL above (ADR-164): the op's own machine,
+          // live code, or its text snapshot -- never the 'QC' type label.
+          plannedMachineCode: sql<
+            string | null
+          >`COALESCE(${plannedMachine.code}, NULLIF(${jcOps.machineCodeText}, 'QC'))`,
           shift: opLog.shift,
           qty: opLog.qty,
           rejectQty: opLog.rejectQty,
@@ -95,6 +105,7 @@ export async function listOpLog(
         .innerJoin(items, eq(items.id, jobCards.itemId))
         .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
         .leftJoin(machines, sql`${machines.id} = ${logMachine}`)
+        .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
         .leftJoin(users, eq(users.id, opLog.createdBy))
         .where(where)
         .orderBy(desc(opLog.logDate), desc(opLog.createdAt), asc(opLog.logNo))
@@ -121,6 +132,7 @@ export async function listOpLog(
       operation: r.operation,
       // Live master code first, then the LOG's snapshot, then the OP's snapshot.
       machineCode: r.machineCode ?? r.logMachineCodeText ?? r.machineCodeText ?? null,
+      plannedMachineCode: r.plannedMachineCode ?? null,
       shift: r.shift,
       qty: r.qty,
       rejectQty: r.rejectQty,

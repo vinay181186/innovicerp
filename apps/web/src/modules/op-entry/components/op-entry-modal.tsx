@@ -27,6 +27,7 @@
 
 import type { JcOpEnriched } from '@innovic/shared';
 import { X } from 'lucide-react';
+import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { OpEntryForm } from './op-entry-form';
 
@@ -75,14 +76,18 @@ export function OpEntryModal({
   const { op, activeRunningId } = target;
   const isQc = op.opType === 'qc' || op.qcRequired;
   const planned = op.machineCode ?? op.machineCodeText ?? '—';
-  // While a session is open the strip names the machine it is ACTUALLY on —
-  // the one the pieces get stamped with — and the plan beside it if they
-  // differ. Before a session exists only the plan is known; the Actual
-  // Machine picker inside the form decides the rest.
-  const machine =
-    op.activeRunningMachineCode && op.activeRunningMachineCode !== planned
-      ? `${op.activeRunningMachineCode} (planned ${planned})`
-      : (op.activeRunningMachineCode ?? planned);
+  // Two facts, always: the plan, and the machine the open session is ACTUALLY
+  // on (the one the pieces get stamped with). When the operator never changed
+  // it, both read the same name — that is the answer, not a gap. Before a
+  // session exists the Actual Machine picker inside the form decides it.
+  // On the Start tab the actual is whatever the operator has picked so far —
+  // the form reports it up — so the strip follows the picker live.
+  const [pickedActual, setPickedActual] = useState<string | null>(null);
+  const actual = activeRunningId
+    ? (op.activeRunningMachineCode ?? planned)
+    : isQc
+      ? planned
+      : (pickedActual ?? planned);
   // `CODE/REV` for the part, or '' when the join brought no item back. Empty
   // rather than a dash: a dash would read as "this card has no item", and every
   // job card has one.
@@ -204,7 +209,8 @@ export function OpEntryModal({
             </div>
           ) : null}
           <Fact label="OPERATION" value={`Op ${op.opSeq} · ${op.operation}`} />
-          <Fact label={activeRunningId ? 'MACHINE' : 'PLANNED MACHINE'} value={machine} />
+          <Fact label="PLANNED MACHINE" value={planned} />
+          <Fact label="ACTUAL MACHINE" value={actual} />
           <div>
             <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
               AVAILABLE
@@ -217,6 +223,7 @@ export function OpEntryModal({
 
         <div style={{ padding: 16 }}>
           <OpEntryForm
+            onActualMachineChange={setPickedActual}
             op={op}
             activeRunningId={activeRunningId}
             {...(onModeChange ? { onModeChange } : {})}

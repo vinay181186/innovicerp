@@ -1,7 +1,8 @@
 // Op Log viewer — mirror of legacy renderOpLog (HTML L13194).
 //
 // Paginated, filterable, read-only. Filters: JC, log type, shift, date range.
-// Columns mirror legacy: Log No, JC, Date, Op, Shift, Machine, Operation,
+// Columns mirror legacy: Log No, JC, Date, Op, Shift, Machine (split into
+// Planned / Actual under ADR-164), Operation,
 // Qty, Reject, Operator, Remarks — plus an Item column legacy never had, because
 // a JC number says WHICH JOB and not WHICH PART. TPI rows tagged. No delete
 // (see service.ts note — legacy `delLog` violates CLAUDE.md Rule #8).
@@ -189,7 +190,8 @@ function OpLogListPage(): React.JSX.Element {
                 <th className="td-ctr">Op</th>
                 <th>Type</th>
                 <th>Shift</th>
-                <th>Machine</th>
+                <th>Planned</th>
+                <th>Actual</th>
                 <th>Operation</th>
                 <th className="td-ctr" style={{ color: 'var(--green)' }}>Qty</th>
                 <th className="td-ctr" style={{ color: 'var(--red)' }}>Reject</th>
@@ -201,20 +203,20 @@ function OpLogListPage(): React.JSX.Element {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={14} className="empty-state">
+                  <td colSpan={15} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={14} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={15} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error ? error.message : 'Failed to load op log'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="empty-state">No log entries match these filters.</td>
+                  <td colSpan={15} className="empty-state">No log entries match these filters.</td>
                 </tr>
               ) : (
                 items.map((r) => (
@@ -256,8 +258,28 @@ function OpLogListPage(): React.JSX.Element {
                       ) : null}
                     </td>
                     <td className="text2">{r.shift}</td>
+                    {/* ADR-164 — PLANNED is the op's jc_ops machine; ACTUAL is
+                        the machine this entry was stamped with. The actual
+                        turns amber only when it is not the plan. */}
                     <td>
                       <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--cyan)' }}>
+                        {r.plannedMachineCode ?? '?'}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className="tag"
+                        style={{
+                          background: 'var(--bg4)',
+                          color:
+                            r.machineCode &&
+                            r.plannedMachineCode &&
+                            r.machineCode.trim().toLowerCase() !==
+                              r.plannedMachineCode.trim().toLowerCase()
+                              ? 'var(--amber)'
+                              : 'var(--cyan)',
+                        }}
+                      >
                         {r.machineCode ?? '?'}
                       </span>
                     </td>
