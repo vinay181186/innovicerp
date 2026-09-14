@@ -351,7 +351,10 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          <div className="form-grid">
+          {/* 3-up header row: RC No. · Item Code · Item Name on one line, so the
+              name reads right beside the code and the header stays compact. The
+              wide blocks below (Plan Type, Raw material, Notes) still span the row. */}
+          <div className="form-grid-3">
             <div className="form-grp">
               <span className="form-label">RC No.</span>
               <input
@@ -385,11 +388,19 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 valueLabel={header.itemCodeText || undefined}
                 selectedLabel={(o) => o.code ?? o.name}
               />
-              {header.itemId && header.itemName ? (
-                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                  ✓ {header.itemName}
-                </div>
-              ) : null}
+            </div>
+            <div className="form-grp">
+              {/* Item Name — read-only, auto-filled from the picked item, sitting
+                  right beside Item Code (the format Create SO shows). It mirrors
+                  the master; you pick the item by code, the name follows. */}
+              <span className="form-label">Item Name</span>
+              <input
+                className="innovic-input"
+                value={header.itemName}
+                readOnly
+                placeholder="—"
+                style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
+              />
             </div>
             {/* Plan Type — the same three-way choice SO Planning asks for every
                 plan, recorded once here as the item's default. Same cards, same
