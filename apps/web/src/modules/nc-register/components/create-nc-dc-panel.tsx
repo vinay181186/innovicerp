@@ -5,12 +5,13 @@
 import type { CreateNcDcInput, NcRegister } from '@innovic/shared';
 import { Loader2, Truck } from 'lucide-react';
 import { useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { Note } from './nc-note';
 
-// Return-to-vendor challan, raised from the NC (design §5). Every mandatory
-// field opens blank — the date included; the qty is not asked because the
-// challan line is the NC's full rejected qty by rule (interlock 4).
+// Return-to-vendor challan, raised from the NC (design §5). The DC date defaults
+// to today (like every other DC/receipt screen); the qty is not asked because
+// the challan line is the NC's full rejected qty by rule (interlock 4).
 export function CreateNcDcPanel(props: {
   nc: NcRegister;
   pending: boolean;
@@ -18,7 +19,11 @@ export function CreateNcDcPanel(props: {
   onSubmit: (input: CreateNcDcInput) => Promise<void> | void;
 }): React.JSX.Element {
   const { nc, pending, error, onSubmit } = props;
-  const [dcDate, setDcDate] = useState('');
+  // Defaults to today, like every other DC / receipt screen (delivery-challans
+  // create + receive, nc-register-form). It opened blank before, which left the
+  // Create DC button disabled after a vendor was picked — a required ★ field the
+  // user could not see was empty. Still editable.
+  const [dcDate, setDcDate] = useState(todayLocal());
   const [vendorId, setVendorId] = useState<string | null>(null);
   // The picker's label is "CODE — Name"; the challan stores the code text
   // alongside the id (the DC's ADR-015 pair), so the code is peeled off here.
