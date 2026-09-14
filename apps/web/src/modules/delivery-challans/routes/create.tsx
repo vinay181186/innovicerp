@@ -35,7 +35,7 @@ import type { CreateDeliveryChallanInput, DcSendableLine, Uom } from '@innovic/s
 import { poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Truck } from 'lucide-react';
-import { type CSSProperties, Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { matchesSearchTerm } from '@/components/shared/search-match';
@@ -75,17 +75,6 @@ const SOURCE_META: Record<DcSource, { label: string; icon: string }> = {
   nc: { label: 'Against NC', icon: '🧾' },
 };
 
-function sourceBtnStyle(active: boolean): CSSProperties {
-  return {
-    flex: 1,
-    padding: '12px',
-    border: active ? '2px solid var(--blue)' : '2px solid var(--border)',
-    background: active ? 'var(--blue3)' : 'var(--bg)',
-    fontWeight: 700,
-    cursor: 'pointer',
-  };
-}
-
 function DeliveryChallanNewPage(): React.JSX.Element {
   const { poId: initialPoId } = deliveryChallanNewRoute.useSearch();
   const navigate = useNavigate();
@@ -121,33 +110,24 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           rejected material to a vendor against a disposed NC.
         </div>
 
-        {/* ▸ DC AGAINST — 2-button selector. State, not navigation. */}
-        <div style={{ marginBottom: 14 }}>
-          <div
-            style={{
-              fontSize: 11,
-              color: 'var(--blue)',
-              fontFamily: 'var(--mono)',
-              fontWeight: 700,
-              letterSpacing: '.06em',
-              marginBottom: 8,
-            }}
+        {/* ▸ DC AGAINST — a compact dropdown (Against PO / Against NC). State,
+            not navigation; switching unmounts the other side below. */}
+        <div className="form-grp" style={{ maxWidth: 220, marginBottom: 14 }}>
+          <label className="form-label" htmlFor="dc-source">
+            DC against
+          </label>
+          <select
+            id="dc-source"
+            className="innovic-select"
+            value={source}
+            onChange={(e) => setSource(e.target.value as DcSource)}
           >
-            ▸ DC AGAINST
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
             {(['po', 'nc'] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                className="btn"
-                onClick={() => setSource(s)}
-                style={sourceBtnStyle(source === s)}
-              >
+              <option key={s} value={s}>
                 {SOURCE_META[s].icon} {SOURCE_META[s].label}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
         </div>
 
         {/* Switching source unmounts the other side, dropping its picks/drafts. */}
