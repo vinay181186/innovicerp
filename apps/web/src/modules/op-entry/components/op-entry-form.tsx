@@ -166,10 +166,17 @@ export function OpEntryForm({
     ? (machinesList.find((m) => m.id === actualMachineId) ?? null)
     : null;
   const plannedLabel = op.machineCode ?? op.machineCodeText ?? '—';
+  // The code to PRINT for the actual machine. The master lookup above is the
+  // truth once the list is in; until then the op row already knows its own
+  // planned machine's code, so a picker still seeded on the plan is labelled
+  // from that rather than left blank while the list loads.
+  const actualLabel =
+    actualMachine?.code ??
+    (actualMachineId && actualMachineId === op.machineId ? op.machineCode : null);
   useEffect(() => {
-    onActualMachineChange?.(actualMachine?.code ?? null);
+    onActualMachineChange?.(actualLabel ?? null);
     // The host only wants the CODE; the callback identity is not a trigger.
-  }, [actualMachine?.code]);
+  }, [actualLabel]);
   // Seed on every op change: the picker must open on THIS op's plan, not on
   // whatever the previous row was started on.
   useEffect(() => {
@@ -229,6 +236,11 @@ export function OpEntryForm({
           (r) => r.machineId === actualMachineId && !r.isOsp && r.jcOpId !== op.id,
         ) ?? null)
       : null;
+  // Until the sessions list has answered, the machine is UNKNOWN — not free.
+  // Start stays disabled and the banner slot says so; otherwise the seconds
+  // the list takes to arrive are seconds in which a busy machine looks free.
+  const busyUnknown =
+    !activeRunningId && isProcessOp && Boolean(actualMachineId) && runningOps.data === undefined;
 
   // Reset when the selected op changes. Quantities and notes belong to the op
   // that was on screen, never to the next one.
@@ -411,6 +423,10 @@ export function OpEntryForm({
     if (!chosenShift) return;
     if (isProcessOp && !actualMachineId) {
       setErrorMessage('Select the machine this operation will actually run on.');
+      return;
+    }
+    if (busyUnknown) {
+      setErrorMessage('Still checking whether the machine is free — one moment.');
       return;
     }
     if (busy) {
@@ -1002,7 +1018,7 @@ export function OpEntryForm({
                     onSearch={setMachineSearch}
                     options={machineOptions}
                     placeholder={actualGroupId ? '🔍 Machine in group ★' : '🔍 Machine ★'}
-                    valueLabel={actualMachine?.code}
+                    valueLabel={actualLabel ?? undefined}
                     selectedLabel={(m) => m.code ?? m.name}
                   />
                 </div>
@@ -1177,8 +1193,8 @@ export function OpEntryForm({
                 <b className="mono">
                   {op.jobCardCode} Op{op.opSeq}
                 </b>{' '}
-                as Running on <b>{isProcessOp ? (actualMachine?.code ?? '—') : plannedLabel}</b>
-                {isProcessOp && actualMachine && actualMachine.code !== plannedLabel ? (
+                as Running on <b>{isProcessOp ? (actualLabel ?? '—') : plannedLabel}</b>
+                {isProcessOp && actualLabel && actualLabel !== plannedLabel ? (
                   <>
                     {' '}
                     <span className="amber">(planned {plannedLabel})</span>
@@ -1242,7 +1258,7 @@ export function OpEntryForm({
             >
               <AlertTriangle size={18} className="amber" style={{ flex: 'none', marginTop: 2 }} />
               <div style={{ flex: 1 }}>
-                <b className="mono">{actualMachine?.code}</b> is currently running{' '}
+                <b className="mono">{actualLabel ?? 'This machine'}</b> is currently running{' '}
                 <span className="mono fw-700 cyan">
                   {busy.jobCardCode} / Op {busy.opSeq}
                 </span>
@@ -1269,6 +1285,24 @@ export function OpEntryForm({
                 ✚ Open Current Operation
               </button>
             </div>
+          ) : busyUnknown ? (
+            <div
+              className="text3"
+              style={{
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+                padding: 10,
+                marginTop: 12,
+                background: 'var(--bg3)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+            >
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking whether <b className="mono">{actualLabel ?? 'this machine'}</b> is free…
+            </div>
           ) : null}
           {errorBanner}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
@@ -1290,7 +1324,7 @@ export function OpEntryForm({
                     type="submit"
                     className="btn btn-primary"
                     style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
-                    disabled={blockedReason !== null || start.isPending || Boolean(busy)}
+                    disabled={blockedReason !== null || start.isPending || Boolean(busy) || busyUnknown}
                   >
                     {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={14} />}
                     ▶ Start Operation
