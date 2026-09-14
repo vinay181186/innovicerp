@@ -6,6 +6,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useJobCardsList } from '@/modules/job-cards/api';
+import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useJcOpsEnriched,
@@ -13,6 +14,7 @@ import {
   useOpMachineOutput,
   useRealtimeOpLog,
   useRealtimeRunningOps,
+  useRunningOps,
 } from '../api';
 import { JcOpsTable } from '../components/jc-ops-table';
 import { MachineOpEntryView } from '../components/machine-op-entry-view';
@@ -48,6 +50,15 @@ function OpEntryPage() {
   const search = opEntryRoute.useSearch();
   const navigate = opEntryRoute.useNavigate();
   const { data: eff } = useMyAccess();
+  // Warm the three lists the Start popup needs the moment it opens — what is
+  // running right now (the machine-busy check), the machines master and the
+  // groups (the Actual Machine picker). Same query keys as the popup's own
+  // hooks, so by the time an operator presses ▶ Start the answers are already
+  // cached and the busy banner is on screen with the form, not seconds after
+  // it. Fetched here once per page, not per popup.
+  useRunningOps({ status: 'running' });
+  useMachinesList({ limit: 200, offset: 0 });
+  useMachineGroupsList({ limit: 200, offset: 0 });
 
   const [jcInput, setJcInput] = useState(search.jc ?? '');
   useEffect(() => {
