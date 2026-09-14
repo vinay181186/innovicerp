@@ -3,7 +3,9 @@
 // vendor and every line with a balance still to receive are loaded from it;
 // change or clear the PO and everything below it is thrown away and reloaded.
 // No free-text PO ref, no vendor fallback, no manual item entry, no QC fields
-// — QC happens later at Incoming QC.
+// — QC happens later at Incoming QC. No GRN No. box either: the server
+// auto-numbers (nextGrnCode) when `header.code` is omitted, and the number is
+// shown on the GRN list and detail.
 //
 // Eligible POs: approved (`open` / `partial`) and buying goods in
 // (`!poSendsMaterialOut`). Job-work / service POs come back through a delivery
@@ -16,7 +18,6 @@
 import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -66,8 +67,6 @@ export function GrnAgainstPoForm({
   submitError,
   onCancel,
 }: GrnAgainstPoFormProps): React.JSX.Element {
-  const [code, setCode] = useState('');
-  const [docNoValid, setDocNoValid] = useState(true);
   const [grnDate, setGrnDate] = useState(todayLocal());
   const [poId, setPoId] = useState<string | null>(initialPurchaseOrderId ?? null);
   const [poSearch, setPoSearch] = useState('');
@@ -202,7 +201,6 @@ export function GrnAgainstPoForm({
 
     const payload: CreateGoodsReceiptNoteInput = {
       header: {
-        ...(code.trim() ? { code: code.trim() } : {}),
         grnDate,
         purchaseOrderId: po.id,
         poCodeText: po.code,
@@ -241,15 +239,8 @@ export function GrnAgainstPoForm({
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)}>
-      {/* Header row 1 — GRN No. · Date · Purchase Order (wide). */}
+      {/* Header row 1 — Date · Purchase Order (wide) · Vendor (from the PO). */}
       <div className="form-grid-4" style={{ marginBottom: 12 }}>
-        <DocNumberInput
-          type="grn"
-          label="GRN No."
-          value={code}
-          onChange={setCode}
-          onValidityChange={setDocNoValid}
-        />
         <div className="form-grp">
           <label className="form-label" htmlFor="grnDate">
             Date<span className="req">★</span>
@@ -280,10 +271,6 @@ export function GrnAgainstPoForm({
           />
           {poIneligible ? <div className="form-error">{poIneligible}</div> : null}
         </div>
-      </div>
-
-      {/* Header row 2 — Vendor (from the PO) · Invoice No. · DC / Challan No. · Remarks. */}
-      <div className="form-grid-4" style={{ marginBottom: 16 }}>
         <div className="form-grp">
           <label className="form-label" htmlFor="vendor">
             Vendor
@@ -297,6 +284,10 @@ export function GrnAgainstPoForm({
             tabIndex={-1}
           />
         </div>
+      </div>
+
+      {/* Header row 2 — Invoice No. · DC / Challan No. · Remarks (wide). */}
+      <div className="form-grid-4" style={{ marginBottom: 16 }}>
         <div className="form-grp">
           <label className="form-label" htmlFor="invoiceNo">
             Invoice No.
@@ -323,7 +314,7 @@ export function GrnAgainstPoForm({
             onChange={(e) => setDcNo(e.target.value)}
           />
         </div>
-        <div className="form-grp">
+        <div className="form-grp form-span-2">
           <label className="form-label" htmlFor="remarks">
             Remarks
           </label>
@@ -487,7 +478,7 @@ export function GrnAgainstPoForm({
           <button
             type="submit"
             className="btn btn-success"
-            disabled={submitting || !docNoValid || poIneligible !== null}
+            disabled={submitting || poIneligible !== null}
           >
             {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
             ✓ Create GRN

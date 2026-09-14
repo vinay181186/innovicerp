@@ -1,15 +1,17 @@
-// GRN "Against JWPO / DC" — the 🏭 tab of <UnifiedGrnForm>.
+// GRN "Against NC" — the nc_return type of <UnifiedGrnForm>.
 //
-// Chain: job-work / service PO → OSP delivery challan (IN-DC-…) sends our
-// material to the vendor → this screen books it back. Pick the JWPO, then one
-// of its challans still awaiting receipt — or pick the challan straight away
-// and the JWPO box fills itself from it — and every line with a balance is
-// loaded from that challan. Saving posts to POST /delivery-challans/:id/receive
-// — the SAME endpoint the standalone DC Receive page uses — so the server
-// raises the GRN (linked to the DC), updates the PO line's received qty and
-// status, flips the job-card operation, and marks the DC received when fully
-// reconciled. The previous version of this tab posted to /jw-dc/inward, which
-// never created a GRN and never touched the PO.
+// Chain (ADR-161): an NC disposed "return to vendor" gets exactly ONE
+// return-to-vendor challan raised from the NC page (delivery_challans.nc_id
+// set, no purchase order behind it, one line for the rejected qty). The pieces
+// come back ONLY through POST /delivery-challans/:id/receive — the server then
+// raises the GRN with nc_id, bumps the NC's rtv_received_qty, sets the NC to
+// received_qc_pending, and Incoming QC later credits the NC and re-injects the
+// pieces into the job-card operation.
+//
+// So "Against NC" = pick the NC → its return challan is the source → the SAME
+// receive call the Against JWPO / DC type makes. This file is that form with
+// the NC picker in front and no PO anywhere. An NC is eligible while its
+// return challan is still `issued` with a balance to receive.
 //
 // No OK / Rejected split and no QC fields here: everything received lands on
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
@@ -29,7 +31,6 @@ import {
   useReceiveDeliveryChallan,
 } from '@/modules/delivery-challans/api';
 import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-math';
-import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 import { goodsReceiptNotesKeys } from '../api';
 
 interface LineDraft {
@@ -47,10 +48,10 @@ interface LineDraft {
   error: string | null;
 }
 
-export interface GrnAgainstDcFormProps {
+export interface GrnAgainstNcFormProps {
   /** The parent screen's exit-guard `leave`: runs the post-save navigation
    *  without the "Are you sure you want to exit?" question. The guard itself
-   *  lives in <UnifiedGrnForm>, which owns this tab — one screen, one guard. */
+   *  lives in <UnifiedGrnForm>, which owns this form — one screen, one guard. */
   onLeave: (go: () => void) => void;
   onCancel: () => void;
 }
@@ -66,19 +67,13 @@ function lineQtyError(raw: string, balance: number): string | null {
   return null;
 }
 
-export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): React.JSX.Element {
+export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const receive = useReceiveDeliveryChallan();
 
-  const [jwpoId, setJwpoId] = useState<string | null>(null);
-  const [jwpoSearch, setJwpoSearch] = useState('');
-  const [dcId, setDcId] = useState<string | null>(null);
-  const [dcSearch, setDcSearch] = useState('');
-  // Remount key for the DC picker. Bumped ONLY when the user changes the JWPO,
-  // so the picker's own text resets then — and never when a DC pick auto-fills
-  // the JWPO, which must not wipe the challan just picked.
-  const [dcPickerKey, setDcPickerKey] = useState(0);
+  const [ncId, setNcId] = useState<string | null>(null);
+  const [ncSearch, setNcSearch] = useState('');
   const [receiptDate, setReceiptDate] = useState(todayLocal());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -87,60 +82,38 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // ONE query feeds both pickers: every challan still awaiting receipt. The
-  // eligible JWPOs are simply the distinct POs behind those rows, so a PO with
-  // nothing out at the vendor never appears. 200 is the API's max page and is
-  // far above the number of issued-but-unreceived challans at any one time.
-  // Rows with `ncId` are return-to-vendor challans (no PO) and are dropped.
+  // The same query the DC form uses — every challan still awaiting receipt —
+  // but keeping ONLY the return-to-vendor rows (ncId set). One challan per NC
+  // by rule, so each such row IS one eligible NC. 200 is the API's max page
+  // and is far above the number of issued-but-unreceived challans at any time.
   const dcList = useDeliveryChallansList({ status: 'issued', limit: 200, offset: 0 });
-  const eligibleDcs = useMemo(
-    () =>
-      (dcList.data?.items ?? []).filter(
-        (d) => d.ncId === null && d.purchaseOrderId !== null,
-      ),
+  const ncRows = useMemo(
+    () => (dcList.data?.items ?? []).filter((d) => d.ncId !== null),
     [dcList.data],
   );
 
-  const jwpoOptions = useMemo(() => {
-    const byPo = new Map<string, { id: string; code: string; name: string }>();
-    for (const d of eligibleDcs) {
-      const id = d.purchaseOrderId;
-      if (!id || byPo.has(id)) continue;
-      byPo.set(id, {
-        id,
-        code: d.poCode ?? d.poCodeText,
-        name: d.vendorName ?? d.vendorCodeText,
-      });
-    }
-    // Search is client-side: the whole eligible set is already in the browser.
-    // The composed "CODE — Vendor" label is matched too, because the picker
-    // re-sends its own selected label as the term when reopened.
-    return [...byPo.values()].filter((o) =>
-      matchesSearchTerm([o.code, o.name, `${o.code} — ${o.name}`], jwpoSearch),
-    );
-  }, [eligibleDcs, jwpoSearch]);
+  // Option per NC. Search is client-side over the NC code, the job card, the
+  // vendor and the composed "CODE — JC · Vendor" label — the last because the
+  // picker re-sends its own selected label as the term when reopened.
+  const ncOptions = useMemo(
+    () =>
+      ncRows
+        .map((d) => ({
+          id: d.ncId ?? d.id,
+          code: d.ncCode ?? d.poCodeText,
+          name: `${d.jobCardCode ?? '—'} · ${d.vendorName ?? d.vendorCodeText}`,
+        }))
+        .filter((o) => matchesSearchTerm([o.code, o.name, `${o.code} — ${o.name}`], ncSearch)),
+    [ncRows, ncSearch],
+  );
 
-  // DC options: with a JWPO picked, that JWPO's challans (short label, as
-  // before); with none, EVERY eligible challan, labelled with its JWPO and
-  // vendor so it can be told apart. Both label forms go into the hidden
-  // `searchText` — after a DC-first pick the box holds the long label while
-  // the options have switched to the short one, and reopening the picker
-  // re-sends that text as the term; without this the row would not be found.
-  const dcOptions = useMemo(() => {
-    const pool = jwpoId ? eligibleDcs.filter((d) => d.purchaseOrderId === jwpoId) : eligibleDcs;
-    return pool
-      .map((d) => {
-        const short = `${d.dcDate} · ${d.lineCount} line${d.lineCount === 1 ? '' : 's'}`;
-        const long = `${d.poCode ?? d.poCodeText} · ${d.vendorName ?? d.vendorCodeText} · ${d.dcDate}`;
-        return {
-          id: d.id,
-          code: d.code,
-          name: jwpoId ? short : long,
-          searchText: `${d.code} — ${short} ${d.code} — ${long}`,
-        };
-      })
-      .filter((o) => matchesSearchTerm([o.code, o.name, o.searchText], dcSearch));
-  }, [eligibleDcs, jwpoId, dcSearch]);
+  // The picked NC's return challan row (from the list) — the source of the
+  // job card, challan code and vendor shown in the header, and of `dcId`.
+  const ncRow = useMemo(
+    () => (ncId ? ncRows.find((d) => d.ncId === ncId) : undefined),
+    [ncId, ncRows],
+  );
+  const dcId = ncRow?.id ?? null;
 
   const { data: dcData } = useDeliveryChallan(dcId ?? undefined);
   // Only trust the detail when it is the picked challan's (not the previous
@@ -148,8 +121,10 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
   // undefined otherwise, so every use below narrows on it directly.
   const dc = dcId !== null && dcData !== undefined && dcData.id === dcId ? dcData : undefined;
 
-  // DEPENDENT-FIELD RULE (DC → lines): pick / change / clear the challan and
-  // the lines are rebuilt from it or emptied. Vendor is derived below.
+  // DEPENDENT-FIELD RULE (NC → challan → lines): pick / change / clear the NC
+  // and the lines are rebuilt from its return challan or emptied. Job card,
+  // challan code and vendor are derived from `ncRow` / `dc` below, so they
+  // reset for free.
   useEffect(() => {
     setFormError(null);
     setSubmitError(null);
@@ -183,35 +158,17 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
     );
   }, [dc]);
 
-  // DEPENDENT-FIELD RULE (JWPO → DC): any change to the JWPO drops the picked
-  // challan, which in turn drops vendor + lines + errors via the effect above.
-  const onJwpoChange = (id: string | null): void => {
-    setJwpoId(id);
-    setDcId(null);
-    setDcSearch('');
-    setDcPickerKey((k) => k + 1);
+  const onNcChange = (id: string | null): void => {
+    setNcId(id);
     setFormError(null);
     setSubmitError(null);
   };
 
-  // DC picked first (no JWPO yet) → the JWPO box fills from the challan's own
-  // PO. With a JWPO already picked the options were already its challans, so
-  // nothing else moves.
-  const onDcChange = (id: string | null): void => {
-    setDcId(id);
-    if (id && !jwpoId) {
-      const row = eligibleDcs.find((d) => d.id === id);
-      if (row?.purchaseOrderId) setJwpoId(row.purchaseOrderId);
-    }
-  };
-
   const vendorLabel = dc
     ? (dc.vendorName ?? dc.vendorCodeText)
-    : (() => {
-        // While the detail loads, the list row already knows the vendor.
-        const row = dcId ? eligibleDcs.find((d) => d.id === dcId) : undefined;
-        return row ? (row.vendorName ?? row.vendorCodeText) : '';
-      })();
+    : ncRow
+      ? (ncRow.vendorName ?? ncRow.vendorCodeText)
+      : '';
 
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -221,12 +178,12 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
     e.preventDefault();
     setFormError(null);
     setSubmitError(null);
-    if (!jwpoId) {
-      setFormError('Pick a JWPO.');
+    if (!ncId) {
+      setFormError('Pick an NC.');
       return;
     }
     if (!dc) {
-      setFormError('Pick a delivery challan.');
+      setFormError('The return challan for this NC is still loading — try again in a moment.');
       return;
     }
     if (!receiptDate) {
@@ -259,10 +216,9 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
     setSubmitting(true);
     try {
       const res = await receive.mutateAsync({ dcId: dc.id, input });
-      // The DC hook refreshes only DC caches; the GRN list and the PO (its
-      // received qty and status just moved) must be refreshed here.
+      // The DC hook refreshes only DC caches; the GRN list must be refreshed
+      // here. (No PO to refresh — an NC return challan has none.)
       void qc.invalidateQueries({ queryKey: goodsReceiptNotesKeys.lists() });
-      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.all });
       const grnId = res.autoGrn?.id ?? null;
       onLeave(() =>
         grnId
@@ -277,69 +233,86 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
     }
   };
 
-  const jwpoValueLabel = useMemo(() => {
-    if (!jwpoId) return undefined;
-    const row = eligibleDcs.find((d) => d.purchaseOrderId === jwpoId);
-    return row ? `${row.poCode ?? row.poCodeText} — ${row.vendorName ?? row.vendorCodeText}` : undefined;
-  }, [jwpoId, eligibleDcs]);
-
-  const dcValueLabel = useMemo(() => {
-    if (!dcId) return undefined;
-    const o = dcOptions.find((x) => x.id === dcId);
+  const ncValueLabel = useMemo(() => {
+    if (!ncId) return undefined;
+    const o = ncOptions.find((x) => x.id === ncId);
     return o ? `${o.code} — ${o.name}` : undefined;
-  }, [dcId, dcOptions]);
+  }, [ncId, ncOptions]);
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)}>
-      {/* Header row 1 — JWPO · Delivery Challan · Receipt Date · Vendor (from the DC). */}
+      {/* Header row 1 — NC No. · Job Card · Return Challan · Vendor (all from the NC's challan). */}
       <div className="form-grid-4" style={{ marginBottom: 12 }}>
         <div className="form-grp">
-          <label className="form-label" htmlFor="jwpoId">
-            JWPO<span className="req">★</span>
+          <label className="form-label" htmlFor="ncId">
+            NC No.<span className="req">★</span>
           </label>
           <SearchableSelect
-            id="jwpoId"
-            value={jwpoId}
-            onChange={onJwpoChange}
-            options={jwpoOptions}
-            onSearch={setJwpoSearch}
+            id="ncId"
+            value={ncId}
+            onChange={onNcChange}
+            options={ncOptions}
+            onSearch={setNcSearch}
             loading={dcList.isFetching}
-            placeholder="🔍 Type JWPO number or vendor…"
-            valueLabel={jwpoValueLabel}
-            emptyText="No job-work POs have a challan awaiting receipt"
+            placeholder="🔍 Type NC number, job card or vendor…"
+            valueLabel={ncValueLabel}
+            emptyText="No NC has a return challan awaiting receipt"
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="dcId">
-            Delivery Challan<span className="req">★</span>
+          <label className="form-label" htmlFor="ncJobCard">
+            Job Card
           </label>
-          {/* Keyed on a counter bumped by a USER change of the JWPO, so the
-              picker's own text resets then — otherwise the old challan's label
-              would linger in the box. Not keyed on jwpoId itself: a DC pick
-              auto-fills the JWPO and must keep the challan just picked. */}
-          <SearchableSelect
-            key={dcPickerKey}
-            id="dcId"
-            value={dcId}
-            onChange={onDcChange}
-            options={dcOptions}
-            onSearch={setDcSearch}
-            loading={dcList.isFetching}
-            placeholder={jwpoId ? '🔍 Pick a challan…' : '🔍 Pick a challan (or a JWPO first)…'}
-            valueLabel={dcValueLabel}
-            emptyText={
-              jwpoId
-                ? 'No challan on this JWPO is awaiting receipt'
-                : 'No OSP challan is awaiting receipt'
-            }
+          <input
+            id="ncJobCard"
+            className="innovic-input"
+            readOnly
+            value={ncRow?.jobCardCode ?? ''}
+            placeholder="— from the NC —"
+            tabIndex={-1}
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="receiptDate">
+          <label className="form-label" htmlFor="ncReturnChallan">
+            Return Challan
+          </label>
+          <input
+            id="ncReturnChallan"
+            className="innovic-input"
+            readOnly
+            value={ncRow?.code ?? ''}
+            placeholder="— from the NC —"
+            tabIndex={-1}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="ncVendor">
+            Vendor
+          </label>
+          <input
+            id="ncVendor"
+            className="innovic-input"
+            readOnly
+            value={vendorLabel}
+            placeholder="— from the NC —"
+            tabIndex={-1}
+          />
+        </div>
+      </div>
+      {ncRow?.reason ? (
+        <div className="text3" style={{ fontSize: 12, marginTop: -6, marginBottom: 12 }}>
+          Return reason: {ncRow.reason}
+        </div>
+      ) : null}
+
+      {/* Header row 2 — Receipt Date · Vendor Invoice No. · Remarks (wide). */}
+      <div className="form-grid-4" style={{ marginBottom: 16 }}>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="ncReceiptDate">
             Receipt Date<span className="req">★</span>
           </label>
           <input
-            id="receiptDate"
+            id="ncReceiptDate"
             type="date"
             className="innovic-input"
             value={receiptDate}
@@ -348,28 +321,11 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="dcVendor">
-            Vendor
-          </label>
-          <input
-            id="dcVendor"
-            className="innovic-input"
-            readOnly
-            value={vendorLabel}
-            placeholder="— from the challan —"
-            tabIndex={-1}
-          />
-        </div>
-      </div>
-
-      {/* Header row 2 — Vendor Invoice No. · Remarks (wide). */}
-      <div className="form-grid-4" style={{ marginBottom: 16 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="vendorInvoice">
+          <label className="form-label" htmlFor="ncVendorInvoice">
             Vendor Invoice No.
           </label>
           <input
-            id="vendorInvoice"
+            id="ncVendorInvoice"
             className="innovic-input"
             autoComplete="off"
             placeholder="optional"
@@ -378,11 +334,11 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
           />
         </div>
         <div className="form-grp form-span-2">
-          <label className="form-label" htmlFor="dcRemarks">
+          <label className="form-label" htmlFor="ncRemarks">
             Remarks
           </label>
           <input
-            id="dcRemarks"
+            id="ncRemarks"
             className="innovic-input"
             autoComplete="off"
             placeholder="Notes"
@@ -396,11 +352,14 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
         className="form-label"
         style={{ fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}
       >
-        Line items — still out on this challan
+        Line items — still out on this return challan
       </div>
 
       <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-        <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}>
+        <table
+          className="innovic-table"
+          style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}
+        >
           <thead>
             <tr>
               <th style={{ width: '4%' }}>#</th>
@@ -419,13 +378,11 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
             {lines.length === 0 ? (
               <tr>
                 <td colSpan={8} className="empty-state" style={{ padding: 14 }}>
-                  {!jwpoId && !dcId
-                    ? 'Pick a delivery challan (or a JWPO, then one of its challans) to load the lines still out.'
-                    : !dcId
-                      ? 'Pick a delivery challan to load its lines.'
-                      : !dc
-                        ? 'Loading challan lines…'
-                        : 'Every line on this challan is already received — nothing left to book in.'}
+                  {!ncId
+                    ? 'Pick an NC to load its return challan.'
+                    : !dc
+                      ? 'Loading return challan lines…'
+                      : 'Every line on this return challan is already received — nothing left to book in.'}
                 </td>
               </tr>
             ) : (
@@ -463,7 +420,12 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
                       max={l.balance}
                       step={1}
                       className="innovic-input"
-                      style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: 'var(--cyan)',
+                        padding: '4px 4px',
+                      }}
                       value={l.receiveNow}
                       onChange={(e) =>
                         patchLine(idx, {
@@ -512,8 +474,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
             Cancel
           </button>
           <button type="submit" className="btn btn-success" disabled={submitting}>
-            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            ✓ Create GRN
+            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}✓ Create GRN
           </button>
         </div>
       </div>

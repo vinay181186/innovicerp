@@ -93,6 +93,10 @@ export const goodsReceiptNoteSchema = z.object({
    *  a GRN booked straight against a purchase PO. Read-only: the client never
    *  sends it; the receive service stamps it. */
   deliveryChallanId: z.string().uuid().nullable().default(null),
+  /** The NC whose return-to-vendor challan this GRN receives (migration 0122,
+   *  ADR-161). Stamped by the DC receive path from the challan's own nc_id;
+   *  null on every other GRN. Read-only for the client. */
+  ncId: z.string().uuid().nullable().default(null),
   invoiceNo: z.string().nullable(),
   remarks: z.string().nullable(),
   createdAt: z.string(),
@@ -120,6 +124,8 @@ export const goodsReceiptNoteDetailSchema = goodsReceiptNoteSchema.extend({
   /** Resolved DC code from delivery_challans.code via deliveryChallanId; null
    *  when the GRN is not DC-sourced. Lets the detail page link "Open DC". */
   dcCode: z.string().nullable().default(null),
+  /** Resolved NC code from nc_register.code via ncId; null unless NC-sourced. */
+  ncCode: z.string().nullable().default(null),
   lines: z.array(goodsReceiptNoteLineDetailSchema),
 });
 export type GoodsReceiptNoteDetail = z.infer<typeof goodsReceiptNoteDetailSchema>;

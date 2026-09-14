@@ -8712,3 +8712,74 @@ PO line's `received_qty` and the PO status, flips the JC op, and marks the DC
   still has no balance guard (out of scope). Receiving on the DC tab needs the
   `ospdc_create` entry right — the server's 403 is shown verbatim.
 - The JWPO/DC pickers read the first 200 `issued` challans (API max).
+
+## ADR-163: GRN "Against NC" receives the NC's own return challan; GRN Type is one dropdown; the GRN number is never typed
+
+**Date:** 2026-09-14
+**Status:** Accepted
+
+### Context
+
+ADR-162 gave the GRN screen "Against PO" and "Against JWPO / DC". The user asked
+for a third way in — "Against NC" — plus a compact type dropdown, the GRN number
+taken off the create screen, and the JWPO tab to accept the challan first.
+
+Impact analysis of the NC chain (ADR-161, `nc-register/service.ts` `createNcDc`,
+`nc-register/recovery.ts` `onNcChallanReceived` / `onNcReplacementQc`):
+
+- A return-to-vendor NC gets exactly ONE challan, raised from the NC page for the
+  full rejected qty; `nc.delivery_challan_id` is set once and a second challan is
+  refused. The challan carries `nc_id`, `job_card_id`, `reason`, no PO
+  (`po_code_text` = the NC code).
+- `rtv_received_qty` has ONE writer — `onNcChallanReceived`, called only from
+  `receiveAgainstDeliveryChallan`. There is no path that receives an NC without
+  its challan (`ncCloseBlockedReason` refuses closure until the challan is issued
+  and received).
+- The auto-GRN raised there carries `nc_id`; Incoming QC reads it to credit the
+  NC (`cleared_qty` / `failed_qty`) and re-inject into the origin JC op; the
+  PO-line formula (`recalcPoLineReceivedQty`) excludes NC GRNs and subtracts
+  open RTV qty instead; `v_nc_op_breakup` shows "sent to vendor / received – QC
+  pending" from the rtv columns.
+
+So the NC's challan IS the source of truth for what may come back, and every
+downstream link (GRN → DC → NC → JC op, PO line, Incoming QC) already hangs off
+the DC receive call.
+
+### Decision
+
+1. **Against NC** = pick the NC → its return challan is the source → the same
+   `POST /delivery-challans/:id/receive`. Eligible NC = has an `issued` challan
+   with balance (`qty − Σ receipt lines`); derived from the same issued-challan
+   query the JWPO tab uses, filtered to rows WITH `nc_id`. No PO field. The
+   screen shows NC No., Job Card, Return Challan, Vendor, the challan's reason,
+   and the line with Sent / Received so far / Balance / Receive Now. Nothing new
+   is written anywhere: the qty lands once on the DC receipt, the NC's
+   `rtv_received_qty` moves once, the GRN is linked once.
+2. **GRN reads carry `ncId` / `ncCode`** so the GRN detail links "Open NC" and
+   the list badges "Against NC" (not "Against DC") — the only read-side gap the
+   analysis found.
+3. **GRN Type is one `<select>`** — Against PO / Against JWPO / DC / Against NC
+   (`GRN_INWARD_TYPES` gains `nc_return`; the stale jw-dc branch of the union is
+   replaced by the DC-receive contract for both challan types).
+4. **The GRN number is not on the create screen.** The server numbers every GRN
+   (`nextGrnCode`); the number appears on GRN Master and Detail only.
+5. **JWPO tab: challan first is allowed.** Picking a DC fills its JWPO; picking a
+   JWPO narrows the challan list; changing the JWPO clears the challan.
+
+### Alternatives considered
+
+- A new `POST /goods-receipt-notes/from-nc` — a second writer of the DC receipt,
+  NC rtv columns and GRN; rejected, same reason as ADR-162.
+- Letting "Against NC" receive an NC that has no challan yet — the system has no
+  such state (ADR-161 consequences); such an NC is not eligible and the NC page's
+  "Create DC" is the next step.
+- A `disposition`/rtv filter on the NC list API — not needed: the issued-challan
+  list already names every eligible NC.
+
+### Consequences
+
+- Positive: three entry points, one receive path; the Challan → Receive page is
+  untouched and stays the fallback. No migration, no NC-module change.
+- Negative: the NC tab needs the same `ospdc_create` entry right as the DC
+  Receive page (server-enforced; the 403 is shown verbatim). A GRN number can no
+  longer be overridden on create.

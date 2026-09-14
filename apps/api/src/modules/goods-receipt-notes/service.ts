@@ -464,6 +464,7 @@ export async function listGoodsReceiptNotes(
         grn.vendor_code_text AS "vendorCodeText",
         grn.dc_no AS "dcNo", grn.invoice_no AS "invoiceNo", grn.remarks,
         grn.delivery_challan_id AS "deliveryChallanId",
+        grn.nc_id AS "ncId",
         grn.created_at AS "createdAt", grn.created_by AS "createdBy",
         grn.updated_at AS "updatedAt", grn.updated_by AS "updatedBy",
         grn.deleted_at AS "deletedAt",
@@ -575,6 +576,7 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     vendorCodeText: (r['vendorCodeText'] as string | null) ?? null,
     dcNo: (r['dcNo'] as string | null) ?? null,
     deliveryChallanId: (r['deliveryChallanId'] as string | null) ?? null,
+    ncId: (r['ncId'] as string | null) ?? null,
     invoiceNo: (r['invoiceNo'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
@@ -619,9 +621,11 @@ async function getGoodsReceiptNoteInternal(
         grn.updated_at AS "updatedAt", grn.updated_by AS "updatedBy",
         grn.deleted_at AS "deletedAt",
         grn.delivery_challan_id AS "deliveryChallanId",
+        grn.nc_id AS "ncId",
         po.code AS "poCode",
         v.name AS "vendorName",
-        dc.code AS "dcCode"
+        dc.code AS "dcCode",
+        nc.code AS "ncCode"
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.purchase_orders po
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
@@ -629,6 +633,9 @@ async function getGoodsReceiptNoteInternal(
         ON v.id = grn.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.delivery_challans dc
         ON dc.id = grn.delivery_challan_id AND dc.deleted_at IS NULL
+      -- One NC per GRN header FK (grn.nc_id); a single-row join, cannot multiply.
+      LEFT JOIN public.nc_register nc
+        ON nc.id = grn.nc_id AND nc.deleted_at IS NULL
       WHERE grn.id = ${id}::uuid
         AND grn.company_id = ${companyId}::uuid
         AND grn.deleted_at IS NULL
@@ -680,6 +687,7 @@ async function getGoodsReceiptNoteInternal(
     vendorCodeText: (headerRow['vendorCodeText'] as string | null) ?? null,
     dcNo: (headerRow['dcNo'] as string | null) ?? null,
     deliveryChallanId: (headerRow['deliveryChallanId'] as string | null) ?? null,
+    ncId: (headerRow['ncId'] as string | null) ?? null,
     invoiceNo: (headerRow['invoiceNo'] as string | null) ?? null,
     remarks: (headerRow['remarks'] as string | null) ?? null,
     createdAt: tsLike(headerRow['createdAt']),
@@ -690,6 +698,7 @@ async function getGoodsReceiptNoteInternal(
     poCode: (headerRow['poCode'] as string | null) ?? null,
     vendorName: (headerRow['vendorName'] as string | null) ?? null,
     dcCode: (headerRow['dcCode'] as string | null) ?? null,
+    ncCode: (headerRow['ncCode'] as string | null) ?? null,
     lines: lineRows.map((r) => ({
       id: r['id'] as string,
       companyId: r['companyId'] as string,

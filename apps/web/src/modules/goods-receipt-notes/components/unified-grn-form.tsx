@@ -8,51 +8,49 @@
 // passes it to showModalLg(title, body, onSave, 'Create GRN') at L26567.
 // Legacy has NO editGRN/viewGRN: zero row-level edit affordance on any status.
 //
-// The ▸ GRN TYPE selector below mirrors legacy L26530-26536. Legacy offers THREE
-// modes — 📦 Against PO / 🏭 Against JWPO / DC / ✍ Manual (_grnSetMode, L26627).
-// Only the first two are ported: GRN_INWARD_TYPES (packages/shared) has no
-// 'manual' member. See ISSUE-205 — legacy's Manual mode writes a plain GRN row
-// with qcStatus 'Pending'/qcAcceptedQty 0 (L26577-26581) and therefore needs NO
-// store-adjustment endpoint; the previously-stated reason for dropping it was
-// false.
+// The GRN Type dropdown below replaces legacy's 3-button selector (L26530-26536,
+// _grnSetMode L26627). Legacy offered 📦 Against PO / 🏭 Against JWPO / DC /
+// ✍ Manual; Manual is not ported (GRN_INWARD_TYPES in packages/shared has no
+// 'manual' member — see ISSUE-205). In its place is the NC return (ADR-161).
 //
-// The two tabs:
-//   📦 Against PO      → <GrnAgainstPoForm>: pick an approved buying PO, its
-//                        pending lines load, save via POST /goods-receipt-notes.
-//   🏭 Against JWPO/DC → <GrnAgainstDcForm>: pick the job-work PO, then one of
-//                        its OSP delivery challans still out at the vendor, and
-//                        save via POST /delivery-challans/:id/receive — the same
-//                        path the DC Receive page uses, so the GRN is auto-raised
-//                        and linked to the DC and the PO's received qty moves.
-//                        (It used to post to /jw-dc/inward, which never created
-//                        a GRN and never touched the PO.)
-// Neither tab carries QC fields; QC happens later at Incoming QC. The old
+// The three types — every one reuses an endpoint that already exists; no new
+// GRN write path was added for any of them:
+//   Against PO        → <GrnAgainstPoForm>: pick an approved buying PO, its
+//                       pending lines load, save via POST /goods-receipt-notes.
+//                       The server auto-numbers the GRN (nextGrnCode).
+//   Against JWPO / DC → <GrnAgainstDcForm>: pick the job-work PO and/or one of
+//                       its OSP delivery challans still out at the vendor, and
+//                       save via POST /delivery-challans/:id/receive — the same
+//                       path the DC Receive page uses, so the GRN is auto-raised
+//                       and linked to the DC and the PO's received qty moves.
+//   Against NC        → <GrnAgainstNcForm>: pick an NC whose "return to vendor"
+//                       challan is still out (ADR-161 — one challan per NC, no
+//                       PO behind it). The challan IS the source, so this is the
+//                       SAME receive call as the DC tab: the server raises the
+//                       GRN with nc_id, bumps the NC's rtv_received_qty and sets
+//                       it received_qc_pending for Incoming QC to credit.
+// No type carries QC fields; QC happens later at Incoming QC. The old
 // <GoodsReceiptNoteForm> still serves /goods-receipt-notes/$id/edit only.
 
 import { GRN_INWARD_TYPES, type CreateGoodsReceiptNoteInput, type GrnInwardType } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
-import { useCallback, useState, type CSSProperties } from 'react';
+import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useCreateGoodsReceiptNote } from '../api';
 import { GrnAgainstDcForm } from './grn-against-dc-form';
+import { GrnAgainstNcForm } from './grn-against-nc-form';
 import { GrnAgainstPoForm } from './grn-against-po-form';
 
-// Button text + icons verbatim from legacy addGRN() L26533-26534.
-const TYPE_META: Record<GrnInwardType, { label: string; icon: string }> = {
-  purchase: { label: 'Against PO', icon: '📦' },
-  job_work_return: { label: 'Against JWPO / DC', icon: '🏭' },
+// Option text — the first two verbatim from legacy addGRN() L26533-26534.
+const TYPE_META: Record<GrnInwardType, { label: string }> = {
+  purchase: { label: 'Against PO' },
+  job_work_return: { label: 'Against JWPO / DC' },
+  nc_return: { label: 'Against NC' },
 };
 
-function typeBtnStyle(active: boolean): CSSProperties {
-  return {
-    flex: 1,
-    padding: '12px',
-    border: active ? '2px solid var(--cyan)' : '2px solid var(--border)',
-    background: active ? 'rgba(34,211,238,0.08)' : 'var(--bg)',
-    fontWeight: 700,
-    cursor: 'pointer',
-  };
+function isInwardType(v: string): v is GrnInwardType {
+  return (GRN_INWARD_TYPES as readonly string[]).includes(v);
 }
 
 export function UnifiedGrnForm({
@@ -61,12 +59,14 @@ export function UnifiedGrnForm({
   initialPurchaseOrderId?: string;
 }): React.JSX.Element {
   const navigate = useNavigate();
+  // A `?poId=` preselect is always a buying PO, so the type starts (and stays
+  // unless the user changes it) on Against PO.
   const [inwardType, setInwardType] = useState<GrnInwardType>('purchase');
-  // ONE exit guard for the whole inward screen, both tabs. Where Cancel goes is
-  // where ESC → Exit goes; every other way off the screen (Back link,
-  // breadcrumb, browser Back) gets "Are you sure?". The Job Work Return tab
-  // has no Cancel of its own and lives inside this component, so it is handed
-  // `exit.leave` (as `onLeave`) for its save rather than a second guard.
+  // ONE exit guard for the whole inward screen, every type. Where Cancel goes
+  // is where ESC → Exit goes; every other way off the screen (Back link,
+  // breadcrumb, browser Back) gets "Are you sure?". The DC and NC forms have
+  // no Cancel of their own and live inside this component, so they are handed
+  // `exit.leave` (as `onLeave`) for their save rather than a second guard.
   const goBack = useCallback(() => void navigate({ to: '/goods-receipt-notes' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
 
@@ -100,36 +100,32 @@ export function UnifiedGrnForm({
           </div>
         </div>
         <div className="panel-body">
-          {/* ▸ GRN TYPE — 2-button selector */}
-          <div style={{ marginBottom: 14 }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: 'var(--cyan)',
-                fontFamily: 'var(--mono)',
-                fontWeight: 700,
-                letterSpacing: '.06em',
-                marginBottom: 8,
-              }}
-            >
-              ▸ GRN TYPE
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {GRN_INWARD_TYPES.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  className="btn"
-                  onClick={() => setInwardType(t)}
-                  style={typeBtnStyle(inwardType === t)}
-                >
-                  {TYPE_META[t].icon} {TYPE_META[t].label}
-                </button>
-              ))}
+          {/* GRN Type — one compact dropdown in the first cell of a 4-grid row,
+              so it lines up with the header fields of whichever form follows. */}
+          <div className="form-grid-4" style={{ marginBottom: 12 }}>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="grnInwardType">
+                GRN Type<span className="req">★</span>
+              </label>
+              <select
+                id="grnInwardType"
+                className="innovic-select"
+                value={inwardType}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (isInwardType(v)) setInwardType(v);
+                }}
+              >
+                {GRN_INWARD_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {TYPE_META[t].label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Switching tabs unmounts the other form, so its picks and lines
+          {/* Switching type unmounts the other form, so its picks and lines
               are dropped — no stale state crosses over. */}
           {inwardType === 'purchase' ? (
             <GrnAgainstPoForm
@@ -141,6 +137,9 @@ export function UnifiedGrnForm({
           ) : null}
           {inwardType === 'job_work_return' ? (
             <GrnAgainstDcForm onLeave={exit.leave} onCancel={() => exit.leave(goBack)} />
+          ) : null}
+          {inwardType === 'nc_return' ? (
+            <GrnAgainstNcForm onLeave={exit.leave} onCancel={() => exit.leave(goBack)} />
           ) : null}
         </div>
       </div>
