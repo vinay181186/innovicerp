@@ -422,7 +422,12 @@ export const jobCardCompletionEventSchema = z.object({
   logType: z.enum(['start', 'complete', 'qc']).nullable(),
   opSeq: z.number().int().nullable(),
   operation: z.string().nullable(),
+  /** The machine that ACTUALLY made this entry (op_log.machine_id, 0095). */
   machineCode: z.string().nullable(),
+  /** The PLANNED machine of the op this row belongs to (jc_ops.machine_id,
+   *  live code), so a board that names the machine ACTUALLY used can name the
+   *  plan beside it (ADR-164). Same name as the actual when nothing changed. */
+  plannedMachineCode: z.string().nullable().default(null),
   operatorName: z.string().nullable(),
   shift: z.string().nullable(),
   qty: z.number().int().nullable(),

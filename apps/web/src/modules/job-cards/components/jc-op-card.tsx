@@ -33,7 +33,7 @@ import type {
   OpLog,
 } from '@innovic/shared';
 import { useState } from 'react';
-import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
+import { PlannedActualMachine } from '@/components/shared/machine-split';
 import { OP_STATUS, opAccentColor } from '../lib/jc-op-labels';
 import { JcOpFooter, OutsourceInfo } from './jc-op-actions';
 import { QtyTile, SetupChip, secLabel } from './jc-op-card-parts';
@@ -201,15 +201,23 @@ export function JcOpCard({
           >
             {op.opSeq}
           </span>
-          <span className="fw-700" style={{ fontSize: 14 }}>
-            {isQc ? 'QC' : isOut ? 'OSP' : (op.machineCode ?? op.machineCodeText ?? '—')}
-            {/* ADR-126 — the label above is the machine the REMAINING qty runs
-                on. Once an op has run on more than one machine it stops matching
-                the DONE tile below, so say so rather than implying the current
-                machine made everything. One machine (the norm) renders exactly
-                as before — MachineChip returns null. */}
-            <MachineChip machines={op.machines} />
-          </span>
+          {isQc || isOut ? (
+            <span className="fw-700" style={{ fontSize: 14 }}>
+              {isQc ? 'QC' : 'OSP'}
+            </span>
+          ) : (
+            /* ADR-164 — a process op names BOTH machines: the PLANNED one
+               (jc_ops, where the remaining qty is routed) and the ACTUAL one
+               (open session, else the machine(s) that made the DONE qty). Same
+               name on both lines when nothing changed; amber when it differs,
+               with the per-machine breakdown when 2+ machines made pieces. */
+            <PlannedActualMachine
+              planned={op.machineCode ?? op.machineCodeText}
+              activeRunningMachineCode={op.activeRunningMachineCode}
+              machines={op.machines}
+              size={13}
+            />
+          )}
           {machineName && !isQc && !isOut ? (
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>{machineName}</span>
           ) : null}
@@ -322,12 +330,9 @@ export function JcOpCard({
                       ) : null}
                     </>
                     ) : null}
-                    {/* The per-machine breakdown of this DONE figure (ADR-126).
-                        Renders nothing unless the op ran on more than one
-                        machine. Skipped on a QC op: the split describes
-                        MACHINED production, and DONE there is the inspection's
-                        accepted count (doneQty above), which no machine made. */}
-                    {isQc ? null : <MachineSplitLines machines={op.machines} />}
+                    {/* The per-machine breakdown of this DONE figure now lives
+                        in the PLANNED / ACTUAL pair in the heading (ADR-164),
+                        so it is not repeated here. */}
                   </>
                 }
               />

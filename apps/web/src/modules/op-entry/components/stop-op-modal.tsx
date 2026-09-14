@@ -68,8 +68,14 @@ export interface StopOpTarget {
   itemName?: string | null;
   opSeq: number;
   operation: string;
-  /** Machine code, or 'OSP'/'—' when there is no machine. Display only. */
+  /** The ACTUAL machine — the one this session is running on and the one the
+   *  entry will be stamped with. Machine code, or 'OSP'/'—' when there is no
+   *  machine. Display only. */
   machineLabel: string;
+  /** The PLANNED machine (jc_ops machine, from JC creation), named beside the
+   *  actual so the operator sees both (ADR-164). Optional: an OSP row has no
+   *  plan to show, and an unwired caller falls back to the single line. */
+  plannedMachineLabel?: string;
   /** v_jc_op_status.available for this op right now. NOT pendingQty. */
   availableQty: number;
 }
@@ -275,8 +281,30 @@ export function StopOpModal({
                 {target.itemName ? <span className="text3"> — {target.itemName}</span> : null}
               </div>
             ) : null}
+            {/* Planned · Actual (ADR-164). The actual turns amber only when
+                it is not the plan — the same rule as PlannedActualMachine. */}
             <div className="text3" style={{ marginTop: 4 }}>
-              Machine <b className="mono">{target.machineLabel}</b>
+              {target.plannedMachineLabel !== undefined ? (
+                <>
+                  Planned <b className="mono">{target.plannedMachineLabel}</b> · Actual{' '}
+                  <b
+                    className="mono"
+                    style={{
+                      color:
+                        target.machineLabel.trim().toLowerCase() !==
+                        target.plannedMachineLabel.trim().toLowerCase()
+                          ? 'var(--amber)'
+                          : undefined,
+                    }}
+                  >
+                    {target.machineLabel}
+                  </b>
+                </>
+              ) : (
+                <>
+                  Machine <b className="mono">{target.machineLabel}</b>
+                </>
+              )}
             </div>
           </div>
 

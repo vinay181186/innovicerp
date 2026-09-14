@@ -5,11 +5,24 @@
 
 import type { JcOpEnriched, JobCardListItem, MachineSplit, OpLog } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { resolveActualMachine } from '@/components/shared/machine-split';
 
-// The op's CURRENT machine — where the REMAINING qty runs, not who made the
-// completed qty (ADR-126). See machineSplitCell for the honest breakdown.
+// The op's PLANNED machine — where the REMAINING qty runs, not who made the
+// completed qty (ADR-126). See actualMachine / machineSplitCell for the rest.
 const machine = (o: JcOpEnriched): string =>
   o.opType === 'qc' ? 'QC' : o.opType === 'outsource' ? 'Outsource' : (o.machineCode ?? o.machineCodeText ?? '');
+
+// The op's ACTUAL machine (ADR-164): the open session's machine, else the
+// machine(s) that made the done qty, else the plan itself. Same name as the
+// planned column when nothing changed. Blank for QC / OSP ops (no machine).
+const actualMachine = (o: JcOpEnriched): string =>
+  o.opType !== 'process'
+    ? ''
+    : resolveActualMachine({
+        planned: o.machineCode ?? o.machineCodeText,
+        activeRunningMachineCode: o.activeRunningMachineCode,
+        machines: o.machines,
+      }).label;
 
 // Per-machine production split (0095 / ADR-126), from the correlated LATERAL
 // over v_op_machine_output in the op-entry service. Empty for a single-machine
@@ -71,6 +84,9 @@ export function exportJobCardExcel(args: {
   const opCols = [
     'Op #',
     'Machine',
+    // The machine the pieces were / are being made on (ADR-164); equals
+    // "Machine" (the plan) unless the operator ran the op elsewhere.
+    'Actual Machine',
     'Operation',
     'Cycle (min)',
     'Program',
@@ -92,6 +108,7 @@ export function exportJobCardExcel(args: {
     ...ops.map((o) => [
       o.opSeq,
       machine(o),
+      actualMachine(o),
       o.operation,
       Number(o.cycleTimeMin) || 0,
       o.program ?? '',
@@ -121,6 +138,9 @@ export function exportJobCardExcel(args: {
     'Operation',
     'Type',
     'Machine',
+    // The op's PLANNED machine beside the one this entry was actually made on
+    // (ADR-164). Same name unless the op was run elsewhere.
+    'Planned Machine',
     'Qty',
     'Reject Qty',
     'Operator',
@@ -140,6 +160,7 @@ export function exportJobCardExcel(args: {
         op?.operation ?? '',
         l.logType,
         logMachine(l),
+        l.plannedMachineCode ?? '',
         l.qty,
         l.rejectQty,
         l.operatorName ?? '',

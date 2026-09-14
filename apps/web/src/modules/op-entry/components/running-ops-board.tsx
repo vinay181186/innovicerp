@@ -4,6 +4,7 @@ import type { RunningOp, StopOpInput } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Square } from 'lucide-react';
 import { useState } from 'react';
+import { PlannedActualMachine } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useStopOp } from '../api';
@@ -107,7 +108,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                 <th>Item Name</th>
                 <th>Op</th>
                 <th>Operation</th>
-                <th>Machine</th>
+                <th>Machine (Planned / Actual)</th>
                 <th>Operator</th>
                 <th>Started</th>
                 <th>Status</th>
@@ -132,8 +133,18 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                     <ItemCells r={r} />
                     <td className="mono">{r.opSeq}</td>
                     <td>{r.operation}</td>
+                    {/* ADR-164 — the session's machine is the ACTUAL; the op's
+                        jc_ops machine is the PLAN. Both named on every
+                        in-house row; an OSP session has no machine. */}
                     <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.machineCode ?? (r.isOsp ? 'OSP' : '—')}
+                      {r.isOsp ? (
+                        'OSP'
+                      ) : (
+                        <PlannedActualMachine
+                          planned={r.plannedMachineCode}
+                          activeRunningMachineCode={r.machineCode}
+                        />
+                      )}
                     </td>
                     <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
                     <td className="mono" style={{ fontSize: 11 }}>
@@ -182,7 +193,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th>Machine</th>
+                  <th>Machine (Planned / Actual)</th>
                   <th>Operator</th>
                   <th>Ended</th>
                   <th>Status</th>
@@ -199,8 +210,18 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                     <ItemCells r={r} />
                     <td className="mono">{r.opSeq}</td>
                     <td>{r.operation}</td>
+                    {/* ADR-164 — the session's machine is the ACTUAL; the op's
+                        jc_ops machine is the PLAN. Both named on every
+                        in-house row; an OSP session has no machine. */}
                     <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.machineCode ?? (r.isOsp ? 'OSP' : '—')}
+                      {r.isOsp ? (
+                        'OSP'
+                      ) : (
+                        <PlannedActualMachine
+                          planned={r.plannedMachineCode}
+                          activeRunningMachineCode={r.machineCode}
+                        />
+                      )}
                     </td>
                     <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
                     <td className="mono text3" style={{ fontSize: 11 }}>
@@ -225,6 +246,11 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             opSeq: stopRow.opSeq,
             operation: stopRow.operation,
             machineLabel: stopRow.machineCode ?? (stopRow.isOsp ? 'OSP' : '—'),
+            // Planned beside actual (ADR-164). Spread, not `undefined`, on an
+            // OSP row: exactOptionalPropertyTypes refuses an explicit undefined.
+            ...(stopRow.isOsp
+              ? {}
+              : { plannedMachineLabel: stopRow.plannedMachineCode ?? stopRow.machineCode ?? '—' }),
             availableQty: stopRow.availableQty,
             // The Stop box names the part as well as the job. `RunningOp`
             // carries all three, and the box is where an operator checks they

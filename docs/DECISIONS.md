@@ -8783,3 +8783,69 @@ the DC receive call.
 - Negative: the NC tab needs the same `ospdc_create` entry right as the DC
   Receive page (server-enforced; the 403 is shown verbatim). A GRN number can no
   longer be overridden on create.
+
+## ADR-164: Start Operation asks for the ACTUAL machine; the planned machine is shown, never rewritten
+**Date:** 2026-09-14
+**Status:** Accepted
+
+### Context
+User requirement: in Start Operation show the **Planned Machine** (from JC
+creation, read-only) and an **Actual Machine** (defaults to planned, changeable
+through Machine Group → Machine); changing Actual must never overwrite Planned;
+Actual must be saved separately and reach every screen that needs it.
+
+Traced before coding. The data model already held both (ADR-125/126):
+`jc_ops.machine_id` is the plan — where the REMAINING qty is routed — and
+`running_ops.machine_id` → `op_log.machine_id` is the machine that MADE each
+qty, stamped at log time from the open session (`resolveLogMachine`). What was
+missing was the choice: `startOpInputSchema` carried no machine, `startOp`
+copied `jc_ops.machine_id` into the session, and the popup showed one
+read-only "Machine" box. Every downstream consumer was classified: Daily
+Report, Op Log Viewer, SO Costing machine-time, Machine-wise output, JC
+completion feed, Shop Floor / Running boards, operator home, utilisation KPI,
+AL-013 and the Excel Production Log read the session/log machine (actual);
+Machine Loading, Job Queue, Production Schedule, Production Dashboard, JC Ops
+board, JC print, SO Overview location and the JC list filter read `jc_ops`
+(planned) by design. The `MachineChip` / `MachineSplitLines` pairing already
+labels both.
+
+### Decision
+- `startOpInputSchema.machineId` — **required on a process op, forbidden on a
+  QC op**. `startOp` validates it (company, not deleted), writes it to
+  `running_ops.machine_id` and the `'start'` op_log marker, and audits
+  `"… Started on CNC-02 (planned CNC-03)"` when they differ. `jc_ops.machine_id`
+  is not touched. Log and Stop need no change: they already stamp off the
+  session.
+- `JcOpEnriched` gains `machineId`, `machineGroupId` (plan, for defaulting the
+  picker) and `activeRunningMachineCode` (the open session's machine, so the
+  Log / Stop popups name the machine the pieces will be stamped with).
+- Start popup: **Planned Machine** (read-only) · **Machine Group** picker ·
+  **Actual Machine ★** — the same `MachineGroupPicker` + narrowed
+  `SearchableSelect` the JC edit card and SO Planning use. Defaults to the plan,
+  or to the machine tile the By Machine tab was opened from. The machine-busy
+  gate moves from the modal into the form and keys on the CHOSEN machine: it is
+  a notice beside the picker (Start disabled, "Open Current Operation" offered),
+  not a wall, because picking another machine is now the normal way out.
+- No migration. No view change. No new column anywhere: "saved separately" is
+  satisfied by the columns 0095 already created.
+
+### Alternatives Considered
+- A `planned_machine_id` snapshot on `running_ops` / `op_log` — rejected: the
+  plan is `jc_ops.machine_id` and a later re-route is a deliberate routing
+  change with its own audit line (ADR-125); a frozen copy would only disagree
+  with it.
+- Starting on another machine re-routes the remaining qty (updates the plan) —
+  rejected by the requirement; "Change Machine" on the JC Ops board remains the
+  way to re-route.
+- Actual machine optional — rejected: a session with `machine_id` NULL escapes
+  the one-running-per-machine unique index, so two jobs could "run" on the same
+  unnamed machine. Text-only planned machines (code never matched the master)
+  now force a pick, closing that hole.
+
+### Consequences
+- Positive: an operator who runs the job on a free machine records it in one
+  click; every machine-wise report attributes the pieces correctly with no
+  further edits; the plan stays the plan.
+- Negative: Start now needs the machines master loaded (≤ 200 rows) before the
+  picker can offer anything; a planned machine that is not in the master shows
+  as text and must be re-picked.

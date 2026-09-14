@@ -38,6 +38,10 @@ export const opLogListItemSchema = z.object({
   opSeq: z.number().int(),
   operation: z.string().nullable(),
   machineCode: z.string().nullable(),
+  /** The PLANNED machine of the op this row belongs to (jc_ops.machine_id,
+   *  live code), so a board that names the machine ACTUALLY used can name the
+   *  plan beside it (ADR-164). Same name as the actual when nothing changed. */
+  plannedMachineCode: z.string().nullable().default(null),
   shift: z.string(),
   qty: z.number().int(),
   rejectQty: z.number().int(),

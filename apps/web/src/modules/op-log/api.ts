@@ -16,7 +16,12 @@ export interface OpLogListItem {
   itemRevision: string | null;
   opSeq: number;
   operation: string | null;
+  /** The machine this entry's qty was STAMPED with — the ACTUAL machine. */
   machineCode: string | null;
+  /** The PLANNED machine of the op this row belongs to (jc_ops machine, from
+   *  JC creation) so the viewer names both (ADR-164). Same name as the actual
+   *  when nothing changed; null on a QC entry or a text-only op. */
+  plannedMachineCode: string | null;
   shift: string;
   qty: number;
   rejectQty: number;

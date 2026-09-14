@@ -5,7 +5,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
-import { MachineSplitLines } from '@/components/shared/machine-split';
+import { ActualMachineLine } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
@@ -354,11 +354,12 @@ function JobQueuePage(): React.JSX.Element {
                           <td className="mono">{r.orderQty}</td>
                           <td className="green mono fw-700">
                             {r.completed}
-                            {/* The per-machine breakdown of that total (ADR-126).
-                                This row sits in THIS machine's queue, but after a
-                                re-route the Done figure was made elsewhere. Renders
-                                nothing unless the op ran on more than one machine. */}
-                            <MachineSplitLines machines={r.machines} />
+                            {/* ADR-164 — this row sits in its PLANNED machine's
+                                queue, so say which machine ACTUALLY made this
+                                figure: always drawn, same name when nothing
+                                changed, amber when it differs, with the
+                                per-machine breakdown for a 2+ machine split. */}
+                            <ActualMachineLine planned={m.machineCode} machines={r.machines} />
                           </td>
                           <td>
                             <span
@@ -449,6 +450,7 @@ const OP_STATUS: Record<string, { label: string; cls: string }> = {
   received: { label: 'Incoming QC', cls: 'b-cyan' },
   outsource: { label: 'Outsource', cls: 'b-amber' },
 };
+
 
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
   const hit = OP_STATUS[status.toLowerCase()];

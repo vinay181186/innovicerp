@@ -18,7 +18,8 @@
 // (machine_id) where status='running' and is_osp=false. The service catches
 // the resulting unique-violation and returns a typed ConflictError.
 
-import { and, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   approvalConfig,
   items,
@@ -67,6 +68,16 @@ import type {
   UpdateOpLogTimingInput,
   UpdateOpLogTimingResult,
 } from './schema';
+
+// Second handle on machines for the PLANNED machine (jc_ops.machine_id), so a
+// query that already joins machines for the ACTUAL one (op_log / running_ops
+// .machine_id) can name the plan beside it in the same SELECT (ADR-164).
+const plannedMachine = alias(machines, 'planned_machine');
+// The plan's live code, or the op's text snapshot when it never resolved an FK
+// (ADR-012 #10) — never the literal 'QC', a type label not a machine (ISSUE-010).
+const plannedMachineCodeSql = sql<
+  string | null
+>`COALESCE(${plannedMachine.code}, NULLIF(${jcOps.machineCodeText}, 'QC'))`;
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -166,6 +177,11 @@ export async function listJcOpsEnriched(
         sol.revision::text     AS "itemRevision",
         COALESCE(so.code, jw.code) AS "soCode",
         o.op_seq               AS "opSeq",
+        -- The PLANNED machine as an id + its group, so the Start popup can
+        -- default the Actual Machine picker to it and open the Group list on
+        -- the right group. jc_ops stores no group; it is read off the master.
+        o.machine_id           AS "machineId",
+        m.machine_group_id     AS "machineGroupId",
         m.code                 AS "machineCode",
         o.machine_code_text    AS "machineCodeText",
         o.operation,
@@ -210,6 +226,21 @@ export async function listJcOpsEnriched(
           ORDER BY r.created_at DESC
           LIMIT 1
         ) AS "activeRunningOpId",
+        -- The ACTUAL machine that session is on. Since the operator may start
+        -- an op on a machine other than the planned one, the Log / Stop popups
+        -- must name THIS machine — it is the one the pieces get stamped with
+        -- (resolveLogMachine) — not the routing above.
+        (
+          SELECT rm.code
+          FROM public.running_ops r
+          JOIN public.machines rm ON rm.id = r.machine_id
+          WHERE r.jc_op_id = o.id
+            AND r.company_id = o.company_id
+            AND r.status = 'running'
+            AND r.is_osp = false
+          ORDER BY r.created_at DESC
+          LIMIT 1
+        ) AS "activeRunningMachineCode",
         -- Who actually made the completed qty, per machine (0095 / ADR-126).
         -- The machine columns above are the op's CURRENT machine — where the
         -- REMAINING qty runs — so on a re-routed op they name a machine that
@@ -275,6 +306,9 @@ export async function listJcOpsEnriched(
       reworkRaisedQty: Number(r['reworkRaisedQty'] ?? 0),
       reworkRaisedToOps: (r['reworkRaisedToOps'] as string | null) ?? null,
       activeRunningOpId: (r['activeRunningOpId'] as string | null) ?? null,
+      activeRunningMachineCode: (r['activeRunningMachineCode'] as string | null) ?? null,
+      machineId: (r['machineId'] as string | null) ?? null,
+      machineGroupId: (r['machineGroupId'] as string | null) ?? null,
       // Pinned to null rather than left to the spread above: the contract types
       // these three as `string | null`, and a row that resolved no item or no SO
       // line must arrive as an explicit null, never as an absent key.
@@ -326,6 +360,8 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
         machineId: opLog.machineId,
         machineCode: machines.code,
         machineCodeText: opLog.machineCodeText,
+        // The PLAN beside the ACTUAL above (ADR-164): the op's own machine.
+        plannedMachineCode: plannedMachineCodeSql,
         startTime: opLog.startTime,
         remarks: opLog.remarks,
         timingEditedAt: opLog.timingEditedAt,
@@ -334,6 +370,8 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
       })
       .from(opLog)
       .leftJoin(machines, eq(machines.id, opLog.machineId))
+      .leftJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
+      .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
       .where(and(eq(opLog.companyId, companyId), scope))
       .orderBy(desc(opLog.createdAt))
       .limit(input.limit);
@@ -356,6 +394,7 @@ type OpLogRow = {
   machineId: string | null;
   machineCode: string | null;
   machineCodeText: string | null;
+  plannedMachineCode: string | null;
   startTime: string | null;
   remarks: string | null;
   timingEditedAt: Date | string | null;
@@ -382,6 +421,7 @@ function toOpLog(r: OpLogRow): OpLog {
     machineId: r.machineId,
     machineCode: r.machineCode,
     machineCodeText: r.machineCodeText,
+    plannedMachineCode: r.plannedMachineCode,
     startTime: r.startTime,
     remarks: r.remarks,
     timingEditedAt: asIso(r.timingEditedAt),
@@ -413,6 +453,8 @@ async function selectOpLogById(
       machineId: opLog.machineId,
       machineCode: machines.code,
       machineCodeText: opLog.machineCodeText,
+      // The PLAN beside the ACTUAL above (ADR-164): the op's own machine.
+      plannedMachineCode: plannedMachineCodeSql,
       startTime: opLog.startTime,
       remarks: opLog.remarks,
       timingEditedAt: opLog.timingEditedAt,
@@ -421,6 +463,8 @@ async function selectOpLogById(
     })
     .from(opLog)
     .leftJoin(machines, eq(machines.id, opLog.machineId))
+    .leftJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
+    .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
     .where(and(eq(opLog.id, id), eq(opLog.companyId, companyId)))
     .limit(1);
   const row = rows[0];
@@ -505,6 +549,9 @@ export async function listRunningOps(
         o.operation,
         r.machine_id        AS "machineId",
         m.code              AS "machineCode",
+        -- The PLAN beside the ACTUAL above (ADR-164): the op's own machine, or
+        -- its text snapshot when no FK resolved -- never the 'QC' type label.
+        COALESCE(pm.code, NULLIF(o.machine_code_text, 'QC')) AS "plannedMachineCode",
         r.is_osp            AS "isOsp",
         r.operator_id       AS "operatorId",
         r.operator_name     AS "operatorName",
@@ -525,6 +572,7 @@ export async function listRunningOps(
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = r.machine_id
+      LEFT JOIN public.machines pm ON pm.id = o.machine_id
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = r.jc_op_id
       WHERE r.company_id = ${companyId}::uuid
         ${input.status ? sql`AND r.status = ${input.status}::running_op_status` : sql``}
@@ -541,6 +589,7 @@ export async function listRunningOps(
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
+      plannedMachineCode: (r['plannedMachineCode'] as string | null) ?? null,
       startDate:
         r['startDate'] instanceof Date
           ? (r['startDate'] as Date).toISOString().slice(0, 10)
@@ -611,6 +660,9 @@ interface StampedMachine {
   machineCode: string | null;
   /** Snapshot written to op_log.machine_code_text. */
   machineCodeText: string | null;
+  /** The PLAN beside the ACTUAL (ADR-164): the op's own machine, live code,
+   *  so the inserted row can name it without a re-query. */
+  plannedMachineCode: string | null;
 }
 
 async function resolveLogMachine(
@@ -634,17 +686,31 @@ async function resolveLogMachine(
   const textFallback =
     op.machineCodeText && op.machineCodeText !== 'QC' ? op.machineCodeText : null;
 
-  if (machineId) {
+  // One lookup covers both the ACTUAL machine and the PLANNED one (ADR-164):
+  // usually the same id, and never more than two.
+  const wanted = [machineId, op.machineId].filter((id): id is string => !!id);
+  const codeById = new Map<string, string>();
+  if (wanted.length > 0) {
     const m = await tx
-      .select({ code: machines.code })
+      .select({ id: machines.id, code: machines.code })
       .from(machines)
-      .where(eq(machines.id, machineId))
-      .limit(1);
-    const code = m[0]?.code ?? null;
-    return { machineId, machineCode: code, machineCodeText: code ?? textFallback };
+      .where(inArray(machines.id, wanted));
+    for (const row of m) codeById.set(row.id, row.code);
+  }
+  const plannedMachineCode =
+    (op.machineId ? codeById.get(op.machineId) : null) ?? textFallback;
+
+  if (machineId) {
+    const code = codeById.get(machineId) ?? null;
+    return {
+      machineId,
+      machineCode: code,
+      machineCodeText: code ?? textFallback,
+      plannedMachineCode,
+    };
   }
 
-  return { machineId: null, machineCode: null, machineCodeText: textFallback };
+  return { machineId: null, machineCode: null, machineCodeText: textFallback, plannedMachineCode };
 }
 
 async function loadAvailability(
@@ -1042,6 +1108,8 @@ function toInsertedOpLog(row: typeof opLog.$inferSelect, stamped: StampedMachine
     machineId: row.machineId,
     machineCode: stamped.machineCode,
     machineCodeText: row.machineCodeText,
+    // The PLAN beside the ACTUAL above (ADR-164), from the same stamp.
+    plannedMachineCode: stamped.plannedMachineCode,
     startTime: row.startTime,
     remarks: row.remarks,
     timingEditedAt: null, // just inserted
@@ -1396,6 +1464,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       machineId: row.machineId,
       machineCode: null,
       machineCodeText: row.machineCodeText,
+      // A QC op has no planned machine either (ADR-164 / ISSUE-010).
+      plannedMachineCode: null,
       startTime: row.startTime,
       remarks: row.remarks,
       timingEditedAt: null, // just inserted
@@ -1893,19 +1963,49 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       }
     }
 
+    // Planned vs actual. jc_ops.machine_id is the PLAN — where the remaining
+    // qty is routed — and this call never rewrites it. The session opens on
+    // the ACTUAL machine the operator picked in the popup (defaulted to the
+    // plan there), and every op_log row the session produces is stamped with
+    // it (0095 / resolveLogMachine). A process op must name one: a session
+    // with machine_id NULL escapes the one-running-per-machine index, so two
+    // jobs could "run" on the same unnamed machine. QC ops carry no machine
+    // (ISSUE-010) and must not be handed one.
+    let actualMachineId: string | null = null;
     let machineCode: string | null = null;
-    if (op.machineId) {
+    if (op.opType === 'qc') {
+      if (input.machineId) {
+        throw new ValidationError('A QC operation has no machine — start it without one');
+      }
+    } else {
+      if (!input.machineId) {
+        throw new ValidationError('Select the machine this operation will actually run on');
+      }
       const m = await tx
+        .select({ id: machines.id, code: machines.code })
+        .from(machines)
+        .where(
+          and(
+            eq(machines.id, input.machineId),
+            eq(machines.companyId, companyId),
+            isNull(machines.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!m[0]) throw new NotFoundError('Machine not found');
+      actualMachineId = m[0].id;
+      machineCode = m[0].code;
+    }
+    // The planned machine's code, only for the audit line when it differs.
+    let plannedCode: string | null = op.machineCodeText && op.machineCodeText !== 'QC' ? op.machineCodeText : null;
+    if (op.machineId) {
+      const pm = await tx
         .select({ code: machines.code })
         .from(machines)
         .where(eq(machines.id, op.machineId))
         .limit(1);
-      machineCode = m[0]?.code ?? null;
+      plannedCode = pm[0]?.code ?? plannedCode;
     }
-    // Text snapshot for the op_log marker below when no machine row resolves.
-    // 'QC' is a type label the route builder writes, not a machine (ISSUE-010).
-    const startMachineCodeText =
-      op.machineCodeText && op.machineCodeText !== 'QC' ? op.machineCodeText : null;
 
     let inserted;
     try {
@@ -1914,7 +2014,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
         .values({
           companyId,
           jcOpId: input.jcOpId,
-          machineId: op.machineId,
+          machineId: actualMachineId,
           isOsp: false,
           operatorId: input.operatorId ?? null,
           operatorName: input.operatorName ?? null,
@@ -1936,7 +2036,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     }
 
     // Also append a 'start' marker to op_log for history (qty=0). It carries the
-    // same machine as the session it opens (0095), so the marker and the
+    // same ACTUAL machine as the session it opens (0095), so the marker and the
     // completion logs that follow it read as one continuous run on one machine.
     await tx.insert(opLog).values({
       companyId,
@@ -1949,8 +2049,8 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       rejectQty: 0,
       operatorId: input.operatorId ?? null,
       operatorName: input.operatorName ?? null,
-      machineId: op.machineId,
-      machineCodeText: machineCode ?? startMachineCodeText,
+      machineId: actualMachineId,
+      machineCodeText: machineCode,
       startTime: input.startTime,
       remarks: input.remarks ?? null,
       createdBy: user.id,
@@ -1988,10 +2088,12 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       .limit(1);
     const meta = jc[0]!;
 
-    // Audit: OP_START (legacy line 5532). machineCode comes from the lookup
-    // above; falls back to op.machineId if no machine row resolved.
+    // Audit: OP_START (legacy line 5532). Names the ACTUAL machine, and the
+    // planned one beside it when the operator ran the op somewhere else, so
+    // the trail shows the deviation without anyone comparing two screens.
     const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
-    const machinePart = machineCode ? ` on ${machineCode}` : '';
+    const deviation = machineCode && plannedCode && plannedCode !== machineCode ? ` (planned ${plannedCode})` : '';
+    const machinePart = machineCode ? ` on ${machineCode}${deviation}` : '';
     await emitActivityLog(
       tx,
       {
@@ -2016,6 +2118,8 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       operation: meta.operation,
       machineId: row.machineId,
       machineCode,
+      // The PLAN beside the ACTUAL above (ADR-164), as resolved for the audit line.
+      plannedMachineCode: plannedCode,
       isOsp: row.isOsp,
       operatorId: row.operatorId,
       operatorName: row.operatorName,
@@ -2153,6 +2257,8 @@ export async function stopOp(
         // left-joined (null for JW-sourced and standalone cards), cast to text
         // for databases that predate migration 0119. Never items.revision.
         itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        // The PLAN beside the session's ACTUAL machine (ADR-164): the op's own.
+        plannedMachineCode: plannedMachineCodeSql,
       })
       .from(jcOps)
       .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
@@ -2161,6 +2267,7 @@ export async function stopOp(
         salesOrderLines,
         and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
       )
+      .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
       .where(eq(jcOps.id, r.jcOpId))
       .limit(1);
     const m = meta[0]!;
@@ -2207,6 +2314,8 @@ export async function stopOp(
       operation: m.operation,
       machineId: r.machineId,
       machineCode,
+      // The PLAN beside the ACTUAL above (ADR-164).
+      plannedMachineCode: m.plannedMachineCode ?? null,
       isOsp: r.isOsp,
       operatorId: r.operatorId,
       operatorName: r.operatorName,

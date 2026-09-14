@@ -28,6 +28,10 @@ export const shopFloorRunningRowSchema = z.object({
   priority: z.string(),
   dueDate: z.string().nullable(),
   operatorName: z.string().nullable(),
+  /** The PLANNED machine of the op this row belongs to (jc_ops.machine_id,
+   *  live code), so a board that names the machine ACTUALLY used can name the
+   *  plan beside it (ADR-164). Same name as the actual when nothing changed. */
+  plannedMachineCode: z.string().nullable().default(null),
   startDate: z.string(),
   startTime: z.string(),
   /** The most this operation can still be logged for, RIGHT NOW — the same

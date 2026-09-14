@@ -11,17 +11,21 @@ import {
   type SubmitOpLogInput,
   type SubmitQcLogInput,
 } from '@innovic/shared';
-import { Loader2, Play, PackagePlus, ShieldCheck, Square } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { AlertTriangle, Loader2, Play, PackagePlus, ShieldCheck, Square } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
+import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { useOperatorsList } from '@/modules/operators/api';
 import {
   useGenerateOspPr,
+  useRunningOps,
   useStartOp,
   useStopOp,
   useSubmitOpLog,
@@ -44,6 +48,18 @@ interface Props {
    *  than left staring at a box they have already submitted. Absent when the
    *  form is rendered inline, where nothing should close. */
   onSubmitted?: () => void;
+  /** The machine to offer as the ACTUAL machine before the operator touches
+   *  the picker, when the host knows better than the plan — the By Machine tab
+   *  opens Start from a machine tile, and that tile is the machine the
+   *  operator is standing at. Falls back to the op's planned machine. */
+  defaultMachineId?: string | null;
+  /** Closes the host popup without a write. Used by the machine-busy notice's
+   *  "Open Current Operation", which navigates away from this box. */
+  onClose?: () => void;
+  /** Reports the Actual Machine the operator currently has picked on the
+   *  Start tab (code, or null while none), so the host's heading strip can
+   *  show it live beside the planned machine. */
+  onActualMachineChange?: (code: string | null) => void;
 }
 
 /** The one wording used wherever this form refuses a future date, so the QC
@@ -59,7 +75,11 @@ export function OpEntryForm({
   activeRunningId,
   onModeChange,
   onSubmitted,
+  defaultMachineId,
+  onClose,
+  onActualMachineChange,
 }: Props): React.JSX.Element {
+  const navigate = useNavigate();
   const submit = useSubmitOpLog();
   const submitQc = useSubmitQcLog();
   const start = useStartOp();
@@ -123,6 +143,92 @@ export function OpEntryForm({
   const [qcReportName, setQcReportName] = useState<string | null>(null);
   // OSP auto-PR result/error message (ADR-039) — only used on the outsource panel.
   const [ospMsg, setOspMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  // PLANNED vs ACTUAL machine. The plan is jc_ops.machine_id, set at JC
+  // creation and shown read-only here — Start never rewrites it. The session
+  // opens on the ACTUAL machine, which defaults to the plan (or to the tile the
+  // By Machine tab was opened from) and can be changed through Group → Machine,
+  // the same two controls the JC edit card and SO Planning use. Only a process
+  // op has one; QC ops carry no machine.
+  const isProcessOp = op.opType === 'process';
+  const [actualMachineId, setActualMachineId] = useState<string | null>(null);
+  const [actualGroupId, setActualGroupId] = useState<string | null>(null);
+  const [machineSearch, setMachineSearch] = useState('');
+  // ≤ 200: the machines list route caps `limit` there and 400s above it.
+  const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
+  const { data: machineGroupsData } = useMachineGroupsList({ limit: 200, offset: 0 });
+  const machinesList = useMemo(() => machinesData?.machines ?? [], [machinesData]);
+  const machineGroupCodeById = useMemo(
+    () => new Map((machineGroupsData?.groups ?? []).map((g) => [g.id, g.code])),
+    [machineGroupsData],
+  );
+  const actualMachine = actualMachineId
+    ? (machinesList.find((m) => m.id === actualMachineId) ?? null)
+    : null;
+  const plannedLabel = op.machineCode ?? op.machineCodeText ?? '—';
+  useEffect(() => {
+    onActualMachineChange?.(actualMachine?.code ?? null);
+    // The host only wants the CODE; the callback identity is not a trigger.
+  }, [actualMachine?.code]);
+  // Seed on every op change: the picker must open on THIS op's plan, not on
+  // whatever the previous row was started on.
+  useEffect(() => {
+    const seedId = defaultMachineId ?? op.machineId ?? null;
+    setActualMachineId(seedId);
+    setActualGroupId(
+      seedId && seedId !== op.machineId
+        ? null // resolved from the master below once the list is in
+        : (op.machineGroupId ?? null),
+    );
+    setMachineSearch('');
+  }, [op.id, op.machineId, op.machineGroupId, defaultMachineId]);
+  // A seeded machine whose group the op row could not tell us (the By Machine
+  // tile, or a plan with no group) reads its group off the master.
+  useEffect(() => {
+    if (!actualMachineId || actualGroupId) return;
+    const m = machinesList.find((x) => x.id === actualMachineId);
+    if (m?.machineGroupId) setActualGroupId(m.machineGroupId);
+  }, [machinesList, actualMachineId, actualGroupId]);
+  const machineOptions = useMemo(
+    () =>
+      machinesList
+        .filter(
+          (m) =>
+            (!actualGroupId || m.machineGroupId === actualGroupId) &&
+            (!machineSearch.trim() ||
+              `${m.code} ${m.name}`.toLowerCase().includes(machineSearch.trim().toLowerCase())),
+        )
+        .map((m) => ({ id: m.id, code: m.code, name: m.name })),
+    [machinesList, actualGroupId, machineSearch],
+  );
+  // Picking a group narrows the list; a machine outside the new group is
+  // cleared so the row cannot read "VMC group, running a lathe".
+  function handleGroupChange(groupId: string | null): void {
+    setActualGroupId(groupId);
+    if (groupId && actualMachine && actualMachine.machineGroupId !== groupId) {
+      setActualMachineId(null);
+    }
+  }
+  function handleMachineChange(id: string | null): void {
+    setActualMachineId(id);
+    const m = id ? machinesList.find((x) => x.id === id) : undefined;
+    if (m?.machineGroupId && !actualGroupId) setActualGroupId(m.machineGroupId);
+  }
+
+  // MACHINE-BUSY GATE. Starting inserts a running_ops row, and a partial
+  // unique index refuses a second running session on the same machine. That
+  // refusal used to arrive only after the form was filled and submitted; here
+  // it is caught the moment the ACTUAL machine is chosen, and — because the
+  // operator can now pick another machine — it is a notice beside the picker,
+  // not a wall in front of the form. Keyed on the chosen machine's id, which
+  // is what the index sees.
+  const runningOps = useRunningOps({ status: 'running' });
+  const busy =
+    !activeRunningId && actualMachineId
+      ? (runningOps.data?.find(
+          (r) => r.machineId === actualMachineId && !r.isOsp && r.jcOpId !== op.id,
+        ) ?? null)
+      : null;
 
   // Reset when the selected op changes. Quantities and notes belong to the op
   // that was on screen, never to the next one.
@@ -303,8 +409,19 @@ export function OpEntryForm({
     // time, shift and operator. No quantity: nothing has been made yet.
     const chosenShift = requireMandatory({ qtyRequired: false, personLabel: 'Operator' });
     if (!chosenShift) return;
+    if (isProcessOp && !actualMachineId) {
+      setErrorMessage('Select the machine this operation will actually run on.');
+      return;
+    }
+    if (busy) {
+      setErrorMessage(
+        `${actualMachine?.code ?? 'That machine'} is running ${busy.jobCardCode} Op ${busy.opSeq} — pick another machine or stop that operation first.`,
+      );
+      return;
+    }
     const input: StartOpInput = {
       jcOpId: op.id,
+      ...(isProcessOp && actualMachineId ? { machineId: actualMachineId } : {}),
       startDate: logDate,
       startTime: entryTime,
       shift: chosenShift,
@@ -846,17 +963,76 @@ export function OpEntryForm({
                 ))}
               </select>
             </div>
-            <div className="form-grp" style={{ width: 130 }}>
-              <label className="form-label" htmlFor="opf-machine">
-                Machine
-              </label>
-              <input
-                id="opf-machine"
-                className="innovic-input"
-                readOnly
-                value={op.machineCode ?? op.machineCodeText ?? '—'}
-              />
-            </div>
+            {isStart && isProcessOp ? (
+              <>
+                {/* PLANNED — from JC creation, read-only. Start never rewrites
+                    it; the machine the session actually runs on is chosen in
+                    the two boxes beside it. */}
+                <div className="form-grp" style={{ width: 110 }}>
+                  <label className="form-label" htmlFor="opf-machine">
+                    Planned Machine
+                  </label>
+                  <input
+                    id="opf-machine"
+                    className="innovic-input mono fw-700"
+                    readOnly
+                    value={plannedLabel}
+                    title="Set at Job Card creation. Not changed by starting."
+                  />
+                </div>
+                <div className="form-grp" style={{ width: 160 }}>
+                  <label className="form-label" htmlFor="opf-mgrp">
+                    Machine Group
+                  </label>
+                  <MachineGroupPicker
+                    id="opf-mgrp"
+                    valueId={actualGroupId}
+                    valueText={actualGroupId ? (machineGroupCodeById.get(actualGroupId) ?? null) : null}
+                    onChange={handleGroupChange}
+                  />
+                </div>
+                <div className="form-grp" style={{ width: 170 }}>
+                  <label className="form-label" htmlFor="opf-actual-machine">
+                    Actual Machine<span className="req">★</span>
+                  </label>
+                  <SearchableSelect
+                    id="opf-actual-machine"
+                    value={actualMachineId}
+                    onChange={handleMachineChange}
+                    onSearch={setMachineSearch}
+                    options={machineOptions}
+                    placeholder={actualGroupId ? '🔍 Machine in group ★' : '🔍 Machine ★'}
+                    valueLabel={actualMachine?.code}
+                    selectedLabel={(m) => m.code ?? m.name}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Log / Stop: both machines, always, as two plain read-only
+                    boxes the same height as their neighbours — no sub-line
+                    under either, so the row stays level. Actual is the open
+                    session's machine (the one the pieces get stamped with);
+                    when the operator never changed it the two read the same. */}
+                <div className="form-grp" style={{ width: 110 }}>
+                  <label className="form-label" htmlFor="opf-machine">
+                    Planned Machine
+                  </label>
+                  <input id="opf-machine" className="innovic-input" readOnly value={plannedLabel} />
+                </div>
+                <div className="form-grp" style={{ width: 110 }}>
+                  <label className="form-label" htmlFor="opf-actual-machine-ro">
+                    Actual Machine
+                  </label>
+                  <input
+                    id="opf-actual-machine-ro"
+                    className="innovic-input"
+                    readOnly
+                    value={op.activeRunningMachineCode ?? plannedLabel}
+                  />
+                </div>
+              </>
+            )}
             {showQtyFields ? (
               <>
                 <div className="form-grp" style={{ width: 100 }}>
@@ -1001,7 +1177,14 @@ export function OpEntryForm({
                 <b className="mono">
                   {op.jobCardCode} Op{op.opSeq}
                 </b>{' '}
-                as Running on <b>{op.machineCode ?? op.machineCodeText ?? '—'}</b>.
+                as Running on <b>{isProcessOp ? (actualMachine?.code ?? '—') : plannedLabel}</b>
+                {isProcessOp && actualMachine && actualMachine.code !== plannedLabel ? (
+                  <>
+                    {' '}
+                    <span className="amber">(planned {plannedLabel})</span>
+                  </>
+                ) : null}
+                .
               </div>
               {/* The part. The sentence above names the job, the operation and
                   the machine, which is everything except WHAT is being made —
@@ -1037,6 +1220,56 @@ export function OpEntryForm({
             </div>
           ) : null}
 
+          {busy ? (
+            /* MACHINE BUSY — names the job holding the chosen machine and
+               offers the one action that frees it: open that running op's
+               Log box, where Complete or Stop releases the machine through the
+               existing workflow. Or the operator simply picks another
+               machine above. Start stays disabled while this shows. */
+            <div
+              style={{
+                display: 'flex',
+                gap: 10,
+                alignItems: 'flex-start',
+                padding: 12,
+                marginTop: 12,
+                background: 'var(--bg3)',
+                border: '1px solid var(--amber)',
+                borderRadius: 8,
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <AlertTriangle size={18} className="amber" style={{ flex: 'none', marginTop: 2 }} />
+              <div style={{ flex: 1 }}>
+                <b className="mono">{actualMachine?.code}</b> is currently running{' '}
+                <span className="mono fw-700 cyan">
+                  {busy.jobCardCode} / Op {busy.opSeq}
+                </span>
+                . Pick another machine, or complete / stop that operation first.
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                title="Open the running operation to Complete or Stop it"
+                onClick={() => {
+                  void navigate({
+                    to: '/op-entry',
+                    search: (prev) => ({
+                      ...prev,
+                      jc: busy.jobCardCode,
+                      op: busy.jcOpId,
+                      mode: 'complete',
+                      view: undefined,
+                    }),
+                  });
+                  onClose?.();
+                }}
+              >
+                ✚ Open Current Operation
+              </button>
+            </div>
+          ) : null}
           {errorBanner}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
             {canOpEntry ? (
@@ -1057,7 +1290,7 @@ export function OpEntryForm({
                     type="submit"
                     className="btn btn-primary"
                     style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
-                    disabled={blockedReason !== null || start.isPending}
+                    disabled={blockedReason !== null || start.isPending || Boolean(busy)}
                   >
                     {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={14} />}
                     ▶ Start Operation

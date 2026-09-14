@@ -285,8 +285,15 @@ export function MachineOpEntryView(): React.JSX.Element {
             ops={pendingOps}
             producedOps={producedOps}
             isLoading={machineOps.isLoading}
+            // The tile the operator is standing at pre-fills the Actual
+            // Machine picker; the op's planned machine is shown beside it.
             onStart={(op) =>
-              setEntryTarget({ op, activeRunningId: op.activeRunningOpId, mode: 'start' })
+              setEntryTarget({
+                op,
+                activeRunningId: op.activeRunningOpId,
+                mode: 'start',
+                machineId: selectedMachine.id,
+              })
             }
           />
         )

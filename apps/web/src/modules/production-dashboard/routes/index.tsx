@@ -22,7 +22,7 @@ import type {
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
+import { PlannedActualMachine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachineLoading } from '@/modules/machine-loading/api';
@@ -197,7 +197,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th>Item Name</th>
                       <th>Op</th>
                       <th>Operation</th>
-                      <th>Machine</th>
+                      <th>Machine (Planned / Actual)</th>
                       <th>Order Qty</th>
                       <th>Completed</th>
                       <th style={{ color: 'var(--amber)' }}>Available</th>
@@ -560,26 +560,6 @@ function ScTile({
   );
 }
 
-// Legacy machTag() (HTML L1978-1984) — a `.tag` chip with the code in bold and
-// the machine NAME beneath it. The name is not on this payload, so only the
-// code block renders (legacy's own `m`-not-found branch does the same).
-function MachineTag({ code }: { code: string }): React.JSX.Element {
-  return (
-    <span
-      className="tag"
-      style={{
-        background: 'var(--bg4)',
-        color: 'var(--cyan)',
-        display: 'inline-block',
-        lineHeight: 1.25,
-        verticalAlign: 'top',
-      }}
-    >
-      <span style={{ fontWeight: 700, display: 'block' }}>{code}</span>
-    </span>
-  );
-}
-
 function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element {
   return (
     <tr>
@@ -621,20 +601,22 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
       <td className="td-ctr mono">{op.opSeq}</td>
       <td>{op.operation}</td>
       <td>
-        {op.machineCode ? <MachineTag code={op.machineCode} /> : '—'}
-        {/* ADR-126 — this column is the machine the REMAINING qty runs on. Once
-            an op has run on more than one machine it stops matching the Completed
-            figure beside it, so say so instead of implying the current machine
-            made everything. One machine (the norm) renders exactly as before —
-            MachineChip returns null. */}
-        <MachineChip machines={op.machines} />
+        {/* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs) and
+            ACTUAL (the machine(s) that made the Completed qty, else the plan).
+            Same name on both lines when nothing changed; amber when it differs,
+            with the per-machine breakdown for a 2+ machine split. An op with no
+            machine at all (OSP) keeps its dash. */}
+        {op.machineCode || op.machines.length ? (
+          <PlannedActualMachine planned={op.machineCode} machines={op.machines} />
+        ) : (
+          '—'
+        )}
       </td>
       <td className="td-ctr">{op.orderQty}</td>
       <td className="td-ctr green mono fw-700">
         {op.completedQty}
-        {/* The per-machine breakdown of that total (ADR-126). Renders nothing
-            unless the op ran on more than one machine. */}
-        <MachineSplitLines machines={op.machines} />
+        {/* The per-machine breakdown of that total lives in the Planned /
+            Actual machine cell (ADR-164), so it is not repeated here. */}
       </td>
       <td className="td-ctr">
         <span className="mono fw-700 amber" style={{ fontSize: 16 }}>

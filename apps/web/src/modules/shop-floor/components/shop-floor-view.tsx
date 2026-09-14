@@ -239,7 +239,24 @@ export function ShopFloorView(): React.JSX.Element {
                           )}
                         </td>
                         <td className="td-ctr mono fw-700 amber">{r.opSeq}</td>
-                        <td className="fw-700">{r.operation}</td>
+                        <td className="fw-700">
+                          {r.operation}
+                          {/* ADR-164 — this panel IS the actual machine. When
+                              the op was planned for a different one, say so
+                              on the row; when they agree the heading already
+                              names it and nothing extra is drawn. */}
+                          {r.plannedMachineCode &&
+                          r.plannedMachineCode.trim().toLowerCase() !==
+                            m.machineCode.trim().toLowerCase() ? (
+                            <div
+                              className="text3"
+                              style={{ fontSize: 10, fontWeight: 400, whiteSpace: 'nowrap' }}
+                              title={`Planned for ${r.plannedMachineCode}, running on ${m.machineCode}`}
+                            >
+                              planned <span className="mono">{r.plannedMachineCode}</span>
+                            </div>
+                          ) : null}
+                        </td>
                         <td className="td-code" style={{ color: 'var(--purple)' }}>
                           {itemCodeWithRev(r.itemCode, r.itemRevision)}
                         </td>
@@ -311,6 +328,9 @@ export function ShopFloorView(): React.JSX.Element {
             opSeq: stopRow.row.opSeq,
             operation: stopRow.row.operation,
             machineLabel: stopRow.machineCode,
+            // The panel's machine is the ACTUAL; the row carries the PLAN
+            // (ADR-164). Same name when nothing changed.
+            plannedMachineLabel: stopRow.row.plannedMachineCode ?? stopRow.machineCode,
             availableQty: stopRow.row.availableQty,
           }}
           pending={stopMut.isPending}
