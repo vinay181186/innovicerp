@@ -159,7 +159,19 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 Open PO
               </Link>
             ) : null}
-            {/* Set only on a GRN the DC receive auto-raised (Against JWPO / DC). */}
+            {/* Set only on a GRN raised by receiving an NC's return-to-vendor
+                challan (Against NC, ADR-161). */}
+            {detail.ncId ? (
+              <Link
+                to="/nc-register/$id"
+                params={{ id: detail.ncId }}
+                className="btn btn-ghost btn-sm"
+              >
+                Open NC
+              </Link>
+            ) : null}
+            {/* Set only on a GRN the DC receive auto-raised (Against JWPO / DC
+                or Against NC — both come back through the challan). */}
             {detail.deliveryChallanId ? (
               <Link
                 to="/delivery-challans/$id"
@@ -328,7 +340,13 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
           otherwise whatever the storekeeper typed on Against PO. */}
       <Pair label="DC No." value={detail.dcCode ?? detail.dcNo ?? '—'} />
       <Pair label="Invoice No." value={detail.invoiceNo ?? '—'} />
-      <Pair label="PO" value={detail.poCode ?? detail.poCodeText ?? '—'} />
+      {/* On an NC-return GRN there is no PO: the header's poCodeText holds the
+          NC code, so it is shown once, under an "NC" label. */}
+      {detail.ncCode ? (
+        <Pair label="NC" value={detail.ncCode} />
+      ) : (
+        <Pair label="PO" value={detail.poCode ?? detail.poCodeText ?? '—'} />
+      )}
       <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText ?? '—'} />
       <div className="form-grp form-full">
         <span className="form-label">Remarks</span>

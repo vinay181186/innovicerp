@@ -361,8 +361,12 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                   <span className={`badge ${closed ? 'b-green' : 'b-amber'}`}>
                     {closed ? 'QC Cleared' : 'QC Pending'}
                   </span>
-                  {/* Source: an OSP delivery challan (ADR-080) or a purchase PO. */}
-                  {grn.deliveryChallanId ? (
+                  {/* Source: an NC's return-to-vendor challan (ADR-161), an OSP
+                      delivery challan (ADR-080) or a purchase PO. An NC GRN
+                      also carries deliveryChallanId, so NC is checked first. */}
+                  {grn.ncId ? (
+                    <span className="badge b-red">Against NC</span>
+                  ) : grn.deliveryChallanId ? (
                     <span className="badge b-cyan">Against DC</span>
                   ) : grn.purchaseOrderId ? (
                     <span className="badge b-grey">Against PO</span>
@@ -434,9 +438,13 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                       {grn.grnDate}
                     </span>
                     <span>·</span>
+                    {/* On an NC-return GRN poCodeText holds the NC code (no PO
+                        exists), so the same slot reads "NC …" instead. */}
                     <span style={{ whiteSpace: 'nowrap' }}>
-                      PO{' '}
-                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{poRef ?? '—'}</span>
+                      {grn.ncId ? 'NC' : 'PO'}{' '}
+                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                        {grn.ncId ? (grn.poCodeText ?? '—') : (poRef ?? '—')}
+                      </span>
                     </span>
                     {grn.dcNo ? (
                       <>

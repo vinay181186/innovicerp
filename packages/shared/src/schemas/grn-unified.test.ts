@@ -11,19 +11,39 @@ const UUID2 = '22222222-2222-4222-8222-222222222222';
 
 const purchase = {
   inwardType: 'purchase' as const,
-  header: { code: 'GRN-1', grnDate: '2026-06-28' },
+  // vendorCodeText: a GRN header needs a vendor (migration 0080 CHECK).
+  header: { grnDate: '2026-06-28', vendorCodeText: 'VND-1' },
   lines: [{ itemName: 'Widget', itemCodeText: 'W-1', receivedQty: 3 }],
 };
+// Both challan-sourced branches carry the DC receive body (ADR-162 / ADR-163).
 const jobWorkReturn = {
   inwardType: 'job_work_return' as const,
-  inwardDate: '2026-06-28',
-  jwDcOutwardId: UUID,
-  lines: [{ jwDcOutwardLineId: UUID2, receivedQty: 5, okQty: 4, rejectedQty: 1 }],
+  deliveryChallanId: UUID,
+  receiptDate: '2026-06-28',
+  lines: [{ deliveryChallanLineId: UUID2, receivedQty: 5 }],
+};
+const ncReturn = {
+  inwardType: 'nc_return' as const,
+  deliveryChallanId: UUID,
+  receiptDate: '2026-06-28',
+  lines: [{ deliveryChallanLineId: UUID2, receivedQty: 2 }],
 };
 
 describe('grnUnifiedSchema', () => {
-  it('exposes exactly the two supported inward types (Misc deferred; JWSO Inward on Party GRN screen)', () => {
-    expect([...GRN_INWARD_TYPES]).toEqual(['purchase', 'job_work_return']);
+  it('exposes exactly the three supported inward types (Misc deferred; JWSO Inward on Party GRN screen)', () => {
+    expect([...GRN_INWARD_TYPES]).toEqual(['purchase', 'job_work_return', 'nc_return']);
+  });
+
+  it('accepts a valid NC Return payload', () => {
+    expect(grnUnifiedSchema.safeParse(ncReturn).success).toBe(true);
+  });
+
+  it('rejects a challan receive with no positive line qty', () => {
+    const res = grnUnifiedSchema.safeParse({
+      ...ncReturn,
+      lines: [{ deliveryChallanLineId: UUID2, receivedQty: 0 }],
+    });
+    expect(res.success).toBe(false);
   });
 
   it('accepts a valid Purchase payload', () => {
@@ -65,11 +85,9 @@ describe('grnUnifiedSchema', () => {
     expect(grnUnifiedSchema.safeParse({ ...purchase, lines: [] }).success).toBe(false);
   });
 
-  it('Job Work Return enforces okQty + rejectedQty === receivedQty', () => {
-    const bad = {
-      ...jobWorkReturn,
-      lines: [{ jwDcOutwardLineId: UUID2, receivedQty: 5, okQty: 4, rejectedQty: 0 }],
-    };
-    expect(grnUnifiedSchema.safeParse(bad).success).toBe(false);
+  it('Job Work Return needs the challan id — a bare receipt body fails', () => {
+    const { deliveryChallanId: _drop, ...noDc } = jobWorkReturn;
+    void _drop;
+    expect(grnUnifiedSchema.safeParse(noDc).success).toBe(false);
   });
 });
