@@ -26,10 +26,8 @@
 // close button, so the two boxes an operator meets read as one thing.
 
 import type { JcOpEnriched } from '@innovic/shared';
-import { useNavigate } from '@tanstack/react-router';
-import { AlertTriangle, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useRunningOps } from '../api';
 import { OpEntryForm } from './op-entry-form';
 
 /** What the popup was opened against. Which half of the entry form shows is
@@ -43,6 +41,10 @@ export interface OpEntryModalTarget {
    *  whether the form offers Stop. */
   activeRunningId: string | null;
   mode: 'start' | 'complete';
+  /** The machine the operator is standing at when the box was opened from a
+   *  machine tile (By Machine tab). Pre-fills the Actual Machine picker; the
+   *  op's planned machine is the default otherwise. */
+  machineId?: string | null;
 }
 
 /** One fact in the heading strip. */
@@ -72,38 +74,15 @@ export function OpEntryModal({
 }): React.JSX.Element {
   const { op, activeRunningId } = target;
   const isQc = op.opType === 'qc' || op.qcRequired;
-  const machine = op.machineCode ?? op.machineCodeText ?? '—';
-  const navigate = useNavigate();
-
-  // MACHINE-BUSY GATE — the ONE new behaviour. Starting an op inserts a
-  // running_ops row, and a partial unique index refuses a second running op on
-  // the same non-OSP machine — the "machine busy" ConflictError. That refusal
-  // used to arrive only AFTER the operator filled and submitted the Start form.
-  // Catch it up front: the moment the Start box would open, look for another op
-  // already running on this op's machine, and if there is one show a purely
-  // informational notice in place of the form. Only relevant when THIS op is
-  // not itself running (activeRunningId null → Start) and it targets a real
-  // machine (OSP holds no machine lock).
-  //
-  // This popup is a signpost, nothing more. It starts nothing, completes
-  // nothing and remembers nothing: "Open Current Operation" navigates to the
-  // running op's existing Log-production screen and closes this box, leaving no
-  // reference to the op the operator tried to start. Completing or stopping the
-  // running op there behaves EXACTLY as it always has (partial quantities and
-  // all) and does NOT auto-start anything — the operator returns and clicks
-  // Start on the new op themselves.
-  //
-  // A JcOpEnriched names its machine by CODE (`machine`, above); match on the
-  // code an operator would read — unique in the machine master.
-  const machineKey = op.machineCode ?? op.machineCodeText ?? null;
-  const runningOps = useRunningOps({ status: 'running' });
-  const busy =
-    !activeRunningId && machineKey
-      ? (runningOps.data?.find(
-          (r) => r.machineCode === machineKey && !r.isOsp && r.jcOpId !== op.id,
-        ) ?? null)
-      : null;
-  const showBusy = Boolean(busy);
+  const planned = op.machineCode ?? op.machineCodeText ?? '—';
+  // While a session is open the strip names the machine it is ACTUALLY on —
+  // the one the pieces get stamped with — and the plan beside it if they
+  // differ. Before a session exists only the plan is known; the Actual
+  // Machine picker inside the form decides the rest.
+  const machine =
+    op.activeRunningMachineCode && op.activeRunningMachineCode !== planned
+      ? `${op.activeRunningMachineCode} (planned ${planned})`
+      : (op.activeRunningMachineCode ?? planned);
   // `CODE/REV` for the part, or '' when the join brought no item back. Empty
   // rather than a dash: a dash would read as "this card has no item", and every
   // job card has one.
@@ -115,13 +94,11 @@ export function OpEntryModal({
   // stale ?mode=start used to do on IN-JC-26-00017 Op 1 while it was running.
   // A QC op has its own form inside and its own vocabulary, so it keeps its own
   // title rather than being called production either way.
-  const title = showBusy
-    ? '⛔ Machine busy'
-    : isQc
-      ? '✔ QC inspection'
-      : activeRunningId
-        ? '✚ Log production'
-        : '▶ Start operation';
+  const title = isQc
+    ? '✔ QC inspection'
+    : activeRunningId
+      ? '✚ Log production'
+      : '▶ Start operation';
 
   return (
     <div
@@ -163,68 +140,6 @@ export function OpEntryModal({
           </button>
         </div>
 
-        {showBusy && busy ? (
-          /* MACHINE BUSY — shown instead of the Start form. Names the job and
-             operation holding the machine, and offers the one action that
-             unblocks the operator: open that running op's Log-production box,
-             where Complete or Stop frees the machine through the existing
-             workflow. No new screen, no second start path. */
-          <div style={{ padding: 16 }}>
-            <div
-              style={{
-                display: 'flex',
-                gap: 12,
-                alignItems: 'flex-start',
-                padding: 14,
-                background: 'var(--bg3)',
-                border: '1px solid var(--amber)',
-                borderRadius: 8,
-              }}
-            >
-              <AlertTriangle size={22} className="amber" style={{ flex: 'none', marginTop: 2 }} />
-              <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-                This machine is currently running{' '}
-                <span className="mono fw-700 cyan">
-                  {busy.jobCardCode} / Op {busy.opSeq}
-                </span>
-                . You cannot start this operation until the current operation is completed
-                or stopped.
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                title="Open the running operation to Complete or Stop it"
-                onClick={() => {
-                  // Go to the running op's EXISTING Log-production screen via the
-                  // same deep link the Job Card page and Job Queue already use,
-                  // then close this box. mode:'complete' opens the running op
-                  // (its own running session shows Complete and Stop). Nothing
-                  // about the op the operator tried to start is carried across —
-                  // this popup neither starts nor completes anything itself.
-                  void navigate({
-                    to: '/op-entry',
-                    search: (prev) => ({
-                      ...prev,
-                      jc: busy.jobCardCode,
-                      op: busy.jcOpId,
-                      mode: 'complete',
-                      view: undefined,
-                    }),
-                  });
-                  onClose();
-                }}
-              >
-                ✚ Open Current Operation
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
         {/* WHICH JOB — the whole reason this box exists. It comes before every
             field, not beside them, so the operation being logged is read before
             a single number is typed. */}
@@ -289,7 +204,7 @@ export function OpEntryModal({
             </div>
           ) : null}
           <Fact label="OPERATION" value={`Op ${op.opSeq} · ${op.operation}`} />
-          <Fact label="MACHINE" value={machine} />
+          <Fact label={activeRunningId ? 'MACHINE' : 'PLANNED MACHINE'} value={machine} />
           <div>
             <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
               AVAILABLE
@@ -309,10 +224,10 @@ export function OpEntryModal({
             // a successful save invites a second identical submission, which on
             // a shop floor is how a quantity gets booked twice.
             onSubmitted={onClose}
+            onClose={onClose}
+            defaultMachineId={target.machineId ?? null}
           />
         </div>
-          </>
-        )}
       </div>
     </div>
   );

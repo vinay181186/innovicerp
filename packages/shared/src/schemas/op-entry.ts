@@ -82,6 +82,15 @@ export const jcOpEnrichedSchema = z.object({
   itemName: z.string().nullable().default(null),
   soCode: z.string().nullable().optional(), // source SO/JW order code (T27)
   opSeq: z.number().int().positive(),
+  /** The PLANNED machine: jc_ops.machine_id, where the REMAINING qty is routed.
+   *  Carried as an id (not only a code) so the Start popup can default its
+   *  Actual Machine picker to it. Null on OSP / QC ops and on a text-only op
+   *  whose code never matched the master. */
+  machineId: z.string().uuid().nullable().default(null),
+  /** machines.machine_group_id of the planned machine, so the Group → Machine
+   *  picker opens on the right group. Display/narrowing only — nothing stores
+   *  it on the op. */
+  machineGroupId: z.string().uuid().nullable().default(null),
   machineCode: z.string().nullable(), // joined from machines.code; null for OSP / QC
   machineCodeText: z.string().nullable(),
   /** Who actually MADE the completed qty, per machine (ADR-126). The two machine
@@ -146,6 +155,12 @@ export const jcOpEnrichedSchema = z.object({
    *
    *  Two questions, two fields. This one is the session question. */
   activeRunningOpId: z.string().uuid().nullable().default(null),
+  /** The ACTUAL machine the open session above is running on (running_ops
+   *  .machine_id → machines.code). Differs from machineCode when the operator
+   *  started the op on a machine other than the planned one; null when no
+   *  session is open or the session is OSP. Log / Stop popups show this one,
+   *  because that is the machine the pieces will be stamped with. */
+  activeRunningMachineCode: z.string().nullable().default(null),
   /** The NC quantity breakup for this op (docs/QC-NC-HANDLING-DESIGN.md §7,
    *  from v_nc_op_breakup). Every figure is "pieces currently in that state",
    *  so together they partition the op's NC qty. All 0 when the op has never
@@ -442,6 +457,13 @@ export type StopOpInput = z.infer<typeof stopOpInputSchema>;
 export const startOpInputSchema = z
   .object({
     jcOpId: z.string().uuid(),
+    /** The ACTUAL machine this session runs on. Defaults (in the popup) to the
+     *  op's planned machine; the operator may pick another through Group →
+     *  Machine. Written to running_ops.machine_id and stamped onto every
+     *  op_log row the session produces (0095) — never onto jc_ops.machine_id,
+     *  which stays the plan. Required on a process op (a session with no
+     *  machine has no busy lock); must be omitted on QC / OSP ops. */
+    machineId: z.string().uuid().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     startTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/),
     shift: shiftSchema,
