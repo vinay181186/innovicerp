@@ -122,6 +122,7 @@ function RouteCardEditPage(): React.JSX.Element {
           code: detail.code,
           itemId: detail.itemId,
           itemCodeText: detail.itemCode ?? '',
+          itemName: detail.itemName ?? '',
           rawMaterialGradeId: detail.rawMaterialGradeId,
           rawMaterialGradeText: detail.rawMaterialGradeText,
           rawMaterialSizeId: detail.rawMaterialSizeId,

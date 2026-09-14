@@ -12,7 +12,6 @@
 
 import type {
   CreateRouteCardOpInput,
-  Item,
   Machine,
   RouteCard,
   RouteCardPlanType,
@@ -20,6 +19,7 @@ import type {
 } from '@innovic/shared';
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
@@ -58,7 +58,8 @@ export interface RouteCardFormOpDraft {
 export interface RouteCardFormHeaderDraft {
   code: string;
   itemId: string;
-  itemCodeText: string; // displayed value
+  itemCodeText: string; // code snapshot, shown in the field once picked
+  itemName: string; // name snapshot, shown under the picker (survives a search that pages past it)
   // Raw material — two INDEPENDENT master pickers, both optional. The id links
   // to the master; the *Text snapshot is what the detail page and the printout
   // still show after the master row is renamed, so both travel together and
@@ -140,7 +141,15 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   const [ops, setOps] = useState<RouteCardFormOpDraft[]>(initialOps);
   const [revisionNote, setRevisionNote] = useState('');
 
-  const { data: itemsList } = useItemsList({ limit: 1000, offset: 0 });
+  // Master-only item picker, same as Create SO: type to search the server, the
+  // dropdown lists "CODE — Name", the field shows the code once picked. Server
+  // search (not load-all) so the box scales past a page of items.
+  const [itemSearch, setItemSearch] = useState('');
+  const { data: itemsList, isFetching: itemsFetching } = useItemsList({
+    ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
   // machines & vendors list-query schemas cap `limit` at 200 — 500 makes the
   // route 400, leaving the pickers empty. Stay ≤ 200.
   const { data: machinesList } = useMachinesList({ limit: 200, offset: 0 });
@@ -166,11 +175,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     setHeader((prev) => (prev.code.trim() ? prev : { ...prev, code: next }));
   }, [mode, nextCodeData]);
 
-  const itemsByCode = useMemo(() => {
-    const m = new Map<string, Item>();
-    for (const i of itemsList?.items ?? []) m.set(i.code.toUpperCase(), i);
-    return m;
-  }, [itemsList]);
 
   const machinesByCode = useMemo(() => {
     const m = new Map<string, Machine>();
@@ -184,9 +188,17 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     return m;
   }, [vendorsList]);
 
-  const onItemCodeChange = (code: string): void => {
-    const match = itemsByCode.get(code.trim().toUpperCase());
-    setHeader({ ...header, itemCodeText: code, itemId: match?.id ?? '' });
+  // The picker returns the master item's id. Snapshot its code (shown in the
+  // field) and name (shown underneath) so both survive a later search that
+  // pages past this item. Clearing the box empties all three together.
+  const onPickItem = (id: string | null): void => {
+    const it = (itemsList?.items ?? []).find((i) => i.id === id);
+    setHeader({
+      ...header,
+      itemId: it?.id ?? '',
+      itemCodeText: it?.code ?? '',
+      itemName: it?.name ?? '',
+    });
   };
 
   const updateOp = (idx: number, patch: Partial<RouteCardFormOpDraft>): void => {
@@ -353,20 +365,29 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               <span className="form-label">
                 Item Code<span className="req">★</span>
               </span>
-              <input
-                className="innovic-input"
-                list="rc-items-dl"
-                value={header.itemCodeText}
-                onChange={(e) => onItemCodeChange(e.target.value)}
+              {/* The same master-only picker Create SO uses (SearchableSelect),
+                  not a free-text datalist: it lists "CODE — Name", shows the code
+                  in the field once picked, and only lets a real master item be
+                  chosen — so an off-master typo can no longer sit in the box
+                  looking accepted. */}
+              <SearchableSelect
+                id="rc-item"
+                value={header.itemId || null}
+                onChange={onPickItem}
+                onSearch={setItemSearch}
+                loading={itemsFetching}
+                options={(itemsList?.items ?? []).map((i) => ({
+                  id: i.id,
+                  code: i.code,
+                  name: i.name,
+                }))}
                 placeholder="🔍 Search item code or name…"
+                valueLabel={header.itemCodeText || undefined}
+                selectedLabel={(o) => o.code ?? o.name}
               />
-              {header.itemId ? (
+              {header.itemId && header.itemName ? (
                 <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                  ✓ {(itemsList?.items ?? []).find((i) => i.id === header.itemId)?.name ?? ''}
-                </div>
-              ) : header.itemCodeText.trim() ? (
-                <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 2 }}>
-                  ⚠ not found in item master
+                  ✓ {header.itemName}
                 </div>
               ) : null}
             </div>
@@ -556,13 +577,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         </div>
       </div>
 
-      <datalist id="rc-items-dl">
-        {(itemsList?.items ?? []).map((i) => (
-          <option key={i.id} value={i.code}>
-            {i.name}
-          </option>
-        ))}
-      </datalist>
       <datalist id="rc-vendors-dl">
         {(vendorsList?.vendors ?? []).map((v) => (
           <option key={v.id} value={v.code}>

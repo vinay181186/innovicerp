@@ -66,6 +66,7 @@ function RouteCardNewPage(): React.JSX.Element {
           code: '',
           itemId: '',
           itemCodeText: '',
+          itemName: '',
           rawMaterialGradeId: null,
           rawMaterialGradeText: null,
           rawMaterialSizeId: null,
