@@ -87,6 +87,12 @@ export const goodsReceiptNoteSchema = z.object({
   vendorId: z.string().uuid().nullable(),
   vendorCodeText: z.string().nullable(),
   dcNo: z.string().nullable(),
+  /** The OSP delivery challan this GRN was raised against (migration 0075,
+   *  ADR-080). Set by the DC receive path (`insertGrnForOspReceipt`) — which
+   *  is what the GRN screen's "Against JWPO / DC" tab now calls — and null on
+   *  a GRN booked straight against a purchase PO. Read-only: the client never
+   *  sends it; the receive service stamps it. */
+  deliveryChallanId: z.string().uuid().nullable().default(null),
   invoiceNo: z.string().nullable(),
   remarks: z.string().nullable(),
   createdAt: z.string(),
@@ -111,6 +117,9 @@ export const goodsReceiptNoteDetailSchema = goodsReceiptNoteSchema.extend({
   poCode: z.string().nullable(),
   /** Resolved vendor name from vendors.name via FK; null when not linked. */
   vendorName: z.string().nullable(),
+  /** Resolved DC code from delivery_challans.code via deliveryChallanId; null
+   *  when the GRN is not DC-sourced. Lets the detail page link "Open DC". */
+  dcCode: z.string().nullable().default(null),
   lines: z.array(goodsReceiptNoteLineDetailSchema),
 });
 export type GoodsReceiptNoteDetail = z.infer<typeof goodsReceiptNoteDetailSchema>;

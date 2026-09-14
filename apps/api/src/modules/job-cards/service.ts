@@ -651,6 +651,13 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
     const opRows = (await tx.execute(sql`
       SELECT o.id, o.op_seq AS "opSeq",
         COALESCE(m.code, o.machine_code_text) AS "machineCode",
+        -- DISPLAY-ONLY group the op's machine is filed under, mirroring Route
+        -- Card (route-cards/service.ts ~L401): derived live from
+        -- machines.machine_group_id, never stored on the op. The double left
+        -- join returns null naturally for an op with no machine (OSP/QC, or a
+        -- free-typed machine_code_text) and for a machine that is under no
+        -- group — so it is deliberately NOT COALESCEd onto machine_code_text.
+        mg.code AS "machineGroupCode",
         o.operation, o.op_type AS "opType", o.cycle_time_min AS "cycleTimeMin",
         o.program, o.tool_no AS "toolNo", o.tool_details AS "toolDetails",
         o.qc_required AS "qcRequired",
@@ -671,6 +678,7 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         COALESCE(vos.computed_status, 'waiting') AS "computedStatus"
       FROM public.jc_ops o
       LEFT JOIN public.machines m ON m.id = o.machine_id
+      LEFT JOIN public.machine_groups mg ON mg.id = m.machine_group_id
       LEFT JOIN public.vendors v ON v.id = o.outsource_vendor_id
       LEFT JOIN public.v_jc_op_status vos ON vos.jc_op_id = o.id
       WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
@@ -723,6 +731,9 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         id: o['id'] as string,
         opSeq: Number(o['opSeq'] ?? 0),
         machineCode: (o['machineCode'] as string | null) ?? null,
+        // DISPLAY-ONLY derived group (see the op query's left join); null for
+        // OSP/QC ops, ops with no machine, and machines under no group.
+        machineGroupCode: (o['machineGroupCode'] as string | null) ?? null,
         operation: (o['operation'] as string | null) ?? '',
         opType: o['opType'] as JobCardEditModel['ops'][number]['opType'],
         cycleTimeMin: Number(o['cycleTimeMin'] ?? 0),

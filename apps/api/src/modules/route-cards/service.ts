@@ -308,6 +308,7 @@ export async function listRouteCards(
         rc.raw_material_size_id AS "rawMaterialSizeId",
         rc.raw_material_size_text AS "rawMaterialSizeText",
         rc.notes,
+        rc.plan_type AS "planType",
         rc.created_at AS "createdAt", rc.created_by AS "createdBy",
         rc.updated_at AS "updatedAt", rc.updated_by AS "updatedBy",
         rc.deleted_at AS "deletedAt",
@@ -353,6 +354,7 @@ function toListItem(r: Record<string, unknown>): RouteCardListItem {
     rawMaterialSizeId: (r['rawMaterialSizeId'] as string | null) ?? null,
     rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
     notes: (r['notes'] as string | null) ?? null,
+    planType: (r['planType'] as RouteCard['planType'] | null) ?? 'manufacture',
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
     updatedAt: tsLike(r['updatedAt']),
@@ -434,6 +436,7 @@ async function loadRouteCardDetail(
     rawMaterialSizeId: header.rawMaterialSizeId,
     rawMaterialSizeText: header.rawMaterialSizeText,
     notes: header.notes,
+    planType: header.planType,
     createdAt: tsLike(header.createdAt),
     createdBy: header.createdBy,
     updatedAt: tsLike(header.updatedAt),
@@ -658,6 +661,7 @@ export async function createRouteCard(
         currentRevision: 0,
         ...rawMaterial,
         notes: input.notes ?? null,
+        planType: input.planType ?? 'manufacture',
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -795,6 +799,12 @@ export async function updateRouteCard(
         `Size ${noteVal(header.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
       );
     }
+    // The plan type is a header fact like grade and size: a change to it is a
+    // revision and belongs in the auto-note next to them.
+    const nextPlanType = input.planType ?? header.planType;
+    if (nextPlanType !== header.planType) {
+      headerChanges.push(`Plan type ${header.planType} → ${nextPlanType}`);
+    }
     if ((input.notes ?? null) !== (header.notes ?? null)) {
       headerChanges.push(`Notes ${noteVal(header.notes)} → ${noteVal(input.notes)}`);
     }
@@ -809,6 +819,7 @@ export async function updateRouteCard(
         itemId: input.itemId,
         ...rawMaterial,
         notes: input.notes ?? null,
+        planType: input.planType ?? header.planType,
         updatedBy: user.id,
         updatedAt: new Date(),
       })
@@ -909,6 +920,7 @@ export async function softDeleteRouteCard(id: string, user: AuthContext): Promis
       rawMaterialSizeId: header.rawMaterialSizeId,
       rawMaterialSizeText: header.rawMaterialSizeText,
       notes: header.notes,
+      planType: header.planType,
       createdAt: tsLike(header.createdAt),
       createdBy: header.createdBy,
       updatedAt: tsLike(header.updatedAt),

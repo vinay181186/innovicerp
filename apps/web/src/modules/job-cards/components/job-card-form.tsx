@@ -23,7 +23,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
 import { useItemsList } from '@/modules/items/api';
-import { useMachinesList } from '@/modules/machines/api';
+import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
@@ -55,6 +55,9 @@ const QC_DOC_TYPES = [
 
 interface FormOp {
   id?: string;
+  /** DISPLAY-ONLY, never saved: the Machine GROUP that narrows this row's machine
+   *  list (SO Planning / Route Card parity). buildJcWriteInput ignores it. */
+  machineGroupId: string | null;
   machineCode: string;
   operation: string;
   opType: 'process' | 'qc' | 'outsource';
@@ -117,9 +120,16 @@ export function JobCardForm({
   // route 400, leaving the machine picker empty ("No matches"). Stay ≤ 200.
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
+  // Machine groups exist only to label and narrow the machine picker; the id →
+  // code map lets a row show 'VMC' for the group its machine belongs to.
+  const { data: machineGroupsData } = useMachineGroupsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   const machines = machinesData?.machines ?? [];
   const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);
+  const machineGroupCodeById = useMemo(
+    () => new Map((machineGroupsData?.groups ?? []).map((g) => [g.id, g.code])),
+    [machineGroupsData],
+  );
 
   // ISSUE-170: source-options lists only OPEN lines, so a JC linked to a CLOSED
   // order would lose its own source from the datalist/label/banner. The edit
@@ -183,6 +193,9 @@ export function JobCardForm({
   const [ops, setOps] = useState<FormOp[]>(
     (model?.ops ?? []).map((o) => ({
       id: o.id,
+      // Group is display-only and not stored on the op — back-filled from the
+      // machine master once the machine list loads (effect below).
+      machineGroupId: null,
       machineCode: o.machineCode ?? '',
       operation: o.operation,
       opType: o.opType,
@@ -229,7 +242,7 @@ export function JobCardForm({
         !machineSearch.trim() ||
         `${m.code} ${m.name}`.toLowerCase().includes(machineSearch.trim().toLowerCase()),
     )
-    .map((m) => ({ id: m.id, code: m.code, name: m.name }));
+    .map((m) => ({ id: m.id, code: m.code, name: m.name, machineGroupId: m.machineGroupId ?? null }));
 
   const sourceByLabel = useMemo(() => {
     const m = new Map<string, JobCardSourceOption>();
@@ -301,6 +314,54 @@ export function JobCardForm({
   const setOp = (i: number, patch: Partial<FormOp>): void => {
     setOps((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
   };
+
+  // Picking a machine that carries a group in the master fills the Group box
+  // when it is still empty — the same seeding SO Planning / Route Card do — so a
+  // card opened later reads its group, not a bare machine.
+  const onOpMachineChange = (i: number, code: string): void => {
+    const match = machines.find((m) => m.code.toUpperCase() === code.trim().toUpperCase());
+    const current = ops[i];
+    setOp(i, {
+      machineCode: code,
+      ...(current && current.machineGroupId == null && match?.machineGroupId
+        ? { machineGroupId: match.machineGroupId }
+        : {}),
+    });
+  };
+
+  // Picking a group narrows the machine list for that row. A machine already in
+  // the box that is NOT in the new group is cleared, so the row cannot read
+  // "VMC group, running a lathe" — only cleared when the mismatch is PROVEN.
+  const onOpGroupChange = (i: number, groupId: string | null): void => {
+    const current = ops[i];
+    const machine = current?.machineCode
+      ? machines.find((m) => m.code === current.machineCode)
+      : undefined;
+    const mismatch = groupId != null && machine != null && machine.machineGroupId !== groupId;
+    setOp(i, {
+      machineGroupId: groupId,
+      ...(mismatch ? { machineCode: '' } : {}),
+    });
+  };
+
+  // Group is display-only and not stored, so a JC opened for editing has every
+  // row's group empty even though its machine belongs to one. Read it back off
+  // the master once the machine list is in, for rows with a machine but no group.
+  useEffect(() => {
+    if (!machines.length) return;
+    setOps((prev) => {
+      let changed = false;
+      const next = prev.map((o) => {
+        if (o.opType !== 'process' || o.machineGroupId != null || !o.machineCode) return o;
+        const m = machines.find((x) => x.code === o.machineCode);
+        if (!m?.machineGroupId) return o;
+        changed = true;
+        return { ...o, machineGroupId: m.machineGroupId };
+      });
+      return changed ? next : prev;
+    });
+  }, [machines]);
+
   const moveOp = (i: number, dir: -1 | 1): void => {
     setOps((prev) => {
       const next = [...prev];
@@ -315,6 +376,7 @@ export function JobCardForm({
       ...prev,
       {
         // OSP ops have no machine (T32b); a QC op parks on the QC lane.
+        machineGroupId: null,
         machineCode: '',
         operation: '',
         opType: kind,
@@ -720,7 +782,10 @@ export function JobCardForm({
                 machineName={machines.find((m) => m.code === o.machineCode)?.name ?? ''}
                 machines={machines}
                 machineOptions={machineOptions}
+                machineGroupCodeById={machineGroupCodeById}
                 onMachineSearch={setMachineSearch}
+                onMachineChange={(code) => onOpMachineChange(i, code)}
+                onGroupChange={(gid) => onOpGroupChange(i, gid)}
                 vendorListId="dlJcVendor"
                 toolDetailsPlaceholder="Insert, fixtures, setup notes"
                 isFirst={i === 0}

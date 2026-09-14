@@ -95,7 +95,11 @@ function RouteCardDetailPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to Route Cards
       </Link>
 
-      <div className="panel">
+      {/* SO-Planning left-accent identity card: the cyan stripe + banded header
+          (panel-hdr already paints a --bg3 band) is the same card composition SO
+          Planning gives each line — code in cyan mono, item code in purple, and a
+          small tinted revision pill in place of a plain label. */}
+      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="panel-hdr">
           <div>
             <div className="td-code cyan" style={{ fontSize: 16, fontWeight: 800 }}>
@@ -108,8 +112,14 @@ function RouteCardDetailPage(): React.JSX.Element {
               <span style={{ color: 'var(--purple)' }}>{detail.itemCode ?? '—'}</span>
               <span className="text2">{detail.itemName ?? '— unknown item —'}</span>
               <span
-                className="mono"
-                style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}
+                className="mono fw-700"
+                style={{
+                  fontSize: 10,
+                  padding: '2px 8px',
+                  borderRadius: 3,
+                  background: 'rgba(0,136,187,0.12)',
+                  color: 'var(--cyan)',
+                }}
               >
                 Rev {detail.currentRevision}
               </span>
@@ -148,6 +158,28 @@ function RouteCardDetailPage(): React.JSX.Element {
                 read with the item identity, not buried under Notes. Both are
                 optional — a card with neither still shows the pair as dashes,
                 because a missing grade is a gap worth seeing. */}
+            {/* Plan Type is how the item is normally made -- the same choice
+                SO Planning asks per plan, so it reads in Planning's colours. */}
+            <div className="form-grp">
+              <span className="form-label">Plan Type</span>
+              <div
+                className="fw-700"
+                style={{
+                  color:
+                    detail.planType === 'full_outsource'
+                      ? 'var(--purple)'
+                      : detail.planType === 'direct_purchase'
+                        ? 'var(--green)'
+                        : 'var(--cyan)',
+                }}
+              >
+                {detail.planType === 'full_outsource'
+                  ? '📦 Full Outsource'
+                  : detail.planType === 'direct_purchase'
+                    ? '🛒 Direct Purchase'
+                    : '🏭 Manufacture'}
+              </div>
+            </div>
             <div className="form-grp">
               <span className="form-label">RM Grade</span>
               <div className="mono fw-700">{detail.rawMaterialGradeText ?? '—'}</div>
@@ -189,7 +221,7 @@ function RouteCardDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel">
+      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="panel-hdr">
           <div className="panel-title">⚙️ Operation Sequence ({detail.ops.length})</div>
         </div>
@@ -198,7 +230,9 @@ function RouteCardDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th style={{ width: 40 }}>#</th>
-                <th>Type</th>
+                {/* Group replaces Type, as on the form: the kind of row is told
+                    by its tint and by the QC / OSP badge in this column. */}
+                <th>Group</th>
                 <th>Machine / Vendor</th>
                 <th>Operation</th>
                 <th className="td-ctr">Cycle(h)</th>
@@ -246,14 +280,9 @@ function RouteCardDetailPage(): React.JSX.Element {
                       : (op.machineCode ?? op.machineCodeText ?? '—');
                   const tagName = op.opType === 'outsource' ? op.ospVendorName : op.machineName;
                   // The machine GROUP ('VMC', 'CNC') is the word the shop floor
-                  // actually uses for a family of machines, so showing it under
-                  // the machine tells a reader what KIND of step this is without
-                  // them having to recognise the individual machine code. It
-                  // hangs off the machine, so it only ever appears on an in-house
-                  // op: an OSP row carries a vendor and a QC row carries neither,
-                  // and on those rows nothing extra is drawn at all. Null (no
-                  // machine, or a machine filed under no group) draws nothing —
-                  // no dash, no blank line.
+                  // uses for a family of machines. It hangs off the machine, so
+                  // only an in-house op has one; OSP and QC rows show a badge in
+                  // the Group column instead.
                   const groupCode =
                     op.opType === 'outsource' || op.opType === 'qc' ? null : op.machineGroupCode;
                   return (
@@ -262,9 +291,29 @@ function RouteCardDetailPage(): React.JSX.Element {
                         {op.opSeq}
                       </td>
                       <td>
-                        <span className="badge" style={{ color: accent, fontWeight: 700 }}>
-                          {op.opType.toUpperCase()}
-                        </span>
+                        {op.opType === 'qc' ? (
+                          <span className="badge b-green" style={{ fontSize: 10 }}>
+                            🔬 QC
+                          </span>
+                        ) : op.opType === 'outsource' ? (
+                          <span
+                            className="badge"
+                            style={{
+                              fontSize: 10,
+                              color: 'var(--purple)',
+                              background: 'rgba(124,58,237,0.12)',
+                              border: '1px solid rgba(124,58,237,0.3)',
+                            }}
+                          >
+                            🏭 OSP
+                          </span>
+                        ) : groupCode ? (
+                          <span className="mono fw-700" title={`Machine group: ${groupCode}`}>
+                            {groupCode}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td>
                         <span
@@ -276,28 +325,6 @@ function RouteCardDetailPage(): React.JSX.Element {
                             verticalAlign: 'top',
                           }}
                         >
-                          {groupCode ? (
-                            // The GROUP leads the cell: it is the general answer
-                            // ("this is a VMC step") and the machine code under it
-                            // is the specific one. Reading down goes from the kind
-                            // of machine to the individual machine to its name.
-                            //
-                            // Set as a small spaced label rather than at the code's
-                            // own weight, so leading the cell does not mean
-                            // outshouting the machine it belongs to.
-                            <span
-                              style={{
-                                fontSize: 9,
-                                color: 'var(--text3)',
-                                fontWeight: 700,
-                                letterSpacing: '.08em',
-                                display: 'block',
-                              }}
-                              title={`Machine group: ${groupCode}`}
-                            >
-                              {groupCode}
-                            </span>
-                          ) : null}
                           <span style={{ fontWeight: 700, display: 'block' }}>{tagCode}</span>
                           {tagName ? (
                             <span
@@ -366,8 +393,10 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
   // as one long undifferentiated list, which is worse than showing neither.
   const [openId, setOpenId] = useState<string | null>(null);
 
+  // Amber stripe: the revision trail carries the amber accent its own "Rev N"
+  // cells use, the same way SO Planning colours a card by its status.
   return (
-    <div className="panel">
+    <div className="panel" style={{ borderLeft: '3px solid var(--amber)' }}>
       <div className="panel-hdr">
         <div className="panel-title">▸ Revision History ({revisions.length})</div>
         <div className="text3" style={{ fontSize: 11 }}>

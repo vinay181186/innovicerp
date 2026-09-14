@@ -14,8 +14,20 @@
 // 'manual' member. See ISSUE-205 — legacy's Manual mode writes a plain GRN row
 // with qcStatus 'Pending'/qcAcceptedQty 0 (L26577-26581) and therefore needs NO
 // store-adjustment endpoint; the previously-stated reason for dropping it was
-// false. The Purchase tab REUSES <GoodsReceiptNoteForm> verbatim; Job Work
-// Return routes to POST /jw-dc/inward with NO backend change.
+// false.
+//
+// The two tabs:
+//   📦 Against PO      → <GrnAgainstPoForm>: pick an approved buying PO, its
+//                        pending lines load, save via POST /goods-receipt-notes.
+//   🏭 Against JWPO/DC → <GrnAgainstDcForm>: pick the job-work PO, then one of
+//                        its OSP delivery challans still out at the vendor, and
+//                        save via POST /delivery-challans/:id/receive — the same
+//                        path the DC Receive page uses, so the GRN is auto-raised
+//                        and linked to the DC and the PO's received qty moves.
+//                        (It used to post to /jw-dc/inward, which never created
+//                        a GRN and never touched the PO.)
+// Neither tab carries QC fields; QC happens later at Incoming QC. The old
+// <GoodsReceiptNoteForm> still serves /goods-receipt-notes/$id/edit only.
 
 import { GRN_INWARD_TYPES, type CreateGoodsReceiptNoteInput, type GrnInwardType } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -23,8 +35,8 @@ import { ArrowLeft } from 'lucide-react';
 import { useCallback, useState, type CSSProperties } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useCreateGoodsReceiptNote } from '../api';
-import { GoodsReceiptNoteForm } from './goods-receipt-note-form';
-import { JobWorkReturnSection } from './job-work-return-section';
+import { GrnAgainstDcForm } from './grn-against-dc-form';
+import { GrnAgainstPoForm } from './grn-against-po-form';
 
 // Button text + icons verbatim from legacy addGRN() L26533-26534.
 const TYPE_META: Record<GrnInwardType, { label: string; icon: string }> = {
@@ -58,7 +70,8 @@ export function UnifiedGrnForm({
   const goBack = useCallback(() => void navigate({ to: '/goods-receipt-notes' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
 
-  // Purchase branch — reuses the existing create endpoint + form unchanged.
+  // Purchase branch — the existing create endpoint; the form is the new
+  // PO-driven one (lines come from the PO, never typed by hand).
   const createPurchase = useCreateGoodsReceiptNote();
   const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
   const onPurchaseSubmit = async (values: CreateGoodsReceiptNoteInput): Promise<void> => {
@@ -87,7 +100,7 @@ export function UnifiedGrnForm({
           </div>
         </div>
         <div className="panel-body">
-          {/* ▸ GRN TYPE — 3-button selector */}
+          {/* ▸ GRN TYPE — 2-button selector */}
           <div style={{ marginBottom: 14 }}>
             <div
               style={{
@@ -116,16 +129,19 @@ export function UnifiedGrnForm({
             </div>
           </div>
 
+          {/* Switching tabs unmounts the other form, so its picks and lines
+              are dropped — no stale state crosses over. */}
           {inwardType === 'purchase' ? (
-            <GoodsReceiptNoteForm
-              mode="create"
+            <GrnAgainstPoForm
               {...(initialPurchaseOrderId ? { initialPurchaseOrderId } : {})}
               onSubmit={onPurchaseSubmit}
               submitError={purchaseErr}
               onCancel={() => exit.leave(goBack)}
             />
           ) : null}
-          {inwardType === 'job_work_return' ? <JobWorkReturnSection onLeave={exit.leave} /> : null}
+          {inwardType === 'job_work_return' ? (
+            <GrnAgainstDcForm onLeave={exit.leave} onCancel={() => exit.leave(goBack)} />
+          ) : null}
         </div>
       </div>
     </div>

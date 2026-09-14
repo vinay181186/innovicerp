@@ -41,7 +41,7 @@ import {
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty, writeStoreTxnOnQcAccept } from './cascades';
-import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import { type DocumentTraceability, poSendsMaterialOut, type RelatedDoc } from '@innovic/shared';
 import type {
   CreateGoodsReceiptNoteInput,
   GoodsReceiptNoteDetail,
@@ -139,6 +139,133 @@ async function assertPoLineIdsExist(
     const found = new Set(rows.map((r) => r.id));
     const missing = unique.filter((id) => !found.has(id));
     throw new ValidationError(`PO line id(s) not found: ${missing.join(', ')}`);
+  }
+}
+
+/**
+ * The "Against PO" guard on a manual GRN (create path only).
+ *
+ * `assertPurchaseOrderExists` / `assertPoLineIdsExist` only prove the ids are
+ * real rows in this company. They do NOT prove the PO can take a receipt, that
+ * the lines belong to THIS PO, that a PO line is not listed twice, or that the
+ * qty fits the PO line's balance. Before this the only backstop was the DB
+ * CHECK `received_qty <= qty + 10%` on purchase_order_lines, which surfaced as
+ * a raw database error and still let a line be double-booked inside the 10%.
+ *
+ * The PO lines are read `FOR UPDATE` so two GRNs saved against the same line
+ * at the same second serialise: the second waits, then sees the first one's
+ * received_qty (recalcPoLineReceivedQty runs in the first tx) and is refused.
+ *
+ * `receivedQty` on purchase_order_lines is the same number the GRN form shows
+ * as "already received", so the message the user reads matches the screen.
+ *
+ * Job-work / service POs (`poSendsMaterialOut`) are refused here on purpose:
+ * their receipt is the DC receive path (`insertGrnForOspReceipt`), which does
+ * not go through this function.
+ */
+async function assertPoReceiptFits(
+  tx: DbTransaction,
+  companyId: string,
+  headerPoId: string | null | undefined,
+  lines: GoodsReceiptNoteLineInput[],
+): Promise<void> {
+  let poCode: string | null = null;
+  if (headerPoId) {
+    const poRows = await tx
+      .select({
+        id: purchaseOrders.id,
+        code: purchaseOrders.code,
+        status: purchaseOrders.status,
+        poType: purchaseOrders.poType,
+      })
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.id, headerPoId),
+          eq(purchaseOrders.companyId, companyId),
+          isNull(purchaseOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const po = poRows[0];
+    if (!po) throw new ValidationError(`Purchase order ${headerPoId} not found in this company`);
+    poCode = po.code;
+    if (po.status === 'draft') {
+      throw new ConflictError(`${po.code} is not approved yet — nothing can be received against it`);
+    }
+    if (po.status === 'cancelled' || po.status === 'closed') {
+      throw new ConflictError(
+        `${po.code} is ${po.status} — nothing more can be received against it`,
+      );
+    }
+    if (poSendsMaterialOut(po.poType)) {
+      throw new ConflictError(
+        `${po.code} is a job-work PO — receive it against its Delivery Challan (GRN → Against JWPO / DC)`,
+      );
+    }
+  }
+
+  // Which input line (1-based position in the payload) claims which PO line.
+  // A PO line listed twice would post its qty twice — combine into one line.
+  const byPoLine = new Map<string, number[]>();
+  lines.forEach((l, i) => {
+    if (!l.purchaseOrderLineId) return;
+    const arr = byPoLine.get(l.purchaseOrderLineId) ?? [];
+    arr.push(i + 1);
+    byPoLine.set(l.purchaseOrderLineId, arr);
+  });
+  for (const positions of byPoLine.values()) {
+    if (positions.length > 1) {
+      throw new ValidationError(
+        `PO line on line ${positions[0]} appears twice in this GRN (also line ${positions
+          .slice(1)
+          .join(', ')}) — combine it into one line`,
+      );
+    }
+  }
+  if (byPoLine.size === 0) return;
+  if (!headerPoId) {
+    throw new ValidationError(
+      'Pick the purchase order in the header before linking lines to its PO lines',
+    );
+  }
+
+  const poLineRows = await tx
+    .select({
+      id: purchaseOrderLines.id,
+      purchaseOrderId: purchaseOrderLines.purchaseOrderId,
+      lineNo: purchaseOrderLines.lineNo,
+      itemName: purchaseOrderLines.itemName,
+      qty: purchaseOrderLines.qty,
+      receivedQty: purchaseOrderLines.receivedQty,
+    })
+    .from(purchaseOrderLines)
+    .where(
+      and(
+        eq(purchaseOrderLines.companyId, companyId),
+        inArray(purchaseOrderLines.id, Array.from(byPoLine.keys())),
+        isNull(purchaseOrderLines.deletedAt),
+      ),
+    )
+    .for('update');
+  const poLineById = new Map(poLineRows.map((r) => [r.id, r]));
+
+  for (const [poLineId, positions] of byPoLine) {
+    const n = positions[0]!;
+    const poLine = poLineById.get(poLineId);
+    // assertPoLineIdsExist already ran, so a miss here can only be a race
+    // with a concurrent delete — refuse rather than post against nothing.
+    if (!poLine) throw new ValidationError(`PO line id(s) not found: ${poLineId}`);
+    if (poLine.purchaseOrderId !== headerPoId) {
+      throw new ValidationError(`Line ${n} belongs to a different purchase order`);
+    }
+    const incoming = lines[n - 1]!.receivedQty;
+    const balance = poLine.qty - poLine.receivedQty;
+    if (incoming > balance) {
+      throw new ConflictError(
+        `${poCode} line ${poLine.lineNo} (${poLine.itemName}): ordered ${poLine.qty}, already received ${poLine.receivedQty}, this GRN adds ${incoming} — only ${Math.max(balance, 0)} more can be received`,
+      );
+    }
   }
 }
 
@@ -336,6 +463,7 @@ export async function listGoodsReceiptNotes(
         grn.vendor_id AS "vendorId",
         grn.vendor_code_text AS "vendorCodeText",
         grn.dc_no AS "dcNo", grn.invoice_no AS "invoiceNo", grn.remarks,
+        grn.delivery_challan_id AS "deliveryChallanId",
         grn.created_at AS "createdAt", grn.created_by AS "createdBy",
         grn.updated_at AS "updatedAt", grn.updated_by AS "updatedBy",
         grn.deleted_at AS "deletedAt",
@@ -446,6 +574,7 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     vendorId: (r['vendorId'] as string | null) ?? null,
     vendorCodeText: (r['vendorCodeText'] as string | null) ?? null,
     dcNo: (r['dcNo'] as string | null) ?? null,
+    deliveryChallanId: (r['deliveryChallanId'] as string | null) ?? null,
     invoiceNo: (r['invoiceNo'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
@@ -489,13 +618,17 @@ async function getGoodsReceiptNoteInternal(
         grn.created_at AS "createdAt", grn.created_by AS "createdBy",
         grn.updated_at AS "updatedAt", grn.updated_by AS "updatedBy",
         grn.deleted_at AS "deletedAt",
+        grn.delivery_challan_id AS "deliveryChallanId",
         po.code AS "poCode",
-        v.name AS "vendorName"
+        v.name AS "vendorName",
+        dc.code AS "dcCode"
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.purchase_orders po
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.vendors v
         ON v.id = grn.vendor_id AND v.deleted_at IS NULL
+      LEFT JOIN public.delivery_challans dc
+        ON dc.id = grn.delivery_challan_id AND dc.deleted_at IS NULL
       WHERE grn.id = ${id}::uuid
         AND grn.company_id = ${companyId}::uuid
         AND grn.deleted_at IS NULL
@@ -546,6 +679,7 @@ async function getGoodsReceiptNoteInternal(
     vendorId: (headerRow['vendorId'] as string | null) ?? null,
     vendorCodeText: (headerRow['vendorCodeText'] as string | null) ?? null,
     dcNo: (headerRow['dcNo'] as string | null) ?? null,
+    deliveryChallanId: (headerRow['deliveryChallanId'] as string | null) ?? null,
     invoiceNo: (headerRow['invoiceNo'] as string | null) ?? null,
     remarks: (headerRow['remarks'] as string | null) ?? null,
     createdAt: tsLike(headerRow['createdAt']),
@@ -555,6 +689,7 @@ async function getGoodsReceiptNoteInternal(
     deletedAt: maybeTsLike(headerRow['deletedAt']),
     poCode: (headerRow['poCode'] as string | null) ?? null,
     vendorName: (headerRow['vendorName'] as string | null) ?? null,
+    dcCode: (headerRow['dcCode'] as string | null) ?? null,
     lines: lineRows.map((r) => ({
       id: r['id'] as string,
       companyId: r['companyId'] as string,
@@ -657,6 +792,7 @@ export async function createGoodsReceiptNote(
       .map((l) => l.purchaseOrderLineId)
       .filter((id): id is string => Boolean(id));
     await assertPoLineIdsExist(tx, poLineIds, companyId);
+    await assertPoReceiptFits(tx, companyId, input.header.purchaseOrderId, input.lines);
 
     const lineNos = assignLineNos(input.lines, 1);
 

@@ -279,6 +279,23 @@ export type CreateDeliveryChallanReceiptInput = z.infer<
 export const deliveryChallanReceiptWithLinesSchema = deliveryChallanReceiptSchema;
 export type DeliveryChallanReceiptWithLines = z.infer<typeof deliveryChallanReceiptWithLinesSchema>;
 
+/** What POST /delivery-challans/:id/receive answers with: the refreshed DC
+ *  (same shape the detail page loads) PLUS the GRN the receive just raised.
+ *  The GRN screen's "Against JWPO / DC" tab lands on that GRN after saving,
+ *  so it needs the id back in the same response — before this the caller
+ *  could only guess it from the list. Null only when nothing was received
+ *  (every line 0), which the input schema already refuses. */
+export const receiveDeliveryChallanResponseSchema = deliveryChallanWithLinesSchema.extend({
+  autoGrn: z
+    .object({
+      id: z.string().uuid(),
+      code: z.string(),
+    })
+    .nullable()
+    .default(null),
+});
+export type ReceiveDeliveryChallanResponse = z.infer<typeof receiveDeliveryChallanResponseSchema>;
+
 // ─── How many pieces may go out now (send-qty preview) ─────────────────────
 //
 // The DC form used to cap the Send Now box at the PO line quantity, which is

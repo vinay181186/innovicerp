@@ -814,6 +814,10 @@ export const routeCards = pgTable(
     }),
     rawMaterialSizeText: text('raw_material_size_text'),
     notes: text('notes'),
+    // How this item is normally made — the same three-way choice SO Planning
+    // asks per plan (migration 0123). The card is the natural home for the
+    // default; the planner starts from it instead of re-deciding per order.
+    planType: planTypeEnum('plan_type').notNull().default('manufacture'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

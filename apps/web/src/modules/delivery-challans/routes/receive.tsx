@@ -5,7 +5,7 @@
 // full reconcile the DC status flips to received and any outsource-op-driven
 // JC cascade fires server-side.
 
-import type { CreateDeliveryChallanReceiptInput, DeliveryChallanWithLines } from '@innovic/shared';
+import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -15,6 +15,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
+import { computeReceivedByLine } from '../lib/receipt-math';
 
 export const deliveryChallanReceiveRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -338,21 +339,4 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       </form>
     </div>
   );
-}
-
-function computeReceivedByLine(detail: DeliveryChallanWithLines): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const r of detail.receipts) {
-    for (const rl of r.lines) {
-      const prev = out.get(rl.deliveryChallanLineId) ?? 0;
-      // Historical receipts may carry a legacy rejected_qty; count it toward
-      // "already received" so remaining-qty math stays consistent with rows
-      // created before reject-at-receive was removed.
-      out.set(
-        rl.deliveryChallanLineId,
-        prev + Number(rl.receivedQty) + Number(rl.rejectedQty ?? 0),
-      );
-    }
-  }
-  return out;
 }
