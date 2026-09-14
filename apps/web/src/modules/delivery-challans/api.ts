@@ -5,6 +5,7 @@ import type {
   DeliveryChallanWithLines,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
+  ReceiveDeliveryChallanResponse,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -96,21 +97,28 @@ export function useCancelDeliveryChallan() {
 }
 
 // T-059b — receive-back. POST input is the receipt body; URL carries the DC id.
+// The response is the refreshed DC plus `autoGrn` — the GRN the receive just
+// raised — so the GRN screen's "Against JWPO / DC" tab can land on it. The
+// standalone receive page only reads `.id`, which is unchanged.
 export function useReceiveDeliveryChallan() {
   const qc = useQueryClient();
   return useMutation<
-    DeliveryChallanWithLines,
+    ReceiveDeliveryChallanResponse,
     Error,
     { dcId: string; input: CreateDeliveryChallanReceiptInput }
   >({
     mutationFn: ({ dcId, input }) =>
-      apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${dcId}/receive`, {
+      apiFetch<ReceiveDeliveryChallanResponse>(`/delivery-challans/${dcId}/receive`, {
         method: 'POST',
         json: input,
       }),
     onSuccess: (received) => {
       void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
-      qc.setQueryData(deliveryChallansKeys.detail(received.id), received);
+      // Cache the DC shape only; `autoGrn` is a receive-time extra that the
+      // detail page never reads and should not linger on its query.
+      const { autoGrn: _drop, ...dc } = received;
+      void _drop;
+      qc.setQueryData(deliveryChallansKeys.detail(received.id), dc);
     },
   });
 }

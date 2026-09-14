@@ -159,6 +159,16 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 Open PO
               </Link>
             ) : null}
+            {/* Set only on a GRN the DC receive auto-raised (Against JWPO / DC). */}
+            {detail.deliveryChallanId ? (
+              <Link
+                to="/delivery-challans/$id"
+                params={{ id: detail.deliveryChallanId }}
+                className="btn btn-ghost btn-sm"
+              >
+                Open DC
+              </Link>
+            ) : null}
             {canEdit ? (
               <Link
                 to="/goods-receipt-notes/$id/edit"
@@ -314,7 +324,9 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
   return (
     <div className="form-grid form-grid-3">
       <Pair label="Date" value={detail.grnDate} />
-      <Pair label="DC No." value={detail.dcNo ?? '—'} />
+      {/* The linked OSP challan's own code when the GRN came from a DC receive;
+          otherwise whatever the storekeeper typed on Against PO. */}
+      <Pair label="DC No." value={detail.dcCode ?? detail.dcNo ?? '—'} />
       <Pair label="Invoice No." value={detail.invoiceNo ?? '—'} />
       <Pair label="PO" value={detail.poCode ?? detail.poCodeText ?? '—'} />
       <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText ?? '—'} />

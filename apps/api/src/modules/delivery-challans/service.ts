@@ -39,7 +39,7 @@ import {
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import { parseDocRevision, withDocRevision } from '@innovic/shared';
-import type { DocumentTraceability } from '@innovic/shared';
+import type { DocumentTraceability, ReceiveDeliveryChallanResponse } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
   CreateDeliveryChallanReceiptInput,
@@ -1305,7 +1305,7 @@ export async function receiveAgainstDeliveryChallan(
   deliveryChallanId: string,
   input: CreateDeliveryChallanReceiptInput,
   user: AuthContext,
-): Promise<DeliveryChallanWithLines> {
+): Promise<ReceiveDeliveryChallanResponse> {
   // Booking material back from the vendor creates a receipt, so it is `entry` —
   // the same right that raised the DC. Was requireWriteRole.
   await requireFormAccess(user, 'ospdc_create', 'entry');
@@ -1464,7 +1464,9 @@ export async function receiveAgainstDeliveryChallan(
     // Auto-create the GRN (pending Incoming QC) for the good received qty. This
     // routes OSP receive-backs through Incoming QC instead of crediting stock
     // directly (restores the legacy receiveOutsourceOp → createGRNfromPO flow).
-    let autoGrnCode: string | null = null;
+    // Kept as { id, code }: the response carries it back so the GRN screen's
+    // "Against JWPO / DC" tab can land on the GRN it just raised.
+    let autoGrn: { id: string; code: string } | null = null;
     if (grnLines.length > 0) {
       const grn = await insertGrnForOspReceipt(tx, companyId, user, {
         grnDate: input.receiptDate,
@@ -1481,7 +1483,7 @@ export async function receiveAgainstDeliveryChallan(
         // (design §5): the GRN carries the NC so Incoming QC can settle it.
         ncId: dcHeader.ncId ?? null,
       });
-      autoGrnCode = grn.code;
+      autoGrn = { id: grn.id, code: grn.code };
     }
 
     // Return-to-vendor challan (design §5): book the pieces as back from the
@@ -1552,7 +1554,7 @@ export async function receiveAgainstDeliveryChallan(
       {
         action: 'DC_RECEIVE',
         entity: 'DeliveryChallan',
-        detail: `${dcHeader.code} — receipt ${receiptCode}${autoGrnCode ? ` → GRN ${autoGrnCode} (pending QC)` : ''}`,
+        detail: `${dcHeader.code} — receipt ${receiptCode}${autoGrn ? ` → GRN ${autoGrn.code} (pending QC)` : ''}`,
         refId: dcHeader.code,
       },
       companyId,
@@ -1594,7 +1596,8 @@ export async function receiveAgainstDeliveryChallan(
       }
     }
 
-    return loadDeliveryChallanWithLines(tx, deliveryChallanId, companyId);
+    const dc = await loadDeliveryChallanWithLines(tx, deliveryChallanId, companyId);
+    return { ...dc, autoGrn: autoGrn ? { id: autoGrn.id, code: autoGrn.code } : null };
   });
 }
 

@@ -8644,3 +8644,71 @@ closure as a bare status flip.
 - Risks: `v_jc_op_status` was re-emitted (from the 0093 text, one additive
   term); `jc-op-card.tsx` and `jc-status-content.tsx` grew past the 400-line
   rule and want splitting.
+
+## ADR-162: A GRN is booked FROM its source document — a purchase PO directly, a job-work PO through its Delivery Challan
+
+**Date:** 2026-09-14
+**Status:** Accepted
+
+### Context
+
+The GRN "+ New" screen offered two tabs. "Against PO" listed every PO — unapproved
+drafts and job-work POs included — filled the lines once, and never refreshed them
+when the PO was changed; the server accepted any qty against any PO line, including
+a line from a different PO or the same line twice, with only the DB's `received_qty
+<= qty + 10%` CHECK as a backstop. "Against JWPO / DC" posted to the JW returnable
+gate pass (`jw_dc_inward`), which credits stock directly and never creates a GRN,
+never touches the PO, never reaches Incoming QC. Both tabs also carried the QC
+fields (QC By, accepted/rejected, QC date, report) that belong to Incoming QC.
+
+The correct chain already existed server-side: `POST /delivery-challans/:id/receive`
+raises the GRN (`goods_receipt_notes.delivery_challan_id`, ADR-080), recomputes the
+PO line's `received_qty` and the PO status, flips the JC op, and marks the DC
+`received`. It was reachable only from the DC detail page.
+
+### Decision
+
+1. **Against PO** (`grn-against-po-form.tsx`) picks from approved purchase POs only —
+   status `open`/`partial`, `!poSendsMaterialOut(poType)` — and lists ONLY the PO
+   lines with a balance, defaulting Receive Now to that balance. Changing or
+   clearing the PO replaces vendor and every line; there is no manual line entry
+   and no QC field. The server (`assertPoReceiptFits`) now refuses a draft /
+   closed / cancelled / job-work PO, a PO line from another PO, the same PO line
+   twice, and any qty over `qty − received_qty`, reading the PO lines `FOR UPDATE`
+   so two simultaneous GRNs serialise. The +10% DB CHECK stays as the last net.
+2. **Against JWPO / DC** (`grn-against-dc-form.tsx`) derives the eligible JWPOs from
+   the DCs still `issued` (NC return challans excluded), then the DCs of the picked
+   JWPO, then the DC lines with a balance (`qty − Σ receipt lines`, the same
+   arithmetic as the DC Receive page, now shared in
+   `delivery-challans/lib/receipt-math.ts`). Save calls the existing DC receive
+   endpoint — no second write path — which now returns `autoGrn {id, code}` so the
+   screen lands on the GRN it just raised. `jw_dc_inward` is no longer reachable
+   from the GRN screen; it remains on the JW DC page for gate-pass returns.
+3. **GRN reads carry the DC link.** `deliveryChallanId` on header/list rows,
+   `dcCode` on the detail; the detail page shows "Open DC"; the list shows an
+   "Against DC" / "Against PO" badge.
+4. **The GRN list wears the SO Master card layout** (frozen header, status pills,
+   card per GRN with accent bar, metric strip, expandable lines) instead of a
+   12-column sortable table.
+
+### Alternatives considered
+
+- Fixing the old form in place — its edit mode (`/goods-receipt-notes/$id/edit`)
+  still needs the QC fields, so a separate create component was cleaner than an
+  `isCreate` fork through 700 lines. The old form stays for edit only.
+- Building "Against JWPO" on `jw_dc_outward` (what the tab did) — that table has
+  no GRN, no PO cascade and no Incoming QC; the user's acceptance check ("GRN links
+  to the correct source, source qty/status updates") is exactly what the
+  `delivery_challans` receive path already does.
+- A new `POST /goods-receipt-notes/from-dc` — rejected: it would be a second
+  writer of the same rows as the DC receive service.
+
+### Consequences
+
+- Positive: one GRN per receipt, never over the balance, always linked to its PO
+  line and (for OSP) its DC; the JWPO tab produces the same GRN the DC page does.
+- Negative: a manual GRN with no PO (legacy "Manual" mode) is no longer possible
+  from this screen; a job-work PO can no longer take a direct GRN. PATCH on a GRN
+  still has no balance guard (out of scope). Receiving on the DC tab needs the
+  `ospdc_create` entry right — the server's 403 is shown verbatim.
+- The JWPO/DC pickers read the first 200 `issued` challans (API max).
