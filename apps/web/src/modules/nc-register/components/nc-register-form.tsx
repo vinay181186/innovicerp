@@ -135,17 +135,6 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     [jcOps],
   );
 
-  // How many pieces may still be written to an NC for the CHOSEN op — the
-  // rejected pieces on that op not yet on any NC (ncBreakup.ncEligibleRemaining,
-  // from v_nc_op_breakup). Read live off the enriched ops already loaded above,
-  // so it shrinks as other NCs are raised against the same op. Undefined when no
-  // op is chosen (a manual NC with no op): nothing to cap against, and the field
-  // is left free. The SERVER caps authoritatively in every case — this is only
-  // the friendly, pre-submit half that stops the obvious over-entry.
-  const selectedJcOpId = watch('jcOpId');
-  const eligibleRemaining = opsForJc.find((o) => o.id === selectedJcOpId)?.ncBreakup
-    .ncEligibleRemaining;
-
   // Pre-fill a suggested NC code once on mount (create mode only). Manual edit
   // still allowed — server enforces uniqueness.
   useEffect(() => {
@@ -402,30 +391,15 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                 type="number"
                 min={1}
                 step="0.01"
-                {...(eligibleRemaining != null ? { max: eligibleRemaining } : {})}
                 placeholder="Qty"
                 className="innovic-input fw-700 red"
                 {...register('rejectedQty', {
                   valueAsNumber: true,
                   min: { value: 0.01, message: 'Must be > 0' },
-                  // Cap at the op's remaining eligible pool — mirrors the server
-                  // refusal so the inspector sees it before submit, not after.
-                  validate: (v) =>
-                    eligibleRemaining == null ||
-                    v == null ||
-                    Number.isNaN(v) ||
-                    v <= eligibleRemaining ||
-                    `Only ${eligibleRemaining} pcs remain eligible to raise on this op — the rest are already on NCs.`,
                 })}
               />
               {errors.rejectedQty?.message ? (
                 <div className="form-error">{errors.rejectedQty.message}</div>
-              ) : eligibleRemaining != null ? (
-                <div className="form-help">
-                  {eligibleRemaining > 0
-                    ? `Up to ${eligibleRemaining} pcs eligible on this op (rejected − already on NCs).`
-                    : 'No pieces remain eligible on this op — all rejects are already on NCs.'}
-                </div>
               ) : null}
             </div>
           </>

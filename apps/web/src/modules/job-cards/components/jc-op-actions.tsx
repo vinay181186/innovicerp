@@ -23,9 +23,7 @@
 //
 //   ▶ Start / ✚ Log   available > 0        (startOp / submitOpLog refuse at 0)
 //   🔬 QC / 📋 TPI     qcPending > 0        (nothing waiting to be inspected)
-//   ⚠ Raise NC        ncBreakup.ncEligibleRemaining > 0 (rejected pieces not
-//                     yet written to any NC → opens the NC CREATE form; when
-//                     that is 0 but rejects exist, links to the register instead)
+//   ⚠ NC              qcRejectedQty > 0    (nothing was rejected → no NC to open)
 //   🚚 Gen DC         readyToSendQty > 0   (nothing cleared to send)
 //   📥 Receive        an open challan exists
 //   🔬 Incoming QC    inQcQty > 0          (nothing back awaiting inspection)
@@ -272,23 +270,12 @@ export function JcOpFooter({
   // exactly when the server would refuse the entry.
   const canTpi =
     effectiveFormPerms(eff, 'qc_submit').entry && effectiveFormPerms(eff, 'tpi_submit').entry;
-  // NC is MANUAL now — raised from the op's pending pool (the QC auto-NC was
-  // removed). Two mutually exclusive controls on a QC op that rejected pieces:
-  //   • ncEligibleRemaining > 0 → "⚠ Raise NC (n)" opens the NC CREATE form
-  //     seeded with this JC + operation, so the inspector types only the defect.
-  //     Gated on nc_dispose.ENTRY (it creates a record), the same gate new.tsx
-  //     enforces on the page it lands on.
-  //   • otherwise (every rejected piece already sits on an NC) → "⚠ NC (n)"
-  //     links to the register filtered to this JC, to VIEW the NC(s) that exist.
-  //     Gated on nc_dispose.VIEW.
-  // ncEligibleRemaining = rejected pieces on the op not yet written to any NC
-  // (from v_nc_op_breakup); the server caps the create at that same number.
-  const hasRejects = isQc && op.qcRejectedQty > 0;
-  const ncEligible = op.ncBreakup.ncEligibleRemaining;
-  const showRaiseNc = hasRejects && ncEligible > 0 && effectiveFormPerms(eff, 'nc_dispose').entry;
-  // Fall back to the view link when nothing is left to raise, or when the user
-  // may see NCs but not create them.
-  const showViewNc = hasRejects && !showRaiseNc && effectiveFormPerms(eff, 'nc_dispose').view;
+  // ⚠ NC opens the NC register list, which guards on nc_dispose.view (it used
+  // to open /nc-register/new → .entry; see the link itself for why it moved).
+  // Shown ONLY on a QC operation that actually rejected something: the QC op
+  // is what finds the fault and raises the NC, and with no rejects there is
+  // nothing to look at.
+  const showNc = isQc && op.qcRejectedQty > 0 && effectiveFormPerms(eff, 'nc_dispose').view;
 
   // A button only appears when the action behind it can actually be PERFORMED
   // right now. `available` is the op's workable qty (upstream cleared − already
@@ -367,8 +354,7 @@ export function JcOpFooter({
     showQcBtn ||
     showQcText ||
     (isTpi && canTpi) ||
-    showRaiseNc ||
-    showViewNc;
+    showNc;
   if (!hasFooter) return null;
 
   return (
@@ -431,42 +417,24 @@ export function JcOpFooter({
           📋 TPI
         </Link>
       ) : null}
-      {/* NC — MANUAL from the op's pending pool (the QC auto-NC was removed).
-          The QC operation that rejected pieces is where the fault was found, so
-          the control only appears there, labelled with a count like the 🔬 QC
-          (5) button beside it. Last in the strip and quiet: it is the exception
-          path, not the next step.
+      {/* NC — the QC operation that rejected pieces is where the fault was
+          found, so the link only appears there, labelled with the reject count
+          like the 🔬 QC (5) button beside it. Last in the strip and quiet: it
+          is the exception path, not the next step.
 
-          While pieces are still eligible, "⚠ Raise NC (n)" opens the NC CREATE
-          form seeded with this JC + operation (so the inspector types only the
-          defect). Once every rejected piece is on an NC it becomes "⚠ NC (n)",
-          a link to the register filtered to this JC to SEE the NC(s) that exist.
-          The register has no dedicated job-card filter — its `search` param is
-          matched server-side against the JC code (nc-register/service.ts), so
-          that is the filter used. */}
-      {showRaiseNc ? (
-        <Link
-          to="/nc-register/new"
-          search={{
-            jobCardId: op.jobCardId,
-            jcOpId: op.id,
-            opSeq: String(op.opSeq),
-            operation: op.operation,
-            ...(op.itemCode ? { itemCode: op.itemCode } : {}),
-            ...(op.itemName ? { itemName: op.itemName } : {}),
-            rejectedQty: String(ncEligible),
-          }}
-          className="btn btn-sm btn-ghost"
-          title="Raise a non-conformance for the rejected pieces on this operation"
-        >
-          ⚠ Raise NC ({ncEligible})
-        </Link>
-      ) : showViewNc ? (
+          It opens the NC REGISTER filtered to this job card, not the new-NC
+          form it used to. A QC reject already raises its NC automatically
+          (autoCreateNcFromQcReject), so a "report" link here invited a second,
+          duplicate NC for the same pieces; what the inspector needs is to SEE
+          and dispose the one that exists. The register has no dedicated
+          job-card filter — its `search` param is matched server-side against
+          the JC code (nc-register/service.ts), so that is the filter used. */}
+      {showNc ? (
         <Link
           to="/nc-register"
           search={{ search: jc.code }}
           className="btn btn-sm btn-ghost"
-          title="Open the NC register filtered to this job card — the rejected pieces are already on NC(s)"
+          title="Open the NC register filtered to this job card — the NC for these rejected pieces was raised automatically at QC"
         >
           ⚠ NC ({op.qcRejectedQty})
         </Link>

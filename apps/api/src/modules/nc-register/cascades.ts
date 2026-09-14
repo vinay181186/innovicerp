@@ -517,11 +517,6 @@ function generateAutoNcCode(jcCode: string, opSeq: number): string {
   return `NC-AUTO-${safeJcCode}-Op${opSeq}-${stamp}`;
 }
 
-// NOTE: no longer auto-invoked. NCs are MANUAL now (ADR) — neither the
-// production QC path (op-entry submitQcLog) nor Incoming QC calls this any more;
-// the user raises NCs by hand from each op's pending pool. Kept exported for
-// reference and possible programmatic reuse; the authoritative create path is
-// createNcRegister, which enforces the per-op remaining cap.
 export async function autoCreateNcFromQcReject(
   tx: DbTransaction,
   ctx: AutoCreateNcContext,

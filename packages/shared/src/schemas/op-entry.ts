@@ -58,13 +58,6 @@ export const ncOpBreakupSchema = z.object({
   ncClosedQty: z.number().int().nonnegative(),
   ncOpenQty: z.number().int().nonnegative(),
   openNcCount: z.number().int().nonnegative(),
-  /** How many rejected pieces on this op have NOT yet been written onto an NC —
-   *  the pending pool a new NC may draw from. = qcRejectedQty − Σ(rejected_qty
-   *  of every non-deleted NC on this op). A QC reject records the pieces here;
-   *  each NC created against the op shrinks it, and the create is refused once it
-   *  reaches 0, so Σ NC qty can never exceed the op's rejected qty. 0 when the op
-   *  has no reject, or once every rejected piece is on an NC. */
-  ncEligibleRemaining: z.number().int().nonnegative().default(0),
 });
 export type NcOpBreakup = z.infer<typeof ncOpBreakupSchema>;
 
@@ -182,7 +175,6 @@ export const jcOpEnrichedSchema = z.object({
     ncClosedQty: 0,
     ncOpenQty: 0,
     openNcCount: 0,
-    ncEligibleRemaining: 0,
   }),
 });
 export type JcOpEnriched = z.infer<typeof jcOpEnrichedSchema>;

@@ -23,6 +23,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -156,28 +157,55 @@ function NcRegisterListPage(): React.JSX.Element {
         },
       },
       {
-        header: 'Item',
-        id: 'item',
+        // SO-Master pattern (sales-orders list, ComponentSoExpand): the item
+        // CODE gets its own strong-mono column (td-code, var(--text)) — the code
+        // is the main thing (memory rule), never faint. The drawing revision is
+        // a live read off the SO line behind the NC's job card, so it only rides
+        // the LIVE item code; when the item was deleted and we fall back to
+        // itemCodeText (the reporter's typed snapshot) the code stays bare —
+        // nothing typed ever gets a revision glued onto it.
+        header: 'Item Code',
+        id: 'itemCode',
         accessorFn: (r) => r.itemCode ?? r.itemCodeText ?? '',
         cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>
-            {/* The drawing revision is a live read off the SO line behind the NC's
-                job card, so it only rides the LIVE item code. When the item has
-                been deleted and we fall back to itemCodeText — the snapshot of
-                what the reporter typed — the code stays bare: nothing typed ever
-                gets a revision glued onto it. */}
-            {/* SO pattern: code strong-mono (td-code) in var(--text); name quiet
-                beside it. */}
-            <span className="td-code" style={{ color: 'var(--text)' }}>
-              {row.original.itemCode
-                ? itemCodeWithRev(row.original.itemCode, row.original.itemRevision)
-                : row.original.itemCodeText}
-            </span>
-            <span className="text3" style={{ marginLeft: 6 }}>
-              {row.original.itemName ?? row.original.itemNameText ?? ''}
-            </span>
+          <span className="td-code" style={{ color: 'var(--text)' }}>
+            {row.original.itemCode
+              ? itemCodeWithRev(row.original.itemCode, row.original.itemRevision)
+              : (row.original.itemCodeText ?? '—')}
           </span>
         ),
+      },
+      {
+        // Item NAME as its own adjacent column (was fused into the old "Item"
+        // cell). Long free text → truncate with ellipsis + title, per the
+        // styling skill.
+        header: 'Item Name',
+        id: 'itemName',
+        accessorFn: (r) => r.itemName ?? r.itemNameText ?? '',
+        cell: ({ row }) => {
+          const name = row.original.itemName ?? row.original.itemNameText ?? '';
+          return name ? (
+            <span
+              className="text2"
+              style={{
+                fontSize: 11,
+                maxWidth: 180,
+                display: 'inline-block',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                verticalAlign: 'bottom',
+              }}
+              title={name}
+            >
+              {name}
+            </span>
+          ) : (
+            <span className="text3" style={{ fontSize: 11 }}>
+              —
+            </span>
+          );
+        },
       },
       {
         // Legacy L22531 puts `td-ctr mono fw-700` on the <td> and colours it
@@ -231,7 +259,12 @@ function NcRegisterListPage(): React.JSX.Element {
         cell: ({ row }) => {
           const r = row.original;
           return (
-            <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+            // Row navigates to the NC detail; these controls do OTHER things, so
+            // stop the click from also firing the row navigation (styling skill).
+            <div
+              style={{ display: 'flex', gap: 3, alignItems: 'center' }}
+              onClick={(e) => e.stopPropagation()}
+            >
               <Link
                 to="/nc-register/$id"
                 params={{ id: r.id }}
@@ -406,12 +439,43 @@ function NcRegisterListPage(): React.JSX.Element {
             ) : null}
           </div>
 
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <StatCard label="Total" value={summary?.total} color="var(--red)" />
-            <StatCard label="Pending" value={summary?.pending} color="var(--amber)" />
-            <StatCard label="Total Qty" value={summary?.totalQty} />
-            <StatCard label="Rework" value={summary?.reworkQty} color="var(--cyan)" />
-            <StatCard label="Scrap" value={summary?.scrapQty} color="var(--red)" />
+          {/* Counts as ONE single-row strip (styling skill Rule 3 + SO Master),
+              not five separate .panel cards. Read-only metrics — no onClick, so
+              each cell renders as a plain div. */}
+          <div style={{ marginBottom: 16 }}>
+            <StatStrip
+              items={[
+                {
+                  key: 'total',
+                  label: 'Total',
+                  count: summary?.total == null ? '—' : Math.round(summary.total),
+                  color: 'var(--red)',
+                },
+                {
+                  key: 'pending',
+                  label: 'Pending',
+                  count: summary?.pending == null ? '—' : Math.round(summary.pending),
+                  color: 'var(--amber)',
+                },
+                {
+                  key: 'totalQty',
+                  label: 'Total Qty',
+                  count: summary?.totalQty == null ? '—' : Math.round(summary.totalQty),
+                },
+                {
+                  key: 'rework',
+                  label: 'Rework',
+                  count: summary?.reworkQty == null ? '—' : Math.round(summary.reworkQty),
+                  color: 'var(--cyan)',
+                },
+                {
+                  key: 'scrap',
+                  label: 'Scrap',
+                  count: summary?.scrapQty == null ? '—' : Math.round(summary.scrapQty),
+                  color: 'var(--red)',
+                },
+              ]}
+            />
           </div>
 
           {/* Legacy L22553-22557 filter row. Placeholder names only the fields the
@@ -517,7 +581,16 @@ function NcRegisterListPage(): React.JSX.Element {
                     </tr>
                   ) : (
                     table.getRowModel().rows.map((row) => (
-                      <tr key={row.id}>
+                      <tr
+                        key={row.id}
+                        onClick={() =>
+                          void navigate({
+                            to: '/nc-register/$id',
+                            params: { id: row.original.id },
+                          })
+                        }
+                        style={{ cursor: 'pointer' }}
+                      >
                         {row.getVisibleCells().map((cell) => (
                           <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -531,12 +604,12 @@ function NcRegisterListPage(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Tip line (was legacy L22561). NCs are raised MANUALLY now, from the
-              QC operation's rejected-piece pool (or ❌ Report NC). */}
+          {/* Tip line (was legacy L22561). An NC is raised automatically when a
+              QC operation rejects pieces (or manually with ❌ Report NC). */}
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-            💡 Raise an NC from a QC operation that rejected pieces (or ❌ Report NC), then click{' '}
-            <b>✏ Dispose</b> to decide: Rework, Repair, Return to Vendor, Reject / Scrap, Use As Is,
-            or Make Fresh.
+            💡 Click a row to open the NC. An NC is raised automatically when a QC operation rejects
+            pieces (or with ❌ Report NC); then click <b>✏ Dispose</b> to decide: Rework, Repair,
+            Return to Vendor, Reject / Scrap, Use As Is, or Make Fresh.
           </div>
 
           <div
@@ -588,23 +661,6 @@ function NcRegisterListPage(): React.JSX.Element {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-// Company-wide stat card (legacy HTML L22508-22519). `value` undefined while
-// the summary query is loading → shows a dash.
-function StatCard(props: {
-  label: string;
-  value: number | undefined;
-  color?: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{props.label}</div>
-      <div className="mono fw-700" style={{ fontSize: 22, color: props.color ?? 'var(--text)' }}>
-        {props.value == null ? '—' : Math.round(props.value)}
-      </div>
     </div>
   );
 }
