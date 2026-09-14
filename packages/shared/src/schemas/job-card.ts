@@ -277,6 +277,14 @@ export const jobCardOpEditSchema = z.object({
   id: z.string().uuid(),
   opSeq: z.number().int(),
   machineCode: z.string().nullable(),
+  /** The Machine GROUP this op's machine belongs to — the word the shop floor
+   *  reads ('VMC', 'CNC'), resolved machines → machine_groups. Null on an op
+   *  with no machine, a machine filed under no group, and OSP/QC steps. DISPLAY
+   *  ONLY: the job card stores the machine (jc_ops has no group column), and the
+   *  group is whatever that machine belongs to now — the same rule Route Card
+   *  and SO Planning follow. The edit form's per-op Machine Group picker only
+   *  narrows the machine list; nothing new is saved. */
+  machineGroupCode: z.string().nullable().default(null),
   operation: z.string(),
   opType: jcOpInputTypeSchema,
   cycleTimeMin: z.number().nonnegative(),

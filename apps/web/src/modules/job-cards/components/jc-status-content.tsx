@@ -18,7 +18,7 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { drawingViewUrl } from '@/lib/drawing-url';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useItemsList } from '@/modules/items/api';
-import { useMachinesList } from '@/modules/machines/api';
+import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { opEntryKeys, useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useMyCompany } from '@/modules/settings/api';
@@ -723,9 +723,16 @@ function JcStatusEditForm({
   // machine dropdown showed "No matches". Stay within the cap.
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
+  // Machine groups exist only to label and narrow the machine picker; the id →
+  // code map lets a row show 'VMC' for the group its machine belongs to.
+  const { data: machineGroupsData } = useMachineGroupsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   const machines = machinesData?.machines ?? [];
   const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);
+  const machineGroupCodeById = useMemo(
+    () => new Map((machineGroupsData?.groups ?? []).map((g) => [g.id, g.code])),
+    [machineGroupsData],
+  );
   // T32a: the edit machine picker now uses the shared SearchableSelect (like
   // create/plan) instead of a datalist, which collapsed on a pre-filled value.
   // Only one row's dropdown is open at a time, so a shared search term is fine.
@@ -736,7 +743,7 @@ function JcStatusEditForm({
         !machineSearch.trim() ||
         `${m.code} ${m.name}`.toLowerCase().includes(machineSearch.trim().toLowerCase()),
     )
-    .map((m) => ({ id: m.id, code: m.code, name: m.name }));
+    .map((m) => ({ id: m.id, code: m.code, name: m.name, machineGroupId: m.machineGroupId ?? null }));
 
   // ── Editable header (item code, order qty, due date, priority, remarks).
   //    Source, date, drawing and existing QC docs are preserved unchanged from
@@ -750,6 +757,9 @@ function JcStatusEditForm({
   const [ops, setOps] = useState<EditOp[]>(
     model.ops.map((o) => ({
       id: o.id,
+      // Group is display-only and not stored on the op — back-filled from the
+      // machine master once the machine list loads (effect below).
+      machineGroupId: null,
       machineCode: o.machineCode ?? '',
       operation: o.operation,
       opType: o.opType,
@@ -818,6 +828,53 @@ function JcStatusEditForm({
   const setOp = (i: number, patch: Partial<EditOp>): void => {
     setOps((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
   };
+
+  // Picking a machine seeds the row's group from that machine's master group
+  // when the Group box is still empty (SO Planning / Route Card parity).
+  const onOpMachineChange = (i: number, code: string): void => {
+    const match = machines.find((m) => m.code.toUpperCase() === code.trim().toUpperCase());
+    const current = ops[i];
+    setOp(i, {
+      machineCode: code,
+      ...(current && current.machineGroupId == null && match?.machineGroupId
+        ? { machineGroupId: match.machineGroupId }
+        : {}),
+    });
+  };
+
+  // Picking a group narrows the row's machine list; a machine already picked that
+  // is NOT in the new group is cleared, only when the mismatch is PROVEN.
+  const onOpGroupChange = (i: number, groupId: string | null): void => {
+    const current = ops[i];
+    const machine = current?.machineCode
+      ? machines.find((m) => m.code === current.machineCode)
+      : undefined;
+    const mismatch = groupId != null && machine != null && machine.machineGroupId !== groupId;
+    setOp(i, {
+      machineGroupId: groupId,
+      ...(mismatch ? { machineCode: '' } : {}),
+    });
+  };
+
+  // Group is display-only and not stored, so an op opened for edit (incl. the RW
+  // child JC) has an empty group even though its machine belongs to one. Read it
+  // back off the master once the machine list is in, for rows with a machine but
+  // no group yet — exactly as Route Card does.
+  useEffect(() => {
+    if (!machines.length) return;
+    setOps((prev) => {
+      let changed = false;
+      const next = prev.map((o) => {
+        if (o.opType !== 'process' || o.machineGroupId != null || !o.machineCode) return o;
+        const m = machines.find((x) => x.code === o.machineCode);
+        if (!m?.machineGroupId) return o;
+        changed = true;
+        return { ...o, machineGroupId: m.machineGroupId };
+      });
+      return changed ? next : prev;
+    });
+  }, [machines]);
+
   const moveOp = (i: number, dir: -1 | 1): void => {
     setOps((prev) => {
       const next = [...prev];
@@ -835,6 +892,7 @@ function JcStatusEditForm({
         ...prev,
         {
           // OSP ops carry no machine (T32b); QC parks on the QC lane.
+          machineGroupId: null,
           machineCode: '',
           operation: '',
           opType: kind,
@@ -1111,7 +1169,10 @@ function JcStatusEditForm({
                     machineName={machines.find((m) => m.code === o.machineCode)?.name ?? ''}
                     machines={machines}
                     machineOptions={machineOptions}
+                    machineGroupCodeById={machineGroupCodeById}
                     onMachineSearch={setMachineSearch}
+                    onMachineChange={(code) => onOpMachineChange(i, code)}
+                    onGroupChange={(gid) => onOpGroupChange(i, gid)}
                     vendorListId="dlJcEditVendor"
                     logs={o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : []}
                     isFirst={i === 0}

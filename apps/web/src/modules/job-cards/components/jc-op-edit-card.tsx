@@ -22,6 +22,7 @@ import type { JcOpEnriched, JobCardListItem, OpLog } from '@innovic/shared';
 import { useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { OP_STATUS, opAccentColor } from '../lib/jc-op-labels';
 import { QtyTile, SetupField, secLabel } from './jc-op-card-parts';
 
@@ -30,6 +31,12 @@ import { QtyTile, SetupField, secLabel } from './jc-op-card-parts';
  *  same values `buildJcWriteInput` consumes. */
 export interface JcOpEditValues {
   id?: string;
+  // DISPLAY-ONLY, never saved: the Machine GROUP that narrows this row's machine
+  // list, exactly as SO Planning / Route Card do. jc_ops has no group column —
+  // the machine carries its group in the master, so the group is re-read from the
+  // picked machine each time the card opens (the host back-fills it on load).
+  // buildJcWriteInput never maps it, so it cannot reach the server.
+  machineGroupId: string | null;
   machineCode: string;
   operation: string;
   opType: 'process' | 'qc' | 'outsource';
@@ -57,7 +64,10 @@ export function JcOpEditCard({
   machineName,
   machines,
   machineOptions,
+  machineGroupCodeById,
   onMachineSearch,
+  onMachineChange,
+  onGroupChange,
   vendorListId,
   logs,
   cycleLabel = 'Cycle (min)',
@@ -79,8 +89,19 @@ export function JcOpEditCard({
   enriched: JcOpEnriched | undefined;
   machineName: string;
   machines: { id: string; code: string; name: string }[];
-  machineOptions: { id: string; code: string; name: string }[];
+  /** Search-filtered machine options for the picker, each carrying the group it
+   *  belongs to so this card can narrow the list to the row's chosen group. */
+  machineOptions: { id: string; code: string; name: string; machineGroupId: string | null }[];
+  /** id → group code, so a row with a machine can show its group ('VMC') in the
+   *  Machine Group picker without a second lookup. */
+  machineGroupCodeById: Map<string, string>;
   onMachineSearch: (term: string) => void;
+  /** Host handler: picking a machine seeds the row's group from that machine's
+   *  master group (route-card parity). Called with the machine CODE (or '').  */
+  onMachineChange: (code: string) => void;
+  /** Host handler: picking a group narrows the machine list and clears a machine
+   *  that is not in the new group (route-card parity). */
+  onGroupChange: (groupId: string | null) => void;
   /** id of the <datalist> holding the vendor options. */
   vendorListId: string;
   /** Already sliced to the latest 3 by the caller, exactly as the table did.
@@ -157,6 +178,23 @@ export function JcOpEditCard({
             {seqLabel}
           </span>
 
+          {/* Machine GROUP — display-only picker that NARROWS the machine list
+              to that group, exactly as SO Planning / Route Card do. Only shown
+              for in-house ops (QC/OSP have no machine). Picking a group clears a
+              machine that is not in it; picking a machine seeds the group. */}
+          {!isQc && !isOut ? (
+            <div style={{ width: 132 }}>
+              <MachineGroupPicker
+                id={`jc-edit-mgrp-${op.id ?? index}`}
+                valueId={op.machineGroupId}
+                valueText={
+                  op.machineGroupId ? (machineGroupCodeById.get(op.machineGroupId) ?? null) : null
+                }
+                onChange={onGroupChange}
+              />
+            </div>
+          ) : null}
+
           {/* Machine — editable picker for in-house ops; inactive badge for
               QC and OSP (T32b: an OSP op has no machine). */}
           <div style={{ width: 172 }}>
@@ -179,13 +217,17 @@ export function JcOpEditCard({
                   id={`jc-edit-mach-${op.id ?? index}`}
                   value={machines.find((m) => m.code === op.machineCode)?.id ?? null}
                   onChange={(id) =>
-                    onChange({
-                      machineCode: id ? (machines.find((m) => m.id === id)?.code ?? '') : '',
-                    })
+                    onMachineChange(id ? (machines.find((m) => m.id === id)?.code ?? '') : '')
                   }
                   onSearch={onMachineSearch}
-                  options={machineOptions}
-                  placeholder="🔍 Machine ★"
+                  // Narrowed to the row's group once one is chosen — as SO Planning
+                  // does — so the planner cannot pick a lathe under a VMC group.
+                  options={
+                    op.machineGroupId
+                      ? machineOptions.filter((m) => m.machineGroupId === op.machineGroupId)
+                      : machineOptions
+                  }
+                  placeholder={op.machineGroupId ? '🔍 Machine in group ★' : '🔍 Machine ★'}
                   valueLabel={op.machineCode || undefined}
                   selectedLabel={(m) => m.code ?? m.name ?? ''}
                 />
