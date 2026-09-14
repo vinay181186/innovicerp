@@ -403,7 +403,7 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
             under the machine that runs the REMAINING qty, so after a re-route
             this figure was not made there. Renders nothing unless the op ran on
             more than one machine. */}
-        <MachineSplitLines machines={op.machines} />
+        <MachineSplitLines machines={op.machines} plannedCode={op.machineCode} />
       </td>
       <td className="td-ctr">
         <span

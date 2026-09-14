@@ -160,7 +160,7 @@ export function JcOpsTable({
                         than implying the current machine made everything. One
                         machine (the norm) renders exactly as before —
                         MachineChip returns null. */}
-                    <MachineChip machines={op.machines} />
+                    <MachineChip machines={op.machines} plannedCode={machineLabel} />
                   </td>
                   <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
                     {op.opType}
@@ -199,7 +199,9 @@ export function JcOpsTable({
                         machine. Skipped on a pure QC op: the split describes
                         MACHINED production, and the number above it there is
                         the inspection's accepted count. */}
-                    {op.opType === 'qc' ? null : <MachineSplitLines machines={op.machines} />}
+                    {op.opType === 'qc' ? null : (
+                      <MachineSplitLines machines={op.machines} plannedCode={machineLabel} />
+                    )}
                   </td>
                   <td>
                     {/* pending_qty (0087), not `available`. On a QC op

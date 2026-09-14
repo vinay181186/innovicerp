@@ -274,7 +274,7 @@ function Row({
                 the Done figure beside it, so say so instead of implying the
                 current machine made everything. One machine (the norm) renders
                 exactly as before — MachineChip returns null. */}
-            <MachineChip machines={o.machines} />
+            <MachineChip machines={o.machines} plannedCode={o.machineCode} />
           </>
         )}
       </td>
@@ -361,7 +361,7 @@ function Row({
         {o.completed}
         {/* The per-machine breakdown of that total (ADR-126). Renders nothing
             unless the op ran on more than one machine. */}
-        <MachineSplitLines machines={o.machines} />
+        <MachineSplitLines machines={o.machines} plannedCode={o.machineCode} />
         {o.qcRequired && o.qcPending > 0 ? (
           <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} QC</div>
         ) : null}

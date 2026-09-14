@@ -627,14 +627,14 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
             figure beside it, so say so instead of implying the current machine
             made everything. One machine (the norm) renders exactly as before —
             MachineChip returns null. */}
-        <MachineChip machines={op.machines} />
+        <MachineChip machines={op.machines} plannedCode={op.machineCode} />
       </td>
       <td className="td-ctr">{op.orderQty}</td>
       <td className="td-ctr green mono fw-700">
         {op.completedQty}
         {/* The per-machine breakdown of that total (ADR-126). Renders nothing
             unless the op ran on more than one machine. */}
-        <MachineSplitLines machines={op.machines} />
+        <MachineSplitLines machines={op.machines} plannedCode={op.machineCode} />
       </td>
       <td className="td-ctr">
         <span className="mono fw-700 amber" style={{ fontSize: 16 }}>

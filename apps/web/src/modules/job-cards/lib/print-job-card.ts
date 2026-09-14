@@ -23,6 +23,7 @@ import type {
   MachineSplit,
 } from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
+import { splitDisagrees } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -72,8 +73,10 @@ function machineSplit(op: JcOpEnriched): MachineSplit {
 function machineCell(op: JcOpEnriched): string {
   const label = machineLabel(op);
   const split = machineSplit(op);
-  if (split.length <= 1) return esc(label);
-  const others = split.filter((m) => m.machineCode !== label).length;
+  if (!splitDisagrees(split, label)) return esc(label);
+  const others = split.filter(
+    (m) => m.machineCode.trim().toLowerCase() !== label.trim().toLowerCase(),
+  ).length;
   return others > 0 ? `${esc(label)} (+${others})` : esc(label);
 }
 
@@ -82,7 +85,7 @@ function machineCell(op: JcOpEnriched): string {
 // hovered for a tooltip.
 function doneCell(op: JcOpEnriched): string {
   const split = machineSplit(op);
-  if (split.length <= 1) return String(op.completedQty);
+  if (!splitDisagrees(split, machineLabel(op))) return String(op.completedQty);
   // "CNC-01: 5 pcs" — never "CNC-01 5", which reads as one blob on paper where
   // there is no tooltip to disambiguate it.
   const parts = split.map((m) => `${esc(m.machineCode)}: ${m.qty} pcs`).join(' · ');

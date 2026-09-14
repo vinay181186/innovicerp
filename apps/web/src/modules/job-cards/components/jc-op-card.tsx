@@ -208,7 +208,7 @@ export function JcOpCard({
                 the DONE tile below, so say so rather than implying the current
                 machine made everything. One machine (the norm) renders exactly
                 as before — MachineChip returns null. */}
-            <MachineChip machines={op.machines} />
+            <MachineChip machines={op.machines} plannedCode={op.machineCode ?? op.machineCodeText} />
           </span>
           {machineName && !isQc && !isOut ? (
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>{machineName}</span>
@@ -327,7 +327,12 @@ export function JcOpCard({
                         machine. Skipped on a QC op: the split describes
                         MACHINED production, and DONE there is the inspection's
                         accepted count (doneQty above), which no machine made. */}
-                    {isQc ? null : <MachineSplitLines machines={op.machines} />}
+                    {isQc ? null : (
+                      <MachineSplitLines
+                        machines={op.machines}
+                        plannedCode={op.machineCode ?? op.machineCodeText}
+                      />
+                    )}
                   </>
                 }
               />
