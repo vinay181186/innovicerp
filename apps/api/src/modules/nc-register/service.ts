@@ -35,7 +35,7 @@ import {
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
-import { type DisposeNcContext, disposeNcCascade } from './cascades';
+import { type DisposeNcContext, disposeNcCascade, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
 import type {
   CloseNcReworkInput,
@@ -163,6 +163,13 @@ interface NcJoins {
   itemRevision?: string | null;
   childJobCardCode?: string | null;
   deliveryChallanCode?: string | null;
+  // Material source (Tier A, WI3), derived on read via resolveNcSource / the
+  // list reader's LATERAL. Null on a pure in-house reject.
+  sourceVendorId?: string | null;
+  sourceVendorCode?: string | null;
+  sourceVendorName?: string | null;
+  sourcePoCode?: string | null;
+  sourceGrnCode?: string | null;
 }
 
 function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}): NcRegister {
@@ -211,6 +218,13 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     // computed here, never stored, so they can never drift from the columns.
     qcLogId: row.qcLogId,
     grnLineId: row.grnLineId,
+    // Material source (Tier A, WI3): the vendor/PO/GRN the rejected pieces came
+    // from, derived on read (never stored). Null on a pure in-house reject.
+    sourceVendorId: joins.sourceVendorId ?? null,
+    sourceVendorCode: joins.sourceVendorCode ?? null,
+    sourceVendorName: joins.sourceVendorName ?? null,
+    sourcePoCode: joins.sourcePoCode ?? null,
+    sourceGrnCode: joins.sourceGrnCode ?? null,
     splitFromNcId: row.splitFromNcId,
     childJobCardId: row.childJobCardId,
     childJobCardCode,
@@ -401,7 +415,12 @@ export async function listNcRegister(
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         sol.revision::text AS "itemRevision",
         i.name AS "itemName",
-        cap.code AS "linkedCapaCode"
+        cap.code AS "linkedCapaCode",
+        -- Material source (Tier A, WI3): the vendor/PO/GRN the rejected pieces
+        -- came from. Mirrors resolveNcSource (cascades.ts) — GRN first, else the
+        -- origin op's outsource PO line. All null on a pure in-house reject.
+        ncsrc."sourceVendorId", ncsrc."sourceVendorCode", ncsrc."sourceVendorName",
+        ncsrc."sourcePoCode", ncsrc."sourceGrnCode"
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc
         ON jc.id = nc.job_card_id AND jc.deleted_at IS NULL
@@ -429,6 +448,39 @@ export async function listNcRegister(
         ORDER BY c.created_at ASC
         LIMIT 1
       ) cap ON TRUE
+      -- Material source (Tier A, WI3). One row per NC (LIMIT 1 inside), so it
+      -- cannot multiply the result. GRN branch first; the OSP branch is guarded
+      -- to only fire when there is no GRN line, so the two never collide.
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE(grn.vendor_id, opo."vendorId")   AS "sourceVendorId",
+          COALESCE(grnv.code, opov.code)            AS "sourceVendorCode",
+          COALESCE(grnv.name, opov.name)            AS "sourceVendorName",
+          COALESCE(grn.po_code_text, opo."poCode")  AS "sourcePoCode",
+          grn.code                                  AS "sourceGrnCode"
+        FROM (SELECT 1) _one
+        LEFT JOIN public.goods_receipt_note_lines gl
+          ON gl.id = nc.grn_line_id AND gl.deleted_at IS NULL
+        LEFT JOIN public.goods_receipt_notes grn
+          ON grn.id = gl.goods_receipt_note_id AND grn.deleted_at IS NULL
+        LEFT JOIN public.vendors grnv
+          ON grnv.id = grn.vendor_id AND grnv.deleted_at IS NULL
+        LEFT JOIN LATERAL (
+          SELECT po.vendor_id AS "vendorId", po.code AS "poCode"
+          FROM public.jc_ops o
+          JOIN public.purchase_order_lines pol
+            ON pol.source_jc_op_id = o.id AND pol.deleted_at IS NULL
+          JOIN public.purchase_orders po
+            ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
+          WHERE o.id = nc.jc_op_id AND o.company_id = nc.company_id
+            AND o.op_type = 'outsource'
+            AND nc.grn_line_id IS NULL
+          ORDER BY pol.created_at DESC
+          LIMIT 1
+        ) opo ON TRUE
+        LEFT JOIN public.vendors opov
+          ON opov.id = opo."vendorId" AND opov.deleted_at IS NULL
+      ) ncsrc ON TRUE
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         ${searchFrag}
@@ -533,6 +585,12 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     reworkDoneQty: (r['reworkDoneQty'] as string | null) ?? null,
     qcLogId: str('qcLogId'),
     grnLineId: str('grnLineId'),
+    // Material source (Tier A, WI3) — from the LEFT JOIN LATERAL above.
+    sourceVendorId: str('sourceVendorId'),
+    sourceVendorCode: str('sourceVendorCode'),
+    sourceVendorName: str('sourceVendorName'),
+    sourcePoCode: str('sourcePoCode'),
+    sourceGrnCode: str('sourceGrnCode'),
     splitFromNcId: str('splitFromNcId'),
     childJobCardId: str('childJobCardId'),
     childJobCardCode,
@@ -611,6 +669,13 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
   if (!found) throw new NotFoundError(`NC ${id} not found`);
   const row = found.nc;
   const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
+  // Material source (Tier A, WI3): resolve the vendor/PO/GRN the rejected pieces
+  // came from so the detail view — and the return-to-vendor challan — default to
+  // the ACTUAL supplier.
+  const source = await resolveNcSource(tx, companyId, {
+    grnLineId: row.grnLineId,
+    jcOpId: row.jcOpId,
+  });
   return toNcRegister(row, {
     linkedCapaCode,
     itemCode: found.itemCode,
@@ -618,6 +683,11 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     itemRevision: found.itemRevision,
     childJobCardCode: found.childJobCardCode,
     deliveryChallanCode: found.deliveryChallanCode,
+    sourceVendorId: source.sourceVendorId,
+    sourceVendorCode: source.sourceVendorCode,
+    sourceVendorName: source.sourceVendorName,
+    sourcePoCode: source.sourcePoCode,
+    sourceGrnCode: source.sourceGrnCode,
   });
 }
 
@@ -1408,6 +1478,17 @@ export async function createNcDc(
       if (v.length === 0) throw new ValidationError(`Vendor ${input.vendorId} not found`);
     }
 
+    // WI4: default the return vendor FK from the NC's ACTUAL source (GRN vendor,
+    // or the origin op's outsource PO vendor) when the caller did not pass one.
+    // input.vendorId still wins when supplied; vendorCodeText (required on the
+    // input) stays what the caller displayed. This only makes "same supplier"
+    // the default, it does not force it.
+    const source = await resolveNcSource(tx, companyId, {
+      grnLineId: nc.grnLineId,
+      jcOpId: nc.jcOpId,
+    });
+    const effectiveVendorId = input.vendorId ?? source.sourceVendorId;
+
     // The parent card supplies the SO line; the item master the uom the line
     // needs; the origin op tells us whether a PO line is involved.
     const jcRows = await tx
@@ -1446,7 +1527,8 @@ export async function createNcDc(
         dcDate: input.dcDate,
         purchaseOrderId: null,
         poCodeText: nc.code,
-        vendorId: input.vendorId ?? null,
+        // WI4: caller's vendorId, else the NC's source vendor.
+        vendorId: effectiveVendorId ?? null,
         vendorCodeText: input.vendorCodeText,
         salesOrderLineId: jcRows[0]?.sourceSoLineId ?? null,
         soRefText: nc.soCodeText,

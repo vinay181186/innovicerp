@@ -621,8 +621,38 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
             </span>
           ) : null}
         </InlinePair>
-        {/* Rework XOR Operation — never both (see isReworkDisp above). */}
-        {isReworkDisp ? (
+        {/* Source of the rejected material. A vendor-sourced NC (sourceVendorId
+            present, e.g. a GRN/OSP reject) shows the original vendor and its
+            PO/GRN so the return-to-vendor route is clear. An in-house NC keeps
+            the Rework-Machine XOR Operation display it always had. */}
+        {detail.sourceVendorId ? (
+          <>
+            <InlinePair label="Source Vendor:">
+              <span className="td-code" style={{ color: 'var(--text)' }}>
+                {detail.sourceVendorCode ?? '—'}
+              </span>
+              {detail.sourceVendorName ? (
+                <span className="text3" style={{ marginLeft: 6, fontWeight: 400 }}>
+                  {detail.sourceVendorName}
+                </span>
+              ) : null}
+            </InlinePair>
+            {detail.sourcePoCode ? (
+              <InlinePair label="Source PO:">
+                <span className="td-code" style={{ color: 'var(--text)' }}>
+                  {detail.sourcePoCode}
+                </span>
+              </InlinePair>
+            ) : null}
+            {detail.sourceGrnCode ? (
+              <InlinePair label="Source GRN:">
+                <span className="td-code" style={{ color: 'var(--text)' }}>
+                  {detail.sourceGrnCode}
+                </span>
+              </InlinePair>
+            ) : null}
+          </>
+        ) : isReworkDisp ? (
           <InlinePair label="Rework Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
         ) : (
           <InlinePair label="Operation:">

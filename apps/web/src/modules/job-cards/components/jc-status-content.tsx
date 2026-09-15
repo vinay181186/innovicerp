@@ -222,6 +222,17 @@ function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Element | nu
   ) : (
     <span className="td-code">{jc.parentNcCode ?? '—'}</span>
   );
+  // Source context of the rejected work (Tier A). Derived on read from the
+  // parent NC: which op + machine produced the rejects and how many. Any field
+  // may be null (older cards, or a source NC that lacks the fact) — those
+  // segments are simply dropped so the sentence never shows a bare "—".
+  const verb = jc.recoveryKind === 'repair' ? 'Repairing' : 'Reworking';
+  const qtyText = jc.parentRejectedQty != null ? `${jc.parentRejectedQty} rejected` : 'rejected pieces';
+  const sourceParts = [
+    `Op ${opN}`,
+    jc.parentOpName ?? undefined,
+    jc.parentMachineCode ?? undefined,
+  ].filter((p): p is string => Boolean(p));
   return (
     <div
       style={{
@@ -248,6 +259,9 @@ function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Element | nu
         {parent}
         <span>· Op {opN} · NC</span>
         {nc}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+        {verb} {qtyText} from {sourceParts.join(' · ')}.
       </div>
       <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
         Recovered pieces return to the parent&apos;s Op {opN} after this card&apos;s final QC.

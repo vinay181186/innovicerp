@@ -90,6 +90,15 @@ export const jobCardListItemSchema = z.object({
   originOpSeq: z.number().int().nullable().default(null),
   parentNcId: z.string().uuid().nullable().default(null),
   parentNcCode: z.string().nullable().default(null),
+  /** Source context of the rejected work, derived on read from the parent NC so
+   *  a rework/repair child clearly shows WHICH operation and machine produced
+   *  the rejected pieces (docs QC-NC §4; Tier A). `parentOpName` is the parent
+   *  operation's name, `parentMachineCode` the actual machine that made them
+   *  (nc.machineCodeText), `parentRejectedQty` how many were rejected. Null on a
+   *  non-recovery card or when the source NC lacks the fact. Display only. */
+  parentOpName: z.string().nullable().default(null),
+  parentMachineCode: z.string().nullable().default(null),
+  parentRejectedQty: z.number().int().nullable().default(null),
   // Derived from v_jc_status
   computedStatus: jcComputedStatusSchema,
   totalOps: z.number().int().nonnegative(),
