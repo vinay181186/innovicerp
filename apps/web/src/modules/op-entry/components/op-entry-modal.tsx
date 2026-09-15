@@ -26,9 +26,11 @@
 // close button, so the two boxes an operator meets read as one thing.
 
 import type { JcOpEnriched } from '@innovic/shared';
-import { X } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { AlertTriangle, X } from 'lucide-react';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useRunningOps } from '../api';
 import { OpEntryForm } from './op-entry-form';
 
 /** What the popup was opened against. Which half of the entry form shows is
@@ -76,6 +78,29 @@ export function OpEntryModal({
   const { op, activeRunningId } = target;
   const isQc = op.opType === 'qc' || op.qcRequired;
   const planned = op.machineCode ?? op.machineCodeText ?? '—';
+  const navigate = useNavigate();
+
+  // PLANNED-MACHINE BUSY GATE — the first thing the operator meets. Pressing
+  // ▶ Start on an op whose PLANNED machine is running another job opens this
+  // box on a "Machine busy" panel, not on a form with a notice under it: the
+  // fact that decides what happens next is stated before a single field is
+  // offered. Keyed on the machine id the one-running-per-machine index sees.
+  // The sessions list is pre-warmed by the Op Entry page, so this answers
+  // with the popup, not seconds after it. Two ways on from the panel: open
+  // the running op (Complete / Stop frees the machine), or start THIS op on
+  // another machine — which opens the form with Actual Machine left blank
+  // for the operator to pick. The form keeps its own second gate for a busy
+  // machine picked by hand.
+  const runningOps = useRunningOps({ status: 'running' });
+  const [startElsewhere, setStartElsewhere] = useState(false);
+  const plannedMachineId = isQc ? null : (target.machineId ?? op.machineId ?? null);
+  const plannedBusy =
+    !activeRunningId && plannedMachineId
+      ? (runningOps.data?.find(
+          (r) => r.machineId === plannedMachineId && !r.isOsp && r.jcOpId !== op.id,
+        ) ?? null)
+      : null;
+  const showBusyPanel = Boolean(plannedBusy) && !startElsewhere;
   // Two facts, always: the plan, and the machine the open session is ACTUALLY
   // on (the one the pieces get stamped with). When the operator never changed
   // it, both read the same name — that is the answer, not a gap. Before a
@@ -99,11 +124,13 @@ export function OpEntryModal({
   // stale ?mode=start used to do on IN-JC-26-00017 Op 1 while it was running.
   // A QC op has its own form inside and its own vocabulary, so it keeps its own
   // title rather than being called production either way.
-  const title = isQc
-    ? '✔ QC inspection'
-    : activeRunningId
-      ? '✚ Log production'
-      : '▶ Start operation';
+  const title = showBusyPanel
+    ? '⛔ Machine busy'
+    : isQc
+      ? '✔ QC inspection'
+      : activeRunningId
+        ? '✚ Log production'
+        : '▶ Start operation';
 
   return (
     <div
@@ -221,6 +248,66 @@ export function OpEntryModal({
           </div>
         </div>
 
+        {showBusyPanel && plannedBusy ? (
+          /* MACHINE BUSY — shown INSTEAD of the Start form. Names the job and
+             operation holding the planned machine and offers the ways on. */
+          <div style={{ padding: 16 }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: 12,
+                alignItems: 'flex-start',
+                padding: 14,
+                background: 'var(--bg3)',
+                border: '1px solid var(--amber)',
+                borderRadius: 8,
+              }}
+            >
+              <AlertTriangle size={22} className="amber" style={{ flex: 'none', marginTop: 2 }} />
+              <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                <b className="mono">{planned}</b> is currently running{' '}
+                <span className="mono fw-700 cyan">
+                  {plannedBusy.jobCardCode} / Op {plannedBusy.opSeq}
+                </span>
+                . This operation cannot start on it until that operation is completed or
+                stopped — or start it on another machine.
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                title="Open the Start form with the Actual Machine left blank, to pick a free one"
+                onClick={() => setStartElsewhere(true)}
+              >
+                ⚙ Start on another machine
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                title="Open the running operation to Complete or Stop it"
+                onClick={() => {
+                  void navigate({
+                    to: '/op-entry',
+                    search: (prev) => ({
+                      ...prev,
+                      jc: plannedBusy.jobCardCode,
+                      op: plannedBusy.jcOpId,
+                      mode: 'complete',
+                      view: undefined,
+                    }),
+                  });
+                  onClose();
+                }}
+              >
+                ✚ Open Current Operation
+              </button>
+            </div>
+          </div>
+        ) : (
         <div style={{ padding: 16 }}>
           <OpEntryForm
             onActualMachineChange={setPickedActual}
@@ -233,8 +320,13 @@ export function OpEntryModal({
             onSubmitted={onClose}
             onClose={onClose}
             defaultMachineId={target.machineId ?? null}
+            // "Start on another machine": the plan is busy, so it must not be
+            // the pre-filled answer — the picker opens blank, in the plan's
+            // group, and the operator names the free machine.
+            startWithoutMachine={startElsewhere}
           />
         </div>
+        )}
       </div>
     </div>
   );
