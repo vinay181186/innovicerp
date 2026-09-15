@@ -161,6 +161,16 @@ export const jcOpEnrichedSchema = z.object({
    *  session is open or the session is OSP. Log / Stop popups show this one,
    *  because that is the machine the pieces will be stamped with. */
   activeRunningMachineCode: z.string().nullable().default(null),
+  /** The printed Job Card's traveller columns (PRD-F-004). All read off this
+   *  op's op_log rows; null when nothing has been logged yet.
+   *  entryDoneBy — the SYSTEM users who made the entries (users.full_name of
+   *  op_log.created_by, distinct), which is who is accountable for the record;
+   *  operatorNames — the shop-floor operators named on those entries;
+   *  firstLogDate / lastLogDate — Start and Finish as the traveller prints them. */
+  entryDoneBy: z.string().nullable().default(null),
+  operatorNames: z.string().nullable().default(null),
+  firstLogDate: z.string().nullable().default(null),
+  lastLogDate: z.string().nullable().default(null),
   /** The NC quantity breakup for this op (docs/QC-NC-HANDLING-DESIGN.md §7,
    *  from v_nc_op_breakup). Every figure is "pieces currently in that state",
    *  so together they partition the op's NC qty. All 0 when the op has never

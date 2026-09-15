@@ -166,7 +166,7 @@ function parseSheetDate(d: string | null | undefined): Date | null {
 // Sans 3 / Source Code Pro from Google Fonts; a print popup must not wait on a
 // network font, so each keeps only its system fallback chain.
 
-const SHEET_STYLE = `
+export const SHEET_STYLE = `
   /* TIMES NEW ROMAN THROUGHOUT, ON ALL FIVE DOCUMENTS (user, 2026-09-10).
      This began as the purchase order's own skin and the user has now asked for
      it everywhere, so the four font tokens are redefined once, here, instead of
@@ -519,6 +519,25 @@ function itemCellHtml(l: SheetLine): string {
   return `<span class="icode">${esc(l.itemCode)}</span>${name}${descHtml}`;
 }
 
+/** The letterhead every sheet-family document opens with: logo left, company
+ *  name right, the brand rule, the title. `lines` are the pre-built <p> rows
+ *  printed under the name (address, contact, GSTIN/PAN); a document that wants
+ *  the name alone — the Job Card, which is an internal shop-floor sheet — passes
+ *  none. Same markup either way, so the two never drift apart. */
+export function sheetLetterheadHtml(args: { name: string; title: string; lines?: string[] }): string {
+  return `<div class="lh-pad"><div class="lh-in">
+    <div class="lh-top">
+      <img class="lh-logo" src="${INNOVIC_LOGO_DATA_URI}" alt="INNOVIC">
+      <div class="lh-co">
+        <p class="co-name">${esc(args.name)}</p>
+        ${(args.lines ?? []).join('\n        ')}
+      </div>
+    </div>
+    <div class="lh-rule"></div>
+    <p class="doc-title">${esc(args.title)}</p>
+  </div></div>`;
+}
+
 export function buildSheetHtml(model: SheetPrintModel): string {
   const { blocks, data, company, lines } = model;
   const po = model.columns === 'po';
@@ -558,19 +577,11 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   // there is one letterhead again rather than one per document.
   const idsHtml = ids.join(' &nbsp;&middot;&nbsp; ');
 
-  const letterhead = `<div class="lh-pad"><div class="lh-in">
-    <div class="lh-top">
-      <img class="lh-logo" src="${INNOVIC_LOGO_DATA_URI}" alt="INNOVIC">
-      <div class="lh-co">
-        <p class="co-name">${esc(company.name)}</p>
-        ${addressHtml}
-        ${contactHtml}
-        <p class="co-ids">${idsHtml}</p>
-      </div>
-    </div>
-    <div class="lh-rule"></div>
-    <p class="doc-title">${esc(model.title)}</p>
-  </div></div>`;
+  const letterhead = sheetLetterheadHtml({
+    name: company.name,
+    title: model.title,
+    lines: [addressHtml, contactHtml, `<p class="co-ids">${idsHtml}</p>`],
+  });
 
   const columnHeads = po
     ? '<td class="colh ctr" style="width:11mm">Sr</td>' +
@@ -704,15 +715,25 @@ export function buildSheetHtml(model: SheetPrintModel): string {
 
 /** Opens the sheet print window. Returns false if the popup was blocked. */
 export function openSheetPrintWindow(model: SheetPrintModel): boolean {
+  const title = model.opts?.testBanner ? `Test Print — ${model.windowTitle}` : model.windowTitle;
+  return openSheetHtmlWindow(title, buildSheetHtml(model));
+}
+
+/** Opens a print window around ready-made sheet-family HTML (an `<article
+ *  class="sheet">` built with the classes SHEET_STYLE defines), with the same
+ *  stylesheet and paginator every sheet document uses. The Job Card, whose
+ *  body is an operation traveller rather than a goods table, prints through
+ *  this so it wears the same paper as the PO without pretending to be one.
+ *  Returns false if the popup was blocked. */
+export function openSheetHtmlWindow(title: string, html: string, extraStyle = ''): boolean {
   const w = window.open('', '_blank', 'width=900,height=920');
   if (!w) return false;
-  const title = model.opts?.testBanner ? `Test Print — ${model.windowTitle}` : model.windowTitle;
   // The closing tag is split so the bundler never emits the character sequence
   // that would end THIS module early if it were ever inlined into a page.
   const close = '</' + 'script>';
   w.document.write(
-    `<!DOCTYPE html><html><head><title>${esc(title)}</title><style>${SHEET_STYLE}</style></head>` +
-      `<body>${buildSheetHtml(model)}<script>${PAGINATE_SCRIPT}${close}</body></html>`,
+    `<!DOCTYPE html><html><head><title>${esc(title)}</title><style>${SHEET_STYLE}${extraStyle}</style></head>` +
+      `<body>${html}<script>${PAGINATE_SCRIPT}${close}</body></html>`,
   );
   w.document.close();
   return true;

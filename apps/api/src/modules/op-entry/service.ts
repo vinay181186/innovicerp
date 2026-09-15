@@ -240,6 +240,30 @@ export async function listJcOpsEnriched(
           ORDER BY r.created_at DESC
           LIMIT 1
         ) AS "activeRunningMachineCode",
+        -- Traveller columns for the printed Job Card (PRD-F-004): who made the
+        -- entries in the system, which operators they named, and the first /
+        -- last log dates. Correlated aggregates over this op's own log rows.
+        (
+          SELECT string_agg(DISTINCT u.full_name, ', ')
+          FROM public.op_log l
+          JOIN public.users u ON u.id = l.created_by
+          WHERE l.jc_op_id = o.id AND l.company_id = o.company_id
+        ) AS "entryDoneBy",
+        (
+          SELECT string_agg(DISTINCT l.operator_name, ', ')
+          FROM public.op_log l
+          WHERE l.jc_op_id = o.id AND l.company_id = o.company_id AND l.operator_name IS NOT NULL
+        ) AS "operatorNames",
+        (
+          SELECT MIN(l.log_date)::text
+          FROM public.op_log l
+          WHERE l.jc_op_id = o.id AND l.company_id = o.company_id
+        ) AS "firstLogDate",
+        (
+          SELECT MAX(l.log_date)::text
+          FROM public.op_log l
+          WHERE l.jc_op_id = o.id AND l.company_id = o.company_id AND l.log_type IN ('complete', 'qc')
+        ) AS "lastLogDate",
         -- Who actually made the completed qty, per machine (0095 / ADR-126).
         -- The machine columns above are the op's CURRENT machine — where the
         -- REMAINING qty runs — so on a re-routed op they name a machine that
@@ -306,6 +330,10 @@ export async function listJcOpsEnriched(
       reworkRaisedToOps: (r['reworkRaisedToOps'] as string | null) ?? null,
       activeRunningOpId: (r['activeRunningOpId'] as string | null) ?? null,
       activeRunningMachineCode: (r['activeRunningMachineCode'] as string | null) ?? null,
+      entryDoneBy: (r['entryDoneBy'] as string | null) ?? null,
+      operatorNames: (r['operatorNames'] as string | null) ?? null,
+      firstLogDate: (r['firstLogDate'] as string | null) ?? null,
+      lastLogDate: (r['lastLogDate'] as string | null) ?? null,
       machineId: (r['machineId'] as string | null) ?? null,
       machineGroupId: (r['machineGroupId'] as string | null) ?? null,
       // Pinned to null rather than left to the spread above: the contract types
