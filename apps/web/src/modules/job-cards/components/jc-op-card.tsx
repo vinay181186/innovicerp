@@ -394,20 +394,22 @@ export function JcOpCard({
             </div>
           </div>
 
-          <div style={{ minWidth: 120, marginLeft: 'auto' }}>
-            <div style={{ ...secLabel, textAlign: 'right' }}>Outsource</div>
-            <div style={{ textAlign: 'right' }}>
-              {isOut ? (
+          {/* Only an outsourced op gets this block. An in-house op used to show
+              the caption with "Not outsourced" under it — a label for nothing.
+              `isOut` is read from the op each render, so the moment the user
+              switches the op to outsource the block appears on its own. */}
+          {isOut ? (
+            <div style={{ minWidth: 120, marginLeft: 'auto' }}>
+              <div style={{ ...secLabel, textAlign: 'right' }}>Outsource</div>
+              <div style={{ textAlign: 'right' }}>
                 <OutsourceInfo
                   jcCode={jc.code}
                   jcOpId={op.id}
                   status={op.outsourceStatus ?? 'pending'}
                 />
-              ) : (
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Not outsourced</span>
-              )}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
         {/* ── RECENT LOGS — same latest-3 the table showed, now collapsible ── */}
