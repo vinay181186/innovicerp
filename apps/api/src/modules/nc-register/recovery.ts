@@ -17,7 +17,7 @@
 
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { SHIFTS } from '@innovic/shared';
-import { jcOps, jobCards, ncRegister, opLog, purchaseOrderLines } from '../../db/schema';
+import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -148,9 +148,14 @@ export async function markNcClosed(
  * Raise the child job card that recovers `qty` rejected pieces of `nc`.
  * Modelled on the make_fresh supplementary: item, drawing, SO/JW link and raw
  * material are copied from the parent so every downstream cascade (close,
- * dispatch, material) keeps working on the child. No jc_ops are written — the
- * user defines the recovery route (§4.3); job-cards appends the terminal QC op
- * whenever ops are saved on a card with recovery_kind set.
+ * dispatch, material) keeps working on the child.
+ *
+ * The recovery route is pre-filled by seedRecoveryOps: the operation that
+ * actually MADE the rejected pieces (defaulted to the machine it ran on) plus a
+ * terminal QC to re-inspect the rework. The route stays fully editable, and the
+ * user can still add intermediate ops; the pre-fill just means the child opens
+ * with a runnable route instead of an empty shell. When the child's terminal QC
+ * is logged, onRecoveryJobCardQc settles the parent NC (§4).
  */
 export async function createRecoveryJobCard(
   tx: DbTransaction,
@@ -209,7 +214,100 @@ export async function createRecoveryJobCard(
     .returning({ id: jobCards.id, code: jobCards.code });
   const child = inserted[0];
   if (!child) throw new ValidationError(`Failed to create ${label.toLowerCase()} job card`);
+  await seedRecoveryOps(tx, nc, parent.id, child.id, user);
   return child;
+}
+
+/**
+ * Pre-fill the recovery route with the operation that produced the rejected
+ * pieces + a terminal QC (design §4.3). Example: parent Op-1 CNC (made 10) →
+ * Op-2 QC (5 rejected) yields a child with Op-1 = CNC on the machine that ran
+ * it, Op-2 = QC. Skipped (child stays an empty shell) when the NC carries no
+ * op, or the producing op cannot be identified from the parent route.
+ *
+ * The producing op is the reject op itself when that op is process/outsource,
+ * else the latest non-QC op before it (a dedicated QC op inspects the op that
+ * fed it). A vendor-sourced NC never reaches here — disposeNcCascade refuses
+ * rework/repair for one — so the producing op is always in-house.
+ */
+async function seedRecoveryOps(
+  tx: DbTransaction,
+  nc: NcRow,
+  parentId: string,
+  childId: string,
+  user: AuthContext,
+): Promise<void> {
+  if (nc.opSeq == null) return;
+  const rejectSeq = nc.opSeq;
+
+  const ops = await tx
+    .select()
+    .from(jcOps)
+    .where(and(eq(jcOps.jobCardId, parentId), isNull(jcOps.deletedAt)))
+    .orderBy(jcOps.opSeq);
+  if (ops.length === 0) return;
+
+  const rejectOp = ops.find((o) => o.opSeq === rejectSeq) ?? null;
+  const producing =
+    rejectOp && rejectOp.opType !== 'qc'
+      ? rejectOp
+      : (ops
+          .filter((o) => o.opSeq < rejectSeq && o.opType !== 'qc')
+          .sort((a, b) => b.opSeq - a.opSeq)[0] ?? null);
+  if (!producing) return;
+
+  // Default the producing op to the machine that ACTUALLY made the pieces
+  // (nc.machineCodeText, captured by the op-entry auto-NC cascade), falling
+  // back to the op's planned machine. Keep the id and the text consistent:
+  // resolve the id from the actual code when it names a machine in the master.
+  const actualCode = nc.machineCodeText ?? producing.machineCodeText;
+  let machineId = producing.machineId;
+  if (actualCode && actualCode !== producing.machineCodeText) {
+    const m = await tx
+      .select({ id: machines.id })
+      .from(machines)
+      .where(
+        and(
+          eq(machines.companyId, nc.companyId),
+          eq(machines.code, actualCode),
+          isNull(machines.deletedAt),
+        ),
+      )
+      .limit(1);
+    machineId = m[0]?.id ?? null;
+  }
+
+  await tx.insert(jcOps).values({
+    companyId: nc.companyId,
+    jobCardId: childId,
+    opSeq: 1,
+    operation: producing.operation,
+    // Rework is performed in-house; a vendor/outsource source is guarded off.
+    opType: producing.opType === 'outsource' ? 'process' : producing.opType,
+    machineId,
+    machineCodeText: actualCode,
+    cycleTimeMin: producing.cycleTimeMin,
+    program: producing.program,
+    toolNo: producing.toolNo,
+    toolDetails: producing.toolDetails,
+    qcRequired: producing.qcRequired,
+    createdBy: user.id,
+    updatedBy: user.id,
+  });
+
+  // Terminal QC — its QC log is what onRecoveryJobCardQc keys on (last op) to
+  // credit the recovered pieces back onto the parent's origin op.
+  const qcName = rejectOp && rejectOp.opType === 'qc' ? rejectOp.operation : 'QC';
+  await tx.insert(jcOps).values({
+    companyId: nc.companyId,
+    jobCardId: childId,
+    opSeq: 2,
+    operation: qcName,
+    opType: 'qc',
+    qcRequired: true,
+    createdBy: user.id,
+    updatedBy: user.id,
+  });
 }
 
 /** `<parentCode>-RW<n>` / `-RP<n>`, n = 1 + the parent's existing children of
