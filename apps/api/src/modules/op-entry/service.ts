@@ -1360,9 +1360,13 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         producingJcOpId = prevRows[0]?.id ?? null;
       }
       let producingMachineCodeText: string | null = null;
+      // The operator who RAN the producing op — the person responsible for the
+      // rejected pieces. Read from the same production op_log row as the machine
+      // so the NC names who made them, not the QC inspector (reportedByText).
+      let producingOperatorText: string | null = null;
       if (producingJcOpId) {
         const mRows = await tx
-          .select({ mct: opLog.machineCodeText })
+          .select({ mct: opLog.machineCodeText, opName: opLog.operatorName })
           .from(opLog)
           .where(
             and(
@@ -1375,6 +1379,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
           .orderBy(desc(opLog.createdAt))
           .limit(1);
         producingMachineCodeText = mRows[0]?.mct ?? null;
+        producingOperatorText = mRows[0]?.opName ?? null;
       }
 
       await autoCreateNcFromQcReject(
@@ -1395,6 +1400,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
           qcLogId: row.id,
           // WI1: the ACTUAL producing machine (resolved above).
           machineCodeText: producingMachineCodeText,
+          // The operator who ran the producing op (resolved above).
+          operatorText: producingOperatorText,
         },
         user,
       );

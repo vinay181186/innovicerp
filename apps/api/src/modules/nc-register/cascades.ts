@@ -623,6 +623,11 @@ export interface AutoCreateNcContext {
    *  is the machine that MADE the pieces — nc.opSeq/operationText still name the
    *  rejecting/QC op and are left untouched. */
   machineCodeText?: string | null;
+  /** The operator who ran the producing op — the person responsible for the
+   *  rejected pieces, resolved by the caller from the producing op's op_log
+   *  operator_name. Distinct from reportedByText (the QC inspector). Null when
+   *  none was recorded, or on an Incoming-QC reject of vendor material. */
+  operatorText?: string | null;
   /** The op_log inspection row that rejected the pieces (design §3). Null on
    *  an Incoming-QC reject, which has no op_log row. */
   qcLogId?: string | null;
@@ -721,6 +726,9 @@ export async function autoCreateNcFromQcReject(
       // resolved by the caller from the producing op's op_log. Null when no
       // in-house machine applies (e.g. vendor material at Incoming QC).
       machineCodeText: ctx.machineCodeText ?? null,
+      // The operator who produced the rejected pieces (design §3). Distinct from
+      // reportedByText (the QC inspector who raised the NC).
+      operatorText: ctx.operatorText ?? null,
       rejectedQty: ctx.rejectedQty.toFixed(2),
       reasonCategory: 'other',
       reason,
