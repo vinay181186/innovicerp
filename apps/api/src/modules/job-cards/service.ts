@@ -530,9 +530,8 @@ async function resolveLinkedSource(
   kind: 'so' | 'jw',
   lineId: string,
 ): Promise<JobCardSourceOption | null> {
-  const rows = (
-    kind === 'so'
-      ? await tx.execute(sql`
+  const rows = (kind === 'so'
+    ? await tx.execute(sql`
           SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
             sol.line_no AS "lineNo", sol.part_name AS "partName",
             COALESCE(i.code, sol.item_code_text) AS "itemCode",
@@ -548,7 +547,7 @@ async function resolveLinkedSource(
           WHERE sol.id = ${lineId}::uuid AND sol.company_id = ${companyId}::uuid AND sol.deleted_at IS NULL
           LIMIT 1
         `)
-      : await tx.execute(sql`
+    : await tx.execute(sql`
           SELECT 'jw' AS type, jw.id AS "orderId", jwl.id AS "lineId", jw.code,
             jwl.line_no AS "lineNo", jwl.part_name AS "partName",
             COALESCE(i.code, jwl.item_code_text) AS "itemCode",
@@ -563,8 +562,7 @@ async function resolveLinkedSource(
           LEFT JOIN public.clients cli ON cli.id = jw.client_id AND cli.deleted_at IS NULL
           WHERE jwl.id = ${lineId}::uuid AND jwl.company_id = ${companyId}::uuid AND jwl.deleted_at IS NULL
           LIMIT 1
-        `)
-  ) as unknown as Array<Record<string, unknown>>;
+        `)) as unknown as Array<Record<string, unknown>>;
   const r = rows[0];
   return r ? toSourceOption(r) : null;
 }
@@ -607,7 +605,10 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
 
 // ─── Edit model (repopulates the modal — full op detail + qc docs) ──────────
 
-export async function getJobCardEditModel(id: string, user: AuthContext): Promise<JobCardEditModel> {
+export async function getJobCardEditModel(
+  id: string,
+  user: AuthContext,
+): Promise<JobCardEditModel> {
   const companyId = requireCompany(user);
   // Money hidden below L3 in Production: null the per-op outsource cost for a
   // caller who may not see prices (mirrors machines' hour-rate mask).
@@ -1072,8 +1073,7 @@ export async function getJobCardStatusExtras(
         reworkOpSeq: null,
         rejectedQty: null,
         operatorText: null,
-        ospCategory:
-          a['entity'] === 'PurchaseRequest' ? 'Purchase Request' : 'Purchase Order',
+        ospCategory: a['entity'] === 'PurchaseRequest' ? 'Purchase Request' : 'Purchase Order',
         detail: (a['detail'] as string | null) ?? null,
       });
     }
@@ -1371,7 +1371,13 @@ async function assertLineBalance(
       await tx
         .select({ oq: lineTable.orderQty })
         .from(lineTable)
-        .where(and(eq(lineTable.id, lineId), eq(lineTable.companyId, companyId), isNull(lineTable.deletedAt)))
+        .where(
+          and(
+            eq(lineTable.id, lineId),
+            eq(lineTable.companyId, companyId),
+            isNull(lineTable.deletedAt),
+          ),
+        )
         .limit(1)
     )[0];
     if (!line) throw new ValidationError('Linked SO/JW line not found');
@@ -1428,8 +1434,10 @@ async function assertLineBalance(
       );
     }
   };
-  if (input.sourceSoLineId) await check(salesOrderLines, jobCards.sourceSoLineId, input.sourceSoLineId);
-  else if (input.sourceJwLineId) await check(jobWorkOrderLines, jobCards.sourceJwLineId, input.sourceJwLineId);
+  if (input.sourceSoLineId)
+    await check(salesOrderLines, jobCards.sourceSoLineId, input.sourceSoLineId);
+  else if (input.sourceJwLineId)
+    await check(jobWorkOrderLines, jobCards.sourceJwLineId, input.sourceJwLineId);
 }
 
 /** Rule B (ADR-069): a JC must end with a QC op so finished goods pass a QC
@@ -1444,7 +1452,13 @@ function withTerminalQcOp(
   if (!needsDefaultQcOp(ops, opts)) return ops;
   return [
     ...ops,
-    { operation: DEFAULT_FINAL_QC_OP, opType: 'qc', cycleTimeMin: 0, qcRequired: true, outsourceCost: 0 },
+    {
+      operation: DEFAULT_FINAL_QC_OP,
+      opType: 'qc',
+      cycleTimeMin: 0,
+      qcRequired: true,
+      outsourceCost: 0,
+    },
   ];
 }
 
@@ -1488,9 +1502,10 @@ function buildOpRows(
       toolNo: o.toolNo ?? null,
       toolDetails: o.toolDetails ?? null,
       qcRequired: t === 'qc' ? true : Boolean(o.qcRequired),
-      outsourceVendorId: t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
+      outsourceVendorId:
+        t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
       outsourceVendorText: t === 'outsource' ? (o.outsourceVendorCode ?? null) : null,
-      outsourceCost: NUM(t === 'outsource' ? (o.outsourceCost || 0) : 0),
+      outsourceCost: NUM(t === 'outsource' ? o.outsourceCost || 0 : 0),
       createdBy: ctx.userId,
       updatedBy: ctx.userId,
     } satisfies typeof jcOps.$inferInsert;
@@ -1554,7 +1569,10 @@ async function registerQcDocs(
   );
 }
 
-export async function createJobCard(input: JobCardWriteInput, user: AuthContext): Promise<JobCardListItem> {
+export async function createJobCard(
+  input: JobCardWriteInput,
+  user: AuthContext,
+): Promise<JobCardListItem> {
   // Tier gate (was requireWriteRole, which only knew admin/manager). L2 Data
   // Entry and up in Production can raise a Job Card; L1 Viewer cannot.
   await requireFormAccess(user, 'jc_create', 'entry');
@@ -1621,7 +1639,9 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
     if (ops.length > 0) {
       await tx
         .insert(jcOps)
-        .values(buildOpRows(ops, types, { companyId, jobCardId, userId: user.id }, machineMap, vendorMap));
+        .values(
+          buildOpRows(ops, types, { companyId, jobCardId, userId: user.id }, machineMap, vendorMap),
+        );
       // ADR-051 write half: remember this item's routing so the next plan for
       // the same item can load it back. Same transaction as the JC — a failure
       // here rolls the Job Card back too. Deliberately fed `input.ops` (what
@@ -1715,7 +1735,9 @@ export async function updateJobCard(
         parentNcId: jobCards.parentNcId,
       })
       .from(jobCards)
-      .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
+      .where(
+        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+      )
       .limit(1);
     const head = headRows[0];
     if (!head) throw new NotFoundError(`Job card ${id} not found`);
@@ -1737,8 +1759,7 @@ export async function updateJobCard(
         .limit(1);
       const nc = ncRows[0];
       if (nc) {
-        const openQty =
-          Number(nc.rejectedQty) - Number(nc.clearedQty) - Number(nc.failedQty);
+        const openQty = Number(nc.rejectedQty) - Number(nc.clearedQty) - Number(nc.failedQty);
         if (input.orderQty > openQty) {
           throw new ValidationError(
             `Recovery job card qty ${input.orderQty} exceeds the open NC qty ${openQty}`,
@@ -1941,7 +1962,9 @@ export async function updateJobCard(
     }
     // 2. Park kept ops' opSeq out of the 1..N range to avoid unique collisions
     //    while we renumber (jc_ops unique on (job_card_id, op_seq)).
-    const keptIds = ops.map((o) => o.id).filter((x): x is string => Boolean(x) && existingById.has(x!));
+    const keptIds = ops
+      .map((o) => o.id)
+      .filter((x): x is string => Boolean(x) && existingById.has(x!));
     if (keptIds.length > 0) {
       await tx
         .update(jcOps)
@@ -1955,10 +1978,9 @@ export async function updateJobCard(
       const t = types[i]!;
       // Preserve the stored cost when the editor cannot see money (see the
       // money-in note above); otherwise take the posted value.
-      const postedCost = NUM(t === 'outsource' ? (o.outsourceCost || 0) : 0);
+      const postedCost = NUM(t === 'outsource' ? o.outsourceCost || 0 : 0);
       const exCost = o.id ? existingById.get(o.id)?.outsourceCost : undefined;
-      const outsourceCostVal =
-        showMoney || exCost == null ? postedCost : NUM(Number(exCost) || 0);
+      const outsourceCostVal = showMoney || exCost == null ? postedCost : NUM(Number(exCost) || 0);
       const vals = {
         machineId: t === 'process' ? (machineMap.get(o.machineCode ?? '') ?? null) : null,
         machineCodeText: t === 'process' ? (o.machineCode ?? null) : t === 'qc' ? 'QC' : null,
@@ -1969,7 +1991,8 @@ export async function updateJobCard(
         toolNo: o.toolNo ?? null,
         toolDetails: o.toolDetails ?? null,
         qcRequired: t === 'qc' ? true : Boolean(o.qcRequired),
-        outsourceVendorId: t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
+        outsourceVendorId:
+          t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
         outsourceVendorText: t === 'outsource' ? (o.outsourceVendorCode ?? null) : null,
         outsourceCost: outsourceCostVal,
         updatedBy: user.id,
@@ -2091,12 +2114,16 @@ export async function updateJobCard(
         .where(and(eq(fileRegistry.jobCardId, id), isNull(fileRegistry.deletedAt)));
       const havePaths = new Set(have.map((r) => r.p));
       const fresh = input.qcDocs.filter((d) => !havePaths.has(d.storagePath));
-      await registerQcDocs(tx, { ...input, qcDocs: fresh }, {
-        companyId,
-        jobCardId: id,
-        jcCode: head.code,
-        userId: user.id,
-      });
+      await registerQcDocs(
+        tx,
+        { ...input, qcDocs: fresh },
+        {
+          companyId,
+          jobCardId: id,
+          jcCode: head.code,
+          userId: user.id,
+        },
+      );
     }
 
     // 6. Route-card auto-save (ADR-051 write half) — only when the routing
@@ -2121,9 +2148,7 @@ export async function updateJobCard(
         entity: 'Job Card',
         detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}${
           raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
-        }${
-          machineSwaps.length ? ` · machine changed: ${machineSwaps.join('; ')}` : ''
-        }`,
+        }${machineSwaps.length ? ` · machine changed: ${machineSwaps.join('; ')}` : ''}`,
         refId: head.code,
       },
       companyId,
@@ -2144,12 +2169,17 @@ export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok
     const rows = await tx
       .select({ code: jobCards.code })
       .from(jobCards)
-      .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
+      .where(
+        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+      )
       .limit(1);
     if (!rows[0]) throw new NotFoundError(`Job card ${id} not found`);
 
     const now = new Date();
-    await tx.update(jobCards).set({ deletedAt: now, updatedBy: user.id }).where(eq(jobCards.id, id));
+    await tx
+      .update(jobCards)
+      .set({ deletedAt: now, updatedBy: user.id })
+      .where(eq(jobCards.id, id));
     // Soft-delete the ops too (op_log rows are preserved — FK is to jc_ops.id
     // which still exists; we never hard-delete to keep production history).
     await tx
@@ -2159,7 +2189,12 @@ export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok
 
     await emitActivityLog(
       tx,
-      { action: 'DELETE', entity: 'Job Card', detail: `Deleted ${rows[0].code}`, refId: rows[0].code },
+      {
+        action: 'DELETE',
+        entity: 'Job Card',
+        detail: `Deleted ${rows[0].code}`,
+        refId: rows[0].code,
+      },
       companyId,
       user,
     );

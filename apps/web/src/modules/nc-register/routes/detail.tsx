@@ -615,7 +615,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
               ? itemCodeWithRev(detail.itemCode, detail.itemRevision)
               : (detail.itemCodeText ?? '—')}
           </span>
-          {detail.itemName ?? detail.itemNameText ? (
+          {(detail.itemName ?? detail.itemNameText) ? (
             <span className="text3" style={{ marginLeft: 6, fontWeight: 400 }}>
               {detail.itemName ?? detail.itemNameText}
             </span>

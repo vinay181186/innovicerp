@@ -84,7 +84,6 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
-
 // ─── Reads ────────────────────────────────────────────────────────────────
 
 export async function listJcOpsEnriched(
@@ -697,8 +696,7 @@ async function resolveLogMachine(
       .where(inArray(machines.id, wanted));
     for (const row of m) codeById.set(row.id, row.code);
   }
-  const plannedMachineCode =
-    (op.machineId ? codeById.get(op.machineId) : null) ?? textFallback;
+  const plannedMachineCode = (op.machineId ? codeById.get(op.machineId) : null) ?? textFallback;
 
   if (machineId) {
     const code = codeById.get(machineId) ?? null;
@@ -822,8 +820,7 @@ export async function loadMaterialCap(
   // order belongs to the one line (robust even if the line-no text is blank).
   // Multi-line JWSO → match on the recorded JW line number so one part's
   // material never covers another part.
-  const lineFilter =
-    lineCount > 1 ? sql`AND pgl.jw_line_no_text = ${String(jc.lineNo)}` : sql``;
+  const lineFilter = lineCount > 1 ? sql`AND pgl.jw_line_no_text = ${String(jc.lineNo)}` : sql``;
   const recRows = (await tx.execute(sql`
     SELECT COALESCE(SUM(pgl.received_qty), 0)::int AS "received"
     FROM public.party_grn pg
@@ -2004,7 +2001,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
               : `Cannot start — all ${cap.received} issued piece(s) are already accounted for. ` +
                 `Issue more client material to continue (JWSO ${cap.jwCode}).`
             : `No client material available to start. Received ${cap.received} of ${cap.orderQty} ` +
-              `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
+                `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
         );
       }
     }
@@ -2043,7 +2040,8 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       machineCode = m[0].code;
     }
     // The planned machine's code, only for the audit line when it differs.
-    let plannedCode: string | null = op.machineCodeText && op.machineCodeText !== 'QC' ? op.machineCodeText : null;
+    let plannedCode: string | null =
+      op.machineCodeText && op.machineCodeText !== 'QC' ? op.machineCodeText : null;
     if (op.machineId) {
       const pm = await tx
         .select({ code: machines.code })
@@ -2138,7 +2136,8 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     // planned one beside it when the operator ran the op somewhere else, so
     // the trail shows the deviation without anyone comparing two screens.
     const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
-    const deviation = machineCode && plannedCode && plannedCode !== machineCode ? ` (planned ${plannedCode})` : '';
+    const deviation =
+      machineCode && plannedCode && plannedCode !== machineCode ? ` (planned ${plannedCode})` : '';
     const machinePart = machineCode ? ` on ${machineCode}${deviation}` : '';
     await emitActivityLog(
       tx,

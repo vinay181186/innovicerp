@@ -161,9 +161,7 @@ async function mirrorIncomingQcOntoNextQcOp(
   const srcRows = await tx
     .select({ jobCardId: jcOps.jobCardId, opSeq: jcOps.opSeq, opType: jcOps.opType })
     .from(jcOps)
-    .where(
-      and(eq(jcOps.id, sourceJcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)),
-    )
+    .where(and(eq(jcOps.id, sourceJcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
     .limit(1);
   const src = srcRows[0];
   if (!src || src.opType !== 'outsource') return;
