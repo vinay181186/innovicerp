@@ -30,12 +30,7 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
-import {
-  useCreateJobCard,
-  useJobCardSourceOptions,
-  useNextJcCode,
-  useUpdateJobCard,
-} from '../api';
+import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode, useUpdateJobCard } from '../api';
 import { buildJcWriteInput } from '../lib/build-jc-write-input';
 import { JcOpEditCard } from './jc-op-edit-card';
 import { OutsourceBalanceModal } from './outsource-balance-modal';
@@ -179,13 +174,17 @@ export function JobCardForm({
   const [orderQty, setOrderQty] = useState<string>(model ? String(model.orderQty) : '');
   const [priority, setPriority] = useState<'normal' | 'high'>(model?.priority ?? 'normal');
   const [dueDate, setDueDate] = useState(model?.dueDate ?? '');
-  const [drawingFilePath, setDrawingFilePath] = useState<string | null>(model?.drawingFilePath ?? null);
+  const [drawingFilePath, setDrawingFilePath] = useState<string | null>(
+    model?.drawingFilePath ?? null,
+  );
   const [remarks, setRemarks] = useState(model?.remarks ?? '');
   // Raw material — both optional and independent. A JC created from a plan
   // arrives with these already filled from the plan; a hand-raised JC can pick
   // them here. Id + text snapshot are stored together.
   const [rmGradeId, setRmGradeId] = useState<string | null>(model?.rawMaterialGradeId ?? null);
-  const [rmGradeText, setRmGradeText] = useState<string | null>(model?.rawMaterialGradeText ?? null);
+  const [rmGradeText, setRmGradeText] = useState<string | null>(
+    model?.rawMaterialGradeText ?? null,
+  );
   const [rmSizeId, setRmSizeId] = useState<string | null>(model?.rawMaterialSizeId ?? null);
   const [rmSizeText, setRmSizeText] = useState<string | null>(model?.rawMaterialSizeText ?? null);
   const [drawingName, setDrawingName] = useState<string>(model?.drawingFilePath ? 'Attached' : '');
@@ -242,7 +241,12 @@ export function JobCardForm({
         !machineSearch.trim() ||
         `${m.code} ${m.name}`.toLowerCase().includes(machineSearch.trim().toLowerCase()),
     )
-    .map((m) => ({ id: m.id, code: m.code, name: m.name, machineGroupId: m.machineGroupId ?? null }));
+    .map((m) => ({
+      id: m.id,
+      code: m.code,
+      name: m.name,
+      machineGroupId: m.machineGroupId ?? null,
+    }));
 
   const sourceByLabel = useMemo(() => {
     const m = new Map<string, JobCardSourceOption>();
@@ -481,13 +485,6 @@ export function JobCardForm({
           <option key={o.lineId} value={sourceLabel(o)} />
         ))}
       </datalist>
-      <datalist id="dlJcVendor">
-        {vendors.map((v) => (
-          <option key={v.id} value={v.code}>
-            {v.code} — {v.name}
-          </option>
-        ))}
-      </datalist>
 
       {/* ── JC DETAILS ── */}
       <div className="panel" style={{ marginBottom: 12 }}>
@@ -517,7 +514,9 @@ export function JobCardForm({
             </div>
             <div className="form-grp form-full">
               <label className="form-label">
-                {isEdit ? 'SO / WO / JWSO No. (type to search)' : 'Job Work Sales Order (JWSO) No. (type to search)'}
+                {isEdit
+                  ? 'SO / WO / JWSO No. (type to search)'
+                  : 'Job Work Sales Order (JWSO) No. (type to search)'}
                 {!isEdit ? <span className="req">★</span> : null}
               </label>
               {!isEdit ? (
@@ -541,7 +540,9 @@ export function JobCardForm({
                 placeholder={isEdit ? 'Source is fixed after creation' : '🔍 Search JWSO number…'}
                 onChange={(e) => onSourceChange(e.target.value)}
                 style={isEdit ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined}
-                title={isEdit ? 'A Job Card’s source order cannot be changed after creation.' : undefined}
+                title={
+                  isEdit ? 'A Job Card’s source order cannot be changed after creation.' : undefined
+                }
               />
               {/* Line display (legacy #fSoLineDisplay, _jcCascadeFromOrder L1883-87). */}
               {selectedSource ? (
@@ -580,7 +581,9 @@ export function JobCardForm({
                 >
                   <b style={{ color: 'var(--cyan)' }}>{selectedSource.code}:</b> Ordered{' '}
                   <b>{selectedSource.orderQty}</b> | Already in JCs <b>{selectedSource.inJc}</b> |{' '}
-                  <b style={{ color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--green)' }}>
+                  <b
+                    style={{ color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--green)' }}
+                  >
                     Available: {selectedSource.remaining}
                   </b>
                 </div>
@@ -786,7 +789,7 @@ export function JobCardForm({
                 onMachineSearch={setMachineSearch}
                 onMachineChange={(code) => onOpMachineChange(i, code)}
                 onGroupChange={(gid) => onOpGroupChange(i, gid)}
-                vendorListId="dlJcVendor"
+                vendorOptions={vendors}
                 toolDetailsPlaceholder="Insert, fixtures, setup notes"
                 isFirst={i === 0}
                 isLast={i === ops.length - 1}
@@ -853,7 +856,9 @@ export function JobCardForm({
                         value={d.docType}
                         onChange={(e) =>
                           setDocs((prev) =>
-                            prev.map((x, idx) => (idx === i ? { ...x, docType: e.target.value } : x)),
+                            prev.map((x, idx) =>
+                              idx === i ? { ...x, docType: e.target.value } : x,
+                            ),
                           )
                         }
                         style={{ fontSize: 12 }}
@@ -943,18 +948,16 @@ export function JobCardForm({
             const idx = balanceOpIdx;
             const op = ops[idx];
             if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
-            setBalanceNote(`Outsourced ${qtyDone} pc(s) from Op${idx + 1} — JW OSP purchase request raised.`);
+            setBalanceNote(
+              `Outsourced ${qtyDone} pc(s) from Op${idx + 1} — JW OSP purchase request raised.`,
+            );
             setBalanceOpIdx(null);
           }}
         />
       ) : null}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={() => exit.leave(goBack)}
-        >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
           Cancel
         </button>
         {/* Footer derived from the CALL SITE: addJC L6073 and editJC L6124 both

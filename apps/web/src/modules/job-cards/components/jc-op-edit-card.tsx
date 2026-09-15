@@ -68,7 +68,7 @@ export function JcOpEditCard({
   onMachineSearch,
   onMachineChange,
   onGroupChange,
-  vendorListId,
+  vendorOptions,
   logs,
   cycleLabel = 'Cycle (min)',
   toolDetailsPlaceholder = 'Tool details',
@@ -102,8 +102,10 @@ export function JcOpEditCard({
   /** Host handler: picking a group narrows the machine list and clears a machine
    *  that is not in the new group (route-card parity). */
   onGroupChange: (groupId: string | null) => void;
-  /** id of the <datalist> holding the vendor options. */
-  vendorListId: string;
+  /** Vendor master rows for the outsource picker. Rendered "CODE — Name" (the
+   *  shared SearchableSelect), so picking a vendor shows its name, not just the
+   *  code. The saved value stays the vendor CODE (outsourceVendorCode). */
+  vendorOptions: { id: string; code: string; name: string }[];
   /** Already sliced to the latest 3 by the caller, exactly as the table did.
    *  Omit entirely (create screen) to hide the RECENT LOGS strip — the create
    *  form's table has no such column. */
@@ -126,7 +128,9 @@ export function JcOpEditCard({
   const isQc = op.opType === 'qc';
   const isOut = op.opType === 'outsource';
   const en = enriched;
-  const st = en ? (OP_STATUS[en.computedStatus] ?? { label: en.computedStatus, cls: 'b-grey' }) : null;
+  const st = en
+    ? (OP_STATUS[en.computedStatus] ?? { label: en.computedStatus, cls: 'b-grey' })
+    : null;
   const doneQty = en ? (isQc ? en.qcAcceptedQty : en.completedQty) : 0;
   const orderQty = jc?.orderQty ?? 0;
   // Pending comes straight from the server (v_jc_op_status.pending_qty, 0087) —
@@ -262,10 +266,14 @@ export function JcOpEditCard({
           )}
 
           {isOut ? (
-            <span className="tag" style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}>OSP</span>
+            <span className="tag" style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}>
+              OSP
+            </span>
           ) : null}
           {isQc ? (
-            <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>QC YES</span>
+            <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>
+              QC YES
+            </span>
           ) : null}
 
           <span style={{ flex: 1 }} />
@@ -273,7 +281,9 @@ export function JcOpEditCard({
           {st ? (
             <span className={`badge ${st.cls}`}>{st.label}</span>
           ) : (
-            <span className="text3" style={{ fontSize: 10 }}>—</span>
+            <span className="text3" style={{ fontSize: 10 }}>
+              —
+            </span>
           )}
 
           {/* Move / remove — started ops locked from re-sequence and removal
@@ -313,7 +323,15 @@ export function JcOpEditCard({
         </div>
 
         {/* ── BODY: quantities (read-only) · setup (editable) · outsource ── */}
-        <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'flex-start', marginTop: 10 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 22,
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+            marginTop: 10,
+          }}
+        >
           <div>
             <div style={secLabel}>Quantities</div>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -327,11 +345,15 @@ export function JcOpEditCard({
                     <>
                       <div style={{ fontSize: 8, color: 'var(--green)' }}>✓ accepted</div>
                       {en.qcRejectedQty > 0 ? (
-                        <div style={{ fontSize: 8, color: 'var(--red)' }}>✗{en.qcRejectedQty} rej</div>
+                        <div style={{ fontSize: 8, color: 'var(--red)' }}>
+                          ✗{en.qcRejectedQty} rej
+                        </div>
                       ) : null}
                     </>
                   ) : en.qcRequired && en.qcAcceptedQty > 0 ? (
-                    <div style={{ fontSize: 8, color: 'var(--green)' }}>✓{en.qcAcceptedQty} acc</div>
+                    <div style={{ fontSize: 8, color: 'var(--green)' }}>
+                      ✓{en.qcAcceptedQty} acc
+                    </div>
                   ) : null
                 }
               />
@@ -370,7 +392,9 @@ export function JcOpEditCard({
               </SetupField>
               {/* QC rows carry no program / tool details (legacy `emptyCells`). */}
               {isQc ? (
-                <span className="text3" style={{ fontSize: 11, alignSelf: 'center' }}>—</span>
+                <span className="text3" style={{ fontSize: 11, alignSelf: 'center' }}>
+                  —
+                </span>
               ) : (
                 <>
                   <SetupField label="Program" width={140}>
@@ -416,7 +440,9 @@ export function JcOpEditCard({
           <div style={{ minWidth: 150, marginLeft: 'auto' }}>
             <div style={secLabel}>Outsource</div>
             {isQc ? (
-              <span className="text3" style={{ fontSize: 11 }}>—</span>
+              <span className="text3" style={{ fontSize: 11 }}>
+                —
+              </span>
             ) : (
               <div>
                 {op.hasStarted && !isOut && op.available > 0 && op.id ? (
@@ -443,16 +469,24 @@ export function JcOpEditCard({
                       gap: 4,
                       cursor: op.hasStarted ? 'not-allowed' : 'pointer',
                     }}
-                    title={op.hasStarted ? 'Operation already started — locked' : 'Outsource this op'}
+                    title={
+                      op.hasStarted ? 'Operation already started — locked' : 'Outsource this op'
+                    }
                   >
                     <input
                       type="checkbox"
                       checked={isOut}
                       disabled={op.hasStarted}
-                      onChange={(e) => onChange({ opType: e.target.checked ? 'outsource' : 'process' })}
+                      onChange={(e) =>
+                        onChange({ opType: e.target.checked ? 'outsource' : 'process' })
+                      }
                     />
                     <span
-                      style={{ fontSize: 9, fontWeight: 700, color: isOut ? 'var(--amber)' : 'var(--text3)' }}
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: isOut ? 'var(--amber)' : 'var(--text3)',
+                      }}
                     >
                       {op.hasStarted ? 'OUTSRC 🔒' : 'OUTSOURCE'}
                     </span>
@@ -460,14 +494,37 @@ export function JcOpEditCard({
                 )}
                 {isOut ? (
                   <div style={{ marginTop: 4 }}>
-                    <input
-                      className="innovic-input"
-                      list={vendorListId}
-                      value={op.outsourceVendorCode}
-                      placeholder="🔍 Vendor"
-                      onChange={(e) => onChange({ outsourceVendorCode: e.target.value })}
-                      style={{ fontSize: 10, marginBottom: 3, width: '100%' }}
-                    />
+                    <div style={{ marginBottom: 3 }}>
+                      <SearchableSelect
+                        id={`jc-edit-vend-${op.id ?? index}`}
+                        value={
+                          vendorOptions.find((v) => v.code === op.outsourceVendorCode)?.id ?? null
+                        }
+                        onChange={(id) =>
+                          onChange({
+                            outsourceVendorCode: id
+                              ? (vendorOptions.find((v) => v.id === id)?.code ?? '')
+                              : '',
+                          })
+                        }
+                        onSearch={() => {}}
+                        options={vendorOptions}
+                        placeholder="🔍 Vendor"
+                        // Show "CODE — Name" for the already-picked vendor so the
+                        // name is visible after selection, not just the code.
+                        valueLabel={
+                          op.outsourceVendorCode
+                            ? (() => {
+                                const v = vendorOptions.find(
+                                  (x) => x.code === op.outsourceVendorCode,
+                                );
+                                return v ? `${v.code} — ${v.name}` : op.outsourceVendorCode;
+                              })()
+                            : undefined
+                        }
+                        selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
+                      />
+                    </div>
                     {op.outsourceCost !== null ? (
                       <input
                         type="number"
@@ -491,67 +548,67 @@ export function JcOpEditCard({
             on the create form, whose table has no logs column. ── */}
         {logs ? (
           <>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-          <span style={{ ...secLabel, marginBottom: 0 }}>Recent Logs</span>
-          {logs.length === 0 ? (
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>No entries</span>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => setLogsOpen((v) => !v)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+              <span style={{ ...secLabel, marginBottom: 0 }}>Recent Logs</span>
+              {logs.length === 0 ? (
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>No entries</span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setLogsOpen((v) => !v)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      color: 'var(--blue)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {`latest ${logs.length} log ${logs.length === 1 ? 'entry' : 'entries'}`}
+                  </button>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    type="button"
+                    onClick={() => setLogsOpen((v) => !v)}
+                    aria-label={logsOpen ? 'Collapse logs' : 'Expand logs'}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      color: 'var(--text3)',
+                    }}
+                  >
+                    {logsOpen ? '▲' : '▼'}
+                  </button>
+                </>
+              )}
+            </div>
+            {logs.length > 0 && logsOpen ? (
+              <div
                 style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  fontSize: 11,
-                  color: 'var(--blue)',
-                  fontWeight: 600,
+                  marginTop: 6,
+                  padding: '6px 10px',
+                  background: 'var(--bg3)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
                 }}
               >
-                {`latest ${logs.length} log ${logs.length === 1 ? 'entry' : 'entries'}`}
-              </button>
-              <span style={{ flex: 1 }} />
-              <button
-                type="button"
-                onClick={() => setLogsOpen((v) => !v)}
-                aria-label={logsOpen ? 'Collapse logs' : 'Expand logs'}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  fontSize: 11,
-                  color: 'var(--text3)',
-                }}
-              >
-                {logsOpen ? '▲' : '▼'}
-              </button>
-            </>
-          )}
-        </div>
-        {logs.length > 0 && logsOpen ? (
-          <div
-            style={{
-              marginTop: 6,
-              padding: '6px 10px',
-              background: 'var(--bg3)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-            }}
-          >
-            {logs.map((l) => (
-              <div key={l.id} style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.9 }}>
-                <span className="mono" style={{ color: 'var(--text3)' }}>
-                  {l.logDate}
-                </span>{' '}
-                · {l.shift} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
-                {l.operatorName ?? ''}
+                {logs.map((l) => (
+                  <div key={l.id} style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.9 }}>
+                    <span className="mono" style={{ color: 'var(--text3)' }}>
+                      {l.logDate}
+                    </span>{' '}
+                    · {l.shift} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
+                    {l.operatorName ?? ''}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : null}
+            ) : null}
           </>
         ) : null}
       </div>

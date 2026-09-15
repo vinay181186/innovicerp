@@ -1117,13 +1117,6 @@ function JcStatusEditForm({
           </option>
         ))}
       </datalist>
-      <datalist id="dlJcEditVendor">
-        {vendors.map((v) => (
-          <option key={v.id} value={v.code}>
-            {v.code} — {v.name}
-          </option>
-        ))}
-      </datalist>
 
       {/* Same consolidated summary card as the view — shared JcStatTiles. */}
       <JcStatTiles
@@ -1306,7 +1299,7 @@ function JcStatusEditForm({
                     onMachineSearch={setMachineSearch}
                     onMachineChange={(code) => onOpMachineChange(i, code)}
                     onGroupChange={(gid) => onOpGroupChange(i, gid)}
-                    vendorListId="dlJcEditVendor"
+                    vendorOptions={vendors}
                     logs={o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : []}
                     isFirst={i === 0}
                     isLast={i === ops.length - 1}
