@@ -231,7 +231,10 @@ function PoDcSection({
 
 // Only POs that actually send material out are offered (job work + service, per
 // poSendsMaterialOut). A draft PO is excluded because material cannot leave
-// against an unissued order, and cancelled ones are dead. The whole eligible set
+// against an unissued order, and cancelled ones are dead. A PO whose lines have
+// ALL gone out already (dcSentQty >= totalQty) is excluded too: there is nothing
+// left to put on a challan, and offering it only led to a form where every line
+// said "fully sent". The whole eligible set
 // loads in one fetch and scrolls; the search box filters it client-side across
 // EVERY visible column via the shared matchesSearchTerm helper (universal-search
 // standard) — so typing a vendor, a type or a status finds the row, not only the
@@ -243,7 +246,13 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
 
   const eligible = useMemo(() => {
     const rows = (data?.items ?? []).filter(
-      (p) => poSendsMaterialOut(p.poType) && p.status !== 'draft' && p.status !== 'cancelled',
+      (p) =>
+        poSendsMaterialOut(p.poType) &&
+        p.status !== 'draft' &&
+        p.status !== 'cancelled' &&
+        // Something is still to send. A PO with no lines (totalQty 0) stays
+        // listed: the form, not the picker, explains that.
+        (p.totalQty === 0 || p.dcSentQty < p.totalQty),
     );
     if (search.trim() === '') return rows;
     return rows.filter((p) =>
@@ -256,6 +265,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           p.poType === 'service' ? 'Service' : 'Job Work',
           p.status,
           p.lineCount,
+          `${p.dcSentQty}/${p.totalQty}`,
         ],
         search,
       ),
@@ -306,6 +316,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                 <th>Type</th>
                 <th>Status</th>
                 <th>Lines</th>
+                <th className="td-ctr">Sent / Ordered</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
@@ -322,6 +333,14 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                   </td>
                   <td className="mono">{p.status}</td>
                   <td className="mono">{p.lineCount}</td>
+                  {/* Amber once something has gone out: this PO is part-way
+                      through, and the challan being raised is a balance one. */}
+                  <td
+                    className="mono td-ctr"
+                    style={{ color: p.dcSentQty > 0 ? 'var(--amber)' : undefined }}
+                  >
+                    {p.dcSentQty} / {p.totalQty}
+                  </td>
                   <td>
                     <button
                       type="button"

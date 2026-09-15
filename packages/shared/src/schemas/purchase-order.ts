@@ -171,6 +171,11 @@ export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
   receivedQty: z.number().int().nonnegative(),
+  /** Pieces already sent OUT against this PO's lines on delivery challans that
+   *  are not cancelled — the same rule the DC sendable check applies per line.
+   *  `dcSentQty >= totalQty` means the PO is fully sent and has nothing left
+   *  to put on a new challan. 0 on a buying PO that never ships anything. */
+  dcSentQty: z.number().int().nonnegative().default(0),
 });
 export type PurchaseOrderListItem = z.infer<typeof purchaseOrderListItemSchema>;
 

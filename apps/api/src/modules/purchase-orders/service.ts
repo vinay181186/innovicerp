@@ -523,7 +523,8 @@ export async function listPurchaseOrders(
         cu.full_name AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int   AS "totalQty",
-        COALESCE(line_agg.received_qty, 0)::int AS "receivedQty"
+        COALESCE(line_agg.received_qty, 0)::int AS "receivedQty",
+        COALESCE(dc_agg.sent_qty, 0)::int      AS "dcSentQty"
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.users cu ON cu.id = po.created_by
@@ -536,6 +537,21 @@ export async function listPurchaseOrders(
         WHERE deleted_at IS NULL
         GROUP BY purchase_order_id
       ) line_agg ON line_agg.purchase_order_id = po.id
+      -- What has already gone OUT on challans against this PO's lines — every
+      -- non-cancelled DC, the same population sumSentQtyByPoLine counts for the
+      -- per-line sendable check — so the +New DC picker can drop a PO whose
+      -- lines are all fully sent without asking the sendable route per PO.
+      LEFT JOIN (
+        SELECT pl.purchase_order_id, SUM(dl.qty) AS sent_qty
+        FROM public.delivery_challan_lines dl
+        JOIN public.delivery_challans dc ON dc.id = dl.delivery_challan_id
+        JOIN public.purchase_order_lines pl ON pl.id = dl.purchase_order_line_id
+        WHERE dl.deleted_at IS NULL
+          AND dc.deleted_at IS NULL
+          AND dc.status != 'cancelled'
+          AND pl.deleted_at IS NULL
+        GROUP BY pl.purchase_order_id
+      ) dc_agg ON dc_agg.purchase_order_id = po.id
       WHERE po.company_id = ${companyId}::uuid
         AND po.deleted_at IS NULL
         ${searchFrag}
@@ -616,6 +632,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     receivedQty: Number(r['receivedQty'] ?? 0),
+    dcSentQty: Number(r['dcSentQty'] ?? 0),
   };
 }
 
