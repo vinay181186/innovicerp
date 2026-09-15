@@ -145,6 +145,24 @@ async function resolveItemIdByCode(
   return rows[0]?.id ?? null;
 }
 
+/** The item's master name, for stamping the PR's item_name snapshot when the
+ *  caller supplied a link but no name — e.g. a PR raised from a rework child
+ *  job card, whose own item-name snapshot is blank. Without it the name column
+ *  is null and the PO raised from the PR shows an empty item + a disabled
+ *  Create button (the PO form fills its line name from pr.itemName). */
+async function resolveItemNameById(
+  tx: DbTransaction,
+  itemId: string,
+  companyId: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({ name: items.name })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
+    .limit(1);
+  return rows[0]?.name ?? null;
+}
+
 async function assertJcOpExists(
   tx: DbTransaction,
   jcOpId: string,
@@ -887,6 +905,14 @@ export async function createPurchaseRequest(
       input.itemId ??
       (input.itemCodeText ? await resolveItemIdByCode(tx, input.itemCodeText, companyId) : null);
 
+    // When the caller links an item but sends no name (a PR raised from a rework
+    // child job card carries the id + code but a blank name snapshot), stamp the
+    // master's name so the PR — and the PO raised from it — shows the item and
+    // its Create button is not stuck disabled on an empty name.
+    const resolvedItemName =
+      input.itemName?.trim() ||
+      (resolvedItemId ? await resolveItemNameById(tx, resolvedItemId, companyId) : null);
+
     const inserted = await tx
       .insert(purchaseRequests)
       .values({
@@ -905,7 +931,7 @@ export async function createPurchaseRequest(
         vendorCodeText: input.vendorCodeText ?? null,
         itemId: resolvedItemId,
         itemCodeText: input.itemCodeText ?? null,
-        itemName: input.itemName ?? null,
+        itemName: resolvedItemName,
         qty: input.qty,
         estCost: estCostToString(input.estCost),
         requiredDate: input.requiredDate ?? null,
