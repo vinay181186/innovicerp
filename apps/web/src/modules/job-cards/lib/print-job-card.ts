@@ -1,109 +1,130 @@
-// Job Card print (Print Templates P3, ADR-034). Mirrors legacy `printJobCard`
-// (`legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L10582): a
-// fixed-layout document (NOT a template-editor doc) rendered via the shared
-// `printWindow` util. Builds the body HTML from the JC list row
-// (`JobCardListItem`, from `v_jc_status`) + its enriched ops
-// (`JcOpEnriched[]`, from `/op-entry/jc-ops`) + company.
+// Job Card print — the shop-floor TRAVELLER (form PRD-F-004, reference doc
+// `04_Job_Card_Route_Card_Traveller.docx`), printed on the Innovic Sheet: the
+// same paper, Times New Roman, sizes and letterhead as the Purchase Order and
+// the challans (sheet-print.ts), so every printed document reads as one family.
 //
-// DATA GAPS vs legacy printJobCard (rendered as "—" / omitted — these fields
-// are not surfaced by any existing job-cards / jc-ops read; per task scope we
-// do NOT add an endpoint for them):
-//   - Drawing No. + Material: live on `items` (items.drawing / items.material),
-//     not on the JC list row (which only carries drawingFilePath). Rendered "—".
-//   - Drawing image + Material/Drawing No.: drawing lives in Storage (needs an
-//     async signed URL) and Material/Drawing No. live on `items`; both omitted.
-//   - Production Log: intentionally NOT printed (the print is a shop-floor
-//     document). The production log is available via the ⬇ Excel export instead.
+// What it prints, from the JC list row (`JobCardListItem`, v_jc_status) + its
+// enriched ops (`JcOpEnriched[]`, /op-entry/jc-ops) + the company:
+//   • Letterhead — logo + company name only (an internal document: no address,
+//     no GSTIN), the brand rule, the title JOB CARD.
+//   • Two columns of facts, each on its own full-width rule: JC No, SO No, SO
+//     line, client, part, route card on the left; date, due, qty, item, drawing
+//     on the right. The last row of each column has no rule — the box closes it.
+//   • The operation table: OP · Operation · Plan Machine · Actual Machine ·
+//     Operator · Start · Finish · OK Qty · Rej/Rework · QC/Report · Entry Done
+//     By. Plan is jc_ops.machine_id; Actual is who made the pieces (ADR-164).
+//     "Entry Done By" is the SYSTEM user who booked the entries — the person
+//     accountable for the record — not the shop-floor operator, who has his
+//     own column. Blank rows follow for hand entries.
+//   • Material / traceability and NCR / rework lines for hand entry.
+//   • Prepared / Checked / QC release sign-off.
+//
+// The production log is NOT printed (the ⬇ Excel export carries it).
 
-import type {
-  Company,
-  ComputedJcOpStatus,
-  JcOpEnriched,
-  JobCardListItem,
-  MachineSplit,
-} from '@innovic/shared';
-import { esc } from '@/lib/print/doc-print';
-import { resolveActualMachine, splitDisagrees } from '@/components/shared/machine-split';
+import type { Company, JcOpEnriched, JobCardListItem } from '@innovic/shared';
+import { resolveActualMachine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { printWindow, printedMeta } from '@/lib/print/print-window';
+import { buildDocCompany } from '@/lib/print/company';
+import { esc } from '@/lib/print/doc-print';
+import { openSheetHtmlWindow, sheetLetterheadHtml } from '@/lib/print/sheet-print';
 
-// Legacy printable op status → label + badge class. Legacy printJobCard used a
-// 3-tone heuristic (green=Complete, amber=In Progress, grey=otherwise) over the
-// calc-engine status string (L10598). We carry the richer 12-state enriched
-// status here but keep the same green / amber / grey tone buckets.
-const OP_STATUS_LABEL: Record<ComputedJcOpStatus, string> = {
-  waiting: 'Waiting',
-  available: 'Available',
-  in_progress: 'In Progress',
-  running: 'Running',
-  qc_pending: 'QC Pending',
-  complete: 'Complete',
-  pr_raised: 'PR Raised',
-  po_created: 'PO Created',
-  at_vendor: 'Processing',
-  received: 'Incoming QC',
-  ready_for_pr: 'Ready for PR',
-  outsource: 'Outsource',
-};
+// The sheet's goods table spans 6 columns; every block row here spans the same
+// so the outer border and the letterhead line up exactly as on the PO.
+const COLS = 6;
+// Hand-entry rows under the system's own operations, so the traveller has
+// room on paper for a step added on the floor.
+const BLANK_OP_ROWS = 4;
 
-function opStatusBadgeClass(status: ComputedJcOpStatus): string {
-  if (status === 'complete') return 'b-green';
-  if (status === 'waiting' || status === 'available' || status === 'outsource') return 'b-grey';
-  return 'b-amber';
-}
-
-// machLabel equivalent: machine code (or machineCodeText fallback). OSP / QC
-// ops have no machine — the enriched row's machineCode is null there. This is
-// the machine the REMAINING qty runs on, NOT who made the completed qty.
-function machineLabel(op: JcOpEnriched): string {
-  return op.machineCode ?? op.machineCodeText ?? '—';
-}
-
-// Per-machine production split (0095 / ADR-126), from the correlated LATERAL
-// over v_op_machine_output in the op-entry service. Empty for an op that only
-// ever ran on one machine — which is why every cell below degrades to exactly
-// what it printed before.
-function machineSplit(op: JcOpEnriched): MachineSplit {
-  return op.machines ?? [];
-}
-
-// Machine cell (ADR-164). A process op prints BOTH machines — "Planned: X" (the
-// jc_ops machine, where the remaining qty is routed) and "Actual: Y" (the open
-// session's machine, else the machine(s) that made the done qty, else the plan
-// itself). Same name on both lines when nothing changed. QC / OSP ops have no
-// machine and keep their single label. The per-machine breakdown of a 2+
-// machine split stays under the Done figure (doneCell).
-function machineCell(op: JcOpEnriched): string {
-  const label = machineLabel(op);
-  if (op.opType !== 'process') return esc(label);
-  const actual = resolveActualMachine({
-    planned: label,
-    activeRunningMachineCode: op.activeRunningMachineCode,
-    machines: machineSplit(op),
-  });
-  return (
-    `<div style="white-space:nowrap">Planned: ${esc(label)}</div>` +
-    `<div style="font-size:9px;white-space:nowrap${actual.differs ? ';font-weight:700' : ''}">Actual: ${esc(actual.label)}</div>`
-  );
-}
-
-// Done cell. Split ops print the per-machine breakdown as a small second line
-// under the total — the paper equivalent of MachineSplitLines, which cannot be
-// hovered for a tooltip.
-function doneCell(op: JcOpEnriched): string {
-  const split = machineSplit(op);
-  if (!splitDisagrees(split, machineLabel(op))) return String(op.completedQty);
-  // "CNC-01: 5 pcs" — never "CNC-01 5", which reads as one blob on paper where
-  // there is no tooltip to disambiguate it.
-  const parts = split.map((m) => `${esc(m.machineCode)}: ${m.qty} pcs`).join(' · ');
-  return `${op.completedQty}<div style="font-size:9px;font-weight:400">${parts}</div>`;
-}
-
-// dd-MM-yyyy with no TZ shift; null-safe (mirrors legacy fmt()).
+// dd-MM-yyyy with no TZ shift; null-safe (mirrors legacy fmt()). Blank, not a
+// dash, on the traveller: an empty cell is where a hand writes the date.
 function fmt(d: string | null | undefined): string {
-  if (!d) return '—';
+  if (!d) return '';
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : d;
+}
+
+/** One label / value row. The rule under it runs the full column width — from
+ *  the box's outer border to the centre divider — which is what `.jf` does
+ *  through the column's zero padding (see JC_STYLE). */
+function fact(label: string, value: string, opts?: { strong?: boolean; last?: boolean }): string {
+  const cls = ['jf', opts?.last ? 'last' : '', opts?.strong ? 'strong' : ''].filter(Boolean).join(' ');
+  return `<div class="${cls}"><span class="lab">${esc(label)}</span><span class="val">${esc(value)}</span></div>`;
+}
+
+function opRow(o: JcOpEnriched): string {
+  const isQc = o.opType === 'qc';
+  const isOsp = o.opType === 'outsource';
+  const planned = isQc ? 'QC' : isOsp ? 'OSP' : (o.machineCode ?? o.machineCodeText ?? '');
+  // Actual: the session's machine, else who made the pieces, else the plan
+  // (nothing disagrees). QC and OSP carry no machine.
+  const actual = isQc || isOsp ? '' : resolveActualMachine({
+    planned,
+    activeRunningMachineCode: o.activeRunningMachineCode,
+    machines: o.machines,
+  });
+  const actualLabel = actual === '' ? '' : actual.label;
+  const actualCls = actual !== '' && actual.differs ? ' dev' : '';
+  const okQty = isQc ? o.qcAcceptedQty : o.completedQty;
+  const rej = isQc ? o.qcRejectedQty : 0;
+  return `<tr>
+    <td class="c b">${o.opSeq}</td>
+    <td>${esc(o.operation)}${isQc ? ' (QC)' : ''}</td>
+    <td class="c b">${esc(planned)}</td>
+    <td class="c b${actualCls}">${esc(actualLabel)}</td>
+    <td>${esc(o.operatorNames ?? '')}</td>
+    <td class="c">${fmt(o.firstLogDate)}</td>
+    <td class="c">${fmt(o.lastLogDate)}</td>
+    <td class="c b">${okQty > 0 ? okQty : ''}</td>
+    <td class="c">${rej > 0 ? rej : ''}</td>
+    <td></td>
+    <td>${esc(o.entryDoneBy ?? '')}</td>
+  </tr>`;
+}
+
+function blankRow(seq: number): string {
+  return `<tr class="blank"><td class="c">${seq}</td>${'<td></td>'.repeat(10)}</tr>`;
+}
+
+// Everything the traveller needs beyond SHEET_STYLE. Sizes follow the sheet:
+// 9.5pt in the table, 10.5pt values, 9pt/8.5pt labels, Times throughout.
+const JC_STYLE = `
+  .jsplit{display:grid;grid-template-columns:1fr 1fr}
+  .jsplit > div{padding:0}
+  .jsplit > div:first-child{border-right:1px solid var(--paper-rule)}
+  .jf{display:flex;align-items:flex-end;gap:2mm;border-bottom:1px solid var(--paper-rule);
+      min-height:6.8mm;padding:0 3mm .6mm}
+  .jf.last{border-bottom:none}
+  .jf .lab{flex:0 0 32mm;font-family:var(--f-label);font-size:8.5pt;letter-spacing:.06em;
+           text-transform:uppercase;color:#3A3A3A}
+  .jf .val{flex:1;text-align:center;font-size:10.5pt}
+  .jf.strong .val{font-weight:700}
+  table.ops{width:100%;border-collapse:collapse;font-size:9.5pt}
+  table.ops th{border:1px solid var(--paper-rule);border-top:none;padding:1.3mm 1.2mm;
+               font-family:var(--f-label);font-size:8pt;letter-spacing:.06em;text-align:center;
+               background:var(--paper-band)}
+  table.ops th:first-child,table.ops td:first-child{border-left:none}
+  table.ops th:last-child,table.ops td:last-child{border-right:none}
+  table.ops td{border:1px solid var(--paper-rule);padding:1.4mm 1.2mm;height:9.5mm;vertical-align:middle}
+  table.ops tr:last-child td{border-bottom:none}
+  table.ops td.c{text-align:center;white-space:nowrap}
+  table.ops td.b{font-weight:700}
+  table.ops td.dev{color:#a15c00}
+  .jsec{padding:1.3mm 3mm;font-family:var(--f-label);font-size:8.5pt;letter-spacing:.08em;
+        text-transform:uppercase;font-weight:700;color:#3A3A3A}
+  .jtrace{display:grid;grid-template-columns:1fr 1fr}
+  .jtrace > div{padding:1.5mm 3mm 1mm}
+  .jtrace .jf,.jsign .jf{border-bottom:none;min-height:0;padding:0;margin:0 0 2mm}
+  .jtrace .jf .val,.jsign .jf .val{border-bottom:1px solid var(--paper-rule);text-align:left;
+                                    min-height:5.2mm;padding:0 1mm .5mm}
+  .jsign{display:grid;grid-template-columns:1fr 1fr 1fr}
+  .jsign > div{padding:2.5mm 3mm 1.5mm}
+  .jsign > div + div{border-left:1px solid var(--paper-rule)}
+  .jsign .jf .lab{flex:0 0 27mm}
+  .jfoot{display:flex;justify-content:space-between;gap:6mm;padding:1.2mm 3mm;font-size:8pt;color:#3A3A3A}
+`;
+
+function sectionRow(html: string): string {
+  return `<tr><td class="block" colspan="${COLS}">${html}</td></tr>`;
 }
 
 export function printJobCard(args: {
@@ -111,74 +132,96 @@ export function printJobCard(args: {
   ops: JcOpEnriched[];
   company: Company | null | undefined;
 }): boolean {
-  const { jc, company } = args;
+  const { jc } = args;
+  const company = buildDocCompany(args.company);
   // Order by op_seq so the routing prints in process order (the enriched read
   // is not guaranteed ordered).
   const ops = [...args.ops].sort((a, b) => a.opSeq - b.opSeq);
 
-  const qtyDone = jc.lastOpCompletedQty;
-  const pending = Math.max(0, jc.orderQty - qtyDone);
+  const so = jc.sourceLink?.type === 'so' ? jc.sourceLink : null;
+  const soNo = jc.sourceLink?.code ?? '';
+  const soLine = so ? String(so.lineNo) : (jc.clientPoLineNo ?? '');
+  const routeCard = jc.routeCardCode
+    ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / Rev ${jc.routeCardRevision}` : ''}`
+    : '';
+  // The drawing is the item code with the customer's revision from the SO line
+  // (CODE / REV); items.drawing_no is not on the list row.
+  const drawing = jc.itemRevision ? `${jc.itemCode} / ${jc.itemRevision}` : jc.itemCode;
 
-  const opRows = ops
-    .map(
-      (o) => `<tr>
-      <td style="width:30px;text-align:center;font-weight:700">${o.opSeq}</td>
-      <td>${machineCell(o)}</td>
-      <td>${esc(o.operation)}</td>
-      <td style="text-align:center">${Number(o.cycleTimeMin) || '—'}</td>
-      <td style="font-family:monospace">${esc(o.program || '—')}</td>
-      <td>${esc(o.toolNo || '—')}</td>
-      <td style="text-align:center">${o.inputAvail}</td>
-      <td style="text-align:center;color:#16a34a;font-weight:700">${doneCell(o)}</td>
-      <td style="text-align:center;font-weight:700;color:${o.available > 0 ? '#d97706' : '#9ca3af'}">${o.available}</td>
-      <td><span class="badge ${opStatusBadgeClass(o.computedStatus)}">${esc(OP_STATUS_LABEL[o.computedStatus])}</span></td>
-    </tr>`,
-    )
-    .join('');
+  const left = [
+    fact('JC No.', jc.code, { strong: true }),
+    fact('SO No.', soNo, { strong: true }),
+    fact('SO Line', soLine),
+    fact('Client', jc.customerName ?? ''),
+    fact('Part Name', jc.itemName),
+    fact('Route Card / Rev', routeCard, { last: true }),
+  ].join('');
+  const right = [
+    fact('JC Date', fmt(jc.jcDate)),
+    fact('Due Date', fmt(jc.dueDate)),
+    fact('Order Qty', `${jc.orderQty} pcs`, { strong: true }),
+    fact('Part / Item No.', itemCodeWithRev(jc.itemCode, null), { strong: true }),
+    fact('Drawing No. / Rev', drawing, { last: true }),
+  ].join('');
 
-  // The printed Item Code carries the customer's drawing revision from the SO
-  // line behind this card (`CODE/REV`), because a card in a shop-floor operator's
-  // hand that disagrees with the Job Card view on screen is worse than one that
-  // says nothing. A JW-sourced or standalone card has no SO line, so the helper
-  // prints the bare code with no trailing slash.
-  const itemCodeLine = itemCodeWithRev(jc.itemCode, jc.itemRevision);
+  const rows =
+    ops.map(opRow).join('') +
+    Array.from({ length: BLANK_OP_ROWS }, (_, i) => blankRow(ops.length + i + 1)).join('');
 
-  // SO/WO No. from the source link (so/jw code); "—" for source-less JCs.
-  const soWoNo = jc.sourceLink?.code ?? '—';
-  const priorityHigh = jc.priority === 'high';
+  const opsTable = `<table class="ops">
+    <thead><tr>
+      <th style="width:8mm">OP</th>
+      <th>Operation</th>
+      <th style="width:17mm">Plan<br>Machine</th>
+      <th style="width:17mm">Actual<br>Machine</th>
+      <th style="width:20mm">Operator</th>
+      <th style="width:16mm">Start</th>
+      <th style="width:16mm">Finish</th>
+      <th style="width:11mm">OK<br>Qty</th>
+      <th style="width:13mm">Rej /<br>Rework</th>
+      <th style="width:20mm">QC / Report</th>
+      <th style="width:22mm">Entry<br>Done By</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 
-  // JC status → badge (mirrors legacy: green for Complete/Closed, cyan otherwise).
-  const jcStatusBadge =
-    jc.computedStatus === 'complete' || jc.computedStatus === 'closed' ? 'b-green' : 'b-cyan';
-  const jcStatusLabel = jc.computedStatus.replaceAll('_', ' ');
-
-  const body = `
-    <div class="doc-title"><h1>JOB CARD — ${esc(jc.code)}</h1><span class="print-meta">${printedMeta()}</span></div>
-    <div class="info-grid">
-      <div class="info-box"><div class="info-lbl">Item Code</div><div class="info-val" style="color:#7c3aed">${esc(itemCodeLine)}</div></div>
-      <div class="info-box"><div class="info-lbl">Item Name</div><div class="info-val">${esc(jc.itemName || '—')}</div></div>
-      <div class="info-box"><div class="info-lbl">Grade</div><div class="info-val">${esc(jc.rawMaterialGradeText || '—')}</div></div>
-      <div class="info-box"><div class="info-lbl">Size</div><div class="info-val">${esc(jc.rawMaterialSizeText || '—')}</div></div>
-      <div class="info-box"><div class="info-lbl">SO / WO No.</div><div class="info-val" style="font-family:monospace;font-size:12px">${esc(soWoNo)}</div></div>
-      <div class="info-box"><div class="info-lbl">Client PO Line</div><div class="info-val" style="color:#7c3aed;font-weight:700">${esc(jc.clientPoLineNo || '—')}</div></div>
-      <div class="info-box"><div class="info-lbl">Date</div><div class="info-val">${fmt(jc.jcDate)}</div></div>
-      <div class="info-box"><div class="info-lbl">Order Qty</div><div class="info-val">${jc.orderQty}</div></div>
-      <div class="info-box"><div class="info-lbl">Completed</div><div class="info-val" style="color:#16a34a">${qtyDone}</div></div>
-      <div class="info-box"><div class="info-lbl">Pending</div><div class="info-val" style="color:${pending > 0 ? '#dc2626' : '#16a34a'}">${pending}</div></div>
-      <div class="info-box"><div class="info-lbl">Due Date</div><div class="info-val">${fmt(jc.dueDate)}</div></div>
-      <div class="info-box"><div class="info-lbl">Priority</div><div class="info-val"><span class="badge ${priorityHigh ? 'b-amber' : 'b-grey'}">${priorityHigh ? 'High' : 'Normal'}</span></div></div>
-      <div class="info-box"><div class="info-lbl">Drawing No.</div><div class="info-val" style="font-family:monospace">—</div></div>
-      <div class="info-box"><div class="info-lbl">Material</div><div class="info-val">—</div></div>
-      <div class="info-box"><div class="info-lbl">Status</div><div class="info-val"><span class="badge ${jcStatusBadge}">${esc(jcStatusLabel)}</span></div></div>
-    </div>
-    <h2>Operation Routing</h2>
-    <table><thead><tr><th>#</th><th>Machine (Planned / Actual)</th><th>Operation</th><th>Cycle (min)</th><th>Program</th><th>Tool No.</th><th>Order</th><th>Done</th><th>Avail</th><th>Status</th></tr></thead>
-    <tbody>${opRows || '<tr><td colspan="10" style="text-align:center;color:#aaa">No operations</td></tr>'}</tbody></table>
-    <div class="sign-row">
-      <div class="sign-box">Prepared By</div>
-      <div class="sign-box">Checked By</div>
-      <div class="sign-box">Approved By</div>
+  const trace = `<div class="jsec">Material / Traceability &nbsp;·&nbsp; NCR / Rework references</div>
+    <div class="jtrace">
+      <div>${fact('Material Grade', jc.rawMaterialGradeText ?? '')}${fact('Heat / Lot No.', '')}</div>
+      <div>${fact('NCR No.', jc.parentNcCode ?? '')}${fact('Rework JC', '')}</div>
     </div>`;
 
-  return printWindow({ title: `Job Card ${jc.code}`, body, company });
+  const signs = `<div class="jsign">
+      <div>${fact('Prepared By', '')}${fact('Date', '')}</div>
+      <div>${fact('Checked / Appr.', '')}${fact('Date', '')}</div>
+      <div>${fact('QC Release', '')}${fact('Date', '')}</div>
+    </div>`;
+
+  const foot = `<div class="jfoot">
+      <span>Job card must reference only released drawing / routing revisions. QC hold operations cannot be closed without inspector acceptance.</span>
+      <span>Page <span data-pgof>1</span></span>
+    </div>`;
+
+  const letterhead = sheetLetterheadHtml({ name: company.name, title: 'Job Card' });
+
+  const html = `
+  <div class="no-print toolbar">
+    <button onclick="window.print()" style="padding:8px 24px;background:#1E4DB3;color:#fff;border:0;border-radius:5px;cursor:pointer">🖨 Print</button>
+    <button onclick="window.close()" style="padding:8px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">✕ Close</button>
+  </div>
+  <article class="sheet">
+    <table class="doc">
+      <thead><tr><th class="lh" colspan="${COLS}">${letterhead}</th></tr></thead>
+      <tfoot><tr><td class="pgfoot" colspan="${COLS}"><div></div></td></tr></tfoot>
+      <tbody>
+        ${sectionRow(`<div class="jsplit"><div>${left}</div><div>${right}</div></div>`)}
+        ${sectionRow(opsTable)}
+        ${sectionRow(trace)}
+        ${sectionRow(signs)}
+        ${sectionRow(foot)}
+      </tbody>
+    </table>
+  </article>`;
+
+  return openSheetHtmlWindow(`Job Card ${jc.code}`, html, JC_STYLE);
 }
