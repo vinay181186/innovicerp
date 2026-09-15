@@ -82,7 +82,7 @@ function opRow(o: JcOpEnriched): string {
 }
 
 function blankRow(seq: number): string {
-  return `<tr class="blank"><td class="c">${seq}</td>${'<td></td>'.repeat(10)}</tr>`;
+  return `<tr class="hand"><td class="c">${seq}</td>${'<td></td>'.repeat(10)}</tr>`;
 }
 
 // Everything the traveller needs beyond SHEET_STYLE. Sizes follow the sheet:
@@ -109,6 +109,7 @@ const JC_STYLE = `
   table.ops td.c{text-align:center;white-space:nowrap}
   table.ops td.b{font-weight:700}
   table.ops td.dev{color:#a15c00}
+  table.ops tr.hand td{color:#3A3A3A}
   .jsec{padding:1.3mm 3mm;font-family:var(--f-label);font-size:8.5pt;letter-spacing:.08em;
         text-transform:uppercase;font-weight:700;color:#3A3A3A}
   .jtrace{display:grid;grid-template-columns:1fr 1fr}
