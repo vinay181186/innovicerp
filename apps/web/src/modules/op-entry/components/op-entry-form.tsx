@@ -60,6 +60,11 @@ interface Props {
    *  Start tab (code, or null while none), so the host's heading strip can
    *  show it live beside the planned machine. */
   onActualMachineChange?: (code: string | null) => void;
+  /** Open the Start form with the Actual Machine BLANK (group still seeded
+   *  from the plan). The host sets it when the planned machine is busy and
+   *  the operator chose "Start on another machine" — the plan must not be the
+   *  pre-filled answer then. */
+  startWithoutMachine?: boolean;
 }
 
 /** The one wording used wherever this form refuses a future date, so the QC
@@ -78,6 +83,7 @@ export function OpEntryForm({
   defaultMachineId,
   onClose,
   onActualMachineChange,
+  startWithoutMachine = false,
 }: Props): React.JSX.Element {
   const navigate = useNavigate();
   const submit = useSubmitOpLog();
@@ -154,6 +160,10 @@ export function OpEntryForm({
   const [actualMachineId, setActualMachineId] = useState<string | null>(null);
   const [actualGroupId, setActualGroupId] = useState<string | null>(null);
   const [machineSearch, setMachineSearch] = useState('');
+  // The busy banner's ✕. Dismissing hides the banner for THAT machine only —
+  // pick a different busy one and it comes straight back — and never enables
+  // Start: a busy machine stays un-startable whether or not the notice is up.
+  const [busyDismissedFor, setBusyDismissedFor] = useState<string | null>(null);
   // ≤ 200: the machines list route caps `limit` there and 400s above it.
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
   const { data: machineGroupsData } = useMachineGroupsList({ limit: 200, offset: 0 });
@@ -180,7 +190,7 @@ export function OpEntryForm({
   // Seed on every op change: the picker must open on THIS op's plan, not on
   // whatever the previous row was started on.
   useEffect(() => {
-    const seedId = defaultMachineId ?? op.machineId ?? null;
+    const seedId = startWithoutMachine ? null : (defaultMachineId ?? op.machineId ?? null);
     setActualMachineId(seedId);
     setActualGroupId(
       seedId && seedId !== op.machineId
@@ -188,7 +198,8 @@ export function OpEntryForm({
         : (op.machineGroupId ?? null),
     );
     setMachineSearch('');
-  }, [op.id, op.machineId, op.machineGroupId, defaultMachineId]);
+    setBusyDismissedFor(null);
+  }, [op.id, op.machineId, op.machineGroupId, defaultMachineId, startWithoutMachine]);
   // A seeded machine whose group the op row could not tell us (the By Machine
   // tile, or a plan with no group) reads its group off the master.
   useEffect(() => {
@@ -1174,6 +1185,69 @@ export function OpEntryForm({
             </div>
           </div>
 
+          {busy && busyDismissedFor !== actualMachineId ? (
+            /* MACHINE BUSY (picked by hand) — the moment the operator chooses
+               an Actual Machine that is running another job, this says so,
+               right under the machine boxes, before the amber Start box. ✕
+               closes it so they can get on with picking another machine; it
+               does NOT free the machine — Start stays disabled while a busy
+               machine is the chosen one. */
+            <div
+              role="alert"
+              style={{
+                display: 'flex',
+                gap: 10,
+                alignItems: 'flex-start',
+                padding: '10px 12px',
+                marginTop: 12,
+                background: 'var(--bg3)',
+                border: '1px solid var(--amber)',
+                borderRadius: 8,
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <AlertTriangle size={18} className="amber" style={{ flex: 'none', marginTop: 2 }} />
+              <div style={{ flex: 1 }}>
+                <b className="mono">{actualLabel ?? 'This machine'}</b> is currently running{' '}
+                <span className="mono fw-700 cyan">
+                  {busy.jobCardCode} / Op {busy.opSeq}
+                </span>
+                . Pick another machine, or complete / stop that operation first.
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                title="Open the running operation to Complete or Stop it"
+                onClick={() => {
+                  void navigate({
+                    to: '/op-entry',
+                    search: (prev) => ({
+                      ...prev,
+                      jc: busy.jobCardCode,
+                      op: busy.jcOpId,
+                      mode: 'complete',
+                      view: undefined,
+                    }),
+                  });
+                  onClose?.();
+                }}
+              >
+                ✚ Open Current Operation
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                aria-label="Dismiss"
+                title="Close this notice and pick another machine"
+                onClick={() => setBusyDismissedFor(actualMachineId)}
+                style={{ padding: '2px 6px' }}
+              >
+                ✕
+              </button>
+            </div>
+          ) : null}
+
           {isStart ? (
             // "Mark Operation as Running" info panel — full width below the strip.
             <div
@@ -1236,56 +1310,7 @@ export function OpEntryForm({
             </div>
           ) : null}
 
-          {busy ? (
-            /* MACHINE BUSY — names the job holding the chosen machine and
-               offers the one action that frees it: open that running op's
-               Log box, where Complete or Stop releases the machine through the
-               existing workflow. Or the operator simply picks another
-               machine above. Start stays disabled while this shows. */
-            <div
-              style={{
-                display: 'flex',
-                gap: 10,
-                alignItems: 'flex-start',
-                padding: 12,
-                marginTop: 12,
-                background: 'var(--bg3)',
-                border: '1px solid var(--amber)',
-                borderRadius: 8,
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              <AlertTriangle size={18} className="amber" style={{ flex: 'none', marginTop: 2 }} />
-              <div style={{ flex: 1 }}>
-                <b className="mono">{actualLabel ?? 'This machine'}</b> is currently running{' '}
-                <span className="mono fw-700 cyan">
-                  {busy.jobCardCode} / Op {busy.opSeq}
-                </span>
-                . Pick another machine, or complete / stop that operation first.
-              </div>
-              <button
-                type="button"
-                className="btn btn-sm"
-                title="Open the running operation to Complete or Stop it"
-                onClick={() => {
-                  void navigate({
-                    to: '/op-entry',
-                    search: (prev) => ({
-                      ...prev,
-                      jc: busy.jobCardCode,
-                      op: busy.jcOpId,
-                      mode: 'complete',
-                      view: undefined,
-                    }),
-                  });
-                  onClose?.();
-                }}
-              >
-                ✚ Open Current Operation
-              </button>
-            </div>
-          ) : busyUnknown ? (
+          {busyUnknown ? (
             <div
               className="text3"
               style={{
@@ -1325,6 +1350,11 @@ export function OpEntryForm({
                     className="btn btn-primary"
                     style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
                     disabled={blockedReason !== null || start.isPending || Boolean(busy) || busyUnknown}
+                    title={
+                      busy
+                        ? `${actualLabel ?? 'The chosen machine'} is busy with ${busy.jobCardCode} Op ${busy.opSeq} — pick another machine`
+                        : undefined
+                    }
                   >
                     {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={14} />}
                     ▶ Start Operation
