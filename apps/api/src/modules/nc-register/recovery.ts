@@ -444,16 +444,83 @@ async function creditRecovery(
   return { cleared, failed, closed };
 }
 
+/**
+ * Propagate a settled recovery delta UP the whole parent chain (design §4,
+ * nested rework). Starting from the JC a recovery just resolved on, credit its
+ * parent NC and — when that NC itself sits on another recovery child — keep
+ * climbing to the ORIGINAL parent. `accepted` pieces are credited (cleared) AND
+ * re-injected into each ancestor's origin op, so they flow through that JC's
+ * remaining downstream ops; `failed` (scrapped) pieces only move the ledger.
+ * Each level is clamped to what the ancestor NC still owes, so a climb can never
+ * over-credit, and it stops at a closed NC or the top of the chain.
+ *
+ * This is what lets a rework-of-a-rework's good pieces reach the original JC: a
+ * partial 5-of-10 accepted on a grandchild shows 5 done on the child's origin op
+ * AND 5 done on the parent's — and the same for a return-to-vendor replacement.
+ */
+export async function climbRecoveryToAncestors(
+  tx: DbTransaction,
+  fromJobCardId: string,
+  accepted: number,
+  failed: number,
+  viaCode: string,
+  logDate: string,
+  shift: (typeof SHIFTS)[number],
+  companyId: string,
+  user: AuthContext,
+): Promise<void> {
+  let jcId = fromJobCardId;
+  for (let guard = 0; guard < 50; guard++) {
+    const jrows = await tx
+      .select({ parentNcId: jobCards.parentNcId })
+      .from(jobCards)
+      .where(
+        and(eq(jobCards.id, jcId), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+      )
+      .limit(1);
+    const parentNcId = jrows[0]?.parentNcId ?? null;
+    if (!parentNcId) return; // reached the original parent (not a recovery child)
+    const nc = await loadNc(tx, parentNcId, companyId);
+    if (nc.status === 'closed') return; // already settled above — do not re-touch
+    const open = ncOpenQty(nc);
+    const a = Math.max(0, Math.min(accepted, open));
+    const f = Math.max(0, Math.min(failed, open - a));
+    if (a + f > 0) {
+      await creditRecovery(tx, nc, a, f, user);
+      if (a > 0) {
+        await reinjectIntoOriginOp(tx, nc, a, viaCode, logDate, shift, user);
+      }
+      await emitActivityLog(
+        tx,
+        {
+          action: 'NC_RECOVERY_QC',
+          entity: 'NonConformance',
+          detail: `${nc.code} — recovery climbed from ${viaCode}: +${a} cleared${f ? `, +${f} failed` : ''}`,
+          refId: nc.code,
+        },
+        companyId,
+        user,
+      );
+    }
+    jcId = nc.jobCardId; // climb to the JC this NC was raised on
+  }
+}
+
 // ─── Hook: terminal QC on a rework / repair child (design §4) ─────────────
 
 /**
  * Called by op-entry after a QC op_log insert. No-op unless the JC is a
- * recovery child (recovery_kind set) AND jcOpId is that JC's LAST op. Credits
- * cleared/failed, re-injects accepted into the parent's origin op as an op_log
- * 'qc' row, auto-closes when cleared+failed == rejected. Emits NC_RECOVERY_QC.
+ * recovery child (recovery_kind set) AND jcOpId is that JC's LAST op. Climbs the
+ * ACCEPTED pieces up the whole parent chain (crediting each ancestor NC and
+ * re-injecting into its origin op) so a partial or full recovery updates every
+ * upstream JC, op by op, to the original parent.
  *
- * Rejected pieces need nothing extra here: op-entry's own auto-NC cascade has
- * already raised the follow-on NC against the child card.
+ * Rejected pieces are deliberately NOT booked as 'failed' on the parent here:
+ * they are still in rework — op-entry's own auto-NC cascade has raised a fresh
+ * NC on this child for them, and they become 'failed' on the ancestors only if
+ * that NC is later scrapped (disposeNcCascade climbs the failed qty then). This
+ * keeps the parent NC open until the pieces are genuinely recovered or scrapped,
+ * instead of closing it as all-failed the moment a child rejects.
  */
 export async function onRecoveryJobCardQc(
   tx: DbTransaction,
@@ -508,25 +575,35 @@ export async function onRecoveryJobCardQc(
   if (!jc.parentNcId) {
     throw new NotFoundError(`Recovery job card ${jc.code} has no parent NC`);
   }
-  const nc = await loadNc(tx, jc.parentNcId, companyId);
   const accepted = Math.max(0, Math.round(args.acceptedQty));
   const rejected = Math.max(0, Math.round(args.rejectedQty));
   if (accepted + rejected === 0) return;
-  assertWithinOpen(nc, accepted, rejected);
 
-  const ledger = await creditRecovery(tx, nc, accepted, rejected, user);
-  await reinjectIntoOriginOp(tx, nc, accepted, jc.code, args.logDate, toShift(args.shift), user);
+  // Climb the ACCEPTED pieces up the entire parent chain. The child's rejected
+  // pieces stay in rework on their own auto-NC (see the docstring); they are not
+  // credited as failed here, so the parent NC stays open until they are truly
+  // recovered or scrapped.
+  if (accepted > 0) {
+    await climbRecoveryToAncestors(
+      tx,
+      args.jobCardId,
+      accepted,
+      0,
+      jc.code,
+      args.logDate,
+      toShift(args.shift),
+      companyId,
+      user,
+    );
+  }
 
   await emitActivityLog(
     tx,
     {
       action: 'NC_RECOVERY_QC',
       entity: 'NonConformance',
-      detail:
-        `${nc.code} — ${jc.code} QC: accepted ${accepted}, rejected ${rejected}; ` +
-        `cleared ${ledger.cleared}/${Math.round(n(nc.rejectedQty))}, failed ${ledger.failed}` +
-        (ledger.closed ? '; CLOSED' : ''),
-      refId: nc.code,
+      detail: `${jc.code} terminal QC: accepted ${accepted}, rejected ${rejected} — accepted climbed to the parent chain`,
+      refId: jc.code,
     },
     companyId,
     user,
@@ -689,4 +766,22 @@ export async function onNcReplacementQc(
     companyId,
     user,
   );
+
+  // If this NC sits on a recovery child, the accepted replacement pieces must
+  // climb the parent chain too — same rule as an in-house rework recovery, so a
+  // return-to-vendor replacement updates every upstream JC to the original
+  // parent. No-op when the NC is on the original (top) JC.
+  if (accepted > 0) {
+    await climbRecoveryToAncestors(
+      tx,
+      nc.jobCardId,
+      accepted,
+      0,
+      'replacement GRN',
+      args.logDate,
+      'day',
+      companyId,
+      user,
+    );
+  }
 }

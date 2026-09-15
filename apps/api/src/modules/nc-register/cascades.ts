@@ -38,7 +38,7 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { createRecoveryJobCard, ncOpenQty } from './recovery';
+import { climbRecoveryToAncestors, createRecoveryJobCard, ncOpenQty } from './recovery';
 import type { DisposeNcInput } from './schema';
 
 type NcRow = typeof ncRegister.$inferSelect;
@@ -355,6 +355,20 @@ export async function disposeNcCascade(
       })
       .where(eq(ncRegister.id, ncId));
     result.status = 'closed';
+    // If this scrapped NC sits on a recovery child, the pieces are genuinely
+    // gone — climb the failed qty up the ancestor chain so every ancestor NC
+    // (kept open while the pieces were still in rework) can now settle.
+    await climbRecoveryToAncestors(
+      tx,
+      nc.jobCardId,
+      0,
+      qty,
+      `scrap ${nc.code}`,
+      today,
+      'day',
+      ctx.companyId,
+      ctx.user,
+    );
     return result;
   }
 
