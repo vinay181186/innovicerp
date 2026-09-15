@@ -71,8 +71,7 @@ interface FeedRow {
 // Mirrors legacy _allEvents shaping (L11091-11131) per event kind.
 function mapEvent(e: JobCardCompletionEvent): FeedRow {
   if (e.kind === 'op') {
-    const label =
-      e.logType === 'start' ? 'Started' : e.logType === 'qc' ? 'QC Entry' : 'Completed';
+    const label = e.logType === 'start' ? 'Started' : e.logType === 'qc' ? 'QC Entry' : 'Completed';
     // ADR-164 — machineCode is the machine ACTUALLY used; plannedMachineCode is
     // the op's plan. Name the plan only when the two differ.
     const machine = e.machineCode ?? '?';
@@ -172,24 +171,45 @@ function QcDocCard({
   jcCode?: string;
 }): React.JSX.Element {
   const open = (): void => {
-    void drawingViewUrl({ path: storagePath, source: 'qc_document', ...(jcCode ? { refCode: jcCode } : {}) }).then((url) => window.open(url, '_blank', 'noopener'));
+    void drawingViewUrl({
+      path: storagePath,
+      source: 'qc_document',
+      ...(jcCode ? { refCode: jcCode } : {}),
+    }).then((url) => window.open(url, '_blank', 'noopener'));
   };
   return (
-    <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border)', minWidth: 190 }}>
+    <div
+      style={{
+        padding: '8px 12px',
+        background: 'var(--bg3)',
+        borderRadius: 8,
+        border: '1px solid var(--border)',
+        minWidth: 190,
+      }}
+    >
       <div style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 700 }}>{docType}</div>
       <div style={{ fontSize: 12, fontWeight: 600, margin: '3px 0' }}>{fileName || '—'}</div>
       {storagePath ? (
         <button
           type="button"
           onClick={open}
-          style={{ fontSize: 11, color: 'var(--blue)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+          style={{
+            fontSize: 11,
+            color: 'var(--blue)',
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+          }}
         >
           📎 {fileName || 'Download'}
         </button>
       ) : (
         <span style={{ fontSize: 10, color: 'var(--text3)' }}>No file</span>
       )}
-      <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>Added: {uploadDate ?? '—'}</div>
+      <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>
+        Added: {uploadDate ?? '—'}
+      </div>
     </div>
   );
 }
@@ -227,7 +247,8 @@ function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Element | nu
   // may be null (older cards, or a source NC that lacks the fact) — those
   // segments are simply dropped so the sentence never shows a bare "—".
   const verb = jc.recoveryKind === 'repair' ? 'Repairing' : 'Reworking';
-  const qtyText = jc.parentRejectedQty != null ? `${jc.parentRejectedQty} rejected` : 'rejected pieces';
+  const qtyText =
+    jc.parentRejectedQty != null ? `${jc.parentRejectedQty} rejected` : 'rejected pieces';
   const sourceParts = [
     `Op ${opN}`,
     jc.parentOpName ?? undefined,
@@ -463,10 +484,31 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           browser's own tab, which is what gives us one Download button in one
           place, shown only to people who may save a copy. */}
       {drawing ? (
-        <div style={{ marginBottom: 14, padding: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8, flexWrap: 'wrap' }}>
-            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>▸ DRAWING</span>
-            <span className="badge b-grey" style={{ fontSize: 10 }}>{drawing.label}</span>
+        <div
+          style={{
+            marginBottom: 14,
+            padding: 10,
+            background: 'var(--bg3)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 6,
+              gap: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>
+              ▸ DRAWING
+            </span>
+            <span className="badge b-grey" style={{ fontSize: 10 }}>
+              {drawing.label}
+            </span>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -481,20 +523,36 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
               type="button"
               onClick={() => setDrawingPreviewOpen(true)}
               title="Open this drawing"
-              style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', display: 'block' }}
+              style={{
+                background: 'none',
+                border: 0,
+                padding: 0,
+                cursor: 'pointer',
+                display: 'block',
+              }}
             >
               <img
                 src={drawingUrl}
                 alt={`${drawing.label} drawing`}
-                style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 4, border: '1px solid var(--border2)', display: 'block' }}
+                style={{
+                  maxHeight: 140,
+                  maxWidth: '100%',
+                  borderRadius: 4,
+                  border: '1px solid var(--border2)',
+                  display: 'block',
+                }}
               />
             </button>
           ) : (
             // PDFs (and anything else) have no thumbnail. The old bare <img>
             // rendered a broken-image icon here; say what the file is instead.
             <div className="text3" style={{ fontSize: 11 }}>
-              📄 {drawing.path.split('/').pop()?.replace(/^\d{10,}-/, '') ?? 'drawing'} — open it to
-              view.
+              📄{' '}
+              {drawing.path
+                .split('/')
+                .pop()
+                ?.replace(/^\d{10,}-/, '') ?? 'drawing'}{' '}
+              — open it to view.
             </div>
           )}
         </div>
@@ -559,10 +617,16 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                 rmAvailable={o.id === firstOpId ? (extras?.rmAvailable ?? null) : null}
                 logs={(logsByOp.get(o.id) ?? []).slice(0, 3)}
                 onStart={(opId) =>
-                  void navigate({ to: '/op-entry', search: { jc: jc.code, op: opId, mode: 'start' } })
+                  void navigate({
+                    to: '/op-entry',
+                    search: { jc: jc.code, op: opId, mode: 'start' },
+                  })
                 }
                 onLog={(opId) =>
-                  void navigate({ to: '/op-entry', search: { jc: jc.code, op: opId, mode: 'complete' } })
+                  void navigate({
+                    to: '/op-entry',
+                    search: { jc: jc.code, op: opId, mode: 'complete' },
+                  })
                 }
                 onQc={() => void navigate({ to: '/qc-call-register' })}
               />
@@ -576,7 +640,15 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       {extras && extras.qcDocs.length > 0 ? (
         <>
           <div style={{ marginTop: 16, marginBottom: 8 }}>
-            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700, textTransform: 'uppercase' }}>
+            <span
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: 'var(--cyan)',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+              }}
+            >
               ▸ QC Documents ({extras.qcDocs.length})
             </span>
           </div>
@@ -598,15 +670,35 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       {/* Log history — legacy L11144-11161, L11259-11260. A per-date grouped
           icon feed, not a table. Header shows the REAL server total; when op_log
           was capped, it notes how many of the total are shown (ISSUE-174). */}
-      <div className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+      <div
+        className="mono"
+        style={{
+          fontSize: 11,
+          color: 'var(--cyan)',
+          fontWeight: 700,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          marginBottom: 8,
+        }}
+      >
         ▸ Completion Log{' '}
         {eventDays.truncated
           ? `(showing latest ${eventDays.shown} of ${eventDays.total} entries)`
           : `(${eventDays.total} entries)`}
       </div>
-      <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: '0 12px' }}>
+      <div
+        style={{
+          maxHeight: 220,
+          overflowY: 'auto',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: '0 12px',
+        }}
+      >
         {eventDays.total === 0 ? (
-          <div className="empty-state" style={{ padding: 16 }}>No log entries yet</div>
+          <div className="empty-state" style={{ padding: 16 }}>
+            No log entries yet
+          </div>
         ) : (
           eventDays.days.map((day) => (
             <div key={day.date} style={{ marginBottom: 12 }}>
@@ -626,14 +718,32 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
               {day.events.map((e) => (
                 <div
                   key={e.id}
-                  style={{ display: 'flex', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    padding: '5px 0',
+                    borderBottom: '1px solid var(--border)',
+                    alignItems: 'flex-start',
+                  }}
                 >
-                  <div style={{ fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 }}>{e.icon}</div>
+                  <div style={{ fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 }}>
+                    {e.icon}
+                  </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: e.color }}>{e.title}</span>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 700, color: e.color }}>
+                        {e.title}
+                      </span>
                       {e.time ? (
-                        <span className="mono" style={{ fontSize: 10, color: 'var(--text3)' }}>{e.time}</span>
+                        <span className="mono" style={{ fontSize: 10, color: 'var(--text3)' }}>
+                          {e.time}
+                        </span>
                       ) : null}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>
@@ -764,7 +874,12 @@ function JcStatusEditForm({
         !machineSearch.trim() ||
         `${m.code} ${m.name}`.toLowerCase().includes(machineSearch.trim().toLowerCase()),
     )
-    .map((m) => ({ id: m.id, code: m.code, name: m.name, machineGroupId: m.machineGroupId ?? null }));
+    .map((m) => ({
+      id: m.id,
+      code: m.code,
+      name: m.name,
+      machineGroupId: m.machineGroupId ?? null,
+    }));
 
   // ── Editable header (item code, order qty, due date, priority, remarks).
   //    Source, date, drawing and existing QC docs are preserved unchanged from
@@ -823,10 +938,7 @@ function JcStatusEditForm({
 
   // Read-only enriched columns + recent logs (from the JC Status view) keyed by
   // op id, so each editable row shows the SAME live progress the view shows.
-  const enrichedById = useMemo(
-    () => new Map(enrichedOps.map((o) => [o.id, o])),
-    [enrichedOps],
-  );
+  const enrichedById = useMemo(() => new Map(enrichedOps.map((o) => [o.id, o])), [enrichedOps]);
   const sortedEnriched = useMemo(
     () => [...enrichedOps].sort((a, b) => a.opSeq - b.opSeq),
     [enrichedOps],
@@ -1263,7 +1375,9 @@ function JcStatusEditForm({
             const idx = balanceOpIdx;
             const op = ops[idx];
             if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
-            setBalanceNote(`Outsourced ${qtyDone} pc(s) from Op${idx + 1} — JW OSP purchase request raised.`);
+            setBalanceNote(
+              `Outsourced ${qtyDone} pc(s) from Op${idx + 1} — JW OSP purchase request raised.`,
+            );
             setBalanceOpIdx(null);
           }}
         />
