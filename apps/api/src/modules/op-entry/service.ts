@@ -18,7 +18,7 @@
 // (machine_id) where status='running' and is_osp=false. The service catches
 // the resulting unique-violation and returns a typed ConflictError.
 
-import { and, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   approvalConfig,
@@ -1336,6 +1336,50 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // and the follow-on NC for those very pieces must already exist by then so
     // the trail reads reject → NC → child JC → reject → NC without a gap.
     if (input.rejectQty > 0 && jcCode) {
+      // WI1 (ADR-164/0095): the auto-NC must name the ACTUAL machine that MADE
+      // the rejected pieces, not null. nc.opSeq/operationText still point at the
+      // rejecting/QC op (reinjection + migration 0124 key on them) — this only
+      // fills machine_code_text. The producing op is:
+      //   - a dedicated QC op → the immediately-preceding non-QC op on this JC,
+      //   - a process op inspected in place → this op itself.
+      // Its actual machine is that op's latest op_log.machine_code_text, which
+      // resolveLogMachine stamped at production time. Never the literal 'QC'.
+      let producingJcOpId: string | null = op.id;
+      if (op.opType === 'qc') {
+        const prevRows = await tx
+          .select({ id: jcOps.id })
+          .from(jcOps)
+          .where(
+            and(
+              eq(jcOps.jobCardId, op.jobCardId),
+              eq(jcOps.companyId, companyId),
+              isNull(jcOps.deletedAt),
+              ne(jcOps.opType, 'qc'),
+              lt(jcOps.opSeq, op.opSeq),
+            ),
+          )
+          .orderBy(desc(jcOps.opSeq))
+          .limit(1);
+        producingJcOpId = prevRows[0]?.id ?? null;
+      }
+      let producingMachineCodeText: string | null = null;
+      if (producingJcOpId) {
+        const mRows = await tx
+          .select({ mct: opLog.machineCodeText })
+          .from(opLog)
+          .where(
+            and(
+              eq(opLog.jcOpId, producingJcOpId),
+              eq(opLog.companyId, companyId),
+              isNotNull(opLog.machineCodeText),
+              ne(opLog.machineCodeText, 'QC'),
+            ),
+          )
+          .orderBy(desc(opLog.createdAt))
+          .limit(1);
+        producingMachineCodeText = mRows[0]?.mct ?? null;
+      }
+
       await autoCreateNcFromQcReject(
         tx,
         {
@@ -1352,6 +1396,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
           // The inspection row that raised the NC — the traceability link the
           // spec's Flow 4 was missing (design §3, nc_register.qc_log_id).
           qcLogId: row.id,
+          // WI1: the ACTUAL producing machine (resolved above).
+          machineCodeText: producingMachineCodeText,
         },
         user,
       );

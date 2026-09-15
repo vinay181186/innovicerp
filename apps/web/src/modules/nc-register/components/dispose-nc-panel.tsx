@@ -78,6 +78,22 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   const isLegacyRework = nc.reworkOpSeq != null;
   const isRecovery = action === 'rework' || action === 'repair';
 
+  // Mirror the server guard (§3) so the operator never picks an action the API
+  // will refuse. `sourceVendorId` is the read model's single signal for where
+  // the rejected material came from:
+  //   • vendor-sourced (GRN / OSP reject) → no in-house op to rework/repair, so
+  //     those two are hidden; return_to_vendor stays.
+  //   • in-house        → no vendor to return to, so return_to_vendor is hidden.
+  // scrap / use_as_is / make_fresh are always valid, so they always survive.
+  const isVendorSourced = nc.sourceVendorId != null;
+  const availableActions = useMemo<readonly NcDisposition[]>(
+    () =>
+      ACTION_ORDER.filter((a) =>
+        isVendorSourced ? a !== 'rework' && a !== 'repair' : a !== 'return_to_vendor',
+      ),
+    [isVendorSourced],
+  );
+
   const reworkOps = useMemo<JcOpOption[]>(() => {
     if (jcOps.length > 0) return jcOps;
     return nc.opSeq != null ? [{ opSeq: nc.opSeq, operation: '' }] : [];
@@ -174,7 +190,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                   required
                 >
                   <option value="">-- Select Action --</option>
-                  {ACTION_ORDER.map((a) => (
+                  {availableActions.map((a) => (
                     <option key={a} value={a}>
                       {NC_DISPOSITION_LABELS[a]}
                     </option>

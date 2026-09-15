@@ -24,10 +24,13 @@ export function CreateNcDcPanel(props: {
   // Create DC button disabled after a vendor was picked — a required ★ field the
   // user could not see was empty. Still editable.
   const [dcDate, setDcDate] = useState(todayLocal());
-  const [vendorId, setVendorId] = useState<string | null>(null);
+  // Preselect the return vendor from the NC's source when the material came
+  // from a vendor (GRN/OSP reject) — the server also defaults it, but showing
+  // it here lets the operator see and confirm the supplier. Still overridable.
+  const [vendorId, setVendorId] = useState<string | null>(nc.sourceVendorId ?? null);
   // The picker's label is "CODE — Name"; the challan stores the code text
   // alongside the id (the DC's ADR-015 pair), so the code is peeled off here.
-  const [vendorCodeText, setVendorCodeText] = useState('');
+  const [vendorCodeText, setVendorCodeText] = useState(nc.sourceVendorCode ?? '');
   const [transport, setTransport] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -77,11 +80,27 @@ export function CreateNcDcPanel(props: {
             <VendorPicker
               id="ncDcVendor"
               value={vendorId}
+              initialLabel={
+                nc.sourceVendorId && nc.sourceVendorCode
+                  ? `${nc.sourceVendorCode}${nc.sourceVendorName ? ` — ${nc.sourceVendorName}` : ''}`
+                  : ''
+              }
               onChange={(id, label) => {
                 setVendorId(id);
                 setVendorCodeText(id ? (label.split(' — ')[0] ?? label) : '');
               }}
             />
+            {nc.sourceVendorId ? (
+              <div className="form-grp form-full">
+                <span className="text3" style={{ fontSize: 11 }}>
+                  Original supplier:{' '}
+                  <span className="td-code" style={{ color: 'var(--text)' }}>
+                    {nc.sourceVendorCode ?? '—'}
+                  </span>
+                  {nc.sourceVendorName ? ` — ${nc.sourceVendorName}` : ''}
+                </span>
+              </div>
+            ) : null}
             <div className="form-grp">
               <label className="form-label" htmlFor="ncDcTransport">
                 Transport

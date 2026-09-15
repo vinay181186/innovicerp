@@ -622,6 +622,10 @@ export async function submitIncomingQc(
             // The GRN line this reject was found on (design §3,
             // nc_register.grn_line_id) — the receipt end of the trail.
             grnLineId: line.id,
+            // WI1: no machine here. This is Incoming QC of VENDOR material (the
+            // source op is outsourced), so the pieces were made by the vendor,
+            // not on an in-house machine — machineCodeText stays null.
+            machineCodeText: null,
           },
           user,
         );

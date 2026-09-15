@@ -208,6 +208,12 @@ export async function listJobCards(
         jc.origin_op_seq      AS "originOpSeq",
         jc.parent_nc_id       AS "parentNcId",
         pnc.code              AS "parentNcCode",
+        -- Tier A (QC-NC §4): source context of the rejected work, derived live
+        -- from the parent NC — WHICH operation and machine produced the rejected
+        -- pieces and how many. Null on a non-recovery card (pnc left-joined).
+        pnc.operation_text    AS "parentOpName",
+        pnc.machine_code_text AS "parentMachineCode",
+        pnc.rejected_qty::int AS "parentRejectedQty",
         COALESCE((
           SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
                       THEN vos.qc_accepted_qty ELSE vos.completed_qty END
@@ -358,6 +364,12 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.origin_op_seq      AS "originOpSeq",
         jc.parent_nc_id       AS "parentNcId",
         pnc.code              AS "parentNcCode",
+        -- Tier A (QC-NC §4): source context of the rejected work, derived live
+        -- from the parent NC — WHICH operation and machine produced the rejected
+        -- pieces and how many. Null on a non-recovery card (pnc left-joined).
+        pnc.operation_text    AS "parentOpName",
+        pnc.machine_code_text AS "parentMachineCode",
+        pnc.rejected_qty::int AS "parentRejectedQty",
         COALESCE((
           SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
                       THEN vos.qc_accepted_qty ELSE vos.completed_qty END
@@ -460,6 +472,10 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     originOpSeq: r['originOpSeq'] != null ? Number(r['originOpSeq']) : null,
     parentNcId: (r['parentNcId'] as string | null) ?? null,
     parentNcCode: (r['parentNcCode'] as string | null) ?? null,
+    // Tier A: parent NC source context (WI2), derived from the parent NC.
+    parentOpName: (r['parentOpName'] as string | null) ?? null,
+    parentMachineCode: (r['parentMachineCode'] as string | null) ?? null,
+    parentRejectedQty: r['parentRejectedQty'] != null ? Number(r['parentRejectedQty']) : null,
     computedStatus: r['computedStatus'] as JobCardListItem['computedStatus'],
     totalOps: Number(r['totalOps'] ?? 0),
     doneOps: Number(r['doneOps'] ?? 0),

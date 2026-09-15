@@ -43,6 +43,100 @@ import type { DisposeNcInput } from './schema';
 
 type NcRow = typeof ncRegister.$inferSelect;
 
+// ─── NC material source (Tier A) ─────────────────────────────────────────────
+//
+// Where the rejected material CAME FROM, derived on read from the NC's own
+// links — never a stored column. Two sources, GRN first:
+//   (a) grn_line_id set (Incoming-QC reject) → the GRN header's vendor + codes.
+//   (b) else the origin op (jc_op_id) is an outsource op → its outsource PO line
+//       vendor + PO code.
+// `isVendorSourced` is true whenever the material came from a vendor — a GRN
+// line is set, OR the origin op is outsource — even when no vendor row resolves.
+// It drives the return-vendor default (createNcDc, WI4) and the disposition
+// guard (disposeNcCascade, WI5). A pure in-house reject resolves to all-null,
+// isVendorSourced=false. The NC list reader mirrors this same logic inline as a
+// LEFT JOIN LATERAL for pagination; keep the two in step.
+
+export interface NcSource {
+  sourceVendorId: string | null;
+  sourceVendorCode: string | null;
+  sourceVendorName: string | null;
+  sourcePoCode: string | null;
+  sourceGrnCode: string | null;
+  isVendorSourced: boolean;
+}
+
+const EMPTY_NC_SOURCE: NcSource = {
+  sourceVendorId: null,
+  sourceVendorCode: null,
+  sourceVendorName: null,
+  sourcePoCode: null,
+  sourceGrnCode: null,
+  isVendorSourced: false,
+};
+
+export async function resolveNcSource(
+  tx: DbTransaction,
+  companyId: string,
+  nc: { grnLineId: string | null; jcOpId: string | null },
+): Promise<NcSource> {
+  // (a) Incoming-QC reject: the GRN line names the vendor directly.
+  if (nc.grnLineId) {
+    const rows = (await tx.execute(sql`
+      SELECT grn.vendor_id AS "vendorId", v.code AS "vendorCode", v.name AS "vendorName",
+             grn.code AS "grnCode", grn.po_code_text AS "poCode"
+      FROM public.goods_receipt_note_lines gl
+      JOIN public.goods_receipt_notes grn
+        ON grn.id = gl.goods_receipt_note_id AND grn.deleted_at IS NULL
+      LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
+      WHERE gl.id = ${nc.grnLineId}::uuid AND gl.company_id = ${companyId}::uuid
+        AND gl.deleted_at IS NULL
+      LIMIT 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    const r = rows[0];
+    // A GRN line is always a vendor source, even if the GRN row was since deleted.
+    return {
+      sourceVendorId: (r?.['vendorId'] as string | null) ?? null,
+      sourceVendorCode: (r?.['vendorCode'] as string | null) ?? null,
+      sourceVendorName: (r?.['vendorName'] as string | null) ?? null,
+      sourcePoCode: (r?.['poCode'] as string | null) ?? null,
+      sourceGrnCode: (r?.['grnCode'] as string | null) ?? null,
+      isVendorSourced: true,
+    };
+  }
+
+  // (b) Origin op outsourced: its outsource PO line names the vendor.
+  if (nc.jcOpId) {
+    const rows = (await tx.execute(sql`
+      SELECT po.vendor_id AS "vendorId", v.code AS "vendorCode", v.name AS "vendorName",
+             po.code AS "poCode",
+             (o.op_type = 'outsource') AS "isOutsource"
+      FROM public.jc_ops o
+      LEFT JOIN public.purchase_order_lines pol
+        ON pol.source_jc_op_id = o.id AND pol.deleted_at IS NULL
+      LEFT JOIN public.purchase_orders po
+        ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
+      LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
+      WHERE o.id = ${nc.jcOpId}::uuid AND o.company_id = ${companyId}::uuid
+      ORDER BY (po.id IS NOT NULL) DESC, pol.created_at DESC
+      LIMIT 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    const r = rows[0];
+    if (r && Boolean(r['isOutsource'])) {
+      return {
+        sourceVendorId: (r['vendorId'] as string | null) ?? null,
+        sourceVendorCode: (r['vendorCode'] as string | null) ?? null,
+        sourceVendorName: (r['vendorName'] as string | null) ?? null,
+        sourcePoCode: (r['poCode'] as string | null) ?? null,
+        sourceGrnCode: null,
+        isVendorSourced: true,
+      };
+    }
+  }
+
+  return { ...EMPTY_NC_SOURCE };
+}
+
 export interface DisposeNcContext {
   companyId: string;
   userId: string;
@@ -122,6 +216,37 @@ export async function disposeNcCascade(
   // including the split below.
   if (input.action === 'scrap') {
     await requireFormAccess(ctx.user, 'nc_dispose', 'approve');
+  }
+
+  // WI5: match the disposition to where the material CAME FROM. Vendor-sourced
+  // material — an Incoming-QC reject on a GRN line, or a reject at an outsource
+  // op — goes BACK to the vendor and is not reworked in-house; an in-house
+  // reject has no vendor to return to. scrap / use_as_is / make_fresh apply to
+  // either source and stay unrestricted.
+  //
+  // CREATE-TIME only: this checks the disposition being applied now. It does not
+  // retroactively re-classify NC rows dispositioned before this guard existed
+  // (e.g. the existing prod NC-…-00006-Op8), whose disposition columns are left
+  // exactly as they were.
+  if (
+    input.action === 'return_to_vendor' ||
+    input.action === 'rework' ||
+    input.action === 'repair'
+  ) {
+    const source = await resolveNcSource(tx, ctx.companyId, {
+      grnLineId: loaded.grnLineId,
+      jcOpId: loaded.jcOpId,
+    });
+    if (input.action === 'return_to_vendor' && !source.isVendorSourced) {
+      throw new ConflictError(
+        'This NC has no vendor source; in-house rejected material is reworked or scrapped, not returned to a vendor.',
+      );
+    }
+    if ((input.action === 'rework' || input.action === 'repair') && source.isVendorSourced) {
+      throw new ConflictError(
+        "This NC's material came from a vendor; return it to the vendor rather than reworking it in-house.",
+      );
+    }
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -492,6 +617,12 @@ export interface AutoCreateNcContext {
   ncDate: string; // YYYY-MM-DD (matches the QC log's date)
   reportedByText: string | null;
   remarks: string | null;
+  /** The ACTUAL producing machine for the rejected pieces (ADR-164/0095),
+   *  resolved by the caller from the producing op's op_log. Null when there is
+   *  no in-house machine (e.g. an Incoming-QC reject of vendor material). This
+   *  is the machine that MADE the pieces — nc.opSeq/operationText still name the
+   *  rejecting/QC op and are left untouched. */
+  machineCodeText?: string | null;
   /** The op_log inspection row that rejected the pieces (design §3). Null on
    *  an Incoming-QC reject, which has no op_log row. */
   qcLogId?: string | null;
@@ -586,7 +717,10 @@ export async function autoCreateNcFromQcReject(
       itemCodeText: itemCode,
       itemNameText: null,
       soCodeText: null,
-      machineCodeText: null,
+      // ADR-164/0095: the ACTUAL machine that produced the rejected pieces,
+      // resolved by the caller from the producing op's op_log. Null when no
+      // in-house machine applies (e.g. vendor material at Incoming QC).
+      machineCodeText: ctx.machineCodeText ?? null,
       rejectedQty: ctx.rejectedQty.toFixed(2),
       reasonCategory: 'other',
       reason,

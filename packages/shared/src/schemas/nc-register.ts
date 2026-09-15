@@ -74,6 +74,15 @@ export const ncRegisterSchema = z.object({
   qcLogId: z.string().uuid().nullable().default(null),
   /** The GRN line for an Incoming-QC-raised NC. */
   grnLineId: z.string().uuid().nullable().default(null),
+  /** SOURCE of the rejected material, derived on read (Tier A) so the NC and its
+   *  return-to-vendor challan show — and default to — the ACTUAL supplier, not a
+   *  free-typed one. Resolved from grnLineId → GRN vendor, or the origin op's
+   *  outsource PO line vendor. Null for a pure in-house reject (no vendor). */
+  sourceVendorId: z.string().uuid().nullable().default(null),
+  sourceVendorCode: z.string().nullable().default(null),
+  sourceVendorName: z.string().nullable().default(null),
+  sourcePoCode: z.string().nullable().default(null),
+  sourceGrnCode: z.string().nullable().default(null),
   /** Sibling link: set on the remainder row when a disposition covered less
    *  than the full rejected qty. */
   splitFromNcId: z.string().uuid().nullable().default(null),
