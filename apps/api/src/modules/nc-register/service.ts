@@ -168,6 +168,9 @@ interface NcJoins {
   itemRevision?: string | null;
   childJobCardCode?: string | null;
   deliveryChallanCode?: string | null;
+  // G8: the NC this row continues (Incoming-QC reject on a GRN that came back
+  // against that NC's return-to-vendor challan). Code resolved on read.
+  parentNcCode?: string | null;
   // Material source (Tier A, WI3), derived on read via resolveNcSource / the
   // list reader's LATERAL. Null on a pure in-house reject.
   sourceVendorId?: string | null;
@@ -231,6 +234,9 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     sourcePoCode: joins.sourcePoCode ?? null,
     sourceGrnCode: joins.sourceGrnCode ?? null,
     splitFromNcId: row.splitFromNcId,
+    // G8: "Continues NC <code>" — set by autoCreateNcFromQcReject only.
+    parentNcId: row.parentNcId,
+    parentNcCode: joins.parentNcCode ?? null,
     childJobCardId: row.childJobCardId,
     childJobCardCode,
     deliveryChallanId: row.deliveryChallanId,
@@ -390,6 +396,9 @@ export async function listNcRegister(
         nc.qc_log_id AS "qcLogId",
         nc.grn_line_id AS "grnLineId",
         nc.split_from_nc_id AS "splitFromNcId",
+        -- G8: the NC this row continues (second trip of the same pieces).
+        nc.parent_nc_id AS "parentNcId",
+        pnc.code AS "parentNcCode",
         nc.child_job_card_id AS "childJobCardId",
         cjc.code AS "childJobCardCode",
         nc.delivery_challan_id AS "deliveryChallanId",
@@ -444,6 +453,9 @@ export async function listNcRegister(
         ON cjc.id = nc.child_job_card_id AND cjc.deleted_at IS NULL
       LEFT JOIN public.delivery_challans dc
         ON dc.id = nc.delivery_challan_id AND dc.deleted_at IS NULL
+      -- G8: parent NC (one-per-NC FK, cannot multiply rows).
+      LEFT JOIN public.nc_register pnc
+        ON pnc.id = nc.parent_nc_id AND pnc.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT c.code
         FROM public.capa_records c
@@ -597,6 +609,8 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     sourcePoCode: str('sourcePoCode'),
     sourceGrnCode: str('sourceGrnCode'),
     splitFromNcId: str('splitFromNcId'),
+    parentNcId: str('parentNcId'),
+    parentNcCode: str('parentNcCode'),
     childJobCardId: str('childJobCardId'),
     childJobCardCode,
     deliveryChallanId: ledger.deliveryChallanId,
@@ -653,6 +667,12 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
         SELECT dc.code FROM public.delivery_challans dc
         WHERE dc.id = ${ncRegister.deliveryChallanId} AND dc.deleted_at IS NULL
       )`,
+      // G8: the NC this row continues. Scalar subquery so nc_register is not
+      // self-joined through the drizzle alias machinery.
+      parentNcCode: sql<string | null>`(
+        SELECT pnc.code FROM public.nc_register pnc
+        WHERE pnc.id = ${ncRegister.parentNcId} AND pnc.deleted_at IS NULL
+      )`,
     })
     .from(ncRegister)
     // Resolve item code/name from the live items master, not the stale
@@ -688,6 +708,7 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     itemRevision: found.itemRevision,
     childJobCardCode: found.childJobCardCode,
     deliveryChallanCode: found.deliveryChallanCode,
+    parentNcCode: found.parentNcCode,
     sourceVendorId: source.sourceVendorId,
     sourceVendorCode: source.sourceVendorCode,
     sourceVendorName: source.sourceVendorName,
@@ -738,6 +759,7 @@ export async function getNcRegisterRelated(
         childJobCardId: ncRegister.childJobCardId,
         deliveryChallanId: ncRegister.deliveryChallanId,
         splitFromNcId: ncRegister.splitFromNcId,
+        parentNcId: ncRegister.parentNcId,
       })
       .from(ncRegister)
       .where(
@@ -773,6 +795,37 @@ export async function getNcRegisterRelated(
           header.splitFromNcId
             ? sql`(${ncRegister.id} = ${header.splitFromNcId}::uuid OR ${ncRegister.splitFromNcId} = ${id}::uuid OR (${ncRegister.splitFromNcId} = ${header.splitFromNcId}::uuid AND ${ncRegister.id} <> ${id}::uuid))`
             : eq(ncRegister.splitFromNcId, id),
+        ),
+      )
+      .orderBy(asc(ncRegister.code));
+
+    // ── G8: the NC chain ────────────────────────────────────────────────────
+    // parent_nc_id is set by autoCreateNcFromQcReject when an Incoming-QC
+    // reject lands on a GRN that came back against an NC's return-to-vendor
+    // challan: the same pieces on a second trip. Upstream = the NC this one
+    // continues; downstream = every NC that continues this one.
+    const parentNcRows = header.parentNcId
+      ? await tx
+          .select(ncPick)
+          .from(ncRegister)
+          .where(
+            and(
+              eq(ncRegister.id, header.parentNcId),
+              eq(ncRegister.companyId, companyId),
+              isNull(ncRegister.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const parentNc = parentNcRows[0] ?? null;
+    const continuationRows = await tx
+      .select(ncPick)
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.companyId, companyId),
+          isNull(ncRegister.deletedAt),
+          eq(ncRegister.parentNcId, id),
         ),
       )
       .orderBy(asc(ncRegister.code));
@@ -952,6 +1005,20 @@ export async function getNcRegisterRelated(
       'item',
       item ? [row(item.id, item.code, null, null, { label: item.name })] : [],
     );
+    // G8: the NC whose pieces this row carries (second trip to the vendor).
+    const parentNcSection = section(
+      'parent-nc',
+      'Continues NC',
+      '⚠',
+      'nc',
+      parentNc
+        ? [
+            row(parentNc.id, parentNc.code, parentNc.status, parentNc.date, {
+              label: `Continues NC ${parentNc.code} — ${parentNc.rejectedQty} pcs`,
+            }),
+          ]
+        : [],
+    );
 
     // ── Downstream sections ─────────────────────────────────────────────────
     // The rework/repair child is listed by name first; the parent_nc_id scan
@@ -990,6 +1057,19 @@ export async function getNcRegisterRelated(
       ),
     );
 
+    // G8: NCs raised on the pieces this row sent back to the vendor.
+    const continuationSection = section(
+      'continuation-nc',
+      'Follow-on NCs (same pieces, next trip)',
+      '⚠',
+      'nc',
+      continuationRows.map((r) =>
+        row(r.id, r.code, r.status, r.date, {
+          label: `Follow-on NC ${r.code} — ${r.rejectedQty} pcs`,
+        }),
+      ),
+    );
+
     // ── Related sections (lateral soft links) ───────────────────────────────
     const siblingSection = section(
       'sibling-nc',
@@ -1008,8 +1088,14 @@ export async function getNcRegisterRelated(
       capaRows.map((r) => row(r.id, r.code, r.status, r.date)),
     );
 
-    const upstream = [jobCardSection, itemSection];
-    const downstream = [recoverySection, reworkSection, dcSection, followOnSection];
+    const upstream = [jobCardSection, itemSection, parentNcSection];
+    const downstream = [
+      recoverySection,
+      reworkSection,
+      dcSection,
+      followOnSection,
+      continuationSection,
+    ];
     const related = [siblingSection, capaSection];
     return {
       self: { module: 'nc-register', code: header.code },

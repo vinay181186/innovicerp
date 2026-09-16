@@ -52,6 +52,7 @@ import {
   rollupSoLine,
 } from '../../lib/calc-engine';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -208,13 +209,17 @@ export async function getSoOverview(
       else logsByOp.set(log.jcOpId, [log]);
     }
     const runningOpIds = new Set(runningRows.map((r) => r.jcOpId));
+    // G9c: what Incoming QC accepted off each outsource op's GRNs, so the op
+    // reads complete (and stops counting as at-vendor) once the vendor has
+    // returned everything.
+    const ospAcceptedByOp = await loadOspAcceptedByOp(tx, companyId, jcIds);
 
     // Build per-JC enriched rollups once. Keyed by JC id for the per-line walk.
     const rollupByJcId = new Map<string, JCRollup>();
     for (const jc of jcRows) {
       const ops = opsByJc.get(jc.id) ?? [];
       const opLogsForJc = ops.flatMap((o) => logsByOp.get(o.id) ?? []);
-      const enriched = enrichOps(jc, ops, opLogsForJc, runningOpIds);
+      const enriched = enrichOps(jc, ops, opLogsForJc, runningOpIds, ospAcceptedByOp);
       rollupByJcId.set(jc.id, rollupJC(jc, enriched));
     }
 
@@ -537,12 +542,14 @@ export async function getSoOverviewDetail(
       else logsByOp.set(log.jcOpId, [log]);
     }
     const runningOpIds = new Set(runningRows.map((r) => r.jcOpId));
+    // G9c: GRN-accepted qty per outsource op (see the list builder above).
+    const ospAcceptedByOp = await loadOspAcceptedByOp(tx, companyId, jcIds);
 
     const rollupByJcId = new Map<string, { rollup: JCRollup; ops: EnrichedOp[] }>();
     for (const jc of jcRows) {
       const ops = opsByJc.get(jc.id) ?? [];
       const opLogsForJc = ops.flatMap((o) => logsByOp.get(o.id) ?? []);
-      const enriched = enrichOps(jc, ops, opLogsForJc, runningOpIds);
+      const enriched = enrichOps(jc, ops, opLogsForJc, runningOpIds, ospAcceptedByOp);
       rollupByJcId.set(jc.id, { rollup: rollupJC(jc, enriched), ops: enriched });
     }
 

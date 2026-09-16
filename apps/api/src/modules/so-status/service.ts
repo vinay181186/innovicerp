@@ -47,6 +47,7 @@ import {
   rollupSoLine,
 } from '../../lib/calc-engine';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -272,6 +273,10 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       else logsByOp.set(log.jcOpId, [log]);
     }
     const runningOpIds = new Set(runningRows.map((r) => r.jcOpId));
+    // G9c: what Incoming QC accepted off each outsource op's GRNs, so the op
+    // reads complete (and stops counting as at-vendor) once the vendor has
+    // returned everything.
+    const ospAcceptedByOp = await loadOspAcceptedByOp(tx, companyId, jcIds);
 
     // Build JC rollups via calc-engine.
     const rollupByJcId = new Map<string, { rollup: JCRollup; ops: EnrichedOp[] }>();
@@ -282,7 +287,13 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       };
       const ops = opsByJc.get(jc.id) ?? [];
       const opLogsForJc = ops.flatMap((o) => logsByOp.get(o.id) ?? []);
-      const enriched = enrichOps(jcForCalc as never, ops, opLogsForJc, runningOpIds);
+      const enriched = enrichOps(
+        jcForCalc as never,
+        ops,
+        opLogsForJc,
+        runningOpIds,
+        ospAcceptedByOp,
+      );
       const rollup = rollupJC(jcForCalc as never, enriched);
       rollupByJcId.set(jc.id, { rollup, ops: enriched });
     }

@@ -13,6 +13,12 @@
 //
 // Math primer (mirrors legacy):
 //   completed   = sum(qty) of op_log rows where log_type='complete'
+//                 + for an outsource op, the qty accepted at Incoming QC on the
+//                 GRNs against its PO line(s) (G9c, gap report 2026-09-16 —
+//                 the caller passes that per-op sum in; see
+//                 lib/osp-accepted.ts). Without it an outsource op never read
+//                 complete here even at 10/10 accepted, and at_vendor stayed
+//                 at the full input.
 //   qcAccepted  = sum(qty) of op_log rows where log_type='qc'
 //   qcRejected  = sum(reject_qty) of op_log rows where log_type='qc'
 //   inputAvail  = first op? jc.orderQty : previous op's "output" (qcAccepted if
@@ -96,6 +102,11 @@ export function enrichOps(
   ops: JcOpRow[],
   logs: OpLogRow[],
   runningOpIds: Set<string>,
+  /** Per-op Σ goods_receipt_note_lines.qc_accepted_qty for OUTSOURCE ops
+   *  (keyed by jc_ops.id). Optional so every existing caller keeps its
+   *  behaviour; pass it to have outsource ops count what the vendor's GRNs
+   *  cleared, exactly as v_jc_op_status.completed_qty does (0128). */
+  ospAcceptedByOp?: ReadonlyMap<string, number>,
 ): EnrichedOp[] {
   const opsSorted = [...ops].sort((a, b) => a.opSeq - b.opSeq);
   const logsByOp = new Map<string, OpLogRow[]>();
@@ -121,6 +132,11 @@ export function enrichOps(
         qcRejected += log.rejectQty;
       }
       // 'start' logs are session markers, don't contribute to qty
+    }
+    // G9c: an outsource op is "done" by the pieces Incoming QC accepted off its
+    // GRNs, not by op_log rows (nobody logs a vendor's work here).
+    if (op.opType === 'outsource' && ospAcceptedByOp) {
+      completed += ospAcceptedByOp.get(op.id) ?? 0;
     }
 
     const prev = enriched[i - 1];
@@ -199,6 +215,10 @@ interface StatusInput {
 
 function deriveOpStatus(s: StatusInput): OpStatus {
   if (s.opType === 'outsource') {
+    // G9c: every piece the op was fed has come back accepted → complete,
+    // whatever the outsource_status stamp says. Only reachable when the caller
+    // fed ospAcceptedByOp (or logged complete rows against the op).
+    if (s.inputAvail > 0 && s.completed >= s.inputAvail) return 'complete';
     switch (s.outsourceStatus) {
       case 'pr_raised':
         return 'outsource_pr_raised';

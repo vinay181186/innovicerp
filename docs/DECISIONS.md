@@ -8948,3 +8948,41 @@ side was not:
 - Out of scope (batch 2/3): `v_nc_op_breakup` per-generation double count and its missing
   `disposed` bucket (G7), `parent_nc_id` (G8), PO-reject release / multi-PO rollups / SO
   status op-log-only (G9).
+
+## ADR-167: OSP chain batch 2/3 — the NC strip counts pieces not generations, a follow-on NC knows its parent, and the loose ends around a PO
+
+**Date:** 2026-09-16
+**Status:** Accepted
+
+### Context
+
+Remaining gaps from the OSP chain audit (`docs/audits/2026-09-16-osp-chain-gap-report.md`)
+after ADR-166: G7 (`v_nc_op_breakup` counted a failed replacement once per NC generation —
+"NC closed 7" for 3 rejected pieces — and had no bucket for an NC that is disposed
+return-to-vendor but not yet shipped, so those pieces vanished from the op card), G8 (a
+second-cycle NC carried no link to the NC whose pieces it holds), G9 (PO reject left the op
+pointing at a cancelled PO; GRN rollups read only the op's first PO line while the challan
+guards read every linked line; SO Status / SO Overview counted op-log only so an OSP op never
+read complete there; a JW-only job card created directly left its OSP op with no PR).
+
+### Decision
+
+1. `v_nc_op_breakup.nc_closed_qty` = Σ `cleared_qty` of closed non-scrap NCs (not rejected
+   qty); new trailing column `rtv_awaiting_challan_qty` (return-to-vendor chosen, status
+   `disposed`), rendered on the op card as "Return challan pending" (migration 0129).
+2. `nc_register.parent_nc_id` (0129, back-filled from the replacement GRN's `nc_id`): set by
+   the auto-NC raised on an Incoming-QC reject of a replacement line; exposed as
+   `parentNcId` / `parentNcCode`; shown as "Continues NC …" on the NC page and in related docs.
+3. GRN rollups in `v_jc_op_status` / `v_osp_wip` read every PO line linked through
+   `jc_op_po_lines` (falling back to `outsource_po_line_id` for pre-0118 ops) — migration 0130.
+4. A PO that becomes `cancelled` (reject, or cancel with no challan and no GRN) releases its
+   job-card ops back to `pr_raised` and re-opens the PR; a cancel with paper behind it is
+   refused naming the document.
+5. SO Status / SO Overview count GRN-accepted qty as completion for outsource ops.
+6. `createJobCard` raises the OSP PR the way `updateJobCard` already did.
+
+### Consequences
+
+- Positive: the op card, NC register and SO screens agree with the physical pieces through
+  any number of return cycles; the NC chain is navigable; a dead PO no longer blocks the op.
+- Negative: two more manual migrations (0129, 0130) per database.

@@ -20,8 +20,10 @@ import { type SQL, and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   approvalConfig,
   deliveryChallans,
+  goodsReceiptNoteLines,
   goodsReceiptNotes,
   items,
+  jcOpPoLines,
   jcOps,
   jobCards,
   jwDcOutward,
@@ -839,11 +841,7 @@ function codeWithRevision(supplied: string): string {
  *  that and the counter would skip every revised PO and re-issue its number.
  *
  *  A brand-new PO is born at revision 1 — IN-MPO-00006/R1. */
-async function nextPoCode(
-  tx: DbTransaction,
-  companyId: string,
-  poType: PoType,
-): Promise<string> {
+async function nextPoCode(tx: DbTransaction, companyId: string, poType: PoType): Promise<string> {
   const prefix = poCodePrefix(poType);
   const rows = await tx
     .select({ code: purchaseOrders.code })
@@ -1820,9 +1818,15 @@ export async function softDeletePurchaseOrder(
     if (!row) {
       throw new NotFoundError(`Purchase order ${id} not found`);
     }
-    // T-036c will add a guard: block delete when GRN lines reference this PO's
-    // lines. For T-036b we'll let the soft-delete go through; once GRN module
-    // exists the guard becomes meaningful.
+    // G9a: a PO with goods moved against it cannot simply vanish — the
+    // challan / receipt would point at nothing. Cancelled challans do not
+    // count. Named so the user knows which document holds it.
+    const liveDoc = await poLiveGoodsDoc(tx, companyId, id);
+    if (liveDoc) {
+      throw new ConflictError(
+        `PO ${row.code} has goods moved against it (${liveDoc}); cancel that document first`,
+      );
+    }
     const now = new Date();
     await tx
       .update(purchaseOrderLines)
@@ -1832,6 +1836,8 @@ export async function softDeletePurchaseOrder(
       .update(purchaseOrders)
       .set({ deletedAt: now, updatedBy: user.id })
       .where(eq(purchaseOrders.id, id));
+    // G9a: hand the outsourced ops and the PRs back (see releaseJcOpsForCancelledPo).
+    await releaseJcOpsForCancelledPo(tx, companyId, { id, code: row.code }, user);
     await emitActivityLog(
       tx,
       {
@@ -1845,6 +1851,288 @@ export async function softDeletePurchaseOrder(
     );
     return { ok: true };
   });
+}
+
+// ─── Cancel / delete: release the outsourced ops (G9a) ─────────────────────
+//
+// Before this, rejecting a draft PO (or deleting one) left every jc_ops row it
+// covered at `po_created` with `outsource_po_line_id` pointing at a dead line:
+// the op could never take another PO, Gen DC stayed gated on it, and the PR
+// behind it read `po_created` for a purchase that no longer existed. Modelled
+// on releaseSourceJcOps in purchase-requests/service.ts.
+
+/** Code of the first document that has moved goods against this PO and is
+ *  still alive — a non-cancelled Delivery Challan, a JW outward DC, or a GRN
+ *  line — or null when the PO can be cancelled cleanly. Unlike
+ *  poGoodsMovementDoc, a CANCELLED challan does not count: it moved nothing. */
+async function poLiveGoodsDoc(
+  tx: DbTransaction,
+  companyId: string,
+  poId: string,
+): Promise<string | null> {
+  const [dc, jwDc, grnLine] = await Promise.all([
+    tx
+      .select({ code: deliveryChallans.code })
+      .from(deliveryChallans)
+      .where(
+        and(
+          eq(deliveryChallans.companyId, companyId),
+          eq(deliveryChallans.purchaseOrderId, poId),
+          sql`${deliveryChallans.status} <> 'cancelled'`,
+          isNull(deliveryChallans.deletedAt),
+        ),
+      )
+      .limit(1),
+    tx
+      .select({ code: jwDcOutward.code })
+      .from(jwDcOutward)
+      .where(
+        and(
+          eq(jwDcOutward.companyId, companyId),
+          eq(jwDcOutward.purchaseOrderId, poId),
+          isNull(jwDcOutward.deletedAt),
+        ),
+      )
+      .limit(1),
+    // GRN lines by PO LINE, not only by header: a receipt raised against the
+    // line from another screen still counts.
+    tx
+      .select({ code: goodsReceiptNotes.code })
+      .from(goodsReceiptNoteLines)
+      .innerJoin(
+        goodsReceiptNotes,
+        eq(goodsReceiptNotes.id, goodsReceiptNoteLines.goodsReceiptNoteId),
+      )
+      .innerJoin(
+        purchaseOrderLines,
+        eq(purchaseOrderLines.id, goodsReceiptNoteLines.purchaseOrderLineId),
+      )
+      .where(
+        and(
+          eq(goodsReceiptNotes.companyId, companyId),
+          eq(purchaseOrderLines.purchaseOrderId, poId),
+          isNull(goodsReceiptNoteLines.deletedAt),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .limit(1),
+  ]);
+  return dc[0]?.code ?? jwDc[0]?.code ?? grnLine[0]?.code ?? null;
+}
+
+/** Free every outsourced op and PR this PO was holding. Runs inside the
+ *  caller's tx, AFTER the PO row has been marked cancelled / deleted.
+ *
+ *  Per jc_ops row whose `outsource_po_line_id` is one of this PO's lines:
+ *   - its jc_op_po_lines rows on this PO are soft-deleted;
+ *   - if another live link (a second PO) still covers the op, the legacy
+ *     column is re-pointed at that line and the op keeps its status;
+ *   - otherwise `outsource_po_line_id` is cleared and the op goes back to
+ *     `pr_raised` when its PR is still alive, or all the way to NULL (no PR)
+ *     when the PR is cancelled / gone — the same resting state
+ *     releaseSourceJcOps leaves, so the JC edit auto-PR can raise a fresh one.
+ *  Per PR this PO drew on (line source_pr_id or the op's outsource_pr_id):
+ *   - when no OTHER live PO line remains, status goes back from `po_created`
+ *     to `approved` (if it had been approved) or `open`, and the first-PO
+ *     stamp (po_id / po_created_at) is cleared if it named this PO — with the
+ *     lines soft-deleted, a stale po_id would make deriveOrderedQty read the
+ *     PR as fully bought forever (the legacy rule there). */
+async function releaseJcOpsForCancelledPo(
+  tx: DbTransaction,
+  companyId: string,
+  po: { id: string; code: string },
+  user: AuthContext,
+): Promise<void> {
+  const now = new Date();
+  // Every line of this PO, soft-deleted or not: an op may still point at one.
+  const lineRows = await tx
+    .select({ id: purchaseOrderLines.id, sourcePrId: purchaseOrderLines.sourcePrId })
+    .from(purchaseOrderLines)
+    .where(
+      and(
+        eq(purchaseOrderLines.purchaseOrderId, po.id),
+        eq(purchaseOrderLines.companyId, companyId),
+      ),
+    );
+  const lineIds = lineRows.map((l) => l.id);
+  if (lineIds.length === 0) return;
+
+  const ops = await tx
+    .select({
+      id: jcOps.id,
+      jobCardId: jcOps.jobCardId,
+      opSeq: jcOps.opSeq,
+      operation: jcOps.operation,
+      outsourcePrId: jcOps.outsourcePrId,
+      outsourceStatus: jcOps.outsourceStatus,
+    })
+    .from(jcOps)
+    .where(
+      and(
+        eq(jcOps.companyId, companyId),
+        inArray(jcOps.outsourcePoLineId, lineIds),
+        isNull(jcOps.deletedAt),
+      ),
+    );
+
+  // The multi-PO links on this PO's lines are dead with it.
+  await tx
+    .update(jcOpPoLines)
+    .set({ deletedAt: now, updatedAt: now, updatedBy: user.id })
+    .where(
+      and(
+        eq(jcOpPoLines.companyId, companyId),
+        inArray(jcOpPoLines.purchaseOrderLineId, lineIds),
+        isNull(jcOpPoLines.deletedAt),
+      ),
+    );
+
+  // PRs in play: the lines' source PRs plus the ops' own PR links.
+  const prIds = Array.from(
+    new Set(
+      [...lineRows.map((l) => l.sourcePrId), ...ops.map((o) => o.outsourcePrId)].filter(
+        (v): v is string => Boolean(v),
+      ),
+    ),
+  );
+  const prRows =
+    prIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: purchaseRequests.id,
+            code: purchaseRequests.code,
+            status: purchaseRequests.status,
+            poId: purchaseRequests.poId,
+            approvedAt: purchaseRequests.approvedAt,
+          })
+          .from(purchaseRequests)
+          .where(
+            and(
+              eq(purchaseRequests.companyId, companyId),
+              inArray(purchaseRequests.id, prIds),
+              isNull(purchaseRequests.deletedAt),
+            ),
+          );
+  const prById = new Map(prRows.map((p) => [p.id, p]));
+
+  const jcCodeById = new Map<string, string>();
+  if (ops.length > 0) {
+    const jcRows = await tx
+      .select({ id: jobCards.id, code: jobCards.code })
+      .from(jobCards)
+      .where(inArray(jobCards.id, Array.from(new Set(ops.map((o) => o.jobCardId)))));
+    for (const r of jcRows) jcCodeById.set(r.id, r.code);
+  }
+
+  for (const op of ops) {
+    // A second, still-live PO on this op? Keep the op committed to it.
+    const other = await tx
+      .select({ purchaseOrderLineId: jcOpPoLines.purchaseOrderLineId })
+      .from(jcOpPoLines)
+      .innerJoin(purchaseOrderLines, eq(purchaseOrderLines.id, jcOpPoLines.purchaseOrderLineId))
+      .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.purchaseOrderId))
+      .where(
+        and(
+          eq(jcOpPoLines.jcOpId, op.id),
+          isNull(jcOpPoLines.deletedAt),
+          isNull(purchaseOrderLines.deletedAt),
+          isNull(purchaseOrders.deletedAt),
+          sql`${purchaseOrders.status} <> 'cancelled'`,
+        ),
+      )
+      .orderBy(asc(jcOpPoLines.createdAt))
+      .limit(1);
+    const jcCode = jcCodeById.get(op.jobCardId) ?? op.jobCardId;
+    if (other[0]) {
+      await tx
+        .update(jcOps)
+        .set({
+          outsourcePoLineId: other[0].purchaseOrderLineId,
+          updatedAt: now,
+          updatedBy: user.id,
+        })
+        .where(eq(jcOps.id, op.id));
+      await emitActivityLog(
+        tx,
+        {
+          action: 'UPDATE',
+          entity: 'Job Card',
+          detail: `${jcCode} Op${op.opSeq} "${op.operation}" — PO ${po.code} cancelled; op stays on its other purchase order`,
+          refId: jcCode,
+        },
+        companyId,
+        user,
+      );
+      continue;
+    }
+    const pr = op.outsourcePrId ? prById.get(op.outsourcePrId) : undefined;
+    const prAlive = pr !== undefined && pr.status !== 'cancelled';
+    await tx
+      .update(jcOps)
+      .set({
+        outsourcePoLineId: null,
+        outsourcePrId: prAlive ? op.outsourcePrId : null,
+        outsourceStatus: prAlive ? 'pr_raised' : null,
+        updatedAt: now,
+        updatedBy: user.id,
+      })
+      .where(eq(jcOps.id, op.id));
+    await emitActivityLog(
+      tx,
+      {
+        action: 'UPDATE',
+        entity: 'Job Card',
+        detail:
+          `${jcCode} Op${op.opSeq} "${op.operation}" — released from PO ${po.code} (cancelled): ` +
+          (prAlive && pr ? `back to PR raised (${pr.code})` : 'no PR — awaiting a fresh PR'),
+        refId: jcCode,
+      },
+      companyId,
+      user,
+    );
+  }
+
+  // PRs: reopen the ones this was the only purchase order for.
+  for (const pr of prRows) {
+    if (pr.status !== 'po_created') continue;
+    const remaining = await tx
+      .select({ id: purchaseOrderLines.id })
+      .from(purchaseOrderLines)
+      .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.purchaseOrderId))
+      .where(
+        and(
+          eq(purchaseOrderLines.sourcePrId, pr.id),
+          sql`${purchaseOrderLines.purchaseOrderId} <> ${po.id}::uuid`,
+          isNull(purchaseOrderLines.deletedAt),
+          isNull(purchaseOrders.deletedAt),
+          sql`${purchaseOrders.status} <> 'cancelled'`,
+        ),
+      )
+      .limit(1);
+    if (remaining[0]) continue;
+    const backTo = pr.approvedAt ? 'approved' : 'open';
+    await tx
+      .update(purchaseRequests)
+      .set({
+        status: backTo,
+        ...(pr.poId === po.id ? { poId: null, poCreatedAt: null } : {}),
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(purchaseRequests.id, pr.id));
+    await emitActivityLog(
+      tx,
+      {
+        action: 'UPDATE',
+        entity: 'PurchaseRequest',
+        detail: `${pr.code} back to ${backTo} — its only purchase order ${po.code} was cancelled`,
+        refId: pr.code,
+      },
+      companyId,
+      user,
+    );
+  }
 }
 
 // ─── Create-from-PR ───────────────────────────────────────────────────────
@@ -2347,6 +2635,9 @@ export async function rejectPurchaseOrder(
         updatedAt: new Date(),
       })
       .where(eq(purchaseOrders.id, id));
+
+    // G9a: a rejected PO holds nothing — hand its outsourced ops and PRs back.
+    await releaseJcOpsForCancelledPo(tx, companyId, { id: po.id, code: po.code }, user);
 
     await emitActivityLog(
       tx,

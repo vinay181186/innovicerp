@@ -12,7 +12,7 @@
 // Filters live as conditional `sql\`\`` fragments. machineId / operatorId use
 // EXISTS sub-selects on jc_ops / op_log so we don't blow up the row set.
 
-import { and, count, desc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
   deliveryChallans,
@@ -1570,6 +1570,88 @@ async function registerQcDocs(
   );
 }
 
+/** Auto-raise a JW_OSP purchase request for every outsource op on the card
+ *  that is not yet linked to a PR, so an op typed OSP behaves exactly like one
+ *  created via Plan execute (executeManufacture raises the same PR). Re-queries
+ *  the persisted op ids. The `outsource_pr_id IS NULL AND outsource_status IS
+ *  NULL` filter is the duplicate guard: a committed op already carries these,
+ *  so it is never re-raised (the edit path's lock guard also blocks retyping
+ *  one). Runs in the caller's tx. Returns the PR codes it raised.
+ *
+ *  Shared by updateJobCard (where it was born) and createJobCard (G9d, gap
+ *  report 2026-09-16): a JW-only card created with an OSP op used to sit with
+ *  `outsource_status = NULL` and no PR until somebody edited it. */
+async function autoRaiseOspPrs(
+  tx: DbTransaction,
+  args: {
+    companyId: string;
+    jobCardId: string;
+    jcCode: string;
+    jcDate: string;
+    orderQty: number;
+    item: { id: string; code: string };
+    sourceSoLineId: string | null;
+    /** Printed in the PR remark: 'JC edit' | 'JC create'. */
+    origin: string;
+    userId: string;
+  },
+): Promise<string[]> {
+  const raisedPrCodes: string[] = [];
+  if (args.orderQty <= 0) return raisedPrCodes; // PR qty must be > 0 (DB check constraint)
+  const opsNeedingPr = await tx
+    .select({
+      id: jcOps.id,
+      operation: jcOps.operation,
+      outsourceVendorId: jcOps.outsourceVendorId,
+      outsourceVendorText: jcOps.outsourceVendorText,
+      outsourceCost: jcOps.outsourceCost,
+    })
+    .from(jcOps)
+    .where(
+      and(
+        eq(jcOps.jobCardId, args.jobCardId),
+        eq(jcOps.opType, 'outsource'),
+        isNull(jcOps.deletedAt),
+        isNull(jcOps.outsourcePrId),
+        isNull(jcOps.outsourceStatus),
+      ),
+    )
+    .orderBy(asc(jcOps.opSeq));
+  for (const op of opsNeedingPr) {
+    const prCode = await nextSeriesCode(tx, 'pr', args.companyId, 'IN-JWPR-');
+    const prRows = await tx
+      .insert(purchaseRequests)
+      .values({
+        companyId: args.companyId,
+        code: prCode,
+        prDate: args.jcDate,
+        status: 'open',
+        prType: 'jw_osp',
+        vendorId: op.outsourceVendorId ?? null,
+        // PR needs a vendor id OR text; flag "decide at PO time" when neither.
+        vendorCodeText: op.outsourceVendorId ? null : (op.outsourceVendorText ?? OSP_VENDOR_TBD),
+        itemId: args.item.id,
+        itemCodeText: args.item.code,
+        qty: args.orderQty,
+        estCost: op.outsourceCost ?? '0',
+        sourceJcOpId: op.id,
+        sourceSoLineId: args.sourceSoLineId,
+        operation: op.operation,
+        remarks: `Auto OSP PR on ${args.origin} — op "${op.operation}" (${args.jcCode})`,
+        createdBy: args.userId,
+        updatedBy: args.userId,
+      })
+      .returning({ id: purchaseRequests.id });
+    const prId = prRows[0]!.id;
+    raisedPrCodes.push(prCode);
+    await tx
+      .update(jcOps)
+      .set({ outsourcePrId: prId, outsourceStatus: 'pr_raised', updatedBy: args.userId })
+      .where(eq(jcOps.id, op.id));
+  }
+  return raisedPrCodes;
+}
+
 export async function createJobCard(
   input: JobCardWriteInput,
   user: AuthContext,
@@ -1637,12 +1719,26 @@ export async function createJobCard(
       .returning({ id: jobCards.id });
     const jobCardId = jc!.id;
 
+    let raisedPrCodes: string[] = [];
     if (ops.length > 0) {
       await tx
         .insert(jcOps)
         .values(
           buildOpRows(ops, types, { companyId, jobCardId, userId: user.id }, machineMap, vendorMap),
         );
+      // G9d: a JW card born with an OSP op gets its purchase request NOW, in
+      // the same tx, instead of waiting for the first edit to trigger it.
+      raisedPrCodes = await autoRaiseOspPrs(tx, {
+        companyId,
+        jobCardId,
+        jcCode: code,
+        jcDate: input.jcDate,
+        orderQty: input.orderQty,
+        item,
+        sourceSoLineId: input.sourceSoLineId ?? null,
+        origin: 'JC create',
+        userId: user.id,
+      });
       // ADR-051 write half: remember this item's routing so the next plan for
       // the same item can load it back. Same transaction as the JC — a failure
       // here rolls the Job Card back too. Deliberately fed `input.ops` (what
@@ -1664,7 +1760,9 @@ export async function createJobCard(
       {
         action: 'CREATE',
         entity: 'Job Card',
-        detail: `Created ${code} — ${item.code} x ${input.orderQty}`,
+        detail: `Created ${code} — ${item.code} x ${input.orderQty}${
+          raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
+        }`,
         refId: code,
       },
       companyId,
@@ -2017,65 +2115,18 @@ export async function updateJobCard(
     }
 
     // 3b. Auto-raise a JW_OSP purchase request for every op that is now
-    //     outsource but not yet linked to a PR — so editing an op to OSP behaves
-    //     exactly like creating one via Plan execute (executeManufacture raises
-    //     the same PR). Covers both newly-added outsource ops and ops flipped
-    //     process/qc → outsource. Re-query post-upsert to read the persisted op
-    //     ids. The `outsource_pr_id IS NULL AND outsource_status IS NULL` filter
-    //     is the duplicate guard: a committed op already carries these, so it is
-    //     never re-raised (the lock guard above also blocks retyping one).
-    const raisedPrCodes: string[] = [];
-    const opsNeedingPr = await tx
-      .select({
-        id: jcOps.id,
-        operation: jcOps.operation,
-        outsourceVendorId: jcOps.outsourceVendorId,
-        outsourceVendorText: jcOps.outsourceVendorText,
-        outsourceCost: jcOps.outsourceCost,
-      })
-      .from(jcOps)
-      .where(
-        and(
-          eq(jcOps.jobCardId, id),
-          eq(jcOps.opType, 'outsource'),
-          isNull(jcOps.deletedAt),
-          isNull(jcOps.outsourcePrId),
-          isNull(jcOps.outsourceStatus),
-        ),
-      );
-    for (const op of opsNeedingPr) {
-      if (input.orderQty <= 0) continue; // PR qty must be > 0 (DB check constraint)
-      const prCode = await nextSeriesCode(tx, 'pr', companyId, 'IN-JWPR-');
-      const prRows = await tx
-        .insert(purchaseRequests)
-        .values({
-          companyId,
-          code: prCode,
-          prDate: input.jcDate,
-          status: 'open',
-          prType: 'jw_osp',
-          vendorId: op.outsourceVendorId ?? null,
-          // PR needs a vendor id OR text; flag "decide at PO time" when neither.
-          vendorCodeText: op.outsourceVendorId ? null : (op.outsourceVendorText ?? OSP_VENDOR_TBD),
-          itemId: item.id,
-          itemCodeText: item.code,
-          qty: input.orderQty,
-          estCost: op.outsourceCost ?? '0',
-          sourceJcOpId: op.id,
-          sourceSoLineId: head.sourceSoLineId,
-          operation: op.operation,
-          remarks: `Auto OSP PR on JC edit — op "${op.operation}" (${head.code})`,
-          createdBy: user.id,
-          updatedBy: user.id,
-        })
-        .returning({ id: purchaseRequests.id });
-      const prId = prRows[0]!.id;
-      raisedPrCodes.push(prCode);
-      await tx
-        .update(jcOps)
-        .set({ outsourcePrId: prId, outsourceStatus: 'pr_raised', updatedBy: user.id })
-        .where(eq(jcOps.id, op.id));
-    }
+    //     outsource but not yet linked to a PR (see autoRaiseOspPrs).
+    const raisedPrCodes = await autoRaiseOspPrs(tx, {
+      companyId,
+      jobCardId: id,
+      jcCode: head.code,
+      jcDate: input.jcDate,
+      orderQty: input.orderQty,
+      item,
+      sourceSoLineId: head.sourceSoLineId,
+      origin: 'JC edit',
+      userId: user.id,
+    });
 
     // 4. Header.
     // Resolved once, up here: the header write below AND the route-card
