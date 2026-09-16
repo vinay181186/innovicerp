@@ -44,7 +44,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
 import { generateOspPrForOp } from './osp-cascade';
-import { tryApplyQcStockCascade } from './qc-stock-cascade';
+import { recoveryChildCreditsStock, tryApplyQcStockCascade } from './qc-stock-cascade';
 import { tryCascadeJcComplete } from './sales-cascade';
 import type {
   DecideOpLogTimeChangeInput,
@@ -1346,10 +1346,10 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       .select({
         code: jobCards.code,
         // Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4): the two
-        // fields the recovery cascade and the stock guard below key off.
+        // fields the recovery cascade and the parent close check key off. The
+        // stock guard reads its own copy inside recoveryChildCreditsStock.
         recoveryKind: jobCards.recoveryKind,
         parentJobCardId: jobCards.parentJobCardId,
-        originOpSeq: jobCards.originOpSeq,
       })
       .from(jobCards)
       .where(eq(jobCards.id, op.jobCardId))
@@ -1469,18 +1469,10 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // where the child IS the last inspection the pieces will ever get is when
     // the origin op is the parent's terminal op — the re-injected op_log row
     // is written directly, not through submitQcLog, so nothing else credits
-    // them and the child must.
-    let creditsStock = true;
-    if (recoveryKind && jcMeta[0]?.parentJobCardId) {
-      const parentLast = await tx
-        .select({ opSeq: jcOps.opSeq })
-        .from(jcOps)
-        .where(and(eq(jcOps.jobCardId, jcMeta[0].parentJobCardId), isNull(jcOps.deletedAt)))
-        .orderBy(desc(jcOps.opSeq))
-        .limit(1);
-      const parentLastSeq = parentLast[0]?.opSeq ?? null;
-      creditsStock = parentLastSeq != null && parentLastSeq === jcMeta[0].originOpSeq;
-    }
+    // them and the child must. The rule lives in recoveryChildCreditsStock
+    // (op-entry/qc-stock-cascade.ts) and is shared with incoming-qc's mirror
+    // (mirrorIncomingQcOntoNextQcOp) so the two writers cannot drift.
+    const creditsStock = await recoveryChildCreditsStock(tx, companyId, op.jobCardId);
 
     // T-040f: stock cascade — if this QC log is against the LAST op of the
     // JC AND qty (accepted) > 0, write a store_transactions IN row crediting

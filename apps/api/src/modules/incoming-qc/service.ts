@@ -32,6 +32,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import {
   creditGrnQcStock,
   recalcPoHeaderStatus,
@@ -39,7 +40,7 @@ import {
 } from '../goods-receipt-notes/cascades';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onNcReplacementQc, onRecoveryJobCardQc } from '../nc-register/recovery';
-import { tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
+import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 
 function requireCompany(user: AuthContext): string {
@@ -87,6 +88,7 @@ function dispositionOf(
  */
 async function creditOutsourceReturn(
   tx: DbTransaction,
+  companyId: string,
   jcOpId: string | null,
   acceptedDelta: number,
   userId: string,
@@ -108,7 +110,16 @@ async function creditOutsourceReturn(
   if (!op) return;
   if (op.opType !== 'outsource' && (op.sentQty ?? 0) <= 0) return;
   const newReturned = (op.returnedQty ?? 0) + acceptedDelta;
-  const fullyReturned = op.sentQty > 0 && newReturned >= op.sentQty;
+  // The 'received' flip needs BOTH: the QC-accepted total covers the sent qty
+  // AND the shared "every piece is back in the building" predicate agrees
+  // (ordinary receipts cover outsource_sent_qty, no return-to-vendor piece
+  // still out on ANY NC of this op). Without the second half, two open RTV
+  // NCs on one op could read 'received' here while receipt-cascades /
+  // nc-register still had pieces at the vendor — two writers disagreeing on
+  // one column. The returned-qty increment itself is unconditional.
+  const returnedCoversSent = op.sentQty > 0 && newReturned >= op.sentQty;
+  const fullyReturned =
+    returnedCoversSent && (await isOspOpFullyBack(tx, companyId, op.id, op.sentQty)).fullyBack;
   await tx
     .update(jcOps)
     .set({
@@ -262,7 +273,16 @@ async function mirrorIncomingQcOntoNextQcOp(
   // nothing (a later op's QC does). No double credit either way: the GRN's own
   // grn_qc row was skipped because the line is mid-route, and this one writes
   // source_type 'qc_accept' against the JC op, exactly as a keyed QC log would.
-  if (mirroredId) {
+  //
+  // Recovery-child guard (ADR-069), the SAME one op-entry/service.submitQcLog
+  // applies before its own tryApplyQcStockCascade: on a rework/repair CHILD
+  // job card the accepted pieces are re-injected into the PARENT route by
+  // onRecoveryJobCardQc (just above) and the parent's terminal QC credits them
+  // later, so crediting here too would book every recovered piece twice. The
+  // child credits only when the origin op IS the parent's terminal op. One
+  // implementation (recoveryChildCreditsStock) serves both writers so they
+  // stay in lock-step.
+  if (mirroredId && (await recoveryChildCreditsStock(tx, companyId, src.jobCardId))) {
     await tryApplyQcStockCascade(
       tx,
       {
@@ -589,7 +609,13 @@ export async function submitIncomingQc(
         // sent qty. The replacement's accepted pieces are that debt being
         // paid, and without this credit `returned` could never reach `sent`
         // and the op would sit at 'sent' with the material in the building.
-        await creditOutsourceReturn(tx, poRows[0].sourceJcOpId, input.acceptedQty, user.id);
+        await creditOutsourceReturn(
+          tx,
+          companyId,
+          poRows[0].sourceJcOpId,
+          input.acceptedQty,
+          user.id,
+        );
         // Also for a replacement (line.ncId set) — see the mirror's docstring:
         // the NC settlement below writes no op_log row for a PO-linked origin,
         // so this is the only path that carries accepted replacement pieces

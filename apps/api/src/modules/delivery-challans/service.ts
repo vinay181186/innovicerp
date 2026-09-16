@@ -29,7 +29,7 @@ import {
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
-import { onNcChallanReceived } from '../nc-register/recovery';
+import { onNcChallanCancelled, onNcChallanReceived } from '../nc-register/recovery';
 import {
   applyOutwardToJcOp,
   jobWorkUnlinkedRefusal,
@@ -1222,11 +1222,22 @@ export async function cancelDeliveryChallan(
       );
 
     const opCascades: Array<{ jcCode: string; opSeq: number; qty: number }> = [];
+    if (header.ncId) {
+      // Return-to-vendor challan (createNcDc, ADR-166). Its one line carries
+      // the origin op's PO line for the print, but createNcDc never added its
+      // qty to jc_ops.outsource_sent_qty (that column counts ordinary sends
+      // only), so reverseOutwardFromJcOp must NOT run here — it would subtract
+      // pieces that were never added. What has to be unwound instead is the
+      // NC's rtv ledger, the op status createNcDc demoted, and the PO line
+      // received_qty the ADR-165 formula lowered when the challan went out.
+      // Receipts are already ruled out above (dcHasActiveReceipts).
+      await onNcChallanCancelled(tx, { ncId: header.ncId, deliveryChallanId: id }, companyId, user);
+    }
     for (const dl of lineRows) {
       const qtyInt = Math.round(Number(dl.qty));
       // Option A (ADR-067): OSP send no longer touches stock, so cancel has no
       // ledger movement to reverse — only the jc_op sent-qty is unwound below.
-      if (dl.purchaseOrderLineId) {
+      if (dl.purchaseOrderLineId && !header.ncId) {
         const result = await reverseOutwardFromJcOp({
           tx,
           companyId,
