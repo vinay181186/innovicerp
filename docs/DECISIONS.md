@@ -8949,6 +8949,22 @@ side was not:
   `disposed` bucket (G7), `parent_nc_id` (G8), PO-reject release / multi-PO rollups / SO
   status op-log-only (G9).
 
+### Addendum (2026-09-16, after `/code-review` of the batch)
+
+Three findings, all fixed before the batch went further:
+- The mirror's stock credit lacked op-entry's recovery-child guard (a rework child whose
+  origin op is not the parent's terminal op would have booked every recovered piece twice).
+  One helper, `recoveryChildCreditsStock`, now serves both `submitQcLog` and the mirror.
+- Cancelling a return-to-vendor challan left the NC at `sent_to_vendor` with `rtv_sent_qty`
+  set, so the op could never return to `received` and the pieces stayed "at vendor" on
+  paper. `cancelDeliveryChallan` now calls `onNcChallanCancelled` (NC back to `disposed`,
+  challan link cleared, op restored through the same fully-back predicate, PO line
+  recomputed) and no longer reverses `outsource_sent_qty` for a challan that never added
+  to it.
+- `creditOutsourceReturn` could mark an op `received` while a second RTV NC still had
+  pieces out; it now consults `isOspOpFullyBack` too, so there is one definition of
+  "received".
+
 ## ADR-167: OSP chain batch 2/3 — the NC strip counts pieces not generations, a follow-on NC knows its parent, and the loose ends around a PO
 
 **Date:** 2026-09-16

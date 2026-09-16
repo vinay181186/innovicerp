@@ -710,6 +710,155 @@ export async function onNcChallanReceived(
   }
 }
 
+// ─── Hook: return-to-vendor challan cancelled (ADR-166 review F2) ─────────
+
+/**
+ * Called by delivery-challans.cancelDeliveryChallan when the challan being
+ * cancelled has nc_id (a return-to-vendor challan raised by createNcDc) and
+ * no receipts exist yet. Undoes exactly what createNcDc wrote on the NC and
+ * the origin op, so the NC goes back to "return-to-vendor chosen, challan not
+ * yet issued" (status 'disposed' — packages/shared/src/enums/nc-status.ts)
+ * and a fresh challan can be raised.
+ *
+ * Without this the NC kept rtv_sent_qty > 0, delivery_challan_id set and
+ * status 'sent_to_vendor' forever: sumRtvOutstandingForOp reported the pieces
+ * at the vendor, isOspOpFullyBack could never be true, and the origin op that
+ * createNcDc demoted to 'sent' could never return to 'received'.
+ *
+ *   1. Refuses if any piece already came back (rtv_received_qty > 0) — the
+ *      caller's receipts check covers this too; kept as a defensive guard.
+ *   2. Requires the NC's challan to be THIS challan.
+ *   3. rtv_sent_qty = 0, delivery_challan_id = NULL, status = 'disposed'.
+ *   4. If the origin op is at 'sent' and, with this NC's pieces no longer
+ *      counted as out, isOspOpFullyBack says every piece is in the building,
+ *      restore 'received' (mirror of createNcDc's demotion) — one
+ *      OP_OUTSOURCE_RECEIVED audit row, only on an actual change.
+ *   5. Emits NC_RTV_CHALLAN_CANCELLED.
+ *   6. Recomputes the origin op's PO line + header: the ADR-165 received_qty
+ *      formula subtracts open return-to-vendor qty only for NCs WITH a
+ *      challan, so un-issuing the challan must add the pieces back now.
+ */
+export async function onNcChallanCancelled(
+  tx: DbTransaction,
+  args: { ncId: string; deliveryChallanId: string },
+  companyId: string,
+  user: AuthContext,
+): Promise<void> {
+  const nc = await loadNc(tx, args.ncId, companyId);
+  if (nc.deliveryChallanId !== args.deliveryChallanId) {
+    throw new ConflictError(
+      `Challan ${args.deliveryChallanId} is not the return-to-vendor challan on ${nc.code}`,
+    );
+  }
+  const alreadyReceived = Math.round(n(nc.rtvReceivedQty));
+  if (alreadyReceived > 0) {
+    throw new ConflictError(
+      `${alreadyReceived} pcs already came back from the vendor on ${nc.code}; ` +
+        `its return-to-vendor challan cannot be cancelled`,
+    );
+  }
+  const sent = Math.round(n(nc.rtvSentQty));
+
+  await tx
+    .update(ncRegister)
+    .set({
+      rtvSentQty: '0.00',
+      deliveryChallanId: null,
+      status: 'disposed',
+      updatedBy: user.id,
+    })
+    .where(eq(ncRegister.id, nc.id));
+
+  await emitActivityLog(
+    tx,
+    {
+      action: 'NC_RTV_CHALLAN_CANCELLED',
+      entity: 'NonConformance',
+      detail: `${nc.code} — return-to-vendor challan cancelled (${sent} pcs no longer out); back to disposed, challan can be re-issued`,
+      refId: nc.code,
+    },
+    companyId,
+    user,
+  );
+
+  if (!nc.jcOpId) return;
+  const opRows = await tx
+    .select({
+      id: jcOps.id,
+      opSeq: jcOps.opSeq,
+      outsourceStatus: jcOps.outsourceStatus,
+      outsourceSentQty: jcOps.outsourceSentQty,
+      outsourcePoLineId: jcOps.outsourcePoLineId,
+      jcCode: jobCards.code,
+    })
+    .from(jcOps)
+    .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+    .where(and(eq(jcOps.id, nc.jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
+    .limit(1);
+  const op = opRows[0];
+  if (!op) return;
+
+  if (op.outsourceStatus === 'sent') {
+    // Reads this NC's rtv_sent_qty as just zeroed above, so "no RTV piece
+    // still out" no longer counts the cancelled challan.
+    const { fullyBack } = await isOspOpFullyBack(tx, companyId, op.id, op.outsourceSentQty);
+    if (fullyBack) {
+      await tx
+        .update(jcOps)
+        .set({ outsourceStatus: 'received', updatedBy: user.id })
+        .where(eq(jcOps.id, op.id));
+      await emitActivityLog(
+        tx,
+        {
+          action: 'OP_OUTSOURCE_RECEIVED',
+          entity: 'JcOp',
+          detail: `${op.jcCode} Op ${op.opSeq} — fully received (return-to-vendor challan on ${nc.code} cancelled)`,
+          refId: op.jcCode,
+        },
+        companyId,
+        user,
+      );
+    }
+  }
+
+  if (op.outsourcePoLineId) {
+    const poLineId = op.outsourcePoLineId;
+    const read = async () =>
+      (
+        await tx
+          .select({
+            receivedQty: purchaseOrderLines.receivedQty,
+            lineNo: purchaseOrderLines.lineNo,
+            purchaseOrderId: purchaseOrderLines.purchaseOrderId,
+          })
+          .from(purchaseOrderLines)
+          .where(eq(purchaseOrderLines.id, poLineId))
+          .limit(1)
+      )[0];
+    const before = await read();
+    await recalcPoLineReceivedQty(tx, poLineId, user.id);
+    const after = await read();
+    if (before && after && before.receivedQty !== after.receivedQty) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'PO_RECEIVED_ADJUST',
+          entity: 'PurchaseOrderLine',
+          detail:
+            `PO line ${before.lineNo} received_qty ${before.receivedQty} → ${after.receivedQty} ` +
+            `(return-to-vendor challan for ${sent} pcs on ${nc.code} cancelled)`,
+          refId: nc.code,
+        },
+        companyId,
+        user,
+      );
+    }
+    if (after) {
+      await recalcPoHeaderStatus(tx, after.purchaseOrderId, user.id);
+    }
+  }
+}
+
 // ─── Hook: Incoming QC on the vendor's replacement (design §5, §12.6) ─────
 
 /**

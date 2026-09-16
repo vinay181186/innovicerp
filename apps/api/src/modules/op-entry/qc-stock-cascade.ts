@@ -20,6 +20,53 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { jcOps, jobCards, storeTransactions } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 
+/**
+ * Recovery-child stock guard (ADR-069: finished stock is credited exactly ONCE
+ * per piece). On a rework/repair CHILD job card the accepted pieces do not stop
+ * at the child's terminal QC: the recovery cascade (nc-register/recovery
+ * onRecoveryJobCardQc) re-injects them into the PARENT route at the origin op,
+ * and the parent's own terminal QC credits them when they get there. Crediting
+ * them on the child as well would book every recovered piece twice. The one
+ * case where the child IS the last inspection the pieces will ever get is when
+ * the origin op is the parent's terminal op — the re-injected op_log row is
+ * written directly, not through submitQcLog, so nothing else credits them and
+ * the child must.
+ *
+ * Returns true for an ordinary (non-recovery) job card, or when the job card is
+ * not found, so callers can gate tryApplyQcStockCascade on it unconditionally.
+ *
+ * ONE implementation, used by BOTH writers of a terminal-QC stock credit:
+ *   - op-entry/service.submitQcLog (a keyed QC log)
+ *   - incoming-qc/service.mirrorIncomingQcOntoNextQcOp (the mirrored qc row an
+ *     Incoming QC writes onto the following QC op)
+ * Keep them in lock-step by changing this function, not either caller.
+ */
+export async function recoveryChildCreditsStock(
+  tx: DbTransaction,
+  companyId: string,
+  jobCardId: string,
+): Promise<boolean> {
+  const jcRows = await tx
+    .select({
+      recoveryKind: jobCards.recoveryKind,
+      parentJobCardId: jobCards.parentJobCardId,
+      originOpSeq: jobCards.originOpSeq,
+    })
+    .from(jobCards)
+    .where(and(eq(jobCards.id, jobCardId), eq(jobCards.companyId, companyId)))
+    .limit(1);
+  const jc = jcRows[0];
+  if (!jc?.recoveryKind || !jc.parentJobCardId) return true;
+  const parentLast = await tx
+    .select({ opSeq: jcOps.opSeq })
+    .from(jcOps)
+    .where(and(eq(jcOps.jobCardId, jc.parentJobCardId), sql`${jcOps.deletedAt} IS NULL`))
+    .orderBy(desc(jcOps.opSeq))
+    .limit(1);
+  const parentLastSeq = parentLast[0]?.opSeq ?? null;
+  return parentLastSeq != null && parentLastSeq === jc.originOpSeq;
+}
+
 export interface QcStockCascadeContext {
   companyId: string;
   jobCardId: string;
