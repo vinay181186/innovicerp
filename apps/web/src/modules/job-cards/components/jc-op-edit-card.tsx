@@ -56,6 +56,9 @@ export interface JcOpEditValues {
 
 const iconBtn: React.CSSProperties = { padding: '2px 6px' };
 
+// Stable no-op for hosts that pass a static vendor list (no server search).
+const noVendorSearch = (): void => {};
+
 export function JcOpEditCard({
   jc,
   op,
@@ -70,6 +73,8 @@ export function JcOpEditCard({
   onMachineChange,
   onGroupChange,
   vendorOptions,
+  onVendorSearch = noVendorSearch,
+  vendorsLoading = false,
   logs,
   cycleLabel = 'Cycle (min)',
   toolDetailsPlaceholder = 'Tool details',
@@ -107,6 +112,12 @@ export function JcOpEditCard({
    *  shared SearchableSelect), so picking a vendor shows its name, not just the
    *  code. The saved value stays the vendor CODE (outsourceVendorCode). */
   vendorOptions: { id: string; code: string; name: string }[];
+  /** Host handler: the vendor picker's typed term goes to the server (the list
+   *  endpoint caps at 200 rows, the master runs past that). Omit to keep the
+   *  static list a host already passes. */
+  onVendorSearch?: (term: string) => void;
+  /** True while the host's vendor search is in flight ("Loading…"). */
+  vendorsLoading?: boolean;
   /** Already sliced to the latest 3 by the caller, exactly as the table did.
    *  Omit entirely (create screen) to hide the RECENT LOGS strip — the create
    *  form's table has no such column. */
@@ -508,7 +519,8 @@ export function JcOpEditCard({
                               : '',
                           })
                         }
-                        onSearch={() => {}}
+                        onSearch={onVendorSearch}
+                        loading={vendorsLoading}
                         options={vendorOptions}
                         placeholder="🔍 Vendor"
                         // Show "CODE — Name" for the already-picked vendor so the

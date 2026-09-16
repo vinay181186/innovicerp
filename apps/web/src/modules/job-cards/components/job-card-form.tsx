@@ -115,13 +115,41 @@ export function JobCardForm({
   // machines & vendors list-query schemas cap `limit` at 200 — 500 makes the
   // route 400, leaving the machine picker empty ("No matches"). Stay ≤ 200.
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
-  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
+  // OSP vendor picker searches the SERVER (same wiring as SO Planning's "+ Add
+  // OSP Op"): the endpoint caps `limit` at 200, and the vendor master runs past
+  // that, so a static first page left every later vendor unreachable ("No
+  // matches" for VND-959).
+  const [vendorSearch, setVendorSearch] = useState('');
+  const { data: vendorsData, isFetching: vendorsFetching } = useVendorsList({
+    ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    limit: 200,
+    offset: 0,
+  });
   // Machine groups exist only to label and narrow the machine picker; the id →
   // code map lets a row show 'VMC' for the group its machine belongs to.
   const { data: machineGroupsData } = useMachineGroupsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   const machines = machinesData?.machines ?? [];
-  const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);
+  // Every vendor row this form has seen (first page + each search page), by
+  // code. A picked vendor keeps its "CODE — Name" label in the op card even
+  // after the search term moves on to another row's picker and that vendor
+  // drops out of the current page.
+  const [knownVendors, setKnownVendors] = useState<
+    Map<string, { id: string; code: string; name: string }>
+  >(() => new Map());
+  useEffect(() => {
+    const rows = vendorsData?.vendors ?? [];
+    if (rows.length === 0) return;
+    setKnownVendors((prev) => {
+      let next: typeof prev | null = null;
+      for (const v of rows) {
+        if (prev.has(v.code)) continue;
+        next ??= new Map(prev);
+        next.set(v.code, { id: v.id, code: v.code, name: v.name });
+      }
+      return next ?? prev;
+    });
+  }, [vendorsData]);
   const machineGroupCodeById = useMemo(
     () => new Map((machineGroupsData?.groups ?? []).map((g) => [g.id, g.code])),
     [machineGroupsData],
@@ -248,6 +276,26 @@ export function JobCardForm({
       name: m.name,
       machineGroupId: m.machineGroupId ?? null,
     }));
+
+  // Picker rows = the server's page for the current term, plus any op's
+  // already-picked vendor that page does not contain (looked up from the rows
+  // seen so far), so its "CODE — Name" label and highlight survive a re-search.
+  const vendorOptions = useMemo(() => {
+    const page = (vendorsData?.vendors ?? [])
+      .filter((v) => v.isActive)
+      .map((v) => ({ id: v.id, code: v.code, name: v.name }));
+    const seen = new Set(page.map((v) => v.code));
+    for (const o of ops) {
+      const code = o.outsourceVendorCode;
+      if (!code || seen.has(code)) continue;
+      const known = knownVendors.get(code);
+      if (known) {
+        page.push(known);
+        seen.add(code);
+      }
+    }
+    return page;
+  }, [vendorsData, ops, knownVendors]);
 
   const sourceByLabel = useMemo(() => {
     const m = new Map<string, JobCardSourceOption>();
@@ -790,7 +838,9 @@ export function JobCardForm({
                 onMachineSearch={setMachineSearch}
                 onMachineChange={(code) => onOpMachineChange(i, code)}
                 onGroupChange={(gid) => onOpGroupChange(i, gid)}
-                vendorOptions={vendors}
+                vendorOptions={vendorOptions}
+                onVendorSearch={setVendorSearch}
+                vendorsLoading={vendorsFetching}
                 toolDetailsPlaceholder="Insert, fixtures, setup notes"
                 isFirst={i === 0}
                 isLast={i === ops.length - 1}
@@ -943,7 +993,6 @@ export function JobCardForm({
           itemCode={itemCode}
           available={ops[balanceOpIdx]!.available}
           defaultVendorCode={ops[balanceOpIdx]!.outsourceVendorCode}
-          vendors={vendors}
           onClose={() => setBalanceOpIdx(null)}
           onDone={(qtyDone) => {
             const idx = balanceOpIdx;

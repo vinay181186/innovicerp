@@ -12,7 +12,9 @@ import { opSrNo } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useOutsourceOpBalance } from '@/modules/jc-ops/api';
+import { useVendorsList } from '@/modules/vendors/api';
 import { jobCardsKeys } from '../api';
 
 export function OutsourceBalanceModal({
@@ -24,7 +26,6 @@ export function OutsourceBalanceModal({
   itemCode,
   available,
   defaultVendorCode,
-  vendors,
   onClose,
   onDone,
 }: {
@@ -36,7 +37,6 @@ export function OutsourceBalanceModal({
   itemCode: string;
   available: number;
   defaultVendorCode: string;
-  vendors: { id: string; code: string; name: string }[];
   onClose: () => void;
   onDone: (qtyDone: number) => void;
 }): React.JSX.Element {
@@ -44,7 +44,29 @@ export function OutsourceBalanceModal({
   const outsource = useOutsourceOpBalance();
   const [qty, setQty] = useState<number>(available);
   const [vendorCode, setVendorCode] = useState<string>(defaultVendorCode);
+  // "CODE — Name" of the picked vendor, kept so the label survives the search
+  // page moving on. Seeded with the bare default code until the master resolves it.
+  const [vendorLabel, setVendorLabel] = useState<string>(defaultVendorCode);
   const [err, setErr] = useState<string | null>(null);
+
+  // Vendor picker searches the SERVER: the list endpoint caps `limit` at 200 and
+  // the vendor master runs past that, so a static first page could not reach
+  // later vendors. The saved value is still the vendor CODE (see onSave).
+  const [vendorSearch, setVendorSearch] = useState('');
+  const { data: vendorsData, isFetching: vendorsFetching } = useVendorsList({
+    ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    limit: 200,
+    offset: 0,
+  });
+  const vendorOptions = (vendorsData?.vendors ?? [])
+    .filter((v) => v.isActive)
+    .map((v) => ({ id: v.id, code: v.code, name: v.name }));
+  const pickedVendor = vendorCode ? vendorOptions.find((v) => v.code === vendorCode) : undefined;
+  const pickedLabel = pickedVendor
+    ? `${pickedVendor.code} — ${pickedVendor.name}`
+    : vendorCode
+      ? vendorLabel || vendorCode
+      : undefined;
 
   const onSave = (): void => {
     setErr(null);
@@ -143,21 +165,21 @@ export function OutsourceBalanceModal({
             >
               Vendor ★
             </div>
-            <input
-              className="innovic-select"
-              list="dlJcOutsourceBalanceVendor"
-              value={vendorCode}
-              onChange={(e) => setVendorCode(e.target.value)}
-              placeholder="Vendor code"
-              style={{ width: '100%', fontSize: 12 }}
+            <SearchableSelect
+              id="jcOutsourceBalanceVendor"
+              value={pickedVendor?.id ?? null}
+              onChange={(id) => {
+                const v = id ? vendorOptions.find((x) => x.id === id) : undefined;
+                setVendorCode(v?.code ?? '');
+                setVendorLabel(v ? `${v.code} — ${v.name}` : '');
+              }}
+              onSearch={setVendorSearch}
+              loading={vendorsFetching}
+              options={vendorOptions}
+              placeholder="🔍 Vendor code or name"
+              valueLabel={pickedLabel}
+              selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
             />
-            <datalist id="dlJcOutsourceBalanceVendor">
-              {vendors.map((v) => (
-                <option key={v.id} value={v.code}>
-                  {v.code} — {v.name}
-                </option>
-              ))}
-            </datalist>
           </div>
         </div>
 

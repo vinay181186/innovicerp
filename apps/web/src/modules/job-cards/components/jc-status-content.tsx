@@ -857,13 +857,38 @@ function JcStatusEditForm({
   // makes the route's zod .parse() 400, so the picker got ZERO options and the
   // machine dropdown showed "No matches". Stay within the cap.
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
-  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
+  // OSP vendor picker searches the SERVER (same wiring as JobCardForm and SO
+  // Planning): the endpoint caps `limit` at 200 and the vendor master runs past
+  // that, so a static first page left later vendors unreachable ("No matches").
+  const [vendorSearch, setVendorSearch] = useState('');
+  const { data: vendorsData, isFetching: vendorsFetching } = useVendorsList({
+    ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    limit: 200,
+    offset: 0,
+  });
   // Machine groups exist only to label and narrow the machine picker; the id →
   // code map lets a row show 'VMC' for the group its machine belongs to.
   const { data: machineGroupsData } = useMachineGroupsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   const machines = machinesData?.machines ?? [];
-  const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);
+  // Every vendor row seen so far (by code), so an op's picked vendor keeps its
+  // "CODE — Name" label after the search page moves on to another row.
+  const [knownVendors, setKnownVendors] = useState<
+    Map<string, { id: string; code: string; name: string }>
+  >(() => new Map());
+  useEffect(() => {
+    const rows = vendorsData?.vendors ?? [];
+    if (rows.length === 0) return;
+    setKnownVendors((prev) => {
+      let next: typeof prev | null = null;
+      for (const v of rows) {
+        if (prev.has(v.code)) continue;
+        next ??= new Map(prev);
+        next.set(v.code, { id: v.id, code: v.code, name: v.name });
+      }
+      return next ?? prev;
+    });
+  }, [vendorsData]);
   const machineGroupCodeById = useMemo(
     () => new Map((machineGroupsData?.groups ?? []).map((g) => [g.id, g.code])),
     [machineGroupsData],
@@ -914,6 +939,26 @@ function JcStatusEditForm({
       available: o.available ?? 0,
     })),
   );
+
+  // Picker rows = the server's page for the current term, plus any op's
+  // already-picked vendor that page does not contain (from the rows seen so
+  // far), so its "CODE — Name" label and highlight survive a re-search.
+  const vendorOptions = useMemo(() => {
+    const page = (vendorsData?.vendors ?? [])
+      .filter((v) => v.isActive)
+      .map((v) => ({ id: v.id, code: v.code, name: v.name }));
+    const seen = new Set(page.map((v) => v.code));
+    for (const o of ops) {
+      const code = o.outsourceVendorCode;
+      if (!code || seen.has(code)) continue;
+      const known = knownVendors.get(code);
+      if (known) {
+        page.push(known);
+        seen.add(code);
+      }
+    }
+    return page;
+  }, [vendorsData, ops, knownVendors]);
   const [error, setError] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(true);
   const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
@@ -1303,7 +1348,9 @@ function JcStatusEditForm({
                     onMachineSearch={setMachineSearch}
                     onMachineChange={(code) => onOpMachineChange(i, code)}
                     onGroupChange={(gid) => onOpGroupChange(i, gid)}
-                    vendorOptions={vendors}
+                    vendorOptions={vendorOptions}
+                    onVendorSearch={setVendorSearch}
+                    vendorsLoading={vendorsFetching}
                     logs={o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : []}
                     isFirst={i === 0}
                     isLast={i === ops.length - 1}
@@ -1366,7 +1413,6 @@ function JcStatusEditForm({
           itemCode={itemCode}
           available={ops[balanceOpIdx]!.available}
           defaultVendorCode={ops[balanceOpIdx]!.outsourceVendorCode}
-          vendors={vendors}
           onClose={() => setBalanceOpIdx(null)}
           onDone={(qtyDone) => {
             const idx = balanceOpIdx;
