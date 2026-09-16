@@ -11,6 +11,7 @@ import {
   type SubmitOpLogInput,
   type SubmitQcLogInput,
 } from '@innovic/shared';
+import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { AlertTriangle, Loader2, Play, PackagePlus, ShieldCheck, Square } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -306,7 +307,9 @@ export function OpEntryForm({
     // still be typed out loud rather than assumed.
     if (opts.qtyRequired && qty.trim() === '') missing.push('Qty');
     if (missing.length > 0 || !shift) {
-      setErrorMessage(`Fill in the mandatory ★ fields before continuing — missing: ${missing.join(', ')}.`);
+      setErrorMessage(
+        `Fill in the mandatory ★ fields before continuing — missing: ${missing.join(', ')}.`,
+      );
       return null;
     }
     // The picker's `max` greys future days out, but several browsers still let
@@ -442,7 +445,7 @@ export function OpEntryForm({
     }
     if (busy) {
       setErrorMessage(
-        `${actualMachine?.code ?? 'That machine'} is running ${busy.jobCardCode} Op ${busy.opSeq} — pick another machine or stop that operation first.`,
+        `${actualMachine?.code ?? 'That machine'} is running ${busy.jobCardCode} Op ${fmtOpSrNo(busy.opSeq)} — pick another machine or stop that operation first.`,
       );
       return;
     }
@@ -531,7 +534,10 @@ export function OpEntryForm({
       const res = await genOsp.mutateAsync({ jcOpId: op.id });
       setOspMsg({ kind: 'ok', text: res.message });
     } catch (err) {
-      setOspMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Failed to generate OSP PR' });
+      setOspMsg({
+        kind: 'err',
+        text: err instanceof Error ? err.message : 'Failed to generate OSP PR',
+      });
     }
   }
 
@@ -562,8 +568,7 @@ export function OpEntryForm({
   // the auto-PR action. Once a PR/PO exists (outsource_status advanced past
   // pending) the op is managed from Purchase → Outsource Jobs.
   if (isOutsource) {
-    const alreadyRaised =
-      op.outsourceStatus != null && op.outsourceStatus !== 'pending';
+    const alreadyRaised = op.outsourceStatus != null && op.outsourceStatus !== 'pending';
     const statusLabel: Record<string, string> = {
       pending: 'Pending — no PR yet',
       pr_raised: 'PR raised — awaiting PO',
@@ -576,7 +581,7 @@ export function OpEntryForm({
         <div className="panel-hdr">
           <span className="panel-title">Outside processing</span>
           <span className="text3" style={{ fontSize: 11 }}>
-            Op {op.opSeq} · <span className="mono">{op.operation}</span>
+            Op {opSrNo(op.opSeq)} · <span className="mono">{op.operation}</span>
           </span>
         </div>
         <div className="panel-body">
@@ -592,7 +597,9 @@ export function OpEntryForm({
           >
             Status:{' '}
             <span className="fw-700">
-              {op.outsourceStatus ? (statusLabel[op.outsourceStatus] ?? op.outsourceStatus) : 'Pending — no PR yet'}
+              {op.outsourceStatus
+                ? (statusLabel[op.outsourceStatus] ?? op.outsourceStatus)
+                : 'Pending — no PR yet'}
             </span>
           </div>
 
@@ -611,8 +618,8 @@ export function OpEntryForm({
           ) : (
             <>
               <p className="text2" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
-                If this operation matches a configured OSP process, generate a JW purchase
-                request (and a draft PO when the process has a vendor with auto-PO enabled).
+                If this operation matches a configured OSP process, generate a JW purchase request
+                (and a draft PO when the process has a vendor with auto-PO enabled).
               </p>
               <button
                 type="button"
@@ -655,7 +662,7 @@ export function OpEntryForm({
           <div className="panel-hdr">
             <span className="panel-title">QC inspection</span>
             <span className="text3" style={{ fontSize: 11 }}>
-              Op {op.opSeq} · <span className="mono">{op.operation}</span> · QC pending:{' '}
+              Op {opSrNo(op.opSeq)} · <span className="mono">{op.operation}</span> · QC pending:{' '}
               <span className="mono">{op.qcPending}</span>
             </span>
           </div>
@@ -772,7 +779,9 @@ export function OpEntryForm({
               </div>
               <div
                 className="form-grp"
-                style={remarksExpanded ? { flexBasis: '100%' } : { flex: '1 1 180px', minWidth: 160 }}
+                style={
+                  remarksExpanded ? { flexBasis: '100%' } : { flex: '1 1 180px', minWidth: 160 }
+                }
               >
                 <div
                   style={{
@@ -922,7 +931,6 @@ export function OpEntryForm({
     </div>
   ) : null;
 
-
   return (
     <form onSubmit={(e) => void handleProductionSubmit(e)}>
       <div className="panel">
@@ -930,7 +938,7 @@ export function OpEntryForm({
           <span className="panel-title">{isStart ? '▶ Start Operation' : '✓ Log entry'}</span>
           {modeToggle ?? (
             <span className="text3" style={{ fontSize: 11 }}>
-              Op {op.opSeq} · <span className="mono">{op.operation}</span>
+              Op {opSrNo(op.opSeq)} · <span className="mono">{op.operation}</span>
             </span>
           )}
         </div>
@@ -1014,7 +1022,9 @@ export function OpEntryForm({
                   <MachineGroupPicker
                     id="opf-mgrp"
                     valueId={actualGroupId}
-                    valueText={actualGroupId ? (machineGroupCodeById.get(actualGroupId) ?? null) : null}
+                    valueText={
+                      actualGroupId ? (machineGroupCodeById.get(actualGroupId) ?? null) : null
+                    }
                     onChange={handleGroupChange}
                   />
                 </div>
@@ -1211,7 +1221,7 @@ export function OpEntryForm({
               <div style={{ flex: 1 }}>
                 <b className="mono">{actualLabel ?? 'This machine'}</b> is currently running{' '}
                 <span className="mono fw-700 cyan">
-                  {busy.jobCardCode} / Op {busy.opSeq}
+                  {busy.jobCardCode} / Op {opSrNo(busy.opSeq)}
                 </span>
                 . Pick another machine, or complete / stop that operation first.
               </div>
@@ -1259,13 +1269,15 @@ export function OpEntryForm({
                 marginTop: 12,
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}>
+              <div
+                style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}
+              >
                 ▶ Mark Operation as Running
               </div>
               <div style={{ fontSize: 11, color: 'var(--text2)' }}>
                 This will mark{' '}
                 <b className="mono">
-                  {op.jobCardCode} Op{op.opSeq}
+                  {op.jobCardCode} Op{opSrNo(op.opSeq)}
                 </b>{' '}
                 as Running on <b>{isProcessOp ? (actualLabel ?? '—') : plannedLabel}</b>
                 {isProcessOp && actualLabel && actualLabel !== plannedLabel ? (
@@ -1349,14 +1361,20 @@ export function OpEntryForm({
                     type="submit"
                     className="btn btn-primary"
                     style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
-                    disabled={blockedReason !== null || start.isPending || Boolean(busy) || busyUnknown}
+                    disabled={
+                      blockedReason !== null || start.isPending || Boolean(busy) || busyUnknown
+                    }
                     title={
                       busy
-                        ? `${actualLabel ?? 'The chosen machine'} is busy with ${busy.jobCardCode} Op ${busy.opSeq} — pick another machine`
+                        ? `${actualLabel ?? 'The chosen machine'} is busy with ${busy.jobCardCode} Op ${fmtOpSrNo(busy.opSeq)} — pick another machine`
                         : undefined
                     }
                   >
-                    {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={14} />}
+                    {start.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Play size={14} />
+                    )}
                     ▶ Start Operation
                   </button>
                 )
@@ -1402,8 +1420,7 @@ export function OpEntryForm({
                 color: 'var(--text2)',
               }}
             >
-              Pending on this op:{' '}
-              <b style={{ color: 'var(--amber)' }}>{op.pendingQty}</b>
+              Pending on this op: <b style={{ color: 'var(--amber)' }}>{op.pendingQty}</b>
             </span>
           </div>
         </div>

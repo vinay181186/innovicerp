@@ -26,6 +26,7 @@ import type {
   ProductionScheduleStats,
   RescheduleJcOpInput,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import {
@@ -341,8 +342,9 @@ export async function rescheduleJcOp(
         {
           action: 'EDIT',
           entity: 'JC Operation',
+          // display rule — see opSrNo in @innovic/shared
           detail:
-            `Machine changed on ${op.jcCode} op ${Number(op.opSeq)} ${op.operation} — ` +
+            `Machine changed on ${op.jcCode} op ${opSrNo(Number(op.opSeq))} ${op.operation} — ` +
             `${op.oldMachineCode ?? '(none)'} → ${machRows[0].code}; ` +
             // Real per-machine split, not the op total against the outgoing
             // machine — on a second swap the total spans several (ADR-125).

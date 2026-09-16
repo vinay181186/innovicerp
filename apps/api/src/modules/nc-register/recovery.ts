@@ -16,7 +16,7 @@
 // hooks; the manual Close button goes through the same gate.
 
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { SHIFTS } from '@innovic/shared';
+import { SHIFTS, opSrNo } from '@innovic/shared';
 import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -180,7 +180,8 @@ export async function createRecoveryJobCard(
 
   const code = await nextRecoveryJcCode(tx, nc.companyId, parent.id, parent.code, kind);
   const label = kind === 'rework' ? 'Rework' : 'Repair';
-  const opPart = nc.opSeq != null ? ` Op ${nc.opSeq}` : '';
+  // display rule — see opSrNo in @innovic/shared
+  const opPart = nc.opSeq != null ? ` Op ${opSrNo(nc.opSeq)}` : '';
   const today = new Date().toISOString().slice(0, 10);
 
   const inserted = await tx

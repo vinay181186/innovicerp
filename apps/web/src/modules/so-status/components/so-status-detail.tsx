@@ -4,15 +4,16 @@
 // type + due colour), Equipment-BOM banner, per-line panels (tracker chips +
 // OSP alerts + JC table + Create JC / Create PO), Equipment-BOM items table.
 
-import type {
-  PlanningLine,
-  SoStatusBomItem,
-  SoStatusEquipmentInfo,
-  SoStatusJc,
-  SoStatusLine,
-  SoStatusOp,
-  SoStatusOutsourceAlert,
-  SoStatusPendingOsPrOp,
+import {
+  type PlanningLine,
+  type SoStatusBomItem,
+  type SoStatusEquipmentInfo,
+  type SoStatusJc,
+  type SoStatusLine,
+  type SoStatusOp,
+  type SoStatusOutsourceAlert,
+  type SoStatusPendingOsPrOp,
+  opSrNo,
 } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
@@ -651,10 +652,10 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
                 type="button"
                 className="btn btn-sm"
                 style={{ background: 'rgba(255,176,32,0.1)', color: 'var(--amber)', border: '1px solid rgba(255,176,32,0.3)', fontSize: 9, padding: '2px 8px', margin: 1 }}
-                title={`Raise PR for Op ${p.opSeq} — ${p.operation}`}
+                title={`Raise PR for Op ${opSrNo(p.opSeq)} — ${p.operation}`}
                 onClick={() => navigate({ to: '/purchase-requests', search: { jc: p.jcCode, op: p.opSeq } as never })}
               >
-                📋 PR Op{p.opSeq}
+                📋 PR Op{opSrNo(p.opSeq)}
               </button>
             ))}
           </div>
@@ -680,7 +681,7 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
   const isOS = op.opType === 'outsource';
   const ic = opChipColor(op);
   const title =
-    `Op ${op.opSeq} — ${op.operation} (${op.opType})` +
+    `Op ${opSrNo(op.opSeq)} — ${op.operation} (${op.opType})` +
     (isOS ? ` [OUTSOURCE: ${op.outsourceStatus ?? 'pending'}]` : '') +
     `\ninput ${op.inputAvail} · completed ${op.completed}` +
     (op.qcRequired || op.opType === 'qc' ? ` · qc-acc ${op.qcAccepted}/${op.qcRejected}-rej/${op.qcPending}-pend` : '') +
@@ -699,7 +700,7 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
           ...(isOS ? { background: 'rgba(255,176,32,0.06)' } : {}),
         }}
       >
-        {isOS ? '🏭' : ''}Op{op.opSeq}{op.qcRequired ? '✓' : ''}
+        {isOS ? '🏭' : ''}Op{opSrNo(op.opSeq)}{op.qcRequired ? '✓' : ''}
       </span>{' '}
     </>
   );

@@ -6,6 +6,7 @@
 // with legacy — no data gaps.
 
 import type { Company, DailyReportResponse } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { esc, fmtDate } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
@@ -17,7 +18,7 @@ function machineSection(group: DailyReportResponse['groups'][number]): string {
       <td style="font-family:monospace">${esc(r.jcCode)}</td>
       <td style="color:#7c3aed">${esc(itemCodeWithRev(r.itemCode, r.itemRevision))}</td>
       <td>${esc(r.itemName ?? '—')}</td>
-      <td style="text-align:center">${r.opSeq}</td>
+      <td style="text-align:center">${opSrNo(r.opSeq)}</td>
       <td>${esc(r.operation)}</td>
       <td style="text-align:center">${esc(r.shift)}</td>
       <td style="text-align:center;font-weight:700;color:#16a34a">${r.qty}</td>

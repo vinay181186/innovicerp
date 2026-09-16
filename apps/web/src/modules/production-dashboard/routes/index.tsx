@@ -20,6 +20,7 @@ import type {
   ProductionDashboardLowStockItem,
   ProductionDashboardReadyOp,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { PlannedActualMachine } from '@/components/shared/machine-split';
@@ -321,10 +322,7 @@ function MachineCard({
           {label}
           <span className="badge b-grey">Idle</span>
         </div>
-        <div
-          className="text3"
-          style={{ fontSize: 12, textAlign: 'center', padding: '8px 0' }}
-        >
+        <div className="text3" style={{ fontSize: 12, textAlign: 'center', padding: '8px 0' }}>
           — No pending work —
         </div>
       </div>
@@ -550,9 +548,7 @@ function ScTile({
         border: `1px solid ${border}`,
       }}
     >
-      <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase' }}>
-        {label}
-      </div>
+      <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase' }}>{label}</div>
       <div className="mono fw-700" style={{ fontSize: 22, color }}>
         {value}
       </div>
@@ -598,7 +594,7 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
       >
         {op.itemName ?? ''}
       </td>
-      <td className="td-ctr mono">{op.opSeq}</td>
+      <td className="td-ctr mono">{opSrNo(op.opSeq)}</td>
       <td>{op.operation}</td>
       <td>
         {/* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs) and
@@ -708,8 +704,7 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
         ) : (
           (jc.itemName ?? '—')
         )}{' '}
-        —{' '}
-        <b>{jc.orderQty} pcs</b>
+        — <b>{jc.orderQty} pcs</b>
       </div>
       {/* Legacy progBar(pct,'#3b82f6') (L1972-1974, called L3728). The literal
           is a dark-theme blue → mapped to the nearest token, var(--blue).

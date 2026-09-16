@@ -3,7 +3,7 @@
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
 
-import type { CreatePlanInput, PlanType } from '@innovic/shared';
+import { type CreatePlanInput, type PlanType, opSrNo } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
@@ -72,10 +72,30 @@ export interface PlanFormValues {
   }>;
 }
 
-export const PLAN_TYPE_OPTIONS: Array<{ value: PlanType; label: string; icon: string; help: string }> = [
-  { value: 'manufacture', label: 'Manufacture', icon: '🏭', help: 'In-house production with operations' },
-  { value: 'direct_purchase', label: 'Direct Purchase', icon: '🛒', help: 'Buy from vendor — single PR generated' },
-  { value: 'full_outsource', label: 'Full Outsource', icon: '📦', help: 'Outsource to job-work vendor (+ optional material PR)' },
+export const PLAN_TYPE_OPTIONS: Array<{
+  value: PlanType;
+  label: string;
+  icon: string;
+  help: string;
+}> = [
+  {
+    value: 'manufacture',
+    label: 'Manufacture',
+    icon: '🏭',
+    help: 'In-house production with operations',
+  },
+  {
+    value: 'direct_purchase',
+    label: 'Direct Purchase',
+    icon: '🛒',
+    help: 'Buy from vendor — single PR generated',
+  },
+  {
+    value: 'full_outsource',
+    label: 'Full Outsource',
+    icon: '📦',
+    help: 'Outsource to job-work vendor (+ optional material PR)',
+  },
   { value: 'assembly', label: 'Assembly', icon: '🔧', help: 'Assembly of equipment per BOM' },
 ];
 
@@ -163,8 +183,11 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     remarks: v.remarks || null,
     ops:
       v.planType === 'manufacture' || v.planType === 'assembly'
-        ? v.ops.map((op) => ({
-            opSeq: op.opSeq,
+        ? v.ops.map((op, i) => ({
+            // The routing is numbered by row position, as on the SO Planning
+            // modal — the person sees 10, 20, 30 (display rule, see opSrNo) and
+            // the stored sequence is 1, 2, 3.
+            opSeq: i + 1,
             operation: op.operation,
             opType: op.opType,
             cycleTimeMin: op.cycleTimeMin,
@@ -681,9 +704,7 @@ export function PlanForm({
                   disabled={loadingOps}
                   title="Replaces ops with the item's active route card"
                 >
-                  {loadingOps ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : null}
+                  {loadingOps ? <Loader2 size={13} className="animate-spin" /> : null}
                   Load route card ({defaultOps.ops.length})
                 </button>
               ) : null}
@@ -696,7 +717,7 @@ export function PlanForm({
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Sr No</th>
                   <th>Operation</th>
                   <th>Type</th>
                   <th>Machine</th>
@@ -717,23 +738,7 @@ export function PlanForm({
                 ) : (
                   values.ops.map((op, idx) => (
                     <tr key={idx}>
-                      <td>
-                        <input
-                          type="number"
-                          min={1}
-                          className="innovic-input"
-                          style={{ width: 50 }}
-                          value={op.opSeq}
-                          onChange={(e) =>
-                            setValues((v) => ({
-                              ...v,
-                              ops: v.ops.map((o, i) =>
-                                i === idx ? { ...o, opSeq: Number(e.target.value) } : o,
-                              ),
-                            }))
-                          }
-                        />
-                      </td>
+                      <td className="td-ctr mono fw-700">{opSrNo(idx + 1)}</td>
                       <td>
                         <input
                           className="innovic-input"
@@ -757,7 +762,10 @@ export function PlanForm({
                               ...v,
                               ops: v.ops.map((o, i) =>
                                 i === idx
-                                  ? { ...o, opType: e.target.value as 'process' | 'outsource' | 'qc' }
+                                  ? {
+                                      ...o,
+                                      opType: e.target.value as 'process' | 'outsource' | 'qc',
+                                    }
                                   : o,
                               ),
                             }))

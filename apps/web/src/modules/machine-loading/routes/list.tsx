@@ -4,6 +4,7 @@
 // (.mach-card not ported to theme).
 
 import type { MachineLoadCard, MachineLoadOp, MachineLoadStatus } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
 import { useMemo } from 'react';
@@ -69,7 +70,10 @@ function barColor(pct: number): string {
 function ProgBar({ pct }: { pct: number }): React.JSX.Element {
   return (
     <div className="prog-wrap">
-      <div className="prog-bar" style={{ width: `${Math.min(100, pct)}%`, background: barColor(pct) }} />
+      <div
+        className="prog-bar"
+        style={{ width: `${Math.min(100, pct)}%`, background: barColor(pct) }}
+      />
     </div>
   );
 }
@@ -363,7 +367,6 @@ function OpRow({
   );
 }
 
-
 function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
   return (
     <>
@@ -387,7 +390,7 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
       <td className="td-ctr mono text3" style={{ fontSize: 11 }}>
         {op.soCode ?? '—'}
       </td>
-      <td className="td-ctr mono">{op.opSeq}</td>
+      <td className="td-ctr mono">{opSrNo(op.opSeq)}</td>
       <td>{op.operation}</td>
       <td>
         <span className={`badge ${op.priority === 'high' ? 'b-amber' : 'b-grey'}`}>

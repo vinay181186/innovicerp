@@ -20,7 +20,7 @@
 // edited nor rejected once any PO existed, and the 90 sat in the "still to buy"
 // list forever.
 
-import type { PurchaseRequestDetail } from '@innovic/shared';
+import { type PurchaseRequestDetail, opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Ban, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -151,7 +151,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
     ? `${detail.soCode}${detail.soLineNo ? ` · Ln ${detail.soLineNo}` : ''}`
     : '—';
   const jcNo = detail.sourceJcCode
-    ? `${detail.sourceJcCode}${detail.sourceJcOpSeq ? ` · Op ${detail.sourceJcOpSeq}` : ''}`
+    ? `${detail.sourceJcCode}${detail.sourceJcOpSeq ? ` · Op ${opSrNo(detail.sourceJcOpSeq)}` : ''}`
     : '—';
   const vendorCode = detail.vendorCode ?? detail.vendorCodeText ?? '—';
   // CODE/REV. The revision is the customer's drawing revision on the SO line

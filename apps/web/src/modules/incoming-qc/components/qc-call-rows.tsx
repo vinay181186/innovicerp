@@ -4,7 +4,12 @@
 // Extracted so the QC Call Register can show incoming-material QC alongside
 // process (JC-op) QC on a single approval screen.
 
-import { shortName, type IncomingQcCompletedRow, type IncomingQcPendingRow } from '@innovic/shared';
+import {
+  type IncomingQcCompletedRow,
+  type IncomingQcPendingRow,
+  opSrNo,
+  shortName,
+} from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
@@ -154,7 +159,7 @@ export function IncomingPendingRow(props: {
           <div style={{ fontSize: 10, marginTop: 2 }}>
             {o.jcCode ? (
               <span className="text2">
-                → <b className="mono">{o.jcCode}</b> Op {o.opSeq}
+                → <b className="mono">{o.jcCode}</b> Op {o.opSeq != null ? opSrNo(o.opSeq) : ''}
                 {o.opName ? ` · ${o.opName}` : ''}
               </span>
             ) : (
@@ -201,7 +206,7 @@ export function IncomingPendingRow(props: {
             {o.jcCode ? (
               <span className="text2" style={{ fontWeight: 600 }}>
                 {' '}
-                · {o.jcCode} Op {o.opSeq}
+                · {o.jcCode} Op {o.opSeq != null ? opSrNo(o.opSeq) : ''}
               </span>
             ) : null}
           </div>

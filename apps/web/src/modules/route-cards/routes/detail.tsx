@@ -2,6 +2,7 @@
 // Mirrors legacy viewRouteCard modal (L10143).
 
 import type { RouteCardRevision } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import {
   ArrowLeft,
@@ -229,7 +230,7 @@ function RouteCardDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 40 }}>#</th>
+                <th style={{ width: 40 }}>Sr No</th>
                 {/* Group replaces Type, as on the form: the kind of row is told
                     by its tint and by the QC / OSP badge in this column. */}
                 <th>Group</th>
@@ -287,8 +288,9 @@ function RouteCardDetailPage(): React.JSX.Element {
                     op.opType === 'outsource' || op.opType === 'qc' ? null : op.machineGroupCode;
                   return (
                     <tr key={op.id} style={{ background: bg }}>
+                      {/* 10, 20, 30 on screen — display rule, see opSrNo */}
                       <td className="td-ctr mono fw-700" style={{ color: accent }}>
-                        {op.opSeq}
+                        {opSrNo(op.opSeq)}
                       </td>
                       <td>
                         {op.opType === 'qc' ? (
@@ -444,7 +446,10 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                   </tr>
                   {open ? (
                     <tr>
-                      <td colSpan={6} style={{ background: 'var(--bg3)', padding: '8px 12px 12px' }}>
+                      <td
+                        colSpan={6}
+                        style={{ background: 'var(--bg3)', padding: '8px 12px 12px' }}
+                      >
                         <div
                           className="text3"
                           style={{
@@ -460,7 +465,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                           <table className="innovic-table">
                             <thead>
                               <tr>
-                                <th className="td-ctr">#</th>
+                                <th className="td-ctr">Sr No</th>
                                 <th>Type</th>
                                 <th>Machine / Vendor</th>
                                 <th>Operation</th>
@@ -477,7 +482,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                 return (
                                   <tr key={`${rev.id}-${op.opSeq}`}>
                                     <td className="td-ctr mono fw-700" style={{ color: accent }}>
-                                      {op.opSeq}
+                                      {opSrNo(op.opSeq)}
                                     </td>
                                     <td>
                                       <span
@@ -493,15 +498,23 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                         : (op.machineCode ?? '—')}
                                     </td>
                                     <td className="fw-700">{op.operation}</td>
-                                    <td className="td-ctr mono">{Number(op.cycleTimeMin) || '—'}</td>
-                                    <td className="mono" style={{ fontSize: 12, color: 'var(--blue)' }}>
+                                    <td className="td-ctr mono">
+                                      {Number(op.cycleTimeMin) || '—'}
+                                    </td>
+                                    <td
+                                      className="mono"
+                                      style={{ fontSize: 12, color: 'var(--blue)' }}
+                                    >
                                       {op.opType === 'outsource'
                                         ? op.ospLeadDays != null
                                           ? `${op.ospLeadDays}d lead`
                                           : '—'
                                         : (op.program ?? '—')}
                                     </td>
-                                    <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+                                    <td
+                                      className="mono"
+                                      style={{ fontSize: 12, color: 'var(--cyan)' }}
+                                    >
                                       {op.toolNo ?? '—'}
                                     </td>
                                     <td className="text3" style={{ fontSize: 12 }}>

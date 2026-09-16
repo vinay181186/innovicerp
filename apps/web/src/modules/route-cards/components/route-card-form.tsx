@@ -17,6 +17,7 @@ import type {
   RouteCardPlanType,
   Vendor,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -175,7 +176,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     setHeader((prev) => (prev.code.trim() ? prev : { ...prev, code: next }));
   }, [mode, nextCodeData]);
 
-
   const machinesByCode = useMemo(() => {
     const m = new Map<string, Machine>();
     for (const x of machinesList?.machines ?? []) m.set(x.code.toUpperCase(), x);
@@ -275,21 +275,23 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     if (ops.length === 0) return 'Add at least one operation';
     for (let i = 0; i < ops.length; i++) {
       const o = ops[i]!;
-      if (!o.operation.trim()) return `Op ${i + 1}: operation name is required`;
+      // Messages name the op as the table shows it (10, 20, 30) — see opSrNo.
+      const sr = opSrNo(i + 1);
+      if (!o.operation.trim()) return `Op ${sr}: operation name is required`;
       if (o.opType === 'process' && !o.machineId && !o.machineCodeText.trim()) {
-        return `Op ${i + 1}: process steps need a machine`;
+        return `Op ${sr}: process steps need a machine`;
       }
       if (o.opType === 'outsource' && !o.ospVendorId && !o.ospVendorCodeText.trim()) {
-        return `Op ${i + 1}: outsource steps need a vendor`;
+        return `Op ${sr}: outsource steps need a vendor`;
       }
       const cycle = Number(o.cycleTimeMin);
       if (!Number.isFinite(cycle) || cycle < 0) {
-        return `Op ${i + 1}: cycle time must be a non-negative number`;
+        return `Op ${sr}: cycle time must be a non-negative number`;
       }
       if (o.ospLeadDays.trim()) {
         const lead = Number(o.ospLeadDays);
         if (!Number.isInteger(lead) || lead < 0) {
-          return `Op ${i + 1}: lead days must be a non-negative integer`;
+          return `Op ${sr}: lead days must be a non-negative integer`;
         }
       }
     }
@@ -345,9 +347,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
         <div className="panel-hdr">
           <div className="panel-title">
-            {mode === 'create'
-              ? '➕ New Route Card'
-              : `Edit Route Card — ${routeCard?.code ?? ''}`}
+            {mode === 'create' ? '➕ New Route Card' : `Edit Route Card — ${routeCard?.code ?? ''}`}
           </div>
         </div>
         <div className="panel-body">
@@ -537,7 +537,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 36 }}>#</th>
+                <th style={{ width: 36 }}>Sr No</th>
                 {/* Group replaces the old Type dropdown. The KIND of a row is
                     decided by which Add button raised it (Op / OSP / QC) and is
                     shown by the row's tint and by the QC / OSP badge in this
@@ -663,7 +663,9 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   const rowMachines = op.machineGroupId
     ? machinesList.filter((m) => m.machineGroupId === op.machineGroupId)
     : machinesList;
-  const groupCode = op.machineGroupId ? (machineGroupCodeById.get(op.machineGroupId) ?? null) : null;
+  const groupCode = op.machineGroupId
+    ? (machineGroupCodeById.get(op.machineGroupId) ?? null)
+    : null;
   const rowBg =
     op.opType === 'qc'
       ? 'rgba(34,197,94,0.06)'
@@ -689,7 +691,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   return (
     <tr style={{ background: rowBg }}>
       <td className="td-ctr mono fw-700" style={{ color: accent }}>
-        {idx + 1}
+        {opSrNo(idx + 1)}
       </td>
       <td>
         {op.opType === 'qc' ? (

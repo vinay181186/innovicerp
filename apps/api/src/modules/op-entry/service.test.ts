@@ -473,7 +473,7 @@ describe('op-entry service', () => {
       expect(r.userId).toBe(admin.id);
       expect(r.userName).toBe(admin.email);
       expect(r.detail).toContain(testJcCode);
-      expect(r.detail).toContain('Op #99');
+      expect(r.detail).toContain('Op #990');
     }
 
     // Cleanup so subsequent tests don't see the residue.
@@ -598,7 +598,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
     const myRow = audit.find((r) => r.refId === testJcCode);
     expect(myRow).toBeDefined();
     expect(myRow?.entity).toBe('Op');
-    expect(myRow?.detail).toContain('Op #2');
+    expect(myRow?.detail).toContain('Op #20');
     expect(myRow?.detail).toContain('8 accepted');
     expect(myRow?.detail).toContain('2 rejected');
     expect(myRow?.detail).toContain('QC-Insp');

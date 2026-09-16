@@ -7,7 +7,7 @@
 // under the server's closure gate. The legacy in-route rework row (one with
 // `reworkOpSeq`) keeps its old "Close rework" button.
 
-import type { DisposeNcResult, NcRegister } from '@innovic/shared';
+import { type DisposeNcResult, type NcRegister, opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -656,7 +656,8 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
           <InlinePair label="Rework Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
         ) : (
           <InlinePair label="Operation:">
-            {detail.opSeq != null ? `Op${detail.opSeq}` : ''}
+            {/* Op numbers show in tens (display rule, see opSrNo). */}
+            {detail.opSeq != null ? `Op${opSrNo(detail.opSeq)}` : ''}
             {detail.opSeq != null && operation ? ' — ' : ''}
             {operation ?? (detail.opSeq == null ? '—' : '')}
           </InlinePair>
@@ -707,7 +708,7 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         {/* Legacy in-route rework only — a new rework raises a child JC
             (linked below) and never sets rework_op_seq. */}
         {detail.reworkOpSeq != null ? (
-          <InlinePair label="Rework Op:">Op{detail.reworkOpSeq}</InlinePair>
+          <InlinePair label="Rework Op:">Op{opSrNo(detail.reworkOpSeq)}</InlinePair>
         ) : null}
         {/* Not in legacy `_viewNC`, but legacy's LIST row shows "♻ n/m done"
             (HTML L22536) and our close-rework flow captures it. Kept. */}

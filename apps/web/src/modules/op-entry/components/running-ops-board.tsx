@@ -1,6 +1,7 @@
 // Live operations board — legacy chrome (.panel / .innovic-table / .btn).
 
 import type { RunningOp, StopOpInput } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Square } from 'lucide-react';
 import { useState } from 'react';
@@ -131,7 +132,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                       <JcLink id={r.jobCardId} code={r.jobCardCode} />
                     </td>
                     <ItemCells r={r} />
-                    <td className="mono">{r.opSeq}</td>
+                    <td className="mono">{opSrNo(r.opSeq)}</td>
                     <td>{r.operation}</td>
                     {/* ADR-164 — the session's machine is the ACTUAL; the op's
                         jc_ops machine is the PLAN. Both named on every
@@ -208,7 +209,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                       <JcLink id={r.jobCardId} code={r.jobCardCode} />
                     </td>
                     <ItemCells r={r} />
-                    <td className="mono">{r.opSeq}</td>
+                    <td className="mono">{opSrNo(r.opSeq)}</td>
                     <td>{r.operation}</td>
                     {/* ADR-164 — the session's machine is the ACTUAL; the op's
                         jc_ops machine is the PLAN. Both named on every

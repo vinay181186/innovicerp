@@ -9,7 +9,12 @@
 // leaves 'pending' — disposed/closed NCs are permanent records.
 
 import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
-import { type DocumentTraceability, type RelatedDoc, withDocRevision } from '@innovic/shared';
+import {
+  type DocumentTraceability,
+  type RelatedDoc,
+  opSrNo,
+  withDocRevision,
+} from '@innovic/shared';
 import {
   capaRecords,
   deliveryChallanLines,
@@ -932,7 +937,10 @@ export async function getNcRegisterRelated(
       jc
         ? [
             row(jc.id, jc.code, jc.closedAt ? 'closed' : 'open', jc.date, {
-              ...(header.jcOpId && header.opSeq != null ? { label: `Op${header.opSeq}` } : {}),
+              // display rule — see opSrNo in @innovic/shared
+              ...(header.jcOpId && header.opSeq != null
+                ? { label: `Op${opSrNo(header.opSeq)}` }
+                : {}),
             }),
           ]
         : [],

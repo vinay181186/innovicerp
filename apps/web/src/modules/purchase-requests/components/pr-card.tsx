@@ -26,7 +26,7 @@
 // quantity was bought. All of that comes out of pr-balance.ts; the card has no
 // rule of its own.
 
-import type { PurchaseRequestListItem } from '@innovic/shared';
+import { type PurchaseRequestListItem, opSrNo } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -106,7 +106,7 @@ function SourceRef({ pr }: { pr: PurchaseRequestListItem }): React.JSX.Element {
     return (
       <span style={{ color: 'var(--cyan)' }}>
         {pr.sourceJcCode}
-        {pr.sourceJcOpSeq ? <span className="text3"> · op {pr.sourceJcOpSeq}</span> : null}
+        {pr.sourceJcOpSeq ? <span className="text3"> · op {opSrNo(pr.sourceJcOpSeq)}</span> : null}
       </span>
     );
   }

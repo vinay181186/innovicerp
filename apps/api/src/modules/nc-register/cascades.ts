@@ -32,6 +32,7 @@
 // pending, linked back through split_from_nc_id. Every NC row is therefore
 // exactly one disposition — there is no child table to reconcile.
 
+import { opSrNo } from '@innovic/shared';
 import { and, eq, isNull, like, sql } from 'drizzle-orm';
 import { items, jobCards, ncRegister, opLog, operators } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
@@ -719,7 +720,8 @@ export async function autoCreateNcFromQcReject(
   const reason =
     ctx.remarks && ctx.remarks.length > 0
       ? `Auto-created from QC inspection: ${ctx.remarks}`
-      : `Auto-created from QC inspection on ${ctx.jcCode} Op #${ctx.opSeq}`;
+      : // display rule — see opSrNo in @innovic/shared
+        `Auto-created from QC inspection on ${ctx.jcCode} Op #${opSrNo(ctx.opSeq)}`;
 
   const inserted = await tx
     .insert(ncRegister)

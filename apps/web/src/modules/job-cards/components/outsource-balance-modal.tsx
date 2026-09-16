@@ -8,6 +8,7 @@
 // Extracted verbatim from JobCardForm so the create/edit form AND the
 // mode-switched JC Status edit branch share ONE modal (no copy-paste of the
 // production outsource-balance flow).
+import { opSrNo } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -91,7 +92,7 @@ export function OutsourceBalanceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Outsource Balance — {jcCode} Op{opSeq}
+          Outsource Balance — {jcCode} Op{opSrNo(opSeq)}
         </div>
         <div
           style={{

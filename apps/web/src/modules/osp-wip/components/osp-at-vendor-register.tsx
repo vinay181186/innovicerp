@@ -4,7 +4,7 @@
 // the v_osp_wip view (migration 0064). Every ordered unit reconciles into a
 // bucket: order_qty = accepted + in_qc + at_vendor + not_sent.
 
-import type { ListOspWipResponse, OspWipRow } from '@innovic/shared';
+import { type ListOspWipResponse, type OspWipRow, opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -74,7 +74,11 @@ export function OspAtVendorRegister(): React.JSX.Element {
                 ) : null}
               </span>
               {filter !== 'all' ? (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFilter('all')}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setFilter('all')}
+                >
                   Show All
                 </button>
               ) : null}
@@ -133,9 +137,9 @@ export function OspAtVendorRegister(): React.JSX.Element {
             passed; "In QC" is returned but QC still pending; "At Vendor" is material physically out
             (sent − returned) — all tracked here, not in finished stock. <b>Not Sent</b> is the
             order balance still to be outsourced eventually; <b>Ready to Send</b> is how much the
-            previous operation has actually cleared, i.e. what a challan will accept today.
-            Figures are derived from job-card counters and the return GRN's incoming QC; nothing
-            is keyed in.
+            previous operation has actually cleared, i.e. what a challan will accept today. Figures
+            are derived from job-card counters and the return GRN's incoming QC; nothing is keyed
+            in.
           </div>
         </>
       ) : null}
@@ -160,7 +164,7 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
         {row.vendorName ?? '—'}
       </td>
       <td className="text3" style={{ fontSize: 11 }}>
-        {row.operation ?? `Op ${row.opSeq}`}
+        {row.operation ?? `Op ${opSrNo(row.opSeq)}`}
       </td>
       <td className="td-ctr mono">{row.orderQty}</td>
       <td className="td-ctr mono text3">{row.sentQty || '—'}</td>
@@ -173,22 +177,34 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
         </span>
       </td>
       <td className="td-ctr">
-        <span className="mono fw-700" style={{ color: row.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}>
+        <span
+          className="mono fw-700"
+          style={{ color: row.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}
+        >
           {row.inQcQty || '—'}
         </span>
       </td>
       <td className="td-ctr">
-        <span className="mono" style={{ color: row.acceptedQty > 0 ? 'var(--green)' : 'var(--text3)' }}>
+        <span
+          className="mono"
+          style={{ color: row.acceptedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+        >
           {row.acceptedQty || '—'}
         </span>
       </td>
       <td className="td-ctr">
-        <span className="mono" style={{ color: row.rejectedQty > 0 ? 'var(--red)' : 'var(--text3)' }}>
+        <span
+          className="mono"
+          style={{ color: row.rejectedQty > 0 ? 'var(--red)' : 'var(--text3)' }}
+        >
           {row.rejectedQty || '—'}
         </span>
       </td>
       <td className="td-ctr">
-        <span className="mono" style={{ color: row.notSentQty > 0 ? 'var(--blue)' : 'var(--text3)' }}>
+        <span
+          className="mono"
+          style={{ color: row.notSentQty > 0 ? 'var(--blue)' : 'var(--text3)' }}
+        >
           {row.notSentQty || '—'}
         </span>
       </td>

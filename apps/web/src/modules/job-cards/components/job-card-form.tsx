@@ -15,6 +15,7 @@
 // _hasOpStarted L6151.
 
 import type { JobCardEditModel, JobCardSourceOption } from '@innovic/shared';
+import { fmtOpSrNo } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -949,7 +950,7 @@ export function JobCardForm({
             const op = ops[idx];
             if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
             setBalanceNote(
-              `Outsourced ${qtyDone} pc(s) from Op${idx + 1} — JW OSP purchase request raised.`,
+              `Outsourced ${qtyDone} pc(s) from Op${fmtOpSrNo(idx + 1)} — JW OSP purchase request raised.`,
             );
             setBalanceOpIdx(null);
           }}

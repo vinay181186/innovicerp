@@ -1,7 +1,7 @@
 // Rework Cycles tab (legacy _qccRenderRework L18920). Ops inspected more than
 // once, or once with rejects — these directly impact project timeline.
 
-import type { QcReworkRow } from '@innovic/shared';
+import { type QcReworkRow, opSrNo } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 function fmt(d: string | null): string {
@@ -54,7 +54,9 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                   <tr key={g.jcOpId}>
                     <td className="td-code">
                       <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
-                      <span style={{ color: 'var(--red)', fontWeight: 700 }}>Op{g.opSeq}</span>
+                      <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                        Op{opSrNo(g.opSeq)}
+                      </span>
                     </td>
                     <td style={{ fontSize: 11 }}>
                       {/* Legacy L18939 hardcodes #8B5CF6, not var(--purple). */}

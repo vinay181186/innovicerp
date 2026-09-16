@@ -22,6 +22,7 @@
 // The production log is NOT printed (the ⬇ Excel export carries it).
 
 import type { Company, JcOpEnriched, JobCardListItem } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
@@ -47,7 +48,9 @@ function fmt(d: string | null | undefined): string {
  *  the box's outer border to the centre divider — which is what `.jf` does
  *  through the column's zero padding (see JC_STYLE). */
 function fact(label: string, value: string, opts?: { strong?: boolean; last?: boolean }): string {
-  const cls = ['jf', opts?.last ? 'last' : '', opts?.strong ? 'strong' : ''].filter(Boolean).join(' ');
+  const cls = ['jf', opts?.last ? 'last' : '', opts?.strong ? 'strong' : '']
+    .filter(Boolean)
+    .join(' ');
   return `<div class="${cls}"><span class="lab">${esc(label)}</span><span class="val">${esc(value)}</span></div>`;
 }
 
@@ -57,17 +60,20 @@ function opRow(o: JcOpEnriched): string {
   const planned = isQc ? 'QC' : isOsp ? 'OSP' : (o.machineCode ?? o.machineCodeText ?? '');
   // Actual: the session's machine, else who made the pieces, else the plan
   // (nothing disagrees). QC and OSP carry no machine.
-  const actual = isQc || isOsp ? '' : resolveActualMachine({
-    planned,
-    activeRunningMachineCode: o.activeRunningMachineCode,
-    machines: o.machines,
-  });
+  const actual =
+    isQc || isOsp
+      ? ''
+      : resolveActualMachine({
+          planned,
+          activeRunningMachineCode: o.activeRunningMachineCode,
+          machines: o.machines,
+        });
   const actualLabel = actual === '' ? '' : actual.label;
   const actualCls = actual !== '' && actual.differs ? ' dev' : '';
   const okQty = isQc ? o.qcAcceptedQty : o.completedQty;
   const rej = isQc ? o.qcRejectedQty : 0;
   return `<tr>
-    <td class="c b">${o.opSeq}</td>
+    <td class="c b">${opSrNo(o.opSeq)}</td>
     <td>${esc(o.operation)}${isQc ? ' (QC)' : ''}</td>
     <td class="c b">${esc(planned)}</td>
     <td class="c b${actualCls}">${esc(actualLabel)}</td>
@@ -82,7 +88,7 @@ function opRow(o: JcOpEnriched): string {
 }
 
 function blankRow(seq: number): string {
-  return `<tr class="hand"><td class="c">${seq}</td>${'<td></td>'.repeat(10)}</tr>`;
+  return `<tr class="hand"><td class="c">${opSrNo(seq)}</td>${'<td></td>'.repeat(10)}</tr>`;
 }
 
 // Everything the traveller needs beyond SHEET_STYLE. Sizes follow the sheet:

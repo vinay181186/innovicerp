@@ -18,6 +18,7 @@
 // (machine_id) where status='running' and is_osp=false. The service catches
 // the resulting unique-violation and returns a typed ConflictError.
 
+import { opSrNo } from '@innovic/shared';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -1103,7 +1104,8 @@ async function writeProductionLog(
       {
         action: 'OP_COMPLETE',
         entity: 'Op',
-        detail: `${meta.code} Op #${op.opSeq} — ${input.qty} pcs${operatorPart}`,
+        // display rule — see opSrNo in @innovic/shared
+        detail: `${meta.code} Op #${opSrNo(op.opSeq)} — ${input.qty} pcs${operatorPart}`,
         refId: meta.code,
       },
       companyId,
@@ -1518,7 +1520,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         {
           action: 'OP_QC',
           entity: 'Op',
-          detail: `${jcCode} Op #${op.opSeq} — ${input.qty} accepted, ${input.rejectQty} rejected${operatorPart}`,
+          detail: `${jcCode} Op #${opSrNo(op.opSeq)} — ${input.qty} accepted, ${input.rejectQty} rejected${operatorPart}`,
           refId: jcCode,
         },
         companyId,
@@ -1654,7 +1656,7 @@ async function applyTimingChange(
       action: 'OP_LOG_TIME_EDIT',
       entity: 'Op',
       detail:
-        `${jc?.code ?? ''} Op #${jc?.opSeq ?? ''} — ${row.logType} entry ${row.logNo} ` +
+        `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — ${row.logType} entry ${row.logNo} ` +
         `retimed ${was} → ${now} (qty ${row.qty} unchanged)${via}`,
       refId: jc?.code ?? row.logNo,
     },
@@ -1792,7 +1794,7 @@ export async function updateOpLogTiming(
         action: 'OP_LOG_TIME_CHANGE_REQUESTED',
         entity: 'Op',
         detail:
-          `${jc?.code ?? ''} Op #${jc?.opSeq ?? ''} — entry ${row.logNo}, ` +
+          `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — entry ${row.logNo}, ` +
           `${was} → ${asked} requested (entry unchanged until approved)`,
         refId: jc?.code ?? row.logNo,
       },
@@ -1988,7 +1990,7 @@ export async function decideOpLogTimeChange(
             : 'OP_LOG_TIME_CHANGE_REJECTED',
         entity: 'Op',
         detail:
-          `${jc?.code ?? ''} Op #${jc?.opSeq ?? ''} — time change to ${asked} ` +
+          `${jc?.code ?? ''} Op #${jc?.opSeq != null ? opSrNo(jc.opSeq) : ''} — time change to ${asked} ` +
           `${input.decision === 'approve' ? 'approved' : 'rejected'}` +
           `${input.decisionReason?.trim() ? `: ${input.decisionReason.trim()}` : ''}`,
         refId: jc?.code ?? req.id,
@@ -2179,7 +2181,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       {
         action: 'OP_START',
         entity: 'Op',
-        detail: `${meta.code} Op #${meta.opSeq} — Started${machinePart}${operatorPart}`,
+        detail: `${meta.code} Op #${opSrNo(meta.opSeq)} — Started${machinePart}${operatorPart}`,
         refId: meta.code,
       },
       companyId,
@@ -2371,7 +2373,7 @@ export async function stopOp(
       {
         action: 'OP_STOP',
         entity: 'Op',
-        detail: `${m.code} Op #${m.opSeq} — Stopped${machinePart}${qtyPart}`,
+        detail: `${m.code} Op #${opSrNo(m.opSeq)} — Stopped${machinePart}${qtyPart}`,
         refId: m.code,
       },
       companyId,

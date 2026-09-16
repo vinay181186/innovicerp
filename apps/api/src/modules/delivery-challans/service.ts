@@ -38,7 +38,7 @@ import {
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
-import { parseDocRevision, withDocRevision } from '@innovic/shared';
+import { opSrNo, parseDocRevision, withDocRevision } from '@innovic/shared';
 import type { DocumentTraceability, ReceiveDeliveryChallanResponse } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
@@ -683,12 +683,13 @@ export async function getSendableForPo(
 
       const opAllowed = Math.max(0, s.effectiveSendable);
       const maxSendNow = Math.min(poBalance, opAllowed);
-      const where = `Job card ${s.jcCode} operation ${s.op.opSeq}`;
+      // display rule — see opSrNo in @innovic/shared
+      const where = `Job card ${s.jcCode} operation ${opSrNo(s.op.opSeq)}`;
       // The same phrase for mid-sentence use. Written out rather than
       // where.toLowerCase() — that lowercased the job card CODE too, turning
       // IN-JC-26-00010 into "in-jc-26-00010", which is not its name and is not
       // what anyone would search for.
-      const whereMid = `job card ${s.jcCode} operation ${s.op.opSeq}`;
+      const whereMid = `job card ${s.jcCode} operation ${opSrNo(s.op.opSeq)}`;
 
       // Which limit is actually doing the stopping decides what the user is
       // told, because each one has a different way out — finish the operation
@@ -1147,7 +1148,7 @@ export async function createDeliveryChallan(
         {
           action: 'OP_OUTSOURCE_SENT',
           entity: 'JcOp',
-          detail: `${op.jcCode} Op ${op.opSeq} — sent ${op.qty} pcs via ${header.code}`,
+          detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — sent ${op.qty} pcs via ${header.code}`,
           refId: op.jcCode,
         },
         companyId,
@@ -1252,7 +1253,7 @@ export async function cancelDeliveryChallan(
         {
           action: 'OP_OUTSOURCE_REVERSED',
           entity: 'JcOp',
-          detail: `${op.jcCode} Op ${op.opSeq} — reversed ${op.qty} pcs from ${header.code}`,
+          detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — reversed ${op.qty} pcs from ${header.code}`,
           refId: op.jcCode,
         },
         companyId,
@@ -1567,7 +1568,7 @@ export async function receiveAgainstDeliveryChallan(
           {
             action: 'OP_OUTSOURCE_RECEIVED',
             entity: 'JcOp',
-            detail: `${op.jcCode} Op ${op.opSeq} — fully received via ${receiptCode}`,
+            detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — fully received via ${receiptCode}`,
             refId: op.jcCode,
           },
           companyId,

@@ -2,6 +2,7 @@
 // Mirror of legacy _buildWorkList (L3196) + wlRule_* (L2959-3193). Pure-SQL
 // aggregation; each rule guarded so one failure can't sink the panel.
 
+import { opSrNo } from '@innovic/shared';
 import type { WorkListItem, WorkListSeverity } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { users } from '../../db/schema';
@@ -39,7 +40,11 @@ async function q(tx: DbTransaction, text: string): Promise<Row[]> {
 }
 
 // ── Rule 1: PO awaiting approval (draft) ──
-async function rulePoApproval(tx: DbTransaction, cid: string, today: string): Promise<WorkListItem[]> {
+async function rulePoApproval(
+  tx: DbTransaction,
+  cid: string,
+  today: string,
+): Promise<WorkListItem[]> {
   const rows = await q(
     tx,
     `SELECT code, po_date, vendor_code_text FROM purchase_orders
@@ -63,7 +68,11 @@ async function rulePoApproval(tx: DbTransaction, cid: string, today: string): Pr
 }
 
 // ── Rule 2: PR approved, no PO ──
-async function rulePrConversion(tx: DbTransaction, cid: string, today: string): Promise<WorkListItem[]> {
+async function rulePrConversion(
+  tx: DbTransaction,
+  cid: string,
+  today: string,
+): Promise<WorkListItem[]> {
   const rows = await q(
     tx,
     `SELECT code, pr_date, item_code_text, item_name, qty FROM purchase_requests
@@ -87,7 +96,11 @@ async function rulePrConversion(tx: DbTransaction, cid: string, today: string): 
 }
 
 // ── Rule 3: Pending incoming QC (GRN lines pending) ──
-async function rulePendingQC(tx: DbTransaction, cid: string, today: string): Promise<WorkListItem[]> {
+async function rulePendingQC(
+  tx: DbTransaction,
+  cid: string,
+  today: string,
+): Promise<WorkListItem[]> {
   const rows = await q(
     tx,
     `SELECT g.code, g.grn_date, g.vendor_code_text,
@@ -115,7 +128,11 @@ async function rulePendingQC(tx: DbTransaction, cid: string, today: string): Pro
 }
 
 // ── Rule 4: Equipment SO with BOM pending (no BOM linked) ──
-async function ruleBomPending(tx: DbTransaction, cid: string, today: string): Promise<WorkListItem[]> {
+async function ruleBomPending(
+  tx: DbTransaction,
+  cid: string,
+  today: string,
+): Promise<WorkListItem[]> {
   const rows = await q(
     tx,
     `SELECT so.code, so.customer_name, so.so_date,
@@ -146,7 +163,12 @@ async function ruleBomPending(tx: DbTransaction, cid: string, today: string): Pr
 }
 
 // ── Rule 5: My assigned tasks ──
-async function ruleMyTasks(tx: DbTransaction, cid: string, userId: string, today: string): Promise<WorkListItem[]> {
+async function ruleMyTasks(
+  tx: DbTransaction,
+  cid: string,
+  userId: string,
+  today: string,
+): Promise<WorkListItem[]> {
   const rows = await q(
     tx,
     `SELECT code, title, description, due_date, viewed_at, assigned_by
@@ -172,7 +194,12 @@ async function ruleMyTasks(tx: DbTransaction, cid: string, userId: string, today
 }
 
 // ── Rule 6: My CAPAs ──
-async function ruleMyCapas(tx: DbTransaction, cid: string, myName: string, today: string): Promise<WorkListItem[]> {
+async function ruleMyCapas(
+  tx: DbTransaction,
+  cid: string,
+  myName: string,
+  today: string,
+): Promise<WorkListItem[]> {
   if (!myName) return [];
   const safe = myName.replace(/'/g, "''");
   const rows = await q(
@@ -208,7 +235,11 @@ async function ruleMyCapas(tx: DbTransaction, cid: string, myName: string, today
 }
 
 // ── Rule 7: Overdue Job Cards (due<today, not fully complete) ──
-async function ruleOverdueJCs(tx: DbTransaction, cid: string, today: string): Promise<WorkListItem[]> {
+async function ruleOverdueJCs(
+  tx: DbTransaction,
+  cid: string,
+  today: string,
+): Promise<WorkListItem[]> {
   const rows = await q(
     tx,
     `SELECT jc.code, jc.due_date,
@@ -238,7 +269,11 @@ async function ruleOverdueJCs(tx: DbTransaction, cid: string, today: string): Pr
 }
 
 // ── Rule 8: Overdue PO delivery ──
-async function ruleOverduePO(tx: DbTransaction, cid: string, today: string): Promise<WorkListItem[]> {
+async function ruleOverduePO(
+  tx: DbTransaction,
+  cid: string,
+  today: string,
+): Promise<WorkListItem[]> {
   const rows = await q(
     tx,
     `SELECT code, vendor_code_text, due_date FROM purchase_orders
@@ -291,7 +326,8 @@ async function ruleStuckOps(tx: DbTransaction, cid: string): Promise<WorkListIte
       dept: 'production',
       severity: sev,
       icon: '⚠',
-      title: `${r['jc_code']} Op ${r['op_seq']} — ${ratio >= 2 ? 'severely overrun' : 'running late'}`,
+      // display rule — see opSrNo in @innovic/shared
+      title: `${r['jc_code']} Op ${opSrNo(Number(r['op_seq']))} — ${ratio >= 2 ? 'severely overrun' : 'running late'}`,
       detail: `${r['operation'] ?? ''} on ${r['machine'] ?? ''} · ${elapsed.toFixed(1)}h elapsed (expected ${expected.toFixed(1)}h)`,
       age: Math.round(elapsed / 24),
       actionLabel: 'Review',
@@ -342,7 +378,11 @@ export async function getWorkList(user: AuthContext): Promise<WorkListItem[]> {
   requireCompany(user);
   const a = await loadAccess(user);
   return withUserContext(user, async (tx) => {
-    const me = await tx.select({ name: users.fullName }).from(users).where(sql`id = ${user.id}::uuid`).limit(1);
+    const me = await tx
+      .select({ name: users.fullName })
+      .from(users)
+      .where(sql`id = ${user.id}::uuid`)
+      .limit(1);
     return buildWorkListWith(tx, user, a, me[0]?.name ?? '');
   });
 }

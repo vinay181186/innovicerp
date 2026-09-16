@@ -229,7 +229,7 @@ describe('nc-register dispose cascades (T-040b, QC–NC handling design §1–§
     expect(child[0]!.recoveryKind).toBe('rework');
     expect(child[0]!.orderQty).toBe(5);
     expect(child[0]!.clientMaterialGate).toBe(false);
-    expect(child[0]!.remarks).toBe(`Rework of ${f.jcCode} Op 3 — ${f.ncCode}`);
+    expect(child[0]!.remarks).toBe(`Rework of ${f.jcCode} Op 30 — ${f.ncCode}`);
     // No ops are copied — the user defines the recovery route (§4.3).
     const childOps = await db
       .select({ id: jcOps.id })

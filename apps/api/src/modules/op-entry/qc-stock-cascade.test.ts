@@ -218,14 +218,14 @@ describe('qc stock cascade — ADR-106: JWSO credits stock like SO', () => {
     const rows = await db
       .select({ qty: storeTransactions.qty, txnType: storeTransactions.txnType })
       .from(storeTransactions)
-      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-JW Op #1`));
+      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-JW Op #10`));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.qty).toBe(QTY);
     expect(rows[0]!.txnType).toBe('in');
 
     await db
       .delete(storeTransactions)
-      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-JW Op #1`));
+      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-JW Op #10`));
   });
 
   it('credits own stock for an SO-sourced job card — identical behaviour', async () => {
@@ -235,13 +235,13 @@ describe('qc stock cascade — ADR-106: JWSO credits stock like SO', () => {
     const rows = await db
       .select({ qty: storeTransactions.qty, txnType: storeTransactions.txnType })
       .from(storeTransactions)
-      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-SO Op #1`));
+      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-SO Op #10`));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.qty).toBe(QTY);
     expect(rows[0]!.txnType).toBe('in');
 
     await db
       .delete(storeTransactions)
-      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-SO Op #1`));
+      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-SO Op #10`));
   });
 });

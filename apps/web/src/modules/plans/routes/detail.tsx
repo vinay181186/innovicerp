@@ -1,6 +1,7 @@
 // Plan detail (PL-4). Shows full plan + ops + linked entities + actions.
 
 import type { PlanStatus, PlanType } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -8,12 +9,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import {
-  useExecutePlan,
-  useFinalizePlan,
-  usePlan,
-  useSoftDeletePlan,
-} from '../api';
+import { useExecutePlan, useFinalizePlan, usePlan, useSoftDeletePlan } from '../api';
 
 export const planDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -181,11 +177,7 @@ function PlanDetailPage(): React.JSX.Element {
               </button>
             ) : null}
             {perms.edit && isEditable ? (
-              <Link
-                to="/plans/$id/edit"
-                params={{ id: plan.id }}
-                className="btn btn-ghost btn-sm"
-              >
+              <Link to="/plans/$id/edit" params={{ id: plan.id }} className="btn btn-ghost btn-sm">
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
@@ -301,8 +293,7 @@ function PlanDetailPage(): React.JSX.Element {
             </>
           ) : null}
 
-          {(plan.planType === 'manufacture' || plan.planType === 'assembly') &&
-          plan.jcId ? (
+          {(plan.planType === 'manufacture' || plan.planType === 'assembly') && plan.jcId ? (
             <Grid>
               <KV label="Linked JC" value="✓ Created" />
             </Grid>
@@ -336,7 +327,7 @@ function PlanDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Sr No</th>
                   <th>Operation</th>
                   <th>Type</th>
                   <th>Machine</th>
@@ -349,7 +340,8 @@ function PlanDetailPage(): React.JSX.Element {
               <tbody>
                 {plan.ops.map((op) => (
                   <tr key={op.id}>
-                    <td>{op.opSeq}</td>
+                    {/* 10, 20, 30 on screen — display rule, see opSrNo */}
+                    <td>{opSrNo(op.opSeq)}</td>
                     <td>{op.operation}</td>
                     <td>{op.opType}</td>
                     <td>{op.machineCodeText ?? '—'}</td>

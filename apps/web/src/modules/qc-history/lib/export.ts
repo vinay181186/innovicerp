@@ -10,7 +10,7 @@
 // export (export-job-card-excel.ts). The name is on the sheet at all because a
 // job-card number says WHICH JOB and never which part.
 
-import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
+import { type QcHistoryLogRow, type QcHistoryPendingRow, opSrNo } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { fmtDate } from '@/lib/print/doc-print';
 
@@ -28,7 +28,7 @@ function download(rows: Record<string, unknown>[], sheetName: string, filename: 
 export function exportCompletedQc(logs: QcHistoryLogRow[]): void {
   const rows = logs.map((l) => ({
     JC: l.jcCode,
-    Op: `Op${l.opSeq}`,
+    Op: `Op${opSrNo(l.opSeq)}`,
     SO: l.soCode ?? '',
     'Item Code': l.itemCode ?? '',
     'Drawing Rev': l.itemRevision ?? '',
@@ -48,7 +48,7 @@ export function exportCompletedQc(logs: QcHistoryLogRow[]): void {
 export function exportPendingQc(pending: QcHistoryPendingRow[]): void {
   const rows = pending.map((o) => ({
     JC: o.jcCode,
-    Op: `Op${o.opSeq}`,
+    Op: `Op${opSrNo(o.opSeq)}`,
     SO: o.soCode ?? '',
     'Item Code': o.itemCode ?? '',
     'Drawing Rev': o.itemRevision ?? '',

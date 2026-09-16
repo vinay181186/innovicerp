@@ -7,7 +7,14 @@
 // page title lives in the topbar (#pageTitle, legacy L2232/L2322). Same shape as
 // so-planning/workflow.tsx (legacy L9427).
 
-import { SHIFTS, SHIFT_LABELS, shortName, type Shift, type SubmitQcLogInput } from '@innovic/shared';
+import {
+  SHIFTS,
+  SHIFT_LABELS,
+  type Shift,
+  type SubmitQcLogInput,
+  opSrNo,
+  shortName,
+} from '@innovic/shared';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -509,7 +516,7 @@ function PendingCall(props: {
               {o.jcCode}
             </b>{' '}
             <span className="text3" style={{ fontSize: 11 }}>
-              Op{o.opSeq}
+              Op{opSrNo(o.opSeq)}
             </span>
             {o.clientPoLineNo ? (
               <span
@@ -576,7 +583,7 @@ function PendingCall(props: {
         >
           {/* Legacy L4167: QC Entry header naming the JC/Op and the operation. */}
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
-            ✅ QC Entry — {o.jcCode} Op{o.opSeq} —{' '}
+            ✅ QC Entry — {o.jcCode} Op{opSrNo(o.opSeq)} —{' '}
             <span
               style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}
             >
@@ -741,7 +748,7 @@ function CompletedLog({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
         <div style={{ minWidth: 0 }}>
           <b className="cyan">{l.jcCode}</b>{' '}
           <span className="text3" style={{ fontSize: 10 }}>
-            Op{l.opSeq} — {l.operation}
+            Op{opSrNo(l.opSeq)} — {l.operation}
           </span>
           <div className="text2" style={{ fontSize: 11 }}>
             {/* Same rule as the open-call card above: the item code is what

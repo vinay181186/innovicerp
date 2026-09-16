@@ -15,6 +15,7 @@
 // Caller is op-entry/service.submitQcLog; this runs in the SAME tx so a
 // rollback unwinds both the QC log and the stock row together.
 
+import { opSrNo } from '@innovic/shared';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { jcOps, jobCards, storeTransactions } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
@@ -97,7 +98,8 @@ export async function tryApplyQcStockCascade(
       txnType: 'in',
       qty: ctx.acceptedQty,
       sourceType: 'qc_accept',
-      sourceRef: `${ctx.jcCode} Op #${ctx.opSeq}`,
+      // display rule — see opSrNo in @innovic/shared
+      sourceRef: `${ctx.jcCode} Op #${opSrNo(ctx.opSeq)}`,
       stockBefore,
       stockAfter,
       remarks: `QC accept · last op · ${ctx.acceptedQty} pcs`,

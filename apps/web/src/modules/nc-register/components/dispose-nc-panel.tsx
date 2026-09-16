@@ -13,6 +13,7 @@ import {
   NC_DISPOSITION_LABELS,
   type NcDisposition,
   type NcRegister,
+  opSrNo,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -160,7 +161,8 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             {nc.itemNameText ? ` ${nc.itemNameText}` : ''}
           </CtxField>
           <CtxField label="OPERATION">
-            {nc.opSeq != null ? `Op${nc.opSeq}` : ''}
+            {/* Op numbers show in tens (display rule, see opSrNo). */}
+            {nc.opSeq != null ? `Op${opSrNo(nc.opSeq)}` : ''}
             {nc.opSeq != null && (nc.operationText ?? nc.qcOperationText) ? ': ' : ''}
             {nc.operationText ?? nc.qcOperationText ?? (nc.opSeq == null ? '—' : '')}
           </CtxField>
@@ -244,11 +246,11 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                       }
                     >
                       <option value="">
-                        {nc.opSeq != null ? `Defaults to op ${nc.opSeq}` : '— pick op —'}
+                        {nc.opSeq != null ? `Defaults to op ${opSrNo(nc.opSeq)}` : '— pick op —'}
                       </option>
                       {reworkOps.map((o) => (
                         <option key={o.opSeq} value={o.opSeq}>
-                          Op{o.opSeq}
+                          Op{opSrNo(o.opSeq)}
                           {o.operation ? `: ${o.operation}` : ''}
                         </option>
                       ))}

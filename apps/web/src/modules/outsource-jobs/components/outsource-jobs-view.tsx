@@ -36,7 +36,11 @@
 // exposes sourceJcCode/sourceJcOpSeq (used here), a bare sourceSoLineId uuid
 // with no code join, and no plan field at all. See report / ISSUE-067.
 
-import type { ListPurchaseRequestsQuery, PurchaseRequestListItem } from '@innovic/shared';
+import {
+  type ListPurchaseRequestsQuery,
+  type PurchaseRequestListItem,
+  opSrNo,
+} from '@innovic/shared';
 import { Loader2, X } from 'lucide-react';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useEffect, useMemo, useState } from 'react';
@@ -161,7 +165,8 @@ export function OutsourceJobsView(): React.JSX.Element {
           [
             pr.code,
             pr.sourceJcCode,
-            pr.sourceJcOpSeq,
+            // Searched by the number on screen (display rule, see opSrNo).
+            pr.sourceJcOpSeq ? opSrNo(pr.sourceJcOpSeq) : null,
             pr.itemCode,
             pr.itemCodeText,
             // The drawing revision is on screen beside the code, so it is
@@ -310,8 +315,12 @@ export function OutsourceJobsView(): React.JSX.Element {
       {/* Summary cards */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 10 }}>Total OSP</div>
-          <div className="mono fw-700" style={{ fontSize: 22 }}>{totalPR}</div>
+          <div className="text3" style={{ fontSize: 10 }}>
+            Total OSP
+          </div>
+          <div className="mono fw-700" style={{ fontSize: 22 }}>
+            {totalPR}
+          </div>
         </div>
         <div
           className="panel"
@@ -324,7 +333,9 @@ export function OutsourceJobsView(): React.JSX.Element {
           }}
           onClick={() => setStatusBand((prev) => (prev === 'open' ? undefined : 'open'))}
         >
-          <div className="text3" style={{ fontSize: 10 }}>Open PR</div>
+          <div className="text3" style={{ fontSize: 10 }}>
+            Open PR
+          </div>
           <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--amber)' }}>
             {openPR}
           </div>
@@ -338,22 +349,36 @@ export function OutsourceJobsView(): React.JSX.Element {
             cursor: 'pointer',
             border: `2px solid ${statusBand === 'po_created' ? 'var(--green)' : 'transparent'}`,
           }}
-          onClick={() => setStatusBand((prev) => (prev === 'po_created' ? undefined : 'po_created'))}
+          onClick={() =>
+            setStatusBand((prev) => (prev === 'po_created' ? undefined : 'po_created'))
+          }
         >
-          <div className="text3" style={{ fontSize: 10 }}>PO Created</div>
+          <div className="text3" style={{ fontSize: 10 }}>
+            PO Created
+          </div>
           <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--green)' }}>
             {poCreated}
           </div>
         </div>
         <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 10 }}>Total Qty</div>
-          <div className="mono fw-700" style={{ fontSize: 22 }}>{totalQty}</div>
+          <div className="text3" style={{ fontSize: 10 }}>
+            Total Qty
+          </div>
+          <div className="mono fw-700" style={{ fontSize: 22 }}>
+            {totalQty}
+          </div>
         </div>
       </div>
 
       {/* Search + JC-source filter (legacy L27103-27106) */}
       <div
-        style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}
+        style={{
+          display: 'flex',
+          gap: 8,
+          marginBottom: 14,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
       >
         <input
           className="innovic-input"
@@ -370,7 +395,9 @@ export function OutsourceJobsView(): React.JSX.Element {
         >
           <option value="">All JC sources</option>
           {soNos.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>
+              {s}
+            </option>
           ))}
         </select>
       </div>
@@ -500,7 +527,9 @@ export function OutsourceJobsView(): React.JSX.Element {
               </div>
               <div className="form-grid-3">
                 <div className="form-grp">
-                  <label className="form-label">PO No. <span className="req">★</span></label>
+                  <label className="form-label">
+                    PO No. <span className="req">★</span>
+                  </label>
                   <input
                     className="innovic-input"
                     value={poCode}
@@ -539,7 +568,9 @@ export function OutsourceJobsView(): React.JSX.Element {
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)' }}>
                 PO Lines (rate is editable per line)
               </div>
-              <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+              <div
+                style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}
+              >
                 <table className="innovic-table">
                   <thead>
                     <tr style={{ background: 'var(--bg4)' }}>
@@ -558,7 +589,9 @@ export function OutsourceJobsView(): React.JSX.Element {
                       const orderQty = ospOrderQty(pr);
                       return (
                         <tr key={pr.id}>
-                          <td className="mono" style={{ color: 'var(--purple)', fontSize: 11 }}>{pr.code}</td>
+                          <td className="mono" style={{ color: 'var(--purple)', fontSize: 11 }}>
+                            {pr.code}
+                          </td>
                           <td className="mono" style={{ color: 'var(--cyan)', fontSize: 11 }}>
                             {pr.sourceJcCode ?? '—'}
                           </td>
@@ -686,9 +719,13 @@ function OspRow({
           />
         ) : null}
       </td>
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>{pr.code}</td>
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {pr.code}
+      </td>
       <td className="mono" style={{ color: 'var(--cyan)', fontSize: 11 }}>
-        {pr.sourceJcCode ? `${pr.sourceJcCode}${pr.sourceJcOpSeq ? ' op' + pr.sourceJcOpSeq : ''}` : '—'}
+        {pr.sourceJcCode
+          ? `${pr.sourceJcCode}${pr.sourceJcOpSeq ? ' op' + opSrNo(pr.sourceJcOpSeq) : ''}`
+          : '—'}
       </td>
       <td style={{ fontSize: 11 }}>
         {/* CODE/REV — same rule as the review table above. */}

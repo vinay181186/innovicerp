@@ -26,12 +26,8 @@
 // an OSP op, TPI for a third-party inspection, Report NC on every op — and
 // every button in it is permission-gated. That strip and its gating live in
 // jc-op-actions.tsx (JcOpFooter), so this file stays layout only.
-import type {
-  JcOpEnriched,
-  JobCardListItem,
-  JobCardRmAvailable,
-  OpLog,
-} from '@innovic/shared';
+import type { JcOpEnriched, JobCardListItem, JobCardRmAvailable, OpLog } from '@innovic/shared';
+import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { useState } from 'react';
 import { PlannedActualMachine } from '@/components/shared/machine-split';
 import { OP_STATUS, opAccentColor } from '../lib/jc-op-labels';
@@ -152,12 +148,19 @@ export function JcOpCard({
   // otherwise showed a bare "✗5 rej" and no sign of the disposition. Suppressed
   // when the rework came back to this same op — the ♻ tag in the header already
   // says so and two markers for one decision reads as two decisions.
+  // reworkRaisedToOps arrives as stored seqs ("1, 3"); shown in tens (display
+  // rule, see opSrNo).
+  const reworkOutSrNos = (op.reworkRaisedToOps ?? '')
+    .split(',')
+    .filter((n) => n.trim() !== '')
+    .map((n) => fmtOpSrNo(Number(n.trim())))
+    .join(', ');
   const reworkOutTo =
     op.reworkRaisedToOps && op.reworkRaisedToOps !== String(op.opSeq)
-      ? ` → Op${op.reworkRaisedToOps}`
+      ? ` → Op${reworkOutSrNos}`
       : '';
   const reworkOut = op.reworkRaisedQty > 0 && reworkOutTo !== '';
-  const reworkOutTitle = `${op.reworkRaisedQty} piece(s) rejected here and sent back to Op${op.reworkRaisedToOps ?? ''} for rework. Clears when the NC is closed.`;
+  const reworkOutTitle = `${op.reworkRaisedQty} piece(s) rejected here and sent back to Op${reworkOutSrNos} for rework. Clears when the NC is closed.`;
 
   return (
     <div
@@ -199,7 +202,7 @@ export function JcOpCard({
               color: 'var(--text2)',
             }}
           >
-            {op.opSeq}
+            {opSrNo(op.opSeq)}
           </span>
           {isQc || isOut ? (
             <span className="fw-700" style={{ fontSize: 14 }}>
@@ -222,10 +225,20 @@ export function JcOpCard({
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>{machineName}</span>
           ) : null}
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>{op.operation}</span>
-          {isOut ? <span className="tag" style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}>OSP</span> : null}
-          {isQc ? <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>QC</span> : null}
+          {isOut ? (
+            <span className="tag" style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}>
+              OSP
+            </span>
+          ) : null}
+          {isQc ? (
+            <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>
+              QC
+            </span>
+          ) : null}
           {!isQc && op.qcRequired ? (
-            <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>QC YES</span>
+            <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>
+              QC YES
+            </span>
           ) : null}
           {/* Rework owed here — pieces an NC sent BACK to this op. The Op Entry
               table has always shown this (♻N beside the operation); this card
@@ -300,35 +313,51 @@ export function JcOpCard({
                 sub={
                   <>
                     {isQc ? (
-                    <>
-                      <div style={{ fontSize: 8, color: 'var(--green)' }}>✓ accepted</div>
-                      {op.qcRejectedQty > 0 ? (
-                        <div style={{ fontSize: 8, color: 'var(--red)' }}>✗{op.qcRejectedQty} rej</div>
-                      ) : null}
-                      {reworkOut ? (
-                        <div style={{ fontSize: 8, color: 'var(--amber)' }} title={reworkOutTitle}>
-                          ♻{op.reworkRaisedQty} rework{reworkOutTo}
+                      <>
+                        <div style={{ fontSize: 8, color: 'var(--green)' }}>✓ accepted</div>
+                        {op.qcRejectedQty > 0 ? (
+                          <div style={{ fontSize: 8, color: 'var(--red)' }}>
+                            ✗{op.qcRejectedQty} rej
+                          </div>
+                        ) : null}
+                        {reworkOut ? (
+                          <div
+                            style={{ fontSize: 8, color: 'var(--amber)' }}
+                            title={reworkOutTitle}
+                          >
+                            ♻{op.reworkRaisedQty} rework{reworkOutTo}
+                          </div>
+                        ) : null}
+                        {op.qcPending > 0 ? (
+                          <div style={{ fontSize: 8, color: 'var(--amber)' }}>
+                            ⏳{op.qcPending} pending
+                          </div>
+                        ) : null}
+                      </>
+                    ) : op.qcRequired ? (
+                      <>
+                        <div style={{ fontSize: 8, color: 'var(--green)' }}>
+                          ✓{op.qcAcceptedQty} acc
                         </div>
-                      ) : null}
-                      {op.qcPending > 0 ? (
-                        <div style={{ fontSize: 8, color: 'var(--amber)' }}>⏳{op.qcPending} pending</div>
-                      ) : null}
-                    </>
-                  ) : op.qcRequired ? (
-                    <>
-                      <div style={{ fontSize: 8, color: 'var(--green)' }}>✓{op.qcAcceptedQty} acc</div>
-                      {op.qcRejectedQty > 0 ? (
-                        <div style={{ fontSize: 8, color: 'var(--red)' }}>✗{op.qcRejectedQty} rej</div>
-                      ) : null}
-                      {reworkOut ? (
-                        <div style={{ fontSize: 8, color: 'var(--amber)' }} title={reworkOutTitle}>
-                          ♻{op.reworkRaisedQty} rework{reworkOutTo}
-                        </div>
-                      ) : null}
-                      {op.qcPending > 0 ? (
-                        <div style={{ fontSize: 8, color: 'var(--amber)' }}>⏳{op.qcPending} pend</div>
-                      ) : null}
-                    </>
+                        {op.qcRejectedQty > 0 ? (
+                          <div style={{ fontSize: 8, color: 'var(--red)' }}>
+                            ✗{op.qcRejectedQty} rej
+                          </div>
+                        ) : null}
+                        {reworkOut ? (
+                          <div
+                            style={{ fontSize: 8, color: 'var(--amber)' }}
+                            title={reworkOutTitle}
+                          >
+                            ♻{op.reworkRaisedQty} rework{reworkOutTo}
+                          </div>
+                        ) : null}
+                        {op.qcPending > 0 ? (
+                          <div style={{ fontSize: 8, color: 'var(--amber)' }}>
+                            ⏳{op.qcPending} pend
+                          </div>
+                        ) : null}
+                      </>
                     ) : null}
                     {/* The per-machine breakdown of this DONE figure now lives
                         in the PLANNED / ACTUAL pair in the heading (ADR-164),
@@ -478,13 +507,7 @@ export function JcOpCard({
         {/* ── FOOTER: the operation's NEXT ACTION. Lives in jc-op-actions.tsx
             with the OSP ladder, because every button in it is permission-gated
             on the screen it opens and that gating belongs in one place. ── */}
-        <JcOpFooter
-          jc={jc}
-          op={op}
-          onStart={onStart}
-          onLog={onLog}
-          onQc={onQc}
-        />
+        <JcOpFooter jc={jc} op={op} onStart={onStart} onLog={onLog} onQc={onQc} />
       </div>
     </div>
   );

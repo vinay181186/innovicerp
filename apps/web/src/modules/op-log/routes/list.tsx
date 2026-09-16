@@ -7,6 +7,7 @@
 // a JC number says WHICH JOB and not WHICH PART. TPI rows tagged. No delete
 // (see service.ts note — legacy `delLog` violates CLAUDE.md Rule #8).
 
+import { opSrNo } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -100,7 +101,14 @@ function OpLogListPage(): React.JSX.Element {
       {/* Filters */}
       <div
         className="panel"
-        style={{ padding: 12, marginBottom: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}
+        style={{
+          padding: 12,
+          marginBottom: 10,
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
       >
         <input
           className="innovic-input"
@@ -143,7 +151,9 @@ function OpLogListPage(): React.JSX.Element {
           <option value="night">Night</option>
           <option value="general">General</option>
         </select>
-        <span className="text3" style={{ fontSize: 11 }}>From</span>
+        <span className="text3" style={{ fontSize: 11 }}>
+          From
+        </span>
         <input
           type="date"
           className="innovic-input"
@@ -156,7 +166,9 @@ function OpLogListPage(): React.JSX.Element {
           }
           style={{ width: 140, fontSize: 12 }}
         />
-        <span className="text3" style={{ fontSize: 11 }}>To</span>
+        <span className="text3" style={{ fontSize: 11 }}>
+          To
+        </span>
         <input
           type="date"
           className="innovic-input"
@@ -193,8 +205,12 @@ function OpLogListPage(): React.JSX.Element {
                 <th>Planned</th>
                 <th>Actual</th>
                 <th>Operation</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>Qty</th>
-                <th className="td-ctr" style={{ color: 'var(--red)' }}>Reject</th>
+                <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  Qty
+                </th>
+                <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                  Reject
+                </th>
                 <th>Operator</th>
                 <th>Remarks</th>
                 <th>Logged By</th>
@@ -216,12 +232,16 @@ function OpLogListPage(): React.JSX.Element {
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="empty-state">No log entries match these filters.</td>
+                  <td colSpan={15} className="empty-state">
+                    No log entries match these filters.
+                  </td>
                 </tr>
               ) : (
                 items.map((r) => (
                   <tr key={r.id}>
-                    <td className="mono text3" style={{ fontSize: 11 }}>{r.logNo}</td>
+                    <td className="mono text3" style={{ fontSize: 11 }}>
+                      {r.logNo}
+                    </td>
                     <td className="td-code cyan">{r.jcNo}</td>
                     {/* The item code is the value anyone scans this log for — it
                         is how the drawing and the batch get identified — so it
@@ -230,7 +250,10 @@ function OpLogListPage(): React.JSX.Element {
                         along with the part name under it; the name keeps its own
                         `text3` and stays quiet, which is the intended contrast. */}
                     <td style={{ fontSize: 11 }}>
-                      <span className="mono fw-700" style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
+                      <span
+                        className="mono fw-700"
+                        style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}
+                      >
                         {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
                       </span>
                       {r.itemName ? (
@@ -250,11 +273,13 @@ function OpLogListPage(): React.JSX.Element {
                       ) : null}
                     </td>
                     <td className="text2">{fmtDate(r.logDate)}</td>
-                    <td className="td-ctr mono">{r.opSeq}</td>
+                    <td className="td-ctr mono">{opSrNo(r.opSeq)}</td>
                     <td>
                       <span className={`badge ${logTypeBadge(r.logType)}`}>{r.logType}</span>
                       {r.isTpi ? (
-                        <span className="badge b-purple" style={{ marginLeft: 4, fontSize: 9 }}>TPI</span>
+                        <span className="badge b-purple" style={{ marginLeft: 4, fontSize: 9 }}>
+                          TPI
+                        </span>
                       ) : null}
                     </td>
                     <td className="text2">{r.shift}</td>
@@ -262,7 +287,10 @@ function OpLogListPage(): React.JSX.Element {
                         the machine this entry was stamped with. The actual
                         turns amber only when it is not the plan. */}
                     <td>
-                      <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--cyan)' }}>
+                      <span
+                        className="tag"
+                        style={{ background: 'var(--bg4)', color: 'var(--cyan)' }}
+                      >
                         {r.plannedMachineCode ?? '?'}
                       </span>
                     </td>
@@ -285,12 +313,19 @@ function OpLogListPage(): React.JSX.Element {
                     </td>
                     <td>{r.operation ?? '?'}</td>
                     <td className="td-ctr mono fw-700 green">{r.qty}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: r.rejectQty > 0 ? 'var(--red)' : 'var(--text3)' }}>
+                    <td
+                      className="td-ctr mono fw-700"
+                      style={{ color: r.rejectQty > 0 ? 'var(--red)' : 'var(--text3)' }}
+                    >
                       {r.rejectQty}
                     </td>
                     <td className="text2">{r.operatorName ?? '—'}</td>
-                    <td className="text3" style={{ fontSize: 11 }}>{r.remarks ?? ''}</td>
-                    <td className="text3" style={{ fontSize: 11 }}>{r.createdByName ?? '—'}</td>
+                    <td className="text3" style={{ fontSize: 11 }}>
+                      {r.remarks ?? ''}
+                    </td>
+                    <td className="text3" style={{ fontSize: 11 }}>
+                      {r.createdByName ?? '—'}
+                    </td>
                   </tr>
                 ))
               )}

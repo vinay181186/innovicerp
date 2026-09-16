@@ -45,6 +45,7 @@ import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { saveRouteCardForItem } from '../route-cards/service';
+import { opSrNo } from '@innovic/shared';
 import type { CreateRouteCardOpInput, DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import type {
   JcOpInput,
@@ -1918,8 +1919,9 @@ export async function updateJobCard(
         inPayload.opType === 'process' &&
         (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
       ) {
+        // display rule — see opSrNo in @innovic/shared
         machineSwaps.push(
-          `op ${ex.opSeq} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
+          `op ${opSrNo(ex.opSeq)} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
         );
       }
     }
@@ -2589,7 +2591,9 @@ export async function getJobCardRelated(
               parentJc.code,
               parentJc.status,
               parentJc.jcDate,
-              header.originOpSeq != null ? { label: `Op ${header.originOpSeq}` } : undefined,
+              header.originOpSeq != null
+                ? { label: `Op ${opSrNo(header.originOpSeq)}` }
+                : undefined,
             ),
           ]
         : [],
@@ -2609,7 +2613,7 @@ export async function getJobCardRelated(
       '🔁',
       'job-card',
       childRows.map((r) => {
-        const label = [r.recoveryKind, r.originOpSeq != null ? `Op ${r.originOpSeq}` : null]
+        const label = [r.recoveryKind, r.originOpSeq != null ? `Op ${opSrNo(r.originOpSeq)}` : null]
           .filter(Boolean)
           .join(' · ');
         return row(r.id, r.code, r.status, r.jcDate, label ? { label } : undefined);

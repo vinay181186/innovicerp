@@ -2,7 +2,7 @@
 // attempt counter, due date, assignment, and Pick-Up / Assign actions.
 // Sortable by age / due date / customer.
 
-import type { QcCommandQueueRow } from '@innovic/shared';
+import { type QcCommandQueueRow, opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -145,7 +145,9 @@ export function QueueTab({
                         </td>
                         <td className="td-code" style={{ color: 'var(--cyan)' }}>
                           {it.jcCode}{' '}
-                          <span style={{ color: 'var(--red)', fontWeight: 700 }}>Op{it.opSeq}</span>
+                          <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                            Op{opSrNo(it.opSeq)}
+                          </span>
                         </td>
                         <td style={{ fontSize: 12 }}>
                           <b style={{ color: 'var(--red)' }}>{it.operation}</b>
@@ -153,7 +155,10 @@ export function QueueTab({
                           {/* An inspector reads the code to find the drawing, so
                               it carries weight rather than sitting in the faintest
                               token on the page. */}
-                          <span className="mono fw-700" style={{ fontSize: 11, color: 'var(--text)' }}>
+                          <span
+                            className="mono fw-700"
+                            style={{ fontSize: 11, color: 'var(--text)' }}
+                          >
                             {itemCodeWithRev(it.itemCode, it.itemRevision)}
                           </span>
                           {/* The part in words, under the code that identifies

@@ -3,7 +3,7 @@
 // filters + pending QC table + completed QC-entries table + Excel export.
 // Read-only, legacy chrome.
 
-import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
+import { type QcHistoryLogRow, type QcHistoryPendingRow, opSrNo } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -125,7 +125,10 @@ function QcHistoryPage(): React.JSX.Element {
           {/* Stats — legacy L23604-23609. `blue` has no accent rule in legacy's
               stylesheet (only cyan/amber/green/red at L97-102), so that tile
               renders bare there and here. */}
-          <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 14 }}>
+          <div
+            className="stat-grid"
+            style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 14 }}
+          >
             <div className="stat-card amber">
               <div className="stat-label">Pending QC Ops</div>
               <div className="stat-val">{data.stats.pendingOps}</div>
@@ -328,7 +331,7 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
   return (
     <tr className={o.overdue ? 'qc-alert-blink' : undefined}>
       <td className="td-code cyan">{o.jcCode}</td>
-      <td className="td-ctr mono">Op{o.opSeq}</td>
+      <td className="td-ctr mono">Op{opSrNo(o.opSeq)}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
         {o.soCode ?? '—'}
       </td>
@@ -385,7 +388,7 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
   return (
     <tr>
       <td className="td-code cyan">{l.jcCode}</td>
-      <td className="td-ctr mono">Op{l.opSeq}</td>
+      <td className="td-ctr mono">Op{opSrNo(l.opSeq)}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
         {l.soCode ?? '—'}
       </td>

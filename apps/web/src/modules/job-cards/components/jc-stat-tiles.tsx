@@ -15,6 +15,7 @@ import type {
   JobCardListItem,
   JobCardStatusOpExtra,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
@@ -155,13 +156,19 @@ export function JcStatTiles({
             {jc.routeCardCode ? (
               <>
                 <span style={{ color: 'var(--text3)' }}>Route Card: </span>
-                <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>{jc.routeCardCode}</span>
+                <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                  {jc.routeCardCode}
+                </span>
                 {jc.routeCardRevision != null ? (
-                  <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>Rev {jc.routeCardRevision}</span>
+                  <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>
+                    Rev {jc.routeCardRevision}
+                  </span>
                 ) : null}
               </>
             ) : (
-              <span style={{ color: 'var(--text3)' }}>Route Card: <span style={{ color: 'var(--amber)' }}>none</span></span>
+              <span style={{ color: 'var(--text3)' }}>
+                Route Card: <span style={{ color: 'var(--amber)' }}>none</span>
+              </span>
             )}
           </div>
         </div>
@@ -169,12 +176,16 @@ export function JcStatTiles({
         {/* SO / WO */}
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
           <div style={lblStyle}>SO / WO</div>
-          <div className="fw-700 mono" style={{ fontSize: 16 }}>{jc.sourceLink?.code ?? '—'}</div>
+          <div className="fw-700 mono" style={{ fontSize: 16 }}>
+            {jc.sourceLink?.code ?? '—'}
+          </div>
           <div style={{ ...noteStyle, marginTop: 2 }}>
             Line <b>{jc.sourceLink?.lineNo ?? '1'}</b> · Due {jc.dueDate ?? '—'}
           </div>
           {jc.clientPoLineNo ? (
-            <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>CPO Ln: {jc.clientPoLineNo}</div>
+            <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
+              CPO Ln: {jc.clientPoLineNo}
+            </div>
           ) : null}
           {/* Remarks moved to the Item tile, under Grade / Size — see there. */}
         </div>
@@ -191,7 +202,13 @@ export function JcStatTiles({
             }}
           >
             <QtySeg label="Ordered" value={jc.orderQty} color="var(--text)" />
-            <QtySeg label="Completed" value={completed} color="var(--green)" bg="var(--green3)" borderLeft />
+            <QtySeg
+              label="Completed"
+              value={completed}
+              color="var(--green)"
+              bg="var(--green3)"
+              borderLeft
+            />
             <QtySeg
               label="Pending"
               value={pending}
@@ -204,7 +221,12 @@ export function JcStatTiles({
           {/* ADR-103 — client material still workable on this job card. */}
           {rmAvailable ? (
             <div
-              style={{ marginTop: 6, fontSize: 11, color: rmAvailable.availableQty > 0 ? 'var(--text2)' : 'var(--red)', fontWeight: rmAvailable.availableQty > 0 ? 400 : 700 }}
+              style={{
+                marginTop: 6,
+                fontSize: 11,
+                color: rmAvailable.availableQty > 0 ? 'var(--text2)' : 'var(--red)',
+                fontWeight: rmAvailable.availableQty > 0 ? 400 : 700,
+              }}
               title={
                 `Client material issued to this job card: ${rmAvailable.issuedQty}. ` +
                 `Already produced on the first operation: ${rmAvailable.consumedQty}. ` +
@@ -214,7 +236,9 @@ export function JcStatTiles({
               }
             >
               RM avail <span className="mono fw-700">{rmAvailable.availableQty}</span>
-              {rmAvailable.availableQty === 0 ? ' · issue material' : ` of ${rmAvailable.issuedQty} issued`}
+              {rmAvailable.availableQty === 0
+                ? ' · issue material'
+                : ` of ${rmAvailable.issuedQty} issued`}
             </div>
           ) : null}
         </div>
@@ -231,10 +255,11 @@ export function JcStatTiles({
           <div style={{ ...noteStyle, marginTop: 6 }}>
             {stuck ? (
               <>
-                Waiting at <b>Op{stuck.opSeq}</b> · {stuckWhere}
+                Waiting at <b>Op{opSrNo(stuck.opSeq)}</b> · {stuckWhere}
                 {stuckRunningOn?.differs ? (
                   <>
-                    {' '}· running on <b style={{ color: 'var(--amber)' }}>{stuckRunningOn.label}</b>
+                    {' '}
+                    · running on <b style={{ color: 'var(--amber)' }}>{stuckRunningOn.label}</b>
                   </>
                 ) : null}
               </>
@@ -255,7 +280,9 @@ export function JcStatTiles({
           <b style={{ color: 'var(--text)', fontSize: 12 }}>
             {doneOps} of {totalOps} operations complete · {pct}%
           </b>
-          <span style={{ ...noteStyle, marginLeft: 8 }}>Finished goods counted only after the last op</span>
+          <span style={{ ...noteStyle, marginLeft: 8 }}>
+            Finished goods counted only after the last op
+          </span>
         </div>
       </div>
 
@@ -264,7 +291,9 @@ export function JcStatTiles({
         <div style={lblStyle}>Operation Flow</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
           {sortedOps.length === 0 ? (
-            <span className="text3" style={{ fontSize: 12 }}>No operations</span>
+            <span className="text3" style={{ fontSize: 12 }}>
+              No operations
+            </span>
           ) : (
             sortedOps.map((o, i) => {
               const isQc = o.opType === 'qc';
@@ -344,20 +373,45 @@ export function JcStatTiles({
                     }}
                   >
                     <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: opColor }}>
-                      Op{o.opSeq}
+                      Op{opSrNo(o.opSeq)}
                       {isOut ? ' 🏭' : ''}
                       {isQc ? ' 🔬' : ''}
                     </div>
                     {isQc ? (
                       <>
-                        <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--green)' }}>QC</div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            margin: '2px 0',
+                            color: 'var(--green)',
+                          }}
+                        >
+                          QC
+                        </div>
                         <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.operation}</div>
                       </>
                     ) : isOut ? (
-                      <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--amber)' }}>OUTSOURCE</div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          margin: '2px 0',
+                          color: 'var(--amber)',
+                        }}
+                      >
+                        OUTSOURCE
+                      </div>
                     ) : (
                       <>
-                        <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--cyan)' }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            margin: '2px 0',
+                            color: 'var(--cyan)',
+                          }}
+                        >
                           {o.machineCode ?? o.machineCodeText ?? '—'}
                         </div>
                         {/* ADR-164 — the code above is the PLANNED machine. When
@@ -390,7 +444,14 @@ export function JcStatTiles({
                       {isQc ? '' : o.operation.split(' ').slice(0, 2).join(' ')}
                     </div>
                     {isOut ? (
-                      <div style={{ fontSize: 9, marginTop: 3, fontWeight: 700, color: 'var(--amber)' }}>
+                      <div
+                        style={{
+                          fontSize: 9,
+                          marginTop: 3,
+                          fontWeight: 700,
+                          color: 'var(--amber)',
+                        }}
+                      >
                         {OUTSOURCE_STATUS_LABEL[o.outsourceStatus ?? 'pending']}
                       </div>
                     ) : null}
@@ -401,12 +462,21 @@ export function JcStatTiles({
                       {flowLabel}
                     </div>
                     {o.reworkPendingQty > 0 || o.reworkRaisedQty > 0 ? (
-                      <div style={{ fontSize: 9, marginTop: 2, fontWeight: 700, color: 'var(--amber)' }}>
+                      <div
+                        style={{
+                          fontSize: 9,
+                          marginTop: 2,
+                          fontWeight: 700,
+                          color: 'var(--amber)',
+                        }}
+                      >
                         ♻{o.reworkPendingQty > 0 ? o.reworkPendingQty : o.reworkRaisedQty}
                       </div>
                     ) : null}
                   </div>
-                  {i < sortedOps.length - 1 ? <span style={{ color: 'var(--text3)', fontSize: 18 }}>›</span> : null}
+                  {i < sortedOps.length - 1 ? (
+                    <span style={{ color: 'var(--text3)', fontSize: 18 }}>›</span>
+                  ) : null}
                 </div>
               );
             })
@@ -444,10 +514,21 @@ function QtySeg({
         borderLeft: borderLeft ? '1px solid var(--border2)' : undefined,
       }}
     >
-      <div className="mono" style={{ fontSize: emphasise ? 20 : 18, fontWeight: 800, color, lineHeight: 1.1 }}>
+      <div
+        className="mono"
+        style={{ fontSize: emphasise ? 20 : 18, fontWeight: 800, color, lineHeight: 1.1 }}
+      >
         {value}
       </div>
-      <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', marginTop: 2 }}>
+      <div
+        style={{
+          fontSize: 9,
+          textTransform: 'uppercase',
+          letterSpacing: '.05em',
+          color: 'var(--text3)',
+          marginTop: 2,
+        }}
+      >
         {label}
       </div>
     </div>

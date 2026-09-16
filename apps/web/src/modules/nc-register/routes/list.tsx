@@ -8,6 +8,7 @@ import {
   NC_STATUSES,
   type NcReasonCategory,
   type NcStatus,
+  opSrNo,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
@@ -328,7 +329,7 @@ function NcRegisterListPage(): React.JSX.Element {
               const opText =
                 seq == null && !op
                   ? null
-                  : `${seq != null ? `Op${seq}` : ''}${seq != null && op ? ': ' : ''}${op ?? ''}`;
+                  : `${seq != null ? `Op${opSrNo(seq)}` : ''}${seq != null && op ? ': ' : ''}${op ?? ''}`;
               const itemCode = nc.itemCode
                 ? itemCodeWithRev(nc.itemCode, nc.itemRevision)
                 : (nc.itemCodeText ?? '');
@@ -344,9 +345,7 @@ function NcRegisterListPage(): React.JSX.Element {
                   <div style={{ width: 4, flexShrink: 0, background: accentForNc(nc.status) }} />
                   <div
                     style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-                    onClick={() =>
-                      void navigate({ to: '/nc-register/$id', params: { id: nc.id } })
-                    }
+                    onClick={() => void navigate({ to: '/nc-register/$id', params: { id: nc.id } })}
                     title="Open this NC"
                   >
                     {/* ── Band 1: identity + badges — actions ── */}
@@ -529,15 +528,16 @@ function NcRegisterListPage(): React.JSX.Element {
                         </span>
                       </span>
                       <span>·</span>
-                      <span className="text2">
-                        {NC_REASON_CATEGORY_LABELS[nc.reasonCategory]}
-                      </span>
+                      <span className="text2">{NC_REASON_CATEGORY_LABELS[nc.reasonCategory]}</span>
                       <span>·</span>
                       <span className="text2">{nc.ncDate}</span>
                       {nc.linkedCapaCode ? (
                         <>
                           <span>·</span>
-                          <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                          <span
+                            className="mono"
+                            style={{ color: 'var(--purple)', fontWeight: 700 }}
+                          >
                             {nc.linkedCapaCode}
                           </span>
                         </>
