@@ -699,7 +699,7 @@ export async function onNcChallanReceived(
           {
             action: 'OP_OUTSOURCE_RECEIVED',
             entity: 'JcOp',
-            detail: `${op.jcCode} Op ${op.opSeq} — fully received (return-to-vendor pieces back on ${nc.code})`,
+            detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — fully received (return-to-vendor pieces back on ${nc.code})`,
             refId: op.jcCode,
           },
           companyId,
@@ -812,7 +812,7 @@ export async function onNcChallanCancelled(
         {
           action: 'OP_OUTSOURCE_RECEIVED',
           entity: 'JcOp',
-          detail: `${op.jcCode} Op ${op.opSeq} — fully received (return-to-vendor challan on ${nc.code} cancelled)`,
+          detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — fully received (return-to-vendor challan on ${nc.code} cancelled)`,
           refId: op.jcCode,
         },
         companyId,
