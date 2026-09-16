@@ -86,6 +86,13 @@ export const ncRegisterSchema = z.object({
   /** Sibling link: set on the remainder row when a disposition covered less
    *  than the full rejected qty. */
   splitFromNcId: z.string().uuid().nullable().default(null),
+  /** The NC whose return-to-vendor REPLACEMENT this NC was raised on (ADR-167,
+   *  migration 0129). Incoming QC rejects a replacement piece → the new NC
+   *  carries that piece and points here, so a chain NC-A → NC-B → NC-C is
+   *  readable from the register instead of only through GRN headers. Null on
+   *  a first-cycle NC. */
+  parentNcId: z.string().uuid().nullable().default(null),
+  parentNcCode: z.string().nullable().default(null),
   /** The rework / repair child job card, once raised. */
   childJobCardId: z.string().uuid().nullable().default(null),
   childJobCardCode: z.string().nullable().default(null),

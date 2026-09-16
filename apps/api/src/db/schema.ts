@@ -2440,6 +2440,12 @@ export const ncRegister = pgTable(
     splitFromNcId: uuid('split_from_nc_id').references((): AnyPgColumn => ncRegister.id, {
       onDelete: 'set null',
     }),
+    // The NC whose return-to-vendor REPLACEMENT this NC was raised on: Incoming
+    // QC rejects a replacement GRN line (header nc_id set) and the piece carries
+    // forward into this new NC. Migration 0129 (audit gap G8).
+    parentNcId: uuid('parent_nc_id').references((): AnyPgColumn => ncRegister.id, {
+      onDelete: 'set null',
+    }),
     childJobCardId: uuid('child_job_card_id').references((): AnyPgColumn => jobCards.id, {
       onDelete: 'set null',
     }),
@@ -2486,6 +2492,9 @@ export const ncRegister = pgTable(
     index('nc_register_jc_op_idx')
       .on(t.jcOpId)
       .where(sql`${t.jcOpId} is not null`),
+    index('nc_register_parent_nc_idx')
+      .on(t.parentNcId)
+      .where(sql`${t.parentNcId} is not null and ${t.deletedAt} is null`),
     index('nc_register_item_idx').on(t.itemId),
     check('nc_register_rejected_qty_positive', sql`${t.rejectedQty} > 0`),
     check(

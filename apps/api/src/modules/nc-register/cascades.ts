@@ -33,7 +33,15 @@
 // exactly one disposition — there is no child table to reconcile.
 
 import { and, eq, isNull, like, sql } from 'drizzle-orm';
-import { items, jobCards, ncRegister, opLog, operators } from '../../db/schema';
+import {
+  goodsReceiptNoteLines,
+  goodsReceiptNotes,
+  items,
+  jobCards,
+  ncRegister,
+  opLog,
+  operators,
+} from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -283,6 +291,9 @@ export async function disposeNcCascade(
         timeLogged: loaded.timeLogged,
         qcLogId: loaded.qcLogId,
         grnLineId: loaded.grnLineId,
+        // G8: the split half carries the same pieces, so it continues the same
+        // parent NC (if any) as the row it was split from.
+        parentNcId: loaded.parentNcId,
         splitFromNcId: loaded.id,
         createdBy: ctx.userId,
         updatedBy: ctx.userId,
@@ -721,11 +732,35 @@ export async function autoCreateNcFromQcReject(
       ? `Auto-created from QC inspection: ${ctx.remarks}`
       : `Auto-created from QC inspection on ${ctx.jcCode} Op #${ctx.opSeq}`;
 
+  // G8 (gap report 2026-09-16): an Incoming-QC reject on a GRN that itself
+  // came back against an NC's return-to-vendor challan (goods_receipt_notes.nc_id)
+  // is a FOLLOW-ON of that NC — the same pieces, second trip. Link the new row
+  // to it so the register can show "Continues NC <code>". Null on any other path.
+  let parentNcId: string | null = null;
+  if (ctx.grnLineId) {
+    const parentRows = await tx
+      .select({ ncId: goodsReceiptNotes.ncId })
+      .from(goodsReceiptNoteLines)
+      .innerJoin(
+        goodsReceiptNotes,
+        eq(goodsReceiptNotes.id, goodsReceiptNoteLines.goodsReceiptNoteId),
+      )
+      .where(
+        and(
+          eq(goodsReceiptNoteLines.id, ctx.grnLineId),
+          eq(goodsReceiptNotes.companyId, ctx.companyId),
+        ),
+      )
+      .limit(1);
+    parentNcId = parentRows[0]?.ncId ?? null;
+  }
+
   const inserted = await tx
     .insert(ncRegister)
     .values({
       companyId: ctx.companyId,
       code,
+      parentNcId,
       ncDate: ctx.ncDate,
       jobCardId: ctx.jobCardId,
       jcOpId: ctx.jcOpId,

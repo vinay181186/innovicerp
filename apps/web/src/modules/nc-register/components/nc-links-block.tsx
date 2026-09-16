@@ -1,6 +1,7 @@
 // The links a recovery leaves behind on an NC (docs/QC-NC-HANDLING-DESIGN.md
 // §3–§5): the child rework / repair JC, the return challan, the NC this one
-// was split from and the rows split off it. Renders nothing when there is
+// was split from, the rows split off it and (ADR-167) the NC whose return
+// replacement this one continues. Renders nothing when there is
 // nothing to link.
 
 import type { NcRegister } from '@innovic/shared';
@@ -14,7 +15,8 @@ export function NcLinksBlock(props: {
   const { detail, splitParent, siblings } = props;
   const childId = detail.childJobCardCode ? detail.childJobCardId : null;
   const dcId = detail.deliveryChallanCode ? detail.deliveryChallanId : null;
-  if (!childId && !dcId && !detail.splitFromNcId && siblings.length === 0) return null;
+  if (!childId && !dcId && !detail.splitFromNcId && !detail.parentNcId && siblings.length === 0)
+    return null;
   const linkStyle = { textDecoration: 'none' } as const;
   return (
     <div className="form-grid" style={{ fontSize: 12, marginBottom: 10 }}>
@@ -41,6 +43,19 @@ export function NcLinksBlock(props: {
             title="Open the return-to-vendor challan"
           >
             {detail.deliveryChallanCode}
+          </Link>
+        </InlinePair>
+      ) : null}
+      {detail.parentNcId ? (
+        <InlinePair label="Continues NC">
+          <Link
+            to="/nc-register/$id"
+            params={{ id: detail.parentNcId }}
+            className="mono fw-700"
+            style={{ ...linkStyle, color: 'var(--red)' }}
+            title="The NC whose return-to-vendor replacement was rejected again (ADR-167)"
+          >
+            {detail.parentNcCode ?? '…'}
           </Link>
         </InlinePair>
       ) : null}

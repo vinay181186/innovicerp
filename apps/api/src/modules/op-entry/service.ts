@@ -278,6 +278,9 @@ export async function listJcOpsEnriched(
         COALESCE(b.under_rework_qty, 0)        AS "underReworkQty",
         COALESCE(b.under_repair_qty, 0)        AS "underRepairQty",
         COALESCE(b.sent_to_vendor_qty, 0)      AS "sentToVendorQty",
+        -- Disposed return-to-vendor pieces still waiting for their challan
+        -- (view column from migration 0129 — G7 of the 2026-09-16 gap report).
+        COALESCE(b.rtv_awaiting_challan_qty, 0) AS "rtvAwaitingChallanQty",
         COALESCE(b.received_qc_pending_qty, 0) AS "receivedQcPendingQty",
         COALESCE(b.scrap_qty, 0)               AS "scrapQty",
         COALESCE(b.nc_closed_qty, 0)           AS "ncClosedQty",
@@ -353,6 +356,7 @@ export async function listJcOpsEnriched(
         underReworkQty: Number(r['underReworkQty'] ?? 0),
         underRepairQty: Number(r['underRepairQty'] ?? 0),
         sentToVendorQty: Number(r['sentToVendorQty'] ?? 0),
+        rtvAwaitingChallanQty: Number(r['rtvAwaitingChallanQty'] ?? 0),
         receivedQcPendingQty: Number(r['receivedQcPendingQty'] ?? 0),
         scrapQty: Number(r['scrapQty'] ?? 0),
         ncClosedQty: Number(r['ncClosedQty'] ?? 0),

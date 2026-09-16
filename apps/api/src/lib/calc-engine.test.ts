@@ -222,6 +222,36 @@ describe('enrichOps', () => {
     }
   });
 
+  it('outsource op: GRN-accepted qty (ospAcceptedByOp) counts as completed (G9c)', () => {
+    const ops = [
+      op({ id: 'o1', opSeq: 1, opType: 'outsource', outsourceStatus: 'sent' }),
+      op({ id: 'o2', opSeq: 2 }),
+    ];
+    // Partly back: 7 of 10 accepted → still at vendor, 3 outstanding.
+    const partial = enrichOps(jc({ orderQty: 10 }), ops, [], new Set(), new Map([['o1', 7]]));
+    expect(partial[0]?.completed).toBe(7);
+    expect(partial[0]?.status).toBe('outsource_at_vendor');
+    expect(partial[0]!.inputAvail - partial[0]!.completed).toBe(3);
+    expect(partial[1]?.inputAvail).toBe(7);
+    // Fully back: 10 of 10 accepted → complete, whatever the stamp says.
+    const full = enrichOps(jc({ orderQty: 10 }), ops, [], new Set(), new Map([['o1', 10]]));
+    expect(full[0]?.status).toBe('complete');
+    expect(full[1]?.inputAvail).toBe(10);
+    // Map absent → unchanged legacy behaviour (op_log only).
+    const legacy = enrichOps(jc({ orderQty: 10 }), ops, [], new Set());
+    expect(legacy[0]?.completed).toBe(0);
+    expect(legacy[0]?.status).toBe('outsource_at_vendor');
+    // Map only applies to outsource ops.
+    const inHouse = enrichOps(
+      jc({ orderQty: 10 }),
+      [op({ id: 'o3', opSeq: 1 })],
+      [],
+      new Set(),
+      new Map([['o3', 10]]),
+    );
+    expect(inHouse[0]?.completed).toBe(0);
+  });
+
   it('output of qcRequired op flows qcAccepted to next op input, not completed', () => {
     const ops = [
       op({ id: 'o1', opSeq: 1, qcRequired: true }),

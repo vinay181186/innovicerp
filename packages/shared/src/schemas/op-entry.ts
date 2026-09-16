@@ -58,6 +58,11 @@ export const ncOpBreakupSchema = z.object({
   ncClosedQty: z.number().int().nonnegative(),
   ncOpenQty: z.number().int().nonnegative(),
   openNcCount: z.number().int().nonnegative(),
+  /** Return-to-vendor chosen, challan not yet raised (NC status `disposed`).
+   *  Until ADR-167 this state had no bucket, so the pieces vanished from the
+   *  op card's strip between "Dispose" and "Create DC". Defaulted so an API
+   *  built before migration 0129 still parses. */
+  rtvAwaitingChallanQty: z.number().int().nonnegative().default(0),
 });
 export type NcOpBreakup = z.infer<typeof ncOpBreakupSchema>;
 

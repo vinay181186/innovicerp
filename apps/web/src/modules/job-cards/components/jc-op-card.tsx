@@ -53,6 +53,7 @@ const NC_BREAKUP_ROWS: ReadonlyArray<{
   { key: 'ncRaisedQty', label: 'NC raised', color: 'var(--amber)' },
   { key: 'underReworkQty', label: 'Under rework', color: 'var(--amber)' },
   { key: 'underRepairQty', label: 'Under repair', color: 'var(--amber)' },
+  { key: 'rtvAwaitingChallanQty', label: 'Return challan pending', color: 'var(--amber)' },
   { key: 'sentToVendorQty', label: 'Sent to vendor', color: 'var(--blue)' },
   { key: 'receivedQcPendingQty', label: 'Received – QC pending', color: 'var(--blue)' },
   { key: 'scrapQty', label: 'Scrap', color: 'var(--red)' },
