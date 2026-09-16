@@ -891,6 +891,17 @@ async function loadPoLineMap(
   return out;
 }
 
+/**
+ * Qty already sent out against each PO line on ORDINARY outward challans.
+ *
+ * Return-to-vendor challans (no PO, `nc_id` set) are excluded (OSP chain gap
+ * G6, 2026-09-16): their line carries the op's PO line so the challan print
+ * names the order, but the pieces on it were already counted when they first
+ * went out, so they must not eat the PO line's balance a second time.
+ * Example: PO 10, ordinary DC 6, RTV 2 → was sentOnDcs 8 / balance 2; now
+ * 6 / 4 — which matches the op-level sendable (cascades.ts), built on
+ * outsource_sent_qty, which never counted return challans.
+ */
 async function sumSentQtyByPoLine(
   tx: DbTransaction,
   poLineIds: string[],
@@ -912,6 +923,7 @@ async function sumSentQtyByPoLine(
         eq(deliveryChallanLines.companyId, companyId),
         isNull(deliveryChallanLines.deletedAt),
         isNull(deliveryChallans.deletedAt),
+        isNull(deliveryChallans.ncId),
         sql`${deliveryChallans.status} != 'cancelled'`,
       ),
     )
@@ -1513,6 +1525,7 @@ export async function receiveAgainstDeliveryChallan(
       jcCode: string;
       opSeq: number;
       fullyReceived: boolean;
+      statusChanged: boolean;
       jobCardId: string;
     }> = [];
     for (const [poLineId, qtyAdded] of poLineQtyAdded) {
@@ -1530,6 +1543,7 @@ export async function receiveAgainstDeliveryChallan(
           jcCode: cascadeResult.jcCode,
           opSeq: cascadeResult.opSeq,
           fullyReceived: Boolean(cascadeResult.fullyReceived),
+          statusChanged: Boolean(cascadeResult.statusChanged),
           jobCardId: cascadeResult.jobCardId!,
         });
       }
@@ -1561,8 +1575,12 @@ export async function receiveAgainstDeliveryChallan(
       companyId,
       user,
     );
+    // Only when the op's status actually moved in THIS receipt. A
+    // return-to-vendor receipt against the same PO line re-evaluates an op
+    // that is already 'received' (or that onNcChallanReceived just flipped,
+    // with its own audit row) as fully received, and used to log it again.
     for (const op of opCascades) {
-      if (op.fullyReceived) {
+      if (op.fullyReceived && op.statusChanged) {
         await emitActivityLog(
           tx,
           {

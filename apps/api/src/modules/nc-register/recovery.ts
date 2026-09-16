@@ -21,6 +21,7 @@ import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 
 type NcRow = typeof ncRegister.$inferSelect;
@@ -617,6 +618,14 @@ export async function onRecoveryJobCardQc(
  * Called by delivery-challans on receipt of a DC that has nc_id.
  * rtv_received_qty += receivedQty (cap at rtv_sent_qty → ConflictError),
  * status = 'received_qc_pending'. Emits NC_RTV_RECEIVED.
+ *
+ * Then, if the origin op is at 'sent' (createNcDc demoted it when the pieces
+ * went back out) and every piece is now in the building — no return-to-vendor
+ * piece still out on ANY NC of that op, and the ordinary receipts cover
+ * outsource_sent_qty — the op goes back to 'received' (OSP chain gap G5,
+ * 2026-09-16). The predicate is the same one applyReceiveToJcOp uses for an
+ * ordinary receipt, so the two paths cannot disagree. Emits
+ * OP_OUTSOURCE_RECEIVED only when the status actually changed.
  */
 export async function onNcChallanReceived(
   tx: DbTransaction,
@@ -661,6 +670,44 @@ export async function onNcChallanReceived(
     companyId,
     user,
   );
+
+  if (total >= sent && nc.jcOpId) {
+    const opRows = await tx
+      .select({
+        id: jcOps.id,
+        opSeq: jcOps.opSeq,
+        outsourceStatus: jcOps.outsourceStatus,
+        outsourceSentQty: jcOps.outsourceSentQty,
+        jcCode: jobCards.code,
+      })
+      .from(jcOps)
+      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+      .where(and(eq(jcOps.id, nc.jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
+      .limit(1);
+    const op = opRows[0];
+    if (op && op.outsourceStatus === 'sent') {
+      // Reads this NC's rtv_received_qty as just written above, so "no RTV
+      // piece still out" includes this very challan.
+      const { fullyBack } = await isOspOpFullyBack(tx, companyId, op.id, op.outsourceSentQty);
+      if (fullyBack) {
+        await tx
+          .update(jcOps)
+          .set({ outsourceStatus: 'received', updatedBy: user.id })
+          .where(eq(jcOps.id, op.id));
+        await emitActivityLog(
+          tx,
+          {
+            action: 'OP_OUTSOURCE_RECEIVED',
+            entity: 'JcOp',
+            detail: `${op.jcCode} Op ${op.opSeq} — fully received (return-to-vendor pieces back on ${nc.code})`,
+            refId: op.jcCode,
+          },
+          companyId,
+          user,
+        );
+      }
+    }
+  }
 }
 
 // ─── Hook: Incoming QC on the vendor's replacement (design §5, §12.6) ─────

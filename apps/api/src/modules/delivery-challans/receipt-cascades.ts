@@ -7,11 +7,15 @@
 //        jc_op (via jc_op_po_lines, 0118 — so an op covered by SEVERAL purchase
 //        orders is found from ANY of them, not only its first) and:
 //          - if cumulative received+rejected qty across all receipts on the
-//            DC lines linked to ANY of that op's PO lines >= outsource_sent_qty,
-//            flip outsource_status to 'received'
+//            ORDINARY DC lines linked to ANY of that op's PO lines >=
+//            outsource_sent_qty AND no return-to-vendor piece is still at the
+//            vendor, flip outsource_status to 'received'
 //          - otherwise leave status as 'sent' (partial receive)
 //        Returns the snapshot for audit emission. No-op when no jc_op is
 //        linked to the PO line.
+//        The "fully back" predicate lives in isOspOpFullyBack() and is shared
+//        with nc-register/recovery.onNcChallanReceived so a replacement
+//        receipt and an ordinary receipt agree on when the op is 'received'.
 //
 //   2. writeStoreTxnOnDcReceive(args)
 //        Stock IN ledger row mirroring the GRN/QC pattern. Lock items row
@@ -33,6 +37,88 @@ import {
   storeTransactions,
 } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
+
+/**
+ * Σ received (+ rejected, legacy column) across every active receipt line on
+ * an ORDINARY outward challan (dc.nc_id IS NULL) whose DC line is linked to
+ * ANY purchase order line covering this op (jc_op_po_lines, 0118).
+ *
+ * Return-to-vendor challans are excluded on purpose (OSP chain gap G5,
+ * 2026-09-16): their DC line carries the op's PO line too, so before this
+ * filter a replacement receipt counted against outsource_sent_qty — which only
+ * ever counts ordinary sends. PO 10, ordinary DC received 8, RTV 2 back →
+ * 8 + 2 ≥ 10 flipped the op to 'received' with 2 ordinary pieces still out.
+ */
+export async function sumOrdinaryReceiptsForOp(
+  tx: DbTransaction,
+  companyId: string,
+  jcOpId: string,
+): Promise<number> {
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(SUM(drl.received_qty + drl.rejected_qty), 0)::numeric AS total
+    FROM public.delivery_challan_receipt_lines drl
+    INNER JOIN public.delivery_challan_lines dcl
+      ON dcl.id = drl.delivery_challan_line_id AND dcl.deleted_at IS NULL
+    INNER JOIN public.delivery_challans dc
+      ON dc.id = dcl.delivery_challan_id
+      AND dc.deleted_at IS NULL
+      AND dc.status <> 'cancelled'
+      AND dc.nc_id IS NULL
+    WHERE dcl.purchase_order_line_id IN (
+        SELECT l.purchase_order_line_id
+        FROM public.jc_op_po_lines l
+        WHERE l.jc_op_id = ${jcOpId}::uuid
+          AND l.company_id = ${companyId}::uuid
+          AND l.deleted_at IS NULL
+      )
+      AND drl.deleted_at IS NULL
+      AND drl.company_id = ${companyId}::uuid
+  `)) as unknown as Array<{ total: string | number }>;
+  return Number(rows[0]?.total ?? 0);
+}
+
+/**
+ * Σ (rtv_sent_qty − rtv_received_qty) over the op's return-to-vendor NCs —
+ * the pieces that are at the vendor AGAIN on a return cycle. Zero means no
+ * returned piece is still out. A closed NC contributes 0 by construction
+ * (everything it sent has come back).
+ */
+export async function sumRtvOutstandingForOp(
+  tx: DbTransaction,
+  companyId: string,
+  jcOpId: string,
+): Promise<number> {
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(SUM(GREATEST(0, n.rtv_sent_qty - n.rtv_received_qty)), 0)::numeric AS total
+    FROM public.nc_register n
+    WHERE n.jc_op_id = ${jcOpId}::uuid
+      AND n.company_id = ${companyId}::uuid
+      AND n.deleted_at IS NULL
+  `)) as unknown as Array<{ total: string | number }>;
+  return Number(rows[0]?.total ?? 0);
+}
+
+/**
+ * The ONE definition of "every piece this op sent out is back in the
+ * building": ordinary receipts cover outsource_sent_qty (which is the op's
+ * total across every ordinary challan, so it must be compared against ALL of
+ * the op's PO lines — split an op over two purchase orders and one line's
+ * receipts could never reach the total) AND no return-to-vendor piece is
+ * still out. Used by applyReceiveToJcOp (ordinary receipt) and by
+ * nc-register/recovery.onNcChallanReceived (replacement receipt).
+ */
+export async function isOspOpFullyBack(
+  tx: DbTransaction,
+  companyId: string,
+  jcOpId: string,
+  outsourceSentQty: number,
+): Promise<{ ordinaryReceived: number; rtvOutstanding: number; fullyBack: boolean }> {
+  const ordinaryReceived = await sumOrdinaryReceiptsForOp(tx, companyId, jcOpId);
+  const rtvOutstanding = await sumRtvOutstandingForOp(tx, companyId, jcOpId);
+  const fullyBack =
+    outsourceSentQty > 0 && ordinaryReceived >= outsourceSentQty && rtvOutstanding === 0;
+  return { ordinaryReceived, rtvOutstanding, fullyBack };
+}
 
 export interface ReceiveCascadeArgs {
   tx: DbTransaction;
@@ -56,6 +142,11 @@ export interface ReceiveCascadeResult {
   nextStatus?: string;
   /** True when the cumulative-reconciled qty hit outsource_sent_qty. */
   fullyReceived?: boolean;
+  /** True only when this call actually wrote a new outsource_status. Gate the
+   *  OP_OUTSOURCE_RECEIVED audit row on this, not on fullyReceived: an op
+   *  already at 'received' re-evaluates as fully received on every later
+   *  receipt against its PO line and would otherwise be logged again. */
+  statusChanged?: boolean;
 }
 
 export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<ReceiveCascadeResult> {
@@ -101,41 +192,22 @@ export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<Rece
     .limit(1);
   const jcCode = jcRows[0]?.code ?? '';
 
-  // Sum cumulative received + rejected across ALL active (non-cancelled,
-  // non-deleted) receipt lines whose dc_line is linked to ANY purchase order
-  // line covering this op (0118).
-  //
-  // It is compared against outsource_sent_qty, which is the op's TOTAL sent
-  // across every challan. Counting one PO line's receipts against that total is
-  // only right while an op has one PO line: split the op over two purchase
-  // orders and the sum could never reach the total, so the op would stay at
-  // 'sent' with the material already back in the building.
-  const sumRows = (await tx.execute(sql`
-    SELECT COALESCE(SUM(drl.received_qty + drl.rejected_qty), 0)::numeric AS total
-    FROM public.delivery_challan_receipt_lines drl
-    INNER JOIN public.delivery_challan_lines dcl
-      ON dcl.id = drl.delivery_challan_line_id AND dcl.deleted_at IS NULL
-    INNER JOIN public.delivery_challans dc
-      ON dc.id = dcl.delivery_challan_id
-      AND dc.deleted_at IS NULL
-      AND dc.status <> 'cancelled'
-    WHERE dcl.purchase_order_line_id IN (
-        SELECT l.purchase_order_line_id
-        FROM public.jc_op_po_lines l
-        WHERE l.jc_op_id = ${op.id}::uuid
-          AND l.company_id = ${companyId}::uuid
-          AND l.deleted_at IS NULL
-      )
-      AND drl.deleted_at IS NULL
-      AND drl.company_id = ${companyId}::uuid
-  `)) as unknown as Array<{ total: string | number }>;
-  const cumulative = Number(sumRows[0]?.total ?? 0);
+  // Cumulative received + rejected across ALL active (non-cancelled,
+  // non-deleted) receipt lines on ORDINARY challans whose dc_line is linked to
+  // ANY purchase order line covering this op (0118), compared against
+  // outsource_sent_qty — and no return-to-vendor piece still at the vendor.
+  // Return-to-vendor challan receipts are NOT counted here (their lines carry
+  // the same PO line but outsource_sent_qty never counted them going out);
+  // they move the op through nc-register/recovery.onNcChallanReceived using
+  // the same predicate. See isOspOpFullyBack for the full reasoning.
+  const { fullyBack } = await isOspOpFullyBack(tx, companyId, op.id, op.outsourceSentQty);
 
   const prevStatus = op.outsourceStatus ?? null;
-  const fullyReceived = cumulative >= op.outsourceSentQty && op.outsourceSentQty > 0;
+  const fullyReceived = fullyBack;
   const nextStatus = fullyReceived ? 'received' : (prevStatus ?? 'sent');
+  const statusChanged = nextStatus !== prevStatus;
 
-  if (nextStatus !== prevStatus) {
+  if (statusChanged) {
     await tx
       .update(jcOps)
       .set({
@@ -154,6 +226,7 @@ export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<Rece
     prevStatus,
     nextStatus,
     fullyReceived,
+    statusChanged,
   };
 }
 

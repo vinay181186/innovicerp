@@ -39,6 +39,8 @@ import {
 } from '../goods-receipt-notes/cascades';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onNcReplacementQc, onRecoveryJobCardQc } from '../nc-register/recovery';
+import { tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
+import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -141,6 +143,17 @@ async function creditOutsourceReturn(
  * inspects something else (another process has happened in between), and a
  * process op next in line needs no mirror — the outsource op's own output
  * already feeds it. No-op when the source op is not an outsource op.
+ *
+ * Runs for a return-to-vendor REPLACEMENT too (`replacementNcId` set). The
+ * vendor's replacement pieces are inspected once, here, exactly like the
+ * first-cycle pieces, and they must reach op_seq + 1 the same way: the NC
+ * settlement (onNcReplacementQc) only recomputes the PO for a PO-linked
+ * origin and writes NO op_log row, so without this mirror the accepted
+ * replacements never reached the QC op and the job card sat at qc_pending
+ * with those pieces "pending" forever (OSP chain gap G1, 2026-09-16). The
+ * in-house re-inject branch of onNcReplacementQc cannot fire for the same
+ * line — an in-house-origin NC can never have a return-to-vendor challan
+ * (nc-register/cascades.ts, return_to_vendor requires a vendor source).
  */
 async function mirrorIncomingQcOntoNextQcOp(
   tx: DbTransaction,
@@ -148,6 +161,7 @@ async function mirrorIncomingQcOntoNextQcOp(
   sourceJcOpId: string | null,
   acceptedDelta: number,
   rejectedDelta: number,
+  replacementNcId: string | null,
   user: AuthContext,
 ): Promise<void> {
   // Only the ACCEPTED pieces are mirrored. The following QC op's input is the
@@ -159,8 +173,14 @@ async function mirrorIncomingQcOntoNextQcOp(
   // NC raised against the outsource op.
   if (!sourceJcOpId || acceptedDelta <= 0) return;
   const srcRows = await tx
-    .select({ jobCardId: jcOps.jobCardId, opSeq: jcOps.opSeq, opType: jcOps.opType })
+    .select({
+      jobCardId: jcOps.jobCardId,
+      opSeq: jcOps.opSeq,
+      opType: jcOps.opType,
+      jcCode: jobCards.code,
+    })
     .from(jcOps)
+    .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
     .where(and(eq(jcOps.id, sourceJcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
     .limit(1);
   const src = srcRows[0];
@@ -209,8 +229,13 @@ async function mirrorIncomingQcOntoNextQcOp(
   // same hook op-entry uses. It is a no-op for an ordinary JC or a non-terminal
   // op, so this only fires for a recovery child whose last op is fed by an
   // outsource op's incoming QC.
+  //
+  // Skipped for a return-to-vendor replacement: onNcReplacementQc (called
+  // right after this mirror) already climbs the accepted replacement pieces up
+  // the parent chain for a recovery child, so running the hook here as well
+  // would credit the ancestor NCs twice for the same pieces.
   const mirroredId = inserted[0]?.id;
-  if (mirroredId) {
+  if (mirroredId && !replacementNcId) {
     await onRecoveryJobCardQc(
       tx,
       {
@@ -223,6 +248,31 @@ async function mirrorIncomingQcOntoNextQcOp(
         shift: 'day',
       },
       companyId,
+      user,
+    );
+  }
+
+  // Stock credit when the mirrored QC op is the job card's LAST op (OSP chain
+  // gap G3, 2026-09-16). creditGrnQcStock deliberately skips a mid-route OSP
+  // line (ADR-092: the JC's final QC op credits the store, not the GRN) — but
+  // the row above is a raw op_log insert, not op-entry's submitQcLog, so the
+  // last-op cascade that normally runs there never ran and the pieces reached
+  // the store on paper nowhere. Same cascade, same tx. It is a no-op unless
+  // op_seq + 1 is the highest op on the JC, so a QC op that is NOT last credits
+  // nothing (a later op's QC does). No double credit either way: the GRN's own
+  // grn_qc row was skipped because the line is mid-route, and this one writes
+  // source_type 'qc_accept' against the JC op, exactly as a keyed QC log would.
+  if (mirroredId) {
+    await tryApplyQcStockCascade(
+      tx,
+      {
+        companyId,
+        jobCardId: src.jobCardId,
+        jcCode: src.jcCode,
+        opSeq: src.opSeq + 1,
+        acceptedQty: acceptedDelta,
+        txnDate: logDate,
+      },
       user,
     );
   }
@@ -540,25 +590,30 @@ export async function submitIncomingQc(
         // paid, and without this credit `returned` could never reach `sent`
         // and the op would sit at 'sent' with the material in the building.
         await creditOutsourceReturn(tx, poRows[0].sourceJcOpId, input.acceptedQty, user.id);
-        if (!line.ncId) {
-          await mirrorIncomingQcOntoNextQcOp(
-            tx,
-            companyId,
-            poRows[0].sourceJcOpId,
-            input.acceptedQty,
-            input.rejectedQty,
-            user,
-          );
-        }
+        // Also for a replacement (line.ncId set) — see the mirror's docstring:
+        // the NC settlement below writes no op_log row for a PO-linked origin,
+        // so this is the only path that carries accepted replacement pieces
+        // on to the following QC op.
+        await mirrorIncomingQcOntoNextQcOp(
+          tx,
+          companyId,
+          poRows[0].sourceJcOpId,
+          input.acceptedQty,
+          input.rejectedQty,
+          line.ncId ?? null,
+          user,
+        );
       }
     }
 
     // Return-to-vendor replacement (design §5): this inspection settles the
     // NC that sent the pieces back — cleared/failed on the NC, close when the
-    // gate is met, and for an in-house-origin NC the accepted pieces re-enter
-    // the origin op. That re-injection is why the §7 mirror above is skipped
-    // here: the cascade already puts the pieces back where they belong, and a
-    // second qc row on the following QC op would inspect them twice on paper.
+    // gate is met, and the PO line is recomputed to count the cleared pieces.
+    // It writes NO op_log row for a PO-linked (vendor) origin: the GRN line
+    // already rolls into the outsource op through v_jc_op_status, and the §7
+    // mirror above is what carries the accepted pieces on to the next QC op.
+    // (The cascade's in-house re-inject branch only fires for an NC with no
+    // outsource PO line, which can never have a return-to-vendor challan.)
     // Rejected pieces raise their follow-on NC below through the same auto-NC
     // path as any other Incoming QC reject.
     if (line.ncId) {
@@ -641,6 +696,30 @@ export async function submitIncomingQc(
       companyId,
       user,
     );
+
+    // Job-card completion (OSP chain gap G2, 2026-09-16). When the outsource
+    // op is the JC's LAST op, this accept is what takes it to 'complete' — the
+    // receive step ran tryCascadeJcComplete while the pieces were still
+    // pending QC, so nothing ever set job_cards.closed_at or closed the SO/JW
+    // line. Same idempotent cascade op-entry runs after a QC log: it fires
+    // only when v_jc_status reads complete/closed, and never re-flips a line
+    // that is already terminal. Runs after the auto-NC block so the status
+    // view sees this inspection's reject too.
+    if (line.poLineId) {
+      const srcOpRows = await tx
+        .select({ jobCardId: jcOps.jobCardId })
+        .from(purchaseOrderLines)
+        .innerJoin(
+          jcOps,
+          and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)),
+        )
+        .where(eq(purchaseOrderLines.id, line.poLineId))
+        .limit(1);
+      const srcJobCardId = srcOpRows[0]?.jobCardId;
+      if (srcJobCardId) {
+        await tryCascadeJcComplete(tx, srcJobCardId, user);
+      }
+    }
 
     return { ok: true as const, grnId: line.grnId };
   });
