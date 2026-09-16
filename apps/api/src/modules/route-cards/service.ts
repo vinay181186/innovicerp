@@ -45,6 +45,7 @@
 //    always rewritten from the master name. Header-only — it is not
 //    pushed down to plans or job cards.
 
+import { opSrNo } from '@innovic/shared';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   items,
@@ -540,7 +541,8 @@ export function computeRouteCardDiffNote(oldOps: DiffOp[], newOps: DiffOp[]): st
 
   for (const [seq, no] of newBySeq) {
     const oo = oldBySeq.get(seq);
-    const label = `${seq}. ${no.operation || '(unnamed)'}`;
+    // display rule — see opSrNo in @innovic/shared (the note is read by people)
+    const label = `${opSrNo(seq)}. ${no.operation || '(unnamed)'}`;
     if (!oo) {
       added.push(label);
       continue;
@@ -580,7 +582,7 @@ export function computeRouteCardDiffNote(oldOps: DiffOp[], newOps: DiffOp[]): st
   }
   for (const [seq, oo] of oldBySeq) {
     if (!newBySeq.has(seq)) {
-      removed.push(`${seq}. ${oo.operation || '(unnamed)'}`);
+      removed.push(`${opSrNo(seq)}. ${oo.operation || '(unnamed)'}`);
     }
   }
 
@@ -1146,11 +1148,7 @@ async function replaceRouteCardOps(
 
   const autoNote = computeRouteCardDiffNote(oldSnapshot, newSnapshot);
   const explicit = p.note?.trim();
-  const opsNote = explicit
-    ? explicit
-    : p.notePrefix
-      ? `${p.notePrefix} — ${autoNote}`
-      : autoNote;
+  const opsNote = explicit ? explicit : p.notePrefix ? `${p.notePrefix} — ${autoNote}` : autoNote;
   const headerNote = p.headerNote?.trim();
   const finalNote = headerNote ? `${opsNote} · ${headerNote}` : opsNote;
 

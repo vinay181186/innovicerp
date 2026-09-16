@@ -228,7 +228,8 @@ function QcDocCard({
 function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Element | null {
   if (!jc.recoveryKind) return null;
   const kind = jc.recoveryKind === 'repair' ? 'REPAIR' : 'REWORK';
-  const opN = jc.originOpSeq ?? '?';
+  // display rule — see opSrNo in @innovic/shared
+  const opN = jc.originOpSeq != null ? fmtOpSrNo(jc.originOpSeq) : '?';
   // Both ids are nullable in the contract; a code with no id renders as text
   // rather than a link to nowhere (rule #8 — no dead links).
   const parent = jc.parentJobCardId ? (

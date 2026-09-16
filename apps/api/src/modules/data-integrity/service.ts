@@ -40,7 +40,8 @@ const CHECKS: readonly CheckSpec[] = [
     code: 'DI-002',
     label: 'JC Ops without a machine + not outsource',
     buildQuery: (cid) => `
-      SELECT jc.code || ' op' || jo.op_seq AS sample
+      -- op number as people see it (10, 20, 30 — see opSrNo in @innovic/shared)
+      SELECT jc.code || ' op' || (jo.op_seq * 10) AS sample
       FROM jc_ops jo
       JOIN job_cards jc ON jc.id = jo.job_card_id
       WHERE jo.company_id = '${cid}'::uuid

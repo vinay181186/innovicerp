@@ -315,7 +315,7 @@ const ncRegisterSource: RegisteredSource = {
       { key: 'reason_category', label: 'Reason', type: 'text', filterable: true, groupable: true },
       { key: 'status', label: 'Status', type: 'text', filterable: true, groupable: true },
       { key: 'disposition', label: 'Disposition', type: 'text', filterable: true, groupable: true },
-      { key: 'op_seq', label: 'Op seq', type: 'number', filterable: true, groupable: true },
+      { key: 'op_seq', label: 'Op Sr No', type: 'number', filterable: true, groupable: true },
       { key: 'reported_by', label: 'Reported by', type: 'text', filterable: true, groupable: true },
     ],
   },
@@ -331,7 +331,9 @@ const ncRegisterSource: RegisteredSource = {
       nc.reason_category::text AS reason_category,
       nc.status::text       AS status,
       nc.disposition::text  AS disposition,
-      nc.op_seq             AS op_seq,
+      -- the op number as people see it (10, 20, 30 — see opSrNo in @innovic/shared);
+      -- filters and grouping run over this select, so they see the same number
+      nc.op_seq * 10        AS op_seq,
       nc.reported_by_text   AS reported_by
     FROM public.nc_register nc
     JOIN public.job_cards jc ON jc.id = nc.job_card_id

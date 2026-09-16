@@ -183,11 +183,12 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     remarks: v.remarks || null,
     ops:
       v.planType === 'manufacture' || v.planType === 'assembly'
-        ? v.ops.map((op, i) => ({
-            // The routing is numbered by row position, as on the SO Planning
-            // modal — the person sees 10, 20, 30 (display rule, see opSrNo) and
-            // the stored sequence is 1, 2, 3.
-            opSeq: i + 1,
+        ? v.ops.map((op) => ({
+            // The row's OWN sequence, never its position: the plan service
+            // restores program / tool / machine onto an op by matching this
+            // number against the prior save, so renumbering after a middle-row
+            // delete would hand the survivor the deleted op's fields.
+            opSeq: op.opSeq,
             operation: op.operation,
             opType: op.opType,
             cycleTimeMin: op.cycleTimeMin,
@@ -738,7 +739,9 @@ export function PlanForm({
                 ) : (
                   values.ops.map((op, idx) => (
                     <tr key={idx}>
-                      <td className="td-ctr mono fw-700">{opSrNo(idx + 1)}</td>
+                      {/* The stored sequence in tens (display rule, see opSrNo). It is no
+                          longer typed: the number is assigned when the op is added. */}
+                      <td className="td-ctr mono fw-700">{opSrNo(op.opSeq)}</td>
                       <td>
                         <input
                           className="innovic-input"
