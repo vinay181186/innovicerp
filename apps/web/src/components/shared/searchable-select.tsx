@@ -116,8 +116,19 @@ export function SearchableSelect({
   // caller only passes `valueLabel` when something is selected, and typing clears
   // it via handleInput, so we don't gate on the resolved `value` id here — that
   // gate was the "picker renders blank in edit mode" bug.
+  //
+  // The label may also ARRIVE IN TWO STEPS: an edit form first knows only the
+  // saved code ("VND-959") and a moment later resolves it to "VND-959 — Name".
+  // Adopting only into an EMPTY box left the bare code on screen for good. So
+  // the box also follows `valueLabel` while it still shows the label we set
+  // last time — never text the user typed (that path clears `valueLabel`).
+  const shownLabelRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!open && valueLabel && query === '') setQuery(valueLabel);
+    if (open || !valueLabel) return;
+    if (query === '' || query === shownLabelRef.current) {
+      shownLabelRef.current = valueLabel;
+      if (query !== valueLabel) setQuery(valueLabel);
+    }
   }, [open, valueLabel, query]);
 
   // Close on outside mousedown. Use the CAPTURE phase so this still fires when the
@@ -180,7 +191,13 @@ export function SearchableSelect({
               // however few rows it has.
               bottom: window.innerHeight - r.top + GAP,
             }
-          : { placement: 'below', left: r.left, width: r.width, maxHeight: room, top: r.bottom + GAP },
+          : {
+              placement: 'below',
+              left: r.left,
+              width: r.width,
+              maxHeight: room,
+              top: r.bottom + GAP,
+            },
       );
     };
     measure();
@@ -328,47 +345,43 @@ export function SearchableSelect({
               }}
               className="overflow-y-auto rounded-md border border-input bg-popover py-1 text-popover-foreground shadow-md"
             >
-          {loading ? (
-            <li className="px-3 py-2 text-sm text-muted-foreground">Loading…</li>
-          ) : filtered.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</li>
-          ) : (
-            filtered.map((o, i) => (
-              <li
-                key={o.id}
-                id={`${baseId}-opt-${i}`}
-                role="option"
-                aria-selected={o.id === value}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  pick(o);
-                }}
-                onMouseEnter={() => setHighlight(i)}
-                className={cn(
-                  'cursor-pointer px-3 py-2 text-sm',
-                  i === highlight ? 'bg-accent text-accent-foreground' : 'text-foreground',
-                )}
-              >
-                {o.code ? (
-                  <>
-                    <span className="font-semibold">{o.code}</span>
-                    {/* The muted colour is tuned for the normal background; on
+              {loading ? (
+                <li className="px-3 py-2 text-sm text-muted-foreground">Loading…</li>
+              ) : filtered.length === 0 ? (
+                <li className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</li>
+              ) : (
+                filtered.map((o, i) => (
+                  <li
+                    key={o.id}
+                    id={`${baseId}-opt-${i}`}
+                    role="option"
+                    aria-selected={o.id === value}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      pick(o);
+                    }}
+                    onMouseEnter={() => setHighlight(i)}
+                    className={cn(
+                      'cursor-pointer px-3 py-2 text-sm',
+                      i === highlight ? 'bg-accent text-accent-foreground' : 'text-foreground',
+                    )}
+                  >
+                    {o.code ? (
+                      <>
+                        <span className="font-semibold">{o.code}</span>
+                        {/* The muted colour is tuned for the normal background; on
                         the highlighted row (bg-accent) it washed out to nearly
                         invisible, so the part NAME — the thing you are reading
                         to confirm the pick — disappeared. Inherit the row's own
                         foreground there and just soften it. */}
-                    <span
-                      className={
-                        i === highlight ? 'opacity-80' : 'text-muted-foreground'
-                      }
-                    >
-                      {' '}
-                      — {o.name}
-                    </span>
-                  </>
-                ) : (
-                  o.name
-                )}
+                        <span className={i === highlight ? 'opacity-80' : 'text-muted-foreground'}>
+                          {' '}
+                          — {o.name}
+                        </span>
+                      </>
+                    ) : (
+                      o.name
+                    )}
                   </li>
                 ))
               )}
