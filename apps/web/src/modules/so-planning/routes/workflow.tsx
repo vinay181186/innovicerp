@@ -4,16 +4,22 @@
 //   Right = per-line cards with status-specific action buttons.
 // Clicking actions opens the modals (create, edit, equip-bom, assembly-bom).
 
-import type { PlanStatus, PlanningPlanSummary, PlanningSoListItem } from '@innovic/shared';
+import type {
+  PlanStatus,
+  PlanningLine,
+  PlanningPlanSummary,
+  PlanningSoListItem,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
-import { usePlanningSoDetail, usePlanningSoList } from '../api';
+import { usePlanningSoDetail, usePlanningSoDetails, usePlanningSoList } from '../api';
 import { BomPlanningModal } from '../components/bom-planning-modal';
 import { CreatePlanModal } from '../components/create-plan-modal';
 import { EditPlanModal } from '../components/edit-plan-modal';
@@ -51,6 +57,72 @@ type ModalState =
   | { kind: 'equip-bom'; soLineId: string }
   | { kind: 'assembly-bom'; soLineId: string };
 
+// The search-results view fetches one detail per matching SO. Cap it so a
+// one-letter term does not fan out into a request per SO on the board; the
+// header tells the user to refine when the cap is hit.
+const MAX_SEARCH_SOS = 20;
+
+// Plan/line lifecycle → the status label + colour a line is shown with. ONE
+// helper, used by the per-line card AND the search-results row, so the two
+// views can never disagree about what a line's state is.
+//  - "executed" = work actually allocated: JC created, outsource/direct PR
+//    raised, in production, or complete.
+//  - covered but plan still a draft (in_planning/planned) → "In Planning"
+//  - covered AND every plan executed → "Fully Planned"
+//  - covered only by a plan-less direct JC → "In Production (no plan)"
+// Green must mean executed, NOT "a draft plan exists for the full qty".
+function lineStatusOf(line: PlanningLine): {
+  label: string;
+  color: string;
+  /** 0–100: covered qty (plans + in-production direct JCs) over order qty. */
+  pct: number;
+  /** Bar colour follows execution, not just coverage: amber while covered only
+   *  by draft plans (nothing allocated yet), green once executed (JC/PR) or in
+   *  production, cyan when partial, grey when none. */
+  barColor: string;
+  hasDirectJc: boolean;
+} {
+  const totalQty = line.orderQty;
+  const hasDirectJc = line.directJcQty > 0;
+  const planExecuted = (s: string): boolean =>
+    s === 'jc_created' || s === 'pr_created' || s === 'in_production' || s === 'complete';
+  const allPlansExecuted =
+    line.plans.length > 0 && line.plans.every((p) => planExecuted(p.planStatus));
+  const coveredByDraftPlans = line.remaining <= 0 && line.plans.length > 0 && !allPlansExecuted;
+
+  // Bar FILL = covered qty (plans + in-production direct JCs).
+  const coveredQty = Math.min(totalQty, line.totalPlanned + line.directJcQty);
+  const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
+  const barColor = coveredByDraftPlans
+    ? 'var(--amber)'
+    : pct >= 100
+      ? 'var(--green)'
+      : pct > 0
+        ? 'var(--cyan)'
+        : 'var(--text3)';
+  const label =
+    line.remaining <= 0
+      ? line.plans.length === 0 && hasDirectJc
+        ? 'In Production (no plan)'
+        : coveredByDraftPlans
+          ? 'In Planning'
+          : 'Fully Planned'
+      : line.plans.length > 0 || hasDirectJc
+        ? `Partial (${line.remaining} left)`
+        : 'Unplanned';
+  const color =
+    line.remaining <= 0
+      ? line.plans.length === 0 && hasDirectJc
+        ? 'var(--cyan)'
+        : coveredByDraftPlans
+          ? 'var(--amber)'
+          : 'var(--green)'
+      : line.plans.length > 0 || hasDirectJc
+        ? 'var(--amber)'
+        : 'var(--text3)';
+  return { label, color, pct, barColor, hasDirectJc };
+}
+
 function PlanningWorkflowPage(): JSX.Element {
   const navigate = useNavigate();
   const { soId: soIdParam, openPlan } = soPlanningWorkflowRoute.useSearch();
@@ -62,6 +134,12 @@ function PlanningWorkflowPage(): JSX.Element {
   const perms = effectiveFormPerms(eff, 'plan_create');
   const [selSoId, setSelSoId] = useState<string | null>(soIdParam ?? null);
   const [soSearch, setSoSearch] = useState('');
+  // While a term is typed the right pane lists the matching LINES across every
+  // SO the search hit (not just the one selected SO — a planner searching
+  // "cover" wants SO-001 L1 and SO-005 L4 together). Clicking any SO — left
+  // list or a result row — dismisses that view and opens the one SO; typing
+  // again brings it back.
+  const [resultsDismissed, setResultsDismissed] = useState(false);
   const [modal, setModal] = useState<ModalState>(
     openPlan ? { kind: 'edit', planId: openPlan } : { kind: 'none' },
   );
@@ -86,14 +164,18 @@ function PlanningWorkflowPage(): JSX.Element {
 
   // Client-side filter over the already-loaded SO list (presentational only —
   // the auto-select-first effect reads soList.data.items directly, unaffected).
-  const soQuery = soSearch.trim().toLowerCase();
-  const visibleSos = (soList.data?.items ?? []).filter(
-    (so) =>
-      !soQuery ||
-      so.soCode.toLowerCase().includes(soQuery) ||
-      (so.customerName ?? '').toLowerCase().includes(soQuery) ||
-      (so.itemsText ?? '').toLowerCase().includes(soQuery),
+  // The list is fetched whole (it scrolls, it does not page), so the shared
+  // matcher is the right tool: case-insensitive, partial, across every column
+  // the row shows — SO code, customer, and the item code + part name text.
+  const visibleSos = (soList.data?.items ?? []).filter((so) =>
+    matchesSearchTerm([so.soCode, so.customerName, so.itemsText], soSearch),
   );
+  const searchTerm = normalizeSearchTerm(soSearch);
+  const showResults = searchTerm !== '' && !resultsDismissed;
+  const pickSo = (id: string): void => {
+    setSelSoId(id);
+    setResultsDismissed(true);
+  };
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
@@ -135,9 +217,12 @@ function PlanningWorkflowPage(): JSX.Element {
           <input
             className="innovic-input"
             style={{ width: '100%' }}
-            placeholder="🔍 Search SO / customer / item…"
+            placeholder="🔍 Search SO, customer, item, part name…"
             value={soSearch}
-            onChange={(e) => setSoSearch(e.target.value)}
+            onChange={(e) => {
+              setSoSearch(e.target.value);
+              setResultsDismissed(false);
+            }}
           />
         </div>
         {soList.isLoading && (
@@ -155,7 +240,7 @@ function PlanningWorkflowPage(): JSX.Element {
             key={so.soId}
             so={so}
             active={so.soId === selSoId}
-            onClick={() => setSelSoId(so.soId)}
+            onClick={() => pickSo(so.soId)}
           />
         ))}
       </div>
@@ -166,6 +251,11 @@ function PlanningWorkflowPage(): JSX.Element {
           soId={selSoId}
           modal={modal}
           setModal={setModal}
+          searchTerm={searchTerm}
+          showResults={showResults}
+          visibleSos={visibleSos}
+          onPickSo={pickSo}
+          onBackToResults={() => setResultsDismissed(false)}
         />
       </div>
     </div>
@@ -253,10 +343,23 @@ function RightPane({
   soId,
   modal,
   setModal,
+  searchTerm,
+  showResults,
+  visibleSos,
+  onPickSo,
+  onBackToResults,
 }: {
   soId: string | null;
   modal: ModalState;
   setModal: (m: ModalState) => void;
+  /** Normalized search term ('' = no search). */
+  searchTerm: string;
+  /** Term active and not yet dismissed → list matching lines across SOs. */
+  showResults: boolean;
+  /** The SOs the left list currently shows (already filtered by the term). */
+  visibleSos: PlanningSoListItem[];
+  onPickSo: (soId: string) => void;
+  onBackToResults: () => void;
 }): JSX.Element {
   const detail = usePlanningSoDetail(soId);
   const editingPlan = usePlan(modal.kind === 'edit' ? modal.planId : '');
@@ -266,6 +369,11 @@ function RightPane({
   // entry; edit + execute a saved plan -> edit. Read-only cards stay visible.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
+
+  // Search-results view replaces the single-SO view while a term is active.
+  if (showResults) {
+    return <SearchResults term={searchTerm} sos={visibleSos} onPick={onPickSo} />;
+  }
 
   // Legacy always renders the header row, then the right content; with no SO
   // selected the header reads "Select an SO" (renderSOPlanning L9439-9441).
@@ -348,6 +456,13 @@ function RightPane({
             </div>
           ) : null}
         </div>
+        {/* The user landed here by clicking a search result; let them go back
+            to the cross-SO list without retyping. */}
+        {searchTerm !== '' ? (
+          <button type="button" className="btn btn-sm" onClick={onBackToResults}>
+            ← Back to search results
+          </button>
+        ) : null}
       </div>
       {so.lines.length === 0 ? (
         <div className="empty-state">
@@ -355,55 +470,16 @@ function RightPane({
         </div>
       ) : (
         so.lines.map((line) => {
-          const totalQty = line.orderQty;
-          const hasDirectJc = line.directJcQty > 0;
-          // Plan/line lifecycle (shared by the header label AND the bar colour):
-          //  - "executed" = work actually allocated: JC created, outsource/direct
-          //    PR raised, in production, or complete.
-          //  - covered but plan still a draft (in_planning/planned) → "In Planning"
-          //  - covered AND every plan executed → "Fully Planned"
-          //  - covered only by a plan-less direct JC → "In Production (no plan)"
-          // Green must mean executed, NOT "a draft plan exists for the full qty".
-          const planExecuted = (s: string): boolean =>
-            s === 'jc_created' || s === 'pr_created' || s === 'in_production' || s === 'complete';
-          const allPlansExecuted =
-            line.plans.length > 0 && line.plans.every((p) => planExecuted(p.planStatus));
-          const coveredByDraftPlans =
-            line.remaining <= 0 && line.plans.length > 0 && !allPlansExecuted;
-
-          // Bar FILL = covered qty (plans + in-production direct JCs).
-          const coveredQty = Math.min(totalQty, line.totalPlanned + line.directJcQty);
-          const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
-          // Bar COLOUR follows execution, not just coverage: amber while covered
-          // only by draft plans (in planning, nothing allocated yet), green once
-          // executed (JC/PR) or in production, cyan when partial, grey when none.
-          const barColor = coveredByDraftPlans
-            ? 'var(--amber)'
-            : pct >= 100
-              ? 'var(--green)'
-              : pct > 0
-                ? 'var(--cyan)'
-                : 'var(--text3)';
-          const lineStatusLabel =
-            line.remaining <= 0
-              ? line.plans.length === 0 && hasDirectJc
-                ? 'In Production (no plan)'
-                : coveredByDraftPlans
-                  ? 'In Planning'
-                  : 'Fully Planned'
-              : line.plans.length > 0 || hasDirectJc
-                ? `Partial (${line.remaining} left)`
-                : 'Unplanned';
-          const lineStatusColor =
-            line.remaining <= 0
-              ? line.plans.length === 0 && hasDirectJc
-                ? 'var(--cyan)'
-                : coveredByDraftPlans
-                  ? 'var(--amber)'
-                  : 'var(--green)'
-              : line.plans.length > 0 || hasDirectJc
-                ? 'var(--amber)'
-                : 'var(--text3)';
+          // Header label, bar fill/colour and left border all come from the one
+          // shared derivation (see lineStatusOf) — the search-results row reads
+          // the same values.
+          const {
+            label: lineStatusLabel,
+            color: lineStatusColor,
+            pct,
+            barColor,
+            hasDirectJc,
+          } = lineStatusOf(line);
           return (
             <div
               key={line.soLineId}
@@ -487,8 +563,7 @@ function RightPane({
                   }}
                 >
                   <span style={{ fontSize: 10, color: 'var(--text3)' }}>
-                    Planned:{' '}
-                    <b style={{ color: 'var(--cyan)' }}>{line.totalPlanned}</b>
+                    Planned: <b style={{ color: 'var(--cyan)' }}>{line.totalPlanned}</b>
                     {hasDirectJc ? (
                       <>
                         {' '}
@@ -497,9 +572,7 @@ function RightPane({
                     ) : null}{' '}
                     / {line.orderQty} pcs ({pct}%)
                   </span>
-                  <span
-                    style={{ fontSize: 10, fontWeight: 700, color: lineStatusColor }}
-                  >
+                  <span style={{ fontSize: 10, fontWeight: 700, color: lineStatusColor }}>
                     {lineStatusLabel}
                   </span>
                 </div>
@@ -702,6 +775,178 @@ function RightPane({
   );
 }
 
+/** Cross-SO search results: one row per SO LINE the term hits, grouped in
+ *  left-list order. Loads each SO's detail through the same query the single-SO
+ *  view uses, so clicking a row opens that SO from cache with no second fetch. */
+function SearchResults({
+  term,
+  sos,
+  onPick,
+}: {
+  term: string;
+  sos: PlanningSoListItem[];
+  onPick: (soId: string) => void;
+}): JSX.Element {
+  const capped = sos.slice(0, MAX_SEARCH_SOS);
+  const details = usePlanningSoDetails(capped.map((so) => so.soId));
+  const anyLoading = details.some((d) => d.isLoading);
+  // A failed detail (expired session, 500, network) must not silently drop its
+  // SO — the left list still shows it, so a quiet "no lines match" would be a
+  // confident wrong answer. Surface it the way the single-SO view does.
+  const failed = details.filter((d) => d.isError);
+  const firstError = failed[0]?.error;
+  const failedMsg =
+    firstError instanceof Error ? firstError.message : failed.length > 0 ? 'Failed to load SO' : '';
+
+  const groups = capped.flatMap((so, i) => {
+    const data = details[i]?.data;
+    if (!data) return [];
+    const hits = data.lines.filter((line) =>
+      matchesSearchTerm(
+        [
+          so.soCode,
+          so.customerName,
+          `L${line.lineNo}`,
+          line.lineNo,
+          itemCodeWithRev(line.itemCode, line.itemRevision, ''),
+          line.itemCode,
+          line.itemName,
+        ],
+        term,
+      ),
+    );
+    // The left list matched this SO on its `itemsText`, which is built from the
+    // SO line's typed `itemCodeText` / `partName`; the detail's `itemCode` /
+    // `itemName` prefer the item master's code/name, and the two can differ.
+    // If none of the lines hit on the detail's fields, show them all rather
+    // than let an SO that is in the left list go silent on the right.
+    const lines = hits.length > 0 ? hits : data.lines;
+    return [{ so, lines }];
+  });
+  const lineCount = groups.reduce((n, g) => n + g.lines.length, 0);
+
+  return (
+    <>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          Search results: {lineCount} line{lineCount === 1 ? '' : 's'} in {groups.length} SO
+          {groups.length === 1 ? '' : 's'} for “{term}”
+          {sos.length > MAX_SEARCH_SOS ? (
+            <div className="text3" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
+              Showing first {MAX_SEARCH_SOS} of {sos.length} matching SOs — refine your search
+            </div>
+          ) : null}
+        </div>
+      </div>
+      {anyLoading ? (
+        <div style={{ padding: 24 }}>
+          <Loader2 className="inline-block animate-spin" /> Loading…
+        </div>
+      ) : null}
+      {failed.length > 0 ? (
+        <div
+          style={{
+            padding: 12,
+            marginBottom: 12,
+            color: 'var(--red)',
+            background: 'rgba(239,68,68,0.1)',
+            borderRadius: 4,
+          }}
+        >
+          Could not load {failed.length} of {capped.length} SOs — {failedMsg}
+        </div>
+      ) : null}
+      {!anyLoading && failed.length === 0 && lineCount === 0 ? (
+        <div className="empty-state">No SO lines match “{term}”</div>
+      ) : null}
+      {groups.map(({ so, lines }) =>
+        lines.map((line) => {
+          const status = lineStatusOf(line);
+          return (
+            // Same look as the per-line card's header (LINE n · code · part ·
+            // SO qty · Due), led by the SO code so rows from different SOs
+            // read apart. Whole row clicks through to that SO.
+            <div
+              key={line.soLineId}
+              className="card"
+              onClick={() => onPick(so.soId)}
+              style={{
+                marginBottom: 8,
+                padding: '10px 14px',
+                cursor: 'pointer',
+                background: 'var(--bg3)',
+                border: '1px solid var(--border)',
+                borderLeft: `3px solid ${status.color}`,
+                borderRadius: 6,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {so.source === 'jw' ? (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      color: 'var(--purple)',
+                      background: 'rgba(124,58,237,0.12)',
+                      padding: '1px 4px',
+                      borderRadius: 3,
+                    }}
+                  >
+                    JW
+                  </span>
+                ) : null}
+                <span className="mono fw-700" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+                  {so.soCode}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: 'var(--text3)',
+                    fontFamily: 'var(--mono)',
+                  }}
+                >
+                  LINE {line.lineNo}
+                </span>
+                {/* Item code is the thing the planner searched for — strong,
+                    never muted. `CODE/REV`; a JW line has no revision and keeps
+                    the bare code. */}
+                <span style={{ fontWeight: 700, color: 'var(--purple)', whiteSpace: 'nowrap' }}>
+                  {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
+                </span>
+                <span style={{ fontSize: 12 }}>{line.itemName ?? ''}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <span style={{ fontSize: 12 }}>
+                  SO: <b>{line.orderQty}</b>
+                </span>
+                <span style={{ fontSize: 12 }}>
+                  Due: <b>{line.dueDate ?? '—'}</b>
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: status.color }}>
+                  {status.label}
+                </span>
+              </div>
+            </div>
+          );
+        }),
+      )}
+    </>
+  );
+}
+
 /** A generated PR number, clickable to its detail page when the id is known
  *  (mirrors how a JC number links to /job-cards/$id). Falls back to plain text. */
 function PrLink({
@@ -847,10 +1092,7 @@ function PlanCard({
           </>
         )}
         {plan.planStatus === 'pr_created' && (
-          <span
-            className="mono"
-            style={{ color: 'var(--purple)', fontSize: 10, fontWeight: 700 }}
-          >
+          <span className="mono" style={{ color: 'var(--purple)', fontSize: 10, fontWeight: 700 }}>
             PR:
             <PrLink
               id={plan.foPrId ?? plan.dpPrId}

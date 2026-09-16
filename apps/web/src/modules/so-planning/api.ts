@@ -6,7 +6,7 @@ import type {
   PlanningDetailResponse,
   PlanningSoListResponse,
 } from '@innovic/shared';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const soPlanningKeys = {
@@ -25,14 +25,36 @@ export function usePlanningSoList() {
   });
 }
 
-export function usePlanningSoDetail(soId: string | null) {
-  return useQuery<PlanningDetailResponse>({
+// The ONE description of "fetch one SO's planning detail". Both the single-SO
+// hook and the many-SO search hook spread this, so they share one query key and
+// one fetch: a detail loaded for the search results is the same cache entry the
+// right pane reads when the user clicks that result — it opens instantly, and a
+// refetch from either side updates both.
+export function planningSoDetailQuery(soId: string) {
+  return {
     queryKey: soPlanningKeys.detail(soId),
     queryFn: () => apiFetch<PlanningDetailResponse>(`/so-planning/${soId}`),
-    enabled: !!soId,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+  };
+}
+
+export function usePlanningSoDetail(soId: string | null) {
+  return useQuery<PlanningDetailResponse>({
+    ...planningSoDetailQuery(soId ?? ''),
+    // Re-state the key with the raw (possibly null) id so the disabled
+    // "no SO selected" entry keeps the exact key it always had.
+    queryKey: soPlanningKeys.detail(soId),
+    enabled: !!soId,
   });
+}
+
+/** Details for several SOs at once — the Planning page's search-results view,
+ *  which lists matching LINES across every SO the search hit. One query per SO
+ *  (no bulk endpoint, none needed: the caller caps the list), each on the same
+ *  key + fetch as `usePlanningSoDetail`, so nothing is fetched twice. */
+export function usePlanningSoDetails(soIds: string[]) {
+  return useQueries({ queries: soIds.map((id) => planningSoDetailQuery(id)) });
 }
 
 export function usePlanningBom(soId: string | null, soLineId: string | null) {
