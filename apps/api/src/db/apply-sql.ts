@@ -26,7 +26,15 @@ try {
     const statements = text
       .split(/-->\s*statement-breakpoint/i)
       .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !/^(--.*\n?)+$/.test(s));
+      // Drop chunks that are comment-only, checked line by line. The old regex
+      // /^(--.*\n?)+$/ backtracks exponentially on a long comment header that
+      // is followed by SQL — 0128's walk-through table hung it for minutes
+      // before the first statement ever reached the database.
+      .filter(
+        (s) =>
+          s.length > 0 &&
+          !s.split('\n').every((line) => line.trim() === '' || line.trimStart().startsWith('--')),
+      );
 
     console.log(`[apply-sql] ${path} → ${statements.length} statement(s)`);
     for (const [i, stmt] of statements.entries()) {
