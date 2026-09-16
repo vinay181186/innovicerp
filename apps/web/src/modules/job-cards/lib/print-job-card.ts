@@ -8,7 +8,8 @@
 //   • Letterhead — logo + company name only (an internal document: no address,
 //     no GSTIN), the brand rule, the title JOB CARD.
 //   • Two columns of facts, each on its own full-width rule: JC No, SO No, SO
-//     line, client, part, route card on the left; date, due, qty, item, drawing
+//     line, part, route card on the left (no client — user 2026-09-16, it is a
+//     shop-floor sheet); date, due, qty, item, drawing
 //     on the right. The last row of each column has no rule — the box closes it.
 //   • The operation table: OP · Operation · Plan Machine · Actual Machine ·
 //     Operator · Start · Finish · OK Qty · Rej/Rework · QC/Report · Entry Done
@@ -159,7 +160,6 @@ export function printJobCard(args: {
     fact('JC No.', jc.code, { strong: true }),
     fact('SO No.', soNo, { strong: true }),
     fact('SO Line', soLine),
-    fact('Client', jc.customerName ?? ''),
     fact('Part Name', jc.itemName),
     fact('Route Card / Rev', routeCard, { last: true }),
   ].join('');
