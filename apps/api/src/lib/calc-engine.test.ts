@@ -252,6 +252,130 @@ describe('enrichOps', () => {
     expect(inHouse[0]?.completed).toBe(0);
   });
 
+  // ADR-167 code-review F2 / R1 (a) — mirrors v_jc_op_status.completed_qty
+  // (0130): for an outsource op WITHOUT shop QC, op_log 'qc' accepted rows
+  // (rework-child re-inject, use_as_is) are recovered pieces and count as
+  // completed alongside the GRN-accepted qty.
+  it('outsource op, qcRequired=false: GRN-accepted 8 + re-injected qc 2 → completed 10, complete, next op fed 10 (F2 / R1-a)', () => {
+    const ops = [
+      op({ id: 'o1', opSeq: 1, opType: 'outsource', outsourceStatus: 'received' }),
+      op({ id: 'o2', opSeq: 2 }),
+    ];
+    // GRN: 8 accepted, 2 rejected → NC → rework child → 2 recovered and
+    // re-injected onto o1 as one op_log qc row (recovery.ts reinjectIntoOriginOp).
+    const before = enrichOps(jc({ orderQty: 10 }), ops, [], new Set(), new Map([['o1', 8]]));
+    expect(before[0]?.completed).toBe(8);
+    expect(before[0]?.status).toBe('outsource_received');
+    expect(before[1]?.inputAvail).toBe(8);
+
+    const logs = [log('o1', 'qc', 2)];
+    const after = enrichOps(jc({ orderQty: 10 }), ops, logs, new Set(), new Map([['o1', 8]]));
+    expect(after[0]?.completed).toBe(10);
+    expect(after[0]?.qcAccepted).toBe(2);
+    expect(after[0]?.status).toBe('complete');
+    expect(after[1]?.inputAvail).toBe(10);
+    // Not qcRequired → no shop-QC bucket appears from the re-inject row.
+    expect(after[0]?.qcPending).toBe(0);
+  });
+
+  // ADR-167 code-review F3 / R1–R3 — with qcRequired the op_log qc rows are
+  // the shop's own inspection of the SAME pieces the GRN counted: they must
+  // NOT add to completed, and qc_pending must not pre-empt the at-vendor
+  // identity while pieces are still out.
+  describe('outsource op with qcRequired (shop QC on top of the vendor GRN)', () => {
+    const ops = () => [
+      op({
+        id: 'o1',
+        opSeq: 1,
+        opType: 'outsource',
+        outsourceStatus: 'received',
+        qcRequired: true,
+      }),
+      op({ id: 'o2', opSeq: 2 }),
+    ];
+
+    it('(b) GRN 5 of 10, shop QC 5, stamp sent → completed 5 (not 10), outsource_at_vendor, NOT complete', () => {
+      const half = [
+        op({ id: 'o1', opSeq: 1, opType: 'outsource', outsourceStatus: 'sent', qcRequired: true }),
+        op({ id: 'o2', opSeq: 2 }),
+      ];
+      const r = enrichOps(
+        jc({ orderQty: 10 }),
+        half,
+        [log('o1', 'qc', 5)],
+        new Set(),
+        new Map([['o1', 5]]),
+      );
+      expect(r[0]?.completed).toBe(5);
+      expect(r[0]?.qcAccepted).toBe(5);
+      expect(r[0]?.qcPending).toBe(0);
+      expect(r[0]?.status).toBe('outsource_at_vendor');
+      expect(r[0]?.status).not.toBe('complete');
+      // 5 still at the vendor for so-status / so-overview atVendorQty.
+      expect(r[0]!.inputAvail - r[0]!.completed).toBe(5);
+      expect(r[1]?.inputAvail).toBe(5);
+    });
+
+    it('(b2) GRN 5 of 10, shop QC still outstanding on those 5, stamp sent → still outsource_at_vendor, not qc_pending (R3)', () => {
+      const half = [
+        op({ id: 'o1', opSeq: 1, opType: 'outsource', outsourceStatus: 'sent', qcRequired: true }),
+      ];
+      const r = enrichOps(jc({ orderQty: 10 }), half, [], new Set(), new Map([['o1', 5]]));
+      expect(r[0]?.completed).toBe(5);
+      expect(r[0]?.qcPending).toBe(5);
+      expect(r[0]?.status).toBe('outsource_at_vendor');
+    });
+
+    it('(c) GRN 10, shop QC 0 → completed 10, qc_pending, next op fed 0', () => {
+      const r = enrichOps(jc({ orderQty: 10 }), ops(), [], new Set(), new Map([['o1', 10]]));
+      expect(r[0]?.completed).toBe(10);
+      expect(r[0]?.qcAccepted).toBe(0);
+      expect(r[0]?.qcPending).toBe(10);
+      expect(r[0]?.status).toBe('qc_pending');
+      expect(r[0]?.status).not.toBe('complete');
+      // outputOf() a qcRequired op is qcAccepted — nothing has been cleared yet.
+      expect(r[1]?.inputAvail).toBe(0);
+    });
+
+    it('(c2) GRN 10, stamp still sent but bar covers the input → qc_pending (pieces are back)', () => {
+      const stale = [
+        op({ id: 'o1', opSeq: 1, opType: 'outsource', outsourceStatus: 'sent', qcRequired: true }),
+      ];
+      const r = enrichOps(jc({ orderQty: 10 }), stale, [], new Set(), new Map([['o1', 10]]));
+      expect(r[0]?.completed).toBe(10);
+      expect(r[0]?.status).toBe('qc_pending');
+    });
+
+    it('(d) GRN 10, shop QC 10 → completed 10 (not 20), complete, next op fed 10', () => {
+      const r = enrichOps(
+        jc({ orderQty: 10 }),
+        ops(),
+        [log('o1', 'qc', 10)],
+        new Set(),
+        new Map([['o1', 10]]),
+      );
+      expect(r[0]?.completed).toBe(10);
+      expect(r[0]?.qcAccepted).toBe(10);
+      expect(r[0]?.qcPending).toBe(0);
+      expect(r[0]?.status).toBe('complete');
+      expect(r[1]?.inputAvail).toBe(10);
+    });
+
+    it('(d2) GRN 10, shop QC 6 accepted / 1 rejected → completed 10, 3 pending, qc_pending, next op fed 6', () => {
+      const r = enrichOps(
+        jc({ orderQty: 10 }),
+        ops(),
+        [log('o1', 'qc', 6, 1)],
+        new Set(),
+        new Map([['o1', 10]]),
+      );
+      expect(r[0]?.completed).toBe(10);
+      expect(r[0]?.qcPending).toBe(3);
+      expect(r[0]?.status).toBe('qc_pending');
+      expect(r[1]?.inputAvail).toBe(6);
+    });
+  });
+
   it('output of qcRequired op flows qcAccepted to next op input, not completed', () => {
     const ops = [
       op({ id: 'o1', opSeq: 1, qcRequired: true }),

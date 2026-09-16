@@ -116,3 +116,37 @@ Batch 1 (correctness): G1, G2, G3, G5, G6 (code) + G4 (one migration re-emitting
 and v_osp_wip). Batch 2: G7, G8 (migrations). Batch 3: G9.
 Re-prove each batch with `apps/web/e2e/flow-erp-chain-report.spec.ts` (R1 section) plus a
 mid-route variant (OSP op followed by a QC op) for G1/G3.
+
+## Post-review follow-ups on ADR-167 (batch 2/3) — 2026-09-16
+
+`/code-review high 3bf2ac6c..b2ebf118` found five items. 1–3 fixed in this session
+(migration 0131 + `lib/calc-engine.ts`). 4–5 are in `purchase-orders/service.ts`, which the
+other terminal has open; **they are OPEN and owned by whoever next edits that file**:
+
+4. `purchase-orders/service.ts` ~L1868 (LOW) — `poLiveGoodsDoc` only looks for GRN lines by
+   `purchase_order_line_id`; a GRN whose lines have no line id but whose header names the PO
+   (`createGoodsReceiptNote` allows it) does not block `softDeletePurchaseOrder`, so the PO and
+   its lines are soft-deleted and `releaseJcOpsForCancelledPo` runs while a live GRN still points
+   at the header. Add the header query `poGoodsMovementDoc` (~L1188) already has.
+5. `purchase-orders/service.ts` ~L2076 (LOW) — on PO cancel the op falls back to `pr_raised`
+   whenever no live `jc_op_po_lines` row exists, but the PR only reopens if no other live PO line
+   has `source_pr_id = pr.id`. Pre-0118 ops (legacy `outsource_po_line_id` → PO-A, same PR also
+   fed PO-B, no link rows) end at `pr_raised` with a PR still `po_created`: no auto-PR, PR not
+   offered, PO-B never cascades. Re-point `outsource_po_line_id` to a remaining live PO line of
+   the same PR before falling back to `pr_raised`.
+6. `v_jc_op_status` (0125 → 0130) second `complete` branch for outsource ops
+   (`osp_accepted + qc_accepted >= input_avail`) has no `qc_required` gate, so an outsource op
+   flagged QC-required with all GRN pieces accepted and no shop QC reads `complete` in the view
+   while `lib/calc-engine.ts` (fixed 2026-09-16) reads `qc_pending`. Pre-existing (0125). Fix:
+   re-emit the view with `AND (NOT o.qc_required OR COALESCE(r.qc_accepted_qty,0) >=
+   COALESCE(r.completed_qty,0) + COALESCE(orr.osp_accepted_qty,0))` on that branch.
+7. (other terminal — addressed in 9bd25e54, verify) `route-cards/service.ts` ~L545/~L585
+   now emits "30. DIR" / "10. turn" in the change note; `route-cards/service.test.ts:119-120` still
+   asserts "3. DIR" / "1. turn" — pure unit test, will fail in CI. Update the expectations.
+8. (other terminal — addressed in 9bd25e54, verify) `plans/components/plan-form.tsx` ~L307 — with the Sr No input removed there is
+   no way to renumber/reorder ops; deleting a middle row leaves a gap in `op_seq` (1,3,4 shown as
+   10,30,40) and `op-entry/service.ts` ~L1078 / `incoming-qc/service.ts` ~L205 look up the next op
+   by `op_seq + 1`. Either renumber on delete or resolve "next op" by ordering, not by +1.
+9. (other terminal — addressed in 9bd25e54, verify) `saved-reports/sources.ts` ~L336 — `nc.op_seq * 10 AS op_seq` changes the value
+   saved-report filters compare against; any report saved with an `op_seq = N` filter returns no
+   rows after deploy. Migrate stored filter values (×10) or expose both `op_seq` and `op_sr_no`.
