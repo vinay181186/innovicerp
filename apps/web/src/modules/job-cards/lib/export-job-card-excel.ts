@@ -4,13 +4,18 @@
 // Uses the SheetJS dep already in the app (see items/lib/import-export.ts).
 
 import type { JcOpEnriched, JobCardListItem, MachineSplit, OpLog } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 
 // The op's PLANNED machine — where the REMAINING qty runs, not who made the
 // completed qty (ADR-126). See actualMachine / machineSplitCell for the rest.
 const machine = (o: JcOpEnriched): string =>
-  o.opType === 'qc' ? 'QC' : o.opType === 'outsource' ? 'Outsource' : (o.machineCode ?? o.machineCodeText ?? '');
+  o.opType === 'qc'
+    ? 'QC'
+    : o.opType === 'outsource'
+      ? 'Outsource'
+      : (o.machineCode ?? o.machineCodeText ?? '');
 
 // The op's ACTUAL machine (ADR-164): the open session's machine, else the
 // machine(s) that made the done qty, else the plan itself. Same name as the
@@ -82,7 +87,7 @@ export function exportJobCardExcel(args: {
 
   // ── Sheet 2: Operations ──
   const opCols = [
-    'Op #',
+    'Op Sr No',
     'Machine',
     // The machine the pieces were / are being made on (ADR-164); equals
     // "Machine" (the plan) unless the operator ran the op elsewhere.
@@ -106,7 +111,7 @@ export function exportJobCardExcel(args: {
   const opAoa: (string | number)[][] = [
     opCols,
     ...ops.map((o) => [
-      o.opSeq,
+      opSrNo(o.opSeq), // display rule, see opSrNo
       machine(o),
       actualMachine(o),
       o.operation,
@@ -134,7 +139,7 @@ export function exportJobCardExcel(args: {
   const logCols = [
     'Date',
     'Shift',
-    'Op #',
+    'Op Sr No',
     'Operation',
     'Type',
     'Machine',
@@ -156,7 +161,7 @@ export function exportJobCardExcel(args: {
       return [
         l.logDate,
         l.shift,
-        op?.opSeq ?? '',
+        op ? opSrNo(op.opSeq) : '',
         op?.operation ?? '',
         l.logType,
         logMachine(l),

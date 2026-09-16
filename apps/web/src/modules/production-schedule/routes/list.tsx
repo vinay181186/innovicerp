@@ -1,10 +1,8 @@
 // Production Schedule (Gantt) — mirrors legacy renderProductionSchedule
 // (HTML L15588). 30-day grid, one row per machine, drag-drop reschedule.
 
-import {
-  type ProductionScheduleBar,
-  type ProductionScheduleFilter,
-} from '@innovic/shared';
+import { type ProductionScheduleBar, type ProductionScheduleFilter } from '@innovic/shared';
+import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -123,11 +121,7 @@ function ProductionSchedulePage(): React.JSX.Element {
     unscheduled: 0,
   };
 
-  const onDrop = (
-    e: React.DragEvent,
-    machineId: string,
-    iso: string,
-  ): void => {
+  const onDrop = (e: React.DragEvent, machineId: string, iso: string): void => {
     e.preventDefault();
     const id = e.dataTransfer.getData('text/jc-op-id');
     if (!id) return;
@@ -272,149 +266,148 @@ function ProductionSchedulePage(): React.JSX.Element {
         </div>
       ) : (
         <>
-        <div className="panel" style={{ padding: 0, overflow: 'auto', maxHeight: 600 }}>
-          <table
-            style={{
-              borderCollapse: 'collapse',
-              width: '100%',
-              fontSize: 10,
-              minWidth: 220 + 30 * COL_WIDTH,
-            }}
-          >
-            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg2)' }}>
-              <tr>
-                <th
-                  style={{
-                    position: 'sticky',
-                    left: 0,
-                    zIndex: 11,
-                    background: 'var(--bg2)',
-                    border: '1px solid var(--border)',
-                    padding: '6px 8px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    textAlign: 'left',
-                    width: 200,
-                    minWidth: 200,
-                  }}
-                >
-                  Machine
-                </th>
-                {days.map((d) => {
-                  const bg = d.isToday
-                    ? 'rgba(59,130,246,0.15)'
-                    : d.isWeekend
-                      ? 'var(--bg3)'
-                      : 'var(--bg2)';
-                  const col = d.isToday
-                    ? 'var(--sig-info)'
-                    : d.isWeekend
-                      ? 'var(--text3)'
-                      : 'var(--text)';
-                  return (
-                    <th
-                      key={d.iso}
-                      style={{
-                        border: '1px solid var(--border)',
-                        padding: '4px 2px',
-                        fontSize: 9,
-                        fontWeight: 600,
-                        background: bg,
-                        color: col,
-                        width: COL_WIDTH,
-                        minWidth: COL_WIDTH,
-                      }}
-                    >
-                      <div>{d.day}</div>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>{d.dom}</div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {data.machines.map((m) => (
-                <tr key={m.machineId}>
-                  <td
+          <div className="panel" style={{ padding: 0, overflow: 'auto', maxHeight: 600 }}>
+            <table
+              style={{
+                borderCollapse: 'collapse',
+                width: '100%',
+                fontSize: 10,
+                minWidth: 220 + 30 * COL_WIDTH,
+              }}
+            >
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg2)' }}>
+                <tr>
+                  <th
                     style={{
                       position: 'sticky',
                       left: 0,
-                      zIndex: 5,
-                      background: 'var(--bg)',
+                      zIndex: 11,
+                      background: 'var(--bg2)',
                       border: '1px solid var(--border)',
                       padding: '6px 8px',
                       fontSize: 11,
                       fontWeight: 700,
+                      textAlign: 'left',
+                      width: 200,
+                      minWidth: 200,
                     }}
                   >
-                    <div>{m.machineName ? `${m.machineCode} — ${m.machineName}` : m.machineCode}</div>
-                    {m.machineType ? (
-                      <div
-                        style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}
-                      >
-                        {m.machineType}
-                      </div>
-                    ) : null}
-                  </td>
-                  {days.map((d, dayIdx) => {
-                    const startingHere = m.bars.filter((b) => b.plannedStart === d.iso);
+                    Machine
+                  </th>
+                  {days.map((d) => {
                     const bg = d.isToday
-                      ? 'rgba(59,130,246,0.05)'
+                      ? 'rgba(59,130,246,0.15)'
                       : d.isWeekend
                         ? 'var(--bg3)'
-                        : 'transparent';
+                        : 'var(--bg2)';
+                    const col = d.isToday
+                      ? 'var(--sig-info)'
+                      : d.isWeekend
+                        ? 'var(--text3)'
+                        : 'var(--text)';
                     return (
-                      <td
+                      <th
                         key={d.iso}
-                        onDragOver={(e) => canWrite && e.preventDefault()}
-                        onDrop={(e) => canWrite && onDrop(e, m.machineId, d.iso)}
                         style={{
                           border: '1px solid var(--border)',
-                          padding: 2,
-                          height: ROW_HEIGHT,
-                          verticalAlign: 'top',
+                          padding: '4px 2px',
+                          fontSize: 9,
+                          fontWeight: 600,
                           background: bg,
-                          position: 'relative',
+                          color: col,
+                          width: COL_WIDTH,
+                          minWidth: COL_WIDTH,
                         }}
                       >
-                        {startingHere.map((b) => (
-                          <Bar
-                            key={b.jcOpId}
-                            bar={b}
-                            colIdx={dayIdx}
-                            canWrite={canWrite}
-                          />
-                        ))}
-                      </td>
+                        <div>{d.day}</div>
+                        <div style={{ fontSize: 11, fontWeight: 700 }}>{d.dom}</div>
+                      </th>
                     );
                   })}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {data.machines.map((m) => (
+                  <tr key={m.machineId}>
+                    <td
+                      style={{
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 5,
+                        background: 'var(--bg)',
+                        border: '1px solid var(--border)',
+                        padding: '6px 8px',
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <div>
+                        {m.machineName ? `${m.machineCode} — ${m.machineName}` : m.machineCode}
+                      </div>
+                      {m.machineType ? (
+                        <div style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}>
+                          {m.machineType}
+                        </div>
+                      ) : null}
+                    </td>
+                    {days.map((d, dayIdx) => {
+                      const startingHere = m.bars.filter((b) => b.plannedStart === d.iso);
+                      const bg = d.isToday
+                        ? 'rgba(59,130,246,0.05)'
+                        : d.isWeekend
+                          ? 'var(--bg3)'
+                          : 'transparent';
+                      return (
+                        <td
+                          key={d.iso}
+                          onDragOver={(e) => canWrite && e.preventDefault()}
+                          onDrop={(e) => canWrite && onDrop(e, m.machineId, d.iso)}
+                          style={{
+                            border: '1px solid var(--border)',
+                            padding: 2,
+                            height: ROW_HEIGHT,
+                            verticalAlign: 'top',
+                            background: bg,
+                            position: 'relative',
+                          }}
+                        >
+                          {startingHere.map((b) => (
+                            <Bar key={b.jcOpId} bar={b} colIdx={dayIdx} canWrite={canWrite} />
+                          ))}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-        {/* Help text — legacy HTML L15762. Legacy's "Click any bar to see
+          {/* Help text — legacy HTML L15762. Legacy's "Click any bar to see
             operation details" and "Auto-Schedule ..." clauses are omitted:
             neither the op-detail modal nor the Auto-Schedule button is ported
             (no endpoint exists), so the text would advertise features this
             page does not have. */}
-        <div
-          style={{
-            marginTop: 10,
-            padding: 10,
-            background: 'var(--sig-info-bg)',
-            border: '1px solid var(--sig-info-bd)',
-            borderRadius: 6,
-            fontSize: 11,
-            color: 'var(--text2)',
-            lineHeight: 1.6,
-          }}
-        >
-          <b style={{ color: 'var(--sig-info)' }}>How to use:</b>{' '}
-          {canWrite ? <><b>Drag</b> a bar to a different machine row or day to reschedule. </> : null}
-          Color shows schedule health: green = on track, yellow = tight, red = will miss due date.
-        </div>
+          <div
+            style={{
+              marginTop: 10,
+              padding: 10,
+              background: 'var(--sig-info-bg)',
+              border: '1px solid var(--sig-info-bd)',
+              borderRadius: 6,
+              fontSize: 11,
+              color: 'var(--text2)',
+              lineHeight: 1.6,
+            }}
+          >
+            <b style={{ color: 'var(--sig-info)' }}>How to use:</b>{' '}
+            {canWrite ? (
+              <>
+                <b>Drag</b> a bar to a different machine row or day to reschedule.{' '}
+              </>
+            ) : null}
+            Color shows schedule health: green = on track, yellow = tight, red = will miss due date.
+          </div>
         </>
       )}
     </div>
@@ -451,7 +444,7 @@ function Bar({
       draggable={canWrite}
       onDragStart={(e) => e.dataTransfer.setData('text/jc-op-id', bar.jcOpId)}
       title={
-        `${bar.jcCode} Op${bar.opSeq} ${bar.operation}` +
+        `${bar.jcCode} Op${fmtOpSrNo(bar.opSeq)} ${bar.operation}` +
         (bar.dueDate ? ` (Due ${bar.dueDate})` : '') +
         (itemLabel ? `\n${itemLabel}` : '')
       }
@@ -482,7 +475,7 @@ function Bar({
           textOverflow: 'ellipsis',
         }}
       >
-        {bar.jcCode} · Op{bar.opSeq}
+        {bar.jcCode} · Op{opSrNo(bar.opSeq)}
       </div>
       <div
         style={{
@@ -533,10 +526,7 @@ function StatCard({
   color: string;
 }): React.JSX.Element {
   return (
-    <div
-      className="panel"
-      style={{ textAlign: 'center', padding: 10 }}
-    >
+    <div className="panel" style={{ textAlign: 'center', padding: 10 }}>
       <div
         className="text3"
         style={{
@@ -547,9 +537,7 @@ function StatCard({
       >
         {label}
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color }}>
-        {value}
-      </div>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }

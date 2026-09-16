@@ -17,6 +17,7 @@ import type {
   PlanType,
   UpdatePlanInput,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -120,7 +121,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     plan.plannedStartDate || todayLocal(),
   );
   const [plannedEndDate, setPlannedEndDate] = useState<string>(
-    plan.plannedEndDate || addDaysLocal(plan.plannedStartDate || todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
+    plan.plannedEndDate ||
+      addDaysLocal(plan.plannedStartDate || todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
   );
   const [remarks, setRemarks] = useState<string>(plan.remarks ?? '');
   // Raw material — two INDEPENDENT master pickers, both optional (no ★). The
@@ -227,8 +229,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // master. When it cannot be — the row is not in the page this hook fetched —
   // the code alone is shown, exactly as before. A missing name degrades the
   // label; it never blanks the field.
-  const codeAndName = (o: { code?: string | null; name: string } | undefined): string | undefined =>
-    o ? (o.code ? `${o.code} — ${o.name}` : o.name) : undefined;
+  const codeAndName = (
+    o: { code?: string | null; name: string } | undefined,
+  ): string | undefined => (o ? (o.code ? `${o.code} — ${o.name}` : o.name) : undefined);
 
   const vendorLabelOf = (o: OpRow): string | undefined => {
     const id = o.outsourceVendorId ?? vendorIdByCode(o.outsourceVendorText ?? '');
@@ -389,13 +392,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       if (ops.length === 0) return 'Add at least one operation';
       const missingName = ops.find((o) => !o.operation);
       if (missingName) return 'Every op needs an operation name';
-      const inHouseNoMachine = ops.find(
-        (o) => o.opType === 'process' && !o.machineCodeText,
-      );
+      const inHouseNoMachine = ops.find((o) => o.opType === 'process' && !o.machineCodeText);
       if (inHouseNoMachine) return 'In-house ops need a machine';
-      const outsourceNoVendor = ops.find(
-        (o) => o.opType === 'outsource' && !o.outsourceVendorText,
-      );
+      const outsourceNoVendor = ops.find((o) => o.opType === 'outsource' && !o.outsourceVendorText);
       if (outsourceNoVendor) return 'Outsource ops need a vendor';
     } else if (planType === 'full_outsource') {
       if (!foVendor) return 'Select a vendor for outsourcing';
@@ -458,11 +457,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // API + shared-contract change, which this UI task is not.
   const machineOptsForGroup = (groupId: string | null | undefined) =>
     groupId
-      ? machineRows.filter((m) => m.machineGroupId === groupId).map((m) => ({
-          id: m.id,
-          code: m.code,
-          name: m.name,
-        }))
+      ? machineRows
+          .filter((m) => m.machineGroupId === groupId)
+          .map((m) => ({
+            id: m.id,
+            code: m.code,
+            name: m.name,
+          }))
       : machineOpts;
 
   // Picking a group re-scopes the Machine picker, so a machine that is not in
@@ -503,8 +504,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       >
         {update.isPending || finalize.isPending ? (
           <>
-            <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} />{' '}
-            …
+            <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} /> …
           </>
         ) : (
           // Legacy editPlan: showModalLg(title, body, onSave, 'Save Plan') →
@@ -639,9 +639,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             <b style={{ fontSize: 16 }}>{plan.orderQty}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 700 }}>
-              PLAN QTY ★
-            </span>
+            <span style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 700 }}>PLAN QTY ★</span>
             <br />
             <input
               type="number"
@@ -929,8 +927,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             <div className="empty-state" style={{ padding: 20, textAlign: 'center' }}>
               <div style={{ fontSize: 12, marginBottom: 4 }}>No operations yet.</div>
               <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                Use <b>+ Add Op</b> for in-house work, <b>+ Add OSP Op</b> for vendor work,
-                or <b>+ Add QC Op</b> for an inspection step.
+                Use <b>+ Add Op</b> for in-house work, <b>+ Add OSP Op</b> for vendor work, or{' '}
+                <b>+ Add QC Op</b> for an inspection step.
               </div>
             </div>
           ) : (
@@ -945,7 +943,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <table className="ops-routing" style={{ minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                    <th style={{ width: 40, textAlign: 'center' }}>Sr No</th>
                     {/* The Group column leads because it is the first thing the
                         planner decides — what KIND of step this is (a machine
                         family, an OSP hand-off, or a QC check). Everything to the
@@ -972,7 +970,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           }}
                         >
                           <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-                            {i + 1}
+                            {opSrNo(i + 1)}
                           </td>
                           {/* A QC step has no machine group — the badge takes the
                               Group cell so every row's leftmost data cell answers
@@ -1069,27 +1067,29 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         key={op.uid}
                         style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}
                       >
-                        <td className="td-ctr mono fw-700">{i + 1}</td>
+                        {/* Shown as 10, 20, 30 — display rule, see opSrNo. The
+                            stored opSeq stays 1, 2, 3. */}
+                        <td className="td-ctr mono fw-700">{opSrNo(i + 1)}</td>
                         <td>
-                          {isOS
-                            ? stepBadge(
-                                '🏭 OSP',
-                                'var(--purple)',
-                                'rgba(124,58,237,0.12)',
-                                'rgba(124,58,237,0.3)',
-                              )
-                            : (
-                                <MachineGroupPicker
-                                  id={`plan-mgrp-${op.uid}`}
-                                  valueId={op.machineGroupId ?? null}
-                                  valueText={
-                                    op.machineGroupId
-                                      ? (machineGroupCodeById.get(op.machineGroupId) ?? null)
-                                      : null
-                                  }
-                                  onChange={(gid) => onGroupChange(op, gid)}
-                                />
-                              )}
+                          {isOS ? (
+                            stepBadge(
+                              '🏭 OSP',
+                              'var(--purple)',
+                              'rgba(124,58,237,0.12)',
+                              'rgba(124,58,237,0.3)',
+                            )
+                          ) : (
+                            <MachineGroupPicker
+                              id={`plan-mgrp-${op.uid}`}
+                              valueId={op.machineGroupId ?? null}
+                              valueText={
+                                op.machineGroupId
+                                  ? (machineGroupCodeById.get(op.machineGroupId) ?? null)
+                                  : null
+                              }
+                              onChange={(gid) => onGroupChange(op, gid)}
+                            />
+                          )}
                         </td>
                         <td>
                           {isOS ? (
@@ -1105,7 +1105,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               // vendor read as unlinked and reopening the list
                               // risked clearing it. The text match stays as the
                               // fallback for ops saved before the id was recorded.
-                              value={op.outsourceVendorId ?? vendorIdByCode(op.outsourceVendorText ?? '')}
+                              value={
+                                op.outsourceVendorId ?? vendorIdByCode(op.outsourceVendorText ?? '')
+                              }
                               onChange={(id) =>
                                 updateOp(op.uid, {
                                   outsourceVendorId: id,
@@ -1277,8 +1279,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             📦 Full Outsource Details
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>
-            ℹ Our material will be sent to vendor. Vendor does all machining/processes and
-            returns finished parts.
+            ℹ Our material will be sent to vendor. Vendor does all machining/processes and returns
+            finished parts.
           </div>
           <datalist id="dlFOCC">
             {(costCenters.data?.items ?? []).map((c) => (
@@ -1449,9 +1451,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() =>
-              setRequiredDocs((prev) => [...prev, { name: '', mandatory: true }])
-            }
+            onClick={() => setRequiredDocs((prev) => [...prev, { name: '', mandatory: true }])}
           >
             + Add Document
           </button>
@@ -1479,10 +1479,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 </thead>
                 <tbody>
                   {requiredDocs.map((d, i) => (
-                    <tr
-                      key={i}
-                      style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}
-                    >
+                    <tr key={i} style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}>
                       <td className="td-ctr mono fw-700">{i + 1}</td>
                       <td>
                         <input
@@ -1543,8 +1540,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             borderTop: '1px solid var(--border)',
           }}
         >
-          📌 QC person must upload these documents during inspection. Mandatory docs will block
-          QC completion.
+          📌 QC person must upload these documents during inspection. Mandatory docs will block QC
+          completion.
         </div>
       </div>
 

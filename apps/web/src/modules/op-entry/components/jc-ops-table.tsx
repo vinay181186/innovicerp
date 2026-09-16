@@ -18,6 +18,7 @@
 // log panel underneath.
 
 import type { JcOpEnriched } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { PlannedActualMachine } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import type { OpEntryModalTarget } from './op-entry-modal';
@@ -81,12 +82,7 @@ function rowAction(
     : { label: '▶ Start', mode: 'start', primary: false };
 }
 
-export function JcOpsTable({
-  ops,
-  selectedOpId,
-  onSelect,
-  onOpenEntry,
-}: Props): React.JSX.Element {
+export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props): React.JSX.Element {
   // Gated on the same keys the entry form itself checks (op-entry-form.tsx:77-78),
   // so a user who could not save is never shown the button. Hidden, never
   // disabled — what every other action button in this app does — and hidden
@@ -132,7 +128,7 @@ export function JcOpsTable({
                   }}
                   onClick={() => onSelect(op.id)}
                 >
-                  <td className="mono">{op.opSeq}</td>
+                  <td className="mono">{opSrNo(op.opSeq)}</td>
                   <td>
                     {op.operation}
                     {/* Rework STILL OWED (0088), not the running total ever

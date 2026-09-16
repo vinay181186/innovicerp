@@ -10,15 +10,14 @@
 // Qty is shown but is never part of the ask: op_log's qty columns are frozen
 // by a DB trigger (ADR-127), so a correction cannot smuggle one in.
 
-import type { OpLogChangeStatus, OpLogTimeChangeRequest } from '@innovic/shared';
+import { type OpLogChangeStatus, type OpLogTimeChangeRequest, opSrNo } from '@innovic/shared';
 import { Check, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests } from '@/modules/op-entry/api';
 
 const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '');
-const when = (date: string, time: string | null): string =>
-  time ? `${date} ${hhmm(time)}` : date;
+const when = (date: string, time: string | null): string => (time ? `${date} ${hhmm(time)}` : date);
 
 const istStamp = (iso: string): string =>
   new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -192,7 +191,7 @@ function RequestCard({
               {req.itemName}
             </span>
           ) : null}
-          <span className="mono">Op{req.opSeq}</span>
+          <span className="mono">Op{opSrNo(req.opSeq)}</span>
           <span>{req.operation}</span>
           <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
             {req.logType}

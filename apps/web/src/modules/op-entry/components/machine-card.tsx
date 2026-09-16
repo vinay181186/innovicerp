@@ -2,6 +2,7 @@
 // itself isn't ported to the theme, so we use the legacy CSS variables).
 
 import type { Machine, RunningOp } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 interface Props {
@@ -11,12 +12,7 @@ interface Props {
   onSelect: () => void;
 }
 
-export function MachineCard({
-  machine,
-  running,
-  isSelected,
-  onSelect,
-}: Props): React.JSX.Element {
+export function MachineCard({ machine, running, isSelected, onSelect }: Props): React.JSX.Element {
   // `CODE/REV` for the part on this machine right now — '' when the machine is
   // idle, or when the running-op join brought no item back. Computed once here
   // because the tile uses it both as the visible line and inside its tooltip.
@@ -82,7 +78,7 @@ export function MachineCard({
             </div>
           ) : null}
           <div className="text3" style={{ fontSize: 10 }}>
-            Op{running.opSeq}: {running.operation}
+            Op{opSrNo(running.opSeq)}: {running.operation}
           </div>
         </>
       ) : null}

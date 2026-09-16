@@ -2,6 +2,7 @@
 // renderStuckDashboard L18043-18103). No DB / env dependency, so these are
 // directly unit-testable; the service composes them with the SQL loaders.
 
+import { opSrNo } from '@innovic/shared';
 import type { StuckItem, StuckThresholds } from '@innovic/shared';
 import { type SoPhaseData, diffDays } from '../../lib/so-phase-data';
 
@@ -41,38 +42,86 @@ export function derivePhaseStuckItems(
     if (p.designAssigned && !p.designApproved) {
       const days = daysSince(p.designAssigned, today);
       if (days > thr.design) {
-        items.push({ ...base, stage: 'Design', days, threshold: thr.design, detail: 'Design in progress, not approved', since: p.designAssigned, color: STAGE_COLOR.design });
+        items.push({
+          ...base,
+          stage: 'Design',
+          days,
+          threshold: thr.design,
+          detail: 'Design in progress, not approved',
+          since: p.designAssigned,
+          color: STAGE_COLOR.design,
+        });
       }
     }
     const designReady = p.designApproved ?? p.bomLinked;
     if (designReady && !p.planCreated) {
       const days = daysSince(designReady, today);
       if (days > thr.designToPlan) {
-        items.push({ ...base, stage: 'Planning', days, threshold: thr.designToPlan, detail: 'Design ready but no plan created', since: designReady, color: STAGE_COLOR.planning });
+        items.push({
+          ...base,
+          stage: 'Planning',
+          days,
+          threshold: thr.designToPlan,
+          detail: 'Design ready but no plan created',
+          since: designReady,
+          color: STAGE_COLOR.planning,
+        });
       }
     }
     if (p.planCreated && !p.jcCreated) {
       const days = daysSince(p.planCreated, today);
       if (days > thr.planToJc) {
-        items.push({ ...base, stage: 'JC Creation', days, threshold: thr.planToJc, detail: 'Plan created but JC not generated', since: p.planCreated, color: STAGE_COLOR.jc });
+        items.push({
+          ...base,
+          stage: 'JC Creation',
+          days,
+          threshold: thr.planToJc,
+          detail: 'Plan created but JC not generated',
+          since: p.planCreated,
+          color: STAGE_COLOR.jc,
+        });
       }
     }
     if (p.prRaised && !p.grnReceived) {
       const days = daysSince(p.prRaised, today);
       if (days > thr.materialProc) {
-        items.push({ ...base, stage: 'Material Procurement', days, threshold: thr.materialProc, detail: 'PR raised, GRN pending', since: p.prRaised, color: STAGE_COLOR.material });
+        items.push({
+          ...base,
+          stage: 'Material Procurement',
+          days,
+          threshold: thr.materialProc,
+          detail: 'PR raised, GRN pending',
+          since: p.prRaised,
+          color: STAGE_COLOR.material,
+        });
       }
     }
     if (p.assemblyStarted && !p.assemblyDone) {
       const days = daysSince(p.assemblyStarted, today);
       if (days > thr.assembly) {
-        items.push({ ...base, stage: 'Assembly', days, threshold: thr.assembly, detail: 'Assembly in progress', since: p.assemblyStarted, color: STAGE_COLOR.assembly });
+        items.push({
+          ...base,
+          stage: 'Assembly',
+          days,
+          threshold: thr.assembly,
+          detail: 'Assembly in progress',
+          since: p.assemblyStarted,
+          color: STAGE_COLOR.assembly,
+        });
       }
     }
     if (p.assemblyDone && !p.dispatched) {
       const days = daysSince(p.assemblyDone, today);
       if (days > thr.assemblyToDispatch) {
-        items.push({ ...base, stage: 'Dispatch Pending', days, threshold: thr.assemblyToDispatch, detail: 'Assembly done, awaiting dispatch', since: p.assemblyDone, color: STAGE_COLOR.dispatch });
+        items.push({
+          ...base,
+          stage: 'Dispatch Pending',
+          days,
+          threshold: thr.assemblyToDispatch,
+          detail: 'Assembly done, awaiting dispatch',
+          since: p.assemblyDone,
+          color: STAGE_COLOR.dispatch,
+        });
       }
     }
   }
@@ -107,12 +156,29 @@ export function classifyOpStuck(
   const base = { soId: c.soId, soNo: c.soNo, customer: c.customer };
   if (c.qcPending > 0) {
     if (days > thr.qc) {
-      return { ...base, stage: 'QC Pending', days, threshold: thr.qc, detail: `${c.jcNo} Op${c.opSeq}: ${c.operation} — ${c.qcPending} pcs`, since, color: STAGE_COLOR.qc };
+      // display rule — see opSrNo in @innovic/shared
+      return {
+        ...base,
+        stage: 'QC Pending',
+        days,
+        threshold: thr.qc,
+        detail: `${c.jcNo} Op${opSrNo(c.opSeq)}: ${c.operation} — ${c.qcPending} pcs`,
+        since,
+        color: STAGE_COLOR.qc,
+      };
     }
     return null;
   }
   if (c.available > 0 && days > thr.productionOp) {
-    return { ...base, stage: 'Production Op', days, threshold: thr.productionOp, detail: `${c.jcNo} Op${c.opSeq}: ${c.operation} — ${c.available} avail`, since, color: STAGE_COLOR.productionOp };
+    return {
+      ...base,
+      stage: 'Production Op',
+      days,
+      threshold: thr.productionOp,
+      detail: `${c.jcNo} Op${opSrNo(c.opSeq)}: ${c.operation} — ${c.available} avail`,
+      since,
+      color: STAGE_COLOR.productionOp,
+    };
   }
   return null;
 }

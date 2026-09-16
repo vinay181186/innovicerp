@@ -32,6 +32,7 @@
 // pending, linked back through split_from_nc_id. Every NC row is therefore
 // exactly one disposition — there is no child table to reconcile.
 
+import { opSrNo } from '@innovic/shared';
 import { and, eq, isNull, like, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
@@ -730,7 +731,8 @@ export async function autoCreateNcFromQcReject(
   const reason =
     ctx.remarks && ctx.remarks.length > 0
       ? `Auto-created from QC inspection: ${ctx.remarks}`
-      : `Auto-created from QC inspection on ${ctx.jcCode} Op #${ctx.opSeq}`;
+      : // display rule — see opSrNo in @innovic/shared
+        `Auto-created from QC inspection on ${ctx.jcCode} Op #${opSrNo(ctx.opSeq)}`;
 
   // G8 (gap report 2026-09-16): an Incoming-QC reject on a GRN that itself
   // came back against an NC's return-to-vendor challan (goods_receipt_notes.nc_id)

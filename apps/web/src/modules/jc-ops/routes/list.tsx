@@ -6,6 +6,7 @@ import {
   type JcOpsBoardRow,
   type OutsourceOpBalanceInput,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -19,12 +20,7 @@ import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachinesList } from '../../machines/api';
-import {
-  jcOpsBoardKeys,
-  useChangeJcOpMachine,
-  useJcOpsBoard,
-  useOutsourceOpBalance,
-} from '../api';
+import { jcOpsBoardKeys, useChangeJcOpMachine, useJcOpsBoard, useOutsourceOpBalance } from '../api';
 
 export const jcOpsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -168,9 +164,7 @@ function JcOpsPage(): React.JSX.Element {
         ) : null}
       </div>
 
-      {editRow ? (
-        <ChangeMachineModal row={editRow} onClose={() => setEditRow(null)} />
-      ) : null}
+      {editRow ? <ChangeMachineModal row={editRow} onClose={() => setEditRow(null)} /> : null}
 
       {prRow ? <CreatePrModal row={prRow} onClose={() => setPrRow(null)} /> : null}
 
@@ -262,7 +256,7 @@ function Row({
           </div>
         ) : null}
       </td>
-      <td className="td-ctr mono fw-700">{o.opSeq}</td>
+      <td className="td-ctr mono fw-700">{opSrNo(o.opSeq)}</td>
       <td>
         {isOutsource ? (
           <span style={{ fontSize: 10, color: 'var(--amber)' }}>—</span>
@@ -561,7 +555,7 @@ function ChangeMachineModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Change Machine — {row.jcCode} Op{row.opSeq}
+          Change Machine — {row.jcCode} Op{opSrNo(row.opSeq)}
         </div>
         <div
           style={{
@@ -591,8 +585,8 @@ function ChangeMachineModal({
                   <b style={{ color: 'var(--text2)' }}>{m.machineCode}</b>: {m.qty} pcs
                 </span>
               ))}
-              . Each stays recorded against its own machine. The new machine takes the
-              remaining <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
+              . Each stays recorded against its own machine. The new machine takes the remaining{' '}
+              <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
             </div>
           ) : row.completed > 0 ? (
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
@@ -772,7 +766,7 @@ function CreatePrModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Create Purchase Request — {row.jcCode} Op{row.opSeq}
+          Create Purchase Request — {row.jcCode} Op{opSrNo(row.opSeq)}
         </div>
         <div
           style={{
@@ -798,7 +792,10 @@ function CreatePrModal({
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+          <div
+            className="text3"
+            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+          >
             PR No. ★
           </div>
           <input
@@ -814,7 +811,12 @@ function CreatePrModal({
           <div style={{ flex: '1 1 140px' }}>
             <div
               className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4, color: 'var(--amber)' }}
+              style={{
+                fontSize: 10,
+                textTransform: 'uppercase',
+                marginBottom: 4,
+                color: 'var(--amber)',
+              }}
             >
               Qty Required ★
             </div>
@@ -828,7 +830,10 @@ function CreatePrModal({
             />
           </div>
           <div style={{ flex: '1 1 140px' }}>
-            <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+            <div
+              className="text3"
+              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+            >
               Est. Cost / pc (₹)
             </div>
             <input
@@ -842,7 +847,10 @@ function CreatePrModal({
             />
           </div>
           <div style={{ flex: '1 1 140px' }}>
-            <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+            <div
+              className="text3"
+              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+            >
               Required By Date
             </div>
             <input
@@ -856,7 +864,10 @@ function CreatePrModal({
         </div>
 
         <div style={{ marginTop: 12 }}>
-          <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+          <div
+            className="text3"
+            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+          >
             Remarks
           </div>
           <input
@@ -968,7 +979,7 @@ function OutsourceBalanceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Outsource Balance — {row.jcCode} Op{row.opSeq}
+          Outsource Balance — {row.jcCode} Op{opSrNo(row.opSeq)}
         </div>
         <div
           style={{
@@ -984,11 +995,12 @@ function OutsourceBalanceModal({
             <b className="mono">{row.machineCode ?? '—'}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            Item: <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            Item:{' '}
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
               {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
-            </span> · Available:{' '}
-            <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs. Sends the balance to a
-            vendor as a JW OSP purchase request.
+            </span>{' '}
+            · Available: <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs. Sends the
+            balance to a vendor as a JW OSP purchase request.
           </div>
         </div>
 

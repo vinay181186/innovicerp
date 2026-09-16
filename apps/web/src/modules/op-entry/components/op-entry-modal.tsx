@@ -26,6 +26,7 @@
 // close button, so the two boxes an operator meets read as one thing.
 
 import type { JcOpEnriched } from '@innovic/shared';
+import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { AlertTriangle, X } from 'lucide-react';
 import { useState } from 'react';
@@ -136,7 +137,7 @@ export function OpEntryModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`${title} — ${op.jobCardCode} Op ${op.opSeq}`}
+      aria-label={`${title} — ${op.jobCardCode} Op ${fmtOpSrNo(op.opSeq)}`}
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -167,7 +168,12 @@ export function OpEntryModal({
           <div className="fw-700" style={{ color: 'var(--cyan)' }}>
             {title}
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <X size={14} />
           </button>
         </div>
@@ -235,7 +241,7 @@ export function OpEntryModal({
               ) : null}
             </div>
           ) : null}
-          <Fact label="OPERATION" value={`Op ${op.opSeq} · ${op.operation}`} />
+          <Fact label="OPERATION" value={`Op ${fmtOpSrNo(op.opSeq)} · ${op.operation}`} />
           <Fact label="PLANNED MACHINE" value={planned} />
           <Fact label="ACTUAL MACHINE" value={actual} />
           <div>
@@ -267,10 +273,10 @@ export function OpEntryModal({
               <div style={{ fontSize: 13, lineHeight: 1.5 }}>
                 <b className="mono">{planned}</b> is currently running{' '}
                 <span className="mono fw-700 cyan">
-                  {plannedBusy.jobCardCode} / Op {plannedBusy.opSeq}
+                  {plannedBusy.jobCardCode} / Op {opSrNo(plannedBusy.opSeq)}
                 </span>
-                . This operation cannot start on it until that operation is completed or
-                stopped — or start it on another machine.
+                . This operation cannot start on it until that operation is completed or stopped —
+                or start it on another machine.
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
@@ -308,24 +314,24 @@ export function OpEntryModal({
             </div>
           </div>
         ) : (
-        <div style={{ padding: 16 }}>
-          <OpEntryForm
-            onActualMachineChange={setPickedActual}
-            op={op}
-            activeRunningId={activeRunningId}
-            {...(onModeChange ? { onModeChange } : {})}
-            // Close once the entry has actually landed. Leaving the box open on
-            // a successful save invites a second identical submission, which on
-            // a shop floor is how a quantity gets booked twice.
-            onSubmitted={onClose}
-            onClose={onClose}
-            defaultMachineId={target.machineId ?? null}
-            // "Start on another machine": the plan is busy, so it must not be
-            // the pre-filled answer — the picker opens blank, in the plan's
-            // group, and the operator names the free machine.
-            startWithoutMachine={startElsewhere}
-          />
-        </div>
+          <div style={{ padding: 16 }}>
+            <OpEntryForm
+              onActualMachineChange={setPickedActual}
+              op={op}
+              activeRunningId={activeRunningId}
+              {...(onModeChange ? { onModeChange } : {})}
+              // Close once the entry has actually landed. Leaving the box open on
+              // a successful save invites a second identical submission, which on
+              // a shop floor is how a quantity gets booked twice.
+              onSubmitted={onClose}
+              onClose={onClose}
+              defaultMachineId={target.machineId ?? null}
+              // "Start on another machine": the plan is busy, so it must not be
+              // the pre-filled answer — the picker opens blank, in the plan's
+              // group, and the operator names the free machine.
+              startWithoutMachine={startElsewhere}
+            />
+          </div>
         )}
       </div>
     </div>

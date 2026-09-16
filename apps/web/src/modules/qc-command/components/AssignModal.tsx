@@ -1,7 +1,7 @@
 // Assign Inspector modal (admin only — legacy _qccAssign L18735). Allocates a
 // pending QC op to any active inspector with an optional note.
 
-import type { QcCommandQueueRow, QcInspectorOption } from '@innovic/shared';
+import { type QcCommandQueueRow, type QcInspectorOption, opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useAssignQc } from '../api';
@@ -80,7 +80,7 @@ export function AssignModal({
   }
 
   return (
-    <Overlay title={`👤 Assign Inspector — ${row.jcCode} Op${row.opSeq}`} onClose={onClose}>
+    <Overlay title={`👤 Assign Inspector — ${row.jcCode} Op${opSrNo(row.opSeq)}`} onClose={onClose}>
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label">Assign to Inspector ★</label>

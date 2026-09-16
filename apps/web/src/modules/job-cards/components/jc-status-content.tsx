@@ -10,6 +10,7 @@ import type {
   JobCardStatusExtras,
   OpLog,
 } from '@innovic/shared';
+import { fmtOpSrNo } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -93,7 +94,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       time: e.time,
       icon: e.logType === 'start' ? '▶' : e.logType === 'qc' ? '🔬' : '✔',
       color: e.logType === 'start' ? 'var(--amber)' : 'var(--green)',
-      title: `Op${e.opSeq ?? '?'}: ${e.operation ?? '?'} — ${label}`,
+      title: `Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}: ${e.operation ?? '?'} — ${label}`,
       detail: `${detail}${e.shift ? ` • ${e.shift}` : ''}`,
       remarks: e.remarks ?? '',
       qtyKind: e.logType === 'start' ? 'none' : e.logType === 'qc' ? 'qc' : 'complete',
@@ -111,7 +112,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       time: e.time,
       icon: '❌',
       color: 'var(--red)',
-      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ?? 'NC'} at Op${e.opSeq ?? '?'}`,
+      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ?? 'NC'} at Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}`,
       detail,
       remarks: '',
       qtyKind: 'nc',
@@ -122,7 +123,9 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
     const d = DISPOSITION_ICON[e.disposition ?? ''] ?? { icon: '📦', color: 'var(--purple)' };
     const detail =
       `${e.rejectedQty ?? 0} pcs` +
-      (e.disposition === 'rework' ? ` → back to Op${e.reworkOpSeq ?? '?'}` : '') +
+      (e.disposition === 'rework'
+        ? ` → back to Op${e.reworkOpSeq != null ? fmtOpSrNo(e.reworkOpSeq) : '?'}`
+        : '') +
       (e.dispositionBy ? ` • By: ${e.dispositionBy}` : '');
     return {
       id: e.id,
@@ -1369,7 +1372,7 @@ function JcStatusEditForm({
             const op = ops[idx];
             if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
             setBalanceNote(
-              `Outsourced ${qtyDone} pc(s) from Op${idx + 1} — JW OSP purchase request raised.`,
+              `Outsourced ${qtyDone} pc(s) from Op${fmtOpSrNo(idx + 1)} — JW OSP purchase request raised.`,
             );
             setBalanceOpIdx(null);
           }}

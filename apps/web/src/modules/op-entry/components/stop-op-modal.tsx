@@ -36,6 +36,7 @@
 // overlay, same `.panel` body, same footer pair.
 
 import { SHIFTS, SHIFT_LABELS, type Shift, type StopOpInput } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Loader2, X } from 'lucide-react';
 import { useState } from 'react';
 import { todayIst } from '@/lib/date';
@@ -257,7 +258,7 @@ export function StopOpModal({
               <b className="mono" style={{ color: 'var(--cyan)' }}>
                 {target.jobCardCode}
               </b>{' '}
-              · Op <b className="mono">{target.opSeq}</b> · {target.operation}
+              · Op <b className="mono">{opSrNo(target.opSeq)}</b> · {target.operation}
             </div>
             {/* The part, directly under the job card number, because "is this
                 the right row" is the question this whole box is here to let the

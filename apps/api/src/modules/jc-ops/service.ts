@@ -11,6 +11,7 @@ import type {
   ListJcOpsBoardQuery,
   ListJcOpsBoardResponse,
 } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
@@ -255,8 +256,9 @@ export async function changeJcOpMachine(
       // Naming the op, the qty and the machine it stays on answers the three
       // questions the old one-liner left open: which op, how much, and where
       // does the production I can see actually live now.
+      // display rule — see opSrNo in @innovic/shared
       throw new ConflictError(
-        `Op ${op.opSeq} ${op.operation} on ${op.jcCode} is finished — all ` +
+        `Op ${opSrNo(op.opSeq)} ${op.operation} on ${op.jcCode} is finished — all ` +
           `${op.done} ${op.done === 1 ? 'pc is' : 'pcs are'} made, so there is nothing left ` +
           `to run on another machine. ` +
           (op.oldMachineCode
@@ -316,7 +318,7 @@ export async function changeJcOpMachine(
         action: 'EDIT',
         entity: 'JC Operation',
         detail:
-          `Machine changed on ${op.jcCode} op ${num(op.opSeq)} ${op.operation} — ` +
+          `Machine changed on ${op.jcCode} op ${opSrNo(num(op.opSeq))} ${op.operation} — ` +
           `${op.oldMachineCode ?? '(none)'} → ${machineRows[0].code}; ` +
           describeMachineSplit(split),
         refId: op.jcCode,

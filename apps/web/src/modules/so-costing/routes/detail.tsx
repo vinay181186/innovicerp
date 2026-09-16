@@ -13,7 +13,7 @@
 //    cycleTime×qty in the browser. No hourRate is exposed on SoCostingOpRow,
 //    so the rate is omitted rather than computed here.
 
-import type { SoCostingDetail } from '@innovic/shared';
+import { type SoCostingDetail, opSrNo } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -90,7 +90,13 @@ function SoCostingDetailPage(): React.JSX.Element {
 
       <div
         className="panel"
-        style={{ padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 20, flexWrap: 'wrap' }}
+        style={{
+          padding: '12px 16px',
+          marginBottom: 16,
+          display: 'flex',
+          gap: 20,
+          flexWrap: 'wrap',
+        }}
       >
         <Stat label="SO" value={data.soNo} color="var(--cyan)" fontSize={16} />
         <Stat label="CUSTOMER" value={data.customer ?? '—'} />
@@ -124,7 +130,9 @@ function SoCostingDetailPage(): React.JSX.Element {
                 <th>Operation</th>
                 <th>Type</th>
                 {priceHidden ? null : (
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>Cost</th>
+                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                    Cost
+                  </th>
                 )}
               </tr>
             </thead>
@@ -181,9 +189,16 @@ function LineRows({
       ) : null}
       {line.ops.map((op, i) => {
         const typeLabel =
-          op.opType === 'qc' ? '🔬 QC' : op.opType === 'outsource' ? '🏭 Outsource' : `⚙ ${op.machineCode ?? ''}`;
+          op.opType === 'qc'
+            ? '🔬 QC'
+            : op.opType === 'outsource'
+              ? '🏭 Outsource'
+              : `⚙ ${op.machineCode ?? ''}`;
         return (
-          <tr key={`${op.jcNo}-${op.opSeq}-${i}`} style={{ background: 'var(--bg3)', fontSize: 11 }}>
+          <tr
+            key={`${op.jcNo}-${op.opSeq}-${i}`}
+            style={{ background: 'var(--bg3)', fontSize: 11 }}
+          >
             <td />
             <td />
             <td />
@@ -192,7 +207,7 @@ function LineRows({
               {op.jcNo}
             </td>
             <td style={{ fontSize: 10 }}>
-              Op{op.opSeq}: {op.operation}
+              Op{opSrNo(op.opSeq)}: {op.operation}
             </td>
             <td className="text3" style={{ fontSize: 10 }}>
               {typeLabel}
@@ -213,7 +228,9 @@ function LineRows({
                 ) : null}
                 {(op.outsourceCost ?? 0) > 0 && (op.machineTimeCost ?? 0) > 0 ? ' + ' : null}
                 {(op.machineTimeCost ?? 0) > 0 ? (
-                  <span style={{ color: 'var(--cyan)' }}>₹{inrFormat(op.machineTimeCost ?? 0)}</span>
+                  <span style={{ color: 'var(--cyan)' }}>
+                    ₹{inrFormat(op.machineTimeCost ?? 0)}
+                  </span>
                 ) : null}
                 {(op.outsourceCost ?? 0) === 0 && (op.machineTimeCost ?? 0) === 0 ? '—' : null}
               </td>

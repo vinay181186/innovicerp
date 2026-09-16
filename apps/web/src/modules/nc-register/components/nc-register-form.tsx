@@ -8,6 +8,7 @@ import {
   type NcReasonCategory,
   type NcRegister,
   type UpdateNcRegisterInput,
+  opSrNo,
 } from '@innovic/shared';
 import { todayLocal } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
@@ -76,9 +77,7 @@ export type NcRegisterFormProps = CreateMode | EditMode;
 export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const seed = props.mode === 'create' ? props.initial : undefined;
-  const defaults: FormValues = isEdit
-    ? detailToFormValues(props.detail)
-    : { ...DEFAULTS, ...seed };
+  const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : { ...DEFAULTS, ...seed };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, handleSubmit, formState, watch, setValue } = form;
@@ -117,10 +116,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
 
   // Pull recent NCs to auto-suggest the next code (legacy `_nextNCNo` assigns
   // NC-NNNN from the running max). Only fetched in create mode.
-  const { data: recentNcs } = useNcRegisterList(
-    { limit: 200, offset: 0 },
-    { enabled: !isEdit },
-  );
+  const { data: recentNcs } = useNcRegisterList({ limit: 200, offset: 0 }, { enabled: !isEdit });
 
   const selectedJcId = watch('jobCardId');
 
@@ -130,10 +126,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     { jobCardId: selectedJcId || undefined },
     { enabled: !isEdit && Boolean(selectedJcId) },
   );
-  const opsForJc = useMemo(
-    () => (jcOps ?? []).slice().sort((a, b) => a.opSeq - b.opSeq),
-    [jcOps],
-  );
+  const opsForJc = useMemo(() => (jcOps ?? []).slice().sort((a, b) => a.opSeq - b.opSeq), [jcOps]);
 
   // Pre-fill a suggested NC code once on mount (create mode only). Manual edit
   // still allowed — server enforces uniqueness.
@@ -340,10 +333,12 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                     });
                   }}
                 >
-                  <option value="">{selectedJcId ? '-- Select --' : '-- Select JC first --'}</option>
+                  <option value="">
+                    {selectedJcId ? '-- Select --' : '-- Select JC first --'}
+                  </option>
                   {opsForJc.map((op) => (
                     <option key={op.id} value={op.id}>
-                      Op{op.opSeq}: {op.operation}
+                      Op{opSrNo(op.opSeq)}: {op.operation}
                     </option>
                   ))}
                 </select>
@@ -440,8 +435,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             rows={3}
             placeholder="Describe the defect or problem in detail..."
             {...register('reason', {
-              validate: (v) =>
-                (v?.trim().length ?? 0) > 0 || 'Describe the problem/defect',
+              validate: (v) => (v?.trim().length ?? 0) > 0 || 'Describe the problem/defect',
             })}
           />
           {errors.reason?.message ? (

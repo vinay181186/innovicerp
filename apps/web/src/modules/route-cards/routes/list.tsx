@@ -6,6 +6,7 @@
 // instead of firing a detail request per row. See ISSUE-019.
 
 import type { RouteCardListItem } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -338,7 +339,7 @@ function ExpandedOps({ rcId }: { rcId: string }): React.JSX.Element {
                 fontWeight: 700,
               }}
             >
-              {i + 1}. {label}
+              {opSrNo(i + 1)}. {label}
             </span>
           );
         })}

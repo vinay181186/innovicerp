@@ -10,6 +10,7 @@
 // /shop-floor/running/:id/stop hook is gone.
 
 import type { ShopFloorRunningRow, StopOpInput } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -53,11 +54,7 @@ export function ShopFloorView(): React.JSX.Element {
           <span style={{ fontSize: 14, color: 'var(--amber)', fontWeight: 700 }}>
             {total} operation{total !== 1 ? 's' : ''} currently running
           </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => void refetch()}
-          >
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refetch()}>
             ↻ Refresh
           </button>
         </div>
@@ -149,10 +146,7 @@ export function ShopFloorView(): React.JSX.Element {
               style={{ marginBottom: 12 }}
             >
               <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
-                <span
-                  className="mono fw-700"
-                  style={{ fontSize: 16, color: 'var(--cyan)' }}
-                >
+                <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--cyan)' }}>
                   {m.machineCode}
                 </span>
                 <span className="text3" style={{ fontSize: 12 }}>
@@ -177,10 +171,7 @@ export function ShopFloorView(): React.JSX.Element {
                   borderBottom: '1px solid var(--amber2)',
                 }}
               >
-                <span
-                  className="mono fw-700"
-                  style={{ fontSize: 15, color: 'var(--amber)' }}
-                >
+                <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--amber)' }}>
                   {m.machineCode}
                 </span>
                 <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
@@ -238,7 +229,7 @@ export function ShopFloorView(): React.JSX.Element {
                             r.jcCode
                           )}
                         </td>
-                        <td className="td-ctr mono fw-700 amber">{r.opSeq}</td>
+                        <td className="td-ctr mono fw-700 amber">{opSrNo(r.opSeq)}</td>
                         <td className="fw-700">
                           {r.operation}
                           {/* ADR-164 — this panel IS the actual machine. When
@@ -271,9 +262,7 @@ export function ShopFloorView(): React.JSX.Element {
                         </td>
                         <td>
                           {/* Legacy badge() (L1959): High → b-amber, Normal → b-grey. */}
-                          <span
-                            className={`badge ${r.priority === 'high' ? 'b-amber' : 'b-grey'}`}
-                          >
+                          <span className={`badge ${r.priority === 'high' ? 'b-amber' : 'b-grey'}`}>
                             {r.priority === 'high' ? 'High' : 'Normal'}
                           </span>
                         </td>
@@ -281,10 +270,7 @@ export function ShopFloorView(): React.JSX.Element {
                           {r.dueDate ?? '—'}
                         </td>
                         <td className="fw-700 amber">{r.operatorName ?? '—'}</td>
-                        <td
-                          className="text3"
-                          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                        >
+                        <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                           {r.startDate} {r.startTime}
                         </td>
                         {/* Legacy L10327 renders an empty <td> when !canEdit(). */}

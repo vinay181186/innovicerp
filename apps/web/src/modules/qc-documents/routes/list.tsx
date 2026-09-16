@@ -16,6 +16,7 @@ import {
   type QcLineDetailResponse,
   type QcMatrixCell,
   type QcMatrixResponse,
+  opSrNo,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -715,7 +716,9 @@ function LineDetailModal({
         <div className="panel-hdr">
           <span className="panel-title">
             📄 QC Documents{' '}
-            {data ? `— ${itemCodeWithRev(data.itemCode, data.itemRevision, '')} (${data.jcCode})` : ''}
+            {data
+              ? `— ${itemCodeWithRev(data.itemCode, data.itemRevision, '')} (${data.jcCode})`
+              : ''}
           </span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
@@ -841,7 +844,7 @@ function LineDetailBody({
               </span>
               <span>{fmtDate(b.date)}</span>
               <span>
-                Op{b.opSeq}: <b>{b.operation}</b>
+                Op{opSrNo(b.opSeq)}: <b>{b.operation}</b>
               </span>
               <span style={{ color: 'var(--green)' }}>
                 Acc: <b>{b.accepted}</b>

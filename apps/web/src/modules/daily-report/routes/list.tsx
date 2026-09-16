@@ -1,6 +1,7 @@
 // Daily Production Report — mirrors legacy renderDailyReport (HTML L10823).
 
 import type { DailyReportResponse } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
@@ -269,7 +270,7 @@ function DailyReportPage(): React.JSX.Element {
                         {itemCodeWithRev(r.itemCode, r.itemRevision)}
                       </td>
                       <td>{r.itemName ?? '—'}</td>
-                      <td className="td-ctr mono">{r.opSeq}</td>
+                      <td className="td-ctr mono">{opSrNo(r.opSeq)}</td>
                       <td>{r.operation}</td>
                       <td className="td-ctr">
                         <span
@@ -331,12 +332,8 @@ function KpiTile({
       >
         {label}
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 30, fontWeight: 800, color }}>
-        {value}
-      </div>
-      {sub ? (
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{sub}</div>
-      ) : null}
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 30, fontWeight: 800, color }}>{value}</div>
+      {sub ? <div style={{ fontSize: 11, color: 'var(--text3)' }}>{sub}</div> : null}
     </div>
   );
 }

@@ -19,6 +19,7 @@
 // The edit table has no Start / Log / QC action cell — so this card has no
 // footer either. No logic, no calculation and no API call changed.
 import type { JcOpEnriched, JobCardListItem, OpLog } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -83,7 +84,7 @@ export function JcOpEditCard({
   jc: Pick<JobCardListItem, 'orderQty'> | undefined;
   op: JcOpEditValues;
   index: number;
-  /** Displayed op number — the caller decides (server opSeq, or position). */
+  /** Stored op seq — the caller decides (server opSeq, or position); shown in tens. */
   seqLabel: number;
   /** Live read-only progress for a SAVED op; undefined for a brand-new one. */
   enriched: JcOpEnriched | undefined;
@@ -179,7 +180,7 @@ export function JcOpEditCard({
               color: 'var(--text2)',
             }}
           >
-            {seqLabel}
+            {opSrNo(seqLabel)}
           </span>
 
           {/* Machine GROUP — display-only picker that NARROWS the machine list

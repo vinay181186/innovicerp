@@ -51,6 +51,7 @@ import { loadPrBalances } from '../purchase-requests/service';
 import {
   type PoType,
   bumpDocRevision,
+  opSrNo,
   parseDocRevision,
   poCodePrefix,
   withDocRevision,
@@ -2058,7 +2059,8 @@ async function releaseJcOpsForCancelledPo(
         {
           action: 'UPDATE',
           entity: 'Job Card',
-          detail: `${jcCode} Op${op.opSeq} "${op.operation}" — PO ${po.code} cancelled; op stays on its other purchase order`,
+          // display rule — see opSrNo in @innovic/shared
+          detail: `${jcCode} Op${opSrNo(op.opSeq)} "${op.operation}" — PO ${po.code} cancelled; op stays on its other purchase order`,
           refId: jcCode,
         },
         companyId,
@@ -2084,7 +2086,7 @@ async function releaseJcOpsForCancelledPo(
         action: 'UPDATE',
         entity: 'Job Card',
         detail:
-          `${jcCode} Op${op.opSeq} "${op.operation}" — released from PO ${po.code} (cancelled): ` +
+          `${jcCode} Op${opSrNo(op.opSeq)} "${op.operation}" — released from PO ${po.code} (cancelled): ` +
           (prAlive && pr ? `back to PR raised (${pr.code})` : 'no PR — awaiting a fresh PR'),
         refId: jcCode,
       },

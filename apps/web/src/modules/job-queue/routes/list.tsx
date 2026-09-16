@@ -1,6 +1,7 @@
 // Job Queue — mirrors legacy renderJobQueue (HTML L10363).
 // Pending ops per machine with ↑↓ reorder buttons.
 
+import { opSrNo } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -58,7 +59,7 @@ function JobQueuePage(): React.JSX.Element {
   const selectedMachine = useMemo(
     () =>
       selectedMachineCode
-        ? machines.find((m) => m.machineCode === selectedMachineCode) ?? null
+        ? (machines.find((m) => m.machineCode === selectedMachineCode) ?? null)
         : null,
     [machines, selectedMachineCode],
   );
@@ -103,11 +104,7 @@ function JobQueuePage(): React.JSX.Element {
             </button>
           ) : null}
           {selectedMachine ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setMachine(null)}
-            >
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMachine(null)}>
               All Machines ×
             </button>
           ) : null}
@@ -233,9 +230,7 @@ function JobQueuePage(): React.JSX.Element {
                   <thead>
                     <tr>
                       <th style={{ width: 44 }}>Order</th>
-                      <th style={{ width: 30 }}>
-                        #
-                      </th>
+                      <th style={{ width: 30 }}>#</th>
                       <th>JC No.</th>
                       <th>Part / SO</th>
                       <th>Op</th>
@@ -243,12 +238,8 @@ function JobQueuePage(): React.JSX.Element {
                       <th>Priority</th>
                       <th>Due</th>
                       <th>Order</th>
-                      <th style={{ color: 'var(--green)' }}>
-                        Done
-                      </th>
-                      <th style={{ color: 'var(--amber)' }}>
-                        Avail★
-                      </th>
+                      <th style={{ color: 'var(--green)' }}>Done</th>
+                      <th style={{ color: 'var(--amber)' }}>Avail★</th>
                       <th>Status</th>
                       <th>Action</th>
                     </tr>
@@ -267,16 +258,12 @@ function JobQueuePage(): React.JSX.Element {
                       // exactly as before.
                       const startedHere =
                         r.machines.length > 0
-                          ? r.machines.some(
-                              (s) => s.machineCode === m.machineCode && s.qty > 0,
-                            )
+                          ? r.machines.some((s) => s.machineCode === m.machineCode && s.qty > 0)
                           : r.completed > 0;
                       return (
                         <tr
                           key={r.jcOpId}
-                          style={
-                            isNext ? { background: 'rgba(255,176,32,0.04)' } : undefined
-                          }
+                          style={isNext ? { background: 'rgba(255,176,32,0.04)' } : undefined}
                         >
                           <td style={{ width: 44 }}>
                             <div
@@ -336,14 +323,15 @@ function JobQueuePage(): React.JSX.Element {
                                 color: 'var(--cyan)',
                               }}
                             >
-                              {itemCodeWithRev(r.itemCode, r.itemRevision, '')} {r.itemName ? `— ${r.itemName}` : ''}
+                              {itemCodeWithRev(r.itemCode, r.itemRevision, '')}{' '}
+                              {r.itemName ? `— ${r.itemName}` : ''}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                               {r.soCode ?? '—'}
                               {r.soCustomer ? ` · ${r.soCustomer}` : ''}
                             </div>
                           </td>
-                          <td className="mono">{r.opSeq}</td>
+                          <td className="mono">{opSrNo(r.opSeq)}</td>
                           <td>{r.operation}</td>
                           <td>
                             <PriorityBadge priority={r.priority} />
@@ -451,7 +439,6 @@ const OP_STATUS: Record<string, { label: string; cls: string }> = {
   outsource: { label: 'Outsource', cls: 'b-amber' },
 };
 
-
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
   const hit = OP_STATUS[status.toLowerCase()];
   // Legacy: `m[status] || 'b-grey'`.
@@ -466,7 +453,5 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
 // Legacy badge() (L1959): 'High' → b-amber, 'Normal' → b-grey.
 function PriorityBadge({ priority }: { priority: string }): React.JSX.Element {
   const high = priority.toLowerCase() === 'high';
-  return (
-    <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>{high ? 'High' : 'Normal'}</span>
-  );
+  return <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>{high ? 'High' : 'Normal'}</span>;
 }

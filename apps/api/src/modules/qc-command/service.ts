@@ -31,7 +31,7 @@ import type {
   QcPickUpInput,
   QcReworkRow,
 } from '@innovic/shared';
-import { shortName } from '@innovic/shared';
+import { opSrNo, shortName } from '@innovic/shared';
 import { qcAssignments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -213,7 +213,8 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           jcOpId: r.jcOpId,
           jcCode: r.jcCode,
           opSeq: Number(r.opSeq),
-          operation: r.operation ?? `Op ${r.opSeq}`,
+          // display rule — see opSrNo in @innovic/shared
+          operation: r.operation ?? `Op ${opSrNo(Number(r.opSeq))}`,
           itemCode: r.itemCode ?? null,
           itemRevision: r.itemRevision ?? null,
           itemName: r.itemName ?? null,

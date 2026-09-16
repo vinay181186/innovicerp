@@ -15,6 +15,7 @@ import {
   type SubmitQcLogInput,
   type TpiCompletedRow,
   type TpiPendingRow,
+  opSrNo,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -66,7 +67,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
     ],
     ...rows.map((l) => [
       l.jcCode,
-      `Op${l.opSeq}`,
+      `Op${opSrNo(l.opSeq)}`,
       l.soCode ?? '',
       l.itemCode ?? '',
       l.itemRevision ?? '',
@@ -246,7 +247,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         <td className="fw-700 cyan" style={{ fontSize: 12 }}>
                           {l.jcCode}
                         </td>
-                        <td style={{ fontSize: 11 }}>Op{l.opSeq}</td>
+                        <td style={{ fontSize: 11 }}>Op{opSrNo(l.opSeq)}</td>
                         <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{l.soCode ?? '—'}</td>
                         <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                           {itemCodeWithRev(l.itemCode, l.itemRevision)}
@@ -449,7 +450,7 @@ function PendingTpi(props: {
             {o.jcCode}
           </b>{' '}
           <span className="text3" style={{ fontSize: 11 }}>
-            Op{o.opSeq} — {o.operation}
+            Op{opSrNo(o.opSeq)} — {o.operation}
           </span>
           {o.waitDays > 1 ? (
             <span style={{ fontSize: 10, color: 'var(--red)', fontWeight: 700, marginLeft: 8 }}>
@@ -517,7 +518,7 @@ function PendingTpi(props: {
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)', marginBottom: 12 }}>
-            ✅ TPI Entry — {o.jcCode} Op{o.opSeq}
+            ✅ TPI Entry — {o.jcCode} Op{opSrNo(o.opSeq)}
           </div>
 
           {/* Legacy L21413-21416: Date | Shift */}

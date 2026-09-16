@@ -10,6 +10,7 @@
 // 1:1 to the board.
 
 import type { Company, MachineLoadCard, MachineLoadOp, MachineSplit } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
@@ -24,7 +25,11 @@ function priorityBadge(priority: MachineLoadOp['priority']): string {
 function statusBadge(status: string): string {
   const s = status.replaceAll('_', ' ');
   const lower = s.toLowerCase();
-  const cls = lower.includes('progress') ? 'b-amber' : lower.includes('available') ? 'b-blue' : 'b-grey';
+  const cls = lower.includes('progress')
+    ? 'b-amber'
+    : lower.includes('available')
+      ? 'b-blue'
+      : 'b-grey';
   // Title-case the computed status for the print.
   const label = s.replace(/\b\w/g, (c) => c.toUpperCase());
   return `<span class="badge ${cls}">${esc(label)}</span>`;
@@ -63,7 +68,7 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
       <td style="color:#7c3aed">${esc(itemCodeWithRev(o.itemCode, o.itemRevision))}</td>
       <td>${esc(o.itemName ?? '—')}</td>
       <td>${esc(o.soCode ?? '—')}</td>
-      <td style="text-align:center">${o.opSeq}</td>
+      <td style="text-align:center">${opSrNo(o.opSeq)}</td>
       <td>${esc(o.operation)}</td>
       <td>${priorityBadge(o.priority)}</td>
       <td style="text-align:center">${esc(o.dueDate ?? '—')}</td>
@@ -92,12 +97,15 @@ export function printMachineQueue(args: {
   const { machines, ops, company, machineId } = args;
 
   const selectedMachines = machineId ? machines.filter((m) => m.machineId === machineId) : machines;
-  const headingScope = machineId
-    ? (selectedMachines[0]?.machineCode ?? 'MACHINE')
-    : 'ALL MACHINES';
+  const headingScope = machineId ? (selectedMachines[0]?.machineCode ?? 'MACHINE') : 'ALL MACHINES';
 
   const sections = selectedMachines
-    .map((m) => machineSection(m, ops.filter((o) => o.machineId === m.machineId)))
+    .map((m) =>
+      machineSection(
+        m,
+        ops.filter((o) => o.machineId === m.machineId),
+      ),
+    )
     .join('');
 
   const body = `

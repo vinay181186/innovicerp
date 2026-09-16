@@ -4,6 +4,7 @@
 // the loaded route-card detail + its item (drawing/rev/material) + company.
 
 import type { Company, Item, RouteCardDetail, RouteCardOp } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -25,7 +26,7 @@ export function printRouteCard(args: {
   const rows = rc.ops
     .map(
       (o, i) => `<tr>
-      <td style="text-align:center;font-weight:700">${i + 1}</td>
+      <td style="text-align:center;font-weight:700">${opSrNo(i + 1)}</td>
       <td>${esc(machineLabel(o))}</td>
       <td>${esc(o.operation)}</td>
       <td style="text-align:center">${Number(o.cycleTimeMin) || '—'}</td>
@@ -53,7 +54,7 @@ export function printRouteCard(args: {
       <div class="info-box"><div class="info-lbl">Revision</div><div class="info-val">${rc.currentRevision}</div></div>
     </div>
     <h2>Operation Sequence</h2>
-    <table><thead><tr><th>#</th><th>Machine</th><th>Operation</th><th>Cycle Time (h)</th><th>Program No.</th><th>Tool No.</th><th>Tool Details / Setup Notes</th></tr></thead>
+    <table><thead><tr><th>Sr No</th><th>Machine</th><th>Operation</th><th>Cycle Time (h)</th><th>Program No.</th><th>Tool No.</th><th>Tool Details / Setup Notes</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#aaa">No operations</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Process Engineer</div>
