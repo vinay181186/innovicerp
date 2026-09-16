@@ -19,13 +19,35 @@
 //                 lib/osp-accepted.ts). Without it an outsource op never read
 //                 complete here even at 10/10 accepted, and at_vendor stayed
 //                 at the full input.
+//                 + for an outsource op WITHOUT qcRequired, ALSO the op_log
+//                 'qc' accepted qty (ADR-167 review F2 + R1). The qc rows on
+//                 an outsource op mean two different things:
+//                   qcRequired = false → they are RECOVERED pieces re-entering
+//                     the op: a rework-child re-inject (nc-register/recovery.ts
+//                     reinjectIntoOriginOp) or a use_as_is close
+//                     (nc-register/cascades.ts). That is the only way a vendor
+//                     op ever gets a piece back after a GRN reject, so they
+//                     ADD to completed (GRN 8 + recovered 2 = 10).
+//                   qcRequired = true  → they are the shop's OWN inspection of
+//                     the SAME pieces the GRN already counted. They must NOT
+//                     add (GRN 5 + shop QC 5 is 5 pieces back, not 10); they
+//                     feed qcAccepted / qcPending only.
+//                 Mirrors v_jc_op_status.completed_qty (0130):
+//                   r.completed_qty + orr.osp_accepted_qty
+//                     + CASE WHEN op_type = 'outsource' THEN r.qc_accepted_qty END
+//                 (the view's add-on is unconditional; the review-R1 split on
+//                 qcRequired is applied here — see the F2 block in enrichOps).
+//   qcBar       = op_log complete + GRN accepted (never the qc rows) — the qty
+//                 shop QC has to accept in full when qcRequired. Same as the
+//                 view's complete gate / qc_pending base:
+//                   r.completed_qty + orr.osp_accepted_qty
 //   qcAccepted  = sum(qty) of op_log rows where log_type='qc'
 //   qcRejected  = sum(reject_qty) of op_log rows where log_type='qc'
 //   inputAvail  = first op? jc.orderQty : previous op's "output" (qcAccepted if
 //                 qcRequired, else completed)
 //   available   = max(0, inputAvail - completed) + reworkQty
 //   qcPending   = QC op:        max(0, inputAvail - qcAccepted - qcRejected)
-//                 process+qc:   max(0, completed - qcAccepted - qcRejected)
+//                 process+qc:   max(0, qcBar - qcAccepted - qcRejected)
 //                 neither:      0
 //
 // Status priorities for one op:
@@ -138,6 +160,23 @@ export function enrichOps(
     if (op.opType === 'outsource' && ospAcceptedByOp) {
       completed += ospAcceptedByOp.get(op.id) ?? 0;
     }
+    // qcBar: what shop QC must accept in full when qcRequired — op_log
+    // complete + GRN accepted, never the qc rows themselves. Same as the
+    // view's `r.completed_qty + orr.osp_accepted_qty` (0130).
+    const qcBar = completed;
+    // ADR-167 review F2 + R1: an outsource op WITHOUT shop QC also counts its
+    // op_log 'qc' accepted rows as completed. After a GRN reject the recovered
+    // pieces (rework child re-inject, use_as_is) land on the origin op as qc
+    // rows — without this the SO screens read 8 of 10 forever and the next op
+    // is fed 8. When the op HAS qcRequired those same rows are the shop's own
+    // inspection of pieces the GRN already counted, so adding them would
+    // double-count (GRN 5 + shop QC 5 → 10 → falsely complete with 5 still at
+    // the vendor). View (0130) adds unconditionally:
+    //   + CASE WHEN o.op_type = 'outsource' THEN COALESCE(r.qc_accepted_qty, 0) ELSE 0 END
+    // — here the add-on is gated on !qcRequired (review R1).
+    if (op.opType === 'outsource' && !op.qcRequired) {
+      completed += qcAccepted;
+    }
 
     const prev = enriched[i - 1];
     const inputAvail = prev ? outputOf(prev) : jc.orderQty;
@@ -155,7 +194,10 @@ export function enrichOps(
     if (isQcOp) {
       qcPending = Math.max(0, inputAvail - qcAccepted - qcRejected);
     } else if (op.qcRequired) {
-      qcPending = Math.max(0, completed - qcAccepted - qcRejected);
+      // Against qcBar (op_log complete + GRN accepted) — the pieces physically
+      // back that shop QC still has to look at. View (0130) qc_pending:
+      //   `r.completed_qty + orr.osp_accepted_qty - r.qc_accepted_qty - r.qc_rejected_qty`.
+      qcPending = Math.max(0, qcBar - qcAccepted - qcRejected);
     }
 
     const running = runningOpIds.has(op.id);
@@ -165,6 +207,7 @@ export function enrichOps(
       qcRequired: op.qcRequired,
       isQcOp,
       completed,
+      qcBar,
       inputAvail,
       qcAccepted,
       qcRejected,
@@ -205,6 +248,8 @@ interface StatusInput {
   qcRequired: boolean;
   isQcOp: boolean;
   completed: number;
+  /** op_log complete + GRN accepted (no qc rows) — the shop-QC bar. */
+  qcBar: number;
   inputAvail: number;
   qcAccepted: number;
   qcRejected: number;
@@ -217,8 +262,33 @@ function deriveOpStatus(s: StatusInput): OpStatus {
   if (s.opType === 'outsource') {
     // G9c: every piece the op was fed has come back accepted → complete,
     // whatever the outsource_status stamp says. Only reachable when the caller
-    // fed ospAcceptedByOp (or logged complete rows against the op).
-    if (s.inputAvail > 0 && s.completed >= s.inputAvail) return 'complete';
+    // fed ospAcceptedByOp (or logged complete/qc rows against the op).
+    // ADR-167 review F3: an outsource op can carry qcRequired (shop QC on top
+    // of the vendor's GRN). Then it is not complete until shop QC has accepted
+    // the whole bar — otherwise it would read `complete` while outputOf()
+    // feeds 0 forward. Mirrors the view's (0130) complete gate:
+    //   NOT qc_required OR r.qc_accepted_qty >= r.completed_qty + orr.osp_accepted_qty
+    // With qcRequired, `completed` holds no shop-QC rows (R1), so GRN 5 +
+    // shop QC 5 → completed 5 → not complete; GRN 10 + shop QC 10 → complete.
+    if (
+      s.inputAvail > 0 &&
+      s.completed >= s.inputAvail &&
+      (!s.qcRequired || s.qcAccepted >= s.qcBar)
+    ) {
+      return 'complete';
+    }
+    // View (0130) next branch: qc_required AND qc_pending > 0 → 'qc_pending'.
+    // Review R3: only once the pieces are BACK (stamp 'received', or the bar
+    // already covers the whole input). A half-returned op (GRN 5 of 10, shop
+    // QC outstanding on those 5) must keep reading outsource_at_vendor so
+    // so-status / so-overview keep counting atVendorQty for the other 5.
+    if (
+      s.qcRequired &&
+      s.qcPending > 0 &&
+      (s.outsourceStatus === 'received' || s.qcBar >= s.inputAvail)
+    ) {
+      return 'qc_pending';
+    }
     switch (s.outsourceStatus) {
       case 'pr_raised':
         return 'outsource_pr_raised';
