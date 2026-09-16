@@ -2,6 +2,7 @@
 // resolved jc code, op_seq, operation, operator name. Pattern: simple list
 // with date-range filter.
 
+import { opSrNo } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 
@@ -26,7 +27,7 @@ export const dailyOpLogReport: RegisteredReport = {
       // the customer drawing revision of the SO line behind that JC, and is
       // blank for a JW-sourced or standalone JC.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'op_seq', label: 'Op seq', type: 'number' },
+      { key: 'op_seq', label: 'Op Sr No', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'operator_name', label: 'Operator', type: 'text' },
       { key: 'qty', label: 'Qty', type: 'number' },
@@ -77,7 +78,8 @@ export const dailyOpLogReport: RegisteredReport = {
       log_type: (r['log_type'] as string) ?? '',
       jc_code: (r['jc_code'] as string) ?? '',
       so_revision: (r['so_revision'] as string | null) ?? '',
-      op_seq: r['op_seq'] != null ? Number(r['op_seq']) : 0,
+      // display rule — see opSrNo in @innovic/shared
+      op_seq: r['op_seq'] != null ? opSrNo(Number(r['op_seq'])) : 0,
       operation: (r['operation'] as string) ?? '',
       operator_name: (r['operator_name'] as string | null) ?? null,
       qty: r['qty'] != null ? Number(r['qty']) : 0,
