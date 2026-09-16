@@ -14,11 +14,18 @@
 // Started ops (hasStarted) are locked from removal/retype, mirroring
 // _hasOpStarted L6151.
 
-import type { JobCardEditModel, JobCardSourceOption } from '@innovic/shared';
+import type {
+  JobCardEditModel,
+  JobCardSourceOption,
+  ListVendorsQuery,
+  ListVendorsResponse,
+} from '@innovic/shared';
 import { fmtOpSrNo } from '@innovic/shared';
+import { useQueries } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { apiFetch } from '@/lib/api';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { uploadFile } from '@/lib/storage';
@@ -30,7 +37,7 @@ import {
   MaterialSizePicker,
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
-import { useVendorsList } from '@/modules/vendors/api';
+import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode, useUpdateJobCard } from '../api';
 import { buildJcWriteInput } from '../lib/build-jc-write-input';
 import { JcOpEditCard } from './jc-op-edit-card';
@@ -276,6 +283,62 @@ export function JobCardForm({
       name: m.name,
       machineGroupId: m.machineGroupId ?? null,
     }));
+
+  // Edit-page gap (test row R3-07b-1): an op's saved vendor past the first 200
+  // rows (VND-959) is on no page this form has fetched, so knownVendors had no
+  // name for it and the op card showed the bare code until a search happened to
+  // bring it in. The op carries only `outsourceVendorCode` (no name), so look
+  // each still-unknown code up by itself — one small keyed vendors-list query
+  // per code, the same key/fetch shape as useVendorsList so react-query caches
+  // it like any other page — and keep only the exact code match (the search is
+  // a substring match, so "VND-95" would also hit VND-950…). A deleted/unknown
+  // code resolves to nothing and simply stays a bare code.
+  const missingVendorCodes = useMemo(() => {
+    const onPage = new Set((vendorsData?.vendors ?? []).map((v) => v.code));
+    const codes = new Set<string>();
+    for (const o of ops) {
+      const code = o.outsourceVendorCode;
+      if (code && !knownVendors.has(code) && !onPage.has(code)) codes.add(code);
+    }
+    return [...codes].sort();
+  }, [ops, knownVendors, vendorsData]);
+  const combineVendorLookups = useCallback(
+    (results: { data?: ListVendorsResponse | undefined }[]) =>
+      results.flatMap((r, i) => {
+        const code = missingVendorCodes[i];
+        const v = r.data?.vendors.find((x) => x.code === code);
+        return v ? [{ id: v.id, code: v.code, name: v.name }] : [];
+      }),
+    [missingVendorCodes],
+  );
+  const resolvedOpVendors = useQueries({
+    queries: missingVendorCodes.map((code) => {
+      const q: ListVendorsQuery = { search: code, limit: 200, offset: 0 };
+      return {
+        queryKey: vendorsKeys.list(q),
+        queryFn: () =>
+          apiFetch<ListVendorsResponse>(
+            `/vendors?search=${encodeURIComponent(code)}&limit=200&offset=0`,
+          ),
+        // Wait for the first page so codes it already carries are not fetched
+        // again one by one.
+        enabled: vendorsData !== undefined,
+      };
+    }),
+    combine: combineVendorLookups,
+  });
+  useEffect(() => {
+    if (resolvedOpVendors.length === 0) return;
+    setKnownVendors((prev) => {
+      let next: typeof prev | null = null;
+      for (const v of resolvedOpVendors) {
+        if (prev.has(v.code)) continue;
+        next ??= new Map(prev);
+        next.set(v.code, v);
+      }
+      return next ?? prev;
+    });
+  }, [resolvedOpVendors]);
 
   // Picker rows = the server's page for the current term, plus any op's
   // already-picked vendor that page does not contain (looked up from the rows
