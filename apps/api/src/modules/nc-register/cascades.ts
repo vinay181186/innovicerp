@@ -626,8 +626,10 @@ async function nextSupplementaryJcCode(
 // Caller is op-entry/service.submitQcLog; this runs in the SAME tx so a
 // rollback unwinds both the QC log and the auto-NC together.
 //
-// Generated NC code shape: `NC-AUTO-<jcCode>-Op<seq>-<HHMMSSmmm>` — embeds
-// the source for human readability + millisecond suffix for uniqueness under
+// Generated NC code shape: `NC-AUTO-<jcCode>-Op<srNo>-<HHMMSSmmm>` — embeds
+// the source for human readability (the op number as people see it, 10 / 20
+// / 30 — user 2026-09-16; codes minted before that day read Op1 / Op2 and
+// were deliberately left alone) + millisecond suffix for uniqueness under
 // bursty parallel submits without a counter query. Falls back to a random
 // suffix if codes still collide (createNcRegister-equivalent uniqueness check
 // is inline below).
@@ -676,7 +678,7 @@ function generateAutoNcCode(jcCode: string, opSeq: number): string {
   // NC code regex permits letters/digits/./_/- (per createNcRegisterInputSchema).
   // Replace any character outside that set in jcCode to be safe.
   const safeJcCode = jcCode.replace(/[^A-Za-z0-9._-]/g, '_');
-  return `NC-AUTO-${safeJcCode}-Op${opSeq}-${stamp}`;
+  return `NC-AUTO-${safeJcCode}-Op${opSrNo(opSeq)}-${stamp}`;
 }
 
 export async function autoCreateNcFromQcReject(
