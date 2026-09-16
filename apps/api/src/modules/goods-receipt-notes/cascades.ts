@@ -9,7 +9,7 @@
 //        goods_receipt_note_lines.received_qty across non-deleted GRN lines
 //        whose purchase_order_line_id = poLineId — EXCLUDING replacement
 //        receipts (GRN header carries nc_id) — LESS the return-to-vendor
-//        quantity still owed on this line (QC–NC handling §12.2 / §12.6,
+//        quantity still OPEN (at the vendor) on this line (QC–NC handling §12.2 / §12.6,
 //        docs/QC-NC-HANDLING-DESIGN.md §5). See the function for the rule.
 //
 //   2. recalcPoHeaderStatus(tx, poId)
@@ -52,14 +52,37 @@ export async function recalcPoLineReceivedQty(
   // GRN on the line fired this recalc.
   //
   //   received = Σ received_qty of ORDINARY GRN lines on the line
-  //            − Σ (rejected_qty − cleared_qty) of every NC on one of this
-  //              line's ops that has had its return challan issued
+  //            − Σ (rejected_qty − cleared_qty − failed_qty) of every NC on
+  //              one of this line's ops that has had its return challan
+  //              issued  — i.e. each NC's OPEN qty, the pieces still at the
+  //              vendor
   //
   // Replacement receipts (GRN header nc_id set) are excluded from the first
   // term: the pieces were already counted when they first arrived, and the
   // document says they rejoin the supplied qty only as they CLEAR QC -- which
-  // is exactly what the second term does as cleared_qty rises. A piece that
-  // fails again stays subtracted, and the follow-on NC carries it.
+  // is exactly what the second term does as cleared_qty rises.
+  //
+  // A replacement piece that FAILS QC is subtracted from the NC's open qty
+  // too (failed_qty), NOT left hanging under the original NC: Incoming QC
+  // raises a follow-on NC on the replacement GRN line for it, and that
+  // follow-on NC is the one that subtracts it -- once ITS challan is issued.
+  // Until then the failed piece counts as received, exactly like an in-house
+  // rejected piece on an ordinary GRN does (base case: GRN 10, QC 7/3, NC not
+  // yet returned -> line 10). Subtracting it under both NCs was the bug that
+  // read a line as 7 of 10 after every piece had been accepted.
+  //
+  // Walk-through (JC IN-JC-26-00033 / IN-JWPO-00005/R1, line qty 10):
+  //   T2 single level:   GRN 10 -> QC 7/3, NC-A raised          -> 10
+  //                      NC-A challan out (open 3)                ->  7
+  //                      replacement 3 back, QC 3 ok, NC-A open 0 -> 10
+  //   T3 nested:         NC-A challan out (open 3)                ->  7
+  //                      replacement QC 1 ok / 2 reject:
+  //                        NC-A open 0 (3-1-2), NC-B (2) not out  -> 10
+  //                      NC-B challan out (open 2)                ->  8
+  //                      NC-B replacement QC 1 ok / 1 reject:
+  //                        NC-B open 0 (2-1-1), NC-C (1) not out  -> 10
+  //                      NC-C challan out (open 1)                ->  9
+  //                      NC-C replacement cleared, open 0         -> 10
   const result = await tx.execute(sql`
     SELECT
       COALESCE((
@@ -72,7 +95,7 @@ export async function recalcPoLineReceivedQty(
       ), 0)
       -
       COALESCE((
-        SELECT SUM(nc.rejected_qty - nc.cleared_qty)
+        SELECT SUM(nc.rejected_qty - nc.cleared_qty - nc.failed_qty)
         FROM public.nc_register nc
         JOIN public.jc_ops o ON o.id = nc.jc_op_id
         WHERE o.outsource_po_line_id = ${poLineId}::uuid

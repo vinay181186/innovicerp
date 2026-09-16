@@ -39,7 +39,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
+import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { type DisposeNcContext, disposeNcCascade, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
 import type {
@@ -1607,6 +1607,19 @@ export async function createNcDc(
           companyId,
           user,
         );
+      }
+      // The line just dropped below its ordered qty, so the header's
+      // open/partial/qc_pending/closed ladder must follow it -- otherwise a
+      // JWPO reads "closed" while its line shows 7 of 10 at the vendor.
+      const poHeader = (
+        await tx
+          .select({ purchaseOrderId: purchaseOrderLines.purchaseOrderId })
+          .from(purchaseOrderLines)
+          .where(eq(purchaseOrderLines.id, poLineId))
+          .limit(1)
+      )[0];
+      if (poHeader) {
+        await recalcPoHeaderStatus(tx, poHeader.purchaseOrderId, user.id);
       }
     }
 
