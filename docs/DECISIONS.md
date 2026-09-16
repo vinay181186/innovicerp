@@ -8849,3 +8849,44 @@ labels both.
 - Negative: Start now needs the machines master loaded (≤ 200 rows) before the
   picker can offer anything; a planned machine that is not in the master shows
   as text and must be re-picked.
+
+## ADR-165: A returned piece is subtracted from the PO once — by the NC that currently carries it
+
+**Date:** 2026-09-16
+**Status:** Accepted (amends ADR-161 §4)
+
+### Context
+
+The 2026-09-15 end-to-end run (ERP chain report, rows T2-13, T2-18, T3-05,
+T3-12) found two defects on the job-work PO behind an outsource op:
+
+1. `recalcPoLineReceivedQty` subtracted `rejected − cleared` for every
+   return-to-vendor NC with an issued challan. When a replacement FAILS Incoming
+   QC, the failed pieces stay subtracted under the first NC (never cleared) and
+   are subtracted AGAIN under the follow-on NC that Incoming QC raises on the
+   replacement line, once that NC's challan goes out. IN-JWPO-00005/R1 ended at
+   7 of 10 with every piece accepted.
+2. The PO HEADER status was never recomputed when the line moved on an RTV
+   event: "closed" while the line read 7/10, "partial" while it read 10/10.
+
+### Decision
+
+1. The second term is the NC's OPEN qty: `rejected − cleared − failed`. A piece
+   that fails its replacement inspection is then carried only by the follow-on
+   NC, which subtracts it once its own challan is issued; until then it counts
+   as received, exactly as an in-house rejected piece on an ordinary GRN does.
+   Walk-through: out 3 → 7; replacement 1 ok / 2 fail → 10 (NC-A open 0, NC-B
+   not yet out); NC-B out → 8; NC-B 1 ok / 1 fail → 10; NC-C out → 9; cleared →
+   10.
+2. Every site that recomputes the line on an RTV event also recomputes the
+   header (`createNcDc`, `onNcReplacementQc`), and `onNcReplacementQc` recomputes
+   when EITHER accepted or rejected changed — a failed replacement moves the
+   line too.
+
+### Consequences
+
+- Positive: the PO's received/supplied figure is right at every step of an
+  arbitrarily deep return-to-vendor chain, and the header follows it.
+- Negative: none for data — the formula is a recompute, so the next GRN, RTV
+  challan or Incoming QC on an affected line corrects it in place. Lines that
+  are already wrong and see no further event stay wrong until touched.

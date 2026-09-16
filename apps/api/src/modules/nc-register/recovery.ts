@@ -21,7 +21,7 @@ import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
+import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 
 type NcRow = typeof ncRegister.$inferSelect;
 export type RecoveryKind = 'rework' | 'repair';
@@ -711,10 +711,17 @@ export async function onNcReplacementQc(
   if (originOp?.outsourcePoLineId) {
     // §12.6 — cleared pieces rejoin the PO's supplied qty. Recomputed, not
     // added: received_qty is rebuilt from scratch by recalcPoLineReceivedQty
-    // whenever a GRN on the line moves, and its formula already adds back
-    // this NC's cleared_qty (written by creditRecovery above). Recomputing
-    // here is what makes the add-back land now rather than at the next GRN.
-    if (accepted > 0) {
+    // whenever a GRN on the line moves, and its formula subtracts only this
+    // NC's OPEN qty (rejected − cleared − failed, both written by
+    // creditRecovery above). Recomputing here is what makes the change land
+    // now rather than at the next GRN. FAILED pieces move the line too: they
+    // leave this NC's open qty and are carried by the follow-on NC Incoming
+    // QC raised on the replacement line (subtracted again only once ITS
+    // challan goes out) -- and Incoming QC's own line recalc ran BEFORE
+    // creditRecovery wrote the new cleared/failed numbers, so this is the
+    // only recalc that sees them. The header ladder follows the line so a
+    // JWPO does not sit on "partial" with its line at 10 of 10.
+    if (accepted > 0 || rejected > 0) {
       const poLineId = originOp.outsourcePoLineId;
       const read = async () =>
         (
@@ -722,6 +729,7 @@ export async function onNcReplacementQc(
             .select({
               receivedQty: purchaseOrderLines.receivedQty,
               lineNo: purchaseOrderLines.lineNo,
+              purchaseOrderId: purchaseOrderLines.purchaseOrderId,
             })
             .from(purchaseOrderLines)
             .where(eq(purchaseOrderLines.id, poLineId))
@@ -738,12 +746,15 @@ export async function onNcReplacementQc(
             entity: 'PurchaseOrderLine',
             detail:
               `PO line ${before.lineNo} received_qty ${before.receivedQty} → ${after.receivedQty} ` +
-              `(${accepted} replacement accepted on ${nc.code})`,
+              `(${accepted} replacement accepted, ${rejected} failed on ${nc.code})`,
             refId: nc.code,
           },
           companyId,
           user,
         );
+      }
+      if (after) {
+        await recalcPoHeaderStatus(tx, after.purchaseOrderId, user.id);
       }
     }
     viaText = 'replacement GRN (PO-linked)';
