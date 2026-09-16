@@ -1573,6 +1573,25 @@ export async function createNcDc(
       })
       .where(eq(ncRegister.id, nc.id));
 
+    // The pieces are at the vendor again, so an origin op that read 'received'
+    // goes back to 'sent' (OSP chain gap G5, 2026-09-16). Only that one
+    // transition: an op still at 'sent' (ordinary pieces also out) stays as it
+    // is, and nothing earlier in the ladder is touched. The receipt of this
+    // challan flips it back through onNcChallanReceived once every returned
+    // piece is in and the ordinary receipts cover outsource_sent_qty.
+    if (nc.jcOpId) {
+      await tx
+        .update(jcOps)
+        .set({ outsourceStatus: 'sent', updatedBy: user.id })
+        .where(
+          and(
+            eq(jcOps.id, nc.jcOpId),
+            eq(jcOps.companyId, companyId),
+            eq(jcOps.outsourceStatus, 'received'),
+          ),
+        );
+    }
+
     // §12.2 — the pieces are leaving, so the PO line no longer counts them as
     // received. NOT an in-place "-= qty": purchase_order_lines.received_qty is
     // recomputed from scratch by recalcPoLineReceivedQty every time any GRN on

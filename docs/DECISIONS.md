@@ -8890,3 +8890,61 @@ T3-12) found two defects on the job-work PO behind an outsource op:
 - Negative: none for data — the formula is a recompute, so the next GRN, RTV
   challan or Incoming QC on an affected line corrects it in place. Lines that
   are already wrong and see no further event stay wrong until touched.
+
+## ADR-166: A returned-to-vendor piece is one piece everywhere — op status, at-vendor, next QC op, stock, JC close
+
+**Date:** 2026-09-16
+**Status:** Accepted
+
+### Context
+
+The OSP chain audit (`docs/audits/2026-09-16-osp-chain-gap-report.md`) traced one outsource
+op through three return-to-vendor cycles. The PO side was right after ADR-165; the job-card
+side was not:
+
+- G1 Accepted replacement pieces never reached the following QC op (the Incoming-QC mirror
+  was skipped for `nc_id` GRN lines and the recovery cascade does not reinject for an OSP
+  origin) → op 2 "3 pending", JC stuck at qc_pending, a second inspection required, whose
+  reject could not be returned to the vendor.
+- G2 Incoming QC never ran the JC-completion cascade → a JC whose last op is the OSP op
+  never closed and its SO line never closed.
+- G3 Stock was never credited for mirrored pieces when the QC op after the OSP op is the JC's
+  last op (`creditGrnQcStock` defers mid-route, the mirrored op_log row skipped the QC stock
+  cascade).
+- G4 `v_jc_op_status` / `v_osp_wip` counted a replacement awaiting Incoming QC as both
+  "at vendor" and "in QC" (replacement GRNs inflated `osp_received_qty`; the rtv term used the
+  NC's whole rejected qty, even while `disposed` with no challan).
+- G5 `outsource_status` froze at `received` for the whole cycle; replacement receipts were
+  compared against ordinary sent qty (early `received`, repeated audits/cascades).
+- G6 Return challans counted as "already sent" on the PO line, under-allowing a later
+  ordinary challan by the returned qty.
+
+### Decision
+
+1. The Incoming-QC mirror onto op_seq+1 runs for replacement lines too (its own guards —
+   source op outsource, next op QC, accepted > 0 — are the only conditions).
+2. When the mirrored QC op is the JC's last op, the same QC stock cascade op-entry uses
+   credits the accepted pieces (`source_type='qc_accept'`); `grn_qc` stays skipped mid-route,
+   so each piece is credited once.
+3. `submitIncomingQc` ends with `tryCascadeJcComplete` for the source job card.
+4. Views (migration 0128): the "not yet returned" term uses ORDINARY receipts
+   (`grn.nc_id IS NULL`); the rtv term is split into `at_vendor_qty` (Σ rtv_sent − rtv_received)
+   and `open_qty` (Σ rejected − cleared − failed); `at_vendor` uses the first, `available` and
+   the `complete` guard the second; `in_qc` keeps all GRNs. `v_osp_wip.returned_qty` is
+   ordinary receipts, so it can never exceed sent.
+5. `applyReceiveToJcOp` counts ordinary challans only; a return challan going out moves a
+   `received` op back to `sent`; when every RTV piece is back and ordinary receipts cover the
+   sent qty, the op is `received` again. One helper computes ordinary receipts for both.
+6. `sumSentQtyByPoLine` ignores return challans.
+
+### Consequences
+
+- Positive: after any number of cycles the op card, OSP register, Store "At Vendor", next
+  QC op, stock ledger and JC/SO closure all agree with the physical pieces.
+- Negative: 0128 must be applied to each database by hand before the code that reads the
+  new view columns is useful (the code reads no new column, so it is safe either way; the
+  numbers are simply still wrong until the views are re-emitted). Existing mirrored rows
+  before this change are not back-filled.
+- Out of scope (batch 2/3): `v_nc_op_breakup` per-generation double count and its missing
+  `disposed` bucket (G7), `parent_nc_id` (G8), PO-reject release / multi-PO rollups / SO
+  status op-log-only (G9).
