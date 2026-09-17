@@ -8,16 +8,21 @@
 //   ──close (only once the JC is complete)──▶  stock credited ONCE with the
 //   Job Card's actually finished qty (48 of a 50 plan credits 48).
 //
-// Close guard and scrap (TEST run 2026-09-17, flow-po.spec.ts S1-d,
-// IN-PRO-00001 / IN-JC-26-00055): v_jc_op_status marks an op `complete` only
-// when its output reaches the FULL order qty and never subtracts scrapped
-// pieces, so 50 ordered → 2 scrapped at DIR → 48 finished left the JC 'open'
-// for good and Close disabled. The guard therefore also accepts a JC that is
-// "settled with losses" (JC_SETTLED_WITH_SCRAP_SQL below): every op has
-// nothing left to do, no NC or rework child is open, and finished + scrapped
-// >= order qty. Scrapped pieces are subtracted for the close guard ONLY — the
-// views are unchanged and the credited qty is still the last op's finished
-// qty (48), never the plan.
+// Close guard and losses (TEST run 2026-09-17, flow-po.spec.ts S1-d,
+// IN-PRO-00001 / IN-JC-26-00055; generalised after the code review of
+// e69d15e8): v_jc_op_status marks an op `complete` only when its output
+// reaches the FULL order qty and never subtracts pieces that were lost, so
+// 50 ordered → 2 scrapped at DIR → 48 finished left the JC 'open' for good
+// and Close disabled. The guard therefore also accepts a JC that is "settled
+// with losses" (jcSettledWithLossesSql below): every op has nothing left to
+// do, no NC or rework / repair child is open, and finished + loss >= order
+// qty. "Loss" is every piece that left the JC's route and never came back —
+// scrapped, failed in a rework / repair child, or replaced by a make-fresh
+// supplementary — not just a direct scrap. Losses are subtracted for the
+// close guard ONLY: the views are unchanged and the credited qty is still the
+// last op's finished qty (48), never the plan. A JC that lost EVERY piece
+// (finished 0) closes with credited_qty 0 and no stock row. The rule is
+// evaluated on the detail read and the Close path only, never per list row.
 //
 // What is deliberately NOT here:
 //   - progress. `jcComputedStatus` / `jcFinishedQty` are read off v_jc_status /
@@ -115,49 +120,115 @@ const JC_COMPUTED_STATUS_SQL = sql<string>`COALESCE((
   WHERE s.job_card_id = ${productionOrders.jobCardId}
 ), 'no_ops')`;
 
-/** Output of the JC's LAST live op — the SAME expression job-cards/service.ts
+/** Output of a JC's LAST live op — the SAME expression job-cards/service.ts
  *  uses for `lastOpCompletedQty`: qc_accepted_qty for a QC / qc_required op,
- *  completed_qty otherwise. This is the number Close credits. */
-const JC_FINISHED_QTY_SQL = sql<number>`COALESCE((
+ *  completed_qty otherwise. `jcId` is any SQL expression yielding the JC's id.
+ *  This is the number Close credits. */
+function lastOpFinishedQtySql(jcId: SQL): SQL<number> {
+  return sql<number>`COALESCE((
   SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
               THEN vos.qc_accepted_qty ELSE vos.completed_qty END
   FROM public.v_jc_op_status vos
-  WHERE vos.job_card_id = ${productionOrders.jobCardId}
+  WHERE vos.job_card_id = ${jcId}
   ORDER BY vos.op_seq DESC LIMIT 1
 ), 0)::int`;
+}
+
+const JC_FINISHED_QTY_SQL = lastOpFinishedQtySql(sql`${productionOrders.jobCardId}`);
+
+/** LOSS = pieces that left the route and never came back, summed over the
+ *  NCs matched by `ncFilter` (a whole JC, or one op of it). Read straight off
+ *  nc_register because v_nc_op_breakup exposes scrap_qty only and lumps
+ *  make_fresh into nc_closed_qty together with use_as_is (0131):
+ *   - closed scrap       → rejected_qty (what v_nc_op_breakup.scrap_qty counts);
+ *   - closed make_fresh  → rejected_qty — the NC closes at once and the
+ *                          supplementary JC is its own document (own stock
+ *                          path, parent_nc_id only, no parent_job_card_id),
+ *                          so those pieces are gone from THIS route;
+ *   - rework / repair    → failed_qty — written by climbRecoveryToAncestors
+ *                          when the piece is scrapped on the child JC (the
+ *                          child counts the same piece once as ITS scrap);
+ *   - return_to_vendor   → nothing. A replacement piece that fails Incoming
+ *                          QC is raised again as a follow-on NC on the SAME
+ *                          op (cascades.ts createAutoNc, parent_nc_id), and
+ *                          that NC is counted when it is scrapped; adding
+ *                          the RTV row's failed_qty too would count the piece
+ *                          twice.
+ *  Same filter as v_nc_op_breakup (deleted_at IS NULL, jc_op_id IS NOT NULL),
+ *  so both legs see the same NCs. KNOWN BLIND SPOT (pre-existing, not fixed
+ *  here): a manual NC raised with jc_op_id NULL is in neither v_nc_op_breakup
+ *  nor this sum, so it can neither hold the JC open nor count as a loss —
+ *  the ordinary 'complete' path has never seen it either. */
+function lossSql(ncFilter: SQL): SQL<number> {
+  return sql<number>`COALESCE((
+      SELECT SUM(CASE
+        WHEN nc.status = 'closed' AND nc.disposition IN ('scrap', 'make_fresh') THEN nc.rejected_qty
+        WHEN nc.disposition IN ('rework', 'repair') THEN nc.failed_qty
+        ELSE 0 END)
+      FROM public.nc_register nc
+      WHERE nc.deleted_at IS NULL AND nc.jc_op_id IS NOT NULL AND ${ncFilter}
+    ), 0)`;
+}
+
+/** How many levels of rework / repair children the settled rule itself is
+ *  applied to. 0 = the JC in hand; 1 = its children; 2 = grandchildren
+ *  (rework-of-a-rework exists on TEST: IN-JC-26-00037 → -RW1 → -RW1-RW1).
+ *  A child deeper than this must read plain complete / closed. Each level
+ *  embeds the whole rule once more; it runs on the detail read only. */
+const SETTLED_RULE_DEPTH = 2;
 
 /** "Settled with losses" — true when the JC cannot reach v_jc_status
- *  'complete' only because pieces were scrapped along the route, yet nothing
- *  is left to do anywhere. All four legs must hold (TEST run 2026-09-17,
- *  flow-po.spec.ts S1-d: 50 → DIR 48/2, NC scrap 2 → Milling 48 → FI 48):
+ *  'complete' only because pieces were LOST along the route, yet nothing is
+ *  left to do. `jcId` is any SQL expression yielding the JC's id; `depth` is
+ *  the recursion level (see SETTLED_RULE_DEPTH). All four legs must hold:
  *   1. no op still has work — v_jc_op_status: computed_status <> 'running';
- *      available (net of pieces scrapped on that very op) = 0 on every non-QC
- *      op; qc_pending = 0 on every QC / qc_required op; nothing at the vendor,
+ *      available = 0 on every in-house non-QC op; on an outsource op
+ *      available net of this op's own loss = 0 (available there still counts
+ *      the vendor-rejected pieces: input − accepted − open RTV, so a piece
+ *      scrapped / made fresh / failed there would hold the op open forever);
+ *      qc_pending = 0 on every QC / qc_required op; nothing at the vendor,
  *      in Incoming QC or owed to rework;
  *   2. no open NC on any op — v_nc_op_breakup: Σ nc_open_qty = Σ open_nc_count = 0;
- *   3. no open rework / repair child JC (parent_job_card_id = this JC) —
- *      v_jc_status of the child must be 'complete' or 'closed';
- *   4. the pieces are accounted for — last-op finished qty (the SAME
- *      expression as JC_FINISHED_QTY_SQL) + Σ scrap_qty >= order_qty, AND
- *      Σ scrap_qty > 0 so the ordinary 'complete' path is untouched when
- *      nothing was scrapped.
- *  Views only, nothing stored; keyed off the PO's job_card_id like the two
- *  expressions above. */
-const JC_SETTLED_WITH_SCRAP_SQL = sql<boolean>`COALESCE((
+ *   3. every rework / repair child JC (parent_job_card_id = this JC) is done:
+ *      its v_jc_status is 'complete' / 'closed', OR — while depth <
+ *      SETTLED_RULE_DEPTH — it is itself settled with losses by this very
+ *      rule (a child that accepted 1 of 2 and scrapped 1 stays 'open' for
+ *      exactly the same reason its parent does);
+ *   4. the pieces are accounted for — last-op finished qty (lastOpFinishedQtySql)
+ *      + loss (lossSql) >= order_qty, AND loss > 0 so the ordinary 'complete'
+ *      path is untouched when nothing was lost.
+ *  Guarantee: legs 1–3 say nothing is in flight anywhere, leg 4 says every
+ *  piece is either finished or lost, so the rule can never be true while work
+ *  is genuinely outstanding — inconsistent data can only make it false, which
+ *  blocks Close, never opens it.
+ *  Views + nc_register only, nothing stored. Aliases carry the depth
+ *  (jc0 / child0, jc1 / child1 …) so the nested copies cannot shadow each
+ *  other. Walk-throughs on TEST (read-only SELECTs, 2026-09-17):
+ *    IN-JC-26-00055 (IN-PRO-00001): 50 ordered, DIR scrapped 2, 48 finished
+ *      → loss 2, 48 + 2 >= 50 → true.
+ *    IN-JC-26-00037-RW1: rework child of 6, its own NC rework 4 → cleared 2 /
+ *      failed 2 (grandchild scrapped 2), 4 finished → loss 2, 4 + 2 >= 6 → true;
+ *      its parent IN-JC-26-00037 (20 ordered, 4 still at the vendor) → false.
+ *    IN-JC-26-00056 / 00057 (IN-PRO-00002 / 3, nothing lost) → false.
+ *  Exported only so the rendered SQL can be checked outside the module (no
+ *  route calls it directly). */
+export function jcSettledWithLossesSql(jcId: SQL, depth = 0): SQL<boolean> {
+  const jc = sql.raw(`jc${depth}`);
+  const child = sql.raw(`child${depth}`);
+  const childSettled =
+    depth < SETTLED_RULE_DEPTH
+      ? sql` AND NOT (${jcSettledWithLossesSql(sql`${child}.id`, depth + 1)})`
+      : sql``;
+  return sql<boolean>`COALESCE((
   SELECT
     NOT EXISTS (
       SELECT 1 FROM public.v_jc_op_status vos
-      WHERE vos.job_card_id = jc.id
+      WHERE vos.job_card_id = ${jc}.id
         AND (
           vos.computed_status = 'running'
-          -- available on an outsource op still counts the vendor-rejected
-          -- pieces (input − accepted − open RTV), so a piece scrapped there
-          -- would hold the op open forever; net this op's own scrap out.
-          OR (vos.op_type <> 'qc'
-              AND vos.available - COALESCE((
-                SELECT SUM(b.scrap_qty) FROM public.v_nc_op_breakup b
-                WHERE b.jc_op_id = vos.jc_op_id
-              ), 0) > 0)
+          OR (vos.op_type NOT IN ('qc', 'outsource') AND vos.available > 0)
+          OR (vos.op_type = 'outsource'
+              AND vos.available - ${lossSql(sql`nc.jc_op_id = vos.jc_op_id`)} > 0)
           OR ((vos.op_type = 'qc' OR vos.qc_required) AND vos.qc_pending <> 0)
           OR vos.at_vendor_qty <> 0
           OR vos.in_qc_qty <> 0
@@ -167,34 +238,23 @@ const JC_SETTLED_WITH_SCRAP_SQL = sql<boolean>`COALESCE((
     AND COALESCE((
       SELECT SUM(b.nc_open_qty) + SUM(b.open_nc_count)
       FROM public.v_nc_op_breakup b
-      WHERE b.job_card_id = jc.id
+      WHERE b.job_card_id = ${jc}.id
     ), 0) = 0
     AND NOT EXISTS (
-      SELECT 1 FROM public.job_cards child
-      JOIN public.v_jc_status cs ON cs.job_card_id = child.id
-      WHERE child.parent_job_card_id = jc.id
-        AND child.deleted_at IS NULL
-        AND cs.computed_status NOT IN ('complete', 'closed')
+      SELECT 1 FROM public.job_cards ${child}
+      JOIN public.v_jc_status cs ON cs.job_card_id = ${child}.id
+      WHERE ${child}.parent_job_card_id = ${jc}.id
+        AND ${child}.deleted_at IS NULL
+        AND cs.computed_status NOT IN ('complete', 'closed')${childSettled}
     )
-    AND COALESCE((
-      SELECT SUM(b.scrap_qty) FROM public.v_nc_op_breakup b
-      WHERE b.job_card_id = jc.id
-    ), 0) > 0
-    AND COALESCE((
-      SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
-                  THEN vos.qc_accepted_qty ELSE vos.completed_qty END
-      FROM public.v_jc_op_status vos
-      WHERE vos.job_card_id = jc.id
-      ORDER BY vos.op_seq DESC LIMIT 1
-    ), 0)
-    + COALESCE((
-      SELECT SUM(b.scrap_qty) FROM public.v_nc_op_breakup b
-      WHERE b.job_card_id = jc.id
-    ), 0) >= jc.order_qty
-  FROM public.job_cards jc
-  WHERE jc.id = ${productionOrders.jobCardId}
-    AND jc.deleted_at IS NULL
+    AND ${lossSql(sql`nc.job_card_id = ${jc}.id`)} > 0
+    AND ${lastOpFinishedQtySql(sql`${jc}.id`)}
+      + ${lossSql(sql`nc.job_card_id = ${jc}.id`)} >= ${jc}.order_qty
+  FROM public.job_cards ${jc}
+  WHERE ${jc}.id = ${jcId}
+    AND ${jc}.deleted_at IS NULL
 ), false)`;
+}
 
 /** Customer (SO) or client (JWSO) name, read live through the plan's line. A
  *  plan carries at most one of so_line_id / jw_line_id, so at most one branch
@@ -249,10 +309,9 @@ const poColumns = {
   // live joins
   jcComputedStatus: JC_COMPUTED_STATUS_SQL,
   jcFinishedQty: JC_FINISHED_QTY_SQL,
-  // Close-guard input only (ADR-170 scrap case). NOT part of the shared
-  // contract: toListItem never copies it and the list payload never carries it;
-  // it is folded into canClose / closeBlockedReason on the detail.
-  jcSettledWithScrap: JC_SETTLED_WITH_SCRAP_SQL,
+  // The settled-with-losses flag is deliberately NOT a column here: it is
+  // close-guard input only, needed by the detail / Close path, and running it
+  // for every list row would be wasted work (readJcSettledWithLosses below).
   jcClosedAt: jobCards.closedAt,
   jcExists: jobCards.id,
   partyName: PARTY_NAME_SQL,
@@ -308,14 +367,30 @@ function toListItem(r: PoRow): ProductionOrderListItem {
 /** The "may this be closed?" sentence lives in lib/production-order-close-guard.ts
  *  (pure, unit-tested). The detail view shows it as `closeBlockedReason`; Close
  *  throws exactly the same words, so what the screen says and what the server
- *  refuses can never differ. `jcSettledWithScrap` is read off the row here and
- *  folded in — it never travels to the browser. */
+ *  refuses can never differ. `jcSettledWithLosses` is read separately
+ *  (readJcSettledWithLosses) and folded in — it never travels to the browser. */
 function toDetail(
   item: ProductionOrderListItem,
-  jcSettledWithScrap: boolean,
+  jcSettledWithLosses: boolean,
 ): ProductionOrderDetail {
-  const reason = closeBlockedReason({ ...item, jcSettledWithScrap });
+  const reason = closeBlockedReason({ ...item, jcSettledWithLosses });
   return { ...item, canClose: reason === null, closeBlockedReason: reason };
+}
+
+/** The settled-with-losses rule for one PO's JC, evaluated on demand. Skipped
+ *  (false) when the PO is already closed or the JC already reads complete /
+ *  closed — the guard is decided without it there, and the rule is the
+ *  heaviest read in this module (SETTLED_RULE_DEPTH nested copies). */
+async function readJcSettledWithLosses(
+  tx: DbTransaction,
+  item: ProductionOrderListItem,
+): Promise<boolean> {
+  if (item.status !== 'open') return false;
+  if (item.jcComputedStatus === 'complete' || item.jcComputedStatus === 'closed') return false;
+  const rows = (await tx.execute(
+    sql`SELECT ${jcSettledWithLossesSql(sql`${item.jobCardId}::uuid`)} AS settled`,
+  )) as unknown as Array<{ settled: boolean }>;
+  return rows[0]?.settled === true;
 }
 
 function baseQuery(tx: DbTransaction) {
@@ -343,7 +418,8 @@ async function readDetailInTx(
     .limit(1);
   const row = rows[0];
   if (!row) throw new NotFoundError(`Production Order ${id} not found`);
-  return toDetail(toListItem(row as PoRow), row.jcSettledWithScrap === true);
+  const item = toListItem(row as PoRow);
+  return toDetail(item, await readJcSettledWithLosses(tx, item));
 }
 
 // ─── Reads ─────────────────────────────────────────────────────────────────
@@ -685,34 +761,44 @@ export async function closeProductionOrder(
     // Same sentence the detail view shows (closeBlockedReason ran in toDetail).
     if (current.closeBlockedReason) throw new ValidationError(current.closeBlockedReason);
     const qty = current.jcFinishedQty;
+    // Total loss: the guard let this through only because the JC is settled
+    // with losses and EVERY piece was lost (finished 0). Nothing to credit,
+    // so no store_transactions row at all — a 0-qty ledger line would be
+    // noise. credited_qty is recorded as 0 and the remark says why.
+    const totalLoss = qty <= 0;
+    const totalLossRemark = 'closed with no finished quantity — all pieces lost';
 
-    // ONE stock row for the whole order. Same columns as the qc_accept credit
-    // in op-entry/qc-stock-cascade.ts; the items row is locked first to
-    // serialise concurrent stock writes on the same item, and the before/after
-    // balance is read from v_item_stock so the ledger stays a running total.
     const today = new Date().toISOString().slice(0, 10);
-    await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${current.itemId}::uuid FOR UPDATE`);
-    const balanceRows = (await tx.execute(sql`
-      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-      FROM public.v_item_stock
-      WHERE company_id = ${companyId}::uuid AND item_id = ${current.itemId}::uuid
-    `)) as unknown as Array<{ on_hand: number }>;
-    const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-    const stockAfter = stockBefore + qty;
+    if (!totalLoss) {
+      // ONE stock row for the whole order. Same columns as the qc_accept credit
+      // in op-entry/qc-stock-cascade.ts; the items row is locked first to
+      // serialise concurrent stock writes on the same item, and the before/after
+      // balance is read from v_item_stock so the ledger stays a running total.
+      await tx.execute(
+        sql`SELECT 1 FROM public.items WHERE id = ${current.itemId}::uuid FOR UPDATE`,
+      );
+      const balanceRows = (await tx.execute(sql`
+        SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
+        FROM public.v_item_stock
+        WHERE company_id = ${companyId}::uuid AND item_id = ${current.itemId}::uuid
+      `)) as unknown as Array<{ on_hand: number }>;
+      const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
+      const stockAfter = stockBefore + qty;
 
-    await tx.insert(storeTransactions).values({
-      companyId,
-      txnDate: today,
-      itemId: current.itemId,
-      txnType: 'in',
-      qty,
-      sourceType: 'production_order_close',
-      sourceRef: current.code,
-      stockBefore,
-      stockAfter,
-      remarks: `Production Order ${current.code} closed — JC ${current.jcCodeText} finished ${qty} of ${current.orderQty}`,
-      createdBy: user.id,
-    });
+      await tx.insert(storeTransactions).values({
+        companyId,
+        txnDate: today,
+        itemId: current.itemId,
+        txnType: 'in',
+        qty,
+        sourceType: 'production_order_close',
+        sourceRef: current.code,
+        stockBefore,
+        stockAfter,
+        remarks: `Production Order ${current.code} closed — JC ${current.jcCodeText} finished ${qty} of ${current.orderQty}`,
+        createdBy: user.id,
+      });
+    }
 
     const now = new Date();
     await tx
@@ -722,7 +808,14 @@ export async function closeProductionOrder(
         closedAt: now,
         closedBy: user.id,
         creditedQty: qty,
-        ...(input.remarks !== undefined ? { remarks: input.remarks } : {}),
+        // The user's remark wins; a total loss with no remark (omitted, null
+        // or blank) records why the order closed with nothing credited, so the
+        // document explains itself.
+        ...(totalLoss && !input.remarks
+          ? { remarks: totalLossRemark }
+          : input.remarks !== undefined
+            ? { remarks: input.remarks }
+            : {}),
         updatedAt: now,
         updatedBy: user.id,
       })
@@ -742,7 +835,9 @@ export async function closeProductionOrder(
       {
         action: 'CLOSE',
         entity: 'Production Order',
-        detail: `${current.code} closed — JC ${current.jcCodeText} finished ${qty} of ${current.orderQty}, stock credited ${qty}`,
+        detail: totalLoss
+          ? `${current.code} ${totalLossRemark} — JC ${current.jcCodeText} finished 0 of ${current.orderQty}, nothing credited`
+          : `${current.code} closed — JC ${current.jcCodeText} finished ${qty} of ${current.orderQty}, stock credited ${qty}`,
         refId: current.code,
       },
       companyId,
