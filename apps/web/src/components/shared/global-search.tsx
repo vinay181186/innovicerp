@@ -265,7 +265,7 @@ export function GlobalSearch(): React.JSX.Element {
         ref={inputRef}
         type="text"
         className="innovic-input gs-input"
-        placeholder="Search documents… (Ctrl+K)"
+        placeholder="Search anything… (Ctrl+K)"
         autoComplete="off"
         spellCheck={false}
         maxLength={GLOBAL_SEARCH_MAX_CHARS}

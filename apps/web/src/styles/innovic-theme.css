@@ -365,7 +365,24 @@
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  flex: 1;
+  flex: 1 1 0;
+  /* Yields space to the search box on narrow bars; truncates rather than
+     spilling over it or wrapping to a second line inside the fixed-height bar. */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Right-hand cluster (SYNCED · Password · Sign out). Same flex basis as
+   .tb-title so the global search box between them is centred in the bar;
+   never shrinks below its buttons, so it cannot paint over the box. */
+.tb-right {
+  flex: 1 1 0;
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
 }
 .tb-sync {
   display: flex;

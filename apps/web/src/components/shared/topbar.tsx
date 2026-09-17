@@ -79,23 +79,28 @@ export function TopBar(): React.JSX.Element {
         {title}
       </div>
       <GlobalSearch />
-      <div className="tb-sync" title="Connection status">
-        <span className="sync-dot" />
-        SYNCED
+      {/* .tb-title and .tb-right share the slack equally, so the search box
+          sits in the middle of the bar and stays in normal flow (no overlap
+          with a long page title at narrow widths). */}
+      <div className="tb-right">
+        <div className="tb-sync" title="Connection status">
+          <span className="sync-dot" />
+          SYNCED
+        </div>
+        <Link to="/change-password" className="btn btn-ghost btn-sm" title="Change your password">
+          <KeyRound size={14} />
+          <span>Password</span>
+        </Link>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => void signOut()}
+          title="Sign out"
+        >
+          <LogOut size={14} />
+          <span>Sign out</span>
+        </button>
       </div>
-      <Link to="/change-password" className="btn btn-ghost btn-sm" title="Change your password">
-        <KeyRound size={14} />
-        <span>Password</span>
-      </Link>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={() => void signOut()}
-        title="Sign out"
-      >
-        <LogOut size={14} />
-        <span>Sign out</span>
-      </button>
     </div>
   );
 }
