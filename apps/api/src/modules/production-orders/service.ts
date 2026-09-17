@@ -8,6 +8,17 @@
 //   ──close (only once the JC is complete)──▶  stock credited ONCE with the
 //   Job Card's actually finished qty (48 of a 50 plan credits 48).
 //
+// Close guard and scrap (TEST run 2026-09-17, flow-po.spec.ts S1-d,
+// IN-PRO-00001 / IN-JC-26-00055): v_jc_op_status marks an op `complete` only
+// when its output reaches the FULL order qty and never subtracts scrapped
+// pieces, so 50 ordered → 2 scrapped at DIR → 48 finished left the JC 'open'
+// for good and Close disabled. The guard therefore also accepts a JC that is
+// "settled with losses" (JC_SETTLED_WITH_SCRAP_SQL below): every op has
+// nothing left to do, no NC or rework child is open, and finished + scrapped
+// >= order qty. Scrapped pieces are subtracted for the close guard ONLY — the
+// views are unchanged and the credited qty is still the last op's finished
+// qty (48), never the plan.
+//
 // What is deliberately NOT here:
 //   - progress. `jcComputedStatus` / `jcFinishedQty` are read off v_jc_status /
 //     v_jc_op_status on every read, never stored (they would drift the moment a
@@ -40,6 +51,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
+import { closeBlockedReason } from '../../lib/production-order-close-guard';
 import { emitActivityLog } from '../activity-log/service';
 import { buildJobCardFromOps, type JcBuildOp } from '../plans/service';
 import type {
@@ -114,6 +126,76 @@ const JC_FINISHED_QTY_SQL = sql<number>`COALESCE((
   ORDER BY vos.op_seq DESC LIMIT 1
 ), 0)::int`;
 
+/** "Settled with losses" — true when the JC cannot reach v_jc_status
+ *  'complete' only because pieces were scrapped along the route, yet nothing
+ *  is left to do anywhere. All four legs must hold (TEST run 2026-09-17,
+ *  flow-po.spec.ts S1-d: 50 → DIR 48/2, NC scrap 2 → Milling 48 → FI 48):
+ *   1. no op still has work — v_jc_op_status: computed_status <> 'running';
+ *      available (net of pieces scrapped on that very op) = 0 on every non-QC
+ *      op; qc_pending = 0 on every QC / qc_required op; nothing at the vendor,
+ *      in Incoming QC or owed to rework;
+ *   2. no open NC on any op — v_nc_op_breakup: Σ nc_open_qty = Σ open_nc_count = 0;
+ *   3. no open rework / repair child JC (parent_job_card_id = this JC) —
+ *      v_jc_status of the child must be 'complete' or 'closed';
+ *   4. the pieces are accounted for — last-op finished qty (the SAME
+ *      expression as JC_FINISHED_QTY_SQL) + Σ scrap_qty >= order_qty, AND
+ *      Σ scrap_qty > 0 so the ordinary 'complete' path is untouched when
+ *      nothing was scrapped.
+ *  Views only, nothing stored; keyed off the PO's job_card_id like the two
+ *  expressions above. */
+const JC_SETTLED_WITH_SCRAP_SQL = sql<boolean>`COALESCE((
+  SELECT
+    NOT EXISTS (
+      SELECT 1 FROM public.v_jc_op_status vos
+      WHERE vos.job_card_id = jc.id
+        AND (
+          vos.computed_status = 'running'
+          -- available on an outsource op still counts the vendor-rejected
+          -- pieces (input − accepted − open RTV), so a piece scrapped there
+          -- would hold the op open forever; net this op's own scrap out.
+          OR (vos.op_type <> 'qc'
+              AND vos.available - COALESCE((
+                SELECT SUM(b.scrap_qty) FROM public.v_nc_op_breakup b
+                WHERE b.jc_op_id = vos.jc_op_id
+              ), 0) > 0)
+          OR ((vos.op_type = 'qc' OR vos.qc_required) AND vos.qc_pending <> 0)
+          OR vos.at_vendor_qty <> 0
+          OR vos.in_qc_qty <> 0
+          OR vos.rework_pending_qty <> 0
+        )
+    )
+    AND COALESCE((
+      SELECT SUM(b.nc_open_qty) + SUM(b.open_nc_count)
+      FROM public.v_nc_op_breakup b
+      WHERE b.job_card_id = jc.id
+    ), 0) = 0
+    AND NOT EXISTS (
+      SELECT 1 FROM public.job_cards child
+      JOIN public.v_jc_status cs ON cs.job_card_id = child.id
+      WHERE child.parent_job_card_id = jc.id
+        AND child.deleted_at IS NULL
+        AND cs.computed_status NOT IN ('complete', 'closed')
+    )
+    AND COALESCE((
+      SELECT SUM(b.scrap_qty) FROM public.v_nc_op_breakup b
+      WHERE b.job_card_id = jc.id
+    ), 0) > 0
+    AND COALESCE((
+      SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
+                  THEN vos.qc_accepted_qty ELSE vos.completed_qty END
+      FROM public.v_jc_op_status vos
+      WHERE vos.job_card_id = jc.id
+      ORDER BY vos.op_seq DESC LIMIT 1
+    ), 0)
+    + COALESCE((
+      SELECT SUM(b.scrap_qty) FROM public.v_nc_op_breakup b
+      WHERE b.job_card_id = jc.id
+    ), 0) >= jc.order_qty
+  FROM public.job_cards jc
+  WHERE jc.id = ${productionOrders.jobCardId}
+    AND jc.deleted_at IS NULL
+), false)`;
+
 /** Customer (SO) or client (JWSO) name, read live through the plan's line. A
  *  plan carries at most one of so_line_id / jw_line_id, so at most one branch
  *  of the COALESCE yields a row. */
@@ -167,6 +249,10 @@ const poColumns = {
   // live joins
   jcComputedStatus: JC_COMPUTED_STATUS_SQL,
   jcFinishedQty: JC_FINISHED_QTY_SQL,
+  // Close-guard input only (ADR-170 scrap case). NOT part of the shared
+  // contract: toListItem never copies it and the list payload never carries it;
+  // it is folded into canClose / closeBlockedReason on the detail.
+  jcSettledWithScrap: JC_SETTLED_WITH_SCRAP_SQL,
   jcClosedAt: jobCards.closedAt,
   jcExists: jobCards.id,
   partyName: PARTY_NAME_SQL,
@@ -219,28 +305,16 @@ function toListItem(r: PoRow): ProductionOrderListItem {
   };
 }
 
-/** The one place the "may this be closed?" sentence is written. The detail
- *  view shows it as `closeBlockedReason`; Close throws exactly the same words,
- *  so what the screen says and what the server refuses can never differ. */
-function closeBlockedReason(item: {
-  status: string;
-  jcCodeText: string;
-  jcComputedStatus: string | null;
-  jcFinishedQty: number;
-}): string | null {
-  if (item.status !== 'open') return `Production Order is already closed`;
-  const st = item.jcComputedStatus ?? 'no_ops';
-  if (st !== 'complete' && st !== 'closed') {
-    return `Job Card ${item.jcCodeText} is not complete yet (${st}) — finish all operations before closing`;
-  }
-  if (item.jcFinishedQty <= 0) {
-    return `Job Card ${item.jcCodeText} has no finished quantity to credit — nothing was accepted at its last operation`;
-  }
-  return null;
-}
-
-function toDetail(item: ProductionOrderListItem): ProductionOrderDetail {
-  const reason = closeBlockedReason(item);
+/** The "may this be closed?" sentence lives in lib/production-order-close-guard.ts
+ *  (pure, unit-tested). The detail view shows it as `closeBlockedReason`; Close
+ *  throws exactly the same words, so what the screen says and what the server
+ *  refuses can never differ. `jcSettledWithScrap` is read off the row here and
+ *  folded in — it never travels to the browser. */
+function toDetail(
+  item: ProductionOrderListItem,
+  jcSettledWithScrap: boolean,
+): ProductionOrderDetail {
+  const reason = closeBlockedReason({ ...item, jcSettledWithScrap });
   return { ...item, canClose: reason === null, closeBlockedReason: reason };
 }
 
@@ -269,7 +343,7 @@ async function readDetailInTx(
     .limit(1);
   const row = rows[0];
   if (!row) throw new NotFoundError(`Production Order ${id} not found`);
-  return toDetail(toListItem(row as PoRow));
+  return toDetail(toListItem(row as PoRow), row.jcSettledWithScrap === true);
 }
 
 // ─── Reads ─────────────────────────────────────────────────────────────────
@@ -608,8 +682,8 @@ export async function closeProductionOrder(
     // Live progress, read AFTER the lock so the number credited is the one
     // that exists at this instant.
     const current = await readDetailInTx(tx, id, companyId);
-    const reason = closeBlockedReason(current);
-    if (reason) throw new ValidationError(reason);
+    // Same sentence the detail view shows (closeBlockedReason ran in toDetail).
+    if (current.closeBlockedReason) throw new ValidationError(current.closeBlockedReason);
     const qty = current.jcFinishedQty;
 
     // ONE stock row for the whole order. Same columns as the qc_accept credit
