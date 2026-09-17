@@ -167,8 +167,21 @@ function linePrFilter(companyId: string, lineIds: string[]) {
     isNull(purchaseRequests.deletedAt),
     isNull(purchaseRequests.sourceJcOpId),
     eq(purchaseRequests.prType, 'standard'),
+    NOT_A_PLAN_PR,
   );
 }
+
+/** A PR that an OLD direct-purchase / full-outsource plan raised on Execute
+ *  also carries `source_so_line_id` and `pr_type='standard'` — but that qty is
+ *  already counted through the plan's `plan_qty`. Counting it again here would
+ *  double a Buy line's planned qty the moment its item is flagged Buy (exactly
+ *  the migration story). The plan points at its PR through dp_pr_id /
+ *  fo_pr_id / fo_mat_pr_id / material_pr_id, so those PRs are not "line PRs". */
+const NOT_A_PLAN_PR = sql`NOT EXISTS (
+  SELECT 1 FROM ${plans} p
+  WHERE p.deleted_at IS NULL
+    AND ${purchaseRequests.id} IN (p.dp_pr_id, p.fo_pr_id, p.fo_mat_pr_id, p.material_pr_id)
+)`;
 
 type LinePrs = { prs: PlanningLine['prs']; prQty: number };
 
@@ -237,7 +250,10 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         maxDueDate: sql<string | null>`max(${salesOrderLines.dueDate})::text`.as('max_due'),
         // Aggregated item code + part name across this SO's lines, for the
         // client-side item search on the Planning page.
-        itemsText: sql<string>`coalesce(string_agg(distinct trim(coalesce(${salesOrderLines.itemCodeText}, '') || ' ' || coalesce(${salesOrderLines.partName}, '')), ' '), '')`.as('items_text'),
+        itemsText:
+          sql<string>`coalesce(string_agg(distinct trim(coalesce(${salesOrderLines.itemCodeText}, '') || ' ' || coalesce(${salesOrderLines.partName}, '')), ' '), '')`.as(
+            'items_text',
+          ),
       })
       .from(salesOrders)
       .leftJoin(
@@ -335,6 +351,7 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
                 isNull(purchaseRequests.deletedAt),
                 isNull(purchaseRequests.sourceJcOpId),
                 eq(purchaseRequests.prType, 'standard'),
+                NOT_A_PLAN_PR,
                 sql`${purchaseRequests.status} <> 'cancelled'`,
                 eq(items.procurementType, 'buy'),
               ),
@@ -355,7 +372,10 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         totalLines: sql<number>`count(${jobWorkOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${jobWorkOrderLines.orderQty}), 0)::int`.as('total_qty'),
         maxDueDate: sql<string | null>`max(${jobWorkOrderLines.dueDate})::text`.as('max_due'),
-        itemsText: sql<string>`coalesce(string_agg(distinct trim(coalesce(${jobWorkOrderLines.itemCodeText}, '') || ' ' || coalesce(${jobWorkOrderLines.partName}, '')), ' '), '')`.as('items_text'),
+        itemsText:
+          sql<string>`coalesce(string_agg(distinct trim(coalesce(${jobWorkOrderLines.itemCodeText}, '') || ' ' || coalesce(${jobWorkOrderLines.partName}, '')), ' '), '')`.as(
+            'items_text',
+          ),
       })
       .from(jobWorkOrders)
       .leftJoin(
@@ -427,7 +447,15 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
     for (const r of jwDirectAgg) jwDirectMap.set(r.soId, Number(r.directQty));
 
     const buildItem = (
-      r: { soId: string; soCode: string; customerName: string | null; totalLines: number; totalQty: number; maxDueDate: string | null; itemsText: string },
+      r: {
+        soId: string;
+        soCode: string;
+        customerName: string | null;
+        totalLines: number;
+        totalQty: number;
+        maxDueDate: string | null;
+        itemsText: string;
+      },
       source: 'so' | 'jw',
       soType: string,
       planned: number,
@@ -648,10 +676,7 @@ export async function getPlanningSoDetail(
             })
             .from(bomMasterLines)
             .where(
-              and(
-                inArray(bomMasterLines.bomMasterId, allBomIds),
-                isNull(bomMasterLines.deletedAt),
-              ),
+              and(inArray(bomMasterLines.bomMasterId, allBomIds), isNull(bomMasterLines.deletedAt)),
             )
             .groupBy(bomMasterLines.bomMasterId);
     const bomPartsMap = new Map<string, number>();
@@ -1136,7 +1161,11 @@ export async function getPlanningBom(
       })
       .from(bomMasters)
       .where(
-        and(eq(bomMasters.id, bomId), eq(bomMasters.companyId, companyId), isNull(bomMasters.deletedAt)),
+        and(
+          eq(bomMasters.id, bomId),
+          eq(bomMasters.companyId, companyId),
+          isNull(bomMasters.deletedAt),
+        ),
       )
       .limit(1);
     const bom = bomHeaders[0];
@@ -1424,6 +1453,10 @@ export async function raisePlanningPr(
           prDate: today,
           status: 'open',
           prType: 'standard',
+          // purchase_requests_vendor_check needs a vendor id OR text. Planning
+          // does not know the vendor — Purchase picks one on the PO — so the
+          // same placeholder the BOM cascade plants goes in here.
+          vendorCodeText: 'TBD',
           itemId,
           itemCodeText: row.itemCode,
           itemName: row.itemName ?? row.line.partName,

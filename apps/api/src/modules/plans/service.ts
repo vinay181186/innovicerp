@@ -185,7 +185,9 @@ export async function listPlans(
     if (query.search) {
       const term = `%${query.search}%`;
       conditions.push(
-        sql`(${plans.code} ILIKE ${term} OR ${plans.itemCodeText} ILIKE ${term} OR ${plans.itemNameText} ILIKE ${term} OR ${plans.soCodeText} ILIKE ${term})`,
+        sql`(${plans.code} ILIKE ${term} OR ${plans.itemCodeText} ILIKE ${term} OR ${plans.itemNameText} ILIKE ${term} OR ${plans.soCodeText} ILIKE ${term}
+          OR ${productionOrders.code} ILIKE ${term}
+          OR EXISTS (SELECT 1 FROM ${jobCards} jc WHERE jc.id = ${plans.jcId} AND jc.code ILIKE ${term}))`,
       );
     }
 
@@ -473,10 +475,7 @@ async function assertPlanQtyWithinRemaining(
   }
 }
 
-export async function createPlan(
-  input: CreatePlanInput,
-  user: AuthContext,
-): Promise<PlanDetail> {
+export async function createPlan(input: CreatePlanInput, user: AuthContext): Promise<PlanDetail> {
   requireWriteRole(user);
   // Phase 2 matrix enforcement: creating a plan is Planning `plan_create` entry.
   await requireFormAccess(user, 'plan_create', 'entry');
@@ -532,6 +531,16 @@ export async function createPlan(
         )
         .limit(1);
       planType = rc[0]?.planType ?? 'manufacture';
+      // ADR-171: bought items are flagged on the Item Master (Source = Buy) and
+      // raise a PR from the Planning line — a card still marked with the
+      // retired "Direct Purchase" tile must not silently become an
+      // un-orderable plan.
+      if (planType === 'direct_purchase') {
+        throw new ValidationError(
+          `Route card for ${input.itemCodeText ?? 'this item'} is marked Direct Purchase (legacy) — ` +
+            'set the item\'s Source to Buy in Item Master and use "+ PR" on the line instead',
+        );
+      }
     }
 
     // Direct Purchase (buy finished item outright) is not valid for job-work —
@@ -882,10 +891,7 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
       .update(planOps)
       .set({ deletedAt: now, updatedBy: user.id })
       .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
-    await tx
-      .update(plans)
-      .set({ deletedAt: now, updatedBy: user.id })
-      .where(eq(plans.id, id));
+    await tx.update(plans).set({ deletedAt: now, updatedBy: user.id }).where(eq(plans.id, id));
 
     await emitActivityLog(
       tx,
@@ -978,10 +984,7 @@ export interface ExecutePlanResult {
  *   - direct_purchase         → create 1 PR, set plan.dp_pr_id, status=pr_created
  *   - full_outsource          → create 1 JW PR (+ optional material PR), set plan.fo_pr_id (+ fo_mat_pr_id), status=pr_created
  *  Wraps all writes in a single transaction so rollback unwinds JC/PR atomically. */
-export async function executePlan(
-  id: string,
-  user: AuthContext,
-): Promise<ExecutePlanResult> {
+export async function executePlan(id: string, user: AuthContext): Promise<ExecutePlanResult> {
   requireWriteRole(user);
   // Executing a saved plan (spawns the Job Cards) is an edit on the plan. The JC
   // creation it triggers is separately gated on jc_create inside job-cards.
@@ -1503,7 +1506,7 @@ async function executeFullOutsource(
         toolDetails: null,
         qcRequired: false,
         outsourceVendorId: plan.foVendorId ?? null,
-        outsourceVendorText: plan.foVendorId ? null : plan.foVendorCodeText ?? null,
+        outsourceVendorText: plan.foVendorId ? null : (plan.foVendorCodeText ?? null),
         outsourceCost: plan.foRate ?? '0',
         createdBy: user.id,
         updatedBy: user.id,
@@ -1594,9 +1597,7 @@ async function executeFullOutsource(
 
 // ─── Planning dashboard ───────────────────────────────────────────────────
 
-export async function getPlanningDashboard(
-  user: AuthContext,
-): Promise<PlanningDashboardResponse> {
+export async function getPlanningDashboard(user: AuthContext): Promise<PlanningDashboardResponse> {
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1659,8 +1660,7 @@ export async function getPlanningDashboard(
       for (const r of opsAgg) opsCounts.set(r.planId, Number(r.c));
     }
 
-    const needsPlanning =
-      Number((needsPlanningRows as unknown as Array<{ c: number }>)[0]?.c ?? 0);
+    const needsPlanning = Number((needsPlanningRows as unknown as Array<{ c: number }>)[0]?.c ?? 0);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -1690,9 +1690,7 @@ export async function getPlanningDashboard(
 // Lists open SO lines that don't yet have a non-cancelled plan covering
 // their full quantity. Mirrors legacy renderPlanDashboard L10024–10041 when
 // flt='unplanned'. SO-side only; JW lines join when JW planning lands.
-export async function getUnplannedOrders(
-  user: AuthContext,
-): Promise<UnplannedOrdersResponse> {
+export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOrdersResponse> {
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1821,11 +1819,7 @@ async function insertOps(
   await tx.insert(planOps).values(values);
 }
 
-async function getPlanInTx(
-  tx: DbTransaction,
-  id: string,
-  companyId: string,
-): Promise<PlanDetail> {
+async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Promise<PlanDetail> {
   const headers = await tx
     .select({
       plan: plans,
@@ -1973,10 +1967,7 @@ function toPlanOp(row: typeof planOps.$inferSelect): PlanOp {
  *     fo_mat_pr_id / material_pr_id (this plan) + plan_ops.outsource_pr_id
  *     (this plan's ops).
  */
-export async function getPlanRelated(
-  id: string,
-  user: AuthContext,
-): Promise<DocumentTraceability> {
+export async function getPlanRelated(id: string, user: AuthContext): Promise<DocumentTraceability> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const headers = await tx
@@ -1996,9 +1987,7 @@ export async function getPlanRelated(
         materialPrId: plans.materialPrId,
       })
       .from(plans)
-      .where(
-        and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)),
-      )
+      .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
     const header = headers[0];
     if (!header) throw new NotFoundError(`Plan ${id} not found`);
@@ -2117,11 +2106,7 @@ export async function getPlanRelated(
       .select({ prId: planOps.outsourcePrId })
       .from(planOps)
       .where(
-        and(
-          eq(planOps.planId, id),
-          eq(planOps.companyId, companyId),
-          isNull(planOps.deletedAt),
-        ),
+        and(eq(planOps.planId, id), eq(planOps.companyId, companyId), isNull(planOps.deletedAt)),
       );
     const prIds = Array.from(
       new Set(
@@ -2302,7 +2287,8 @@ export async function reserveStock(
       {
         action: 'CREATE',
         entity: 'Reservation',
-        detail: `${input.soCodeText} L${input.lineNo} — reserved ${input.qty} ${itemCode ?? ''}`.trim(),
+        detail:
+          `${input.soCodeText} L${input.lineNo} — reserved ${input.qty} ${itemCode ?? ''}`.trim(),
         refId: input.soCodeText,
       },
       companyId,

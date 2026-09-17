@@ -40,7 +40,9 @@ export function PlanPicker({
           offset: 0,
         }
       : {
-          opsSource: 'route_card',
+          // Plans with an OPEN Production Order — filtered on the server so an
+          // old plan is never cut off by the page size.
+          derivedStatus: 'in_production',
           ...(search.trim() ? { search: search.trim() } : {}),
           limit: 50,
           offset: 0,

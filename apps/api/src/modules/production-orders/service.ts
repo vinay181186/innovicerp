@@ -31,6 +31,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { withUniqueRetry } from '../../lib/db-retry';
 import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
@@ -351,222 +352,227 @@ export async function createProductionOrder(
   await requireFormAccess(user, 'prodorder_create', 'entry');
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
-    // Row-lock the plan: two clicks on Create must not both read "no order
-    // yet" and each build a Job Card. The second waits, re-reads, and is
-    // refused by the checks below (the partial unique index on plan_id is the
-    // last line of defence).
-    const planRows = await tx
-      .select()
-      .from(plans)
-      .where(
-        and(eq(plans.id, input.planId), eq(plans.companyId, companyId), isNull(plans.deletedAt)),
-      )
-      .limit(1)
-      .for('update');
-    const plan = planRows[0];
-    if (!plan) throw new NotFoundError(`Plan ${input.planId} not found`);
+  // withUniqueRetry: two users creating orders for DIFFERENT plans at the same
+  // moment can both compute the same next IN-PRO-##### — the loser's whole
+  // transaction (JC, ops, OSP PRs) rolls back and re-runs with the next number.
+  return withUniqueRetry(() =>
+    withUserContext(user, async (tx) => {
+      // Row-lock the plan: two clicks on Create must not both read "no order
+      // yet" and each build a Job Card. The second waits, re-reads, and is
+      // refused by the checks below (the partial unique index on plan_id is the
+      // last line of defence).
+      const planRows = await tx
+        .select()
+        .from(plans)
+        .where(
+          and(eq(plans.id, input.planId), eq(plans.companyId, companyId), isNull(plans.deletedAt)),
+        )
+        .limit(1)
+        .for('update');
+      const plan = planRows[0];
+      if (!plan) throw new NotFoundError(`Plan ${input.planId} not found`);
 
-    if (plan.opsSource !== 'route_card') {
-      throw new ValidationError(
-        `Plan ${plan.code} is an old-style plan with its own operations — use Execute on the plan instead`,
-      );
-    }
-    if (plan.planStatus !== 'planned') {
-      throw new ValidationError(
-        `Plan ${plan.code} is '${plan.planStatus}' — only a planned plan can be turned into a Production Order`,
-      );
-    }
-    const existingPo = await tx
-      .select({ code: productionOrders.code })
-      .from(productionOrders)
-      .where(and(eq(productionOrders.planId, plan.id), isNull(productionOrders.deletedAt)))
-      .limit(1);
-    if (existingPo[0]) {
-      throw new ConflictError(
-        `Plan ${plan.code} already has Production Order ${existingPo[0].code} — one order per plan`,
-      );
-    }
-    if (!plan.itemId) {
-      throw new ValidationError(
-        `Plan ${plan.code} has no master item — pick the item from Item Master on the plan first`,
-      );
-    }
-    const itemId = plan.itemId;
-    const itemLabel = plan.itemCodeText ?? itemId;
+      if (plan.opsSource !== 'route_card') {
+        throw new ValidationError(
+          `Plan ${plan.code} is an old-style plan with its own operations — use Execute on the plan instead`,
+        );
+      }
+      if (plan.planStatus !== 'planned') {
+        throw new ValidationError(
+          `Plan ${plan.code} is '${plan.planStatus}' — only a planned plan can be turned into a Production Order`,
+        );
+      }
+      const existingPo = await tx
+        .select({ code: productionOrders.code })
+        .from(productionOrders)
+        .where(and(eq(productionOrders.planId, plan.id), isNull(productionOrders.deletedAt)))
+        .limit(1);
+      if (existingPo[0]) {
+        throw new ConflictError(
+          `Plan ${plan.code} already has Production Order ${existingPo[0].code} — one order per plan`,
+        );
+      }
+      if (!plan.itemId) {
+        throw new ValidationError(
+          `Plan ${plan.code} has no master item — pick the item from Item Master on the plan first`,
+        );
+      }
+      const itemId = plan.itemId;
+      const itemLabel = plan.itemCodeText ?? itemId;
 
-    // Route card: must be THE active card of the plan's item, with at least
-    // one live operation. "No route card, no way forward."
-    const rcRows = await tx
-      .select({
-        id: routeCards.id,
-        code: routeCards.code,
-        itemId: routeCards.itemId,
-        currentRevision: routeCards.currentRevision,
-        planType: routeCards.planType,
-      })
-      .from(routeCards)
-      .where(
-        and(
-          eq(routeCards.id, input.routeCardId),
-          eq(routeCards.companyId, companyId),
-          isNull(routeCards.deletedAt),
-        ),
-      )
-      .limit(1);
-    const rc = rcRows[0];
-    if (!rc) {
-      // Say whether the ITEM has a card at all, so the message tells the user
-      // what to do next rather than only that the id was wrong.
-      const anyForItem = await tx
-        .select({ id: routeCards.id })
+      // Route card: must be THE active card of the plan's item, with at least
+      // one live operation. "No route card, no way forward."
+      const rcRows = await tx
+        .select({
+          id: routeCards.id,
+          code: routeCards.code,
+          itemId: routeCards.itemId,
+          currentRevision: routeCards.currentRevision,
+          planType: routeCards.planType,
+        })
         .from(routeCards)
         .where(
           and(
+            eq(routeCards.id, input.routeCardId),
             eq(routeCards.companyId, companyId),
-            eq(routeCards.itemId, itemId),
             isNull(routeCards.deletedAt),
           ),
         )
         .limit(1);
-      if (!anyForItem[0]) {
+      const rc = rcRows[0];
+      if (!rc) {
+        // Say whether the ITEM has a card at all, so the message tells the user
+        // what to do next rather than only that the id was wrong.
+        const anyForItem = await tx
+          .select({ id: routeCards.id })
+          .from(routeCards)
+          .where(
+            and(
+              eq(routeCards.companyId, companyId),
+              eq(routeCards.itemId, itemId),
+              isNull(routeCards.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!anyForItem[0]) {
+          throw new ValidationError(
+            `No route card for this item — create it in Item Master first (${itemLabel})`,
+          );
+        }
+        throw new NotFoundError(`Route card ${input.routeCardId} not found or no longer active`);
+      }
+      if (rc.itemId !== itemId) {
+        throw new ValidationError(`Route card ${rc.code} is not for item ${itemLabel}`);
+      }
+
+      const rcOps = await tx
+        .select()
+        .from(routeCardOps)
+        .where(and(eq(routeCardOps.routeCardId, rc.id), isNull(routeCardOps.deletedAt)))
+        .orderBy(asc(routeCardOps.opSeq));
+      if (rcOps.length === 0) {
         throw new ValidationError(
-          `No route card for this item — create it in Item Master first (${itemLabel})`,
+          `Route card ${rc.code} has no operations — add them in Item Master first`,
         );
       }
-      throw new NotFoundError(`Route card ${input.routeCardId} not found or no longer active`);
-    }
-    if (rc.itemId !== itemId) {
-      throw new ValidationError(`Route card ${rc.code} is not for item ${itemLabel}`);
-    }
+      // Same routing rule Execute applies to a plan's ops: a QC op may not sit
+      // directly after an outsource op.
+      assertNoQcDirectlyAfterOutsource(rcOps);
 
-    const rcOps = await tx
-      .select()
-      .from(routeCardOps)
-      .where(and(eq(routeCardOps.routeCardId, rc.id), isNull(routeCardOps.deletedAt)))
-      .orderBy(asc(routeCardOps.opSeq));
-    if (rcOps.length === 0) {
-      throw new ValidationError(
-        `Route card ${rc.code} has no operations — add them in Item Master first`,
-      );
-    }
-    // Same routing rule Execute applies to a plan's ops: a QC op may not sit
-    // directly after an outsource op.
-    assertNoQcDirectlyAfterOutsource(rcOps);
+      // The route card decides HOW the item is made (`route_cards.plan_type`,
+      // migration 0123) — the plan only carries a copy. Re-stamp the plan from
+      // the card now, so the plan and the Job Card built from it agree with the
+      // card as it stands today, not as it stood when the plan was typed.
+      await tx
+        .update(plans)
+        .set({ planType: rc.planType, updatedBy: user.id })
+        .where(eq(plans.id, plan.id));
 
-    // The route card decides HOW the item is made (`route_cards.plan_type`,
-    // migration 0123) — the plan only carries a copy. Re-stamp the plan from
-    // the card now, so the plan and the Job Card built from it agree with the
-    // card as it stands today, not as it stood when the plan was typed.
-    await tx
-      .update(plans)
-      .set({ planType: rc.planType, updatedBy: user.id })
-      .where(eq(plans.id, plan.id));
+      if (rc.planType === 'direct_purchase') {
+        // A bought item has nothing to produce. What (if anything) a Production
+        // Order should do for it is still the user's call; until then the branch
+        // refuses in plain words rather than building a Job Card with no work.
+        throw new ValidationError(
+          'Direct-purchase items are bought, not produced — this route card cannot raise a Production Order yet',
+        );
+      }
+      if (rc.planType === 'full_outsource' && !rcOps.some((op) => op.opType === 'outsource')) {
+        // A full-outsource card is built by the same steps (the builder raises
+        // the IN-JWPR for each outsource op and adds no terminal QC, since the
+        // OSP return is inspected at Incoming QC) — but only if there IS an
+        // outsource op to raise it for.
+        throw new ValidationError('Full-outsource route card must have an outsource operation');
+      }
 
-    if (rc.planType === 'direct_purchase') {
-      // A bought item has nothing to produce. What (if anything) a Production
-      // Order should do for it is still the user's call; until then the branch
-      // refuses in plain words rather than building a Job Card with no work.
-      throw new ValidationError(
-        'Direct-purchase items are bought, not produced — this route card cannot raise a Production Order yet',
-      );
-    }
-    if (rc.planType === 'full_outsource' && !rcOps.some((op) => op.opType === 'outsource')) {
-      // A full-outsource card is built by the same steps (the builder raises
-      // the IN-JWPR for each outsource op and adds no terminal QC, since the
-      // OSP return is inspected at Incoming QC) — but only if there IS an
-      // outsource op to raise it for.
-      throw new ValidationError('Full-outsource route card must have an outsource operation');
-    }
+      // route_card_ops → the builder's op shape. Same field mapping as
+      // plans/service getDefaultRouteOpsForItem (osp_vendor_* → outsource_vendor_*,
+      // cost 0), kept as stored text so nothing is re-rounded.
+      const ops: JcBuildOp[] = rcOps.map((op) => ({
+        opSeq: op.opSeq,
+        machineId: op.machineId,
+        machineCodeText: op.machineCodeText,
+        operation: op.operation,
+        opType: op.opType,
+        cycleTimeMin: op.cycleTimeMin,
+        program: op.program,
+        toolNo: op.toolNo,
+        toolDetails: op.toolDetails,
+        qcRequired: op.qcRequired,
+        outsourceVendorId: op.ospVendorId,
+        outsourceVendorText: op.ospVendorCodeText,
+        outsourceCost: '0',
+      }));
 
-    // route_card_ops → the builder's op shape. Same field mapping as
-    // plans/service getDefaultRouteOpsForItem (osp_vendor_* → outsource_vendor_*,
-    // cost 0), kept as stored text so nothing is re-rounded.
-    const ops: JcBuildOp[] = rcOps.map((op) => ({
-      opSeq: op.opSeq,
-      machineId: op.machineId,
-      machineCodeText: op.machineCodeText,
-      operation: op.operation,
-      opType: op.opType,
-      cycleTimeMin: op.cycleTimeMin,
-      program: op.program,
-      toolNo: op.toolNo,
-      toolDetails: op.toolDetails,
-      qcRequired: op.qcRequired,
-      outsourceVendorId: op.ospVendorId,
-      outsourceVendorText: op.ospVendorCodeText,
-      outsourceCost: '0',
-    }));
-
-    // Build the Job Card by exactly the steps Execute uses (JC row, ops copied,
-    // default terminal QC, OSP PRs) — with the target date as the JC's due
-    // date and NO route-card write-back (the card is the source here).
-    const built = await buildJobCardFromOps(tx, {
-      plan: { ...plan, itemId },
-      ops,
-      user,
-      companyId,
-      dueDate: input.targetDate,
-    });
-    const jc = built.jc;
-
-    await tx
-      .update(plans)
-      .set({ planStatus: 'jc_created', jcId: jc.id, updatedBy: user.id })
-      .where(eq(plans.id, plan.id));
-
-    const code = await nextProductionOrderCode(tx, companyId);
-    const inserted = await tx
-      .insert(productionOrders)
-      .values({
+      // Build the Job Card by exactly the steps Execute uses (JC row, ops copied,
+      // default terminal QC, OSP PRs) — with the target date as the JC's due
+      // date and NO route-card write-back (the card is the source here).
+      const built = await buildJobCardFromOps(tx, {
+        plan: { ...plan, itemId },
+        ops,
+        user,
         companyId,
-        code,
-        status: 'open',
-        planId: plan.id,
-        planCodeText: plan.code,
-        soCodeText: plan.soCodeText,
-        lineNo: plan.lineNo,
-        itemId,
-        itemCodeText: plan.itemCodeText ?? itemLabel,
-        itemNameText: plan.itemNameText,
-        routeCardId: rc.id,
-        routeCardCodeText: rc.code,
-        routeCardRevision: rc.currentRevision,
-        jobCardId: jc.id,
-        jcCodeText: jc.code,
-        orderQty: plan.planQty,
-        targetDate: input.targetDate,
-        remarks: input.remarks ?? null,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning({ id: productionOrders.id });
-    const po = inserted[0]!;
+        dueDate: input.targetDate,
+      });
+      const jc = built.jc;
 
-    // The JC was inserted before the PO row existed, so the back-link — the
-    // OFF switch the stock cascades read — is set now.
-    await tx
-      .update(jobCards)
-      .set({ productionOrderId: po.id, updatedBy: user.id })
-      .where(eq(jobCards.id, jc.id));
+      await tx
+        .update(plans)
+        .set({ planStatus: 'jc_created', jcId: jc.id, updatedBy: user.id })
+        .where(eq(plans.id, plan.id));
 
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'Production Order',
-        detail:
-          built.raisedPrCodes.length > 0
-            ? `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ${ops.length} ops + OSP PR ${built.raisedPrCodes.join(', ')}`
-            : `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ${ops.length} ops`,
-        refId: code,
-      },
-      companyId,
-      user,
-    );
+      const code = await nextProductionOrderCode(tx, companyId);
+      const inserted = await tx
+        .insert(productionOrders)
+        .values({
+          companyId,
+          code,
+          status: 'open',
+          planId: plan.id,
+          planCodeText: plan.code,
+          soCodeText: plan.soCodeText,
+          lineNo: plan.lineNo,
+          itemId,
+          itemCodeText: plan.itemCodeText ?? itemLabel,
+          itemNameText: plan.itemNameText,
+          routeCardId: rc.id,
+          routeCardCodeText: rc.code,
+          routeCardRevision: rc.currentRevision,
+          jobCardId: jc.id,
+          jcCodeText: jc.code,
+          orderQty: plan.planQty,
+          targetDate: input.targetDate,
+          remarks: input.remarks ?? null,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning({ id: productionOrders.id });
+      const po = inserted[0]!;
 
-    return readDetailInTx(tx, po.id, companyId);
-  });
+      // The JC was inserted before the PO row existed, so the back-link — the
+      // OFF switch the stock cascades read — is set now.
+      await tx
+        .update(jobCards)
+        .set({ productionOrderId: po.id, updatedBy: user.id })
+        .where(eq(jobCards.id, jc.id));
+
+      await emitActivityLog(
+        tx,
+        {
+          action: 'CREATE',
+          entity: 'Production Order',
+          detail:
+            built.raisedPrCodes.length > 0
+              ? `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ${ops.length} ops + OSP PR ${built.raisedPrCodes.join(', ')}`
+              : `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ${ops.length} ops`,
+          refId: code,
+        },
+        companyId,
+        user,
+      );
+
+      return readDetailInTx(tx, po.id, companyId);
+    }),
+  );
 }
 
 // ─── Close: credit stock ONCE with the JC's finished qty ───────────────────
