@@ -92,6 +92,10 @@ import { planDetailRoute } from './modules/plans/routes/detail';
 import { planEditRoute } from './modules/plans/routes/edit';
 import { plansListRoute } from './modules/plans/routes/list';
 import { planNewRoute } from './modules/plans/routes/new';
+import { productionOrdersListRoute } from './modules/production-orders/routes/list';
+import { productionOrderNewRoute } from './modules/production-orders/routes/new';
+import { productionOrderCloseRoute } from './modules/production-orders/routes/close';
+import { productionOrderDetailRoute } from './modules/production-orders/routes/detail';
 import { purchaseOrdersListRoute } from './modules/purchase-orders/routes/list';
 import { purchaseOrderDetailRoute } from './modules/purchase-orders/routes/detail';
 import { purchaseOrderEditRoute } from './modules/purchase-orders/routes/edit';
@@ -207,6 +211,12 @@ const routeTree = rootRoute.addChildren([
     planNewRoute,
     planDetailRoute,
     planEditRoute,
+    // Production Orders (ADR-170). `new` and `close` before `$id` so neither
+    // path is eaten by the detail param route.
+    productionOrdersListRoute,
+    productionOrderNewRoute,
+    productionOrderCloseRoute,
+    productionOrderDetailRoute,
     assemblyListRoute,
     assemblyDetailRoute,
     jobWorkOrdersListRoute,

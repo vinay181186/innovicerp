@@ -22,6 +22,7 @@ import {
   machines,
   ncRegister,
   operators,
+  productionOrders,
   purchaseOrders,
   purchaseRequests,
   qcProcesses,
@@ -77,6 +78,7 @@ const ENTITIES: readonly EntityMeta[] = [
   { type: 'Route Card',          table: 'route_cards',          labelSql: 'code',     hasUpdatedBy: true },
   { type: 'Cost Center',         table: 'cost_centers',         labelSql: 'code',     hasUpdatedBy: true },
   { type: 'QC Process',          table: 'qc_processes',         labelSql: 'code',     hasUpdatedBy: true },
+  { type: 'Production Order',    table: 'production_orders',    labelSql: 'code',     hasUpdatedBy: true },
 ];
 
 // Used by restore/perm-delete to look up the Drizzle table object by type.
@@ -98,6 +100,7 @@ const TABLE_BY_TYPE = {
   'Route Card':          routeCards,
   'Cost Center':         costCenters,
   'QC Process':          qcProcesses,
+  'Production Order':    productionOrders,
 } as const satisfies Record<TrashEntityType, unknown>;
 
 function unionSql(companyId: string, typeFilter?: TrashEntityType): string {

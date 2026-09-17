@@ -90,6 +90,10 @@ function PlanEditPage(): React.JSX.Element {
       <PlanForm
         initialValues={toFormValues(plan)}
         isEdit
+        // ADR-170 — route-card-driven plans carry no operations; the ops
+        // editor is hidden and `ops` is left out of the PATCH so the server's
+        // replace-all never runs against them.
+        hideOps={plan.opsSource === 'route_card'}
         isSubmitting={update.isPending}
         submitLabel="Save changes"
         submitError={update.error instanceof Error ? update.error.message : null}
@@ -120,7 +124,7 @@ function PlanEditPage(): React.JSX.Element {
               foCostCenter: ci.foCostCenter,
               foRemarks: ci.foRemarks,
               remarks: ci.remarks,
-              ops: ci.ops,
+              ...(plan.opsSource === 'route_card' ? {} : { ops: ci.ops }),
             },
             {
               onSuccess: () => {

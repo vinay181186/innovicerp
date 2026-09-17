@@ -47,6 +47,7 @@ describe('reports service', () => {
       'open-po-ageing',
       'operator-productivity',
       'production-item-tracker',
+      'production-orders',
       'production-so-line-tracker',
       'so-open-backlog',
       'stock-movement-log',

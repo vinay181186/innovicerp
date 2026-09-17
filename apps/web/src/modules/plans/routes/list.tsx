@@ -1,6 +1,14 @@
 // Plans list (PL-4). All plans with status + type + search filters + pagination.
+//
+// ADR-170 (Production Orders): the same list is Production → Master → Plans.
+// Two pills above the table — All | Pending — where Pending is the server's
+// `poPending=true` (route-card-driven plans that still have no Production
+// Order). The Status column shows the DERIVED status for those plans
+// (Route card pending → Gen production order → In production → Production
+// complete) and the stored planStatus for old plans, exactly as before.
 
-import type { ListPlansResponse, PlanStatus, PlanType } from '@innovic/shared';
+import type { ListPlansResponse, PlanDerivedStatus, PlanStatus, PlanType } from '@innovic/shared';
+import { PLAN_DERIVED_STATUS_LABEL } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
@@ -14,13 +22,24 @@ import { NeedsPlanningTable } from '../components/needs-planning-table';
 const searchSchema = z.object({
   search: z.string().optional(),
   status: z
-    .enum(['in_planning', 'planned', 'jc_created', 'pr_created', 'in_production', 'complete', 'cancelled'])
+    .enum([
+      'in_planning',
+      'planned',
+      'jc_created',
+      'pr_created',
+      'in_production',
+      'complete',
+      'cancelled',
+    ])
     .optional(),
   planType: z.enum(['manufacture', 'direct_purchase', 'full_outsource', 'assembly']).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
   // Needs-Planning mode — folded in from the retired Planning Dashboard; swaps
   // the plans table for the unplanned-SO-lines table.
   needsPlanning: z.boolean().optional(),
+  // ADR-170 — the "Pending" pill: route-card-driven plans with no Production
+  // Order yet. Absent = "All". Narrows WITHIN status / type / search.
+  pending: z.boolean().optional(),
 });
 
 export const plansListRoute = createRoute({
@@ -40,6 +59,16 @@ const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
   cancelled: { cls: 'b-grey', label: 'Cancelled' },
 };
 
+// ADR-170 — derived status of a route-card-driven plan. Same badge classes as
+// the old statuses; amber = blocked (no route card), blue = ready for a
+// Production Order, cyan = PO open, green = PO closed.
+const DERIVED_BADGE: Record<PlanDerivedStatus, string> = {
+  route_card_pending: 'b-amber',
+  gen_production_order: 'b-blue',
+  in_production: 'b-cyan',
+  production_complete: 'b-green',
+};
+
 const TYPE_ICON: Record<PlanType, string> = {
   manufacture: '🏭',
   direct_purchase: '🛒',
@@ -51,12 +80,13 @@ const LIMIT = 50;
 
 function PlansListPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const { search, status, planType, offset, needsPlanning } = plansListRoute.useSearch();
+  const { search, status, planType, offset, needsPlanning, pending } = plansListRoute.useSearch();
   const off = offset ?? 0;
   const { data, isLoading, isError, error } = usePlansList({
     search,
     status,
     planType,
+    ...(pending ? { poPending: true } : {}),
     limit: LIMIT,
     offset: off,
   });
@@ -74,6 +104,7 @@ function PlansListPage(): React.JSX.Element {
       search: {
         ...(search ? { search } : {}),
         ...(planType ? { planType } : {}),
+        ...(pending ? { pending } : {}),
         ...(s ? { status: s } : {}),
       },
     });
@@ -83,8 +114,22 @@ function PlansListPage(): React.JSX.Element {
       search: {
         ...(search ? { search } : {}),
         ...(planType ? { planType } : {}),
+        ...(pending ? { pending } : {}),
         ...(needsPlanning ? {} : { needsPlanning: true }),
       },
+    });
+  // All | Pending pills. Same URL-param shape as the SO list's status pills;
+  // drops the offset so a narrower result never starts on an empty page.
+  const selectPending = (p: boolean): void =>
+    void navigate({
+      to: '/plans',
+      search: {
+        ...(search ? { search } : {}),
+        ...(planType ? { planType } : {}),
+        ...(status ? { status } : {}),
+        ...(p ? { pending: true } : {}),
+      },
+      replace: true,
     });
 
   if (eff && !perms.view) {
@@ -103,7 +148,7 @@ function PlansListPage(): React.JSX.Element {
           <input
             className="innovic-input"
             style={{ width: 200 }}
-            placeholder="Search code / item / SO…"
+            placeholder="Search plan, item, SO, PO, JC…"
             value={search ?? ''}
             onChange={(e) =>
               void navigate({
@@ -111,6 +156,7 @@ function PlansListPage(): React.JSX.Element {
                 search: {
                   ...(status ? { status } : {}),
                   ...(planType ? { planType } : {}),
+                  ...(pending ? { pending } : {}),
                   search: e.target.value || undefined,
                 },
               })
@@ -126,6 +172,7 @@ function PlansListPage(): React.JSX.Element {
                 search: {
                   ...(search ? { search } : {}),
                   ...(planType ? { planType } : {}),
+                  ...(pending ? { pending } : {}),
                   status: (e.target.value as PlanStatus | '') || undefined,
                 },
               })
@@ -148,6 +195,7 @@ function PlansListPage(): React.JSX.Element {
                 search: {
                   ...(search ? { search } : {}),
                   ...(status ? { status } : {}),
+                  ...(pending ? { pending } : {}),
                   planType: (e.target.value as PlanType | '') || undefined,
                 },
               })
@@ -165,6 +213,33 @@ function PlansListPage(): React.JSX.Element {
             </Link>
           ) : null}
         </div>
+      </div>
+
+      {/* ADR-170 — All | Pending. "Pending" = route-card-driven plans that
+          still need a Production Order (server filter `poPending`). Old plans
+          only ever appear under All. Pill styling copied from the SO list. */}
+      <div className="mb-3" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {(
+          [
+            { key: 'all', label: 'All', on: !pending },
+            { key: 'pending', label: 'Pending', on: !!pending },
+          ] as const
+        ).map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            className={`btn btn-sm ${p.on ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontSize: 11, borderRadius: 999, padding: '3px 12px' }}
+            title={
+              p.key === 'pending'
+                ? 'Plans waiting for a Production Order (route card pending / gen production order)'
+                : 'Every plan'
+            }
+            onClick={() => selectPending(p.key === 'pending')}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
 
       <PlanningKpiStrip
@@ -229,12 +304,21 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                 <th>Order Qty</th>
                 <th>Plan Qty</th>
                 <th>Ops</th>
+                <th>PO No</th>
+                <th>JC No</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
               {data.items.map((row) => {
-                const status = STATUS_BADGE[row.planStatus];
+                // New-flow plans (opsSource 'route_card') carry a derived
+                // status; old plans carry null and keep their stored label.
+                const badge = row.derivedStatus
+                  ? {
+                      cls: DERIVED_BADGE[row.derivedStatus],
+                      label: PLAN_DERIVED_STATUS_LABEL[row.derivedStatus],
+                    }
+                  : STATUS_BADGE[row.planStatus];
                 return (
                   <tr key={row.id}>
                     <td>
@@ -269,7 +353,7 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                       <div className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
                         {itemCodeWithRev(row.itemCode ?? row.itemCodeText, row.itemRevision)}
                       </div>
-                      {row.itemName ?? row.itemNameText ? (
+                      {(row.itemName ?? row.itemNameText) ? (
                         <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                           {row.itemName ?? row.itemNameText}
                         </div>
@@ -285,7 +369,40 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                     <td>{row.planQty}</td>
                     <td>{row.opsCount}</td>
                     <td>
-                      <span className={`badge ${status.cls}`}>{status.label}</span>
+                      {row.productionOrderId && row.productionOrderCode ? (
+                        <Link
+                          to="/production-orders/$id"
+                          params={{ id: row.productionOrderId }}
+                          className="td-code"
+                          style={{ color: 'var(--cyan)', fontWeight: 600, whiteSpace: 'nowrap' }}
+                          title={
+                            row.productionOrderStatus
+                              ? `Production Order · ${row.productionOrderStatus}`
+                              : 'Production Order'
+                          }
+                        >
+                          {row.productionOrderCode}
+                        </Link>
+                      ) : (
+                        <span className="text3">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {row.jcId && row.jcCode ? (
+                        <Link
+                          to="/job-cards/$id"
+                          params={{ id: row.jcId }}
+                          className="td-code"
+                          style={{ color: 'var(--cyan)', fontWeight: 600, whiteSpace: 'nowrap' }}
+                        >
+                          {row.jcCode}
+                        </Link>
+                      ) : (
+                        <span className="text3">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`badge ${badge.cls}`}>{badge.label}</span>
                     </td>
                   </tr>
                 );

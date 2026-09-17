@@ -213,6 +213,11 @@ export async function listJobCards(
         jc.origin_op_seq      AS "originOpSeq",
         jc.parent_nc_id       AS "parentNcId",
         pnc.code              AS "parentNcCode",
+        -- ADR-170: the Production Order that built this card (null on an old
+        -- or standalone card). Such a card is credited to stock only when that
+        -- PO is closed. Code joined live — a PO is never renamed.
+        jc.production_order_id AS "productionOrderId",
+        po.code                AS "productionOrderCode",
         -- Tier A (QC-NC §4): source context of the rejected work, derived live
         -- from the parent NC — WHICH operation and machine produced the rejected
         -- pieces and how many. Null on a non-recovery card (pnc left-joined).
@@ -240,6 +245,8 @@ export async function listJobCards(
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
       LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
+      LEFT JOIN public.production_orders po
+        ON po.id = jc.production_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -277,6 +284,8 @@ export async function listJobCards(
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
       LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
+      LEFT JOIN public.production_orders po
+        ON po.id = jc.production_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -369,6 +378,11 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.origin_op_seq      AS "originOpSeq",
         jc.parent_nc_id       AS "parentNcId",
         pnc.code              AS "parentNcCode",
+        -- ADR-170: the Production Order that built this card (null on an old
+        -- or standalone card). Such a card is credited to stock only when that
+        -- PO is closed. Code joined live — a PO is never renamed.
+        jc.production_order_id AS "productionOrderId",
+        po.code                AS "productionOrderCode",
         -- Tier A (QC-NC §4): source context of the rejected work, derived live
         -- from the parent NC — WHICH operation and machine produced the rejected
         -- pieces and how many. Null on a non-recovery card (pnc left-joined).
@@ -396,6 +410,8 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
       LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
+      LEFT JOIN public.production_orders po
+        ON po.id = jc.production_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -477,6 +493,8 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     originOpSeq: r['originOpSeq'] != null ? Number(r['originOpSeq']) : null,
     parentNcId: (r['parentNcId'] as string | null) ?? null,
     parentNcCode: (r['parentNcCode'] as string | null) ?? null,
+    productionOrderId: (r['productionOrderId'] as string | null) ?? null,
+    productionOrderCode: (r['productionOrderCode'] as string | null) ?? null,
     // Tier A: parent NC source context (WI2), derived from the parent NC.
     parentOpName: (r['parentOpName'] as string | null) ?? null,
     parentMachineCode: (r['parentMachineCode'] as string | null) ?? null,

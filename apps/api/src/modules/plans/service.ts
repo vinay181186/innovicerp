@@ -26,6 +26,7 @@ import type {
   PlanDetail,
   PlanOp,
   PlanOpInput,
+  PlanOpsSource,
   PlanRequiredDoc,
   PlanningDashboardResponse,
   RelatedDoc,
@@ -47,6 +48,7 @@ import {
   machines,
   planOps,
   plans,
+  productionOrders,
   purchaseRequests,
   routeCardOps,
   routeCards,
@@ -66,6 +68,7 @@ import {
 } from '../../lib/errors';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
+import { derivePlanStatus } from '../../lib/plan-derived-status';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
@@ -133,6 +136,31 @@ const SO_LINE_REVISION = sql<string | null>`${salesOrderLines.revision}::text`;
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+// ADR-170 — the three live facts a route-card plan's derived status hangs on,
+// as SQL so the list can FILTER on them (poPending / derivedStatus must cut
+// before LIMIT, not after). The row mapper then calls derivePlanStatus() with
+// the same three facts, so the value shown and the value filtered on cannot
+// disagree.
+//
+// Both joins are LEFT and soft-delete filtered: `production_orders.plan_id` is
+// unique among live rows (one Production Order per plan), so the join never
+// multiplies plan rows.
+const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.route_cards rc
+  WHERE rc.company_id = ${plans.companyId}
+    AND rc.item_id = ${plans.itemId}
+    AND rc.deleted_at IS NULL
+)`;
+
+const DERIVED_STATUS_SQL = sql<string | null>`CASE
+  WHEN ${plans.opsSource} <> 'route_card' THEN NULL
+  WHEN ${plans.planStatus} = 'cancelled' THEN NULL
+  WHEN ${productionOrders.status} = 'closed' THEN 'production_complete'
+  WHEN ${productionOrders.status} = 'open' THEN 'in_production'
+  WHEN NOT ${HAS_ROUTE_CARD_SQL} THEN 'route_card_pending'
+  ELSE 'gen_production_order'
+END`;
+
 export async function listPlans(
   query: ListPlansQuery,
   user: AuthContext,
@@ -144,6 +172,15 @@ export async function listPlans(
     if (query.status) conditions.push(eq(plans.planStatus, query.status));
     if (query.planType) conditions.push(eq(plans.planType, query.planType));
     if (query.soLineId) conditions.push(eq(plans.soLineId, query.soLineId));
+    if (query.opsSource) conditions.push(eq(plans.opsSource, query.opsSource));
+    // Derived-status filters (ADR-170). Evaluated in SQL against the same
+    // joined facts the rows report, so paging stays exact.
+    if (query.derivedStatus) conditions.push(sql`${DERIVED_STATUS_SQL} = ${query.derivedStatus}`);
+    if (query.poPending) {
+      conditions.push(
+        sql`${plans.opsSource} = 'route_card' AND ${plans.planStatus} <> 'cancelled' AND ${productionOrders.id} IS NULL`,
+      );
+    }
 
     if (query.search) {
       const term = `%${query.search}%`;
@@ -152,12 +189,21 @@ export async function listPlans(
       );
     }
 
+    // The live Production Order for the plan, if any (LEFT: old plans and
+    // not-yet-ordered plans have none).
+    const poJoin = and(eq(productionOrders.planId, plans.id), isNull(productionOrders.deletedAt));
+
     const rows = await tx
       .select({
         plan: plans,
         itemCode: items.code,
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
+        productionOrderId: productionOrders.id,
+        productionOrderCode: productionOrders.code,
+        productionOrderStatus: productionOrders.status,
+        jcCode: jobCards.code,
+        hasRouteCard: HAS_ROUTE_CARD_SQL,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -167,14 +213,19 @@ export async function listPlans(
         salesOrderLines,
         and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
       )
+      .leftJoin(productionOrders, poJoin)
+      .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
       .where(and(...conditions))
       .orderBy(desc(plans.planDate), asc(plans.code))
       .limit(query.limit)
       .offset(query.offset);
 
+    // Same joins as the page query: the derived-status / poPending conditions
+    // reference production_orders, so the count must see it too.
     const totalRows = await tx
       .select({ value: count() })
       .from(plans)
+      .leftJoin(productionOrders, poJoin)
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
@@ -191,15 +242,29 @@ export async function listPlans(
     }
 
     return {
-      items: rows.map((r) => ({
-        ...toPlan(r.plan),
-        itemCode: r.itemCode ?? null,
-        // Null passed through, not coerced to a blank string: the UI has to be
-        // able to tell "this plan has no SO line" from "the revision is empty".
-        itemRevision: r.itemRevision ?? null,
-        itemName: r.itemName ?? null,
-        opsCount: opsCounts.get(r.plan.id) ?? 0,
-      })),
+      items: rows.map((r) => {
+        const hasRouteCard = Boolean(r.hasRouteCard);
+        return {
+          ...toPlan(r.plan),
+          itemCode: r.itemCode ?? null,
+          // Null passed through, not coerced to a blank string: the UI has to be
+          // able to tell "this plan has no SO line" from "the revision is empty".
+          itemRevision: r.itemRevision ?? null,
+          itemName: r.itemName ?? null,
+          opsCount: opsCounts.get(r.plan.id) ?? 0,
+          derivedStatus: derivePlanStatus({
+            opsSource: r.plan.opsSource,
+            planStatus: r.plan.planStatus,
+            hasRouteCard,
+            poStatus: r.productionOrderStatus ?? null,
+          }),
+          productionOrderId: r.productionOrderId ?? null,
+          productionOrderCode: r.productionOrderCode ?? null,
+          productionOrderStatus: r.productionOrderStatus ?? null,
+          jcCode: r.jcCode ?? null,
+          hasRouteCard,
+        };
+      }),
       total,
       limit: query.limit,
       offset: query.offset,
@@ -434,9 +499,44 @@ export async function createPlan(
       throw new ConflictError(`Plan code "${code}" already exists`);
     }
 
+    // ADR-170 — a route-card-driven plan holds qty / dates / raw material /
+    // remark only. Operations arrive from the item's Route Card when a
+    // Production Order is created, so the plan is stored `planned` straight
+    // away (there is nothing to finalize) and carries no ops of its own. The
+    // Production Order needs a master item to find the Route Card, so a
+    // text-only item is refused here rather than at order time.
+    //
+    // The plan TYPE is the route card's decision, not the client's
+    // (`route_cards.plan_type`, migration 0123: how the item is normally
+    // made). Whatever planType the form sent is ignored for such a plan and
+    // the card's value is stored; an item with no card yet falls back to
+    // 'manufacture'. The Production Order re-reads the card when it is
+    // created and re-stamps the plan, so a card changed in between still wins.
+    const isRouteCardPlan = input.opsSource === 'route_card';
+    let planType = input.planType;
+    if (isRouteCardPlan) {
+      if (!input.itemId) {
+        throw new ValidationError(
+          'Pick the item from Item Master — a Production Order needs the item to find its Route Card',
+        );
+      }
+      const rc = await tx
+        .select({ planType: routeCards.planType })
+        .from(routeCards)
+        .where(
+          and(
+            eq(routeCards.companyId, companyId),
+            eq(routeCards.itemId, input.itemId),
+            isNull(routeCards.deletedAt),
+          ),
+        )
+        .limit(1);
+      planType = rc[0]?.planType ?? 'manufacture';
+    }
+
     // Direct Purchase (buy finished item outright) is not valid for job-work —
     // the client owns the job and supplies the material.
-    if (input.planType === 'direct_purchase' && input.jwLineId) {
+    if (planType === 'direct_purchase' && input.jwLineId) {
       throw new ValidationError('Direct Purchase is not allowed for a job-work (JWSO) order');
     }
 
@@ -454,8 +554,9 @@ export async function createPlan(
         companyId,
         code,
         planDate: input.planDate,
-        planStatus: 'in_planning',
-        planType: input.planType,
+        planStatus: isRouteCardPlan ? 'planned' : 'in_planning',
+        planType,
+        opsSource: isRouteCardPlan ? 'route_card' : 'plan',
         soLineId: input.soLineId ?? null,
         jwLineId: input.jwLineId ?? null,
         soCodeText: input.soCodeText ?? null,
@@ -497,7 +598,7 @@ export async function createPlan(
       .returning();
     const plan = inserted[0]!;
 
-    if (input.ops && input.ops.length > 0) {
+    if (!isRouteCardPlan && input.ops && input.ops.length > 0) {
       await insertOps(tx, companyId, plan.id, input.ops, user);
     }
 
@@ -547,6 +648,17 @@ export async function updatePlan(
       throw new ValidationError('Direct Purchase is not allowed for a job-work (JWSO) order');
     }
 
+    // ADR-170 — a route-card-driven plan has no operations of its own; they
+    // come from the item's Route Card when the Production Order is created.
+    // Qty / dates / raw material / remarks stay editable as before. Its plan
+    // TYPE is the route card's too (re-stamped when the Production Order is
+    // created), so a client-sent planType is ignored below rather than refused.
+    if (row.opsSource === 'route_card' && input.ops !== undefined) {
+      throw new ValidationError(
+        'This plan takes its operations from the Route Card in Item Master — edit the Route Card there instead',
+      );
+    }
+
     // Over-plan guard on qty change: cap at the line's remaining qty, excluding
     // this plan's own current qty from the "already planned" sum.
     if (input.planQty !== undefined && input.planQty !== row.planQty) {
@@ -564,7 +676,9 @@ export async function updatePlan(
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.planDate !== undefined) updates['planDate'] = input.planDate;
-    if (input.planType !== undefined) updates['planType'] = input.planType;
+    if (input.planType !== undefined && row.opsSource !== 'route_card') {
+      updates['planType'] = input.planType;
+    }
     if (input.orderQty !== undefined) updates['orderQty'] = input.orderQty;
     if (input.planQty !== undefined) updates['planQty'] = input.planQty;
     if (input.plannedStartDate !== undefined) updates['plannedStartDate'] = input.plannedStartDate;
@@ -695,7 +809,13 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
     }
 
     // Manufacture + assembly plans require at least 1 op to be finalized.
-    if (row.planType === 'manufacture' || row.planType === 'assembly') {
+    // ADR-170: a route-card-driven plan is born `planned` and never carries
+    // ops, so the check does not apply to it (it only reaches here if some
+    // client sent finalize on a plan that was never in_planning — harmless).
+    if (
+      row.opsSource !== 'route_card' &&
+      (row.planType === 'manufacture' || row.planType === 'assembly')
+    ) {
       const opCheck = await tx
         .select({ c: count() })
         .from(planOps)
@@ -880,6 +1000,14 @@ export async function executePlan(
       .for('update');
     const plan = existing[0];
     if (!plan) throw new NotFoundError(`Plan ${id} not found`);
+    // ADR-170 — a route-card-driven plan is never executed here: its Job Card
+    // is built by a Production Order, which is where the Route Card and the
+    // target date are chosen.
+    if (plan.opsSource === 'route_card') {
+      throw new ValidationError(
+        'This plan is built by a Production Order — Production → Entry → Create Production Order',
+      );
+    }
     if (plan.planStatus !== 'planned') {
       throw new ValidationError(
         `Plan in status '${plan.planStatus}' cannot be executed (must be planned)`,
@@ -898,43 +1026,109 @@ export async function executePlan(
   });
 }
 
-async function executeManufacture(
-  tx: DbTransaction,
-  plan: typeof plans.$inferSelect,
-  user: AuthContext,
-): Promise<ExecutePlanResult> {
-  const ops = await tx
-    .select()
-    .from(planOps)
-    .where(and(eq(planOps.planId, plan.id), isNull(planOps.deletedAt)))
-    .orderBy(asc(planOps.opSeq));
-  if (ops.length === 0) {
-    throw new ValidationError(
-      `${plan.planType} plan cannot be executed with zero operations`,
-    );
-  }
-  // Routing rule: a QC op may not sit directly after an OSP op. A plan-born JC
-  // is never a rework/repair child, so no exemption. Checked on the plan's own
-  // ops (already ordered by op_seq), before the terminal QC op is appended.
-  assertNoQcDirectlyAfterOutsource(ops);
-  if (!plan.itemId) {
-    throw new ValidationError(
-      `${plan.planType} plan requires a resolved itemId to create a JC (item_code_text alone is not enough)`,
-    );
-  }
+// ─── Job Card builder (shared by Execute and Production Orders) ───────────
 
+/** One operation to copy onto the Job Card. Exactly the columns `jc_ops`
+ *  stores, in the stored (numeric-as-text) form — a `plan_ops` row satisfies it
+ *  directly, and a `route_card_ops` row maps onto it with two renames
+ *  (osp_vendor_* → outsource_vendor_*). Kept as text on purpose: converting
+ *  through Number() and back would re-round a stored numeric. */
+export interface JcBuildOp {
+  opSeq: number;
+  machineId: string | null;
+  machineCodeText: string | null;
+  operation: string;
+  opType: (typeof jcOps.$inferSelect)['opType'];
+  cycleTimeMin: string;
+  program: string | null;
+  toolNo: string | null;
+  toolDetails: string | null;
+  qcRequired: boolean;
+  outsourceVendorId: string | null;
+  outsourceVendorText: string | null;
+  /** Numeric text; jc_ops.outsource_cost is NOT NULL, pass '0' for none. */
+  outsourceCost: string;
+}
+
+/** The plan fields the builder reads. A full `plans` row satisfies it once
+ *  `itemId` has been checked non-null. */
+export interface JcBuildPlan {
+  id: string;
+  code: string;
+  companyId: string;
+  itemId: string;
+  itemCodeText: string | null;
+  itemNameText: string | null;
+  planQty: number;
+  soLineId: string | null;
+  jwLineId: string | null;
+  rawMaterialGradeId: string | null;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeId: string | null;
+  rawMaterialSizeText: string | null;
+}
+
+export interface JcBuildResult {
+  jc: { id: string; code: string };
+  /** Number of operations copied from the caller (before the default QC op). */
+  opsCount: number;
+  /** Codes of the OSP purchase requests auto-raised for outsource ops. */
+  raisedPrCodes: string[];
+  /** machine code → machine id resolved for ops that only carried a code. */
+  machineIdByCode: Map<string, string>;
+}
+
+/** Build a Job Card from a plan + a list of operations, inside the caller's
+ *  transaction. This is the body of the old `executeManufacture`, lifted out so
+ *  a Production Order (ADR-170) builds its Job Card by exactly the same steps:
+ *
+ *    1. insert the job_cards row (next IN-JC code, order_qty = plan qty, the
+ *       plan's SO / JW line, the plan's raw-material snapshot, due date,
+ *       production order link);
+ *    2. resolve machine ids for ops that only carry a machine code;
+ *    3. copy the ops → jc_ops, appending the default terminal QC op when
+ *       `needsDefaultQcOp` says so (ADR-069 Rule B);
+ *    4. `afterOpsInserted` hook — Execute uses it to write the routing back to
+ *       the route card at the same point it always did; the Production Order
+ *       path passes nothing (the route card IS the source, nothing to write back);
+ *    5. auto-raise one JW_OSP purchase request per outsource op.
+ *
+ *  It does NOT touch the plan row or write an activity log — each caller does
+ *  that in its own words. */
+export async function buildJobCardFromOps(
+  tx: DbTransaction,
+  opts: {
+    plan: JcBuildPlan;
+    ops: JcBuildOp[];
+    user: AuthContext;
+    companyId: string;
+    /** job_cards.due_date. Execute passes null (as it always did); a Production
+     *  Order passes its target date. */
+    dueDate: string | null;
+    /** Set when a Production Order is building this JC — the stock cascades
+     *  read it as their OFF switch. */
+    productionOrderId?: string | null;
+    afterOpsInserted?: (ctx: {
+      jc: { id: string; code: string };
+      machineIdByCode: Map<string, string>;
+    }) => Promise<void>;
+  },
+): Promise<JcBuildResult> {
+  const { plan, ops, user, companyId } = opts;
   const today = new Date().toISOString().slice(0, 10);
-  const jcCode = await nextJcCode(tx, plan.companyId);
+  const jcCode = await nextJcCode(tx, companyId);
 
   const jcRows = await tx
     .insert(jobCards)
     .values({
-      companyId: plan.companyId,
+      companyId,
       code: jcCode,
       jcDate: today,
       itemId: plan.itemId,
       orderQty: plan.planQty,
       priority: 'normal',
+      dueDate: opts.dueDate,
+      productionOrderId: opts.productionOrderId ?? null,
       // A plan sources from either an SO line or a JW line (never both);
       // pass whichever is set so the JC links back to the right order.
       sourceSoLineId: plan.soLineId ?? null,
@@ -951,7 +1145,7 @@ async function executeManufacture(
       createdBy: user.id,
       updatedBy: user.id,
     })
-    .returning();
+    .returning({ id: jobCards.id, code: jobCards.code });
   const jc = jcRows[0]!;
 
   // Resolve a machine_id FK for ops that only carry machine_code_text (route-card
@@ -972,7 +1166,7 @@ async function executeManufacture(
       .from(machines)
       .where(
         and(
-          eq(machines.companyId, plan.companyId),
+          eq(machines.companyId, companyId),
           isNull(machines.deletedAt),
           inArray(machines.code, unresolvedCodes),
         ),
@@ -980,14 +1174,16 @@ async function executeManufacture(
     for (const m of mrows) machineIdByCode.set(m.code, m.id);
   }
 
-  // Copy plan_ops → jc_ops, backfilling machine_id from the code where possible.
+  // Copy ops → jc_ops, backfilling machine_id from the code where possible.
   // Capture the created jc_op ids (by op_seq) so outsource ops can be linked to
   // their auto-raised PRs below.
   const opRows = ops.map((op) => ({
-    companyId: plan.companyId,
+    companyId,
     jobCardId: jc.id,
     opSeq: op.opSeq,
-    machineId: op.machineId ?? (op.machineCodeText ? machineIdByCode.get(op.machineCodeText) ?? null : null),
+    machineId:
+      op.machineId ??
+      (op.machineCodeText ? (machineIdByCode.get(op.machineCodeText) ?? null) : null),
     machineCodeText: op.machineCodeText,
     operation: op.operation,
     opType: op.opType,
@@ -1007,7 +1203,7 @@ async function executeManufacture(
   // a final QC would otherwise never credit stock (SPACER / IN-JC-26-00007).
   if (needsDefaultQcOp(opRows)) {
     opRows.push({
-      companyId: plan.companyId,
+      companyId,
       jobCardId: jc.id,
       opSeq: opRows[opRows.length - 1]!.opSeq + 1,
       machineId: null,
@@ -1026,54 +1222,17 @@ async function executeManufacture(
       updatedBy: user.id,
     });
   }
-  const insertedOps = await tx
-    .insert(jcOps)
-    .values(opRows)
-    .returning({
-      id: jcOps.id,
-      opSeq: jcOps.opSeq,
-      opType: jcOps.opType,
-      operation: jcOps.operation,
-      outsourceVendorId: jcOps.outsourceVendorId,
-      outsourceVendorText: jcOps.outsourceVendorText,
-      outsourceCost: jcOps.outsourceCost,
-    });
+  const insertedOps = await tx.insert(jcOps).values(opRows).returning({
+    id: jcOps.id,
+    opSeq: jcOps.opSeq,
+    opType: jcOps.opType,
+    operation: jcOps.operation,
+    outsourceVendorId: jcOps.outsourceVendorId,
+    outsourceVendorText: jcOps.outsourceVendorText,
+    outsourceCost: jcOps.outsourceCost,
+  });
 
-  // Route-card auto-save (ADR-051 write half): remember this item's routing so
-  // the next plan for the same item can load it straight back. Fed from the
-  // PLAN's ops — never `opRows`, which may carry the system-appended terminal
-  // QC op (ADR-069 Rule B); saving that would make the routing grow one QC op
-  // per cycle. Same transaction as the JC, so a failure unwinds both.
-  const routeCardOpsFromPlan: CreateRouteCardOpInput[] = ops.map((op) => ({
-    machineId:
-      op.machineId ??
-      (op.machineCodeText ? (machineIdByCode.get(op.machineCodeText) ?? null) : null),
-    machineCodeText: op.machineCodeText,
-    operation: op.operation,
-    opType: op.opType,
-    cycleTimeMin: Number(op.cycleTimeMin),
-    program: op.program,
-    toolNo: op.toolNo,
-    toolDetails: op.toolDetails,
-    qcRequired: op.qcRequired,
-    ospVendorId: op.outsourceVendorId,
-    ospVendorCodeText: op.outsourceVendorText,
-    ospLeadDays: null,
-  }));
-  await saveRouteCardForItem(
-    tx,
-    plan.companyId,
-    plan.itemId,
-    routeCardOpsFromPlan,
-    user,
-    plan.code,
-    {
-      rawMaterialGradeId: plan.rawMaterialGradeId,
-      rawMaterialGradeText: plan.rawMaterialGradeText,
-      rawMaterialSizeId: plan.rawMaterialSizeId,
-      rawMaterialSizeText: plan.rawMaterialSizeText,
-    },
-  );
+  if (opts.afterOpsInserted) await opts.afterOpsInserted({ jc, machineIdByCode });
 
   // Auto-raise a JW_OSP purchase request for every op ticked "Outsource".
   // Mirrors the manual OSP-PR flow (op-entry/osp-cascade) but fires at plan
@@ -1084,11 +1243,11 @@ async function executeManufacture(
   const outsourceOps = insertedOps.filter((o) => o.opType === 'outsource');
   const raisedPrCodes: string[] = [];
   for (const op of outsourceOps) {
-    const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
+    const prCode = await nextSeriesCode(tx, 'pr', companyId, 'IN-JWPR-');
     const prRows = await tx
       .insert(purchaseRequests)
       .values({
-        companyId: plan.companyId,
+        companyId,
         code: prCode,
         prDate: today,
         status: 'open',
@@ -1096,7 +1255,7 @@ async function executeManufacture(
         vendorId: op.outsourceVendorId ?? null,
         // PR needs a vendor id OR text; flag "to be decided at PO time" when the
         // op carries neither.
-        vendorCodeText: op.outsourceVendorId ? null : op.outsourceVendorText ?? OSP_VENDOR_TBD,
+        vendorCodeText: op.outsourceVendorId ? null : (op.outsourceVendorText ?? OSP_VENDOR_TBD),
         itemId: plan.itemId,
         itemCodeText: plan.itemCodeText ?? null,
         itemName: plan.itemNameText ?? null,
@@ -1118,6 +1277,81 @@ async function executeManufacture(
       .set({ outsourcePrId: pr.id, outsourceStatus: 'pr_raised', updatedBy: user.id })
       .where(eq(jcOps.id, op.id));
   }
+
+  return { jc, opsCount: ops.length, raisedPrCodes, machineIdByCode };
+}
+
+async function executeManufacture(
+  tx: DbTransaction,
+  plan: typeof plans.$inferSelect,
+  user: AuthContext,
+): Promise<ExecutePlanResult> {
+  const ops = await tx
+    .select()
+    .from(planOps)
+    .where(and(eq(planOps.planId, plan.id), isNull(planOps.deletedAt)))
+    .orderBy(asc(planOps.opSeq));
+  if (ops.length === 0) {
+    throw new ValidationError(`${plan.planType} plan cannot be executed with zero operations`);
+  }
+  // Routing rule: a QC op may not sit directly after an OSP op. A plan-born JC
+  // is never a rework/repair child, so no exemption. Checked on the plan's own
+  // ops (already ordered by op_seq), before the terminal QC op is appended.
+  assertNoQcDirectlyAfterOutsource(ops);
+  if (!plan.itemId) {
+    throw new ValidationError(
+      `${plan.planType} plan requires a resolved itemId to create a JC (item_code_text alone is not enough)`,
+    );
+  }
+  const itemId = plan.itemId;
+
+  const built = await buildJobCardFromOps(tx, {
+    plan: { ...plan, itemId },
+    ops,
+    user,
+    companyId: plan.companyId,
+    dueDate: null,
+    // Route-card auto-save (ADR-051 write half): remember this item's routing so
+    // the next plan for the same item can load it straight back. Fed from the
+    // PLAN's ops — never the inserted jc_ops, which may carry the
+    // system-appended terminal QC op (ADR-069 Rule B); saving that would make
+    // the routing grow one QC op per cycle. Same transaction as the JC, so a
+    // failure unwinds both. Runs at the same point it always did — after the
+    // ops are inserted, before the OSP PRs are raised.
+    afterOpsInserted: async ({ machineIdByCode }) => {
+      const routeCardOpsFromPlan: CreateRouteCardOpInput[] = ops.map((op) => ({
+        machineId:
+          op.machineId ??
+          (op.machineCodeText ? (machineIdByCode.get(op.machineCodeText) ?? null) : null),
+        machineCodeText: op.machineCodeText,
+        operation: op.operation,
+        opType: op.opType,
+        cycleTimeMin: Number(op.cycleTimeMin),
+        program: op.program,
+        toolNo: op.toolNo,
+        toolDetails: op.toolDetails,
+        qcRequired: op.qcRequired,
+        ospVendorId: op.outsourceVendorId,
+        ospVendorCodeText: op.outsourceVendorText,
+        ospLeadDays: null,
+      }));
+      await saveRouteCardForItem(
+        tx,
+        plan.companyId,
+        itemId,
+        routeCardOpsFromPlan,
+        user,
+        plan.code,
+        {
+          rawMaterialGradeId: plan.rawMaterialGradeId,
+          rawMaterialGradeText: plan.rawMaterialGradeText,
+          rawMaterialSizeId: plan.rawMaterialSizeId,
+          rawMaterialSizeText: plan.rawMaterialSizeText,
+        },
+      );
+    },
+  });
+  const { jc, raisedPrCodes } = built;
 
   await tx
     .update(plans)
@@ -1639,6 +1873,8 @@ function toPlan(row: typeof plans.$inferSelect): Plan {
     planDate: row.planDate,
     planStatus: row.planStatus,
     planType: row.planType,
+    // Stored as text with a CHECK (0133); the two values are the shared enum.
+    opsSource: row.opsSource as PlanOpsSource,
     soLineId: row.soLineId,
     jwLineId: row.jwLineId,
     soCodeText: row.soCodeText,

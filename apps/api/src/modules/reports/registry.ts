@@ -24,6 +24,7 @@ import { ncSummaryByReasonReport } from './definitions/nc-summary-by-reason';
 import { openPoAgeingReport } from './definitions/open-po-ageing';
 import { operatorProductivityReport } from './definitions/operator-productivity';
 import { productionItemTrackerReport } from './definitions/production-item-tracker';
+import { productionOrdersReport } from './definitions/production-orders';
 import { productionSoLineTrackerReport } from './definitions/production-so-line-tracker';
 import { soOpenBacklogReport } from './definitions/so-open-backlog';
 import { stockMovementLogReport } from './definitions/stock-movement-log';
@@ -66,6 +67,7 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [designIssueAgingReport.definition.slug]: designIssueAgingReport,
   [productionItemTrackerReport.definition.slug]: productionItemTrackerReport,
   [productionSoLineTrackerReport.definition.slug]: productionSoLineTrackerReport,
+  [productionOrdersReport.definition.slug]: productionOrdersReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {

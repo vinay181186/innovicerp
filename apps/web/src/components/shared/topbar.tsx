@@ -34,6 +34,11 @@ const TITLE_MAP: Record<string, string> = {
   '/saved-reports': 'Saved Reports',
   '/bom-masters': 'BOM Master',
   '/route-cards': 'Route Card Master',
+  // Exact match wins over the longest-prefix fallback, so the two entry
+  // screens get their own titles and /production-orders/<id> keeps the master's.
+  '/production-orders': 'Production Orders',
+  '/production-orders/new': 'Create Production Order',
+  '/production-orders/close': 'Close Production Order',
   // Acronym routes: the deriveTitle fallback humanizes per-word, so an absent key
   // renders "Qc Call Register" / "Capa" / "Tpi". Labels below are legacy's own
   // (its nav registry), not invented. QC Call Register additionally has no

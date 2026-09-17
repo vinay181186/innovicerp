@@ -16,6 +16,7 @@ import type {
   JobCardStatusOpExtra,
 } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
@@ -185,6 +186,23 @@ export function JcStatTiles({
           {jc.clientPoLineNo ? (
             <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
               CPO Ln: {jc.clientPoLineNo}
+            </div>
+          ) : null}
+          {/* ADR-170 — the Production Order that built this card. Only such a
+              card is credited to stock at PO close (never at last-op QC or an
+              OSP GRN), so the link is the operator's cue for where "finished"
+              actually lands. Old cards carry null and show nothing here. */}
+          {jc.productionOrderId && jc.productionOrderCode ? (
+            <div style={{ fontSize: 11, marginTop: 4 }}>
+              <span style={{ color: 'var(--text3)' }}>Production Order: </span>
+              <Link
+                to="/production-orders/$id"
+                params={{ id: jc.productionOrderId }}
+                className="mono fw-700"
+                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+              >
+                {jc.productionOrderCode}
+              </Link>
             </div>
           ) : null}
           {/* Remarks moved to the Item tile, under Grade / Size — see there. */}

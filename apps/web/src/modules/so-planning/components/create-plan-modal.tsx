@@ -1,18 +1,28 @@
-// Create Plan modal (PL-4b §4). Triggered by "+ Plan N pcs" on a line card.
-// Shows a single qty input; on save creates an in_planning plan and chains
-// to the edit modal so the planner can fill in operations + type details.
+// Create Plan box (ADR-170). Opened by "+ Plan N" on a line of the SO/JWSO
+// Planning screen.
+//
+// A plan is now ONLY: qty + remark, a schedule (planned start / required
+// date, planned end date) and the raw material (grade, size). No operations —
+// those come from the item's Route Card when a Production Order is raised for
+// this plan. So the box saves the plan with `opsSource: 'route_card'` and
+// closes; it does NOT chain into the Edit Plan modal any more.
+//
+// The Reserve-from-stock control that lived here stays: it books free stock
+// to this line before (or instead of) planning the shortfall.
+//
+// ESC / click outside ask "Are you sure you want to exit?" through `Modal`.
 
-import type {
-  CreatePlanInput,
-  PlanningDetailResponse,
-  PlanningLine,
-} from '@innovic/shared';
+import type { CreatePlanInput, PlanningDetailResponse, PlanningLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlan, useReleaseReservations, useReserveStock } from '@/modules/plans/api';
+import {
+  MaterialGradePicker,
+  MaterialSizePicker,
+} from '@/modules/raw-material/components/raw-material-pickers';
 import { Modal } from './modal';
 
 // −/+ stepper buttons: same .btn .btn-ghost shape as the ▲▼ movers elsewhere,
@@ -25,11 +35,18 @@ const stepBtnStyle: React.CSSProperties = {
   height: 38,
 };
 
+const groupTitle: React.CSSProperties = {
+  fontSize: 9,
+  textTransform: 'uppercase',
+  letterSpacing: '.08em',
+  marginBottom: 6,
+};
+
 interface Props {
   so: PlanningDetailResponse;
   line: PlanningLine;
   onClose: () => void;
-  /** Called with the new plan id so the parent can chain into the edit modal. */
+  /** Called with the new plan id once it is saved. */
   onCreated: (planId: string) => void;
 }
 
@@ -44,6 +61,17 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const uncovered = Math.max(0, remaining - reserved);
   const reservable = Math.min(stock, uncovered);
   const [planQty, setPlanQty] = useState<number>(suggested);
+  const [remarks, setRemarks] = useState('');
+  // Born dated: start today, finish five days later — the common case, and
+  // both are right here to change before saving.
+  const [plannedStartDate, setPlannedStartDate] = useState(todayLocal());
+  const [plannedEndDate, setPlannedEndDate] = useState(
+    addDaysLocal(todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
+  );
+  const [rmGradeId, setRmGradeId] = useState<string | null>(null);
+  const [rmGradeText, setRmGradeText] = useState<string | null>(null);
+  const [rmSizeId, setRmSizeId] = useState<string | null>(null);
+  const [rmSizeText, setRmSizeText] = useState<string | null>(null);
   // Reserve qty is adjustable — it starts at everything that's free to book,
   // but the planner can dial it down (or back up) before pressing Reserve.
   // Clamped on render instead of via an effect: after a reserve succeeds the
@@ -101,16 +129,25 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       setErr(`Cannot exceed remaining: ${remaining} pcs`);
       return;
     }
+    if (!plannedStartDate || !plannedEndDate) {
+      setErr('Planned Start and Planned End dates are required');
+      return;
+    }
+    if (plannedEndDate < plannedStartDate) {
+      setErr('Planned End Date cannot be before Planned Start Date');
+      return;
+    }
     setErr(null);
     const input: CreatePlanInput = {
       // code omitted → server assigns the next sequential PLN-NNNN.
       planDate: todayLocal(),
       planType: 'manufacture',
+      // Operations come from the item's Route Card via a Production Order;
+      // the server stores this plan as `planned` with zero ops of its own.
+      opsSource: 'route_card',
       // A JW plan links via jwLineId; an SO plan via soLineId. line.soLineId
       // holds whichever line id the detail endpoint returned.
-      ...(so.source === 'jw'
-        ? { jwLineId: line.soLineId }
-        : { soLineId: line.soLineId }),
+      ...(so.source === 'jw' ? { jwLineId: line.soLineId } : { soLineId: line.soLineId }),
       soCodeText: so.soCode,
       lineNo: line.lineNo,
       itemId: line.itemId ?? null,
@@ -118,10 +155,13 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       itemNameText: line.itemName ?? '',
       orderQty: line.orderQty,
       planQty,
-      // Born dated: start today, finish five days later. The planner adjusts
-      // both in Edit Plan; this only saves them typing the common case.
-      plannedStartDate: todayLocal(),
-      plannedEndDate: addDaysLocal(todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
+      plannedStartDate,
+      plannedEndDate,
+      rawMaterialGradeId: rmGradeId,
+      rawMaterialGradeText: rmGradeText,
+      rawMaterialSizeId: rmSizeId,
+      rawMaterialSizeText: rmSizeText,
+      remarks: remarks.trim() === '' ? null : remarks.trim(),
     };
     try {
       const created = await createPlan.mutateAsync(input);
@@ -155,18 +195,16 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       <button
         type="button"
         className="btn btn-primary"
-        onClick={submit}
+        onClick={() => void submit()}
         disabled={createPlan.isPending}
       >
         {createPlan.isPending ? (
           <>
-            <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} /> …
+            <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} />{' '}
+            Creating…
           </>
         ) : (
-          // Legacy createPlan calls showModal(title, body, onSave, 'Create Plan'),
-          // but showModal (L28014) takes only 3 params — the 4th arg is dead code
-          // and the footer is the hard-coded Cancel / Save pair (L28026-27).
-          'Save'
+          'Create Plan'
         )}
       </button>
     </>
@@ -180,7 +218,8 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     : (line.itemName ?? `Line ${line.lineNo}`);
 
   return (
-    <Modal title={`Create Plan — ${lineLabel}`} onClose={onClose} footer={footer}>
+    <Modal title={`Create Plan — ${lineLabel}`} size="lg" onClose={onClose} footer={footer}>
+      {/* ── What is being planned ── */}
       <div
         style={{
           background: 'var(--bg3)',
@@ -192,7 +231,9 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       >
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO/JW</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+              {so.source === 'jw' ? 'JWSO' : 'SO'}
+            </span>
             <br />
             <b className="mono">
               {so.soCode} L{line.lineNo}
@@ -201,19 +242,23 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           <div>
             <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
             <br />
-            {/* `CODE/REV` — see the modal title. nowrap so a short code never
-                breaks across two lines in this summary strip. */}
-            <b style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}>
+            {/* Item code is the main thing: strong mono, darkest text. */}
+            <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
               {itemCodeWithRev(line.itemCode, line.itemRevision)}
             </b>
+            {line.itemName ? (
+              <span className="text2" style={{ fontSize: 12, marginLeft: 6 }}>
+                {line.itemName}
+              </span>
+            ) : null}
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO QTY</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>ORDER QTY</span>
             <br />
             <b style={{ fontSize: 18 }}>{line.orderQty}</b>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 12, marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
           <div
             style={{
               textAlign: 'center',
@@ -234,7 +279,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               padding: '8px 16px',
               background: 'var(--bg)',
               borderRadius: 6,
-              border: '1px solid rgba(34,197,94,0.3)',
+              border: '1px solid var(--green)',
             }}
           >
             <div style={{ fontSize: 10, color: 'var(--text3)' }}>REMAINING</div>
@@ -297,12 +342,145 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         </div>
       </div>
 
+      {/* ── Plan qty + Remark on one row ── */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
+        <div className="form-grp" style={{ flex: '0 1 200px', minWidth: 0 }}>
+          <label
+            className="form-label"
+            htmlFor="create-plan-qty"
+            style={{ color: 'var(--cyan)', fontWeight: 700, fontSize: 14 }}
+          >
+            Plan Qty ★
+          </label>
+          <input
+            id="create-plan-qty"
+            type="number"
+            min={1}
+            max={remaining}
+            value={planQty}
+            onChange={(e) => setPlanQty(Number(e.target.value))}
+            style={{
+              fontSize: 22,
+              fontWeight: 800,
+              textAlign: 'center',
+              border: '2px solid var(--cyan)',
+              color: 'var(--cyan)',
+              padding: 10,
+              width: '100%',
+            }}
+          />
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+            Max: {remaining} pcs (Order: {line.orderQty} − Already Planned: {line.totalPlanned})
+          </div>
+          {stock > 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
+              💡 {suggested} pcs to make — {remaining} remaining − {stock} already in stock
+              {suggested === 0 ? ' (fully covered by stock)' : ''}.
+            </div>
+          ) : null}
+        </div>
+        <div className="form-grp" style={{ flex: '1 1 260px', minWidth: 0 }}>
+          <label className="form-label" htmlFor="create-plan-remark">
+            Remark
+          </label>
+          <textarea
+            id="create-plan-remark"
+            className="innovic-input"
+            rows={3}
+            maxLength={500}
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Planning notes, special instructions"
+            style={{ width: '100%', resize: 'vertical' }}
+          />
+        </div>
+      </div>
+
+      {/* ── Schedule + Raw Material — same controls as Edit Plan ── */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 14,
+          alignItems: 'flex-end',
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+          <div className="mono fw-700 text3" style={groupTitle}>
+            Schedule
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <label className="form-label" htmlFor="create-plan-start">
+                Planned Start / Required Date
+              </label>
+              <input
+                id="create-plan-start"
+                type="date"
+                className="innovic-input"
+                value={plannedStartDate}
+                onChange={(e) => setPlannedStartDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <label className="form-label" htmlFor="create-plan-end">
+                Planned End Date
+              </label>
+              <input
+                id="create-plan-end"
+                type="date"
+                className="innovic-input"
+                value={plannedEndDate}
+                onChange={(e) => setPlannedEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+        {/* The tint IS the grouping: the arbitrary variant paints every control
+            inside this block with the pale blue token wash (bg-innovic-blue3 =
+            --blue3), including the Grade / Size pickers' own <input>. */}
+        <div className="[&_input]:bg-innovic-blue3" style={{ flex: '1 1 300px', minWidth: 0 }}>
+          <div className="mono fw-700" style={{ ...groupTitle, color: 'var(--blue)' }}>
+            Raw Material
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <div className="form-grp" style={{ flex: '1 1 130px', minWidth: 0 }}>
+              <label className="form-label" style={{ color: 'var(--blue)' }}>
+                Grade
+              </label>
+              <MaterialGradePicker
+                valueId={rmGradeId}
+                valueText={rmGradeText}
+                onChange={(id, text) => {
+                  setRmGradeId(id);
+                  setRmGradeText(text);
+                }}
+              />
+            </div>
+            <div className="form-grp" style={{ flex: '1 1 140px', minWidth: 0 }}>
+              <label className="form-label" style={{ color: 'var(--blue)' }}>
+                Size
+              </label>
+              <MaterialSizePicker
+                valueId={rmSizeId}
+                valueText={rmSizeText}
+                onChange={(id, text) => {
+                  setRmSizeId(id);
+                  setRmSizeText(text);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Reserve from stock — the qty is adjustable, and the Reserve button in
           the footer books exactly what's set here. Reserving again adds to the
           line (the max recomputes); "release" on the RESERVED tile gives the
           whole booking back. */}
       {line.itemId ? (
-        <div className="form-grp" style={{ marginBottom: 14 }}>
+        <div className="form-grp" style={{ marginBottom: 4 }}>
           <label
             className="form-label"
             htmlFor="reserve-qty"
@@ -369,52 +547,21 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               : stock <= 0
                 ? 'Nothing in stock to reserve.'
                 : 'This line is already fully covered — nothing left to reserve.'}
-            {reserved > 0 ? ` · Already reserved: ${reserved} — use “release” above to give it back.` : ''}
+            {reserved > 0
+              ? ` · Already reserved: ${reserved} — use “release” above to give it back.`
+              : ''}
           </div>
         </div>
       ) : null}
 
-      <div className="form-grp">
-        <label
-          className="form-label"
-          style={{ color: 'var(--cyan)', fontWeight: 700, fontSize: 14 }}
-        >
-          Plan Qty ★
-        </label>
-        <input
-          type="number"
-          min={1}
-          max={remaining}
-          value={planQty}
-          onChange={(e) => setPlanQty(Number(e.target.value))}
-          style={{
-            fontSize: 22,
-            fontWeight: 800,
-            textAlign: 'center',
-            border: '2px solid var(--cyan)',
-            color: 'var(--cyan)',
-            padding: 10,
-            width: '100%',
-          }}
-        />
-        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-          Max: {remaining} pcs (SO: {line.orderQty} − Already Planned: {line.totalPlanned})
-        </div>
-        {stock > 0 ? (
-          <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
-            💡 {suggested} pcs to make — {remaining} remaining − {stock} already in stock
-            {suggested === 0 ? ' (fully covered by stock)' : ''}.
-          </div>
-        ) : null}
-      </div>
-
       {err ? (
         <div
+          className="empty-state"
           style={{
             marginTop: 12,
             padding: 8,
             borderRadius: 4,
-            background: 'rgba(239,68,68,0.1)',
+            background: 'var(--red3)',
             color: 'var(--red)',
             fontSize: 12,
           }}

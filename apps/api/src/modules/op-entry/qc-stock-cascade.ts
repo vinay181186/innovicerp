@@ -19,6 +19,7 @@ import { opSrNo } from '@innovic/shared';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { jcOps, jobCards, storeTransactions } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { isProductionOrderLinkedJc } from '../../lib/production-order-link';
 
 /**
  * Recovery-child stock guard (ADR-069: finished stock is credited exactly ONCE
@@ -114,6 +115,13 @@ export async function tryApplyQcStockCascade(
     .limit(1);
   const itemId = jcRows[0]?.itemId;
   if (!itemId) return { fired: false };
+
+  // ADR-170: a Job Card built by a Production Order (or a rework/repair child
+  // of one) is credited to stock ONCE, when that Production Order is closed —
+  // never here. Sits after the last-op / item resolution and before any write
+  // so BOTH callers (submitQcLog and the Incoming-QC mirror) are covered by
+  // this one line. Old JCs (no PO in their ancestry) fall through unchanged.
+  if (await isProductionOrderLinkedJc(tx, ctx.jobCardId)) return { fired: false };
 
   // ADR-106 (supersedes ADR-105): a JWSO Job Card credits stock here exactly
   // like an SO one. The finished parts ARE physically in the store between QC

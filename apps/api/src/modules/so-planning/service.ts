@@ -33,6 +33,7 @@ import {
   jobWorkOrders,
   planOps,
   plans,
+  productionOrders,
   purchaseRequests,
   salesOrderLines,
   salesOrders,
@@ -40,6 +41,56 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { derivePlanStatus } from '../../lib/plan-derived-status';
+
+// ADR-170 — a route-card plan's derived status hangs on two live facts read
+// alongside the plan: its Production Order (LEFT join, one per plan) and
+// whether its item has an active Route Card. Same rule as plans/service.ts
+// listPlans via lib/plan-derived-status.
+const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.route_cards rc
+  WHERE rc.company_id = ${plans.companyId}
+    AND rc.item_id = ${plans.itemId}
+    AND rc.deleted_at IS NULL
+)`;
+const PO_JOIN = and(eq(productionOrders.planId, plans.id), isNull(productionOrders.deletedAt));
+
+/** The ADR-170 fields every plan summary carries, from one joined row. */
+function routeCardPlanFields(r: {
+  plan: typeof plans.$inferSelect;
+  poId: string | null;
+  poCode: string | null;
+  poStatus: string | null;
+  hasRouteCard: boolean | null;
+}): Pick<
+  PlanningPlanSummary,
+  | 'opsSource'
+  | 'derivedStatus'
+  | 'productionOrderId'
+  | 'productionOrderCode'
+  | 'plannedStartDate'
+  | 'plannedEndDate'
+  | 'rawMaterialGradeText'
+  | 'rawMaterialSizeText'
+  | 'remarks'
+> {
+  return {
+    opsSource: r.plan.opsSource === 'route_card' ? 'route_card' : 'plan',
+    derivedStatus: derivePlanStatus({
+      opsSource: r.plan.opsSource,
+      planStatus: r.plan.planStatus,
+      hasRouteCard: Boolean(r.hasRouteCard),
+      poStatus: r.poStatus ?? null,
+    }),
+    productionOrderId: r.poId ?? null,
+    productionOrderCode: r.poCode ?? null,
+    plannedStartDate: r.plan.plannedStartDate ?? null,
+    plannedEndDate: r.plan.plannedEndDate ?? null,
+    rawMaterialGradeText: r.plan.rawMaterialGradeText ?? null,
+    rawMaterialSizeText: r.plan.rawMaterialSizeText ?? null,
+    remarks: r.plan.remarks ?? null,
+  };
+}
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -373,9 +424,14 @@ export async function getPlanningSoDetail(
               dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
               foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
               foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
+              poId: productionOrders.id,
+              poCode: productionOrders.code,
+              poStatus: productionOrders.status,
+              hasRouteCard: HAS_ROUTE_CARD_SQL,
             })
             .from(plans)
             .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+            .leftJoin(productionOrders, PO_JOIN)
             .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
             .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
             .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
@@ -428,6 +484,7 @@ export async function getPlanningSoDetail(
         code: r.plan.code,
         planType: r.plan.planType,
         planStatus: r.plan.planStatus,
+        ...routeCardPlanFields(r),
         planQty: r.plan.planQty,
         opsCount: ops.count,
         hasOutsourceOp: ops.hasOutsource,
@@ -689,9 +746,14 @@ async function getJwPlanningDetail(
             dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
             foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
             foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
+            poId: productionOrders.id,
+            poCode: productionOrders.code,
+            poStatus: productionOrders.status,
+            hasRouteCard: HAS_ROUTE_CARD_SQL,
           })
           .from(plans)
           .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+          .leftJoin(productionOrders, PO_JOIN)
           .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
           .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
           .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
@@ -744,6 +806,7 @@ async function getJwPlanningDetail(
       code: r.plan.code,
       planType: r.plan.planType,
       planStatus: r.plan.planStatus,
+      ...routeCardPlanFields(r),
       planQty: r.plan.planQty,
       opsCount: ops.count,
       hasOutsourceOp: ops.hasOutsource,
@@ -1005,9 +1068,14 @@ export async function getPlanningBom(
       .select({
         plan: plans,
         jcCode: jobCards.code,
+        poId: productionOrders.id,
+        poCode: productionOrders.code,
+        poStatus: productionOrders.status,
+        hasRouteCard: HAS_ROUTE_CARD_SQL,
       })
       .from(plans)
       .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+      .leftJoin(productionOrders, PO_JOIN)
       .where(
         and(
           eq(plans.soLineId, soLineId),
@@ -1029,6 +1097,7 @@ export async function getPlanningBom(
         code: r.plan.code,
         planType: r.plan.planType,
         planStatus: r.plan.planStatus,
+        ...routeCardPlanFields(r),
         planQty: r.plan.planQty,
         opsCount: 0,
         hasOutsourceOp: false,
