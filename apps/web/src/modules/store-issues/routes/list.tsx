@@ -9,6 +9,7 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
 import { todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -18,15 +19,29 @@ import { useCreateStoreIssue, useNextStoreIssueCode, useStoreIssuesList } from '
 
 const PAGE_SIZE = 25;
 
+// Deep-link seed for Global Search (no detail page here): `?tab=tools&search=
+// TIS-00003` opens the Tool Issues tab with its box pre-filled. Read ONCE into
+// the local state below — tab clicks and typing stay local, never navigate.
+const searchSchema = z.object({
+  tab: z.enum(['items', 'tools']).optional(),
+  search: z.string().optional(),
+});
+
 export const storeIssuesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'issue-register',
+  validateSearch: (search) => searchSchema.parse(search),
   component: StoreIssuesListPage,
 });
 
 function StoreIssuesListPage(): React.JSX.Element {
-  const [tab, setTab] = useState<'items' | 'tools'>('items');
-  const [search, setSearch] = useState('');
+  const routeSearch = storeIssuesListRoute.useSearch();
+  const [tab, setTab] = useState<'items' | 'tools'>(() => routeSearch.tab ?? 'items');
+  // Seed this tab's box only when the landing targets it; a `?tab=tools`
+  // landing must not pre-fill the Items box with a tool-issue code.
+  const [search, setSearch] = useState(() =>
+    (routeSearch.tab ?? 'items') === 'items' ? (routeSearch.search ?? '') : '',
+  );
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   // Tier-driven, per department (Store). Was `role === admin || manager`, which
@@ -92,7 +107,9 @@ function StoreIssuesListPage(): React.JSX.Element {
       </div>
 
       {tab === 'tools' ? (
-        <ToolIssueRegisterView />
+        // key: a new ?search landing while already on this page remounts the
+        // view so it re-seeds; nothing else changes the key.
+        <ToolIssueRegisterView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
       ) : (
         <>
           <div

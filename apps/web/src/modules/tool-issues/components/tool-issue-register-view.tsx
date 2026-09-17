@@ -28,17 +28,23 @@ import {
 type FilterKey = 'all' | 'out' | 'overdue' | 'returned';
 const PAGE_SIZE = 25;
 
-export function ToolIssueRegisterView(): React.JSX.Element {
+// `initialSearch` — one-time seed for the search box from the host route's
+// ?search param (Global Search deep link); typing afterwards stays local.
+export function ToolIssueRegisterView({
+  initialSearch,
+}: {
+  initialSearch?: string | undefined;
+}): React.JSX.Element {
   // Tier-driven, per department (toolissue_create sits in Store). This view
-  // renders as the Tool Issues tab of /issue-register and is passed no props, so
-  // it gates itself. Issuing a tool is a create (entry); recording its return
-  // changes a saved issue, so that is edit.
+  // renders as the Tool Issues tab of /issue-register and is passed no access
+  // props, so it gates itself. Issuing a tool is a create (entry); recording
+  // its return changes a saved issue, so that is edit.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'toolissue_create');
   const canIssue = perms.entry;
   const canReturn = perms.edit;
   const [filter, setFilter] = useState<FilterKey>('all');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => initialSearch ?? '');
   const [page, setPage] = useState(1);
   const [showNew, setShowNew] = useState(false);
   const [returnTarget, setReturnTarget] = useState<ToolIssueListItem | null>(null);

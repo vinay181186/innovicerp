@@ -48,6 +48,7 @@ const TITLE_MAP: Record<string, string> = {
   '/incoming-qc': 'Incoming QC',
   '/capa': 'CAPA',
   '/tpi': 'TPI',
+  '/search': 'Search',
 };
 
 function deriveTitle(pathname: string): string {

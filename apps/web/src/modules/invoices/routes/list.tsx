@@ -4,14 +4,25 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { z } from 'zod';
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useInvoiceList } from '../api';
 
+// Deep-link seed for Global Search: `?tab=jw&search=IN-JI-26-0001` opens the
+// JW tab with its box pre-filled. Read ONCE into local state — tab clicks and
+// typing stay local. The SO Invoices tab has no search box of its own, so
+// `search` only reaches the JW view.
+const searchSchema = z.object({
+  tab: z.enum(['so', 'jw']).optional(),
+  search: z.string().optional(),
+});
+
 export const invoiceListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'invoices',
+  validateSearch: (search) => searchSchema.parse(search),
   component: InvoiceListPage,
 });
 
@@ -32,7 +43,8 @@ const fmt = (d: string | null | undefined): string => {
 };
 
 function InvoiceListPage(): React.JSX.Element {
-  const [tab, setTab] = useState<'so' | 'jw'>('so');
+  const routeSearch = invoiceListRoute.useSearch();
+  const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
   const { data, isLoading, isError, error } = useInvoiceList();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
@@ -57,7 +69,9 @@ function InvoiceListPage(): React.JSX.Element {
     return (
       <div>
         {tabBar}
-        <JwInvoiceView />
+        {/* key: a new ?search landing while already on this page remounts the
+            view so it re-seeds; nothing else changes the key. */}
+        <JwInvoiceView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
       </div>
     );
   }

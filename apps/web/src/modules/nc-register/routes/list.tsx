@@ -32,6 +32,12 @@ const listSearchSchema = z.object({
   status: z.enum(NC_STATUSES).optional(),
   reasonCategory: z.enum(NC_REASON_CATEGORIES).optional(),
   page: z.coerce.number().int().positive().default(1),
+  // Deep-link seed for Global Search: `?tab=capa&capa=CAPA-0003` lands on
+  // the CAPA tab with its box pre-filled. Read once into local tab state.
+  // `capa` is separate from `search` on purpose — `search` is the NC list's
+  // own server filter and must not be touched by a CAPA landing.
+  tab: z.enum(['nc', 'capa']).optional(),
+  capa: z.string().optional(),
 });
 
 export const ncRegisterListRoute = createRoute({
@@ -109,9 +115,11 @@ function NcRegisterListPage(): React.JSX.Element {
   const canCreateCapa = effectiveFormPerms(eff, 'capa_create').entry;
 
   // Screen-merge: CAPA folded in as a tab (it used to be its own /capa page,
-  // which stays registered). Tab choice is local — it deliberately does NOT go
-  // in the URL, so the NC list's own ?search/?status/?page params are untouched.
-  const [tab, setTab] = useState<'nc' | 'capa'>('nc');
+  // which stays registered). Tab choice is local: the `?tab` URL param is a
+  // ONE-TIME seed for deep links (Global Search), read here lazily; the tab
+  // click itself does not navigate, so the NC list's own ?search/?status/?page
+  // params are untouched by switching tabs.
+  const [tab, setTab] = useState<'nc' | 'capa'>(() => search.tab ?? 'nc');
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -172,7 +180,9 @@ function NcRegisterListPage(): React.JSX.Element {
     <div>
       {tabBar}
       {tab === 'capa' ? (
-        <CapaView />
+        // key: a new ?capa landing while already on this page remounts the
+        // view so it re-seeds; nothing else changes the key.
+        <CapaView key={search.capa ?? ''} initialSearch={search.capa} />
       ) : (
         <>
           {/* Legacy L22549-22551: title + Report NC only; filters sit below the

@@ -31,17 +31,25 @@ import {
 // over the whole book, instead of over the rows that happened to be downloaded.
 const LIST_LIMIT = 500;
 
-export function PartyMaterialIssueView(): React.JSX.Element {
+// `initialSearch` — one-time seed from the host route's ?search param (Global
+// Search deep link). It fills the box AND the debounced term, so the first fetch
+// already carries it; typing afterwards is local and never touches the URL.
+export function PartyMaterialIssueView({
+  initialSearch,
+}: {
+  initialSearch?: string | undefined;
+}): React.JSX.Element {
   // Tier-driven, per department (party_create sits in Store). This view renders
   // as the Issue tab of /party-grn, so it has to gate itself — the host screen
-  // passes it no props. Cancel reverses an issued quantity, so it is the L5+
-  // pair only L5/L6 hold: L3 has edit without approve, L4 approve without edit.
+  // passes it no access props. Cancel reverses an issued quantity, so it is the
+  // L5+ pair only L5/L6 hold: L3 has edit without approve, L4 approve without
+  // edit.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'party_create');
   const canIssue = perms.entry;
   const canCancel = perms.edit && perms.approve;
-  const [searchInput, setSearchInput] = useState('');
-  const [term, setTerm] = useState('');
+  const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
+  const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<PartyMaterialIssueListItem | null>(null);
 

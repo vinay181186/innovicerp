@@ -8,14 +8,22 @@ import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '@inno
 import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMarkTasksViewed, useTaskList, useTaskUserOptions } from '../api';
 import { AssignTaskModal, UpdateStatusModal, ViewTaskModal } from '../components/task-modals';
 
+// Deep link from Global Search: `?task=<uuid>` opens that task's View modal on
+// arrival. Closing the modal clears the param so a reload does not reopen it.
+const searchSchema = z.object({
+  task: z.string().uuid().optional(),
+});
+
 export const taskBoardRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'task-board',
+  validateSearch: (search) => searchSchema.parse(search),
   component: TaskBoardPage,
 });
 
@@ -40,7 +48,22 @@ function TaskBoardPage(): React.JSX.Element {
   const [userFilter, setUserFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('');
-  const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  const routeSearch = taskBoardRoute.useSearch();
+  const navigate = taskBoardRoute.useNavigate();
+  // `?task=<uuid>` (Global Search deep link) opens that task's View modal on
+  // arrival. Lazy initial covers the cold load; the effect covers a NEW ?task
+  // landing while this page is already mounted (same route, no remount).
+  const [modal, setModal] = useState<ModalState>(() =>
+    routeSearch.task ? { kind: 'view', id: routeSearch.task } : { kind: 'none' },
+  );
+  useEffect(() => {
+    if (routeSearch.task) setModal({ kind: 'view', id: routeSearch.task });
+  }, [routeSearch.task]);
+  // Closing the View modal also drops ?task so a reload does not reopen it.
+  const closeView = (): void => {
+    setModal({ kind: 'none' });
+    if (routeSearch.task) void navigate({ search: {}, replace: true });
+  };
 
   // 'overdue' is a client-side filter (no stored status) — don't send it to the
   // server; the other three map to real status columns.
@@ -180,7 +203,7 @@ function TaskBoardPage(): React.JSX.Element {
       </div>
 
       {modal.kind === 'assign' ? <AssignTaskModal users={userOpts?.options ?? []} onClose={() => setModal({ kind: 'none' })} /> : null}
-      {modal.kind === 'view' ? <ViewTaskModal taskId={modal.id} onClose={() => setModal({ kind: 'none' })} /> : null}
+      {modal.kind === 'view' ? <ViewTaskModal taskId={modal.id} onClose={closeView} /> : null}
       {modal.kind === 'update' ? <UpdateStatusModal task={modal.task} onClose={() => setModal({ kind: 'none' })} /> : null}
     </div>
   );

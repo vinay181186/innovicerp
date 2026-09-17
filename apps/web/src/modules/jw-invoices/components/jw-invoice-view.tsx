@@ -25,11 +25,18 @@ function money(n: number): string {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function JwInvoiceView(): React.JSX.Element {
+// `initialSearch` — one-time seed from the host route's ?search param (Global
+// Search deep link). It fills the box AND the debounced term, so the first fetch
+// already carries it; typing afterwards is local and never touches the URL.
+export function JwInvoiceView({
+  initialSearch,
+}: {
+  initialSearch?: string | undefined;
+}): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
-  const [searchInput, setSearchInput] = useState('');
-  const [term, setTerm] = useState('');
+  const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
+  const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {

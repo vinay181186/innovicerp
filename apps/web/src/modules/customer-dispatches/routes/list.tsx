@@ -19,6 +19,7 @@ import type { CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { z } from 'zod';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -31,9 +32,19 @@ import { type DispatchGroup, DispatchCard } from '../components/dispatch-card';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
 
+// Deep-link seed for Global Search (this register has no detail page):
+// `?tab=so&search=DSP-0004` opens the right tab with the box pre-filled. The
+// params are read ONCE into the local state below — typing and tab clicks stay
+// local and never navigate.
+const searchSchema = z.object({
+  tab: z.enum(['so', 'jw']).optional(),
+  search: z.string().optional(),
+});
+
 export const customerDispatchListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'customer-dispatches',
+  validateSearch: (search) => searchSchema.parse(search),
   component: CustomerDispatchListPage,
 });
 
@@ -68,7 +79,8 @@ function CustomerDispatchListPage(): React.JSX.Element {
   // JW Dispatch (jw-returns) folded in here as a tab — same job, two document
   // families: this one ships finished goods against an SO, that one returns
   // machined goods against a JWSO line. Its own hooks/mutations are unchanged.
-  const [tab, setTab] = useState<'so' | 'jw'>('so');
+  const routeSearch = customerDispatchListRoute.useSearch();
+  const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
   const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
   const cancel = useCancelDispatch();
@@ -76,7 +88,12 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   const canAdd = perms.entry;
   const canCancel = perms.edit && perms.approve;
-  const [search, setSearch] = useState('');
+  // Lazy initial: the URL seeds the box once; keystrokes stay local after that.
+  // Only when the landing targets THIS tab — a `?tab=jw` landing must not
+  // pre-fill the Customer Dispatch box with a JW code.
+  const [search, setSearch] = useState(() =>
+    (routeSearch.tab ?? 'so') === 'so' ? (routeSearch.search ?? '') : '',
+  );
   const [soFilter, setSoFilter] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -186,7 +203,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
     return (
       <div>
         {tabBar}
-        <JwDispatchView />
+        {/* key: a new ?search landing while already on this page remounts the
+            view so it re-seeds; nothing else changes the key. */}
+        <JwDispatchView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
       </div>
     );
   }

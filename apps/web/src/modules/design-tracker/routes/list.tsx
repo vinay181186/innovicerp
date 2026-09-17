@@ -9,6 +9,7 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -30,9 +31,16 @@ type FilterKey = 'all' | 'pending' | 'progress' | 'review' | 'approved' | 'overd
 
 const PAGE_SIZE = 100;
 
+// Deep-link seed for Global Search (no detail page here): `?search=DT-0012`
+// pre-fills the search box. Read ONCE (lazy useState); typing stays local.
+const searchSchema = z.object({
+  search: z.string().optional(),
+});
+
 export const designTrackerListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'design-tracker',
+  validateSearch: (search) => searchSchema.parse(search),
   component: DesignTrackerListPage,
 });
 
@@ -41,7 +49,8 @@ function DesignTrackerListPage(): React.JSX.Element {
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'design_create');
-  const [search, setSearch] = useState('');
+  const routeSearch = designTrackerListRoute.useSearch();
+  const [search, setSearch] = useState(() => routeSearch.search ?? '');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [showAdd, setShowAdd] = useState(false);
   const [editRow, setEditRow] = useState<DesignTrackerListItem | null>(null);

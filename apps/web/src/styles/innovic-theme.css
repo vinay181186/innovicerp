@@ -1206,9 +1206,10 @@ table.tbl-ctr td .innovic-select {
 }
 
 /* ── Global search (header) ── */
-/* components/shared/global-search.tsx — the search box in #topbar and its
-   portaled results panel. Input matches the lists' "Search this list…" box
-   (.innovic-input, 12px) sized to sit inside the 54px bar. */
+/* components/shared/global-search.tsx — the search box in #topbar. It only
+   launches the full-screen Search page (modules/search); no dropdown. Input
+   matches the lists' "Search this list…" box (.innovic-input, 12px) sized to
+   sit inside the 54px bar. */
 .gs-wrap {
   position: relative;
   flex-shrink: 0;
@@ -1227,80 +1228,60 @@ table.tbl-ctr td .innovic-select {
   padding: 6px 10px 6px 28px;
   font-size: 12px;
 }
-.gs-panel {
-  overflow-y: auto;
-  background: var(--bg2);
-  border: 1px solid var(--border2);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-/* Fixed layout so the table never outgrows the panel (td is nowrap; under
-   automatic layout a long Particulars value pushed Doc No. off the right
-   edge). Column widths sit on the <colgroup> classes below. */
-.gs-panel .innovic-table {
+/* Search page results (modules/search/components/results-table.tsx).
+   Fixed layout so the table never grows a sideways scrollbar: the six short
+   columns take fixed widths, Particulars takes the slack and WRAPS (one
+   line per linked document / item), Doc No. and Party clip with an ellipsis
+   (full text on hover). */
+.gs-results .innovic-table {
   table-layout: fixed;
   width: 100%;
 }
-.gs-panel .innovic-table col.gs-col-date {
-  width: 104px;
+.gs-results .innovic-table col.gs-col-date {
+  width: 100px;
 }
-.gs-panel .innovic-table col.gs-col-type {
-  width: 140px;
+.gs-results .innovic-table col.gs-col-type {
+  width: 110px;
 }
-.gs-panel .innovic-table col.gs-col-docno {
-  width: 200px;
+.gs-results .innovic-table col.gs-col-docno {
+  width: 170px;
 }
-.gs-panel .innovic-table td.gs-particulars {
+.gs-results .innovic-table col.gs-col-party {
+  width: 180px;
+}
+.gs-results .innovic-table col.gs-col-qty {
+  width: 70px;
+}
+.gs-results .innovic-table col.gs-col-status {
+  width: 120px;
+}
+.gs-results .innovic-table td.gs-ellipsis {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Text truncates, the status badge never does. */
-.gs-particulars-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+.gs-results .innovic-table td.gs-lines {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
-.gs-particulars-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gs-particulars-row .badge {
-  flex-shrink: 0;
-}
-/* Free-form master codes (item / client / vendor / BOM / route card) can run
-   past 200px; clip with an ellipsis rather than re-open a sideways scroll. */
-.gs-panel .innovic-table td.gs-docno {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gs-panel .innovic-table th {
+.gs-results .innovic-table th {
   cursor: default;
-}
-.gs-panel .innovic-table tbody tr[role='option'] {
-  cursor: pointer;
-}
-/* Keyboard highlight — the app's hover fill (--bg4); (0,3,2) outranks the
-   zebra rule (0,2,3) so even rows highlight too. */
-.gs-panel .innovic-table tr.gs-active td {
-  background: var(--bg4);
 }
 @media (max-width: 768px) {
   .innovic-input.gs-input {
     width: 150px;
   }
-  /* Phones: the three fixed columns (444px) would squeeze Particulars to
+  /* Phones: the six fixed columns (750px) would squeeze Particulars to
      nothing; fall back to natural widths with a sideways scroll instead. */
-  .gs-panel .innovic-table {
+  .gs-results .innovic-table {
     table-layout: auto;
   }
   /* Named per class so this outranks the desktop width rules above. */
-  .gs-panel .innovic-table col.gs-col-date,
-  .gs-panel .innovic-table col.gs-col-type,
-  .gs-panel .innovic-table col.gs-col-docno {
+  .gs-results .innovic-table col.gs-col-date,
+  .gs-results .innovic-table col.gs-col-type,
+  .gs-results .innovic-table col.gs-col-docno,
+  .gs-results .innovic-table col.gs-col-party,
+  .gs-results .innovic-table col.gs-col-qty,
+  .gs-results .innovic-table col.gs-col-status {
     width: auto;
   }
 }

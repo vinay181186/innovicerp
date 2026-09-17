@@ -55,6 +55,7 @@ import { deliveryChallanDetailRoute } from './modules/delivery-challans/routes/d
 import { deliveryChallanNewRoute } from './modules/delivery-challans/routes/create';
 import { deliveryChallanReceiveRoute } from './modules/delivery-challans/routes/receive';
 import { ncRegisterListRoute } from './modules/nc-register/routes/list';
+import { searchRoute } from './modules/search/routes/results';
 import { ncRegisterDetailRoute } from './modules/nc-register/routes/detail';
 import { ncRegisterEditRoute } from './modules/nc-register/routes/edit';
 import { ncRegisterNewRoute } from './modules/nc-register/routes/new';
@@ -233,6 +234,8 @@ const routeTree = rootRoute.addChildren([
     // Order matters: /nc-register/new + /nc-register/$id/edit win against /$id.
     ncRegisterNewRoute,
     ncRegisterListRoute,
+    // Global search results page (header search box lands here).
+    searchRoute,
     ncRegisterEditRoute,
     ncRegisterDetailRoute,
     deliveryChallansListRoute,

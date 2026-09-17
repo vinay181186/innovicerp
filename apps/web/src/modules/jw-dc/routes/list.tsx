@@ -32,6 +32,10 @@ type TabKey = 'outward' | 'inward';
 
 const searchSchema = z.object({
   tab: z.enum(['outward', 'inward']).optional(),
+  // Deep-link seed for Global Search: `?tab=inward&search=IN-JDI-26-0001`
+  // pre-fills the active view's search box. Read ONCE (lazy useState) by the
+  // Outward / Inward views below; typing afterwards stays local.
+  search: z.string().optional(),
 });
 
 export const jwDcListRoute = createRoute({
@@ -47,6 +51,8 @@ function JwDcPage(): React.JSX.Element {
   const tab: TabKey = search.tab ?? 'outward';
 
   const setTab = (next: TabKey): void => {
+    // ?search is dropped on a tab switch: it was a seed for the tab the user
+    // landed on, and carrying it over would filter the other tab by it.
     void navigate({ search: { tab: next === 'outward' ? undefined : next } });
   };
 
@@ -107,7 +113,9 @@ function TabButton({
 function OutwardView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
-  const [search, setSearch] = useState('');
+  const routeSearch = jwDcListRoute.useSearch();
+  // Seeded once from ?search (deep link); keystrokes stay local after that.
+  const [search, setSearch] = useState(() => routeSearch.search ?? '');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
 
@@ -322,7 +330,9 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
 function InwardView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
-  const [search, setSearch] = useState('');
+  const routeSearch = jwDcListRoute.useSearch();
+  // Seeded once from ?search (deep link); keystrokes stay local after that.
+  const [search, setSearch] = useState(() => routeSearch.search ?? '');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
 
