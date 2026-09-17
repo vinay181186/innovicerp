@@ -74,13 +74,14 @@ const TD: CSSProperties = {
   verticalAlign: 'middle',
   fontSize: 13,
   textAlign: 'left',
+  overflow: 'hidden',
 };
 const NOWRAP: CSSProperties = { whiteSpace: 'nowrap' };
 const MONO: CSSProperties = { fontFamily: 'var(--mono)' };
 const MONO_STRONG: CSSProperties = { ...MONO, fontWeight: 700, color: 'var(--text)' };
 const QUIET: CSSProperties = { fontSize: 11, color: 'var(--text3)' };
 const TRUNC: CSSProperties = {
-  maxWidth: 240,
+  maxWidth: '100%',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -147,24 +148,27 @@ export function QcStageStrip(props: {
 }
 
 // ─── table frame ─────────────────────────────────────────────────────────────
-const PENDING_COLS: ReadonlyArray<[string, CSSProperties?]> = [
-  ['GRN / JC No.'],
-  ['Part / Item Code'],
-  ['Vendor · GRN / SO · Op'],
-  ['Qty', { textAlign: 'center' }],
-  ['Called'],
-  ['Stage'],
-  ['', { textAlign: 'right' }],
+// [label, width %, header style]. Widths are fixed (table-layout: fixed) so a
+// long vendor name or log number truncates inside its own column instead of
+// pushing Verdict / Inspect off the right edge of the sheet.
+const PENDING_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
+  ['GRN / JC No.', 13],
+  ['Part / Item Code', 17],
+  ['Vendor · GRN / SO · Op', 26],
+  ['Qty', 6, { textAlign: 'center' }],
+  ['Called', 14],
+  ['Stage', 14],
+  ['', 10, { textAlign: 'right' }],
 ];
-const COMPLETED_COLS: ReadonlyArray<[string, CSSProperties?]> = [
-  ['GRN / JC No.'],
-  ['Part / Item Code'],
-  ['Vendor · GRN / SO · Op'],
-  ['OK', { textAlign: 'center' }],
-  ['Rej', { textAlign: 'center' }],
-  ['Called → Attended'],
-  ['Inspector · Log Ref'],
-  ['Verdict', { textAlign: 'right' }],
+const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
+  ['GRN / JC No.', 13],
+  ['Part / Item Code', 15],
+  ['Vendor · GRN / SO · Op', 20],
+  ['OK', 5, { textAlign: 'center' }],
+  ['Rej', 5, { textAlign: 'center' }],
+  ['Called → Attended', 14],
+  ['Inspector · Log Ref', 18],
+  ['Verdict', 10, { textAlign: 'right' }],
 ];
 export const PENDING_COL_COUNT = PENDING_COLS.length;
 
@@ -176,10 +180,15 @@ export function QcSheetTable(props: {
   const cols = props.view === 'pending' ? PENDING_COLS : COMPLETED_COLS;
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--bg2)' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <colgroup>
+          {cols.map(([, w], i) => (
+            <col key={i} style={{ width: `${w}%` }} />
+          ))}
+        </colgroup>
         <thead>
           <tr>
-            {cols.map(([label, st], i) => (
+            {cols.map(([label, , st], i) => (
               <th key={i} style={{ ...TH, ...st }}>
                 {label}
               </th>
