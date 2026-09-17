@@ -87,6 +87,7 @@ export * from './schemas/jw-invoice';
 export * from './schemas/jw-dc';
 export * from './schemas/grn-unified';
 export * from './schemas/doc-number';
+export * from './schemas/global-search';
 export * from './schemas/design-tracker';
 export * from './schemas/design-project';
 export * from './schemas/prod-so-list';

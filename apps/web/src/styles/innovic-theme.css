@@ -1176,3 +1176,49 @@ table.tbl-ctr td .innovic-select {
   animation: qcBlink 1s ease-in-out infinite;
   border-left: 3px solid var(--red) !important;
 }
+
+/* ── Global search (header) ── */
+/* components/shared/global-search.tsx — the search box in #topbar and its
+   portaled results panel. Input matches the lists' "Search this list…" box
+   (.innovic-input, 12px) sized to sit inside the 54px bar. */
+.gs-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.gs-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  pointer-events: none;
+}
+.innovic-input.gs-input {
+  width: 260px;
+  height: 32px;
+  padding: 6px 10px 6px 28px;
+  font-size: 12px;
+}
+.gs-panel {
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.gs-panel .innovic-table th {
+  cursor: default;
+}
+.gs-panel .innovic-table tbody tr[role='option'] {
+  cursor: pointer;
+}
+/* Keyboard highlight — the app's hover fill (--bg4); (0,3,2) outranks the
+   zebra rule (0,2,3) so even rows highlight too. */
+.gs-panel .innovic-table tr.gs-active td {
+  background: var(--bg4);
+}
+@media (max-width: 768px) {
+  .innovic-input.gs-input {
+    width: 150px;
+  }
+}

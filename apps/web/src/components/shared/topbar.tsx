@@ -8,6 +8,7 @@
 
 import { Link, useLocation } from '@tanstack/react-router';
 import { KeyRound, LogOut } from 'lucide-react';
+import { GlobalSearch } from '@/components/shared/global-search';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { signOut } from '@/lib/session';
 
@@ -77,15 +78,12 @@ export function TopBar(): React.JSX.Element {
       <div className="tb-title" id="pageTitle">
         {title}
       </div>
+      <GlobalSearch />
       <div className="tb-sync" title="Connection status">
         <span className="sync-dot" />
         SYNCED
       </div>
-      <Link
-        to="/change-password"
-        className="btn btn-ghost btn-sm"
-        title="Change your password"
-      >
+      <Link to="/change-password" className="btn btn-ghost btn-sm" title="Change your password">
         <KeyRound size={14} />
         <span>Password</span>
       </Link>
