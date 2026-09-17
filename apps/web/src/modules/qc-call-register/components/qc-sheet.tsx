@@ -147,6 +147,13 @@ export function QcStageStrip(props: {
   );
 }
 
+/** "16 Sep" — day + short month for a date pair that must fit one line. */
+function fmtDayMonth(iso: string): string {
+  const d = new Date(iso.length === 10 ? `${iso}T00:00:00` : iso);
+  if (Number.isNaN(d.getTime())) return fmtDate(iso);
+  return `${String(d.getDate()).padStart(2, '0')} ${d.toLocaleString('en-IN', { month: 'short' })}`;
+}
+
 // ─── table frame ─────────────────────────────────────────────────────────────
 // [label, width %, header style]. Widths are fixed (table-layout: fixed) so a
 // long vendor name or log number truncates inside its own column instead of
@@ -260,10 +267,13 @@ function CalledAttendedCell(props: {
 }): React.JSX.Element {
   const { called, attended, respDays } = props;
   const resp = respDays == null ? null : respDays <= 0 ? 'Same day' : `${respDays} days`;
+  // Two dates share one line, so each is "16 Sep" (the mockup's form); the
+  // full DD-MM-YYYY pair is on hover.
+  const full = `${called ? fmtDate(called) : '—'} → ${attended ? fmtDate(attended) : '—'}`;
   return (
     <td style={{ ...TD, ...NOWRAP }}>
-      <div style={{ ...MONO, fontSize: 12 }}>
-        {called ? fmtDate(called) : '—'} → {attended ? fmtDate(attended) : '—'}
+      <div style={{ ...MONO, fontSize: 12 }} title={full}>
+        {called ? fmtDayMonth(called) : '—'} → {attended ? fmtDayMonth(attended) : '—'}
       </div>
       {resp ? <div style={QUIET}>{resp}</div> : null}
     </td>
