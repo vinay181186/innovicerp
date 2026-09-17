@@ -9120,3 +9120,71 @@ process-QC row is the job card's terminal QC gate. The qc-history rows carried `
 - Positive: one place to look, counts per stage at a glance, export of exactly what is on screen.
 - Negative: the completed feed is still the client-side capped list; the strip's "done" counts
   are labelled from server stats where they exist.
+
+## ADR-170: Production Orders — Plan + Route Card → Job Card; stock credited once, at close
+
+**Date:** 2026-09-17 · **Status:** Accepted · **Migration:** 0133
+
+### Context
+A plan carried its own operations (`plan_ops`, typed in the edit-plan modal, defaulted from the
+item's route card) and **Execute** copied them onto a Job Card. Stock for that JC was credited
+piecemeal, at whichever of three points fired first: the last op's QC accept (`qc_accept`,
+`op-entry/qc-stock-cascade.ts`), an OSP GRN's Incoming QC when the OSP op is the last op
+(`grn_qc`, `goods-receipt-notes/cascades.ts creditGrnQcStock`), or Incoming QC mirrored onto a
+terminal QC op (`incoming-qc/service.ts mirrorIncomingQcOntoNextQcOp` → `qc_accept`). The user
+wants (2026-09-17): a plan is quantity + dates + raw material + remark only; the Route Card is
+the only source of operations ("no route card, no way forward"); a **Production Order**
+(IN-PRO-#####) = Plan + Route Card + Target Date builds the JC; the JC flow after that is
+untouched; and stock is credited **once**, when the user closes the Production Order, with the
+JC's *actually finished* qty (48 of a 50 plan credits 48). Old plans and old JCs must keep
+behaving exactly as before.
+
+### Source of truth and relationships
+| Fact | Lives in | Read by |
+|---|---|---|
+| Plan qty / dates / RM / remark | `plans` (existing columns) | Create Plan box, PO create |
+| Old flow vs new flow | `plans.ops_source` ('plan' \| 'route_card') — stored, never inferred | Execute guard, Planning screen, Plans list |
+| Item's operations | `route_cards` (unique active per item) + `route_card_ops` | PO create copies them to `jc_ops` |
+| Production Order | `production_orders` (plan_id unique → one PO per plan) | PO master, Close, Plans list, report |
+| PO ↔ JC | `production_orders.job_card_id` and `job_cards.production_order_id` | stock cascades (OFF switch), Close |
+| Plan → JC | `plans.jc_id` (kept; set on PO create) | every existing plan/JC screen |
+| JC complete? | `v_jc_status.computed_status IN ('complete','closed')` (0124/0125: all pieces accepted, no open rework child) | Close guard |
+| JC finished qty | last live op in `v_jc_op_status`: `qc_accepted_qty` for a QC / qc_required op, else `completed_qty` (= `JobCardListItem.lastOpCompletedQty`) | Close credits exactly this |
+| Stock ledger | `store_transactions` source `'production_order_close'`, ref = PO code | store inventory |
+| Plan progress (new flow) | derived in `listPlans`: route_card_pending → gen_production_order → in_production → production_complete | Plans list, PO pickers |
+
+### Decision
+1. **Plan** — the Planning screen's Create Plan box posts `opsSource:'route_card'`; the server
+   stores the plan as `planned` immediately (no ops, no finalize), `POST /plans/:id/execute`
+   refuses such a plan ("create a Production Order instead"). Old plans (`ops_source='plan'`)
+   keep the ops editor, finalize and Execute.
+2. **Create Production Order** (Production → Entry) — Plan (route-card plans without a PO) →
+   Route Card (must be the plan item's active card; none → blocked with a message) → Target Date
+   → **Create JC**. The server builds the JC with the same steps `executeManufacture` uses
+   (JC row, ops copied from `route_card_ops`, default terminal QC per `needsDefaultQcOp`, OSP PRs
+   auto-raised) but does **not** write ops back to the route card; sets `plans.jc_id`,
+   `plan_status='jc_created'`, `job_cards.production_order_id`, `job_cards.due_date=target_date`.
+3. **Close Production Order** — blocked until the JC is complete; credits `jcFinishedQty` as one
+   `production_order_close` row; sets `production_orders.status='closed', credited_qty`, and
+   `job_cards.closed_at` if still null. No Close on the create screen.
+4. **Stock OFF switch** — `tryApplyQcStockCascade` and `creditGrnQcStock` return without writing
+   when the resolved JC (or any ancestor via `parent_job_card_id`) has `production_order_id`.
+   Rework children of a PO-linked parent therefore credit nothing; their pieces re-enter the
+   parent's origin op and are counted in the parent's finished qty. GRN lines that resolve to no
+   `jc_op` (plain purchase GRNs) are untouched, so `po_type` is never consulted.
+5. **Screens** — Planning becomes SO | JWSO → order list → order + all lines table; Production
+   → Master → Production Orders (Pending / All / Closed); Production → Close Production Order;
+   Production → Plans (All / Pending, derived status); Reports → Production Orders (Pending / All).
+
+### Alternatives considered
+- Infer "new flow" from `planned` + 0 ops — rejected: direct-purchase / full-outsource plans are
+  legitimately ops-less; a stored column cannot be misread.
+- Key the GRN switch on `purchase_orders.po_type` — rejected: the credit path never looked at
+  po_type; the JC link is the fact that matters and already covers OSP-only routes.
+- Store progress / finished qty on the PO — rejected: `v_jc_status` is the single source; copying
+  it would drift the moment a QC log is corrected.
+
+### Consequences
+- Positive: one credit per JC, at a human-confirmed moment; operations have one master.
+- Negative: two flows coexist until old plans drain; the OFF switch adds one JC lookup to two
+  cascades. Raw `job_cards.production_order_id` FK is declared in SQL only (table order in schema.ts).

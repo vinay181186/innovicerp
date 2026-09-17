@@ -64,6 +64,7 @@ export const ACCESS_FORMS = [
   { key: 'plan_create', dept: 'planning', label: 'SO/JW Planning' },
   // Production
   { key: 'jc_create', dept: 'production', label: 'Job Cards' },
+  { key: 'prodorder_create', dept: 'production', label: 'Production Orders' },
   { key: 'op_entry', dept: 'production', label: 'Op Entry' },
   { key: 'machop_entry', dept: 'production', label: 'Machine Op Entry' },
   { key: 'machine_create', dept: 'production', label: 'Machine Master' },

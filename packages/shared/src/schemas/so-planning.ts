@@ -2,7 +2,7 @@
 // Per docs/PARITY/so-planning.md.
 
 import { z } from 'zod';
-import { planStatusSchema, planTypeSchema } from './plan';
+import { planDerivedStatusSchema, planOpsSourceSchema, planStatusSchema, planTypeSchema } from './plan';
 
 // ─── Left pane: SO list ──────────────────────────────────────────────────
 
@@ -41,6 +41,18 @@ export const planningPlanSummarySchema = z.object({
   code: z.string(),
   planType: planTypeSchema,
   planStatus: planStatusSchema,
+  /** ADR-170. 'route_card' plans have no ops editor and no Execute — a
+   *  Production Order builds their JC. Defaults to 'plan' for older API builds. */
+  opsSource: planOpsSourceSchema.default('plan'),
+  /** ADR-170. Derived progress for route-card plans, null for old plans. */
+  derivedStatus: planDerivedStatusSchema.nullable().default(null),
+  productionOrderId: z.string().uuid().nullable().default(null),
+  productionOrderCode: z.string().nullable().default(null),
+  plannedStartDate: z.string().nullable().default(null),
+  plannedEndDate: z.string().nullable().default(null),
+  rawMaterialGradeText: z.string().nullable().default(null),
+  rawMaterialSizeText: z.string().nullable().default(null),
+  remarks: z.string().nullable().default(null),
   planQty: z.number().int().positive(),
   opsCount: z.number().int().nonnegative(),
   hasOutsourceOp: z.boolean(),
