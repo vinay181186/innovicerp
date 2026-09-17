@@ -360,6 +360,17 @@
 }
 
 /* ═══ TOPBAR ═══ */
+/* Left half (logo + title); mirrors .tb-right so the search box is centred.
+   overflow: hidden — on a phone-width bar with no room left, the logo clips
+   inside its half rather than painting underneath the search box. */
+.tb-left {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .tb-title {
   font-family: var(--hfont);
   font-size: 20px;
@@ -374,7 +385,7 @@
   text-overflow: ellipsis;
 }
 /* Right-hand cluster (SYNCED · Password · Sign out). Same flex basis as
-   .tb-title so the global search box between them is centred in the bar;
+   .tb-left so the global search box between them is centred in the bar;
    never shrinks below its buttons, so it cannot paint over the box. */
 .tb-right {
   flex: 1 1 0;

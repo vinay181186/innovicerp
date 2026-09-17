@@ -70,18 +70,21 @@ export function TopBar(): React.JSX.Element {
 
   return (
     <div id="topbar">
-      <img
-        src={INNOVIC_LOGO_DATA_URI}
-        alt="Innovic"
-        style={{ height: 30, width: 'auto', flexShrink: 0 }}
-      />
-      <div className="tb-title" id="pageTitle">
-        {title}
+      {/* .tb-left (logo + title) and .tb-right share the slack equally, so the
+          search box sits in the true middle of the bar and stays in normal
+          flow (no overlap with a long page title at narrow widths). The logo
+          must be INSIDE the left half or the box lands half a logo to the right. */}
+      <div className="tb-left">
+        <img
+          src={INNOVIC_LOGO_DATA_URI}
+          alt="Innovic"
+          style={{ height: 30, width: 'auto', flexShrink: 0 }}
+        />
+        <div className="tb-title" id="pageTitle">
+          {title}
+        </div>
       </div>
       <GlobalSearch />
-      {/* .tb-title and .tb-right share the slack equally, so the search box
-          sits in the middle of the bar and stays in normal flow (no overlap
-          with a long page title at narrow widths). */}
       <div className="tb-right">
         <div className="tb-sync" title="Connection status">
           <span className="sync-dot" />
