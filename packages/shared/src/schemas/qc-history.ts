@@ -26,6 +26,11 @@ export const qcHistoryPendingRowSchema = z.object({
    *  every screen that prints a JC number names the item beside it. Joined from
    *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
   itemName: z.string().nullable().default(null),
+  /** True when this QC op is the job card's LAST live op — the terminal QC
+   *  gate that credits finished stock (ADR-069). The QC Call Register's stage
+   *  strip files these under "Final Inspection" and every other process QC
+   *  under "In-Process" (ADR-169). Defaulted so older API builds still parse. */
+  isLastOp: z.boolean().default(false),
   operation: z.string(),
   orderQty: z.number().int(),
   completed: z.number().int().nonnegative(),
@@ -42,8 +47,16 @@ export type QcHistoryPendingRow = z.infer<typeof qcHistoryPendingRowSchema>;
 
 export const qcHistoryLogRowSchema = z.object({
   logId: z.string().uuid(),
+  /** The card the log belongs to, so a completed row can open the JC status
+   *  page directly (ADR-169). Nullable + defaulted so older API builds parse. */
+  jobCardId: z.string().uuid().nullable().default(null),
   jcCode: z.string(),
   opSeq: z.number().int(),
+  /** True when this QC op is the job card's LAST live op — the terminal QC
+   *  gate that credits finished stock (ADR-069). The QC Call Register's stage
+   *  strip files these under "Final Inspection" and every other process QC
+   *  under "In-Process" (ADR-169). Defaulted so older API builds still parse. */
+  isLastOp: z.boolean().default(false),
   soCode: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for the inspected part, read off the SO

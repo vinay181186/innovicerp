@@ -9081,3 +9081,42 @@ migration 0067's `DIR-QC-BACKFILL` ledger marker; Playwright specs that assert t
   server agree on the name the server writes.
 - Negative: historic FPY / QC-documents group DIR and Final Inspection as two stages; one more
   manual migration per database.
+
+## ADR-169: QC Call Register becomes a single "ruled sheet" with a stage strip; rows know whether their QC op is the job card's last
+**Date:** 2026-09-17
+**Status:** Accepted
+
+### Context
+User supplied a mockup (Word doc, one image, labelled *"2c Ruled sheet — no fills at all, hairline
+rules and a stage step strip; lightest of the three; closest to a QC register book"*) and asked
+for it to be applied to the QC Call Register, with the header carrying **Export, Search, Pending,
+Completed**. The page was the legacy two-pane split (pending calls + inline accept/reject form on
+the left, completed log on the right; renderQCDashboard L4126) with two separate search boxes,
+amber/green filled count boxes (hard-coded rgba) and a "History & Export" link to /qc-history.
+
+The mockup's stage strip — INCOMING · IN-PROCESS · FINAL INSPECTION — needs to know whether a
+process-QC row is the job card's terminal QC gate. The qc-history rows carried `opSeq` but not
+"is this the last op", and the name alone cannot be trusted (old cards end in DIR, ADR-168).
+
+### Decision
+1. `qcHistoryPendingRowSchema` / `qcHistoryLogRowSchema` gain `isLastOp: boolean` (default false
+   so older API builds still parse); the qc-history service sets it from the same "last live op"
+   criterion the stock cascade uses (ADR-069). Stage = Incoming (GRN-line rows) · Final Inspection
+   (`isLastOp`) · In-Process (other process QC).
+2. One sheet, one search box, one **⬇ Export** (reuses qc-history's export helpers on the rows
+   currently shown), a **Pending | Completed** segmented toggle, a clickable single-row stage
+   strip (count · pcs pending · done), hairline-ruled table with the mockup's columns
+   (GRN/JC No · Part/Item code · Vendor·GRN or SO·Op · OK · Rej · Called→Attended · Inspector·Log
+   ref · Verdict). Pending rows keep the existing inline entry form unchanged; only the collapsed
+   row is restyled. Tokens only; the rgba boxes are gone. QC Queue / TPI tabs, `?line=` deep link,
+   the access guard and all permission logic are untouched. /qc-history is untouched.
+
+### Alternatives Considered
+- Classify "Final Inspection" by op NAME — rejected: DIR-ended legacy cards and user-named
+  terminal QCs would be misfiled; the stock cascade's criterion is the truth.
+- Keep two panes and only recolour — rejected: the ask is the mockup, which is one sheet.
+
+### Consequences
+- Positive: one place to look, counts per stage at a glance, export of exactly what is on screen.
+- Negative: the completed feed is still the client-side capped list; the strip's "done" counts
+  are labelled from server stats where they exist.
