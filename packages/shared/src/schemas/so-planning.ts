@@ -2,7 +2,12 @@
 // Per docs/PARITY/so-planning.md.
 
 import { z } from 'zod';
-import { planDerivedStatusSchema, planOpsSourceSchema, planStatusSchema, planTypeSchema } from './plan';
+import {
+  planDerivedStatusSchema,
+  planOpsSourceSchema,
+  planStatusSchema,
+  planTypeSchema,
+} from './plan';
 import { itemProcurementTypeSchema } from './item';
 import { PR_STATUSES } from '../enums/pr-status';
 
@@ -241,7 +246,11 @@ export type ReservationActionResult = z.infer<typeof reservationActionResultSche
  *  is never bought in. */
 export const raisePlanningPrInputSchema = z.object({
   qty: z.number().int().positive(),
-  requiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  requiredDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   remarks: z.string().trim().max(500).nullable().optional(),
 });
 export type RaisePlanningPrInput = z.infer<typeof raisePlanningPrInputSchema>;
@@ -251,4 +260,3 @@ export const raisePlanningPrResponseSchema = z.object({
   prCode: z.string(),
 });
 export type RaisePlanningPrResponse = z.infer<typeof raisePlanningPrResponseSchema>;
-

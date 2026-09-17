@@ -41,7 +41,14 @@ describe('items service', () => {
   it('createItem inserts a row with audit columns + soft-delete null', async () => {
     const code = `${TEST_PREFIX}A1`;
     const item = await service.createItem(
-      { code, name: 'Alpha', revision: 'A', uom: 'NOS', itemType: 'component', procurementType: 'make' },
+      {
+        code,
+        name: 'Alpha',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        procurementType: 'make',
+      },
       admin,
     );
     expect(item.code).toBe(code);
@@ -56,12 +63,26 @@ describe('items service', () => {
   it('createItem rejects duplicate code in same company', async () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createItem(
-      { code, name: 'First', revision: 'A', uom: 'NOS', itemType: 'component', procurementType: 'make' },
+      {
+        code,
+        name: 'First',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        procurementType: 'make',
+      },
       admin,
     );
     await expect(
       service.createItem(
-        { code, name: 'Second', revision: 'A', uom: 'NOS', itemType: 'component', procurementType: 'make' },
+        {
+          code,
+          name: 'Second',
+          revision: 'A',
+          uom: 'NOS',
+          itemType: 'component',
+          procurementType: 'make',
+        },
         admin,
       ),
     ).rejects.toBeInstanceOf(ConflictError);
@@ -70,7 +91,14 @@ describe('items service', () => {
   it('getItem returns the row by id', async () => {
     const code = `${TEST_PREFIX}G1`;
     const created = await service.createItem(
-      { code, name: 'Get Me', revision: 'A', uom: 'NOS', itemType: 'component', procurementType: 'make' },
+      {
+        code,
+        name: 'Get Me',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        procurementType: 'make',
+      },
       admin,
     );
     const fetched = await service.getItem(created.id, admin);
@@ -87,7 +115,14 @@ describe('items service', () => {
   it('listItems filters by search and stays company-scoped', async () => {
     const code = `${TEST_PREFIX}SRCH-X`;
     await service.createItem(
-      { code, name: 'Searchable Widget', revision: 'A', uom: 'NOS', itemType: 'component', procurementType: 'make' },
+      {
+        code,
+        name: 'Searchable Widget',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        procurementType: 'make',
+      },
       admin,
     );
     const result = await service.listItems({ search: 'SRCH-X', limit: 50, offset: 0 }, admin);
@@ -99,7 +134,14 @@ describe('items service', () => {
   it('updateItem changes fields and bumps updatedBy', async () => {
     const code = `${TEST_PREFIX}U1`;
     const created = await service.createItem(
-      { code, name: 'Before', revision: 'A', uom: 'NOS', itemType: 'component', procurementType: 'make' },
+      {
+        code,
+        name: 'Before',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        procurementType: 'make',
+      },
       admin,
     );
     const updated = await service.updateItem(created.id, { name: 'After', revision: 'B' }, admin);
@@ -111,7 +153,14 @@ describe('items service', () => {
   it('softDeleteItem sets deletedAt; row no longer visible to list/get', async () => {
     const code = `${TEST_PREFIX}D1`;
     const created = await service.createItem(
-      { code, name: 'To Delete', revision: 'A', uom: 'NOS', itemType: 'component', procurementType: 'make' },
+      {
+        code,
+        name: 'To Delete',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        procurementType: 'make',
+      },
       admin,
     );
     await service.softDeleteItem(created.id, admin);
@@ -121,7 +170,14 @@ describe('items service', () => {
   it('emits CREATE / EDIT / DELETE activity_log rows atomic with the mutation', async () => {
     const code = `${TEST_PREFIX}AUD`;
     const created = await service.createItem(
-      { code, name: 'Audit Test', revision: 'A', uom: 'NOS', itemType: 'component', procurementType: 'make' },
+      {
+        code,
+        name: 'Audit Test',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        procurementType: 'make',
+      },
       admin,
     );
     await service.updateItem(created.id, { name: 'Audit Test (renamed)' }, admin);
@@ -150,7 +206,8 @@ describe('items service', () => {
           name: 'No Company',
           revision: 'A',
           uom: 'NOS',
-          itemType: 'component', procurementType: 'make',
+          itemType: 'component',
+          procurementType: 'make',
         },
         noCompanyUser,
       ),

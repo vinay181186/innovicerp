@@ -14,12 +14,14 @@
 // off `v_jc_status` / `v_jc_op_status` for the linked Job Card on every read.
 
 import { z } from 'zod';
-import { PRODUCTION_ORDER_STATUSES, type ProductionOrderStatus } from '../enums/production-order-status';
+import {
+  PRODUCTION_ORDER_STATUSES,
+  type ProductionOrderStatus,
+} from '../enums/production-order-status';
 import { JC_COMPUTED_STATUSES, type JcComputedStatus } from '../enums/jc-computed-status';
 
-export const productionOrderStatusSchema: z.ZodType<ProductionOrderStatus> = z.enum(
-  PRODUCTION_ORDER_STATUSES,
-);
+export const productionOrderStatusSchema: z.ZodType<ProductionOrderStatus> =
+  z.enum(PRODUCTION_ORDER_STATUSES);
 const jcComputedStatusSchema: z.ZodType<JcComputedStatus> = z.enum(JC_COMPUTED_STATUSES);
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
