@@ -226,8 +226,12 @@ export function jcSettledWithLossesSql(jcId: SQL, depth = 0): SQL<boolean> {
       WHERE vos.job_card_id = ${jc}.id
         AND (
           vos.computed_status = 'running'
-          OR (vos.op_type NOT IN ('qc', 'outsource') AND vos.available > 0)
-          OR (vos.op_type = 'outsource'
+          -- any non-QC op: pieces still available minus pieces lost ON that
+          -- very op (a scrap NC raised on a process op leaves completed < input
+          -- for good; on an outsource op the view keeps vendor-rejected pieces
+          -- in available). Pieces lost on a LATER op are not netted here —
+          -- they were already output by this op.
+          OR (vos.op_type <> 'qc'
               AND vos.available - ${lossSql(sql`nc.jc_op_id = vos.jc_op_id`)} > 0)
           OR ((vos.op_type = 'qc' OR vos.qc_required) AND vos.qc_pending <> 0)
           OR vos.at_vendor_qty <> 0
@@ -391,6 +395,33 @@ async function readJcSettledWithLosses(
     sql`SELECT ${jcSettledWithLossesSql(sql`${item.jobCardId}::uuid`)} AS settled`,
   )) as unknown as Array<{ settled: boolean }>;
   return rows[0]?.settled === true;
+}
+
+/** Close-time snapshot: the settled flag AND the finished qty in ONE statement,
+ *  so a QC accept committed between two reads can never leave the flag saying
+ *  "settled" while the qty credited is the older, smaller number (the extra
+ *  piece would then never be credited — its own qc_accept credit is switched
+ *  off for a PO-linked JC). READ COMMITTED sees one snapshot per statement. */
+async function readCloseSnapshot(
+  tx: DbTransaction,
+  jobCardId: string,
+): Promise<{ settled: boolean; finishedQty: number; computedStatus: string | null }> {
+  const jc = sql`${jobCardId}::uuid`;
+  const rows = (await tx.execute(sql`
+    SELECT ${jcSettledWithLossesSql(jc)} AS settled,
+           ${lastOpFinishedQtySql(jc)} AS finished_qty,
+           (SELECT s.computed_status FROM public.v_jc_status s WHERE s.job_card_id = ${jc}) AS computed_status
+  `)) as unknown as Array<{
+    settled: boolean;
+    finished_qty: number;
+    computed_status: string | null;
+  }>;
+  const r = rows[0];
+  return {
+    settled: r?.settled === true,
+    finishedQty: Number(r?.finished_qty ?? 0),
+    computedStatus: r?.computed_status ?? null,
+  };
 }
 
 function baseQuery(tx: DbTransaction) {
@@ -755,12 +786,21 @@ export async function closeProductionOrder(
       throw new ConflictError('Production Order is already closed');
     }
 
-    // Live progress, read AFTER the lock so the number credited is the one
-    // that exists at this instant.
+    // Live progress, read AFTER the lock. The guard inputs (settled flag,
+    // finished qty, JC status) come from ONE statement so the qty credited is
+    // exactly the qty the guard judged.
     const current = await readDetailInTx(tx, id, companyId);
-    // Same sentence the detail view shows (closeBlockedReason ran in toDetail).
-    if (current.closeBlockedReason) throw new ValidationError(current.closeBlockedReason);
-    const qty = current.jcFinishedQty;
+    const snap = await readCloseSnapshot(tx, current.jobCardId);
+    const reason = closeBlockedReason({
+      status: current.status,
+      jcCodeText: current.jcCodeText,
+      jcComputedStatus: (snap.computedStatus ??
+        current.jcComputedStatus) as ProductionOrderListItem['jcComputedStatus'],
+      jcFinishedQty: snap.finishedQty,
+      jcSettledWithLosses: snap.settled,
+    });
+    if (reason) throw new ValidationError(reason);
+    const qty = snap.finishedQty;
     // Total loss: the guard let this through only because the JC is settled
     // with losses and EVERY piece was lost (finished 0). Nothing to credit,
     // so no store_transactions row at all — a 0-qty ledger line would be
