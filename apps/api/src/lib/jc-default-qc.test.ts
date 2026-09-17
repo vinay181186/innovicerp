@@ -4,11 +4,11 @@ import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from './jc-default-qc';
 const op = (opType: string) => ({ opType });
 
 describe('needsDefaultQcOp (Rule B — terminal QC gate)', () => {
-  it('appends DIR for a pure in-house routing with no QC (SPACER case)', () => {
+  it('appends Final Inspection for a pure in-house routing with no QC (SPACER case)', () => {
     expect(needsDefaultQcOp([op('process'), op('process'), op('process')])).toBe(true);
   });
 
-  it('appends DIR when a mid-route QC is followed by a process op (still uncredited)', () => {
+  it('appends Final Inspection when a mid-route QC is followed by a process op (still uncredited)', () => {
     expect(needsDefaultQcOp([op('process'), op('qc'), op('process')])).toBe(true);
   });
 
@@ -30,7 +30,7 @@ describe('needsDefaultQcOp (Rule B — terminal QC gate)', () => {
     expect(needsDefaultQcOp([])).toBe(false);
   });
 
-  it('exposes DIR as the default stage name', () => {
-    expect(DEFAULT_FINAL_QC_OP).toBe('DIR');
+  it('exposes Final Inspection as the default stage name', () => {
+    expect(DEFAULT_FINAL_QC_OP).toBe('Final Inspection');
   });
 });

@@ -36,12 +36,12 @@ Reads: `sales_orders`, `sales_order_lines`, `job_cards`, `jc_ops` (`op_type='qc'
 Web route `qc-docs`. API `/qc-documents` (+ `/so-list`, `/matrix`, `/line-detail`).
 
 ## Business Logic
-- **QC document matrix columns** — fixed order `MIR, MCR, DIR, TPI` first, then any other QC op names discovered on the SO's JCs, appended in discovery order (fallback `QC` if none). Full names mapped via `QC_DOC_FULL_NAMES` (MIR=Material Inspection Report, MCR=Material Compliance Report, DIR=Dimensional Inspection Report, TPI=Third Party Inspection, plus ICS/ASN/OTH1/OTH2).
+- **QC document matrix columns** — fixed order `MIR, MCR, Final Inspection, TPI` first (ADR-168; DIR was in this slot before 2026-09-17 and now appears only when a JC carries it), then any other QC op names discovered on the SO's JCs, appended in discovery order (fallback `QC` if none). Full names mapped via `QC_DOC_FULL_NAMES` (MIR=Material Inspection Report, MCR=Material Compliance Report, DIR=Dimensional Inspection Report, TPI=Third Party Inspection, plus ICS/ASN/OTH1/OTH2).
 - **Cell state** per JC × column: `applicable` (op exists), `done` (`v_jc_op_status.computed_status='complete'`), `pending` (not done & qc_pending>0), accepted qty, `hasDoc` + doc date/path/name.
 - **Doc→cell matching** priority: by `jc_op_id`, else `(job_card_id, qc_op_name)`, else `(job_card_id, doc_type)` uppercased (legacy rows predating matrix columns). Newest doc wins per cell.
 - **Row overall status**: `no_jc` (SO line with no JC — still emitted), `no_qc` (JC with no QC ops), `complete` (all applicable ops done), else `partial`.
 - **Serial-range tracking** (line-detail) — QC batches (op_log qc entries) ordered by date/log_no; serial `srFrom/srTo` computed by running cumulative of accepted qty. Uploaded docs carry their own `sr_from/sr_to`.
-- **Mandatory/optional badges** — driven by `report_types.default_mandatory` (Active) when a matching name exists; otherwise the fixed set MIR/MCR/DIR/TPI is treated as mandatory and everything else optional.
+- **Mandatory/optional badges** — driven by `report_types.default_mandatory` (Active) when a matching name exists; otherwise the fixed set MIR/MCR/Final Inspection/TPI is treated as mandatory and everything else optional.
 - Soft delete only.
 
 ## Dependencies on Other Modules

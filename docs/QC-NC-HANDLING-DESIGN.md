@@ -77,7 +77,7 @@ Created in the dispose transaction by `createRecoveryJobCard`:
 | `item_id`, `drawing_file_path`, `source_so_line_id` / `source_jw_line_id`, raw material grade/size | copied from the parent |
 | `order_qty` | the disposition qty |
 | `remarks` | `Rework of <parentCode> Op <n> — <ncCode>` |
-| `jc_ops` | **none** — the user defines recovery operations (§4.3). When ops are saved, a terminal `DIR` QC op is ALWAYS appended (`recovery_kind` set ⇒ `needsDefaultQcOp` is unconditional), so recovered qty can never merge into WIP without QC (§4.5, interlock 3). |
+| `jc_ops` | **none** — the user defines recovery operations (§4.3). When ops are saved, a terminal `Final Inspection` QC op (ADR-168; was `DIR`) is ALWAYS appended (`recovery_kind` set ⇒ `needsDefaultQcOp` is unconditional), so recovered qty can never merge into WIP without QC (§4.5, interlock 3). |
 
 `order_qty` of a recovery JC cannot be edited above the NC's open qty (interlock 2 on the child).
 

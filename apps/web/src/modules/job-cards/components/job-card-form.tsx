@@ -39,7 +39,11 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode, useUpdateJobCard } from '../api';
-import { buildJcWriteInput } from '../lib/build-jc-write-input';
+import {
+  buildJcWriteInput,
+  grandfatheredOspQcPairs,
+  opsSequenceError,
+} from '../lib/build-jc-write-input';
 import { JcOpEditCard } from './jc-op-edit-card';
 import { OutsourceBalanceModal } from './outsource-balance-modal';
 
@@ -548,6 +552,16 @@ export function JobCardForm({
 
   const submitting = create.isPending || update.isPending || uploading;
 
+  // "No QC directly after OSP" routing rule. Pairs already saved that way on
+  // an existing JC are grandfathered; the live hint below the ops header shows
+  // the same message the Save button (and the API) would raise.
+  const allowedPairs = useMemo(() => grandfatheredOspQcPairs(model?.ops ?? []), [model?.ops]);
+  const startedIds = useMemo(
+    () => new Set((model?.ops ?? []).filter((o) => o.hasStarted).map((o) => o.id)),
+    [model?.ops],
+  );
+  const opsSequenceHint = opsSequenceError(ops, { allowedPairs, startedIds });
+
   const onSubmit = async (): Promise<void> => {
     setError(null);
     // Validation + payload build shared with the JC Status edit branch.
@@ -568,6 +582,8 @@ export function JobCardForm({
       rawMaterialSizeText: rmSizeText,
       ops,
       docs,
+      allowedPairs,
+      startedIds,
     });
     if (!result.ok) {
       setError(result.error);
@@ -878,6 +894,22 @@ export function JobCardForm({
           </div>
         </div>
         <div className="panel-body">
+          {opsSequenceHint ? (
+            <div
+              role="alert"
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid var(--red)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {opsSequenceHint}
+            </div>
+          ) : null}
           {ops.length === 0 ? (
             <div className="empty-state">
               No operations yet — click “+ Add Op” for machining steps, “+ Add QC Op” for QC

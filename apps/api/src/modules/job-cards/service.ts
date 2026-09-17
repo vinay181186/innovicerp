@@ -41,11 +41,15 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
+import {
+  assertNoQcDirectlyAfterOutsource,
+  grandfatheredOspQcPairs,
+} from '../../lib/jc-osp-qc-rule';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { saveRouteCardForItem } from '../route-cards/service';
-import { opSrNo } from '@innovic/shared';
+import { opSrNo, stripStaleGeneratedTerminalQc } from '@innovic/shared';
 import type { CreateRouteCardOpInput, DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import type {
   JcOpInput,
@@ -1443,9 +1447,9 @@ async function assertLineBalance(
 
 /** Rule B (ADR-069): a JC must end with a QC op so finished goods pass a QC
  *  gate and get credited to stock (qc_accept fires only on the last op). When
- *  the caller's last op isn't QC, append a default DIR QC stage. Idempotent on
- *  edit: once the JC ends with the DIR op it is re-submitted as the last op and
- *  no new one is added. */
+ *  the caller's last op isn't QC, append a default "Final Inspection" QC stage
+ *  (DEFAULT_FINAL_QC_OP). Idempotent on edit: once the JC ends with that op it
+ *  is re-submitted as the last op and no new one is added. */
 function withTerminalQcOp(
   ops: JcOpInput[],
   opts: { recoveryKind?: string | null } = {},
@@ -1675,6 +1679,10 @@ export async function createJobCard(
     const item = await resolveItem(tx, input.itemCode, companyId);
     await assertLineBalance(tx, input, companyId, null, item.id);
 
+    // Routing rule: a QC op may not sit directly after an OSP op. Checked on
+    // the USER's ops, before the terminal QC is appended. A manual create is
+    // never a rework/repair child, so no exemption applies here.
+    assertNoQcDirectlyAfterOutsource(input.ops);
     const ops = withTerminalQcOp(input.ops);
     const types = validateOps(ops);
     const machineMap = await resolveCodeMap(
@@ -1869,7 +1877,17 @@ export async function updateJobCard(
 
     const item = await resolveItem(tx, input.itemCode, companyId);
     await assertLineBalance(tx, input, companyId, id, item.id, { recoveryKind: head.recoveryKind });
-    const ops = withTerminalQcOp(input.ops, { recoveryKind: head.recoveryKind });
+    // The generated terminal QC op comes back on edit with an id. If the person
+    // has since retyped an op to OSP, that op is stale (Rule B never gates an
+    // outsource JC with a terminal QC) — drop it before anything else looks at
+    // the routing, or the "no QC directly after OSP" rule below would blame an
+    // op nobody entered. `userOps` is the routing as the person meant it.
+    const started = await startedOpIds(tx, id);
+    const userOps = stripStaleGeneratedTerminalQc(input.ops, {
+      recoveryKind: head.recoveryKind,
+      isStarted: (o) => !!o.id && started.has(o.id),
+    });
+    const ops = withTerminalQcOp(userOps, { recoveryKind: head.recoveryKind });
     const types = validateOps(ops);
     const machineMap = await resolveCodeMap(
       tx,
@@ -1915,7 +1933,14 @@ export async function updateJobCard(
       .leftJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
       .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
     const existingById = new Map(existing.map((o) => [o.id, o]));
-    const started = await startedOpIds(tx, id);
+    // Routing rule: a QC op may not sit directly after an OSP op. Checked on
+    // the USER's ops (input.ops, never the list with the appended terminal QC).
+    // Rework/repair children are exempt (the server itself appends the terminal
+    // QC after an outsource-last routing there). Pairs already saved side by
+    // side on this JC are grandfathered so old JCs stay editable.
+    if (!head.recoveryKind) {
+      assertNoQcDirectlyAfterOutsource(userOps, grandfatheredOspQcPairs(existing));
+    }
     const running = await runningOpIds(tx, id);
     // Committed = outsource op whose PR/PO/DC paperwork already points at it;
     // removing/retyping/moving it would orphan that paperwork.
@@ -1935,7 +1960,7 @@ export async function updateJobCard(
         )
         .map((o) => o.id),
     );
-    // `ops` may carry an appended DIR QC op (no id) — harmless for payloadIds
+    // `ops` may carry an appended Final Inspection QC op (no id) — harmless for payloadIds
     // (id-filtered) but the upsert loop below must iterate `ops` so it lands.
     const payloadIds = new Set(ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
     // Each kept op's NEW op_seq = its 1-based position in the payload.
@@ -2072,7 +2097,7 @@ export async function updateJobCard(
         .where(inArray(jcOps.id, keptIds));
     }
     // 3. Upsert ops in payload order (final op_seq = index + 1). Iterates `ops`
-    //    (not input.ops) so an appended DIR QC op is inserted as the last op.
+    //    (not input.ops) so an appended Final Inspection QC op is inserted as the last op.
     for (let i = 0; i < ops.length; i += 1) {
       const o = ops[i]!;
       const t = types[i]!;
@@ -2182,12 +2207,12 @@ export async function updateJobCard(
     // 6. Route-card auto-save (ADR-051 write half) — only when the routing
     //    itself changed, and only from the ops the user submitted (the appended
     //    terminal QC op is filtered out inside saveRouteCardForItem).
-    if (opsChanged && input.ops.length > 0) {
+    if (opsChanged && userOps.length > 0) {
       await saveRouteCardForItem(
         tx,
         companyId,
         item.id,
-        toRouteCardOps(input.ops, types.slice(0, input.ops.length), machineMap, vendorMap),
+        toRouteCardOps(userOps, types.slice(0, userOps.length), machineMap, vendorMap),
         user,
         head.code,
         rawMaterial,

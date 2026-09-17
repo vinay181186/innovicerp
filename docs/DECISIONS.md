@@ -9002,3 +9002,82 @@ read complete there; a JW-only job card created directly left its OSP op with no
 - Positive: the op card, NC register and SO screens agree with the physical pieces through
   any number of return cycles; the NC chain is navigable; a dead PO no longer blocks the op.
 - Negative: two more manual migrations (0129, 0130) per database.
+
+## ADR-168: "Final Inspection" replaces DIR as the default terminal QC op; a QC op may not directly follow an OSP op
+**Date:** 2026-09-17
+**Status:** Accepted (supersedes the NAME in ADR-069 / ADR-133 / ADR-161; the Rule B logic is unchanged)
+
+### Context
+User, 2026-09-17: *"DIR is no longer a special QC process. DIR must behave like a normal QC
+process. Move the existing DIR-specific special logic/conditions to Final Inspection. Add Final
+Inspection to QC Process Master."* and *"OSP → QC = NOT ALLOWED. OSP → Operation → QC = ALLOWED.
+Reason: OSP → Inward → Incoming QC."*
+
+Traced: the only DIR-specific behaviour in the system is ADR-069 Rule B — the server appends a
+terminal QC op named `DEFAULT_FINAL_QC_OP` when a routing would otherwise never credit finished
+stock. Three places compare on that name (`route-cards/service.ts` `stripAutoTerminalQcOp`,
+`qc-processes/service.ts` delete guard, `jc-default-qc.test.ts`), and `qc-documents/service.ts`
+holds DIR in the always-shown / mandatory-by-default column set `QC_FIXED_ORDER`. A QC step is
+free text on `jc_ops` / `plan_ops` / `route_card_ops` (no FK — ADR-133); no migration ever seeded
+a QC process (the legacy five came with the Firebase load). Live TEST master held `dir` + `tpi`.
+
+Op ORDER was never validated anywhere (form or server): only per-op checks (machine / vendor /
+name). Three writers create `jc_ops`: JC create/edit, Plan execute, Route Card → Plan. The
+codebase deliberately tolerated `outsource → qc` adjacency: `incoming-qc/service.ts`
+`mirrorIncomingQcOnNextQcOp` copies the Incoming-QC result onto a QC op at `op_seq + 1`
+(QC-NC-HANDLING-DESIGN §6). The user's rule makes that pair redundant for ordinary JCs — the
+same reasoning ("the vendor's work is inspected at Incoming QC") — so the pair is now refused
+up front and the mirror stays as a safety net for the two cases that still produce it.
+
+### Decision
+1. `DEFAULT_FINAL_QC_OP = 'Final Inspection'`. `stripAutoTerminalQcOp` compares case-folded on
+   BOTH sides (it uppercased one side only, which would silently never match a mixed-case name).
+   The delete guard now protects "Final Inspection"; DIR is deletable when unused like any other
+   process. `QC_FIXED_ORDER = ['MIR','MCR','Final Inspection','TPI']` — DIR appears on the QC
+   documents matrix only when a JC actually carries it.
+2. Migration **0132** seeds one active `Final Inspection` row per company (case-insensitive
+   NOT EXISTS; created_by = oldest admin, as 0116). Applied to TEST; PROD when the user says.
+3. New shared helper `packages/shared/src/lib/jc-op-sequence.ts` —
+   `findQcDirectlyAfterOutsource` / `qcAfterOutsourceError` / `opPairKey`. Enforced on the JC
+   form (existing red banner, `build-jc-write-input.ts`) and on the server in JC create/edit,
+   Plan save/execute and Route Card create/update, with one message: *"Op 30 (QC) cannot directly
+   follow Op 20 (OSP). Add a manufacturing operation between them — the vendor's work is
+   inspected at Incoming QC when it comes back."*
+4. Exemptions: rework/repair children (`recovery_kind`) are exempt — ADR-161 appends the terminal
+   QC after ANY last op there, outsource included; pairs that already exist on a saved JC are
+   grandfathered (`allowedPairs`) so an old JC stays editable without re-routing.
+5. (From code review.) On EDIT the generated terminal op comes back in the payload with an id.
+   If the person retypes the op before it to OSP (the supported in-house→OSP switch), that op is
+   stale — Rule B never gates an outsource JC with a terminal QC — so `stripStaleGeneratedTerminalQc`
+   (shared) drops it on the form and on the server BEFORE the rule runs and before the
+   route-card auto-save; otherwise the rule would blame an op nobody entered. Only the last op,
+   only under the generated name, never a started op, never on a recovery child. The name
+   constant `DEFAULT_FINAL_QC_OP` therefore moved to `packages/shared` (api re-exports it).
+6. (From code review.) The message names the STORED `op_seq` when the caller has it — plans keep
+   gaps after a delete (1, 3, 4 …), so "Op 30" must be the number on the screen, not the index.
+
+### Intentionally unchanged
+Existing `jc_ops` named DIR/dir (history not rewritten; recovery children keep copying the
+parent's rejecting-QC name). Known one-time consequence: a pre-ADR-168 JC ending in the old
+generated `DIR` op is, on its next routing edit, saved to the item's route card WITH that DIR op
+(the strip recognises only Final Inspection now — a user-picked DIR is a normal op) and bumps the
+route card revision once; later plans from it end in DIR, which is still a QC gate. Plans are NOT
+grandfathered (a plan saved earlier with OSP→QC must be re-routed before its next save; on TEST
+exactly one E2E plan, PLN-0049, holds such a pair; route cards: none); MIR / MCR / TPI; the OSP → Inward → Incoming QC flow and its
+mirror; the ADR-081 Outsource-balance switch (the op stays `process`, so the rule never fires);
+migration 0067's `DIR-QC-BACKFILL` ledger marker; Playwright specs that assert the literal
+"DIR" (listed for the user; not edited without their say).
+
+### Alternatives Considered
+- Alias DIR as a second "generated" name in `stripAutoTerminalQcOp` — rejected: that keeps DIR
+  special, the opposite of the ask; a user-picked DIR now legitimately belongs on a route card.
+- Zod `superRefine` on `jobCardWriteInputSchema.ops` — rejected: the payload has no
+  `recoveryKind`, so the schema cannot exempt recovery children.
+- Rewrite existing DIR ops to Final Inspection — rejected: on TEST the system-written `DIR` and
+  the user-picked `dir` are distinguishable only by case; on PROD they are not.
+
+### Consequences
+- Positive: one rule, one message, on the form and every server door; the master and the
+  server agree on the name the server writes.
+- Negative: historic FPY / QC-documents group DIR and Final Inspection as two stages; one more
+  manual migration per database.

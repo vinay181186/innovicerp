@@ -66,6 +66,7 @@ import {
 } from '../../lib/errors';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
+import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
 import { saveRouteCardForItem } from '../route-cards/service';
@@ -912,6 +913,10 @@ async function executeManufacture(
       `${plan.planType} plan cannot be executed with zero operations`,
     );
   }
+  // Routing rule: a QC op may not sit directly after an OSP op. A plan-born JC
+  // is never a rework/repair child, so no exemption. Checked on the plan's own
+  // ops (already ordered by op_seq), before the terminal QC op is appended.
+  assertNoQcDirectlyAfterOutsource(ops);
   if (!plan.itemId) {
     throw new ValidationError(
       `${plan.planType} plan requires a resolved itemId to create a JC (item_code_text alone is not enough)`,
@@ -1552,6 +1557,14 @@ async function insertOps(
     }
     seen.add(op.opSeq);
   }
+  // Routing rule: a QC op may not sit directly after an OSP op. Refused at plan
+  // save (create and edit both land here) so the bad routing never reaches
+  // execute. Ordered by op_seq because the payload order is not guaranteed.
+  assertNoQcDirectlyAfterOutsource(
+    [...ops]
+      .sort((a, b) => a.opSeq - b.opSeq)
+      .map((op) => ({ opType: op.opType ?? 'process', opSeq: op.opSeq })),
+  );
   const values = ops.map((op) => ({
     companyId,
     planId,
