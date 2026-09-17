@@ -1206,6 +1206,49 @@ table.tbl-ctr td .innovic-select {
   border-radius: var(--radius);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
+/* Fixed layout so the table never outgrows the panel (td is nowrap; under
+   automatic layout a long Particulars value pushed Doc No. off the right
+   edge). Column widths sit on the <colgroup> classes below. */
+.gs-panel .innovic-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.gs-panel .innovic-table col.gs-col-date {
+  width: 104px;
+}
+.gs-panel .innovic-table col.gs-col-type {
+  width: 140px;
+}
+.gs-panel .innovic-table col.gs-col-docno {
+  width: 200px;
+}
+.gs-panel .innovic-table td.gs-particulars {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Text truncates, the status badge never does. */
+.gs-particulars-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.gs-particulars-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gs-particulars-row .badge {
+  flex-shrink: 0;
+}
+/* Free-form master codes (item / client / vendor / BOM / route card) can run
+   past 200px; clip with an ellipsis rather than re-open a sideways scroll. */
+.gs-panel .innovic-table td.gs-docno {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .gs-panel .innovic-table th {
   cursor: default;
 }
@@ -1220,5 +1263,16 @@ table.tbl-ctr td .innovic-select {
 @media (max-width: 768px) {
   .innovic-input.gs-input {
     width: 150px;
+  }
+  /* Phones: the three fixed columns (444px) would squeeze Particulars to
+     nothing; fall back to natural widths with a sideways scroll instead. */
+  .gs-panel .innovic-table {
+    table-layout: auto;
+  }
+  /* Named per class so this outranks the desktop width rules above. */
+  .gs-panel .innovic-table col.gs-col-date,
+  .gs-panel .innovic-table col.gs-col-type,
+  .gs-panel .innovic-table col.gs-col-docno {
+    width: auto;
   }
 }

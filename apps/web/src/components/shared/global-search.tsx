@@ -31,7 +31,7 @@ interface PanelRect {
   maxHeight: number;
 }
 
-const PANEL_MIN_WIDTH = 640;
+const PANEL_MIN_WIDTH = 720;
 const EDGE = 8;
 const GAP = 4;
 
@@ -224,19 +224,24 @@ export function GlobalSearch(): React.JSX.Element {
             onClick={() => pick(r)}
           >
             <td className="mono">{r.date ?? '—'}</td>
-            <td style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              <span title={r.particulars}>{r.particulars}</span>
-              {r.status ? (
-                <span className="badge b-grey" style={{ marginLeft: 6 }}>
-                  {r.status.replaceAll('_', ' ')}
+            <td className="gs-particulars">
+              {/* Flex row so the text truncates and the status badge stays
+                  visible — as the last inline in an ellipsized cell it would
+                  vanish behind any long name. */}
+              <div className="gs-particulars-row">
+                <span className="gs-particulars-text" title={r.particulars}>
+                  {r.particulars}
                 </span>
-              ) : null}
+                {r.status ? (
+                  <span className="badge b-grey">{r.status.replaceAll('_', ' ')}</span>
+                ) : null}
+              </div>
             </td>
             <td className="text3" style={{ fontSize: 12 }}>
               {GLOBAL_SEARCH_KIND_META[r.kind].label}
             </td>
-            <td>
-              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            <td className="gs-docno">
+              <span className="mono fw-700" style={{ color: 'var(--text)' }} title={r.docNo}>
                 {r.docNo}
               </span>
             </td>
@@ -293,6 +298,17 @@ export function GlobalSearch(): React.JSX.Element {
               }}
             >
               <table className="innovic-table" id={listboxId} role="listbox">
+                {/* Column widths live in the .gs-col-* rules (fixed layout on
+                    desktop, natural widths on phones). Particulars takes the
+                    remainder and truncates; Doc No. never wraps — 200px holds a
+                    16-char mono code like IN-JWPO-00019/R1 and only an abnormal
+                    free-form master code gets an ellipsis (full text on hover). */}
+                <colgroup>
+                  <col className="gs-col-date" />
+                  <col className="gs-col-particulars" />
+                  <col className="gs-col-type" />
+                  <col className="gs-col-docno" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Date</th>
