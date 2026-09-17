@@ -402,10 +402,14 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
               />
             </div>
-            {/* Plan Type — the same three-way choice SO Planning asks for every
-                plan, recorded once here as the item's default. Same cards, same
+            {/* Plan Type — the same choice SO Planning asks for every plan,
+                recorded once here as the item's default. Same cards, same
                 colours, so the planner recognises it. `assembly` is not offered:
-                it needs a BOM behind an order line and is decided at planning. */}
+                it needs a BOM behind an order line and is decided at planning.
+                ADR-171: `direct_purchase` is no longer offered — a bought-in
+                item is flagged Source = Buy on the Item Master and the Planning
+                line raises a PR. An existing card that already holds it still
+                renders (read-only chip below) and saves unchanged. */}
             <div className="form-full">
               <span
                 className="form-label"
@@ -430,15 +434,15 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                   'var(--purple)',
                   'rgba(124,58,237,0.08)',
                 )}
-                {planTypeCard(
-                  'direct_purchase',
-                  '🛒',
-                  'Direct Purchase',
-                  'Buy finished item (with material)',
-                  'var(--green)',
-                  'rgba(34,197,94,0.08)',
-                )}
               </div>
+              {header.planType === 'direct_purchase' ? (
+                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
+                  <span className="badge b-grey">🛒 Direct Purchase</span>{' '}
+                  <span className="text3">
+                    (legacy — set the item&apos;s Source to Buy instead)
+                  </span>
+                </div>
+              ) : null}
             </div>
             {/* Raw material — Grade + Size under one bracket, both optional
                 (no ★ on either). Same two pickers Planning and the Job Card

@@ -10,8 +10,11 @@
 
 import {
   type CreateItemInput,
-  type Item,
+  ITEM_PROCUREMENT_TYPES,
+  ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
+  type Item,
+  type ItemProcurementType,
   type UpdateItemInput,
   UOMS,
   createItemInputSchema,
@@ -51,6 +54,7 @@ const CREATE_DEFAULTS: CreateItemInput = {
   material: undefined,
   uom: 'NOS',
   itemType: 'component',
+  procurementType: 'make',
   hsnCode: undefined,
   drawingFilePath: undefined,
 };
@@ -64,6 +68,7 @@ function itemToUpdateDefaults(item: Item): UpdateItemInput {
     material: item.material ?? undefined,
     uom: item.uom,
     itemType: item.itemType,
+    procurementType: item.procurementType,
     hsnCode: item.hsnCode ?? undefined,
     drawingFilePath: item.drawingFilePath ?? undefined,
   };
@@ -223,6 +228,11 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
               <div className="form-error">{errors.itemType.message}</div>
             ) : null}
           </div>
+          <SourceField
+            value={watch('procurementType') ?? 'make'}
+            onChange={(v) => setValue('procurementType', v, { shouldDirty: true })}
+            error={errors.procurementType?.message}
+          />
           <div className="form-grp">
             <label className="form-label" htmlFor="hsnCode">
               HSN Code
@@ -380,6 +390,11 @@ function EditItemForm(props: EditMode): React.JSX.Element {
               <div className="form-error">{errors.itemType.message}</div>
             ) : null}
           </div>
+          <SourceField
+            value={watch('procurementType') ?? 'make'}
+            onChange={(v) => setValue('procurementType', v, { shouldDirty: true })}
+            error={errors.procurementType?.message}
+          />
           <div className="form-grp">
             <label className="form-label" htmlFor="hsnCode">
               HSN Code
@@ -401,6 +416,73 @@ function EditItemForm(props: EditMode): React.JSX.Element {
 
       <FormFooter isSubmitting={formState.isSubmitting} onCancel={props.onCancel} />
     </form>
+  );
+}
+
+// ADR-171 — Source: how the item is normally sourced (SAP "procurement type",
+// Odoo "Manufacture / Buy"). Two tiles, same control the route-card form draws
+// for Plan Type, tokens only. Make = Plan → Production Order → Route Card;
+// Buy = the Planning line offers "+ PR" instead of "+ Plan".
+const SOURCE_HELP: Record<ItemProcurementType, string> = {
+  make: 'Planned & produced — Plan → Production Order → Route Card',
+  buy: 'Purchased finished — + PR from the Planning line',
+};
+const SOURCE_ICON: Record<ItemProcurementType, string> = { make: '🏭', buy: '🛒' };
+const SOURCE_COLOR: Record<ItemProcurementType, string> = {
+  make: 'var(--cyan)',
+  buy: 'var(--blue)',
+};
+const SOURCE_ACTIVE_BG: Record<ItemProcurementType, string> = {
+  make: 'var(--cyan3)',
+  buy: 'var(--blue3)',
+};
+
+function SourceField(props: {
+  value: ItemProcurementType;
+  onChange: (v: ItemProcurementType) => void;
+  error?: string | undefined;
+}): React.JSX.Element {
+  return (
+    <div className="form-grp form-full">
+      <span className="form-label" style={{ fontWeight: 700, display: 'block', marginBottom: 6 }}>
+        Source
+      </span>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {ITEM_PROCUREMENT_TYPES.map((val) => {
+          const active = props.value === val;
+          const color = SOURCE_COLOR[val];
+          return (
+            <label
+              key={val}
+              style={{
+                flex: 1,
+                cursor: 'pointer',
+                padding: '10px 14px',
+                borderRadius: 8,
+                border: `2px solid ${active ? color : 'var(--border)'}`,
+                background: active ? SOURCE_ACTIVE_BG[val] : 'var(--bg)',
+                textAlign: 'center',
+              }}
+            >
+              <input
+                type="radio"
+                name="procurementType"
+                value={val}
+                checked={active}
+                onChange={() => props.onChange(val)}
+                style={{ display: 'none' }}
+              />
+              <div style={{ fontSize: 20, marginBottom: 4 }}>{SOURCE_ICON[val]}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color }}>
+                {ITEM_PROCUREMENT_TYPE_LABEL[val]}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text3)' }}>{SOURCE_HELP[val]}</div>
+            </label>
+          );
+        })}
+      </div>
+      {props.error ? <div className="form-error">{props.error}</div> : null}
+    </div>
   );
 }
 

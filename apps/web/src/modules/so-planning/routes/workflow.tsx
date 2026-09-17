@@ -21,6 +21,7 @@ import {
   PLAN_DERIVED_STATUS_LABEL,
   type PlanDerivedStatus,
   type PlanStatus,
+  type PrStatus,
   type PlanningLine,
   type PlanningPlanSummary,
   type PlanningSoListItem,
@@ -51,6 +52,7 @@ import {
 } from '../api';
 import { BomPlanningModal } from '../components/bom-planning-modal';
 import { CreatePlanModal } from '../components/create-plan-modal';
+import { RaisePrModal } from '../components/raise-pr-modal';
 import { EditPlanModal } from '../components/edit-plan-modal';
 
 const searchSchema = z.object({
@@ -112,9 +114,24 @@ const ORDER_STATUS_BADGE: Record<PlanningSoListItem['planningStatus'], string> =
   unplanned: 'b-grey',
 };
 
+// ADR-171: a purchase request raised from a BUY line, chip label + colour.
+const PR_STATUS_LABEL: Record<PrStatus, string> = {
+  open: 'Open',
+  approved: 'Approved',
+  po_created: 'PO Created',
+  cancelled: 'Cancelled',
+};
+const PR_STATUS_COLOR: Record<PrStatus, string> = {
+  open: 'var(--amber)',
+  approved: 'var(--blue)',
+  po_created: 'var(--green)',
+  cancelled: 'var(--text3)',
+};
+
 type ModalState =
   | { kind: 'none' }
   | { kind: 'create'; soLineId: string }
+  | { kind: 'raise-pr'; soLineId: string }
   | { kind: 'edit'; planId: string }
   | { kind: 'equip-bom'; soLineId: string }
   | { kind: 'assembly-bom'; soLineId: string };
@@ -658,6 +675,21 @@ function OrderDetail({
                           CPO {line.clientPoLineNo}
                         </div>
                       ) : null}
+                      {/* ADR-171: Item Master "Source" — why the Action cell
+                          offers + Plan (make) or + PR (buy). */}
+                      <div style={{ marginTop: 2 }}>
+                        <span
+                          className={`badge ${line.itemProcurementType === 'buy' ? 'b-amber' : 'b-grey'}`}
+                          style={{ fontSize: 9, padding: '0 6px' }}
+                          title={
+                            line.itemProcurementType === 'buy'
+                              ? 'Bought-in item — raise a purchase request'
+                              : 'Made in-house — plan it'
+                          }
+                        >
+                          {line.itemProcurementType === 'buy' ? 'Buy' : 'Make'}
+                        </span>
+                      </div>
                     </td>
                     <td style={wrapCell} title={line.itemName ?? undefined}>
                       {line.itemName ?? '—'}
@@ -688,11 +720,15 @@ function OrderDetail({
                       </div>
                     </td>
                     <td style={wrapCell}>
-                      {line.plans.length === 0 && !status.hasDirectJc ? (
+                      {line.plans.length === 0 && line.prs.length === 0 && !status.hasDirectJc ? (
                         <span className="text3" style={{ fontSize: 11 }}>
                           —
                         </span>
                       ) : null}
+                      {/* ADR-171: purchase requests raised from this BUY line. */}
+                      {line.prs.map((pr) => (
+                        <PrChip key={pr.id} pr={pr} />
+                      ))}
                       {line.plans.map((p) => (
                         <PlanChip
                           key={p.id}
@@ -777,7 +813,27 @@ function OrderDetail({
                             📦 BOM Planning ({line.bomPartsCount})
                           </button>
                         ) : null}
-                        {!line.hasEquipmentBom && line.remaining > 0 && perms.entry ? (
+                        {/* ADR-171: a BUY line is purchased, not planned. SO
+                            lines get + PR; a JWSO line is the client's own
+                            material and is never bought in. */}
+                        {line.itemProcurementType === 'buy' ? (
+                          so.source === 'jw' ? (
+                            <span className="text3" style={{ fontSize: 10 }}>
+                              Buy item — client material
+                            </span>
+                          ) : line.remaining > 0 && perms.entry ? (
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              style={{ fontWeight: 700 }}
+                              onClick={() =>
+                                setModal({ kind: 'raise-pr', soLineId: line.soLineId })
+                              }
+                            >
+                              + PR {line.remaining}
+                            </button>
+                          ) : null
+                        ) : !line.hasEquipmentBom && line.remaining > 0 && perms.entry ? (
                           <button
                             type="button"
                             className="btn btn-primary btn-sm"
@@ -810,6 +866,25 @@ function OrderDetail({
               onCreated={() => {
                 // The plan is complete as saved (route-card flow) — no edit
                 // modal to chain into. Close and refresh the lines.
+                setModal({ kind: 'none' });
+                refresh();
+              }}
+            />
+          );
+        })()}
+
+      {modal.kind === 'raise-pr' &&
+        (() => {
+          const targetLine = so.lines.find((l) => l.soLineId === modal.soLineId);
+          if (!targetLine) return null;
+          return (
+            <RaisePrModal
+              so={so}
+              line={targetLine}
+              onClose={() => setModal({ kind: 'none' })}
+              onRaised={() => {
+                // The PR is a Purchase document from here on; the refreshed
+                // line shows it as a chip.
                 setModal({ kind: 'none' });
                 refresh();
               }}
@@ -990,6 +1065,52 @@ function SearchResults({
           </tbody>
         </table>
       ) : null}
+    </div>
+  );
+}
+
+// ─── PR chip (ADR-171) ───────────────────────────────────────────────────
+
+/** One purchase request raised from a BUY line: 🛒 code (link to the PR) ·
+ *  qty · status — the PO code once one is raised from it. */
+function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 6,
+        padding: '3px 8px',
+        margin: '2px 0',
+        background: 'var(--bg)',
+        border: '1px solid var(--border)',
+        borderRadius: 6,
+        fontSize: 11,
+      }}
+    >
+      <span>🛒</span>
+      <Link
+        to="/purchase-requests/$id"
+        params={{ id: pr.id }}
+        className="mono fw-700"
+        style={{ color: 'var(--text)' }}
+        title="Open the purchase request"
+      >
+        {pr.code}
+      </Link>
+      <span className="text2">
+        PR · <b>{pr.qty} pcs</b>
+      </span>
+      <span style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 10 }}>
+        {pr.status === 'po_created' && pr.poCode ? (
+          <>
+            PO <span className="mono">{pr.poCode}</span>
+          </>
+        ) : (
+          PR_STATUS_LABEL[pr.status]
+        )}
+      </span>
     </div>
   );
 }

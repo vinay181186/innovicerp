@@ -7,7 +7,7 @@
 // here because Item Master defines items only; stock lives in Store. UOM and
 // Item Type are validated against the shared enums (invalid → safe default).
 
-import { ITEM_TYPES, type CreateItemInput, UOMS } from '@innovic/shared';
+import { ITEM_PROCUREMENT_TYPES, ITEM_TYPES, type CreateItemInput, UOMS } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
 import { coerceEnum, getCol, readSheetRows } from '@/lib/xlsx-import';
@@ -22,12 +22,23 @@ const COLUMNS = [
   'Material',
   'UOM',
   'Item Type',
+  'Source',
 ] as const;
 
 export function downloadItemTemplate(): void {
-  const sample = ['ITM-001', 'Shaft 50mm', 'Main drive shaft', 'DRW-001', 'A', 'EN8 Steel', 'NOS', 'component'];
+  const sample = [
+    'ITM-001',
+    'Shaft 50mm',
+    'Main drive shaft',
+    'DRW-001',
+    'A',
+    'EN8 Steel',
+    'NOS',
+    'component',
+    'make',
+  ];
   const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
-  ws['!cols'] = [14, 22, 28, 16, 10, 18, 8, 12].map((wch) => ({ wch }));
+  ws['!cols'] = [14, 22, 28, 16, 10, 18, 8, 12, 8].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Items');
   XLSX.writeFile(wb, 'ItemMaster_ImportTemplate.xlsx');
@@ -76,6 +87,17 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
       transform: (s) => s.toLowerCase(),
     });
     if (itemType.warning) errors.push(`Row ${rowNum}: ${itemType.warning}`);
+    // ADR-171 — Source (make / buy); blank or unknown → make, the default.
+    const source = coerceEnum(
+      getCol(r, ['Source', 'source', 'Procurement Type', 'procurement_type']),
+      ITEM_PROCUREMENT_TYPES,
+      {
+        fallback: 'make',
+        label: 'Source',
+        transform: (s) => s.toLowerCase(),
+      },
+    );
+    if (source.warning) errors.push(`Row ${rowNum}: ${source.warning}`);
     payloads.push({
       code,
       name,
@@ -85,6 +107,7 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
       material: getCol(r, ['Material', 'material']) || undefined,
       uom: uom.value,
       itemType: itemType.value,
+      procurementType: source.value,
     });
   });
 
