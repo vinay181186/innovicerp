@@ -1,67 +1,52 @@
 // Global Search — the header search box rendered on every page (topbar.tsx).
 //
-// It is a launcher, not a dropdown: type two or more characters and the app
-// goes to the full-screen Search page (`/search?q=…`, modules/search) which
-// lists Date | Type | Doc No. | Party | Particulars | Qty | Status across every
-// document kind the caller may view. Enter goes at once, typing goes after a
-// short pause, Escape clears the box. Ctrl+K / Cmd+K focuses it from anywhere.
-//
-// The box mirrors the URL: on /search it shows `?q`, on any other page it is
-// empty — so opening a result (which leaves /search) clears it, and Back to
-// /search brings the term back.
+// Type two or more characters and the results open in a full-window popup
+// over the current page, below the top bar (modules/search/components/
+// search-popup.tsx): Date | Type | Doc No. | Party | Particulars | Qty |
+// Status across every document kind the caller may view, with a count strip
+// to filter by type. Enter opens at once, typing opens after a short pause.
+// Escape (in the box or anywhere in the popup) closes the popup and clears
+// the box; ✕ / backdrop close it but keep the text so it can be edited;
+// opening a row closes and clears. Ctrl+K /
+// Cmd+K focuses the box from anywhere. The box keeps focus and the keyboard
+// while the popup is open — nothing inside it is autofocused.
 
-import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from '@tanstack/react-router';
 import { Search } from 'lucide-react';
 import { GLOBAL_SEARCH_MAX_CHARS, GLOBAL_SEARCH_MIN_CHARS } from '@innovic/shared';
 import { useDebounce } from '@/lib/use-debounce';
+import { SearchPopup, type SearchPopupCloseReason } from '@/modules/search/components/search-popup';
 
-const SEARCH_PATH = '/search';
 const DEBOUNCE_MS = 300;
 
 export function GlobalSearch(): React.JSX.Element {
-  const navigate = useNavigate();
-  const location = useLocation();
+  const { pathname } = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const onSearchPage = location.pathname === SEARCH_PATH;
-  // Read `q` loosely: `location.search` is the union of every route's params.
-  const rawQ = (location.search as Record<string, unknown>).q;
-  const routeQ = onSearchPage && typeof rawQ === 'string' ? rawQ : '';
+  const [value, setValue] = useState('');
+  /** The term the popup searches — set after the pause, or at once on Enter. */
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
 
-  const [value, setValue] = useState(routeQ);
-  // The term this box last pushed into the URL. When it echoes back through
-  // `routeQ` it must NOT overwrite what the user has typed since.
-  const pushedRef = useRef<string | null>(null);
+  // The term the popup was ✕-closed on: the debounce settling on that same
+  // term (Enter, then ✕ within the pause) must not re-open it. Any keystroke
+  // that changes the term clears it.
+  const dismissedTerm = useRef<string | null>(null);
 
-  // Route → box. Leaving /search empties it; arriving (or Back/Forward) fills it.
-  useEffect(() => {
-    if (!onSearchPage) {
-      pushedRef.current = null;
-      setValue('');
-      return;
-    }
-    if (pushedRef.current !== null && routeQ === pushedRef.current) {
-      pushedRef.current = null;
-      return;
-    }
-    setValue(routeQ);
-  }, [onSearchPage, routeQ]);
-
-  function go(term: string): void {
-    if (term.length < GLOBAL_SEARCH_MIN_CHARS || term === routeQ) return;
-    pushedRef.current = term;
-    // Refining a term on /search replaces the entry so Back does not step
-    // through every keystroke; from any other page it is a real navigation.
-    void navigate({ to: SEARCH_PATH, search: { q: term }, replace: onSearchPage });
-  }
-
-  // Box → route, after a pause.
+  // Box → popup, after a pause. Fewer than two characters closes it.
   const debounced = useDebounce(value, DEBOUNCE_MS);
-  // Only the settled term re-runs this; `go` reads the current route on the way.
   useEffect(() => {
-    go(debounced.trim());
+    const term = debounced.trim();
+    setQ(term);
+    if (term !== dismissedTerm.current) dismissedTerm.current = null;
+    setOpen(term.length >= GLOBAL_SEARCH_MIN_CHARS && dismissedTerm.current === null);
   }, [debounced]);
+
+  // A sidebar link (or any navigation) with the popup open closes it.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
 
   // Ctrl+K / Cmd+K anywhere focuses the box.
   useEffect(() => {
@@ -78,14 +63,33 @@ export function GlobalSearch(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Escape (in the box or in the popup) and opening a row close AND clear the
+  // box. ✕ / backdrop close but keep the text and hand focus back to the box
+  // (the portal's unmount would otherwise drop it on <body>), so typing or
+  // Enter refines at once.
+  const close = useCallback((reason: SearchPopupCloseReason) => {
+    setOpen(false);
+    if (reason === 'dismiss') {
+      dismissedTerm.current = inputRef.current?.value.trim() ?? null;
+      inputRef.current?.focus();
+      return;
+    }
+    setValue('');
+  }, []);
+
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
     if (e.key === 'Enter') {
       e.preventDefault();
-      go(value.trim());
+      const term = value.trim();
+      if (term.length < GLOBAL_SEARCH_MIN_CHARS) return;
+      dismissedTerm.current = null;
+      setQ(term);
+      setOpen(true);
       return;
     }
     if (e.key === 'Escape') {
       e.preventDefault();
+      setOpen(false);
       setValue('');
     }
   }
@@ -106,6 +110,7 @@ export function GlobalSearch(): React.JSX.Element {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
       />
+      <SearchPopup q={q} open={open} onClose={close} />
     </div>
   );
 }

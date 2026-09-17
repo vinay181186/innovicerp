@@ -1206,10 +1206,10 @@ table.tbl-ctr td .innovic-select {
 }
 
 /* ── Global search (header) ── */
-/* components/shared/global-search.tsx — the search box in #topbar. It only
-   launches the full-screen Search page (modules/search); no dropdown. Input
-   matches the lists' "Search this list…" box (.innovic-input, 12px) sized to
-   sit inside the 54px bar. */
+/* components/shared/global-search.tsx — the search box in #topbar. It opens
+   the results in a full-window popup below the bar (.gs-overlay, below);
+   no dropdown. Input matches the lists' "Search this list…" box
+   (.innovic-input, 12px) sized to sit inside the 54px bar. */
 .gs-wrap {
   position: relative;
   flex-shrink: 0;
@@ -1227,6 +1227,49 @@ table.tbl-ctr td .innovic-select {
   height: 32px;
   padding: 6px 10px 6px 28px;
   font-size: 12px;
+}
+/* Search popup (modules/search/components/search-popup.tsx). The usual
+   .overlay/.modal, but starting BELOW the top bar so the search box stays
+   visible, focused and editable above it, and filling that whole area so it
+   reads as a full window rather than a centred box. */
+.overlay.gs-overlay {
+  top: var(--topbar-height);
+  align-items: stretch;
+  padding: 8px 12px 12px;
+}
+.gs-overlay .modal {
+  max-width: none;
+  width: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+/* Flex column top to bottom so the results table is the popup's ONE scroller
+   (its sticky header holds) whatever height the summary + count strip take —
+   ten kinds wrap the strip to two rows, so no pixel budget would do. */
+.gs-overlay .modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.gs-overlay .modal-hdr {
+  flex: 0 0 auto;
+}
+.gs-overlay .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.gs-overlay .gs-results-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.gs-overlay .tbl-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
 }
 /* Search page results (modules/search/components/results-table.tsx).
    Fixed layout so the table never grows a sideways scrollbar: the six short
@@ -1269,6 +1312,16 @@ table.tbl-ctr td .innovic-select {
 @media (max-width: 768px) {
   .innovic-input.gs-input {
     width: 150px;
+  }
+  /* #topbar is 48px at this width (see the block above), not the token. */
+  .overlay.gs-overlay {
+    top: 48px;
+  }
+  /* The mobile `.modal { height: 100vh !important }` above would make the
+     popup 48px taller than its overlay and hide the bottom of the results. */
+  .gs-overlay .modal {
+    height: auto !important;
+    max-height: 100% !important;
   }
   /* Phones: the six fixed columns (750px) would squeeze Particulars to
      nothing; fall back to natural widths with a sideways scroll instead. */

@@ -2,30 +2,30 @@
 //
 // Particulars renders `r.lines` ONE LINE EACH (a DC and a PO on the same row
 // are two lines, never joined) and, when the API says what matched but that
-// text is not already on the row, a last "matched: …" line. Rows open via
-// `openSearchResult` — the single place that knows where each kind lives.
+// text is not already on the row, a last "matched: …" line. A row click calls
+// `onOpen`; the host routes it through `openSearchResult` — the single place
+// that knows where each kind lives.
 //
 // Column widths live in the `.gs-results` rules (innovic-theme.css, "Global
 // search" block): fixed layout so Particulars takes the slack and wraps, and
 // the page never grows a sideways scrollbar at 1280px.
 
-import { useNavigate } from '@tanstack/react-router';
 import { GLOBAL_SEARCH_KIND_META } from '@innovic/shared';
 import type { GlobalSearchResult } from '@innovic/shared';
-import { GLOBAL_SEARCH_LANDING_KIND, openSearchResult } from '../api';
+import { GLOBAL_SEARCH_LANDING_KIND } from '../api';
 
 export const RESULT_COLUMNS = 7;
 
 export function ResultsTable({
   items,
   body,
+  onOpen,
 }: {
   items: GlobalSearchResult[];
   /** A single full-width state row (Searching… / error / no results) shown instead of `items`. */
   body?: React.ReactNode;
+  onOpen: (r: GlobalSearchResult) => void;
 }): React.JSX.Element {
-  const navigate = useNavigate();
-
   return (
     <div className="tbl-wrap gs-results">
       <table className="innovic-table">
@@ -59,9 +59,7 @@ export function ResultsTable({
                     key={`${r.kind}:${r.id}`}
                     style={{ cursor: 'pointer' }}
                     title={landing ? 'Open in its register' : 'Open'}
-                    onClick={() => {
-                      openSearchResult(navigate, r);
-                    }}
+                    onClick={() => onOpen(r)}
                   >
                     <td className="mono">{r.date ?? '—'}</td>
                     <td className="text3" style={{ fontSize: 12 }}>
