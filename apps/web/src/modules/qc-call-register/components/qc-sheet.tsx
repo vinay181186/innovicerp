@@ -263,7 +263,9 @@ function CalledAttendedCell(props: {
 
 function InspectorCell(props: {
   name: string | null;
-  ref: string | null;
+  /** The log number. Not `ref` — that name is reserved by React, and a string
+   *  in it throws (#290) the moment a completed row renders. */
+  logRef: string | null;
   remarks: string | null;
 }): React.JSX.Element {
   return (
@@ -272,8 +274,8 @@ function InspectorCell(props: {
         {props.name ?? '—'}
       </div>
       <div style={{ ...QUIET, ...TRUNC }} title={props.remarks ?? undefined}>
-        {props.ref ? <span style={MONO}>{props.ref}</span> : null}
-        {props.ref && props.remarks ? ' · ' : ''}
+        {props.logRef ? <span style={MONO}>{props.logRef}</span> : null}
+        {props.logRef && props.remarks ? ' · ' : ''}
         {props.remarks ?? ''}
       </div>
     </td>
@@ -343,7 +345,7 @@ export function CompletedProcessSheetRow({ l }: { l: QcHistoryLogRow }): React.J
       <NumCell value={l.accepted} />
       <NumCell value={l.rejected} red />
       <CalledAttendedCell called={l.qcCallDate} attended={l.logDate} respDays={resp} />
-      <InspectorCell name={l.inspector} ref={l.logNo} remarks={l.remarks} />
+      <InspectorCell name={l.inspector} logRef={l.logNo} remarks={l.remarks} />
       <VerdictCell verdict={verdict} reportPath={l.qcReportPath} reportName={l.qcReportName} />
     </tr>
   );
@@ -376,7 +378,7 @@ export function CompletedIncomingSheetRow({ l }: { l: IncomingQcCompletedRow }):
       <NumCell value={l.acceptedQty} />
       <NumCell value={l.rejectedQty} red />
       <CalledAttendedCell called={l.grnDate} attended={l.qcDate} respDays={l.respDays} />
-      <InspectorCell name={l.qcInspectedBy} ref={null} remarks={l.qcRemarks} />
+      <InspectorCell name={l.qcInspectedBy} logRef={null} remarks={l.qcRemarks} />
       <VerdictCell verdict={verdict} reportPath={l.qcReportPath} reportName={l.qcReportName} />
     </tr>
   );
