@@ -213,6 +213,9 @@ export const items = pgTable(
     material: text('material'),
     uom: uomEnum('uom').notNull().default('NOS'),
     itemType: itemTypeEnum('item_type').notNull().default('component'),
+    // ADR-171 (migration 0134): 'make' | 'buy'. Buy items skip plan / route
+    // card / Production Order — the Planning line raises a PR instead.
+    procurementType: text('procurement_type').notNull().default('make'),
     hsnCode: text('hsn_code'),
     drawingFilePath: text('drawing_file_path'),
     /** PL-SI-1 (migration 0028) — low-stock alert threshold per item.

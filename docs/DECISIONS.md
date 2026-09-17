@@ -9188,3 +9188,43 @@ behaving exactly as before.
 - Positive: one credit per JC, at a human-confirmed moment; operations have one master.
 - Negative: two flows coexist until old plans drain; the OFF switch adds one JC lookup to two
   cascades. Raw `job_cards.production_order_id` FK is declared in SQL only (table order in schema.ts).
+
+## ADR-171: Item Master "Source" (make / buy) — bought items raise a PR from the Planning line, never a route card
+
+**Date:** 2026-09-17 · **Status:** Accepted · **Migration:** 0134 · **Builds on:** ADR-170
+
+### Context
+With ADR-170 the plan type comes from the route card. For a bought-in item that is a detour: a
+route card exists only to say "Direct Purchase", and a Production Order has nothing to close.
+The user asked for the shortest path, grounded in standard ERP practice. SAP's Material Master
+carries a procurement type (E = in-house production, F = external procurement) and MRP turns a
+demand into a production order or a purchase requisition accordingly; Odoo's product routes
+(Manufacture / Buy) do the same on a confirmed sales order.
+
+### Decision
+1. `items.procurement_type` — `'make'` (default, every existing item) | `'buy'`. Shown on the
+   Item Master form as **Source: Make / Buy**.
+2. Planning line whose item is **buy**: the Action cell offers **+ PR** (not + Plan). A small
+   box — Qty, Required date, Remark — raises ONE standard purchase request (`IN-PR-#####`,
+   `pr_type='standard'`, `source_so_line_id` = the line). No plan, no route card, no Production
+   Order. From there the existing Purchase flow (PR → PO → GRN → Incoming QC → stock at GRN) is
+   untouched; the GRN credit is the plain-purchase path ADR-170 explicitly leaves alone.
+3. `PlanningLine` gains `itemProcurementType`, `prQty` (live qty of non-cancelled PRs raised
+   against the line) and `prs[]`; `totalPlanned` / `remaining` include `prQty` on buy lines so
+   the % planned and the SO-level roll-up stay honest.
+4. Sales-order lines only. A job-work (JWSO) line is the client's material and is never bought
+   in; the endpoint refuses it.
+5. The route card's "Direct Purchase" plan-type tile is hidden on the form (the enum value stays
+   for existing rows); Create Production Order still refuses such cards.
+
+### Alternatives considered
+- Keep Direct Purchase on the route card and make the Production Order raise a PR — rejected:
+  a route card for something we never route, and a "production" document with nothing to close.
+- Raise the PR automatically the moment a plan is created — rejected: planners create plans
+  ahead of when Purchase should act; one deliberate click keeps that control.
+
+### Consequences
+- Positive: one flag on the item, one click on the line; production and purchase paths are
+  symmetrical (Gen production order / + PR) and both end in stock exactly once.
+- Negative: existing direct-purchase plans keep the old Execute path until they drain; an item
+  wrongly left as "make" shows + Plan — the Item Master flag must be set for bought parts.

@@ -279,16 +279,13 @@ export const createPlanInputSchema = z.object({
   /** Defaults to 'plan' (old flow). The Planning screen's Create Plan box sends
    *  'route_card': the server then stores the plan as `planned` straight away
    *  (no ops, no finalize step) — operations arrive later from the Route Card
-   *  when a Production Order is created. Only valid with planType 'manufacture'. */
+   *  when a Production Order is created. The client's planType is a placeholder;
+   *  the server stores the route card's. */
   opsSource: planOpsSourceSchema.optional(),
 }).superRefine((val, ctx) => {
-  if (val.opsSource === 'route_card' && val.planType !== 'manufacture') {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['opsSource'],
-      message: 'A route-card-driven plan must be a manufacture plan',
-    });
-  }
+  // opsSource 'route_card': planType is a placeholder — the server stores the
+  // item's route-card plan type (ADR-170) and re-stamps it when the Production
+  // Order is created, so no planType restriction here.
   if (val.opsSource === 'route_card' && val.ops && val.ops.length > 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

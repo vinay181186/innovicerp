@@ -3,6 +3,8 @@
 
 import { z } from 'zod';
 import { planDerivedStatusSchema, planOpsSourceSchema, planStatusSchema, planTypeSchema } from './plan';
+import { itemProcurementTypeSchema } from './item';
+import { PR_STATUSES } from '../enums/pr-status';
 
 // ─── Left pane: SO list ──────────────────────────────────────────────────
 
@@ -91,6 +93,24 @@ export const planningLineSchema = z.object({
   itemName: z.string().nullable(),
   orderQty: z.number().int().nonnegative(),
   dueDate: z.string().nullable(),
+  /** ADR-171. 'buy' lines are purchased, not planned: the Action cell offers
+   *  "+ PR" instead of "+ Plan"; `prs` lists the purchase requests raised
+   *  against this line and `prQty` (their live qty, cancelled excluded) counts
+   *  towards `totalPlanned` / `remaining`. Defaults keep older API builds valid. */
+  itemProcurementType: itemProcurementTypeSchema.default('make'),
+  prQty: z.number().int().nonnegative().default(0),
+  prs: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        code: z.string(),
+        qty: z.number().int().nonnegative(),
+        status: z.enum(PR_STATUSES),
+        /** PO raised from this PR, when any (code only — for the chip). */
+        poCode: z.string().nullable().default(null),
+      }),
+    )
+    .default([]),
   plans: z.array(planningPlanSummarySchema),
   /** Sum of all non-cancelled plan_qty for this SO line. */
   totalPlanned: z.number().int().nonnegative(),
@@ -210,3 +230,25 @@ export const reservationActionResultSchema = z.object({
   qtyMoved: z.number().int().nonnegative(),
 });
 export type ReservationActionResult = z.infer<typeof reservationActionResultSchema>;
+
+// ─── Buy lines: raise a purchase request straight from the SO line (ADR-171) ──
+
+/** `POST /so-planning/lines/:soLineId/raise-pr` — for a line whose item is
+ *  `procurementType='buy'`. Raises ONE standard purchase request (IN-PR-#####)
+ *  for `qty` of the line's item with `source_so_line_id` = the line, so Purchase
+ *  sees where the demand came from and the Planning line counts it as planned.
+ *  Sales-order lines only: a job-work (JWSO) line is the client's material and
+ *  is never bought in. */
+export const raisePlanningPrInputSchema = z.object({
+  qty: z.number().int().positive(),
+  requiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  remarks: z.string().trim().max(500).nullable().optional(),
+});
+export type RaisePlanningPrInput = z.infer<typeof raisePlanningPrInputSchema>;
+
+export const raisePlanningPrResponseSchema = z.object({
+  prId: z.string().uuid(),
+  prCode: z.string(),
+});
+export type RaisePlanningPrResponse = z.infer<typeof raisePlanningPrResponseSchema>;
+

@@ -4,6 +4,7 @@ export * from './lib/jc-op-sequence';
 export * from './enums/user-role';
 export * from './enums/uom';
 export * from './enums/item-type';
+export * from './enums/item-procurement-type';
 export * from './enums/op-type';
 export * from './enums/op-log-change-status';
 export * from './enums/op-log-type';
