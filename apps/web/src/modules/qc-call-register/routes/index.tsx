@@ -65,10 +65,17 @@ export const qcCallRegisterRoute = createRoute({
   // Inspect button lands here).
   // ?tab=tpi opens straight on the TPI tab (the JC op card's 📋 TPI link). It
   // SEEDS the tab only — see the tab state below, which stays local.
-  validateSearch: (search: Record<string, unknown>): { line?: string; tab?: 'qc' | 'tpi' } => {
-    const out: { line?: string; tab?: 'qc' | 'tpi' } = {};
+  // ?search=<text> seeds the search box the same way (the JC op card's
+  // 🔬 QC Call button passes its job-card code, so the inspector lands on that
+  // card's calls instead of the whole register). Seed only — typing in the box
+  // afterwards does not write back to the URL.
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { line?: string; tab?: 'qc' | 'tpi'; search?: string } => {
+    const out: { line?: string; tab?: 'qc' | 'tpi'; search?: string } = {};
     if (typeof search.line === 'string') out.line = search.line;
     if (search.tab === 'qc' || search.tab === 'tpi') out.tab = search.tab;
+    if (typeof search.search === 'string' && search.search.trim()) out.search = search.search;
     return out;
   },
   component: QcCallRegisterPage,
@@ -94,7 +101,7 @@ function QcCallRegisterPage(): React.JSX.Element {
   // Incoming-material QC (GRN lines) shown on the same approval screen. Optional
   // — if it fails to load we still render process QC rather than blocking.
   const incomingQuery = useIncomingQc();
-  const { line: lineParam, tab: tabParam } = qcCallRegisterRoute.useSearch();
+  const { line: lineParam, tab: tabParam, search: searchParam } = qcCallRegisterRoute.useSearch();
   const [openId, setOpenId] = useState<string | null>(lineParam ? `inc:${lineParam}` : null);
   // Pending | Completed toggle. Opens on Pending — that is the working queue,
   // and the ?line= deep-link lands on a pending row.
@@ -102,8 +109,9 @@ function QcCallRegisterPage(): React.JSX.Element {
   // Stage strip filter: null = every stage.
   const [stage, setStage] = useState<QcStage | null>(null);
   // One search box for whichever view is showing. Same fields the two old
-  // per-pane boxes covered, now one term.
-  const [search, setSearch] = useState('');
+  // per-pane boxes covered, now one term. ?search= only seeds it (see the
+  // route's validateSearch).
+  const [search, setSearch] = useState(searchParam ?? '');
   // Screen-merge: TPI folded in as a tab (it used to be its own /tpi page, which
   // stays registered). Tab choice stays LOCAL state — clicking a tab
   // deliberately does NOT write to the URL, so this route's own ?line=

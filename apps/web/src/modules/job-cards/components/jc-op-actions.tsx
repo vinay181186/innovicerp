@@ -21,8 +21,8 @@
 // is there work behind it this minute. So each one is gated on a QUANTITY or an
 // ID, never on a status alone, and each mirrors the server's own refusal:
 //
-//   ▶ Start / ✚ Log   available > 0        (startOp / submitOpLog refuse at 0)
-//   🔬 QC / 📋 TPI     qcPending > 0        (nothing waiting to be inspected)
+//   ▶ / ✚ Op Entry    available > 0        (startOp / submitOpLog refuse at 0)
+//   🔬 QC Call / 📋 TPI qcPending > 0       (nothing waiting to be inspected)
 //   ⚠ NC              qcRejectedQty > 0    (nothing was rejected → no NC to open)
 //   🚚 Gen DC         readyToSendQty > 0   (nothing cleared to send)
 //   📥 Receive        an open challan exists
@@ -261,9 +261,10 @@ export function JcOpFooter({
   const isQc = op.opType === 'qc';
   const isOut = op.opType === 'outsource';
 
-  // ▶ Start and ✚ Log both write op entries, which guard on op_entry.entry.
+  // ▶ Op Entry (start) and ✚ Op Entry (log) both write op entries, which
+  // guard on op_entry.entry.
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
-  // 🔬 QC opens the QC Call Register (read of the pending list) → qc_submit.view.
+  // 🔬 QC Call opens the QC Call Register (read of the pending list) → qc_submit.view.
   const canQc = effectiveFormPerms(eff, 'qc_submit').view;
   // 📋 TPI opens the same screen's TPI tab, whose submit enforces BOTH keys
   // (tpi/components/tpi-view.tsx:317-319) — mirror that so the link hides
@@ -309,8 +310,10 @@ export function JcOpFooter({
   //
   // So we ask `activeRunningOpId` instead (op-entry.ts): it is the running_ops
   // row RUNNING this op, or null when no machine is holding it.
-  //   activeRunningOpId !== null → ✚ Log   (add production to work in progress)
-  //   activeRunningOpId === null → ▶ Start (nothing running; start before logging)
+  //   activeRunningOpId !== null → ✚ Op Entry (log production against the run)
+  //   activeRunningOpId === null → ▶ Op Entry (nothing running; start it first)
+  // Both are labelled "Op Entry" (user, 2026-09-18) — the icon says which end
+  // of the chain the click lands on; the destination is the same screen.
   // The two are now mutually exclusive by construction — they are branches of
   // one chain below, so exactly one of them can ever render.
   //
@@ -378,8 +381,9 @@ export function JcOpFooter({
             className="btn btn-sm"
             style={{ color: 'var(--green)' }}
             onClick={onQc}
+            title="Open the QC Call Register filtered to this job card"
           >
-            🔬 QC ({op.qcPending})
+            🔬 QC Call ({op.qcPending})
           </button>
         ) : showQcText ? (
           op.computedStatus === 'complete' ? (
@@ -395,12 +399,22 @@ export function JcOpFooter({
            and Log are the two ends of one chain, so exactly one of them shows —
            an op with pending qty and no running session offers Start, never
            Log. */
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => onLog(op.id)}>
-          ✚ Log
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          onClick={() => onLog(op.id)}
+          title="Log production against the run that is open on this operation"
+        >
+          ✚ Op Entry
         </button>
       ) : showStart ? (
-        <button type="button" className="btn btn-sm" onClick={() => onStart(op.id)}>
-          ▶ Start
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          onClick={() => onStart(op.id)}
+          title="Start this operation in Op Entry"
+        >
+          ▶ Op Entry
         </button>
       ) : null}
       {/* Third-party inspection lives on the QC Call Register's TPI tab (the old

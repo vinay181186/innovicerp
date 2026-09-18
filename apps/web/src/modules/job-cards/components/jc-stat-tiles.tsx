@@ -307,200 +307,229 @@ export function JcStatTiles({
       {/* ───────── Row 3 — operation flow ───────── */}
       <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
         <div style={lblStyle}>Operation Flow</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-          {sortedOps.length === 0 ? (
-            <span className="text3" style={{ fontSize: 12 }}>
-              No operations
-            </span>
-          ) : (
-            sortedOps.map((o, i) => {
-              const isQc = o.opType === 'qc';
-              const isOut = o.opType === 'outsource';
-              const st = o.computedStatus;
-              // Flow qty = what this op RELEASED over what actually REACHED it.
-              // The denominator used to be jc.orderQty for every non-QC op, so
-              // an op that only ever received part of the batch advertised the
-              // whole order against itself: on IN-JC-26-00085, 45 pieces reached
-              // Op3 (drill) and it read "40/50" instead of "40/45", and the
-              // outsource op showed no qty at all. `inputAvail` is the qty
-              // upstream actually cleared — the same correction the PENDING tile
-              // got in migration 0087. Fall back to orderQty only when the
-              // enrichment row is missing.
-              const flowQty = isQc ? o.qcAcceptedQty : o.completedQty;
-              const flowDenom = o.inputAvail || jc.orderQty;
-              const flowLabel = `${flowQty}/${flowDenom}`;
-              // CARD COLOUR SAYS HOW FAR THE OP HAS GOT (user, 2026-09-12), not
-              // what kind of op it is — the kind is already on the card as the
-              // 🔬 / 🏭 mark and the QC / OUTSOURCE / machine line.
-              //   grey    done      15/15 — nothing left to do here
-              //   yellow  partial   started, or some pieces through, not all
-              //   green   next      upstream has cleared it and nobody has begun
-              //   plain   waiting   upstream has not reached it yet
-              // Qty first, status second: "15/15" reads as done whatever the
-              // status column says, which is how the user described it.
-              const done = st === 'complete' || (flowDenom > 0 && flowQty >= flowDenom);
-              // `qc_pending` is deliberately NOT in this list: on a QC op it
-              // means pieces are waiting to be inspected and nobody has begun,
-              // which is "next", not "partial". Once some are accepted flowQty
-              // is > 0 and the card turns yellow on its own.
-              const partial =
-                !done &&
-                (flowQty > 0 ||
-                  st === 'in_progress' ||
-                  st === 'running' ||
-                  st === 'pr_raised' ||
-                  st === 'po_created' ||
-                  st === 'at_vendor');
-              const next = !done && !partial && st !== 'waiting';
-              const bg = done
-                ? 'var(--bg4)'
-                : partial
-                  ? 'var(--amber3)'
-                  : next
-                    ? 'var(--green3)'
-                    : 'var(--bg2)';
-              // A waiting card is white on a white page, so its border is the
-              // only thing that draws it -- --border was too faint to see
-              // (user, JC-15 op 2, 2026-09-12). --border3 is a plain grey that
-              // reads without competing with the done card's grey fill.
-              const bdr = done
-                ? 'var(--border2)'
-                : partial
-                  ? 'var(--amber2)'
-                  : next
-                    ? 'var(--green2)'
-                    : 'var(--border3)';
-              const opColor = done
-                ? 'var(--text3)'
-                : partial
-                  ? 'var(--amber)'
-                  : next
-                    ? 'var(--green)'
-                    : 'var(--text3)';
-              const doneColor = opColor;
-              return (
-                <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <JcOpFlowChips jc={jc} sortedOps={sortedOps} opExtraById={opExtraById} />
+      </div>
+    </div>
+  );
+}
+
+/** The OPERATION FLOW chip strip — one chip per op, coloured by how far the
+ *  op has got (grey done · yellow partial · green next · plain waiting).
+ *  Shared by the EDIT page's summary card (JcStatTiles above) and the VIEW
+ *  page's Route / Operation Flow panel (jc-view-summary.tsx), so the two
+ *  screens cannot drift. Moved out of JcStatTiles verbatim. */
+export function JcOpFlowChips({
+  jc,
+  sortedOps,
+  opExtraById,
+  stateIcons = false,
+}: {
+  jc: JobCardListItem;
+  sortedOps: JcOpEnriched[];
+  opExtraById: Map<string, JobCardStatusOpExtra>;
+  /** VIEW page only (2026-09-18 mockup): a ✓ before the qty of a done chip and
+   *  a ↻ on a partial one. Off by default so the EDIT page's chips are
+   *  unchanged. Same done/partial rule as the colours — nothing new decided. */
+  stateIcons?: boolean;
+}): React.JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+      {sortedOps.length === 0 ? (
+        <span className="text3" style={{ fontSize: 12 }}>
+          No operations
+        </span>
+      ) : (
+        sortedOps.map((o, i) => {
+          const isQc = o.opType === 'qc';
+          const isOut = o.opType === 'outsource';
+          const st = o.computedStatus;
+          // Flow qty = what this op RELEASED over what actually REACHED it.
+          // The denominator used to be jc.orderQty for every non-QC op, so
+          // an op that only ever received part of the batch advertised the
+          // whole order against itself: on IN-JC-26-00085, 45 pieces reached
+          // Op3 (drill) and it read "40/50" instead of "40/45", and the
+          // outsource op showed no qty at all. `inputAvail` is the qty
+          // upstream actually cleared — the same correction the PENDING tile
+          // got in migration 0087. Fall back to orderQty only when the
+          // enrichment row is missing.
+          const flowQty = isQc ? o.qcAcceptedQty : o.completedQty;
+          const flowDenom = o.inputAvail || jc.orderQty;
+          const flowLabel = `${flowQty}/${flowDenom}`;
+          // CARD COLOUR SAYS HOW FAR THE OP HAS GOT (user, 2026-09-12), not
+          // what kind of op it is — the kind is already on the card as the
+          // 🔬 / 🏭 mark and the QC / OUTSOURCE / machine line.
+          //   grey    done      15/15 — nothing left to do here
+          //   yellow  partial   started, or some pieces through, not all
+          //   green   next      upstream has cleared it and nobody has begun
+          //   plain   waiting   upstream has not reached it yet
+          // Qty first, status second: "15/15" reads as done whatever the
+          // status column says, which is how the user described it.
+          const done = st === 'complete' || (flowDenom > 0 && flowQty >= flowDenom);
+          // `qc_pending` is deliberately NOT in this list: on a QC op it
+          // means pieces are waiting to be inspected and nobody has begun,
+          // which is "next", not "partial". Once some are accepted flowQty
+          // is > 0 and the card turns yellow on its own.
+          const partial =
+            !done &&
+            (flowQty > 0 ||
+              st === 'in_progress' ||
+              st === 'running' ||
+              st === 'pr_raised' ||
+              st === 'po_created' ||
+              st === 'at_vendor');
+          const next = !done && !partial && st !== 'waiting';
+          const bg = done
+            ? 'var(--bg4)'
+            : partial
+              ? 'var(--amber3)'
+              : next
+                ? 'var(--green3)'
+                : 'var(--bg2)';
+          // A waiting card is white on a white page, so its border is the
+          // only thing that draws it -- --border was too faint to see
+          // (user, JC-15 op 2, 2026-09-12). --border3 is a plain grey that
+          // reads without competing with the done card's grey fill.
+          const bdr = done
+            ? 'var(--border2)'
+            : partial
+              ? 'var(--amber2)'
+              : next
+                ? 'var(--green2)'
+                : 'var(--border3)';
+          const opColor = done
+            ? 'var(--text3)'
+            : partial
+              ? 'var(--amber)'
+              : next
+                ? 'var(--green)'
+                : 'var(--text3)';
+          const doneColor = opColor;
+          return (
+            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div
+                style={{
+                  background: bg,
+                  border: `1px solid ${bdr}`,
+                  borderRadius: 6,
+                  padding: '6px 10px',
+                  textAlign: 'center',
+                  minWidth: 80,
+                }}
+              >
+                <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: opColor }}>
+                  Op{opSrNo(o.opSeq)}
+                  {isOut ? ' 🏭' : ''}
+                  {isQc ? ' 🔬' : ''}
+                </div>
+                {isQc ? (
+                  <>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        margin: '2px 0',
+                        color: 'var(--green)',
+                      }}
+                    >
+                      QC
+                    </div>
+                    <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.operation}</div>
+                  </>
+                ) : isOut ? (
                   <div
                     style={{
-                      background: bg,
-                      border: `1px solid ${bdr}`,
-                      borderRadius: 6,
-                      padding: '6px 10px',
-                      textAlign: 'center',
-                      minWidth: 80,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      margin: '2px 0',
+                      color: 'var(--amber)',
                     }}
                   >
-                    <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: opColor }}>
-                      Op{opSrNo(o.opSeq)}
-                      {isOut ? ' 🏭' : ''}
-                      {isQc ? ' 🔬' : ''}
-                    </div>
-                    {isQc ? (
-                      <>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 600,
-                            margin: '2px 0',
-                            color: 'var(--green)',
-                          }}
-                        >
-                          QC
-                        </div>
-                        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.operation}</div>
-                      </>
-                    ) : isOut ? (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 600,
-                          margin: '2px 0',
-                          color: 'var(--amber)',
-                        }}
-                      >
-                        OUTSOURCE
-                      </div>
-                    ) : (
-                      <>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 600,
-                            margin: '2px 0',
-                            color: 'var(--cyan)',
-                          }}
-                        >
-                          {o.machineCode ?? o.machineCodeText ?? '—'}
-                        </div>
-                        {/* ADR-164 — the code above is the PLANNED machine. When
-                            the pieces are (being) made elsewhere, name that
-                            machine under it; when they match, nothing is added. */}
-                        {(() => {
-                          const actual = resolveActualMachine({
-                            planned: o.machineCode ?? o.machineCodeText,
-                            activeRunningMachineCode: o.activeRunningMachineCode,
-                            machines: o.machines,
-                          });
-                          return actual.differs ? (
-                            <div
-                              className="mono"
-                              style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}
-                              title={`Actual machine: ${actual.label}`}
-                            >
-                              {actual.label}
-                            </div>
-                          ) : null;
-                        })()}
-                        {opExtraById.get(o.id)?.machineName ? (
-                          <div style={{ fontSize: 9, color: 'var(--text3)' }}>
-                            {opExtraById.get(o.id)?.machineName}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                    <div style={{ fontSize: 9, color: 'var(--text3)' }}>
-                      {isQc ? '' : o.operation.split(' ').slice(0, 2).join(' ')}
-                    </div>
-                    {isOut ? (
-                      <div
-                        style={{
-                          fontSize: 9,
-                          marginTop: 3,
-                          fontWeight: 700,
-                          color: 'var(--amber)',
-                        }}
-                      >
-                        {OUTSOURCE_STATUS_LABEL[o.outsourceStatus ?? 'pending']}
-                      </div>
-                    ) : null}
-                    {/* Every op carries a qty, outsource included — it used to
-                        show the vendor status alone, so a chip with 38 pieces
-                        accepted back read as bare "Received" with no number. */}
-                    <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: doneColor }}>
-                      {flowLabel}
-                    </div>
-                    {o.reworkPendingQty > 0 || o.reworkRaisedQty > 0 ? (
-                      <div
-                        style={{
-                          fontSize: 9,
-                          marginTop: 2,
-                          fontWeight: 700,
-                          color: 'var(--amber)',
-                        }}
-                      >
-                        ♻{o.reworkPendingQty > 0 ? o.reworkPendingQty : o.reworkRaisedQty}
-                      </div>
-                    ) : null}
+                    OUTSOURCE
                   </div>
-                  {i < sortedOps.length - 1 ? (
-                    <span style={{ color: 'var(--text3)', fontSize: 18 }}>›</span>
-                  ) : null}
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        margin: '2px 0',
+                        color: 'var(--cyan)',
+                      }}
+                    >
+                      {o.machineCode ?? o.machineCodeText ?? '—'}
+                    </div>
+                    {/* ADR-164 — the code above is the PLANNED machine. When
+                        the pieces are (being) made elsewhere, name that
+                        machine under it; when they match, nothing is added. */}
+                    {(() => {
+                      const actual = resolveActualMachine({
+                        planned: o.machineCode ?? o.machineCodeText,
+                        activeRunningMachineCode: o.activeRunningMachineCode,
+                        machines: o.machines,
+                      });
+                      return actual.differs ? (
+                        <div
+                          className="mono"
+                          style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}
+                          title={`Actual machine: ${actual.label}`}
+                        >
+                          {actual.label}
+                        </div>
+                      ) : null;
+                    })()}
+                    {opExtraById.get(o.id)?.machineName ? (
+                      <div style={{ fontSize: 9, color: 'var(--text3)' }}>
+                        {opExtraById.get(o.id)?.machineName}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+                <div style={{ fontSize: 9, color: 'var(--text3)' }}>
+                  {isQc ? '' : o.operation.split(' ').slice(0, 2).join(' ')}
                 </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+                {isOut ? (
+                  <div
+                    style={{
+                      fontSize: 9,
+                      marginTop: 3,
+                      fontWeight: 700,
+                      color: 'var(--amber)',
+                    }}
+                  >
+                    {OUTSOURCE_STATUS_LABEL[o.outsourceStatus ?? 'pending']}
+                  </div>
+                ) : null}
+                {/* Every op carries a qty, outsource included — it used to
+                    show the vendor status alone, so a chip with 38 pieces
+                    accepted back read as bare "Received" with no number. */}
+                <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: doneColor }}>
+                  {stateIcons && done ? (
+                    <span style={{ color: 'var(--green)' }}>✓ </span>
+                  ) : stateIcons && partial ? (
+                    <span style={{ color: 'var(--amber)' }}>↻ </span>
+                  ) : null}
+                  {flowLabel}
+                </div>
+                {o.reworkPendingQty > 0 || o.reworkRaisedQty > 0 ? (
+                  <div
+                    style={{
+                      fontSize: 9,
+                      marginTop: 2,
+                      fontWeight: 700,
+                      color: 'var(--amber)',
+                    }}
+                  >
+                    ♻{o.reworkPendingQty > 0 ? o.reworkPendingQty : o.reworkRaisedQty}
+                  </div>
+                ) : null}
+              </div>
+              {i < sortedOps.length - 1 ? (
+                <span style={{ color: 'var(--text3)', fontSize: 18 }}>›</span>
+              ) : null}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
