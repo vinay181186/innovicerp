@@ -2,7 +2,7 @@
 **Module key:** `qc-processes` · **Domain:** Quality
 
 ## Purpose
-Master data for QC operation/process types (e.g. MIR, DIR, TPI) with a code, description, default cycle time, and active flag. Referenced when building route cards / QC ops and as the vocabulary of QC operations. Standard CRUD master following the Items-master template.
+Master data for QC operation/process types (e.g. MIR, DIR, TPI, Final Inspection — the last is the name the server appends as the terminal QC op, ADR-069/ADR-168, and its row is seeded by migration 0132) with a code, description, default cycle time, and active flag. Referenced when building route cards / QC ops and as the vocabulary of QC operations. Standard CRUD master following the Items-master template.
 
 ## Pages / Screens
 - **QC Processes list** (`qc-processes`) — searchable, paginated table with active filter.

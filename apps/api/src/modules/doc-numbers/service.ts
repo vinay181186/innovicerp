@@ -38,6 +38,7 @@ const TABLE_NAME: Record<DocNumberType, string> = {
   purchase_order: 'purchase_orders',
   grn: 'goods_receipt_notes',
   delivery_challan: 'delivery_challans',
+  production_order: 'production_orders',
 };
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

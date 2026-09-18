@@ -7,20 +7,23 @@
 //   GET /so-planning/:soId/bom/:lineId → §8 + §9 BOM explosion + child plans
 //
 // Math + grouping mirror legacy renderSOPlanning (HTML L9299) +
-// showEquipBOMPlanning (L8848) + showBOMPlanning (L7116). All reads,
-// no writes. Writes go through the existing plans/service.ts.
+// showEquipBOMPlanning (L8848) + showBOMPlanning (L7116). Reads only, except
+// raisePlanningPr (ADR-171) — plan writes still go through plans/service.ts.
 //
 // Query plan: batched. List endpoint = 2 round-trips. Detail = 3.
 // BOM endpoint = 5.
 
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
+  ItemProcurementType,
   PlanningBomChild,
   PlanningBomResponse,
   PlanningDetailResponse,
   PlanningLine,
   PlanningPlanSummary,
   PlanningSoListResponse,
+  RaisePlanningPrInput,
+  RaisePlanningPrResponse,
 } from '@innovic/shared';
 import {
   bomMasterLines,
@@ -33,13 +36,69 @@ import {
   jobWorkOrders,
   planOps,
   plans,
+  productionOrders,
+  purchaseOrders,
   purchaseRequests,
   salesOrderLines,
   salesOrders,
   soStockReservations,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
+import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { derivePlanStatus } from '../../lib/plan-derived-status';
+import { emitActivityLog } from '../activity-log/service';
+import { nextSeriesCode } from '../op-entry/osp-cascade';
+
+// ADR-170 — a route-card plan's derived status hangs on two live facts read
+// alongside the plan: its Production Order (LEFT join, one per plan) and
+// whether its item has an active Route Card. Same rule as plans/service.ts
+// listPlans via lib/plan-derived-status.
+const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.route_cards rc
+  WHERE rc.company_id = ${plans.companyId}
+    AND rc.item_id = ${plans.itemId}
+    AND rc.deleted_at IS NULL
+)`;
+const PO_JOIN = and(eq(productionOrders.planId, plans.id), isNull(productionOrders.deletedAt));
+
+/** The ADR-170 fields every plan summary carries, from one joined row. */
+function routeCardPlanFields(r: {
+  plan: typeof plans.$inferSelect;
+  poId: string | null;
+  poCode: string | null;
+  poStatus: string | null;
+  hasRouteCard: boolean | null;
+}): Pick<
+  PlanningPlanSummary,
+  | 'opsSource'
+  | 'derivedStatus'
+  | 'productionOrderId'
+  | 'productionOrderCode'
+  | 'plannedStartDate'
+  | 'plannedEndDate'
+  | 'rawMaterialGradeText'
+  | 'rawMaterialSizeText'
+  | 'remarks'
+> {
+  return {
+    opsSource: r.plan.opsSource === 'route_card' ? 'route_card' : 'plan',
+    derivedStatus: derivePlanStatus({
+      opsSource: r.plan.opsSource,
+      planStatus: r.plan.planStatus,
+      hasRouteCard: Boolean(r.hasRouteCard),
+      poStatus: r.poStatus ?? null,
+    }),
+    productionOrderId: r.poId ?? null,
+    productionOrderCode: r.poCode ?? null,
+    plannedStartDate: r.plan.plannedStartDate ?? null,
+    plannedEndDate: r.plan.plannedEndDate ?? null,
+    rawMaterialGradeText: r.plan.rawMaterialGradeText ?? null,
+    rawMaterialSizeText: r.plan.rawMaterialSizeText ?? null,
+    remarks: r.plan.remarks ?? null,
+  };
+}
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -92,6 +151,86 @@ async function loadOspPrsByPlan(
   return map;
 }
 
+/** ADR-171 — 'make' unless the Item Master says 'buy'. A free-text line (no
+ *  item) is 'make': it can only ever be planned, never bought through + PR. */
+function toProcurementType(raw: string | null | undefined): ItemProcurementType {
+  return raw === 'buy' ? 'buy' : 'make';
+}
+
+/** The filter that makes a purchase request "this SO line's PR" (ADR-171):
+ *  a standard PR raised straight against the line — not an OSP PR, which
+ *  hangs off a JC op and belongs to a plan's card, not the line. */
+function linePrFilter(companyId: string, lineIds: string[]) {
+  return and(
+    eq(purchaseRequests.companyId, companyId),
+    inArray(purchaseRequests.sourceSoLineId, lineIds),
+    isNull(purchaseRequests.deletedAt),
+    isNull(purchaseRequests.sourceJcOpId),
+    eq(purchaseRequests.prType, 'standard'),
+    NOT_A_PLAN_PR,
+  );
+}
+
+/** A PR that an OLD direct-purchase / full-outsource plan raised on Execute
+ *  also carries `source_so_line_id` and `pr_type='standard'` — but that qty is
+ *  already counted through the plan's `plan_qty`. Counting it again here would
+ *  double a Buy line's planned qty the moment its item is flagged Buy (exactly
+ *  the migration story). The plan points at its PR through dp_pr_id /
+ *  fo_pr_id / fo_mat_pr_id / material_pr_id, so those PRs are not "line PRs". */
+const NOT_A_PLAN_PR = sql`NOT EXISTS (
+  SELECT 1 FROM ${plans} p
+  WHERE p.deleted_at IS NULL
+    AND ${purchaseRequests.id} IN (p.dp_pr_id, p.fo_pr_id, p.fo_mat_pr_id, p.material_pr_id)
+)`;
+
+type LinePrs = { prs: PlanningLine['prs']; prQty: number };
+
+/**
+ * ADR-171 — purchase requests raised from the Planning line, keyed by SO line
+ * id. `prQty` is the live total (cancelled PRs excluded); `prs` lists every one
+ * including cancelled so the chip row tells the whole story. `poCode` is the
+ * purchase order stamped on the PR (`purchase_requests.po_id`, the first PO
+ * raised from it), when any.
+ */
+async function loadPrsByLine(
+  tx: DbTransaction,
+  companyId: string,
+  lineIds: string[],
+): Promise<Map<string, LinePrs>> {
+  const map = new Map<string, LinePrs>();
+  if (lineIds.length === 0) return map;
+  const rows = await tx
+    .select({
+      id: purchaseRequests.id,
+      code: purchaseRequests.code,
+      qty: purchaseRequests.qty,
+      status: purchaseRequests.status,
+      soLineId: purchaseRequests.sourceSoLineId,
+      poCode: purchaseOrders.code,
+    })
+    .from(purchaseRequests)
+    .leftJoin(
+      purchaseOrders,
+      and(eq(purchaseOrders.id, purchaseRequests.poId), isNull(purchaseOrders.deletedAt)),
+    )
+    .where(linePrFilter(companyId, lineIds))
+    .orderBy(asc(purchaseRequests.code));
+  for (const r of rows) {
+    if (!r.soLineId) continue;
+    const entry = map.get(r.soLineId) ?? { prs: [], prQty: 0 };
+    entry.prs.push({
+      id: r.id,
+      code: r.code,
+      qty: Number(r.qty),
+      status: r.status,
+      poCode: r.poCode ?? null,
+    });
+    if (r.status !== 'cancelled') entry.prQty += Number(r.qty);
+    map.set(r.soLineId, entry);
+  }
+  return map;
+}
+
 // ─── Left pane ───────────────────────────────────────────────────────────
 
 export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoListResponse> {
@@ -111,7 +250,10 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         maxDueDate: sql<string | null>`max(${salesOrderLines.dueDate})::text`.as('max_due'),
         // Aggregated item code + part name across this SO's lines, for the
         // client-side item search on the Planning page.
-        itemsText: sql<string>`coalesce(string_agg(distinct trim(coalesce(${salesOrderLines.itemCodeText}, '') || ' ' || coalesce(${salesOrderLines.partName}, '')), ' '), '')`.as('items_text'),
+        itemsText:
+          sql<string>`coalesce(string_agg(distinct trim(coalesce(${salesOrderLines.itemCodeText}, '') || ' ' || coalesce(${salesOrderLines.partName}, '')), ' '), '')`.as(
+            'items_text',
+          ),
       })
       .from(salesOrders)
       .leftJoin(
@@ -186,6 +328,39 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
     const directMap = new Map<string, number>();
     for (const r of directAgg) directMap.set(r.soId, Number(r.directQty));
 
+    // 2c. ADR-171 — live purchase-request qty per SO on BUY lines. Counted as
+    // planned so the left-pane % matches the right-pane lines (a buy line is
+    // covered by its PR the way a make line is covered by its plan). Same
+    // filter as loadPrsByLine; make-line PRs are deliberately left out.
+    const prAgg =
+      soIds.length === 0
+        ? []
+        : await tx
+            .select({
+              soId: salesOrders.id,
+              prQty: sql<number>`coalesce(sum(${purchaseRequests.qty}), 0)::int`.as('pr_qty'),
+            })
+            .from(purchaseRequests)
+            .innerJoin(salesOrderLines, eq(salesOrderLines.id, purchaseRequests.sourceSoLineId))
+            .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+            .innerJoin(items, eq(items.id, salesOrderLines.itemId))
+            .where(
+              and(
+                inArray(salesOrders.id, soIds),
+                eq(purchaseRequests.companyId, companyId),
+                isNull(purchaseRequests.deletedAt),
+                isNull(purchaseRequests.sourceJcOpId),
+                eq(purchaseRequests.prType, 'standard'),
+                NOT_A_PLAN_PR,
+                sql`${purchaseRequests.status} <> 'cancelled'`,
+                eq(items.procurementType, 'buy'),
+              ),
+            )
+            .groupBy(salesOrders.id);
+    for (const r of prAgg) {
+      plannedMap.set(r.soId, (plannedMap.get(r.soId) ?? 0) + Number(r.prQty));
+    }
+
     // ── Job Work Orders ───────────────────────────────────────────────────
     // Same shape as SO but off job_work_orders / job_work_order_lines and the
     // plans.jw_line_id link. JWs are plannable identically to SOs (full parity).
@@ -197,7 +372,10 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         totalLines: sql<number>`count(${jobWorkOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${jobWorkOrderLines.orderQty}), 0)::int`.as('total_qty'),
         maxDueDate: sql<string | null>`max(${jobWorkOrderLines.dueDate})::text`.as('max_due'),
-        itemsText: sql<string>`coalesce(string_agg(distinct trim(coalesce(${jobWorkOrderLines.itemCodeText}, '') || ' ' || coalesce(${jobWorkOrderLines.partName}, '')), ' '), '')`.as('items_text'),
+        itemsText:
+          sql<string>`coalesce(string_agg(distinct trim(coalesce(${jobWorkOrderLines.itemCodeText}, '') || ' ' || coalesce(${jobWorkOrderLines.partName}, '')), ' '), '')`.as(
+            'items_text',
+          ),
       })
       .from(jobWorkOrders)
       .leftJoin(
@@ -269,7 +447,15 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
     for (const r of jwDirectAgg) jwDirectMap.set(r.soId, Number(r.directQty));
 
     const buildItem = (
-      r: { soId: string; soCode: string; customerName: string | null; totalLines: number; totalQty: number; maxDueDate: string | null; itemsText: string },
+      r: {
+        soId: string;
+        soCode: string;
+        customerName: string | null;
+        totalLines: number;
+        totalQty: number;
+        maxDueDate: string | null;
+        itemsText: string;
+      },
       source: 'so' | 'jw',
       soType: string,
       planned: number,
@@ -294,7 +480,9 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       };
     };
 
-    const items = [
+    // Named `listItems`, not `items`: that name is the items TABLE in this
+    // module (the 2c PR roll-up above joins it).
+    const listItems = [
       ...soRows.map((r) =>
         buildItem(r, 'so', r.soType, plannedMap.get(r.soId) ?? 0, directMap.get(r.soId) ?? 0),
       ),
@@ -303,7 +491,7 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       ),
     ];
 
-    return { generatedAt: new Date().toISOString(), items };
+    return { generatedAt: new Date().toISOString(), items: listItems };
   });
 }
 
@@ -347,6 +535,7 @@ export async function getPlanningSoDetail(
         itemCode: items.code,
         itemName: items.name,
         itemType: items.itemType,
+        itemProcurementType: items.procurementType,
         // The customer's drawing revision typed on this SO line. Selected as its
         // own cast expression rather than read off `line` because the contract
         // types it as a string, and a database that has not had migration 0119
@@ -373,9 +562,14 @@ export async function getPlanningSoDetail(
               dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
               foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
               foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
+              poId: productionOrders.id,
+              poCode: productionOrders.code,
+              poStatus: productionOrders.status,
+              hasRouteCard: HAS_ROUTE_CARD_SQL,
             })
             .from(plans)
             .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+            .leftJoin(productionOrders, PO_JOIN)
             .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
             .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
             .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
@@ -428,6 +622,7 @@ export async function getPlanningSoDetail(
         code: r.plan.code,
         planType: r.plan.planType,
         planStatus: r.plan.planStatus,
+        ...routeCardPlanFields(r),
         planQty: r.plan.planQty,
         opsCount: ops.count,
         hasOutsourceOp: ops.hasOutsource,
@@ -481,10 +676,7 @@ export async function getPlanningSoDetail(
             })
             .from(bomMasterLines)
             .where(
-              and(
-                inArray(bomMasterLines.bomMasterId, allBomIds),
-                isNull(bomMasterLines.deletedAt),
-              ),
+              and(inArray(bomMasterLines.bomMasterId, allBomIds), isNull(bomMasterLines.deletedAt)),
             )
             .groupBy(bomMasterLines.bomMasterId);
     const bomPartsMap = new Map<string, number>();
@@ -560,10 +752,19 @@ export async function getPlanningSoDetail(
       reservedByLine.set(r.soLineId, (reservedByLine.get(r.soLineId) ?? 0) + Number(r.qty));
     }
 
+    // 7e. ADR-171 — purchase requests raised from the line (buy items).
+    const prsByLine = await loadPrsByLine(tx, companyId, lineIds);
+
     // 8. Compose lines.
     const lines: PlanningLine[] = lineRows.map((r) => {
       const linePlans = plansByLine.get(r.line.id) ?? [];
-      const totalPlanned = linePlans.reduce((s, p) => s + p.planQty, 0);
+      const itemProcurementType = toProcurementType(r.itemProcurementType);
+      const linePrs = prsByLine.get(r.line.id) ?? { prs: [], prQty: 0 };
+      // ADR-171: on a BUY line the PRs are the plan — their live qty counts as
+      // planned. On a make line they are reported but change no number.
+      const totalPlanned =
+        linePlans.reduce((s, p) => s + p.planQty, 0) +
+        (itemProcurementType === 'buy' ? linePrs.prQty : 0);
       const orderQty = r.line.orderQty;
       const direct = directJcByLine.get(r.line.id);
       const directJcQty = direct?.qty ?? 0;
@@ -601,6 +802,9 @@ export async function getPlanningSoDetail(
         itemName: r.itemName ?? r.line.partName,
         orderQty,
         dueDate: r.line.dueDate,
+        itemProcurementType,
+        prQty: linePrs.prQty,
+        prs: linePrs.prs,
         plans: linePlans,
         totalPlanned,
         directJcQty,
@@ -670,6 +874,7 @@ async function getJwPlanningDetail(
       line: jobWorkOrderLines,
       itemCode: items.code,
       itemName: items.name,
+      itemProcurementType: items.procurementType,
     })
     .from(jobWorkOrderLines)
     .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
@@ -689,9 +894,14 @@ async function getJwPlanningDetail(
             dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
             foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
             foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
+            poId: productionOrders.id,
+            poCode: productionOrders.code,
+            poStatus: productionOrders.status,
+            hasRouteCard: HAS_ROUTE_CARD_SQL,
           })
           .from(plans)
           .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+          .leftJoin(productionOrders, PO_JOIN)
           .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
           .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
           .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
@@ -744,6 +954,7 @@ async function getJwPlanningDetail(
       code: r.plan.code,
       planType: r.plan.planType,
       planStatus: r.plan.planStatus,
+      ...routeCardPlanFields(r),
       planQty: r.plan.planQty,
       opsCount: ops.count,
       hasOutsourceOp: ops.hasOutsource,
@@ -856,6 +1067,11 @@ async function getJwPlanningDetail(
       itemName: r.itemName ?? r.line.partName,
       orderQty,
       dueDate: r.line.dueDate,
+      // ADR-171: a job-work line is the client's material — never bought in,
+      // so no PRs and nothing to count. The flag is still reported as-is.
+      itemProcurementType: toProcurementType(r.itemProcurementType),
+      prQty: 0,
+      prs: [],
       plans: linePlans,
       totalPlanned,
       directJcQty,
@@ -945,7 +1161,11 @@ export async function getPlanningBom(
       })
       .from(bomMasters)
       .where(
-        and(eq(bomMasters.id, bomId), eq(bomMasters.companyId, companyId), isNull(bomMasters.deletedAt)),
+        and(
+          eq(bomMasters.id, bomId),
+          eq(bomMasters.companyId, companyId),
+          isNull(bomMasters.deletedAt),
+        ),
       )
       .limit(1);
     const bom = bomHeaders[0];
@@ -1005,9 +1225,14 @@ export async function getPlanningBom(
       .select({
         plan: plans,
         jcCode: jobCards.code,
+        poId: productionOrders.id,
+        poCode: productionOrders.code,
+        poStatus: productionOrders.status,
+        hasRouteCard: HAS_ROUTE_CARD_SQL,
       })
       .from(plans)
       .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+      .leftJoin(productionOrders, PO_JOIN)
       .where(
         and(
           eq(plans.soLineId, soLineId),
@@ -1029,6 +1254,7 @@ export async function getPlanningBom(
         code: r.plan.code,
         planType: r.plan.planType,
         planStatus: r.plan.planStatus,
+        ...routeCardPlanFields(r),
         planQty: r.plan.planQty,
         opsCount: 0,
         hasOutsourceOp: false,
@@ -1079,4 +1305,185 @@ export async function getPlanningBom(
       children,
     };
   });
+}
+
+// ─── Buy lines: raise a purchase request from the SO line (ADR-171) ──────
+
+/**
+ * POST /so-planning/lines/:soLineId/raise-pr
+ *
+ * For an SO line whose item is `procurement_type='buy'`: raises ONE standard
+ * purchase request (IN-PR-#####) for `qty` of the line's item, stamped with
+ * `source_so_line_id` so Purchase sees where the demand came from and the
+ * Planning line counts it as planned (loadPrsByLine). No plan, no route card,
+ * no Production Order — from here the ordinary PR → PO → GRN flow takes over.
+ *
+ * Refuses: a job-work line (the client's material — never bought in), a make
+ * item (plan it instead), and any qty over what the line still has left.
+ *
+ * Gate is the Planning form (`plan_create` entry), not `pr_create`: this is
+ * the planner's one click, exactly like + Plan. The insert is the same one
+ * purchase-requests/service.ts createPurchaseRequest does for a standard PR,
+ * done here so the remaining-qty check and the write share one transaction.
+ */
+export async function raisePlanningPr(
+  soLineId: string,
+  input: RaisePlanningPrInput,
+  user: AuthContext,
+): Promise<RaisePlanningPrResponse> {
+  if (!UUID_RE.test(soLineId)) throw new ValidationError(`Invalid SO line id: ${soLineId}`);
+  await requireFormAccess(user, 'plan_create', 'entry');
+  const companyId = requireCompany(user);
+
+  // withUniqueRetry: two planners raising at the same moment can both compute
+  // the same next IN-PR-##### — the loser re-runs and takes the next number.
+  return withUniqueRetry(() =>
+    withUserContext(user, async (tx) => {
+      // 1. The SO line, its order and its item.
+      const rows = await tx
+        .select({
+          line: salesOrderLines,
+          soCode: salesOrders.code,
+          itemCode: items.code,
+          itemName: items.name,
+          itemProcurementType: items.procurementType,
+        })
+        .from(salesOrderLines)
+        .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+        .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
+        .where(
+          and(
+            eq(salesOrderLines.id, soLineId),
+            eq(salesOrderLines.companyId, companyId),
+            isNull(salesOrderLines.deletedAt),
+          ),
+        )
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        // A job-work line id lands here too (same Planning screen, other
+        // table). Name the real reason rather than "not found".
+        const jw = await tx
+          .select({ id: jobWorkOrderLines.id })
+          .from(jobWorkOrderLines)
+          .where(
+            and(
+              eq(jobWorkOrderLines.id, soLineId),
+              eq(jobWorkOrderLines.companyId, companyId),
+              isNull(jobWorkOrderLines.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (jw.length > 0) {
+          throw new ValidationError(
+            "Job-work lines are the client's material and cannot raise a purchase PR",
+          );
+        }
+        throw new NotFoundError(`Sales order line ${soLineId} not found`);
+      }
+
+      // 2. Only a Buy item may be bought from here.
+      const itemId = row.line.itemId;
+      const itemCode = row.itemCode ?? row.line.itemCodeText ?? '—';
+      if (!itemId || !row.itemCode) {
+        throw new ValidationError(
+          `SO ${row.soCode} line ${row.line.lineNo} has no Item Master item — pick one on the sales order before raising a PR`,
+        );
+      }
+      if (toProcurementType(row.itemProcurementType) !== 'buy') {
+        throw new ValidationError(
+          `Item ${itemCode} is set to Make — plan it instead, or set its Source to Buy in Item Master`,
+        );
+      }
+
+      // 3. What the line still has left — the same numbers the Planning line
+      //    shows: orderQty − plans planned − live PR qty − direct JC qty.
+      const plannedAgg = await tx
+        .select({ qty: sql<number>`coalesce(sum(${plans.planQty}), 0)::int` })
+        .from(plans)
+        .where(
+          and(
+            eq(plans.soLineId, soLineId),
+            isNull(plans.deletedAt),
+            sql`${plans.planStatus} <> 'cancelled'`,
+          ),
+        );
+      const plannedQty = Number(plannedAgg[0]?.qty ?? 0);
+
+      const prQty = (await loadPrsByLine(tx, companyId, [soLineId])).get(soLineId)?.prQty ?? 0;
+
+      // Direct (plan-less) JCs on the line — same rule as the detail read (7b).
+      const directAgg = await tx
+        .select({ qty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int` })
+        .from(jobCards)
+        .leftJoin(
+          plans,
+          and(
+            eq(plans.jcId, jobCards.id),
+            isNull(plans.deletedAt),
+            sql`${plans.planStatus} <> 'cancelled'`,
+          ),
+        )
+        .where(
+          and(eq(jobCards.sourceSoLineId, soLineId), isNull(jobCards.deletedAt), isNull(plans.id)),
+        );
+      const directJcQty = Number(directAgg[0]?.qty ?? 0);
+
+      const orderQty = row.line.orderQty;
+      const remaining = Math.max(0, orderQty - plannedQty - prQty - directJcQty);
+      if (input.qty > remaining) {
+        throw new ValidationError(
+          `Only ${remaining} of ${orderQty} left to cover on SO ${row.soCode} line ${row.line.lineNo} ` +
+            `(planned ${plannedQty}, on PR ${prQty}, on Job Card ${directJcQty}) — cannot raise a PR for ${input.qty}`,
+        );
+      }
+
+      // 4. The PR — same insert as a standard PR from the PR form.
+      const code = await nextSeriesCode(tx, 'pr', companyId, 'IN-PR-');
+      const today = new Date().toISOString().slice(0, 10);
+      const userRemark = input.remarks?.trim();
+      const remarks =
+        `Raised from Planning — SO ${row.soCode} line ${row.line.lineNo}` +
+        (userRemark ? ` — ${userRemark}` : '');
+      const inserted = await tx
+        .insert(purchaseRequests)
+        .values({
+          companyId,
+          code,
+          prDate: today,
+          status: 'open',
+          prType: 'standard',
+          // purchase_requests_vendor_check needs a vendor id OR text. Planning
+          // does not know the vendor — Purchase picks one on the PO — so the
+          // same placeholder the BOM cascade plants goes in here.
+          vendorCodeText: 'TBD',
+          itemId,
+          itemCodeText: row.itemCode,
+          itemName: row.itemName ?? row.line.partName,
+          qty: input.qty,
+          estCost: '0',
+          requiredDate: input.requiredDate ?? row.line.dueDate ?? null,
+          sourceSoLineId: soLineId,
+          remarks,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning({ id: purchaseRequests.id, code: purchaseRequests.code });
+      const pr = inserted[0]!;
+
+      await emitActivityLog(
+        tx,
+        {
+          action: 'CREATE',
+          entity: 'PurchaseRequest',
+          detail: `${pr.code} — ${row.itemName ?? itemCode} x ${input.qty} (from Planning, SO ${row.soCode} line ${row.line.lineNo})`,
+          refId: pr.code,
+        },
+        companyId,
+        user,
+      );
+
+      return { prId: pr.id, prCode: pr.code };
+    }),
+  );
 }

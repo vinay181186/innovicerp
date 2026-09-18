@@ -213,6 +213,9 @@ export const items = pgTable(
     material: text('material'),
     uom: uomEnum('uom').notNull().default('NOS'),
     itemType: itemTypeEnum('item_type').notNull().default('component'),
+    // ADR-171 (migration 0134): 'make' | 'buy'. Buy items skip plan / route
+    // card / Production Order — the Planning line raises a PR instead.
+    procurementType: text('procurement_type').notNull().default('make'),
     hsnCode: text('hsn_code'),
     drawingFilePath: text('drawing_file_path'),
     /** PL-SI-1 (migration 0028) — low-stock alert threshold per item.
@@ -990,6 +993,11 @@ export const jobCards = pgTable(
     }),
     originOpSeq: integer('origin_op_seq'),
     recoveryKind: text('recovery_kind'),
+    // Migration 0133. Set when a Production Order built this JC. The stock
+    // cascades (qc_accept / grn_qc) read it as an OFF switch: such a JC is
+    // credited only when its Production Order is closed. The FK is declared
+    // in SQL (production_orders is defined further down this file).
+    productionOrderId: uuid('production_order_id'),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     // ADR-103 (migration 0083). TRUE → the first op is capped at party material
     // ISSUED to this JC. FALSE → legacy ADR-096/097 cap on material RECEIVED for
@@ -3167,6 +3175,10 @@ export const plans = pgTable(
     planDate: date('plan_date').notNull(),
     planStatus: planStatusEnum('plan_status').notNull().default('in_planning'),
     planType: planTypeEnum('plan_type').notNull(),
+    // Migration 0133: 'plan' (old flow, ops on plan_ops, Execute builds the
+    // JC) | 'route_card' (new flow, no ops here; a Production Order builds the
+    // JC from the item's Route Card). See shared enums/plan-ops-source.
+    opsSource: text('ops_source').notNull().default('plan'),
 
     // SO/JW source link. A plan carries at most one of (soLineId, jwLineId);
     // enforced at the service layer. soCodeText/lineNo hold the display code +
@@ -5963,3 +5975,116 @@ export const servicePoLines = pgTable(
 
 export type ServicePoLineRow = typeof servicePoLines.$inferSelect;
 export type NewServicePoLineRow = typeof servicePoLines.$inferInsert;
+
+// ─── Production Orders (migration 0133) ─────────────────────────────────────
+// Plan + Route Card + Target Date → Job Card. One per plan. Stock for the JC is
+// credited ONCE, at close, with the JC's actually finished qty. Progress is
+// never stored here — it is read off v_jc_status for job_card_id.
+export const productionOrders = pgTable(
+  'production_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    status: text('status').notNull().default('open'), // 'open' | 'closed'
+
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plans.id),
+    planCodeText: text('plan_code_text').notNull(),
+    soCodeText: text('so_code_text'),
+    lineNo: integer('line_no'),
+
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemCodeText: text('item_code_text').notNull(),
+    itemNameText: text('item_name_text'),
+
+    routeCardId: uuid('route_card_id')
+      .notNull()
+      .references(() => routeCards.id),
+    routeCardCodeText: text('route_card_code_text').notNull(),
+    routeCardRevision: integer('route_card_revision').notNull().default(0),
+
+    jobCardId: uuid('job_card_id')
+      .notNull()
+      .references(() => jobCards.id),
+    jcCodeText: text('jc_code_text').notNull(),
+
+    orderQty: integer('order_qty').notNull(),
+    targetDate: date('target_date').notNull(),
+
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by').references(() => users.id),
+    creditedQty: integer('credited_qty'),
+    remarks: text('remarks'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('production_orders_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('production_orders_plan_uniq').on(t.planId).where(sql`${t.deletedAt} is null`),
+    uniqueIndex('production_orders_job_card_uniq')
+      .on(t.jobCardId)
+      .where(sql`${t.deletedAt} is null`),
+    index('production_orders_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    check('production_orders_status_check', sql`${t.status} in ('open', 'closed')`),
+    pgPolicy('production_orders_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('production_orders_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Idempotency keys (migration 0135) ──────────────────────────────────────
+// Server-only bookkeeping for the idempotency plugin (ADR-172). The web app
+// sends a one-off `Idempotency-Key` on every write; the plugin records
+// (user, key) here BEFORE the handler runs and the response AFTER, so a
+// resent request is answered with the stored result instead of running the
+// handler twice. Rows live for one day (the plugin purges them), are keyed by
+// the authenticated user and are never company-scoped — RLS is enabled with
+// NO policies on purpose: only the API's own connection (which bypasses RLS)
+// may read or write this table.
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    key: text('key').notNull(),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    statusCode: integer('status_code'),
+    responseBody: jsonb('response_body'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('idempotency_keys_user_key_uniq').on(t.userId, t.key),
+    index('idempotency_keys_created_idx').on(t.createdAt),
+  ],
+).enableRLS();
+
+export type IdempotencyKeyRow = typeof idempotencyKeys.$inferSelect;
+export type NewIdempotencyKeyRow = typeof idempotencyKeys.$inferInsert;

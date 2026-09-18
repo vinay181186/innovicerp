@@ -55,6 +55,7 @@ import { deliveryChallanDetailRoute } from './modules/delivery-challans/routes/d
 import { deliveryChallanNewRoute } from './modules/delivery-challans/routes/create';
 import { deliveryChallanReceiveRoute } from './modules/delivery-challans/routes/receive';
 import { ncRegisterListRoute } from './modules/nc-register/routes/list';
+import { searchRoute } from './modules/search/routes/results';
 import { ncRegisterDetailRoute } from './modules/nc-register/routes/detail';
 import { ncRegisterEditRoute } from './modules/nc-register/routes/edit';
 import { ncRegisterNewRoute } from './modules/nc-register/routes/new';
@@ -91,6 +92,10 @@ import { planDetailRoute } from './modules/plans/routes/detail';
 import { planEditRoute } from './modules/plans/routes/edit';
 import { plansListRoute } from './modules/plans/routes/list';
 import { planNewRoute } from './modules/plans/routes/new';
+import { productionOrdersListRoute } from './modules/production-orders/routes/list';
+import { productionOrderNewRoute } from './modules/production-orders/routes/new';
+import { productionOrderCloseRoute } from './modules/production-orders/routes/close';
+import { productionOrderDetailRoute } from './modules/production-orders/routes/detail';
 import { purchaseOrdersListRoute } from './modules/purchase-orders/routes/list';
 import { purchaseOrderDetailRoute } from './modules/purchase-orders/routes/detail';
 import { purchaseOrderEditRoute } from './modules/purchase-orders/routes/edit';
@@ -206,6 +211,12 @@ const routeTree = rootRoute.addChildren([
     planNewRoute,
     planDetailRoute,
     planEditRoute,
+    // Production Orders (ADR-170). `new` and `close` before `$id` so neither
+    // path is eaten by the detail param route.
+    productionOrdersListRoute,
+    productionOrderNewRoute,
+    productionOrderCloseRoute,
+    productionOrderDetailRoute,
     assemblyListRoute,
     assemblyDetailRoute,
     jobWorkOrdersListRoute,
@@ -233,6 +244,8 @@ const routeTree = rootRoute.addChildren([
     // Order matters: /nc-register/new + /nc-register/$id/edit win against /$id.
     ncRegisterNewRoute,
     ncRegisterListRoute,
+    // Global search results page (header search box lands here).
+    searchRoute,
     ncRegisterEditRoute,
     ncRegisterDetailRoute,
     deliveryChallansListRoute,

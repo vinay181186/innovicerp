@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { ITEM_TYPES } from '../enums/item-type';
+import { ITEM_PROCUREMENT_TYPES } from '../enums/item-procurement-type';
 import { UOMS } from '../enums/uom';
 
 export const itemTypeSchema = z.enum(ITEM_TYPES);
+export const itemProcurementTypeSchema = z.enum(ITEM_PROCUREMENT_TYPES);
 export const uomSchema = z.enum(UOMS);
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
@@ -18,6 +20,9 @@ export const itemSchema = z.object({
   material: z.string().max(64).nullable(),
   uom: uomSchema,
   itemType: itemTypeSchema,
+  /** ADR-171: 'make' (planned & produced) | 'buy' (purchased finished — the
+   *  Planning line offers "+ PR" instead of "+ Plan"). Default 'make'. */
+  procurementType: itemProcurementTypeSchema.default('make'),
   hsnCode: z.string().max(16).nullable(),
   drawingFilePath: z.string().nullable(),
   createdAt: z.string(),
@@ -45,6 +50,7 @@ export const createItemInputSchema = z.object({
   material: z.string().max(64).optional(),
   uom: uomSchema.default('NOS'),
   itemType: itemTypeSchema.default('component'),
+  procurementType: itemProcurementTypeSchema.default('make'),
   hsnCode: z.string().max(16).optional(),
   drawingFilePath: z.string().optional(),
 });
@@ -91,6 +97,7 @@ export type ItemSortField = z.infer<typeof itemSortFieldSchema>;
 export const listItemsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   itemType: itemTypeSchema.optional(),
+  procurementType: itemProcurementTypeSchema.optional(),
   sortBy: itemSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
   // Max 1000: line-editor autocompletes (BOM, Route Card, Job Card) pull the

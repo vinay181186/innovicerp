@@ -387,6 +387,21 @@ function JobCardsListPage(): React.JSX.Element {
                         );
                       })()
                     : null}
+                  {/* ADR-170 — the Production Order that built this card, in
+                      the same quiet mono as the SO link beside it. Old cards
+                      carry null and show nothing. */}
+                  {jc.productionOrderId && jc.productionOrderCode ? (
+                    <Link
+                      to="/production-orders/$id"
+                      params={{ id: jc.productionOrderId }}
+                      className="mono"
+                      style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                      title="Production Order"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {jc.productionOrderCode}
+                    </Link>
+                  ) : null}
                   <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>{high ? 'High' : 'Normal'}</span>
                   <JcStatusBadge status={jc.computedStatus} />
                   {jc.runningCount > 0 ? (

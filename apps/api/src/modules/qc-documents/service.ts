@@ -300,9 +300,14 @@ function isoLike(v: unknown): string {
   return v instanceof Date ? v.toISOString() : String(v);
 }
 
-// Legacy fixed-order QC columns (L23057 / L23168). Always shown first; any
-// other QC op names found append after, preserving discovery order.
-const QC_FIXED_ORDER = ['MIR', 'MCR', 'DIR', 'TPI'] as const;
+// Fixed-order QC columns (legacy L23057 / L23168, with DIR's slot taken by
+// "Final Inspection" — the system-appended terminal QC op, ADR-069 Rule B).
+// Always shown first; any other QC op names found append after, preserving
+// discovery order. DIR is now an ordinary QC op: it shows only when a JC
+// actually carries it. Entries must be spelt exactly as jc_ops.operation is
+// written (the server writes DEFAULT_FINAL_QC_OP verbatim) because column
+// names are matched by exact string when collected from the ops.
+const QC_FIXED_ORDER = ['MIR', 'MCR', 'Final Inspection', 'TPI'] as const;
 
 const QC_DOC_FULL_NAMES: Record<string, string> = {
   MIR: 'Material Inspection Report',
@@ -767,10 +772,11 @@ export async function getQcLineDetail(
     const sections: QcLineDocSection[] = sectionNames.map((name) => ({
       docType: name,
       fullName: QC_DOC_FULL_NAMES[name] ?? name,
-      // Legacy default: when there's no QC-process config, MIR/MCR/DIR/TPI are
-      // treated as mandatory; here we drive it off report_types when a matching
-      // report type exists, else fall back to the fixed-order set being
-      // mandatory and everything else optional.
+      // Legacy default: when there's no QC-process config, the fixed-order set
+      // (MIR/MCR/Final Inspection/TPI) is treated as mandatory; here we drive
+      // it off report_types when a matching report type exists, else fall
+      // back to the fixed-order set being mandatory and everything else
+      // optional.
       mandatory: mandatoryByName.has(name.toUpperCase())
         ? (mandatoryByName.get(name.toUpperCase()) as boolean)
         : (QC_FIXED_ORDER as readonly string[]).includes(name),

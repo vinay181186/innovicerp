@@ -73,6 +73,10 @@ export async function listItems(
     if (input.itemType) {
       conditions.push(eq(items.itemType, input.itemType));
     }
+    // ADR-171: Source filter (Make / Buy).
+    if (input.procurementType) {
+      conditions.push(eq(items.procurementType, input.procurementType));
+    }
 
     const where = and(...conditions);
 
@@ -178,6 +182,7 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
           material: input.material ?? null,
           uom: input.uom,
           itemType: input.itemType,
+          procurementType: input.procurementType,
           hsnCode: input.hsnCode ?? null,
           drawingFilePath: input.drawingFilePath ?? null,
           createdBy: user.id,
@@ -305,6 +310,7 @@ export async function createItemsBulk(
         material: it.material ?? null,
         uom: it.uom,
         itemType: it.itemType,
+        procurementType: it.procurementType,
         hsnCode: it.hsnCode ?? null,
         drawingFilePath: it.drawingFilePath ?? null,
         createdBy: user.id,
@@ -365,6 +371,7 @@ export async function updateItem(
     if (input.material !== undefined) updates.material = input.material ?? null;
     if (input.uom !== undefined) updates.uom = input.uom;
     if (input.itemType !== undefined) updates.itemType = input.itemType;
+    if (input.procurementType !== undefined) updates.procurementType = input.procurementType;
     if (input.hsnCode !== undefined) updates.hsnCode = input.hsnCode ?? null;
     if (input.drawingFilePath !== undefined)
       updates.drawingFilePath = input.drawingFilePath ?? null;

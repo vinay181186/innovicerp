@@ -4,6 +4,7 @@
 // ops table.
 
 import { type CreatePlanInput, type PlanType, opSrNo } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
@@ -214,6 +215,10 @@ interface PlanFormProps {
   submitError?: string | null;
   /** True for edit mode — code field becomes read-only. */
   isEdit?: boolean;
+  /** ADR-170 — true for a route-card-driven plan (`opsSource: 'route_card'`).
+   *  Hides the Operations editor and shows the "operations come from the Route
+   *  Card" notice instead. Old plans never set it. */
+  hideOps?: boolean;
 }
 
 export function PlanForm({
@@ -223,6 +228,7 @@ export function PlanForm({
   submitLabel,
   submitError,
   isEdit,
+  hideOps,
 }: PlanFormProps): React.JSX.Element {
   const [values, setValues] = useState<PlanFormValues>(initialValues);
 
@@ -326,7 +332,7 @@ export function PlanForm({
     setValues((v) => ({ ...v, ops: v.ops.filter((_, i) => i !== idx) }));
   };
 
-  const showOps = values.planType === 'manufacture' || values.planType === 'assembly';
+  const showOps = !hideOps && (values.planType === 'manufacture' || values.planType === 'assembly');
 
   return (
     <form
@@ -672,6 +678,21 @@ export function PlanForm({
                 rows={2}
               />
             </Field>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ADR-170 — route-card-driven plan: no ops editor at all. */}
+      {hideOps ? (
+        <div className="panel">
+          <div className="panel-body">
+            <div className="text3" style={{ fontSize: 12 }}>
+              Operations come from the item's Route Card. Create a Production Order to build the Job
+              Card.{' '}
+              <Link to="/production-orders/new" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+                Create Production Order →
+              </Link>
+            </div>
           </div>
         </div>
       ) : null}

@@ -19,7 +19,20 @@ import { soPlanningKeys } from '@/modules/so-planning/api';
 export const plansKeys = {
   all: ['plans'] as const,
   list: (q: ListPlansQuery) =>
-    [...plansKeys.all, 'list', q.status ?? null, q.planType ?? null, q.search ?? null, q.limit, q.offset] as const,
+    [
+      ...plansKeys.all,
+      'list',
+      q.status ?? null,
+      q.planType ?? null,
+      q.search ?? null,
+      // ADR-170 — Production → Plans filters. Part of the key so All ↔ Pending
+      // never serve each other's cached page.
+      q.opsSource ?? null,
+      q.derivedStatus ?? null,
+      q.poPending ?? null,
+      q.limit,
+      q.offset,
+    ] as const,
   detail: (id: string) => [...plansKeys.all, 'detail', id] as const,
   dashboard: () => [...plansKeys.all, 'dashboard'] as const,
   defaultOps: (itemId: string | null) => [...plansKeys.all, 'default-ops', itemId] as const,
@@ -30,6 +43,11 @@ function buildPlansSearch(q: ListPlansQuery): string {
   if (q.status) params.set('status', q.status);
   if (q.planType) params.set('planType', q.planType);
   if (q.search) params.set('search', q.search);
+  if (q.opsSource) params.set('opsSource', q.opsSource);
+  if (q.derivedStatus) params.set('derivedStatus', q.derivedStatus);
+  // Only ever sent as `true` — the server coerces the string, so a literal
+  // `false` would still read as pending.
+  if (q.poPending) params.set('poPending', 'true');
   if (q.limit !== undefined) params.set('limit', String(q.limit));
   if (q.offset !== undefined) params.set('offset', String(q.offset));
   const s = params.toString();
@@ -106,7 +124,10 @@ export function useReleaseReservations() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: ReleaseReservationInput) =>
-      apiFetch<ReservationActionResult>('/so-reservations/release', { method: 'POST', json: input }),
+      apiFetch<ReservationActionResult>('/so-reservations/release', {
+        method: 'POST',
+        json: input,
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
       void qc.invalidateQueries({ queryKey: plansKeys.all });
@@ -131,8 +152,7 @@ export function useUpdatePlan(id: string) {
 export function useFinalizePlan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<PlanDetail>(`/plans/${id}/finalize`, { method: 'POST' }),
+    mutationFn: (id: string) => apiFetch<PlanDetail>(`/plans/${id}/finalize`, { method: 'POST' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
     },
@@ -157,8 +177,7 @@ export function useExecutePlan() {
 export function useSoftDeletePlan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ ok: true }>(`/plans/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => apiFetch<{ ok: true }>(`/plans/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
     },
@@ -183,9 +202,7 @@ export function useDefaultRouteOps(itemId: string | null) {
   return useQuery<DefaultRouteOpsResponse>({
     queryKey: plansKeys.defaultOps(itemId),
     queryFn: () =>
-      apiFetch<DefaultRouteOpsResponse>(
-        `/plans/default-ops?itemId=${encodeURIComponent(itemId!)}`,
-      ),
+      apiFetch<DefaultRouteOpsResponse>(`/plans/default-ops?itemId=${encodeURIComponent(itemId!)}`),
     enabled: !!itemId,
   });
 }

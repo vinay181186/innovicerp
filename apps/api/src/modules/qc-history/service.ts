@@ -46,6 +46,13 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         -- so the item name rides along beside the code off the items LEFT JOIN
         -- that is already here for i.code.
         i.name AS "itemName",
+        -- Terminal QC gate (ADR-069): true when this op is the job card's LAST
+        -- live op. Same criterion as op-entry/qc-stock-cascade.ts
+        -- tryApplyQcStockCascade (highest op_seq on the JC, soft-deleted ops
+        -- excluded), expressed as a correlated subquery so the register and
+        -- the stock cascade can never disagree on which op credits stock.
+        (vos.op_seq = (SELECT MAX(lo.op_seq) FROM public.jc_ops lo
+          WHERE lo.job_card_id = jc.id AND lo.deleted_at IS NULL)) AS "isLastOp",
         jo.operation, jc.order_qty AS "orderQty",
         vos.completed_qty AS "completed", vos.qc_accepted_qty AS "qcAccepted",
         vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
@@ -79,6 +86,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
+        isLastOp: Boolean(r['isLastOp']),
         operation: (r['operation'] as string | null) ?? '',
         orderQty: Number(r['orderQty'] ?? 0),
         completed: Number(r['completed'] ?? 0),
@@ -95,7 +103,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
     // ── Completed QC log entries (last 500) ──
     const logRows = await tx.execute(sql`
       SELECT
-        ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
+        ol.id AS "logId", jc.id AS "jobCardId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
         so.code AS "soCode", i.code AS "itemCode",
         -- Same live SO-line read as the pending query above: the drawing revision
         -- rides the existing sol LEFT JOIN, is null for cards with no SO behind
@@ -105,6 +113,9 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         -- The part that was inspected, named beside its code so the completed
         -- feed can be read back without opening each job card in turn.
         i.name AS "itemName",
+        -- Same last-op test as the pending query above (ADR-069 terminal gate).
+        (jo.op_seq = (SELECT MAX(lo.op_seq) FROM public.jc_ops lo
+          WHERE lo.job_card_id = jc.id AND lo.deleted_at IS NULL)) AS "isLastOp",
         jo.operation,
         ol.qty AS "accepted", ol.reject_qty AS "rejected",
         ol.log_date AS "logDate", ol.created_at AS "loggedAt", ol.shift, ol.operator_name AS "inspector", ol.remarks,
@@ -126,12 +137,14 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
     const logs: QcHistoryLogRow[] = (logRows as unknown as Array<Record<string, unknown>>).map(
       (r) => ({
         logId: r['logId'] as string,
+        jobCardId: (r['jobCardId'] as string | null) ?? null,
         jcCode: r['jcCode'] as string,
         opSeq: Number(r['opSeq']),
         soCode: (r['soCode'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
+        isLastOp: Boolean(r['isLastOp']),
         operation: (r['operation'] as string | null) ?? '',
         accepted: Number(r['accepted'] ?? 0),
         rejected: Number(r['rejected'] ?? 0),

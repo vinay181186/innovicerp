@@ -26,6 +26,7 @@ import { dailyTaskReportsRoutes } from './modules/daily-task-reports/routes';
 import { soCostingRoutes } from './modules/so-costing/routes';
 import { stockValuationRoutes } from './modules/stock-valuation/routes';
 import { trashRoutes } from './modules/trash/routes';
+import { globalSearchRoutes } from './modules/global-search/routes';
 import { assemblyRoutes } from './modules/assembly/routes';
 import { alertsRoutes } from './modules/alerts/routes';
 import { startAlertsWorker, stopAlertsWorker } from './modules/alerts/worker-boot';
@@ -45,6 +46,7 @@ import { opEntryRoutes } from './modules/op-entry/routes';
 import { goodsReceiptNotesRoutes } from './modules/goods-receipt-notes/routes';
 import { operatorsRoutes } from './modules/operators/routes';
 import { plansRoutes } from './modules/plans/routes';
+import { productionOrdersRoutes } from './modules/production-orders/routes';
 import { purchaseOrdersRoutes } from './modules/purchase-orders/routes';
 import { purchaseRequestsRoutes } from './modules/purchase-requests/routes';
 import { companiesRoutes } from './modules/companies/routes';
@@ -100,6 +102,7 @@ import { usersRoutes } from './modules/users/routes';
 import { vendorsRoutes } from './modules/vendors/routes';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
+import { idempotencyPlugin } from './plugins/idempotency';
 
 initSentry();
 
@@ -117,6 +120,10 @@ await app.register(cors, {
 await app.register(sensible);
 await app.register(errorHandlerPlugin);
 await app.register(authPlugin);
+// ADR-172: repeat writes (same user + Idempotency-Key) are answered with the
+// first run's stored result instead of running the handler twice. Must sit
+// after authPlugin (it keys on req.user) and before every route.
+await app.register(idempotencyPlugin);
 
 // Liveness probe — used by Railway's healthcheck. ALWAYS returns 200 if
 // the server is responding. Doesn't depend on downstream services so a
@@ -197,6 +204,7 @@ await app.register(shopFloorRoutes);
 await app.register(jobQueueRoutes);
 await app.register(productionScheduleRoutes);
 await app.register(plansRoutes);
+await app.register(productionOrdersRoutes);
 await app.register(assemblyRoutes);
 await app.register(jobWorkOrdersRoutes);
 await app.register(jobCardsRoutes);
@@ -238,6 +246,7 @@ await app.register(opLogViewerRoutes);
 await app.register(ospProcessesRoutes);
 await app.register(dataIntegrityRoutes);
 await app.register(trashRoutes);
+await app.register(globalSearchRoutes);
 await app.register(backupRoutes);
 await app.register(scDashboardRoutes);
 await app.register(soCycleTimeRoutes);

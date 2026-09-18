@@ -16,8 +16,7 @@ class ApiError extends Error {
 type RequestInitWithJson = Omit<RequestInit, 'body'> & { json?: unknown };
 
 // Friendly, plain-language copy for the failure modes users actually hit.
-const NETWORK_MESSAGE =
-  "Couldn't reach the server. Check your internet connection and try again.";
+const NETWORK_MESSAGE = "Couldn't reach the server. Check your internet connection and try again.";
 const SERVER_MESSAGE = 'The server had a problem. Please try again in a moment.';
 
 /**
@@ -42,6 +41,18 @@ function humanizeValidationDetails(details: unknown): string | null {
   return parts.length > 0 ? parts.join('; ') : null;
 }
 
+/** crypto.randomUUID exists only in secure contexts (https / localhost); a
+ *  shop-floor PC opening the app over plain http on a LAN IP has no such
+ *  function, so fall back to getRandomValues rather than break every save. */
+function newRequestKey(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (x) => x.toString(16).padStart(2, '0')).join('');
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   init: RequestInitWithJson = {},
@@ -52,6 +63,15 @@ export async function apiFetch<T = unknown>(
   const headers = new Headers(init.headers);
   if (session?.access_token) headers.set('authorization', `Bearer ${session.access_token}`);
   if (init.json !== undefined) headers.set('content-type', 'application/json');
+  // ADR-172: every write carries a one-off key. When a slow save drops the
+  // connection and the browser resends the request, the API recognises the
+  // repeat and answers with the first run's result instead of running the
+  // handler again ("IN-DC-00043/R1 already exists" after a 14 s wait, while
+  // the challan had in fact been created).
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && !headers.has('idempotency-key')) {
+    headers.set('idempotency-key', newRequestKey());
+  }
 
   // A dropped connection / DNS / CORS failure rejects fetch with a TypeError —
   // translate it into a friendly ApiError instead of leaking "Failed to fetch".
@@ -90,8 +110,7 @@ export async function apiFetch<T = unknown>(
     const e = (body ?? {}) as { error?: string; message?: string; details?: unknown };
     // For validation errors, prefer the specific field reason over the generic
     // "Request validation failed" the server sends.
-    const friendly =
-      e.error === 'validation_error' ? humanizeValidationDetails(e.details) : null;
+    const friendly = e.error === 'validation_error' ? humanizeValidationDetails(e.details) : null;
     const fallback = res.status >= 500 ? SERVER_MESSAGE : `HTTP ${res.status}`;
     throw new ApiError(
       res.status,

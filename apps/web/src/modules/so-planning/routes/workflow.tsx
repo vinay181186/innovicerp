@@ -1,32 +1,65 @@
-// SO/JW Planning workflow (PL-4b §1, §2, §3). Two-pane layout mirroring
-// legacy renderSOPlanning (HTML L9299):
-//   Left  = 250px fixed SO list with planning %.
-//   Right = per-line cards with status-specific action buttons.
-// Clicking actions opens the modals (create, edit, equip-bom, assembly-bom).
+// SO/JWSO Planning (PL-4b, rebuilt 2026-09-17 for ADR-170).
+//
+// Two levels, one screen:
+//   Level 1 — the list of open orders. A SO | JWSO toggle in the header picks
+//             which source is listed; the search box narrows it. Click a row
+//             to open the order.
+//   Level 2 — one order: a compact header (Order No, Customer, Type, Due,
+//             Client PO) and ONE table with EVERY line, no paging, no
+//             horizontal scrollbar (fixed layout, long text wraps). Each row
+//             lists its plans as chips and carries the "+ Plan" / BOM actions.
+//
+// "+ Plan" opens the Create Plan box (create-plan-modal.tsx): qty + remark,
+// schedule, raw material — nothing else. The plan is stored with
+// opsSource 'route_card'; operations come from the item's Route Card when a
+// Production Order is raised. Old plans (opsSource 'plan') keep their Edit /
+// Execute / View JC / PR links inside their chip.
+//
+// URL state: ?src=so|jw (toggle), ?soId= (level 2), ?openPlan= (edit modal).
 
-import type {
-  PlanStatus,
-  PlanningLine,
-  PlanningPlanSummary,
-  PlanningSoListItem,
+import {
+  PLAN_DERIVED_STATUS_LABEL,
+  type PlanDerivedStatus,
+  type PlanStatus,
+  type PrStatus,
+  type PlanningLine,
+  type PlanningPlanSummary,
+  type PlanningSoListItem,
 } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import {
+  type ColumnDef,
+  type SortingState,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { Activity, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
-import { usePlanningSoDetail, usePlanningSoDetails, usePlanningSoList } from '../api';
+import {
+  soPlanningKeys,
+  usePlanningSoDetail,
+  usePlanningSoDetails,
+  usePlanningSoList,
+} from '../api';
 import { BomPlanningModal } from '../components/bom-planning-modal';
 import { CreatePlanModal } from '../components/create-plan-modal';
+import { RaisePrModal } from '../components/raise-pr-modal';
 import { EditPlanModal } from '../components/edit-plan-modal';
 
 const searchSchema = z.object({
   soId: z.string().uuid().optional(),
   openPlan: z.string().uuid().optional(),
+  /** Which orders level 1 lists. Survives reload / Back. Default 'so'. */
+  src: z.enum(['so', 'jw']).optional(),
 });
 
 export const soPlanningWorkflowRoute = createRoute({
@@ -35,6 +68,8 @@ export const soPlanningWorkflowRoute = createRoute({
   validateSearch: searchSchema,
   component: PlanningWorkflowPage,
 });
+
+type Source = 'so' | 'jw';
 
 // Legacy renders the raw stored status text (`esc(plan.status)`), which in the
 // legacy store is Title Case ("In Planning", "JC Created", …). Our enum is
@@ -50,9 +85,53 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
   cancelled: 'Cancelled',
 };
 
+const PLAN_STATUS_COLOR: Record<PlanStatus, string> = {
+  in_planning: 'var(--amber)',
+  planned: 'var(--blue)',
+  jc_created: 'var(--cyan)',
+  pr_created: 'var(--purple)',
+  in_production: 'var(--cyan)',
+  complete: 'var(--green)',
+  cancelled: 'var(--text3)',
+};
+
+const DERIVED_STATUS_COLOR: Record<PlanDerivedStatus, string> = {
+  route_card_pending: 'var(--amber)',
+  gen_production_order: 'var(--blue)',
+  in_production: 'var(--cyan)',
+  production_complete: 'var(--green)',
+};
+
+const ORDER_STATUS_LABEL: Record<PlanningSoListItem['planningStatus'], string> = {
+  fully_planned: 'Fully Planned',
+  partial: 'Partial',
+  unplanned: 'Unplanned',
+};
+
+const ORDER_STATUS_BADGE: Record<PlanningSoListItem['planningStatus'], string> = {
+  fully_planned: 'b-green',
+  partial: 'b-amber',
+  unplanned: 'b-grey',
+};
+
+// ADR-171: a purchase request raised from a BUY line, chip label + colour.
+const PR_STATUS_LABEL: Record<PrStatus, string> = {
+  open: 'Open',
+  approved: 'Approved',
+  po_created: 'PO Created',
+  cancelled: 'Cancelled',
+};
+const PR_STATUS_COLOR: Record<PrStatus, string> = {
+  open: 'var(--amber)',
+  approved: 'var(--blue)',
+  po_created: 'var(--green)',
+  cancelled: 'var(--text3)',
+};
+
 type ModalState =
   | { kind: 'none' }
   | { kind: 'create'; soLineId: string }
+  | { kind: 'raise-pr'; soLineId: string }
   | { kind: 'edit'; planId: string }
   | { kind: 'equip-bom'; soLineId: string }
   | { kind: 'assembly-bom'; soLineId: string };
@@ -63,8 +142,8 @@ type ModalState =
 const MAX_SEARCH_SOS = 20;
 
 // Plan/line lifecycle → the status label + colour a line is shown with. ONE
-// helper, used by the per-line card AND the search-results row, so the two
-// views can never disagree about what a line's state is.
+// helper, used by the line row AND the search-results row, so the two views
+// can never disagree about what a line's state is.
 //  - "executed" = work actually allocated: JC created, outsource/direct PR
 //    raised, in production, or complete.
 //  - covered but plan still a draft (in_planning/planned) → "In Planning"
@@ -76,10 +155,6 @@ function lineStatusOf(line: PlanningLine): {
   color: string;
   /** 0–100: covered qty (plans + in-production direct JCs) over order qty. */
   pct: number;
-  /** Bar colour follows execution, not just coverage: amber while covered only
-   *  by draft plans (nothing allocated yet), green once executed (JC/PR) or in
-   *  production, cyan when partial, grey when none. */
-  barColor: string;
   hasDirectJc: boolean;
 } {
   const totalQty = line.orderQty;
@@ -90,16 +165,8 @@ function lineStatusOf(line: PlanningLine): {
     line.plans.length > 0 && line.plans.every((p) => planExecuted(p.planStatus));
   const coveredByDraftPlans = line.remaining <= 0 && line.plans.length > 0 && !allPlansExecuted;
 
-  // Bar FILL = covered qty (plans + in-production direct JCs).
   const coveredQty = Math.min(totalQty, line.totalPlanned + line.directJcQty);
   const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
-  const barColor = coveredByDraftPlans
-    ? 'var(--amber)'
-    : pct >= 100
-      ? 'var(--green)'
-      : pct > 0
-        ? 'var(--cyan)'
-        : 'var(--text3)';
   const label =
     line.remaining <= 0
       ? line.plans.length === 0 && hasDirectJc
@@ -120,62 +187,78 @@ function lineStatusOf(line: PlanningLine): {
       : line.plans.length > 0 || hasDirectJc
         ? 'var(--amber)'
         : 'var(--text3)';
-  return { label, color, pct, barColor, hasDirectJc };
+  return { label, color, pct, hasDirectJc };
+}
+
+/** Small purple "JW" tag next to a Job Work order's number. */
+function JwChip(): JSX.Element {
+  return (
+    <span className="tag" style={{ color: 'var(--purple)', background: 'var(--bg4)' }}>
+      JW
+    </span>
+  );
 }
 
 function PlanningWorkflowPage(): JSX.Element {
   const navigate = useNavigate();
-  const { soId: soIdParam, openPlan } = soPlanningWorkflowRoute.useSearch();
+  const { soId, openPlan, src: srcParam } = soPlanningWorkflowRoute.useSearch();
+  const src: Source = srcParam ?? 'so';
   const soList = usePlanningSoList();
+  const qc = useQueryClient();
   // Page + write gate (plan_create, Planning dept). Writes on this page (create
   // plan, edit, execute, BOM planning) live in the plans module; here we hide
   // their entry points by tier and hide the whole page if VIEW was removed.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
-  const [selSoId, setSelSoId] = useState<string | null>(soIdParam ?? null);
   const [soSearch, setSoSearch] = useState('');
-  // While a term is typed the right pane lists the matching LINES across every
-  // SO the search hit (not just the one selected SO — a planner searching
-  // "cover" wants SO-001 L1 and SO-005 L4 together). Clicking any SO — left
-  // list or a result row — dismisses that view and opens the one SO; typing
-  // again brings it back.
-  const [resultsDismissed, setResultsDismissed] = useState(false);
   const [modal, setModal] = useState<ModalState>(
     openPlan ? { kind: 'edit', planId: openPlan } : { kind: 'none' },
   );
+  // ?openPlan= deep link (from the Plans list): the edit modal needs only the
+  // plan id, so it lives at page level and works on either level.
+  const editingPlan = usePlan(modal.kind === 'edit' ? modal.planId : '');
 
-  // Auto-select first SO on first load.
-  useEffect(() => {
-    if (!selSoId && soList.data && soList.data.items.length > 0) {
-      setSelSoId(soList.data.items[0]!.soId);
-    }
-  }, [soList.data, selSoId]);
-
-  // Keep ?soId= in URL aligned with selection.
-  useEffect(() => {
-    if (selSoId && selSoId !== soIdParam) {
-      void navigate({
-        to: '/planning',
-        search: (prev) => ({ ...prev, soId: selSoId }),
-        replace: true,
-      });
-    }
-  }, [selSoId, soIdParam, navigate]);
-
-  // Client-side filter over the already-loaded SO list (presentational only —
-  // the auto-select-first effect reads soList.data.items directly, unaffected).
-  // The list is fetched whole (it scrolls, it does not page), so the shared
-  // matcher is the right tool: case-insensitive, partial, across every column
-  // the row shows — SO code, customer, and the item code + part name text.
-  const visibleSos = (soList.data?.items ?? []).filter((so) =>
-    matchesSearchTerm([so.soCode, so.customerName, so.itemsText], soSearch),
-  );
-  const searchTerm = normalizeSearchTerm(soSearch);
-  const showResults = searchTerm !== '' && !resultsDismissed;
-  const pickSo = (id: string): void => {
-    setSelSoId(id);
-    setResultsDismissed(true);
+  const setSrc = (s: Source): void => {
+    void navigate({
+      to: '/planning',
+      search: (prev) => ({ ...prev, src: s, soId: undefined }),
+      replace: true,
+    });
   };
+  const openOrder = (id: string): void => {
+    void navigate({ to: '/planning', search: (prev) => ({ ...prev, soId: id }) });
+  };
+  const backToList = (): void => {
+    void navigate({ to: '/planning', search: (prev) => ({ ...prev, soId: undefined }) });
+  };
+  const refreshPlanning = (): void => {
+    void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+  };
+
+  // Client-side filter over the already-loaded list (it is fetched whole — it
+  // scrolls, it does not page): the toggle picks the source, then the shared
+  // matcher narrows within it — case-insensitive, partial, across every column
+  // the row shows plus the item code + part name text behind it.
+  const searchTerm = normalizeSearchTerm(soSearch);
+  const visibleSos = useMemo(
+    () =>
+      (soList.data?.items ?? []).filter(
+        (so) =>
+          so.source === src &&
+          matchesSearchTerm(
+            [
+              so.soCode,
+              so.customerName,
+              so.soType,
+              so.dueDate,
+              ORDER_STATUS_LABEL[so.planningStatus],
+              so.itemsText,
+            ],
+            soSearch,
+          ),
+      ),
+    [soList.data, src, soSearch],
+  );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
@@ -189,532 +272,588 @@ function PlanningWorkflowPage(): JSX.Element {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 0, height: 'calc(100vh - 70px)' }}>
-      {/* Left pane */}
-      <div
-        style={{
-          width: 250,
-          minWidth: 250,
-          borderRight: '1px solid var(--border)',
-          overflowY: 'auto',
-          background: 'var(--bg2)',
-        }}
-      >
-        <div
-          style={{
-            padding: '10px 12px',
-            borderBottom: '1px solid var(--border)',
-            fontSize: 11,
-            fontWeight: 700,
-            color: 'var(--text3)',
-            textTransform: 'uppercase',
-            letterSpacing: '.08em',
-          }}
-        >
-          Select SO/JW
-        </div>
-        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
-          <input
-            className="innovic-input"
-            style={{ width: '100%' }}
-            placeholder="🔍 Search SO, customer, item, part name…"
-            value={soSearch}
-            onChange={(e) => {
-              setSoSearch(e.target.value);
-              setResultsDismissed(false);
-            }}
-          />
-        </div>
-        {soList.isLoading && (
-          <div style={{ padding: 16 }}>
-            <Loader2 className="inline-block animate-spin" /> Loading…
-          </div>
-        )}
-        {soList.data && visibleSos.length === 0 && (
-          <div className="empty-state" style={{ padding: 16 }}>
-            No SOs found
-          </div>
-        )}
-        {visibleSos.map((so) => (
-          <SoListRow
-            key={so.soId}
-            so={so}
-            active={so.soId === selSoId}
-            onClick={() => pickSo(so.soId)}
-          />
-        ))}
-      </div>
-
-      {/* Right pane */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-        <RightPane
-          soId={selSoId}
+    <div>
+      {soId ? (
+        <OrderDetail
+          soId={soId}
+          perms={perms}
           modal={modal}
           setModal={setModal}
-          searchTerm={searchTerm}
-          showResults={showResults}
-          visibleSos={visibleSos}
-          onPickSo={pickSo}
-          onBackToResults={() => setResultsDismissed(false)}
+          onBack={backToList}
+          onChanged={refreshPlanning}
         />
-      </div>
-    </div>
-  );
-}
+      ) : (
+        <>
+          {/* ── Level 1 header: title · SO | JWSO toggle · search ── */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: 14,
+            }}
+          >
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              SO / JWSO Planning
+            </div>
+            <span style={{ flex: 1 }} />
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(
+                [
+                  { key: 'so', label: 'SO' },
+                  { key: 'jw', label: 'JWSO' },
+                ] as { key: Source; label: string }[]
+              ).map((tb) => (
+                <button
+                  key={tb.key}
+                  type="button"
+                  className={`btn btn-sm ${src === tb.key ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setSrc(tb.key)}
+                >
+                  {tb.label}
+                </button>
+              ))}
+            </div>
+            <input
+              className="innovic-input"
+              style={{ width: 300 }}
+              placeholder="Search order no, customer, item, part name…"
+              value={soSearch}
+              onChange={(e) => setSoSearch(e.target.value)}
+            />
+          </div>
 
-function SoListRow({
-  so,
-  active,
-  onClick,
-}: {
-  so: PlanningSoListItem;
-  active: boolean;
-  onClick: () => void;
-}): JSX.Element {
-  const dotColor =
-    so.planningStatus === 'fully_planned'
-      ? 'var(--green)'
-      : so.planningStatus === 'partial'
-        ? 'var(--amber)'
-        : 'var(--text3)';
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        padding: '8px 12px',
-        cursor: 'pointer',
-        borderLeft: `3px solid ${active ? 'var(--cyan)' : 'transparent'}`,
-        background: active ? 'var(--bg3)' : 'transparent',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          {so.source === 'jw' ? (
-            <span
-              style={{
-                fontSize: 9,
-                fontWeight: 700,
-                color: 'var(--purple)',
-                background: 'rgba(124,58,237,0.12)',
-                padding: '1px 4px',
-                borderRadius: 3,
-              }}
-            >
-              JW
-            </span>
+          <OrderList
+            src={src}
+            items={visibleSos}
+            loading={soList.isLoading}
+            error={soList.error instanceof Error ? soList.error.message : null}
+            onOpen={openOrder}
+          />
+
+          {/* Cross-order line search: while a term is typed, every LINE the
+              term hits across the listed orders, under the order list. */}
+          {searchTerm !== '' && visibleSos.length > 0 ? (
+            <SearchResults term={searchTerm} sos={visibleSos} onPick={openOrder} />
           ) : null}
-          <span className="mono fw-700" style={{ fontSize: 12, color: 'var(--cyan)' }}>
-            {so.soCode}
-          </span>
-        </span>
-        <span
-          style={{
-            fontSize: 10,
-            padding: '2px 6px',
-            borderRadius: 3,
-            background: dotColor,
-            color: '#fff',
-            fontWeight: 700,
+        </>
+      )}
+
+      {modal.kind === 'edit' && editingPlan.data ? (
+        <EditPlanModal
+          plan={editingPlan.data}
+          onClose={() => setModal({ kind: 'none' })}
+          onSaved={() => {
+            setModal({ kind: 'none' });
+            refreshPlanning();
+            void editingPlan.refetch();
           }}
-        >
-          {so.planningPct}%
-        </span>
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{so.customerName ?? '—'}</div>
-      {so.itemsText ? (
-        <div
-          style={{
-            fontSize: 10,
-            color: 'var(--text3)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-          title={so.itemsText}
-        >
-          {so.itemsText}
-        </div>
+        />
       ) : null}
     </div>
   );
 }
 
-function RightPane({
+// ─── Level 1: order list ─────────────────────────────────────────────────
+
+function OrderList({
+  src,
+  items,
+  loading,
+  error,
+  onOpen,
+}: {
+  src: Source;
+  items: PlanningSoListItem[];
+  loading: boolean;
+  error: string | null;
+  onOpen: (soId: string) => void;
+}): JSX.Element {
+  // Header/sort config only — rows are rendered as plain <tr>/<td> below so
+  // the cell classes (td-code, mono…) land on the <td> itself.
+  const columns = useMemo<ColumnDef<PlanningSoListItem>[]>(
+    () => [
+      { header: 'Order No', accessorKey: 'soCode' },
+      { header: src === 'jw' ? 'Client' : 'Customer', accessorKey: 'customerName' },
+      { header: 'Type', accessorKey: 'soType' },
+      { header: 'Due', accessorKey: 'dueDate' },
+      { header: 'Lines', accessorKey: 'totalLines' },
+      { header: 'Order Qty', accessorKey: 'totalQty' },
+      { header: 'Planned Qty', accessorKey: 'totalPlannedQty' },
+      { header: '% Planned', accessorKey: 'planningPct' },
+      { header: 'Status', accessorKey: 'planningStatus' },
+    ],
+    [src],
+  );
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const table = useReactTable({
+    data: items,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
+  });
+
+  return (
+    <div className="panel">
+      <div className="tbl-wrap">
+        <table className="innovic-table">
+          <SortableHead table={table} />
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={columns.length} className="empty-state">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                  Loading…
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td
+                  colSpan={columns.length}
+                  className="empty-state"
+                  style={{ color: 'var(--red)' }}
+                >
+                  {error}
+                </td>
+              </tr>
+            ) : table.getRowModel().rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="empty-state">
+                  No open {src === 'jw' ? 'JWSOs' : 'SOs'} to plan
+                </td>
+              </tr>
+            ) : (
+              table.getRowModel().rows.map((row) => {
+                const so = row.original;
+                return (
+                  <tr
+                    key={row.id}
+                    onClick={() => onOpen(so.soId)}
+                    style={{ cursor: 'pointer' }}
+                    title="Open this order's lines"
+                  >
+                    <td className="td-code">
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        {so.source === 'jw' ? <JwChip /> : null}
+                        <span
+                          className="mono fw-700"
+                          style={{ color: 'var(--text)', fontSize: 13 }}
+                        >
+                          {so.soCode}
+                        </span>
+                      </span>
+                    </td>
+                    <td
+                      style={{
+                        maxWidth: 260,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                      title={so.customerName ?? undefined}
+                    >
+                      {so.customerName ?? '—'}
+                    </td>
+                    <td>
+                      <span className="badge b-grey">{so.soType.replaceAll('_', ' ')}</span>
+                    </td>
+                    <td className="mono">{so.dueDate ?? '—'}</td>
+                    <td className="mono">{so.totalLines}</td>
+                    <td className="mono fw-700">{so.totalQty}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                      {so.totalPlannedQty}
+                    </td>
+                    <td>
+                      <span className={`badge ${ORDER_STATUS_BADGE[so.planningStatus]}`}>
+                        {so.planningPct}%
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${ORDER_STATUS_BADGE[so.planningStatus]}`}>
+                        {ORDER_STATUS_LABEL[so.planningStatus]}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Level 2: one order, every line ──────────────────────────────────────
+
+/** Fixed-layout column widths (percent, sum 100). The table is `table-layout:
+ *  fixed` at 100% width so it can never grow a horizontal scrollbar; long
+ *  text wraps inside its column instead. */
+const LINE_COLS: { key: string; label: string; width: number }[] = [
+  { key: 'line', label: 'Line', width: 4 },
+  { key: 'item', label: 'Item Code', width: 11 },
+  { key: 'name', label: 'Item Name', width: 12 },
+  { key: 'orderQty', label: 'Order Qty', width: 5 },
+  { key: 'planned', label: 'Planned', width: 5 },
+  { key: 'inProd', label: 'In Prod', width: 5 },
+  { key: 'remaining', label: 'Remaining', width: 6 },
+  { key: 'due', label: 'Due', width: 7 },
+  { key: 'status', label: 'Status', width: 8 },
+  { key: 'plans', label: 'Plans', width: 27 },
+  { key: 'action', label: 'Action', width: 10 },
+];
+
+/** A cell that may hold long text: wraps inside its fixed column instead of
+ *  forcing the table wider (the shared `.innovic-table td` is nowrap). */
+const wrapCell: React.CSSProperties = { whiteSpace: 'normal', overflowWrap: 'anywhere' };
+
+function HeaderField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div
+        className="mono text3"
+        style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '.08em' }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 13 }}>{children}</div>
+    </div>
+  );
+}
+
+function OrderDetail({
   soId,
+  perms,
   modal,
   setModal,
-  searchTerm,
-  showResults,
-  visibleSos,
-  onPickSo,
-  onBackToResults,
+  onBack,
+  onChanged,
 }: {
-  soId: string | null;
+  soId: string;
+  perms: { view: boolean; entry: boolean; edit: boolean };
   modal: ModalState;
   setModal: (m: ModalState) => void;
-  /** Normalized search term ('' = no search). */
-  searchTerm: string;
-  /** Term active and not yet dismissed → list matching lines across SOs. */
-  showResults: boolean;
-  /** The SOs the left list currently shows (already filtered by the term). */
-  visibleSos: PlanningSoListItem[];
-  onPickSo: (soId: string) => void;
-  onBackToResults: () => void;
+  onBack: () => void;
+  /** Invalidate every planning query (list + details) after a write. */
+  onChanged: () => void;
 }): JSX.Element {
   const detail = usePlanningSoDetail(soId);
-  const editingPlan = usePlan(modal.kind === 'edit' ? modal.planId : '');
   const executePlan = useExecutePlan();
   const navigate = useNavigate();
-  // Write gate (plan_create, Planning). Create a plan / open BOM planning ->
-  // entry; edit + execute a saved plan -> edit. Read-only cards stay visible.
-  const { data: eff } = useMyAccess();
-  const perms = effectiveFormPerms(eff, 'plan_create');
 
-  // Search-results view replaces the single-SO view while a term is active.
-  if (showResults) {
-    return <SearchResults term={searchTerm} sos={visibleSos} onPick={onPickSo} />;
-  }
+  const backBtn = (
+    <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
+      ← Back to list
+    </button>
+  );
 
-  // Legacy always renders the header row, then the right content; with no SO
-  // selected the header reads "Select an SO" (renderSOPlanning L9439-9441).
-  if (!soId) {
+  if (detail.isLoading) {
     return (
       <>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 14,
-          }}
-        >
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Select an SO
-          </div>
-        </div>
-        <div className="empty-state">
-          Select an SO from the left panel to view and plan its lines.
+        <div style={{ marginBottom: 14 }}>{backBtn}</div>
+        <div style={{ padding: 24 }}>
+          <Loader2 className="inline-block animate-spin" /> Loading…
         </div>
       </>
     );
   }
-  if (detail.isLoading) {
-    return (
-      <div style={{ padding: 24 }}>
-        <Loader2 className="inline-block animate-spin" /> Loading…
-      </div>
-    );
-  }
   if (detail.error || !detail.data) {
     return (
-      <div
-        style={{
-          padding: 12,
-          color: 'var(--red)',
-          background: 'rgba(239,68,68,0.1)',
-          borderRadius: 4,
-        }}
-      >
-        {detail.error instanceof Error ? detail.error.message : 'Failed to load SO'}
-      </div>
+      <>
+        <div style={{ marginBottom: 14 }}>{backBtn}</div>
+        <div className="empty-state" style={{ color: 'var(--red)' }}>
+          {detail.error instanceof Error ? detail.error.message : 'Failed to load order'}
+        </div>
+      </>
     );
   }
 
   const so = detail.data;
+  const refresh = (): void => {
+    onChanged();
+    void detail.refetch();
+  };
+
   return (
     <>
+      {/* ── Compact order header ── */}
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 14,
+          gap: 8,
+          flexWrap: 'wrap',
+          marginBottom: 10,
         }}
       >
+        {backBtn}
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Planning: {so.soCode} {so.customerName ? <small>({so.customerName})</small> : null}
-          {/* T15: surface the item(s) at the top of the right pane so it's visible
-              after searching by item (not only inside the per-line cards). */}
-          {so.lines.length > 0 ? (
-            <div className="text3" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
-              {/* `CODE/REV` — the customer's drawing revision from this SO line.
-                  A JW's lines have no customer revision and keep the bare code.
-                  The code is the value a planner searched by to land here, so it
-                  is pulled out of the muted line into the darkest text token and
-                  bold; the part name and the "+N more" tail stay on the line's
-                  own `text3` so the code is the thing the eye lands on. */}
-              {so.lines[0]!.itemCode ? (
-                <>
-                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                    {itemCodeWithRev(so.lines[0]!.itemCode, so.lines[0]!.itemRevision)}
-                  </span>
-                  {' — '}
-                </>
-              ) : null}
-              {so.lines[0]!.itemName ?? ''}
-              {so.lines.length > 1 ? ` +${so.lines.length - 1} more` : ''}
-            </div>
-          ) : null}
+          Planning
         </div>
-        {/* The user landed here by clicking a search result; let them go back
-            to the cross-SO list without retyping. */}
-        {searchTerm !== '' ? (
-          <button type="button" className="btn btn-sm" onClick={onBackToResults}>
-            ← Back to search results
-          </button>
-        ) : null}
       </div>
-      {so.lines.length === 0 ? (
-        <div className="empty-state">
-          Select an SO from the left panel to view and plan its lines.
-        </div>
-      ) : (
-        so.lines.map((line) => {
-          // Header label, bar fill/colour and left border all come from the one
-          // shared derivation (see lineStatusOf) — the search-results row reads
-          // the same values.
-          const {
-            label: lineStatusLabel,
-            color: lineStatusColor,
-            pct,
-            barColor,
-            hasDirectJc,
-          } = lineStatusOf(line);
-          return (
-            <div
-              key={line.soLineId}
-              className="card"
-              style={{
-                marginBottom: 12,
-                padding: 0,
-                overflow: 'hidden',
-                borderLeft: `3px solid ${lineStatusColor}`,
-              }}
-            >
-              {/* Header */}
-              <div
-                style={{
-                  padding: '10px 14px',
-                  background: 'var(--bg3)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 12,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: 'var(--text3)',
-                      fontFamily: 'var(--mono)',
-                    }}
-                  >
-                    LINE {line.lineNo}
-                  </span>
-                  {line.clientPoLineNo ? (
-                    <span
-                      style={{
-                        fontSize: 9,
-                        color: 'var(--purple)',
-                        fontWeight: 700,
-                        background: 'rgba(124,58,237,0.1)',
-                        padding: '1px 5px',
-                        borderRadius: 3,
-                      }}
-                    >
-                      [CPO:{line.clientPoLineNo}]
-                    </span>
-                  ) : null}
-                  {/* `CODE/REV` — the customer's drawing revision from this SO
-                      line; a JW line has none and keeps the bare code, with no
-                      trailing slash. nowrap so a short code never breaks across
-                      two lines in the line header. */}
-                  <span style={{ fontWeight: 700, color: 'var(--purple)', whiteSpace: 'nowrap' }}>
-                    {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
-                  </span>
-                  <span style={{ fontSize: 12 }}>{line.itemName ?? ''}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <span style={{ fontSize: 12 }}>
-                    SO: <b>{line.orderQty}</b>
-                  </span>
-                  <span style={{ fontSize: 12 }}>
-                    Due: <b>{line.dueDate ?? '—'}</b>
-                  </span>
-                </div>
-              </div>
-              {/* Progress */}
-              <div
-                style={{
-                  padding: '6px 14px',
-                  background: 'var(--bg)',
-                  borderBottom: '1px solid var(--border)',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 4,
-                  }}
-                >
-                  <span style={{ fontSize: 10, color: 'var(--text3)' }}>
-                    Planned: <b style={{ color: 'var(--cyan)' }}>{line.totalPlanned}</b>
-                    {hasDirectJc ? (
-                      <>
-                        {' '}
-                        + <b style={{ color: 'var(--cyan)' }}>{line.directJcQty}</b> in prod
-                      </>
-                    ) : null}{' '}
-                    / {line.orderQty} pcs ({pct}%)
-                  </span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: lineStatusColor }}>
-                    {lineStatusLabel}
-                  </span>
-                </div>
-                <div style={{ height: 6, background: 'var(--bg5)', borderRadius: 3 }}>
-                  <div
-                    style={{
-                      width: `${pct}%`,
-                      height: 6,
-                      background: barColor,
-                      borderRadius: 3,
-                    }}
-                  />
-                </div>
-              </div>
-              {/* Plan sub-cards */}
-              {line.plans.length > 0 && (
-                <div style={{ padding: '6px 14px' }}>
-                  {line.plans.map((p) => (
-                    <PlanCard
-                      key={p.id}
-                      plan={p}
-                      canEdit={perms.edit}
-                      onEdit={() => setModal({ kind: 'edit', planId: p.id })}
-                      onExecute={() => executePlan.mutate(p.id)}
-                      isExecuting={executePlan.isPending && executePlan.variables === p.id}
-                      executeError={
-                        executePlan.isError && executePlan.variables === p.id
-                          ? executePlan.error instanceof Error
-                            ? executePlan.error.message
-                            : 'Execute failed'
-                          : null
-                      }
-                      onViewJc={() => {
-                        // Open the Job Card page (not Operation Entry).
-                        if (p.jcId) {
-                          void navigate({ to: '/job-cards/$id', params: { id: p.jcId } });
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-              {/* Plan-less Job Cards created from SO Status — shown so planners
-                  see production that bypassed planning and don't double-issue. */}
-              {hasDirectJc && (
-                <div style={{ padding: '6px 14px' }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 10px',
-                      margin: '4px 0',
-                      background: 'rgba(34,211,238,0.06)',
-                      borderRadius: 6,
-                      border: '1px solid rgba(34,211,238,0.3)',
-                    }}
-                  >
-                    <span style={{ fontSize: 11 }}>🏭</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)' }}>
-                      In Production (no plan)
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text2)' }}>
-                      {line.directJcQty} pcs
-                    </span>
-                    <span
-                      className="mono"
-                      style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 'auto' }}
-                    >
-                      {line.directJcCodes.join(', ')}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>
-                    Job Card(s) created directly from SO Status — counted as covered.
-                    {line.remaining > 0 ? ` Plan only the remaining ${line.remaining} pcs.` : ''}
-                  </div>
-                </div>
-              )}
-              {/* Footer actions */}
-              <div
-                style={{
-                  padding: '6px 14px',
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: 6,
-                  borderTop: '1px solid var(--border)',
-                }}
-              >
-                {line.hasEquipmentBom && perms.entry ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    style={{
-                      background: 'rgba(34,211,238,0.08)',
-                      color: 'var(--cyan)',
-                      border: '1px solid rgba(34,211,238,0.3)',
-                      fontWeight: 700,
-                      fontSize: 11,
-                    }}
-                    onClick={() => setModal({ kind: 'equip-bom', soLineId: line.soLineId })}
-                  >
-                    📦 Equipment BOM Planning ({line.bomPartsCount} parts)
-                  </button>
-                ) : null}
-                {line.hasAssemblyBom && perms.entry ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    style={{
-                      background: 'rgba(34,211,238,0.08)',
-                      color: 'var(--cyan)',
-                      border: '1px solid rgba(34,211,238,0.3)',
-                      fontWeight: 700,
-                      fontSize: 11,
-                    }}
-                    onClick={() => setModal({ kind: 'assembly-bom', soLineId: line.soLineId })}
-                  >
-                    📦 BOM Planning ({line.bomPartsCount} parts)
-                  </button>
-                ) : null}
-                {!line.hasEquipmentBom && line.remaining > 0 && perms.entry ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    style={{
-                      background: 'var(--cyan)',
-                      color: '#fff',
-                      fontWeight: 700,
-                      fontSize: 11,
-                    }}
-                    onClick={() => setModal({ kind: 'create', soLineId: line.soLineId })}
-                  >
-                    + Plan {line.remaining} pcs
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          );
-        })
-      )}
+      <div
+        className="panel"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px 28px',
+          padding: '10px 14px',
+          marginBottom: 12,
+        }}
+      >
+        <HeaderField label="Order No">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            {so.source === 'jw' ? <JwChip /> : null}
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {so.soCode}
+            </span>
+          </span>
+        </HeaderField>
+        <HeaderField label={so.source === 'jw' ? 'Client' : 'Customer'}>
+          <span className="fw-700">{so.customerName ?? '—'}</span>
+        </HeaderField>
+        <HeaderField label="Type">
+          <span className="badge b-grey">{so.soType.replaceAll('_', ' ')}</span>
+        </HeaderField>
+        <HeaderField label="Due">
+          <span className="mono">{so.dueDate ?? '—'}</span>
+        </HeaderField>
+        <HeaderField label="Client PO No">
+          <span className="mono">{so.clientPoNo ?? '—'}</span>
+        </HeaderField>
+        <HeaderField label="Lines">
+          <span className="mono">{so.lines.length}</span>
+        </HeaderField>
+      </div>
 
-      {/* Modals */}
+      {/* ── Every line, one table, no horizontal scroll ── */}
+      <div className="panel">
+        {so.lines.length === 0 ? (
+          <div className="empty-state">This order has no lines.</div>
+        ) : (
+          <table
+            className="innovic-table"
+            style={{ tableLayout: 'fixed', width: '100%', margin: 0 }}
+          >
+            <colgroup>
+              {LINE_COLS.map((c) => (
+                <col key={c.key} style={{ width: `${c.width}%` }} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                {LINE_COLS.map((c) => (
+                  <th key={c.key} style={{ whiteSpace: 'normal', cursor: 'default' }}>
+                    {c.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {so.lines.map((line) => {
+                const status = lineStatusOf(line);
+                return (
+                  <tr key={line.soLineId}>
+                    <td className="mono fw-700 text3">{line.lineNo}</td>
+                    {/* `CODE/REV` — the customer's drawing revision from this
+                        line; a JW line has none and keeps the bare code. The
+                        code is the main thing: strong mono, darkest text. */}
+                    <td style={wrapCell}>
+                      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                        {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
+                      </span>
+                      {line.clientPoLineNo ? (
+                        <div className="mono" style={{ fontSize: 9, color: 'var(--purple)' }}>
+                          CPO {line.clientPoLineNo}
+                        </div>
+                      ) : null}
+                      {/* ADR-171: Item Master "Source" — why the Action cell
+                          offers + Plan (make) or + PR (buy). */}
+                      <div style={{ marginTop: 2 }}>
+                        <span
+                          className={`badge ${line.itemProcurementType === 'buy' ? 'b-amber' : 'b-grey'}`}
+                          style={{ fontSize: 9, padding: '0 6px' }}
+                          title={
+                            line.itemProcurementType === 'buy'
+                              ? 'Bought-in item — raise a purchase request'
+                              : 'Made in-house — plan it'
+                          }
+                        >
+                          {line.itemProcurementType === 'buy' ? 'Buy' : 'Make'}
+                        </span>
+                      </div>
+                    </td>
+                    <td style={wrapCell} title={line.itemName ?? undefined}>
+                      {line.itemName ?? '—'}
+                    </td>
+                    <td className="mono fw-700">{line.orderQty}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                      {line.totalPlanned}
+                    </td>
+                    <td
+                      className="mono"
+                      style={{ color: status.hasDirectJc ? 'var(--cyan)' : 'var(--text3)' }}
+                    >
+                      {line.directJcQty}
+                    </td>
+                    <td
+                      className="mono fw-700"
+                      style={{ color: line.remaining > 0 ? 'var(--amber)' : 'var(--green)' }}
+                    >
+                      {line.remaining}
+                    </td>
+                    <td className="mono">{line.dueDate ?? '—'}</td>
+                    <td style={wrapCell}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>
+                        {status.label}
+                      </span>
+                      <div className="mono text3" style={{ fontSize: 9 }}>
+                        {status.pct}%
+                      </div>
+                    </td>
+                    <td style={wrapCell}>
+                      {line.plans.length === 0 && line.prs.length === 0 && !status.hasDirectJc ? (
+                        <span className="text3" style={{ fontSize: 11 }}>
+                          —
+                        </span>
+                      ) : null}
+                      {/* ADR-171: purchase requests raised from this BUY line. */}
+                      {line.prs.map((pr) => (
+                        <PrChip key={pr.id} pr={pr} />
+                      ))}
+                      {line.plans.map((p) => (
+                        <PlanChip
+                          key={p.id}
+                          plan={p}
+                          canEdit={perms.edit}
+                          onEdit={() => setModal({ kind: 'edit', planId: p.id })}
+                          onExecute={() => executePlan.mutate(p.id)}
+                          isExecuting={executePlan.isPending && executePlan.variables === p.id}
+                          executeError={
+                            executePlan.isError && executePlan.variables === p.id
+                              ? executePlan.error instanceof Error
+                                ? executePlan.error.message
+                                : 'Execute failed'
+                              : null
+                          }
+                          onViewJc={() => {
+                            // Open the Job Card page (not Operation Entry).
+                            if (p.jcId) {
+                              void navigate({ to: '/job-cards/$id', params: { id: p.jcId } });
+                            }
+                          }}
+                        />
+                      ))}
+                      {/* Plan-less Job Cards created from SO Status — shown so
+                          planners see production that bypassed planning and
+                          don't double-issue. */}
+                      {status.hasDirectJc ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 6,
+                            padding: '3px 8px',
+                            margin: '2px 0',
+                            background: 'var(--cyan3)',
+                            border: '1px solid var(--cyan2)',
+                            borderRadius: 6,
+                            fontSize: 11,
+                          }}
+                          title="Job Card(s) created directly from SO Status — counted as covered."
+                        >
+                          <span>🏭</span>
+                          <span style={{ fontWeight: 700, color: 'var(--cyan)' }}>
+                            In Production (no plan)
+                          </span>
+                          <span className="text2">{line.directJcQty} pcs</span>
+                          <span className="mono text3" style={{ fontSize: 10 }}>
+                            {line.directJcCodes.join(', ')}
+                          </span>
+                        </div>
+                      ) : null}
+                    </td>
+                    <td style={wrapCell}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        {line.hasEquipmentBom && perms.entry ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--cyan)', fontWeight: 700, whiteSpace: 'normal' }}
+                            onClick={() => setModal({ kind: 'equip-bom', soLineId: line.soLineId })}
+                          >
+                            📦 Equipment BOM ({line.bomPartsCount})
+                          </button>
+                        ) : null}
+                        {line.hasAssemblyBom && perms.entry ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--cyan)', fontWeight: 700, whiteSpace: 'normal' }}
+                            onClick={() =>
+                              setModal({ kind: 'assembly-bom', soLineId: line.soLineId })
+                            }
+                          >
+                            📦 BOM Planning ({line.bomPartsCount})
+                          </button>
+                        ) : null}
+                        {/* ADR-171: a BUY line is purchased, not planned. SO
+                            lines get + PR; a JWSO line is the client's own
+                            material and is never bought in. */}
+                        {line.itemProcurementType === 'buy' ? (
+                          so.source === 'jw' ? (
+                            <span className="text3" style={{ fontSize: 10 }}>
+                              Buy item — client material
+                            </span>
+                          ) : line.remaining > 0 && perms.entry ? (
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              style={{ fontWeight: 700 }}
+                              onClick={() =>
+                                setModal({ kind: 'raise-pr', soLineId: line.soLineId })
+                              }
+                            >
+                              + PR {line.remaining}
+                            </button>
+                          ) : null
+                        ) : !line.hasEquipmentBom && line.remaining > 0 && perms.entry ? (
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            style={{ fontWeight: 700 }}
+                            onClick={() => setModal({ kind: 'create', soLineId: line.soLineId })}
+                          >
+                            + Plan {line.remaining}
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ── Modals ── */}
       {modal.kind === 'create' &&
         (() => {
           const targetLine = so.lines.find((l) => l.soLineId === modal.soLineId);
@@ -724,25 +863,34 @@ function RightPane({
               so={so}
               line={targetLine}
               onClose={() => setModal({ kind: 'none' })}
-              onCreated={(planId) => {
-                setModal({ kind: 'edit', planId });
-                void detail.refetch();
+              onCreated={() => {
+                // The plan is complete as saved (route-card flow) — no edit
+                // modal to chain into. Close and refresh the lines.
+                setModal({ kind: 'none' });
+                refresh();
               }}
             />
           );
         })()}
 
-      {modal.kind === 'edit' && editingPlan.data ? (
-        <EditPlanModal
-          plan={editingPlan.data}
-          onClose={() => setModal({ kind: 'none' })}
-          onSaved={() => {
-            setModal({ kind: 'none' });
-            void detail.refetch();
-            void editingPlan.refetch();
-          }}
-        />
-      ) : null}
+      {modal.kind === 'raise-pr' &&
+        (() => {
+          const targetLine = so.lines.find((l) => l.soLineId === modal.soLineId);
+          if (!targetLine) return null;
+          return (
+            <RaisePrModal
+              so={so}
+              line={targetLine}
+              onClose={() => setModal({ kind: 'none' })}
+              onRaised={() => {
+                // The PR is a Purchase document from here on; the refreshed
+                // line shows it as a chip.
+                setModal({ kind: 'none' });
+                refresh();
+              }}
+            />
+          );
+        })()}
 
       {modal.kind === 'equip-bom' && (
         <BomPlanningModal
@@ -753,7 +901,7 @@ function RightPane({
           onClose={() => setModal({ kind: 'none' })}
           onSaved={() => {
             setModal({ kind: 'none' });
-            void detail.refetch();
+            refresh();
           }}
         />
       )}
@@ -767,7 +915,7 @@ function RightPane({
           onClose={() => setModal({ kind: 'none' })}
           onSaved={() => {
             setModal({ kind: 'none' });
-            void detail.refetch();
+            refresh();
           }}
         />
       )}
@@ -775,9 +923,11 @@ function RightPane({
   );
 }
 
-/** Cross-SO search results: one row per SO LINE the term hits, grouped in
- *  left-list order. Loads each SO's detail through the same query the single-SO
- *  view uses, so clicking a row opens that SO from cache with no second fetch. */
+// ─── Cross-order line search ─────────────────────────────────────────────
+
+/** Cross-SO search results: one row per SO LINE the term hits, in list order.
+ *  Loads each SO's detail through the same query the single-SO view uses, so
+ *  clicking a row opens that SO from cache with no second fetch. */
 function SearchResults({
   term,
   sos,
@@ -791,7 +941,7 @@ function SearchResults({
   const details = usePlanningSoDetails(capped.map((so) => so.soId));
   const anyLoading = details.some((d) => d.isLoading);
   // A failed detail (expired session, 500, network) must not silently drop its
-  // SO — the left list still shows it, so a quiet "no lines match" would be a
+  // SO — the list above still shows it, so a quiet "no lines match" would be a
   // confident wrong answer. Surface it the way the single-SO view does.
   const failed = details.filter((d) => d.isError);
   const firstError = failed[0]?.error;
@@ -815,32 +965,25 @@ function SearchResults({
         term,
       ),
     );
-    // The left list matched this SO on its `itemsText`, which is built from the
-    // SO line's typed `itemCodeText` / `partName`; the detail's `itemCode` /
+    // The list matched this SO on its `itemsText`, which is built from the SO
+    // line's typed `itemCodeText` / `partName`; the detail's `itemCode` /
     // `itemName` prefer the item master's code/name, and the two can differ.
     // If none of the lines hit on the detail's fields, show them all rather
-    // than let an SO that is in the left list go silent on the right.
+    // than let an SO that is in the list go silent here.
     const lines = hits.length > 0 ? hits : data.lines;
     return [{ so, lines }];
   });
   const lineCount = groups.reduce((n, g) => n + g.lines.length, 0);
 
   return (
-    <>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Search results: {lineCount} line{lineCount === 1 ? '' : 's'} in {groups.length} SO
+    <div className="panel" style={{ marginTop: 14 }}>
+      <div className="panel-hdr">
+        <div className="panel-title">
+          Matching lines: {lineCount} line{lineCount === 1 ? '' : 's'} in {groups.length} order
           {groups.length === 1 ? '' : 's'} for “{term}”
           {sos.length > MAX_SEARCH_SOS ? (
             <div className="text3" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
-              Showing first {MAX_SEARCH_SOS} of {sos.length} matching SOs — refine your search
+              Showing first {MAX_SEARCH_SOS} of {sos.length} matching orders — refine your search
             </div>
           ) : null}
         </div>
@@ -851,101 +994,128 @@ function SearchResults({
         </div>
       ) : null}
       {failed.length > 0 ? (
-        <div
-          style={{
-            padding: 12,
-            marginBottom: 12,
-            color: 'var(--red)',
-            background: 'rgba(239,68,68,0.1)',
-            borderRadius: 4,
-          }}
-        >
-          Could not load {failed.length} of {capped.length} SOs — {failedMsg}
+        <div className="empty-state" style={{ color: 'var(--red)', padding: 12 }}>
+          Could not load {failed.length} of {capped.length} orders — {failedMsg}
         </div>
       ) : null}
       {!anyLoading && failed.length === 0 && lineCount === 0 ? (
-        <div className="empty-state">No SO lines match “{term}”</div>
+        <div className="empty-state">No lines match “{term}”</div>
       ) : null}
-      {groups.map(({ so, lines }) =>
-        lines.map((line) => {
-          const status = lineStatusOf(line);
-          return (
-            // Same look as the per-line card's header (LINE n · code · part ·
-            // SO qty · Due), led by the SO code so rows from different SOs
-            // read apart. Whole row clicks through to that SO.
-            <div
-              key={line.soLineId}
-              className="card"
-              onClick={() => onPick(so.soId)}
-              style={{
-                marginBottom: 8,
-                padding: '10px 14px',
-                cursor: 'pointer',
-                background: 'var(--bg3)',
-                border: '1px solid var(--border)',
-                borderLeft: `3px solid ${status.color}`,
-                borderRadius: 6,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {so.source === 'jw' ? (
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      color: 'var(--purple)',
-                      background: 'rgba(124,58,237,0.12)',
-                      padding: '1px 4px',
-                      borderRadius: 3,
-                    }}
+      {lineCount > 0 ? (
+        <table className="innovic-table" style={{ tableLayout: 'fixed', width: '100%', margin: 0 }}>
+          <colgroup>
+            <col style={{ width: '16%' }} />
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '16%' }} />
+            <col style={{ width: '27%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '18%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th style={{ cursor: 'default' }}>Order No</th>
+              <th style={{ cursor: 'default' }}>Line</th>
+              <th style={{ cursor: 'default' }}>Item Code</th>
+              <th style={{ cursor: 'default' }}>Item Name</th>
+              <th style={{ cursor: 'default' }}>Order Qty</th>
+              <th style={{ cursor: 'default' }}>Due</th>
+              <th style={{ cursor: 'default' }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(({ so, lines }) =>
+              lines.map((line) => {
+                const status = lineStatusOf(line);
+                return (
+                  <tr
+                    key={line.soLineId}
+                    onClick={() => onPick(so.soId)}
+                    style={{ cursor: 'pointer' }}
+                    title="Open this order"
                   >
-                    JW
-                  </span>
-                ) : null}
-                <span className="mono fw-700" style={{ fontSize: 12, color: 'var(--cyan)' }}>
-                  {so.soCode}
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: 'var(--text3)',
-                    fontFamily: 'var(--mono)',
-                  }}
-                >
-                  LINE {line.lineNo}
-                </span>
-                {/* Item code is the thing the planner searched for — strong,
-                    never muted. `CODE/REV`; a JW line has no revision and keeps
-                    the bare code. */}
-                <span style={{ fontWeight: 700, color: 'var(--purple)', whiteSpace: 'nowrap' }}>
-                  {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
-                </span>
-                <span style={{ fontSize: 12 }}>{line.itemName ?? ''}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <span style={{ fontSize: 12 }}>
-                  SO: <b>{line.orderQty}</b>
-                </span>
-                <span style={{ fontSize: 12 }}>
-                  Due: <b>{line.dueDate ?? '—'}</b>
-                </span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: status.color }}>
-                  {status.label}
-                </span>
-              </div>
-            </div>
-          );
-        }),
-      )}
-    </>
+                    <td className="td-code" style={wrapCell}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        {so.source === 'jw' ? <JwChip /> : null}
+                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                          {so.soCode}
+                        </span>
+                      </span>
+                    </td>
+                    <td className="mono text3">{line.lineNo}</td>
+                    {/* Item code is the thing the planner searched for —
+                        strong, never muted. */}
+                    <td style={wrapCell}>
+                      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                        {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
+                      </span>
+                    </td>
+                    <td style={wrapCell}>{line.itemName ?? '—'}</td>
+                    <td className="mono fw-700">{line.orderQty}</td>
+                    <td className="mono">{line.dueDate ?? '—'}</td>
+                    <td style={wrapCell}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>
+                        {status.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              }),
+            )}
+          </tbody>
+        </table>
+      ) : null}
+    </div>
   );
 }
+
+// ─── PR chip (ADR-171) ───────────────────────────────────────────────────
+
+/** One purchase request raised from a BUY line: 🛒 code (link to the PR) ·
+ *  qty · status — the PO code once one is raised from it. */
+function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 6,
+        padding: '3px 8px',
+        margin: '2px 0',
+        background: 'var(--bg)',
+        border: '1px solid var(--border)',
+        borderRadius: 6,
+        fontSize: 11,
+      }}
+    >
+      <span>🛒</span>
+      <Link
+        to="/purchase-requests/$id"
+        params={{ id: pr.id }}
+        className="mono fw-700"
+        style={{ color: 'var(--text)' }}
+        title="Open the purchase request"
+      >
+        {pr.code}
+      </Link>
+      <span className="text2">
+        PR · <b>{pr.qty} pcs</b>
+      </span>
+      <span style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 10 }}>
+        {pr.status === 'po_created' && pr.poCode ? (
+          <>
+            PO <span className="mono">{pr.poCode}</span>
+          </>
+        ) : (
+          PR_STATUS_LABEL[pr.status]
+        )}
+      </span>
+    </div>
+  );
+}
+
+// ─── Plan chip ───────────────────────────────────────────────────────────
 
 /** A generated PR number, clickable to its detail page when the id is known
  *  (mirrors how a JC number links to /job-cards/$id). Falls back to plain text. */
@@ -960,13 +1130,25 @@ function PrLink({
 }): React.JSX.Element {
   if (!id) return <>{code}</>;
   return (
-    <Link to="/purchase-requests/$id" params={{ id }} className="td-code" style={{ color }}>
+    <Link
+      to="/purchase-requests/$id"
+      params={{ id }}
+      className="td-code"
+      style={{ color }}
+      onClick={(e) => e.stopPropagation()}
+    >
       {code}
     </Link>
   );
 }
 
-function PlanCard({
+/** One plan inside a line's Plans cell: code · type · qty · status, then the
+ *  actions that apply.
+ *   - opsSource 'plan' (old flow): Edit while in_planning; Execute + Edit
+ *     while planned; PR links once raised; View JC once a JC exists.
+ *   - opsSource 'route_card' (ADR-170): NO Edit / Execute. The derived status
+ *     label, and a link to the Production Order once one exists. */
+function PlanChip({
   plan,
   canEdit,
   onEdit,
@@ -987,161 +1169,169 @@ function PlanCard({
   const isFO = plan.planType === 'full_outsource';
   const typeIcon = isDP ? '🛒' : isFO ? '📦' : '🏭';
   const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Mfg';
+  const isRouteCard = plan.opsSource === 'route_card';
+  const statusLabel =
+    isRouteCard && plan.derivedStatus
+      ? PLAN_DERIVED_STATUS_LABEL[plan.derivedStatus]
+      : PLAN_STATUS_LABEL[plan.planStatus];
   const stColor =
-    plan.planStatus === 'in_planning'
-      ? 'var(--amber)'
-      : plan.planStatus === 'planned'
-        ? 'var(--blue)'
-        : plan.planStatus === 'jc_created'
-          ? 'var(--cyan)'
-          : plan.planStatus === 'pr_created'
-            ? // Legacy: var(--purple,#8b5cf6). --purple IS defined (#7c3aed), so
-              // the #8b5cf6 fallback is dead code in legacy and must not be ported.
-              'var(--purple)'
-            : 'var(--green)';
+    isRouteCard && plan.derivedStatus
+      ? DERIVED_STATUS_COLOR[plan.derivedStatus]
+      : PLAN_STATUS_COLOR[plan.planStatus];
+  // Schedule / raw material / remark ride along as a tooltip so the chip stays
+  // one line; the Plans page shows them in full.
+  const tip = [
+    plan.plannedStartDate ? `Start: ${plan.plannedStartDate}` : null,
+    plan.plannedEndDate ? `End: ${plan.plannedEndDate}` : null,
+    plan.rawMaterialGradeText ? `Grade: ${plan.rawMaterialGradeText}` : null,
+    plan.rawMaterialSizeText ? `Size: ${plan.rawMaterialSizeText}` : null,
+    plan.remarks ? `Remark: ${plan.remarks}` : null,
+  ]
+    .filter((s): s is string => s !== null)
+    .join('\n');
 
   return (
     <div
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '6px 10px',
-        margin: '4px 0',
+        flexWrap: 'wrap',
+        gap: 6,
+        padding: '3px 8px',
+        margin: '2px 0',
         background: 'var(--bg)',
-        borderRadius: 6,
         border: '1px solid var(--border)',
+        borderRadius: 6,
+        fontSize: 11,
       }}
+      title={tip || undefined}
     >
-      <span style={{ fontSize: 11 }}>{typeIcon}</span>
-      <span className="mono fw-700" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+      <span>{typeIcon}</span>
+      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
         {plan.code}
       </span>
-      <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+      <span className="text2">
         {typeLabel} · <b>{plan.planQty} pcs</b>
       </span>
-      {!isDP && !isFO && plan.opsCount > 0 ? (
-        <span style={{ fontSize: 9, color: 'var(--text3)' }}>
+      {!isRouteCard && !isDP && !isFO && plan.opsCount > 0 ? (
+        <span className="text3" style={{ fontSize: 9 }}>
           ({plan.opsCount} ops{plan.hasOutsourceOp ? ', 🏭 outsrc' : ''})
         </span>
       ) : null}
       {isFO && plan.foVendorCodeText ? (
         <span style={{ fontSize: 9, color: 'var(--purple)' }}>→ {plan.foVendorCodeText}</span>
       ) : null}
-      <span
-        style={{
-          fontWeight: 700,
-          color: stColor,
-          fontSize: 10,
-          marginLeft: 'auto',
-        }}
-      >
-        {PLAN_STATUS_LABEL[plan.planStatus]}
-      </span>
-      <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-        {plan.planStatus === 'in_planning' && canEdit && (
+      <span style={{ fontWeight: 700, color: stColor, fontSize: 10 }}>{statusLabel}</span>
+
+      {/* Route-card plan: the Production Order (once raised) is the way on. */}
+      {isRouteCard && plan.productionOrderId && plan.productionOrderCode ? (
+        <Link
+          to="/production-orders/$id"
+          params={{ id: plan.productionOrderId }}
+          className="mono fw-700"
+          style={{ fontSize: 10, color: 'var(--blue)' }}
+          title="Open the Production Order"
+        >
+          {plan.productionOrderCode}
+        </Link>
+      ) : null}
+
+      {/* Old-flow plan actions — unchanged behaviour, compact buttons. */}
+      {!isRouteCard && plan.planStatus === 'in_planning' && canEdit ? (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700 }}
+          onClick={onEdit}
+        >
+          ✏ Edit
+        </button>
+      ) : null}
+      {!isRouteCard && plan.planStatus === 'planned' && canEdit ? (
+        <>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{
-              background: 'var(--amber)',
-              color: '#000',
-              fontSize: 10,
-              fontWeight: 700,
-            }}
-            onClick={onEdit}
+            className={`btn btn-sm ${executeError ? 'btn-danger' : 'btn-success'}`}
+            style={{ fontSize: 10, fontWeight: 700, opacity: isExecuting ? 0.7 : 1 }}
+            disabled={isExecuting}
+            title={executeError ?? undefined}
+            onClick={onExecute}
           >
-            ✏ Edit
+            {isExecuting ? (
+              <>
+                <Loader2 size={11} className="inline-block animate-spin" /> Executing…
+              </>
+            ) : executeError ? (
+              '⚠ Retry'
+            ) : (
+              '⚡ Execute'
+            )}
           </button>
-        )}
-        {plan.planStatus === 'planned' && canEdit && (
-          <>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{
-                background: executeError ? 'var(--red)' : 'var(--green)',
-                color: '#fff',
-                fontSize: 10,
-                fontWeight: 700,
-                opacity: isExecuting ? 0.7 : 1,
-              }}
-              disabled={isExecuting}
-              title={executeError ?? undefined}
-              onClick={onExecute}
-            >
-              {isExecuting ? (
-                <>
-                  <Loader2 size={11} className="inline-block animate-spin" /> Executing…
-                </>
-              ) : executeError ? (
-                '⚠ Retry'
-              ) : (
-                '⚡ Execute'
-              )}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 10 }}
-              disabled={isExecuting}
-              onClick={onEdit}
-            >
-              ✏
-            </button>
-          </>
-        )}
-        {plan.planStatus === 'pr_created' && (
-          <span className="mono" style={{ color: 'var(--purple)', fontSize: 10, fontWeight: 700 }}>
-            PR:
-            <PrLink
-              id={plan.foPrId ?? plan.dpPrId}
-              code={plan.foPrCode ?? plan.dpPrCode ?? ''}
-              color="var(--purple)"
-            />
-            {plan.foMatPrCode ? (
-              <span style={{ color: 'var(--amber)', marginLeft: 4 }}>
-                Mat:
-                <PrLink id={plan.foMatPrId} code={plan.foMatPrCode} color="var(--amber)" />
-              </span>
-            ) : null}
-          </span>
-        )}
-        {plan.ospPrs.length > 0 && (
-          <span
-            className="mono"
-            style={{
-              color: 'var(--purple)',
-              fontSize: 10,
-              fontWeight: 700,
-              display: 'inline-flex',
-              gap: 3,
-              alignItems: 'center',
-            }}
-            title="OSP purchase request(s) auto-raised for this plan's outsource op(s)"
-          >
-            PR:
-            {plan.ospPrs.map((pr, i) => (
-              <span key={pr.id}>
-                <PrLink id={pr.id} code={pr.code} color="var(--purple)" />
-                {i < plan.ospPrs.length - 1 ? ',' : ''}
-              </span>
-            ))}
-          </span>
-        )}
-        {(plan.planStatus === 'jc_created' ||
-          plan.planStatus === 'in_production' ||
-          plan.planStatus === 'complete') && (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10, color: 'var(--cyan)' }}
-            onClick={onViewJc}
+            style={{ fontSize: 10 }}
+            disabled={isExecuting}
+            onClick={onEdit}
+            title="Edit plan"
           >
-            <Activity size={11} /> {plan.jcCode ?? 'View JC'}
+            ✏
           </button>
-        )}
-      </div>
+        </>
+      ) : null}
+      {plan.planStatus === 'pr_created' ? (
+        <span className="mono" style={{ color: 'var(--purple)', fontSize: 10, fontWeight: 700 }}>
+          PR:
+          <PrLink
+            id={plan.foPrId ?? plan.dpPrId}
+            code={plan.foPrCode ?? plan.dpPrCode ?? ''}
+            color="var(--purple)"
+          />
+          {plan.foMatPrCode ? (
+            <span style={{ color: 'var(--amber)', marginLeft: 4 }}>
+              Mat:
+              <PrLink id={plan.foMatPrId} code={plan.foMatPrCode} color="var(--amber)" />
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+      {plan.ospPrs.length > 0 ? (
+        <span
+          className="mono"
+          style={{
+            color: 'var(--purple)',
+            fontSize: 10,
+            fontWeight: 700,
+            display: 'inline-flex',
+            gap: 3,
+            alignItems: 'center',
+          }}
+          title="OSP purchase request(s) auto-raised for this plan's outsource op(s)"
+        >
+          PR:
+          {plan.ospPrs.map((pr, i) => (
+            <span key={pr.id}>
+              <PrLink id={pr.id} code={pr.code} color="var(--purple)" />
+              {i < plan.ospPrs.length - 1 ? ',' : ''}
+            </span>
+          ))}
+        </span>
+      ) : null}
+      {plan.jcId &&
+      (plan.planStatus === 'jc_created' ||
+        plan.planStatus === 'in_production' ||
+        plan.planStatus === 'complete' ||
+        isRouteCard) ? (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          style={{ fontSize: 10, color: 'var(--cyan)' }}
+          onClick={onViewJc}
+          title="Open the Job Card"
+        >
+          <Activity size={11} /> {plan.jcCode ?? 'View JC'}
+        </button>
+      ) : null}
     </div>
   );
 }

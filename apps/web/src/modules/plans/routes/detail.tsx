@@ -74,8 +74,12 @@ function PlanDetailPage(): React.JSX.Element {
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = !plan.priceVisible;
   const isEditable = plan.planStatus === 'in_planning' || plan.planStatus === 'planned';
-  const canFinalize = plan.planStatus === 'in_planning';
-  const canExecute = plan.planStatus === 'planned';
+  // ADR-170 — a route-card-driven plan holds no operations and is never
+  // Finalized / Executed here: a Production Order builds its Job Card from the
+  // item's Route Card. Old plans (opsSource 'plan') keep every action as before.
+  const fromRouteCard = plan.opsSource === 'route_card';
+  const canFinalize = !fromRouteCard && plan.planStatus === 'in_planning';
+  const canExecute = !fromRouteCard && plan.planStatus === 'planned';
 
   const onFinalize = (): void => {
     setActionError(null);
@@ -299,6 +303,28 @@ function PlanDetailPage(): React.JSX.Element {
             </Grid>
           ) : null}
 
+          {fromRouteCard ? (
+            <div
+              className="text3"
+              style={{
+                marginTop: 12,
+                padding: '8px 10px',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                background: 'var(--bg2)',
+                fontSize: 12,
+              }}
+            >
+              Operations come from the item's Route Card. Create a Production Order to build the Job
+              Card.{' '}
+              {perms.entry && plan.planStatus === 'planned' && !plan.jcId ? (
+                <Link to="/production-orders/new" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+                  Create Production Order →
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
+
           {plan.remarks ? (
             <div style={{ marginTop: 12 }}>
               <div
@@ -318,7 +344,7 @@ function PlanDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      {plan.ops.length > 0 ? (
+      {!fromRouteCard && plan.ops.length > 0 ? (
         <div className="panel">
           <div className="panel-hdr">
             <div className="panel-title">Operations ({plan.ops.length})</div>

@@ -18,6 +18,7 @@ export const DOC_NUMBER_TYPES = [
   'purchase_order',
   'grn',
   'delivery_challan',
+  'production_order',
 ] as const;
 export type DocNumberType = (typeof DOC_NUMBER_TYPES)[number];
 
@@ -36,6 +37,7 @@ export const DOC_NUMBER_FORMATS: Record<DocNumberType, DocNumberFormat> = {
   purchase_order: { prefix: 'IN-PO-', digits: 5, label: 'PO No.' },
   grn: { prefix: 'IN-GRN-', digits: 5, label: 'GRN No.' },
   delivery_challan: { prefix: 'IN-DC-', digits: 5, label: 'DC No.' },
+  production_order: { prefix: 'IN-PRO-', digits: 5, label: 'Production Order No.' },
 };
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

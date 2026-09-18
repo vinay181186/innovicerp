@@ -9002,3 +9002,262 @@ read complete there; a JW-only job card created directly left its OSP op with no
 - Positive: the op card, NC register and SO screens agree with the physical pieces through
   any number of return cycles; the NC chain is navigable; a dead PO no longer blocks the op.
 - Negative: two more manual migrations (0129, 0130) per database.
+
+## ADR-168: "Final Inspection" replaces DIR as the default terminal QC op; a QC op may not directly follow an OSP op
+**Date:** 2026-09-17
+**Status:** Accepted (supersedes the NAME in ADR-069 / ADR-133 / ADR-161; the Rule B logic is unchanged)
+
+### Context
+User, 2026-09-17: *"DIR is no longer a special QC process. DIR must behave like a normal QC
+process. Move the existing DIR-specific special logic/conditions to Final Inspection. Add Final
+Inspection to QC Process Master."* and *"OSP → QC = NOT ALLOWED. OSP → Operation → QC = ALLOWED.
+Reason: OSP → Inward → Incoming QC."*
+
+Traced: the only DIR-specific behaviour in the system is ADR-069 Rule B — the server appends a
+terminal QC op named `DEFAULT_FINAL_QC_OP` when a routing would otherwise never credit finished
+stock. Three places compare on that name (`route-cards/service.ts` `stripAutoTerminalQcOp`,
+`qc-processes/service.ts` delete guard, `jc-default-qc.test.ts`), and `qc-documents/service.ts`
+holds DIR in the always-shown / mandatory-by-default column set `QC_FIXED_ORDER`. A QC step is
+free text on `jc_ops` / `plan_ops` / `route_card_ops` (no FK — ADR-133); no migration ever seeded
+a QC process (the legacy five came with the Firebase load). Live TEST master held `dir` + `tpi`.
+
+Op ORDER was never validated anywhere (form or server): only per-op checks (machine / vendor /
+name). Three writers create `jc_ops`: JC create/edit, Plan execute, Route Card → Plan. The
+codebase deliberately tolerated `outsource → qc` adjacency: `incoming-qc/service.ts`
+`mirrorIncomingQcOnNextQcOp` copies the Incoming-QC result onto a QC op at `op_seq + 1`
+(QC-NC-HANDLING-DESIGN §6). The user's rule makes that pair redundant for ordinary JCs — the
+same reasoning ("the vendor's work is inspected at Incoming QC") — so the pair is now refused
+up front and the mirror stays as a safety net for the two cases that still produce it.
+
+### Decision
+1. `DEFAULT_FINAL_QC_OP = 'Final Inspection'`. `stripAutoTerminalQcOp` compares case-folded on
+   BOTH sides (it uppercased one side only, which would silently never match a mixed-case name).
+   The delete guard now protects "Final Inspection"; DIR is deletable when unused like any other
+   process. `QC_FIXED_ORDER = ['MIR','MCR','Final Inspection','TPI']` — DIR appears on the QC
+   documents matrix only when a JC actually carries it.
+2. Migration **0132** seeds one active `Final Inspection` row per company (case-insensitive
+   NOT EXISTS; created_by = oldest admin, as 0116). Applied to TEST; PROD when the user says.
+3. New shared helper `packages/shared/src/lib/jc-op-sequence.ts` —
+   `findQcDirectlyAfterOutsource` / `qcAfterOutsourceError` / `opPairKey`. Enforced on the JC
+   form (existing red banner, `build-jc-write-input.ts`) and on the server in JC create/edit,
+   Plan save/execute and Route Card create/update, with one message: *"Op 30 (QC) cannot directly
+   follow Op 20 (OSP). Add a manufacturing operation between them — the vendor's work is
+   inspected at Incoming QC when it comes back."*
+4. Exemptions: rework/repair children (`recovery_kind`) are exempt — ADR-161 appends the terminal
+   QC after ANY last op there, outsource included; pairs that already exist on a saved JC are
+   grandfathered (`allowedPairs`) so an old JC stays editable without re-routing.
+5. (From code review.) On EDIT the generated terminal op comes back in the payload with an id.
+   If the person retypes the op before it to OSP (the supported in-house→OSP switch), that op is
+   stale — Rule B never gates an outsource JC with a terminal QC — so `stripStaleGeneratedTerminalQc`
+   (shared) drops it on the form and on the server BEFORE the rule runs and before the
+   route-card auto-save; otherwise the rule would blame an op nobody entered. Only the last op,
+   only under the generated name, never a started op, never on a recovery child. The name
+   constant `DEFAULT_FINAL_QC_OP` therefore moved to `packages/shared` (api re-exports it).
+6. (From code review.) The message names the STORED `op_seq` when the caller has it — plans keep
+   gaps after a delete (1, 3, 4 …), so "Op 30" must be the number on the screen, not the index.
+
+### Intentionally unchanged
+Existing `jc_ops` named DIR/dir (history not rewritten; recovery children keep copying the
+parent's rejecting-QC name). Known one-time consequence: a pre-ADR-168 JC ending in the old
+generated `DIR` op is, on its next routing edit, saved to the item's route card WITH that DIR op
+(the strip recognises only Final Inspection now — a user-picked DIR is a normal op) and bumps the
+route card revision once; later plans from it end in DIR, which is still a QC gate. Plans are NOT
+grandfathered (a plan saved earlier with OSP→QC must be re-routed before its next save; on TEST
+exactly one E2E plan, PLN-0049, holds such a pair; route cards: none); MIR / MCR / TPI; the OSP → Inward → Incoming QC flow and its
+mirror; the ADR-081 Outsource-balance switch (the op stays `process`, so the rule never fires);
+migration 0067's `DIR-QC-BACKFILL` ledger marker; Playwright specs that assert the literal
+"DIR" (listed for the user; not edited without their say).
+
+### Alternatives Considered
+- Alias DIR as a second "generated" name in `stripAutoTerminalQcOp` — rejected: that keeps DIR
+  special, the opposite of the ask; a user-picked DIR now legitimately belongs on a route card.
+- Zod `superRefine` on `jobCardWriteInputSchema.ops` — rejected: the payload has no
+  `recoveryKind`, so the schema cannot exempt recovery children.
+- Rewrite existing DIR ops to Final Inspection — rejected: on TEST the system-written `DIR` and
+  the user-picked `dir` are distinguishable only by case; on PROD they are not.
+
+### Consequences
+- Positive: one rule, one message, on the form and every server door; the master and the
+  server agree on the name the server writes.
+- Negative: historic FPY / QC-documents group DIR and Final Inspection as two stages; one more
+  manual migration per database.
+
+## ADR-169: QC Call Register becomes a single "ruled sheet" with a stage strip; rows know whether their QC op is the job card's last
+**Date:** 2026-09-17
+**Status:** Accepted
+
+### Context
+User supplied a mockup (Word doc, one image, labelled *"2c Ruled sheet — no fills at all, hairline
+rules and a stage step strip; lightest of the three; closest to a QC register book"*) and asked
+for it to be applied to the QC Call Register, with the header carrying **Export, Search, Pending,
+Completed**. The page was the legacy two-pane split (pending calls + inline accept/reject form on
+the left, completed log on the right; renderQCDashboard L4126) with two separate search boxes,
+amber/green filled count boxes (hard-coded rgba) and a "History & Export" link to /qc-history.
+
+The mockup's stage strip — INCOMING · IN-PROCESS · FINAL INSPECTION — needs to know whether a
+process-QC row is the job card's terminal QC gate. The qc-history rows carried `opSeq` but not
+"is this the last op", and the name alone cannot be trusted (old cards end in DIR, ADR-168).
+
+### Decision
+1. `qcHistoryPendingRowSchema` / `qcHistoryLogRowSchema` gain `isLastOp: boolean` (default false
+   so older API builds still parse); the qc-history service sets it from the same "last live op"
+   criterion the stock cascade uses (ADR-069). Stage = Incoming (GRN-line rows) · Final Inspection
+   (`isLastOp`) · In-Process (other process QC).
+2. One sheet, one search box, one **⬇ Export** (reuses qc-history's export helpers on the rows
+   currently shown), a **Pending | Completed** segmented toggle, a clickable single-row stage
+   strip (count · pcs pending · done), hairline-ruled table with the mockup's columns
+   (GRN/JC No · Part/Item code · Vendor·GRN or SO·Op · OK · Rej · Called→Attended · Inspector·Log
+   ref · Verdict). Pending rows keep the existing inline entry form unchanged; only the collapsed
+   row is restyled. Tokens only; the rgba boxes are gone. QC Queue / TPI tabs, `?line=` deep link,
+   the access guard and all permission logic are untouched. /qc-history is untouched.
+
+### Alternatives Considered
+- Classify "Final Inspection" by op NAME — rejected: DIR-ended legacy cards and user-named
+  terminal QCs would be misfiled; the stock cascade's criterion is the truth.
+- Keep two panes and only recolour — rejected: the ask is the mockup, which is one sheet.
+
+### Consequences
+- Positive: one place to look, counts per stage at a glance, export of exactly what is on screen.
+- Negative: the completed feed is still the client-side capped list; the strip's "done" counts
+  are labelled from server stats where they exist.
+
+## ADR-170: Production Orders — Plan + Route Card → Job Card; stock credited once, at close
+
+**Date:** 2026-09-17 · **Status:** Accepted · **Migration:** 0133
+
+### Context
+A plan carried its own operations (`plan_ops`, typed in the edit-plan modal, defaulted from the
+item's route card) and **Execute** copied them onto a Job Card. Stock for that JC was credited
+piecemeal, at whichever of three points fired first: the last op's QC accept (`qc_accept`,
+`op-entry/qc-stock-cascade.ts`), an OSP GRN's Incoming QC when the OSP op is the last op
+(`grn_qc`, `goods-receipt-notes/cascades.ts creditGrnQcStock`), or Incoming QC mirrored onto a
+terminal QC op (`incoming-qc/service.ts mirrorIncomingQcOntoNextQcOp` → `qc_accept`). The user
+wants (2026-09-17): a plan is quantity + dates + raw material + remark only; the Route Card is
+the only source of operations ("no route card, no way forward"); a **Production Order**
+(IN-PRO-#####) = Plan + Route Card + Target Date builds the JC; the JC flow after that is
+untouched; and stock is credited **once**, when the user closes the Production Order, with the
+JC's *actually finished* qty (48 of a 50 plan credits 48). Old plans and old JCs must keep
+behaving exactly as before.
+
+### Source of truth and relationships
+| Fact | Lives in | Read by |
+|---|---|---|
+| Plan qty / dates / RM / remark | `plans` (existing columns) | Create Plan box, PO create |
+| Old flow vs new flow | `plans.ops_source` ('plan' \| 'route_card') — stored, never inferred | Execute guard, Planning screen, Plans list |
+| Item's operations | `route_cards` (unique active per item) + `route_card_ops` | PO create copies them to `jc_ops` |
+| Production Order | `production_orders` (plan_id unique → one PO per plan) | PO master, Close, Plans list, report |
+| PO ↔ JC | `production_orders.job_card_id` and `job_cards.production_order_id` | stock cascades (OFF switch), Close |
+| Plan → JC | `plans.jc_id` (kept; set on PO create) | every existing plan/JC screen |
+| JC complete? | `v_jc_status.computed_status IN ('complete','closed')` (0124/0125: all pieces accepted, no open rework child) | Close guard |
+| JC finished qty | last live op in `v_jc_op_status`: `qc_accepted_qty` for a QC / qc_required op, else `completed_qty` (= `JobCardListItem.lastOpCompletedQty`) | Close credits exactly this |
+| Stock ledger | `store_transactions` source `'production_order_close'`, ref = PO code | store inventory |
+| Plan progress (new flow) | derived in `listPlans`: route_card_pending → gen_production_order → in_production → production_complete | Plans list, PO pickers |
+
+### Decision
+1. **Plan** — the Planning screen's Create Plan box posts `opsSource:'route_card'`; the server
+   stores the plan as `planned` immediately (no ops, no finalize), `POST /plans/:id/execute`
+   refuses such a plan ("create a Production Order instead"). Old plans (`ops_source='plan'`)
+   keep the ops editor, finalize and Execute.
+2. **Create Production Order** (Production → Entry) — Plan (route-card plans without a PO) →
+   Route Card (must be the plan item's active card; none → blocked with a message) → Target Date
+   → **Create JC**. The server builds the JC with the same steps `executeManufacture` uses
+   (JC row, ops copied from `route_card_ops`, default terminal QC per `needsDefaultQcOp`, OSP PRs
+   auto-raised) but does **not** write ops back to the route card; sets `plans.jc_id`,
+   `plan_status='jc_created'`, `job_cards.production_order_id`, `job_cards.due_date=target_date`.
+3. **Close Production Order** — blocked until the JC is complete; credits `jcFinishedQty` as one
+   `production_order_close` row; sets `production_orders.status='closed', credited_qty`, and
+   `job_cards.closed_at` if still null. No Close on the create screen.
+4. **Stock OFF switch** — `tryApplyQcStockCascade` and `creditGrnQcStock` return without writing
+   when the resolved JC (or any ancestor via `parent_job_card_id`) has `production_order_id`.
+   Rework children of a PO-linked parent therefore credit nothing; their pieces re-enter the
+   parent's origin op and are counted in the parent's finished qty. GRN lines that resolve to no
+   `jc_op` (plain purchase GRNs) are untouched, so `po_type` is never consulted.
+5. **Screens** — Planning becomes SO | JWSO → order list → order + all lines table; Production
+   → Master → Production Orders (Pending / All / Closed); Production → Close Production Order;
+   Production → Plans (All / Pending, derived status); Reports → Production Orders (Pending / All).
+
+### Alternatives considered
+- Infer "new flow" from `planned` + 0 ops — rejected: direct-purchase / full-outsource plans are
+  legitimately ops-less; a stored column cannot be misread.
+- Key the GRN switch on `purchase_orders.po_type` — rejected: the credit path never looked at
+  po_type; the JC link is the fact that matters and already covers OSP-only routes.
+- Store progress / finished qty on the PO — rejected: `v_jc_status` is the single source; copying
+  it would drift the moment a QC log is corrected.
+
+### Consequences
+- Positive: one credit per JC, at a human-confirmed moment; operations have one master.
+- Negative: two flows coexist until old plans drain; the OFF switch adds one JC lookup to two
+  cascades. Raw `job_cards.production_order_id` FK is declared in SQL only (table order in schema.ts).
+
+## ADR-171: Item Master "Source" (make / buy) — bought items raise a PR from the Planning line, never a route card
+
+**Date:** 2026-09-17 · **Status:** Accepted · **Migration:** 0134 · **Builds on:** ADR-170
+
+### Context
+With ADR-170 the plan type comes from the route card. For a bought-in item that is a detour: a
+route card exists only to say "Direct Purchase", and a Production Order has nothing to close.
+The user asked for the shortest path, grounded in standard ERP practice. SAP's Material Master
+carries a procurement type (E = in-house production, F = external procurement) and MRP turns a
+demand into a production order or a purchase requisition accordingly; Odoo's product routes
+(Manufacture / Buy) do the same on a confirmed sales order.
+
+### Decision
+1. `items.procurement_type` — `'make'` (default, every existing item) | `'buy'`. Shown on the
+   Item Master form as **Source: Make / Buy**.
+2. Planning line whose item is **buy**: the Action cell offers **+ PR** (not + Plan). A small
+   box — Qty, Required date, Remark — raises ONE standard purchase request (`IN-PR-#####`,
+   `pr_type='standard'`, `source_so_line_id` = the line). No plan, no route card, no Production
+   Order. From there the existing Purchase flow (PR → PO → GRN → Incoming QC → stock at GRN) is
+   untouched; the GRN credit is the plain-purchase path ADR-170 explicitly leaves alone.
+3. `PlanningLine` gains `itemProcurementType`, `prQty` (live qty of non-cancelled PRs raised
+   against the line) and `prs[]`; `totalPlanned` / `remaining` include `prQty` on buy lines so
+   the % planned and the SO-level roll-up stay honest.
+4. Sales-order lines only. A job-work (JWSO) line is the client's material and is never bought
+   in; the endpoint refuses it.
+5. The route card's "Direct Purchase" plan-type tile is hidden on the form (the enum value stays
+   for existing rows); Create Production Order still refuses such cards.
+
+### Alternatives considered
+- Keep Direct Purchase on the route card and make the Production Order raise a PR — rejected:
+  a route card for something we never route, and a "production" document with nothing to close.
+- Raise the PR automatically the moment a plan is created — rejected: planners create plans
+  ahead of when Purchase should act; one deliberate click keeps that control.
+
+### Consequences
+- Positive: one flag on the item, one click on the line; production and purchase paths are
+  symmetrical (Gen production order / + PR) and both end in stock exactly once.
+- Negative: existing direct-purchase plans keep the old Execute path until they drain; an item
+  wrongly left as "make" shows + Plan — the Item Master flag must be set for bought parts.
+
+## ADR-172: Idempotency-Key on every write — a resent save is answered with the first result
+
+**Date:** 2026-09-18 · **Status:** Accepted · **Migration:** 0135
+
+### Context
+In the 2026-09-17 Production Orders verification run two saves (Gen DC → IN-DC-00043/R1, GRN
+receive → IN-GRN-00044) took 14–20 s on the test API. The connection dropped, the browser
+resent the request, and the second copy failed with "already exists" although the first copy
+had created the document within a second. The same shape was recorded on 2026-09-16 (T3 GRN).
+Nothing was duplicated; the user saw an error for a save that had worked and stayed on the form.
+
+### Decision
+1. `apps/web/src/lib/api.ts` sends `idempotency-key: <random uuid>` on every POST / PATCH / PUT
+   / DELETE (one key per `apiFetch` call, so a deliberate second click is a new request).
+2. `apps/api/src/plugins/idempotency.ts` records `(user_id, key, method, path)` in
+   `idempotency_keys` before the handler runs and stores `status_code` + `response_body` after.
+   A repeat with the same key waits for the first run (poll, ≤25 s) and is answered with its
+   stored result; a repeat for a different method/path is refused (422); a 5xx result is not
+   stored so a genuine retry can run. Rows older than a day are purged by the API.
+3. Server-only bookkeeping keyed by the authenticated user: no company column, no RLS
+   policies (the API connects as `postgres`, which bypasses RLS).
+
+### Alternatives considered
+- Treat "code already exists" as success on the two affected screens — rejected: hides the
+  symptom on two screens, every other create screen keeps it.
+- Fix only the slowness — still needed separately, but a dropped connection can happen on any
+  slow network; the key makes the resend harmless wherever it happens.
+
+### Consequences
+- Positive: one click = one document, whatever the network does; every write screen benefits.
+- Negative: one small insert + update per write; a table to purge; multipart uploads are
+  outside the plugin.

@@ -63,6 +63,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
+import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import {
   AuthorizationError,
   ConflictError,
@@ -611,6 +612,11 @@ export async function createRouteCard(
     // Validate item + capture display label for activity log.
     const item = await assertItemExists(tx, input.itemId, companyId);
 
+    // Routing rule: a QC op may not sit directly after an OSP op. Route cards
+    // have no rework/grandfather exemption — a routing saved as the item's
+    // master must be clean. (Ops are ordered as sent; op_seq = index + 1.)
+    assertNoQcDirectlyAfterOutsource(input.ops);
+
     // Validate referenced machines + vendors exist.
     const machineIds = input.ops.map((o) => o.machineId).filter((x): x is string => Boolean(x));
     const vendorIds = input.ops.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x));
@@ -763,6 +769,12 @@ export async function updateRouteCard(
         .limit(1);
       if (dup.length > 0) throw new ConflictError(`Route card code "${input.code}" already exists`);
     }
+
+    // Routing rule: a QC op may not sit directly after an OSP op. Same as
+    // create — no rework/grandfather exemption on an item's master routing.
+    // Legacy JC edits reach the route card through saveRouteCardForItem, not
+    // here, so a grandfathered JC's auto-save is not caught by this check.
+    assertNoQcDirectlyAfterOutsource(input.ops);
 
     // Validate ops references.
     const machineIds = input.ops.map((o) => o.machineId).filter((x): x is string => Boolean(x));
@@ -1190,17 +1202,21 @@ async function replaceRouteCardOps(
  *  fresh one on top — the routing would grow one QC op every cycle.
  *
  *  The test is the exact inverse of the append rule: strip the last op only
- *  when it looks exactly like the generated one (opType 'qc', named DIR, cycle
- *  time 0, qcRequired true) AND the remaining prefix is one that
- *  `needsDefaultQcOp` would append that same op to. So anything stripped is
- *  re-created byte-identically downstream, and an op that would NOT be
- *  re-created (a mid-route DIR, a DIR following an outsource step, a QC step
- *  the user named something else) is left untouched. */
+ *  when it looks exactly like the generated one (opType 'qc', named
+ *  "Final Inspection" — DEFAULT_FINAL_QC_OP, cycle time 0, qcRequired true)
+ *  AND the remaining prefix is one that `needsDefaultQcOp` would append that
+ *  same op to. So anything stripped is re-created byte-identically
+ *  downstream, and an op that would NOT be re-created (a mid-route Final
+ *  Inspection, a Final Inspection following an outsource step, a QC step the
+ *  user named something else) is left untouched.
+ *
+ *  The name compare is case-folded on BOTH sides: the op name is free text and
+ *  the default is mixed-case, so folding only one side would never match. */
 export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRouteCardOpInput[] {
   const last = ops[ops.length - 1];
   if (!last) return ops;
   if (last.opType !== 'qc') return ops;
-  if (last.operation.trim().toUpperCase() !== DEFAULT_FINAL_QC_OP) return ops;
+  if (last.operation.trim().toUpperCase() !== DEFAULT_FINAL_QC_OP.toUpperCase()) return ops;
   if (Number(last.cycleTimeMin ?? 0) !== 0) return ops;
   if (last.qcRequired !== true) return ops;
   const head = ops.slice(0, -1);

@@ -196,10 +196,11 @@ export async function softDeleteQcProcess(id: string, user: AuthContext): Promis
     const row = existing[0];
     if (!row) throw new NotFoundError(`QC process ${id} not found`);
 
-    // The server itself writes this name. ADR-069 Rule B appends a terminal QC
-    // op called DIR to every JC that would otherwise never credit finished
-    // stock (lib/jc-default-qc.ts). That happens whether or not the master
-    // still has the row, so deleting it would put the system in the permanent
+    // The server itself writes this name. ADR-069 Rule B appends this process
+    // (DEFAULT_FINAL_QC_OP, "Final Inspection") automatically as the final QC
+    // step on every JC that would otherwise never credit finished stock
+    // (lib/jc-default-qc.ts). That happens whether or not the master still
+    // has the row, so deleting it would put the system in the permanent
     // position of generating a QC step whose name nothing defines.
     if (row.code === DEFAULT_FINAL_QC_OP) {
       throw new ConflictError(

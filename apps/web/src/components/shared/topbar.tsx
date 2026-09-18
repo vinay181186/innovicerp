@@ -8,6 +8,7 @@
 
 import { Link, useLocation } from '@tanstack/react-router';
 import { KeyRound, LogOut } from 'lucide-react';
+import { GlobalSearch } from '@/components/shared/global-search';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { signOut } from '@/lib/session';
 
@@ -33,6 +34,11 @@ const TITLE_MAP: Record<string, string> = {
   '/saved-reports': 'Saved Reports',
   '/bom-masters': 'BOM Master',
   '/route-cards': 'Route Card Master',
+  // Exact match wins over the longest-prefix fallback, so the two entry
+  // screens get their own titles and /production-orders/<id> keeps the master's.
+  '/production-orders': 'Production Orders',
+  '/production-orders/new': 'Create Production Order',
+  '/production-orders/close': 'Close Production Order',
   // Acronym routes: the deriveTitle fallback humanizes per-word, so an absent key
   // renders "Qc Call Register" / "Capa" / "Tpi". Labels below are legacy's own
   // (its nav registry), not invented. QC Call Register additionally has no
@@ -47,6 +53,7 @@ const TITLE_MAP: Record<string, string> = {
   '/incoming-qc': 'Incoming QC',
   '/capa': 'CAPA',
   '/tpi': 'TPI',
+  '/search': 'Search',
 };
 
 function deriveTitle(pathname: string): string {
@@ -69,35 +76,40 @@ export function TopBar(): React.JSX.Element {
 
   return (
     <div id="topbar">
-      <img
-        src={INNOVIC_LOGO_DATA_URI}
-        alt="Innovic"
-        style={{ height: 30, width: 'auto', flexShrink: 0 }}
-      />
-      <div className="tb-title" id="pageTitle">
-        {title}
+      {/* .tb-left (logo + title) and .tb-right share the slack equally, so the
+          search box sits in the true middle of the bar and stays in normal
+          flow (no overlap with a long page title at narrow widths). The logo
+          must be INSIDE the left half or the box lands half a logo to the right. */}
+      <div className="tb-left">
+        <img
+          src={INNOVIC_LOGO_DATA_URI}
+          alt="Innovic"
+          style={{ height: 30, width: 'auto', flexShrink: 0 }}
+        />
+        <div className="tb-title" id="pageTitle">
+          {title}
+        </div>
       </div>
-      <div className="tb-sync" title="Connection status">
-        <span className="sync-dot" />
-        SYNCED
+      <GlobalSearch />
+      <div className="tb-right">
+        <div className="tb-sync" title="Connection status">
+          <span className="sync-dot" />
+          SYNCED
+        </div>
+        <Link to="/change-password" className="btn btn-ghost btn-sm" title="Change your password">
+          <KeyRound size={14} />
+          <span>Password</span>
+        </Link>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => void signOut()}
+          title="Sign out"
+        >
+          <LogOut size={14} />
+          <span>Sign out</span>
+        </button>
       </div>
-      <Link
-        to="/change-password"
-        className="btn btn-ghost btn-sm"
-        title="Change your password"
-      >
-        <KeyRound size={14} />
-        <span>Password</span>
-      </Link>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={() => void signOut()}
-        title="Sign out"
-      >
-        <LogOut size={14} />
-        <span>Sign out</span>
-      </button>
     </div>
   );
 }

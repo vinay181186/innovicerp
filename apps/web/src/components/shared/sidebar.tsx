@@ -149,11 +149,18 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/op-entry', label: 'Op Entry', icon: '✚', formKey: 'op_entry' },
           { to: '/jc-ops', label: 'JC Operations', icon: '⨯', formKey: 'jc_create' },
           { to: '/daily-report', label: 'Daily Report', icon: '📊' },
+          // Production Orders (ADR-170): Plan + Route Card + Target Date → JC,
+          // and the close that credits stock. Both under one form key.
+          { to: '/production-orders/new', label: 'Create Production Order', icon: '🏭', formKey: 'prodorder_create' },
+          { to: '/production-orders/close', label: 'Close Production Order', icon: '🔒', formKey: 'prodorder_create' },
         ],
       },
       {
         label: 'Master',
         items: [
+          { to: '/production-orders', label: 'Production Orders', icon: '🏭', formKey: 'prodorder_create' },
+          // Plans also stays under Planning; Production reads the same list.
+          { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
           { to: '/job-cards', label: 'Job Cards', icon: '▭', formKey: 'jc_create' },
           { to: '/machines', label: 'Machine Master', icon: '⚙', formKey: 'machine_create' },
           { to: '/operators', label: 'Operator Master', icon: '👷', formKey: 'operator_create' },

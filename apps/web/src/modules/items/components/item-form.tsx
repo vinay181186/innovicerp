@@ -10,8 +10,10 @@
 
 import {
   type CreateItemInput,
-  type Item,
+  ITEM_PROCUREMENT_TYPES,
+  ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
+  type Item,
   type UpdateItemInput,
   UOMS,
   createItemInputSchema,
@@ -51,6 +53,7 @@ const CREATE_DEFAULTS: CreateItemInput = {
   material: undefined,
   uom: 'NOS',
   itemType: 'component',
+  procurementType: 'make',
   hsnCode: undefined,
   drawingFilePath: undefined,
 };
@@ -64,6 +67,7 @@ function itemToUpdateDefaults(item: Item): UpdateItemInput {
     material: item.material ?? undefined,
     uom: item.uom,
     itemType: item.itemType,
+    procurementType: item.procurementType,
     hsnCode: item.hsnCode ?? undefined,
     drawingFilePath: item.drawingFilePath ?? undefined,
   };
@@ -113,7 +117,8 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
               {...register('code', {
                 // Blank → undefined so the server auto-generates the next code;
                 // a kept/typed value is validated by the schema's code rules.
-                setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
+                setValueAs: (v: string) =>
+                  typeof v === 'string' && v.trim() ? v.trim() : undefined,
               })}
             />
             {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
@@ -224,10 +229,35 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             ) : null}
           </div>
           <div className="form-grp">
+            <label className="form-label" htmlFor="procurementType">
+              Source
+            </label>
+            <select
+              id="procurementType"
+              className="innovic-select"
+              title="Make = planned & produced (Plan → Production Order → Route Card). Buy = purchased finished (+ PR from the Planning line)."
+              {...register('procurementType')}
+            >
+              {ITEM_PROCUREMENT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {ITEM_PROCUREMENT_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </select>
+            {errors.procurementType?.message ? (
+              <div className="form-error">{errors.procurementType.message}</div>
+            ) : null}
+          </div>
+          <div className="form-grp">
             <label className="form-label" htmlFor="hsnCode">
               HSN Code
             </label>
-            <input id="hsnCode" className="innovic-input" autoComplete="off" {...register('hsnCode')} />
+            <input
+              id="hsnCode"
+              className="innovic-input"
+              autoComplete="off"
+              {...register('hsnCode')}
+            />
             {errors.hsnCode?.message ? (
               <div className="form-error">{errors.hsnCode.message}</div>
             ) : null}
@@ -381,10 +411,35 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             ) : null}
           </div>
           <div className="form-grp">
+            <label className="form-label" htmlFor="procurementType">
+              Source
+            </label>
+            <select
+              id="procurementType"
+              className="innovic-select"
+              title="Make = planned & produced (Plan → Production Order → Route Card). Buy = purchased finished (+ PR from the Planning line)."
+              {...register('procurementType')}
+            >
+              {ITEM_PROCUREMENT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {ITEM_PROCUREMENT_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </select>
+            {errors.procurementType?.message ? (
+              <div className="form-error">{errors.procurementType.message}</div>
+            ) : null}
+          </div>
+          <div className="form-grp">
             <label className="form-label" htmlFor="hsnCode">
               HSN Code
             </label>
-            <input id="hsnCode" className="innovic-input" autoComplete="off" {...register('hsnCode')} />
+            <input
+              id="hsnCode"
+              className="innovic-input"
+              autoComplete="off"
+              {...register('hsnCode')}
+            />
             {errors.hsnCode?.message ? (
               <div className="form-error">{errors.hsnCode.message}</div>
             ) : null}

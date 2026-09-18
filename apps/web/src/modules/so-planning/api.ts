@@ -5,8 +5,10 @@ import type {
   PlanningBomResponse,
   PlanningDetailResponse,
   PlanningSoListResponse,
+  RaisePlanningPrInput,
+  RaisePlanningPrResponse,
 } from '@innovic/shared';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const soPlanningKeys = {
@@ -62,5 +64,23 @@ export function usePlanningBom(soId: string | null, soLineId: string | null) {
     queryKey: soPlanningKeys.bom(soLineId),
     queryFn: () => apiFetch<PlanningBomResponse>(`/so-planning/${soId}/bom/${soLineId}`),
     enabled: !!soId && !!soLineId,
+  });
+}
+
+/** ADR-171. Raise ONE standard purchase request against a "buy" SO line from
+ *  the Planning screen (`POST /so-planning/lines/:soLineId/raise-pr`). SO
+ *  lines only — the API refuses a JWSO line. Invalidates every planning query
+ *  so the line's PR chips, prQty and the order roll-up refresh together. */
+export function useRaisePlanningPr() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ soLineId, ...input }: RaisePlanningPrInput & { soLineId: string }) =>
+      apiFetch<RaisePlanningPrResponse>(`/so-planning/lines/${soLineId}/raise-pr`, {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+    },
   });
 }

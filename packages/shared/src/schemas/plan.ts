@@ -5,10 +5,14 @@ import { z } from 'zod';
 import { PLAN_STATUSES, type PlanStatus } from '../enums/plan-status';
 import { PLAN_TYPES, type PlanType } from '../enums/plan-type';
 import { OP_TYPES, type OpType } from '../enums/op-type';
+import { PLAN_OPS_SOURCES, type PlanOpsSource } from '../enums/plan-ops-source';
+import { PLAN_DERIVED_STATUSES, type PlanDerivedStatus } from '../enums/plan-derived-status';
 
 export const planStatusSchema: z.ZodType<PlanStatus> = z.enum(PLAN_STATUSES);
 export const planTypeSchema: z.ZodType<PlanType> = z.enum(PLAN_TYPES);
 const planOpTypeSchema: z.ZodType<OpType> = z.enum(OP_TYPES);
+export const planOpsSourceSchema: z.ZodType<PlanOpsSource> = z.enum(PLAN_OPS_SOURCES);
+export const planDerivedStatusSchema: z.ZodType<PlanDerivedStatus> = z.enum(PLAN_DERIVED_STATUSES);
 
 // Legacy editPlan §5.8: per-plan list of QC documents the operator must
 // upload during inspection. Mandatory docs block QC completion later.
@@ -55,6 +59,10 @@ export const planSchema = z.object({
   planDate: z.string(),
   planStatus: planStatusSchema,
   planType: planTypeSchema,
+  /** 'plan' = old flow (ops typed on the plan, Execute builds the JC);
+   *  'route_card' = new flow (no ops here; a Production Order builds the JC
+   *  from the item's Route Card). See enums/plan-ops-source. */
+  opsSource: planOpsSourceSchema,
 
   soLineId: z.string().uuid().nullable(),
   jwLineId: z.string().uuid().nullable(),
@@ -154,6 +162,12 @@ export const listPlansQuerySchema = z.object({
   planType: planTypeSchema.optional(),
   search: z.string().trim().min(1).max(100).optional(),
   soLineId: z.string().uuid().optional(),
+  opsSource: planOpsSourceSchema.optional(),
+  /** Derived-status filter (route-card-driven plans only; see enums/plan-derived-status). */
+  derivedStatus: planDerivedStatusSchema.optional(),
+  /** Production → Plans "Pending" button: route-card-driven plans that have no
+   *  Production Order yet (route_card_pending + gen_production_order), not cancelled. */
+  poPending: z.coerce.boolean().optional(),
   limit: z.coerce.number().int().min(1).max(500).optional().default(100),
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
@@ -169,6 +183,18 @@ export const listPlansResponseSchema = z.object({
       itemRevision: z.string().nullable().default(null),
       itemName: z.string().nullable(),
       opsCount: z.number().int().nonnegative(),
+      /** Computed for `opsSource='route_card'` plans, null for old plans (they
+       *  keep their stored planStatus label). */
+      derivedStatus: planDerivedStatusSchema.nullable().default(null),
+      /** Live Production Order for this plan (one per plan), when any. */
+      productionOrderId: z.string().uuid().nullable().default(null),
+      productionOrderCode: z.string().nullable().default(null),
+      productionOrderStatus: z.string().nullable().default(null),
+      /** Code of the JC (plans.jc_id), old or new flow. */
+      jcCode: z.string().nullable().default(null),
+      /** True when the item has an active route card — the Create Production
+       *  Order picker uses it to explain "Route card pending". */
+      hasRouteCard: z.boolean().default(false),
     }),
   ),
   total: z.number().int().nonnegative(),
@@ -249,7 +275,24 @@ export const createPlanInputSchema = z.object({
   requiredDocs: z.array(planRequiredDocSchema).optional(),
 
   ops: z.array(planOpInputSchema).optional(),
+
+  /** Defaults to 'plan' (old flow). The Planning screen's Create Plan box sends
+   *  'route_card': the server then stores the plan as `planned` straight away
+   *  (no ops, no finalize step) — operations arrive later from the Route Card
+   *  when a Production Order is created. The client's planType is a placeholder;
+   *  the server stores the route card's. */
+  opsSource: planOpsSourceSchema.optional(),
 }).superRefine((val, ctx) => {
+  // opsSource 'route_card': planType is a placeholder — the server stores the
+  // item's route-card plan type (ADR-170) and re-stamps it when the Production
+  // Order is created, so no planType restriction here.
+  if (val.opsSource === 'route_card' && val.ops && val.ops.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ops'],
+      message: 'A route-card-driven plan carries no operations of its own',
+    });
+  }
   // Item identification — at least one of itemId / itemCodeText must be set.
   if (!val.itemId && !val.itemCodeText) {
     ctx.addIssue({

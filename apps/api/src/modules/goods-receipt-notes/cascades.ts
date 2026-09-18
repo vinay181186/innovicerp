@@ -30,6 +30,8 @@
 //        Skipped for mid-route OSP returns (ADR-092) — those pieces are WIP
 //        owed to a downstream op, and store is credited once by the JC's
 //        final QC op instead. See isMidRouteOutsourceReturn below.
+//        Also skipped when the JC was built by a Production Order (ADR-170)
+//        — that JC is credited once, at PO close. See resolveGrnLineJobCardId.
 
 import { eq, sql } from 'drizzle-orm';
 import {
@@ -39,6 +41,7 @@ import {
   storeTransactions,
 } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
+import { isProductionOrderLinkedJc } from '../../lib/production-order-link';
 
 export async function recalcPoLineReceivedQty(
   tx: DbTransaction,
@@ -208,6 +211,42 @@ export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promis
 }
 
 /**
+ * The ONE place a GRN line is resolved to the jc_op(s) it returns pieces for.
+ * Shared by isMidRouteOutsourceReturn and resolveGrnLineJobCardId so the two
+ * can never disagree about which op a receipt belongs to. Yields a CTE named
+ * `op` (job_card_id, op_seq); the caller appends its own SELECT.
+ *
+ * Two paths, because `jc_ops.outsource_po_line_id` is only stamped once the
+ * outward DC is issued:
+ *   1. jc_ops.outsource_po_line_id = the GRN line's purchase_order_line_id
+ *   2. GRN → PO → PO.pr_id → purchase_requests.source_jc_op_id
+ * A non-OSP GRN (ordinary purchase) resolves to no op at all.
+ */
+function grnLineOpsCte(grnLineId: string) {
+  return sql`
+    WITH ln AS (
+      SELECT l.purchase_order_line_id, l.goods_receipt_note_id
+      FROM public.goods_receipt_note_lines l
+      WHERE l.id = ${grnLineId}::uuid
+    ),
+    op AS (
+      SELECT o.job_card_id, o.op_seq
+      FROM ln
+      JOIN public.jc_ops o
+        ON o.outsource_po_line_id = ln.purchase_order_line_id
+      WHERE o.deleted_at IS NULL
+      UNION
+      SELECT o.job_card_id, o.op_seq
+      FROM ln
+      JOIN public.goods_receipt_notes g ON g.id = ln.goods_receipt_note_id
+      JOIN public.purchase_orders po ON po.id = g.purchase_order_id
+      JOIN public.purchase_requests pr ON pr.id = po.pr_id
+      JOIN public.jc_ops o ON o.id = pr.source_jc_op_id
+      WHERE o.deleted_at IS NULL
+    )`;
+}
+
+/**
  * True when this GRN line is the return of an OSP op that is NOT the last op
  * of its Job Card — i.e. the pieces are mid-route WIP, still owed to a
  * downstream op, not finished goods (ADR-092).
@@ -232,26 +271,7 @@ async function isMidRouteOutsourceReturn(
   grnLineId: string,
 ): Promise<boolean> {
   const rows = (await tx.execute(sql`
-    WITH ln AS (
-      SELECT l.purchase_order_line_id, l.goods_receipt_note_id
-      FROM public.goods_receipt_note_lines l
-      WHERE l.id = ${grnLineId}::uuid
-    ),
-    op AS (
-      SELECT o.job_card_id, o.op_seq
-      FROM ln
-      JOIN public.jc_ops o
-        ON o.outsource_po_line_id = ln.purchase_order_line_id
-      WHERE o.deleted_at IS NULL
-      UNION
-      SELECT o.job_card_id, o.op_seq
-      FROM ln
-      JOIN public.goods_receipt_notes g ON g.id = ln.goods_receipt_note_id
-      JOIN public.purchase_orders po ON po.id = g.purchase_order_id
-      JOIN public.purchase_requests pr ON pr.id = po.pr_id
-      JOIN public.jc_ops o ON o.id = pr.source_jc_op_id
-      WHERE o.deleted_at IS NULL
-    )
+    ${grnLineOpsCte(grnLineId)}
     SELECT EXISTS (
       SELECT 1 FROM op
       WHERE op.op_seq < (
@@ -264,13 +284,36 @@ async function isMidRouteOutsourceReturn(
 }
 
 /**
+ * The Job Card whose op this GRN line returns pieces for, resolved the SAME
+ * two ways isMidRouteOutsourceReturn resolves the op (shared CTE above).
+ * Null when the line resolves to no jc_op — i.e. a plain purchase GRN — so
+ * callers that key a decision on the JC leave ordinary receipts alone.
+ */
+async function resolveGrnLineJobCardId(
+  tx: DbTransaction,
+  grnLineId: string,
+): Promise<string | null> {
+  const rows = (await tx.execute(sql`
+    ${grnLineOpsCte(grnLineId)}
+    SELECT op.job_card_id
+    FROM op
+    WHERE op.job_card_id IS NOT NULL
+    ORDER BY op.op_seq
+    LIMIT 1
+  `)) as unknown as Array<{ job_card_id: string | null }>;
+  return rows[0]?.job_card_id ?? null;
+}
+
+/**
  * Credit `qty` accepted pcs to stock via the grn_qc ledger — the single source
  * of truth for QC-accept stock movement. Locks the item row, reads current
  * on-hand, inserts one 'in' store_transaction. No-op when qty ≤ 0 (rejecting
  * everything writes nothing), the line has no resolved item (free-text-only
- * items aren't stock-tracked by design), or the line is a mid-route OSP return
- * (see isMidRouteOutsourceReturn). Callable per-inspect for incremental QC, so
- * multiple partial accepts on one line produce one ledger row each.
+ * items aren't stock-tracked by design), the line is a mid-route OSP return
+ * (see isMidRouteOutsourceReturn), or the line's Job Card was built by a
+ * Production Order (ADR-170 — credited at PO close instead). Callable
+ * per-inspect for incremental QC, so multiple partial accepts on one line
+ * produce one ledger row each.
  */
 export async function creditGrnQcStock(args: {
   tx: DbTransaction;
@@ -287,6 +330,14 @@ export async function creditGrnQcStock(args: {
   // ADR-092: mid-route OSP returns are WIP, not finished goods. Store is
   // credited once, by the JC's final QC op — not here.
   if (await isMidRouteOutsourceReturn(tx, grnLineId)) return;
+  // ADR-170: an OSP return for a Job Card built by a Production Order (or a
+  // rework/repair child of one) is credited ONCE, when that Production Order
+  // is closed — not here, even when the OSP op is the JC's last op. A line
+  // that resolves to no jc_op (a plain purchase GRN) has no JC to be linked
+  // to, so it credits exactly as before; purchase_orders.po_type is never
+  // consulted.
+  const linkedJobCardId = await resolveGrnLineJobCardId(tx, grnLineId);
+  if (linkedJobCardId && (await isProductionOrderLinkedJc(tx, linkedJobCardId))) return;
 
   // Lock the items row to serialize concurrent QC accepts on the same item.
   await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);

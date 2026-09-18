@@ -34,7 +34,15 @@
 //  - Fetching indicator and import banners are React-only additions with no
 //    legacy counterpart; removing them would drop working behaviour.
 
-import { type ItemType, ITEM_TYPES, type Item, type ListItemsQuery } from '@innovic/shared';
+import {
+  ITEM_PROCUREMENT_TYPES,
+  ITEM_PROCUREMENT_TYPE_LABEL,
+  ITEM_TYPES,
+  type Item,
+  type ItemProcurementType,
+  type ItemType,
+  type ListItemsQuery,
+} from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { Loader2 } from 'lucide-react';
@@ -84,6 +92,8 @@ interface ImportResult {
 const listSearchSchema = z.object({
   search: z.string().optional(),
   itemType: z.enum(ITEM_TYPES).optional(),
+  // ADR-171 — Source (make / buy) filter, same URL-param shape as itemType.
+  procurementType: z.enum(ITEM_PROCUREMENT_TYPES).optional(),
   sortBy: z.enum(['code', 'name']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
 });
@@ -124,12 +134,13 @@ function ItemsListPage(): React.JSX.Element {
     () => ({
       search: search.search,
       itemType: search.itemType,
+      procurementType: search.procurementType,
       sortBy: search.sortBy,
       sortDir: search.sortDir,
       limit: LIST_LIMIT,
       offset: 0,
     }),
-    [search.search, search.itemType, search.sortBy, search.sortDir],
+    [search.search, search.itemType, search.procurementType, search.sortBy, search.sortDir],
   );
 
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
@@ -142,6 +153,13 @@ function ItemsListPage(): React.JSX.Element {
   const setTypeFilter = useCallback(
     (next: ItemType | undefined): void => {
       void navigate({ search: (prev) => ({ ...prev, itemType: next }), replace: true });
+    },
+    [navigate],
+  );
+
+  const setSourceFilter = useCallback(
+    (next: ItemProcurementType | undefined): void => {
+      void navigate({ search: (prev) => ({ ...prev, procurementType: next }), replace: true });
     },
     [navigate],
   );
@@ -331,6 +349,16 @@ function ItemsListPage(): React.JSX.Element {
         cell: ({ row }) => <span className="badge b-grey">{row.original.uom}</span>,
       },
       {
+        // ADR-171 — Source: Buy stands out (blue), Make is the quiet default.
+        header: 'Source',
+        accessorKey: 'procurementType',
+        cell: ({ row }) => (
+          <span className={`badge ${row.original.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}>
+            {ITEM_PROCUREMENT_TYPE_LABEL[row.original.procurementType]}
+          </span>
+        ),
+      },
+      {
         header: 'Drw',
         meta: { tdClass: 'td-ctr' },
         cell: ({ row }) =>
@@ -437,6 +465,23 @@ function ItemsListPage(): React.JSX.Element {
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 240, fontSize: 12 }}
           />
+          <select
+            className="innovic-select"
+            value={search.procurementType ?? ''}
+            onChange={(e) => {
+              const v = e.target.value as ItemProcurementType | '';
+              setSourceFilter(v === '' ? undefined : v);
+            }}
+            title="Source — Make / Buy"
+            style={{ width: 130, fontSize: 12 }}
+          >
+            <option value="">All sources</option>
+            {ITEM_PROCUREMENT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {ITEM_PROCUREMENT_TYPE_LABEL[t]}
+              </option>
+            ))}
+          </select>
           {isFetching && !isLoading ? (
             <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…

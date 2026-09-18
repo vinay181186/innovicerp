@@ -21,6 +21,7 @@ export const TRASH_ENTITY_TYPES = [
   'Route Card',
   'Cost Center',
   'QC Process',
+  'Production Order',
 ] as const;
 export type TrashEntityType = (typeof TRASH_ENTITY_TYPES)[number];
 

@@ -1,23 +1,22 @@
-// Incoming-QC rows for the unified QC Call Register. LEFT-pane pending GRN lines
-// with an inline accept/reject form (credits accepted qty to stock via
-// POST /incoming-qc/:id/inspect), and RIGHT-pane completed-inspection rows.
-// Extracted so the QC Call Register can show incoming-material QC alongside
-// process (JC-op) QC on a single approval screen.
+// Incoming-QC pending row for the unified QC Call Register: a GRN line awaiting
+// inspection with an inline accept/reject form (credits accepted qty to stock
+// via POST /incoming-qc/:id/inspect). Extracted so the QC Call Register can
+// show incoming-material QC alongside process (JC-op) QC on a single approval
+// screen. The collapsed line is drawn by the register's ruled sheet
+// (qc-call-register/components/qc-sheet.tsx PendingSheetRow); only the
+// expanded form lives here. Completed incoming rows are drawn by the sheet
+// directly (CompletedIncomingSheetRow).
 
-import {
-  type IncomingQcCompletedRow,
-  type IncomingQcPendingRow,
-  opSrNo,
-  shortName,
-} from '@innovic/shared';
+import { type IncomingQcPendingRow, opSrNo, shortName } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { fmtDate } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
+import { PendingSheetRow } from '@/modules/qc-call-register/components/qc-sheet';
 import { useSession } from '@/lib/session';
 import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
@@ -111,98 +110,58 @@ export function IncomingPendingRow(props: {
   }
 
   return (
-    <div
-      style={{
-        borderBottom: '1px solid var(--border)',
-        background: open ? 'rgba(34,197,94,0.06)' : undefined,
-      }}
+    <PendingSheetRow
+      code={
+        <Link
+          to="/goods-receipt-notes/$id"
+          params={{ id: o.grnId }}
+          title="Open this GRN"
+          style={{ color: 'inherit' }}
+        >
+          {o.grnNo}
+        </Link>
+      }
+      partName={o.itemName}
+      // An OSP return traces to an SO line and shows CODE/REV; a vendor's
+      // raw-material receipt has no SO behind it and correctly shows the bare
+      // code. The "no job card" line below says which is which.
+      itemCode={itemCodeWithRev(o.itemCode, o.itemRevision)}
+      context={
+        <>
+          {o.vendorName ?? '—'} · GRN <span className="mono">{o.grnNo}</span>
+          {o.soCode ? (
+            <>
+              {' '}
+              · SO <span className="mono">{o.soCode}</span>
+            </>
+          ) : null}
+        </>
+      }
+      contextLine2={
+        o.jcCode ? (
+          <>
+            → <span className="mono">{o.jcCode}</span> Op {o.opSeq != null ? opSrNo(o.opSeq) : ''}
+            {o.opName ? ` · ${o.opName}` : ''}
+          </>
+        ) : (
+          <span style={{ color: 'var(--amber)', fontWeight: 700 }}>No job card</span>
+        )
+      }
+      qty={o.pendingQty}
+      calledDate={o.grnDate}
+      waitDays={o.waitDays}
+      overdue={false}
+      stage="incoming"
+      open={open}
+      onToggle={onToggle}
     >
-      <div
-        style={{
-          padding: '10px 12px',
-          cursor: 'pointer',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-        onClick={onToggle}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div>
-            <span
-              style={{
-                fontSize: 9,
-                fontWeight: 800,
-                color: 'var(--purple)',
-                border: '1px solid var(--purple)',
-                borderRadius: 3,
-                padding: '0 5px',
-                marginRight: 6,
-              }}
-            >
-              INCOMING
-            </span>
-            <b className="cyan" style={{ fontSize: 13 }}>
-              {/* An OSP return traces to an SO line and shows CODE/REV; a vendor's
-                  raw-material receipt has no SO behind it and correctly shows the
-                  bare code. The "NO JOB CARD" tag below says which is which. */}
-              {itemCodeWithRev(o.itemCode, o.itemRevision)}
-            </b>{' '}
-            <span className="text2" style={{ fontSize: 12 }}>
-              {o.itemName ?? ''}
-            </span>
-          </div>
-          <div className="text3" style={{ fontSize: 10 }}>
-            🏭 {o.vendorName ?? '—'} · SO <b className="mono">{o.soCode ?? '—'}</b>
-            <span style={{ marginLeft: 6, opacity: 0.6 }}>· GRN {o.grnNo}</span>
-          </div>
-          <div style={{ fontSize: 10, marginTop: 2 }}>
-            {o.jcCode ? (
-              <span className="text2">
-                → <b className="mono">{o.jcCode}</b> Op {o.opSeq != null ? opSrNo(o.opSeq) : ''}
-                {o.opName ? ` · ${o.opName}` : ''}
-              </span>
-            ) : (
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 800,
-                  color: 'var(--amber)',
-                  border: '1px solid var(--amber)',
-                  borderRadius: 3,
-                  padding: '0 5px',
-                }}
-              >
-                NO JOB CARD
-              </span>
-            )}
-          </div>
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>{o.pendingQty}</div>
-          <div className="text3" style={{ fontSize: 9 }}>
-            PENDING
-          </div>
-        </div>
-      </div>
-
       {/* No `entry` → the form is simply not drawn. No notice either: an
           expanded row that shows only its figures reads as view-only on its own. */}
-      {open && canEntry ? (
-        <div
-          style={{
-            padding: '14px 12px',
-            background: 'rgba(34,197,94,0.04)',
-            borderTop: '2px solid var(--green)',
-          }}
-        >
+      {canEntry ? (
+        <div style={{ padding: '14px 16px', borderTop: '2px solid var(--green)' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
             ✅ Inspect — {itemCodeWithRev(o.itemCode, o.itemRevision, o.itemName ?? 'Item')} ·{' '}
-            <span
-              style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}
-            >
-              GRN {o.grnNo}
-            </span>
+            <span className="mono">GRN {o.grnNo}</span>
             {o.jcCode ? (
               <span className="text2" style={{ fontWeight: 600 }}>
                 {' '}
@@ -221,7 +180,6 @@ export function IncomingPendingRow(props: {
                 fontSize: 11,
                 color: 'var(--amber)',
                 border: '1px solid var(--amber)',
-                background: 'rgba(245,158,11,0.08)',
                 borderRadius: 4,
                 padding: '6px 8px',
                 marginBottom: 10,
@@ -357,95 +315,6 @@ export function IncomingPendingRow(props: {
           </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-export function IncomingCompletedRow({ l }: { l: IncomingQcCompletedRow }): React.JSX.Element {
-  const dispColor =
-    l.disposition === 'Rejected'
-      ? 'var(--red)'
-      : l.disposition === 'Partial Accept'
-        ? 'var(--amber)'
-        : 'var(--green)';
-  return (
-    <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ minWidth: 0 }}>
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 800,
-              color: 'var(--purple)',
-              border: '1px solid var(--purple)',
-              borderRadius: 3,
-              padding: '0 5px',
-              marginRight: 6,
-            }}
-          >
-            INCOMING
-          </span>
-          <b className="cyan">{itemCodeWithRev(l.itemCode, l.itemRevision)}</b>{' '}
-          <span className="text3" style={{ fontSize: 10 }}>
-            {l.itemName ?? ''}
-          </span>
-          <div className="text2" style={{ fontSize: 11 }}>
-            GRN <span className="mono">{l.grnNo}</span> · {l.vendorName ?? '—'}
-          </div>
-          <div style={{ fontSize: 10, marginTop: 2 }}>
-            <span className="text3">Received: {fmtDate(l.grnDate)}</span>
-            {l.qcDate ? (
-              <>
-                {' → '}
-                <span>
-                  Inspected: <b style={{ color: 'var(--green)' }}>{fmtDate(l.qcDate)}</b>
-                </span>
-                {l.respDays != null ? (
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      marginLeft: 6,
-                      color: l.respDays <= 0 ? 'var(--green)' : 'var(--amber)',
-                    }}
-                  >
-                    (
-                    {l.respDays <= 0 ? 'Same day' : `${l.respDays} day${l.respDays > 1 ? 's' : ''}`}
-                    )
-                  </span>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ color: 'var(--green)', fontWeight: 700 }}>{l.acceptedQty} ✓</span>
-          {l.rejectedQty > 0 ? (
-            <span style={{ color: 'var(--red)', fontWeight: 700 }}>{l.rejectedQty} ✗</span>
-          ) : null}
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: dispColor,
-              border: `1px solid ${dispColor}`,
-              borderRadius: 3,
-              padding: '1px 6px',
-            }}
-          >
-            {l.disposition}
-          </span>
-        </div>
-      </div>
-      <div
-        className="text3"
-        style={{ display: 'flex', gap: 10, fontSize: 10, marginTop: 3, flexWrap: 'wrap' }}
-      >
-        <span className="text2">👤 {l.qcInspectedBy ?? '—'}</span>
-        {l.qcReportPath ? (
-          <QcReportLink path={l.qcReportPath} name={l.qcReportName} label={l.qcReportName ?? '⬇'} />
-        ) : null}
-        {l.qcRemarks ? <span className="text2">{l.qcRemarks}</span> : null}
-      </div>
-    </div>
+    </PendingSheetRow>
   );
 }

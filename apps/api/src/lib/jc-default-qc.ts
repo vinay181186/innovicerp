@@ -7,19 +7,24 @@
 // QC, dispatched 60 → −60).
 //
 // Fix: every JC must end with a QC op. When the caller's last op is not already
-// QC, append a default DIR (Dimensional Inspection Report) QC stage. Applied at
-// every jc_ops creation path (manual JW create/edit in job-cards, plan
-// execution in plans) so it holds regardless of how the JC was born.
+// QC, append a default "Final Inspection" QC stage. Applied at every jc_ops
+// creation path (manual JW create/edit in job-cards, plan execution in plans)
+// so it holds regardless of how the JC was born.
 
-/** Default QC stage name appended as the terminal QC op. DIR = Dimensional
- *  Inspection Report — one of the shop's standard QC stages (MIR/MCR/DIR/TPI). */
-export const DEFAULT_FINAL_QC_OP = 'DIR';
+import { DEFAULT_FINAL_QC_OP } from '@innovic/shared';
+
+/** Default QC stage name appended as the terminal QC op. "Final Inspection" is
+ *  the system-owned terminal QC process (ADR-069 Rule B). It replaced DIR in
+ *  this role — DIR is now an ordinary QC process like MIR/MCR/TPI. Owned by
+ *  packages/shared (the JC form recognises the generated op too); re-exported
+ *  here so every server caller keeps importing it from this file. */
+export { DEFAULT_FINAL_QC_OP };
 
 /** True when a default terminal QC op should be appended (Rule B, safe form).
  *
  *  Finished stock must be credited exactly ONCE per JC. The crediting events
  *  are: (a) qc_accept on a QC *last* op, and (b) grn_qc when an outsource op's
- *  work is received back. So a DIR QC is appended ONLY when neither already
+ *  work is received back. So a Final Inspection QC is appended ONLY when neither already
  *  applies:
  *    - last op is `process` (not qc → would already gate; not outsource →
  *      credited on receive), AND

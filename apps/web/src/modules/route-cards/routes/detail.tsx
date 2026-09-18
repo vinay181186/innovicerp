@@ -180,6 +180,13 @@ function RouteCardDetailPage(): React.JSX.Element {
                     ? '🛒 Direct Purchase'
                     : '🏭 Manufacture'}
               </div>
+              {detail.planType === 'direct_purchase' ? (
+                // ADR-171: the tile is gone from the form; the value survives
+                // on old cards so the user knows where the flag now lives.
+                <div className="text3" style={{ fontSize: 10 }}>
+                  legacy — set the item&apos;s Source to Buy instead
+                </div>
+              ) : null}
             </div>
             <div className="form-grp">
               <span className="form-label">RM Grade</span>

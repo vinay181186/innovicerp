@@ -24,6 +24,11 @@ export const STORE_TXN_SOURCE_TYPES = [
   // reservation booked to a specific SO line; the matching 'in' releases it
   // back to general stock. See so_stock_reservations (migration 0099).
   'reservation',
+  // Migration 0133 (2026-09-17): finished goods credited ONCE, when a Production
+  // Order is closed, for the Job Card's actually finished qty. A JC that belongs
+  // to a Production Order writes NO qc_accept / grn_qc row on its last op —
+  // this is the only credit that JC ever produces.
+  'production_order_close',
   'other',
 ] as const;
 export type StoreTxnSourceType = (typeof STORE_TXN_SOURCE_TYPES)[number];

@@ -6,6 +6,8 @@
 // own route AND as the "🛡 CAPA" tab on NC Register (screen-merge audit). All
 // state here is local — CAPA has no URL-driven search params — so the view is
 // safe to mount inside another route. Pass `title` when it IS the page.
+// `initialSearch` is a one-time seed for the search box (Global Search deep
+// link via the host's ?search); typing afterwards stays local.
 
 import {
   CAPA_EFFECTIVENESS,
@@ -39,7 +41,10 @@ type ModalState =
   | { kind: 'new' }
   | { kind: 'edit'; capa: CapaRecord; readOnly: boolean };
 
-export function CapaView(props: { title?: string }): React.JSX.Element {
+export function CapaView(props: {
+  title?: string;
+  initialSearch?: string | undefined;
+}): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useCapaList();
   const { data: eff } = useMyAccess();
   // Tier-driven, per department (QC), on the CAPA form key — `capa_create` was
@@ -50,7 +55,7 @@ export function CapaView(props: { title?: string }): React.JSX.Element {
   // (root cause → verification → closure) rewrites a saved record → edit.
   const canCreate = perms.entry;
   const canEdit = perms.edit;
-  const [term, setTerm] = useState('');
+  const [term, setTerm] = useState(() => props.initialSearch ?? '');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
 
   const items = data?.items ?? [];

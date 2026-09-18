@@ -7,6 +7,7 @@
 // screen (client-side mirror of the server's addJC/editJC validations).
 
 import type { JcOpInput, JobCardWriteInput } from '@innovic/shared';
+import { qcAfterOutsourceError, stripStaleGeneratedTerminalQc } from '@innovic/shared';
 
 /** Minimal editable op shape the builder needs. Both the create/edit form's
  *  `FormOp` and the status edit branch's op row are structurally assignable. */
@@ -56,6 +57,53 @@ export interface BuildJcWriteInputArgs {
   rawMaterialSizeText?: string | null;
   ops: BuildJcOpValues[];
   docs: BuildJcDocValues[];
+  /** Rework/repair child (`recovery_kind` set on the JC). The server appends
+   *  the terminal QC on those itself (ADR-069 / ADR-161), so the "no QC
+   *  directly after OSP" routing check is skipped for them. */
+  recoveryKind?: string | null;
+  /** (outsource → qc) pairs that were ALREADY saved side by side on this JC
+   *  — see grandfatheredOspQcPairs(). Keeps old job cards editable. */
+  allowedPairs?: ReadonlySet<string>;
+  /** Ids of saved ops that already have logged work (edit only). A started
+   *  op is never dropped by the stale-terminal-QC strip below. */
+  startedIds?: ReadonlySet<string>;
+}
+
+// The grandfather-set builder lives in shared (grandfatheredOspQcPairs) so the
+// form and the server compute the same pairs; re-exported for the two forms.
+export { grandfatheredOspQcPairs } from '@innovic/shared';
+
+/** The routing as the person MEANT it: on edit the server's own terminal
+ *  "Final Inspection" op comes back with an id, and once an op before it has
+ *  been retyped to OSP that op is stale (Rule B never gates an outsource JC
+ *  with a terminal QC). Dropped here — and by the server on save — so the
+ *  routing rule never blames an op nobody entered. */
+export function effectiveUserOps<T extends BuildJcOpValues>(
+  ops: ReadonlyArray<T>,
+  opts: {
+    recoveryKind?: string | null | undefined;
+    startedIds?: ReadonlySet<string> | undefined;
+  } = {},
+): T[] {
+  return stripStaleGeneratedTerminalQc(ops, {
+    recoveryKind: opts.recoveryKind ?? null,
+    isStarted: (o) => !!o.id && (opts.startedIds?.has(o.id) ?? false),
+  });
+}
+
+/** The live hint / Save error for the "no QC directly after OSP" rule, or
+ *  null when the routing is clean. One place, used by both forms and by
+ *  buildJcWriteInput, so they can never disagree. */
+export function opsSequenceError(
+  ops: ReadonlyArray<BuildJcOpValues>,
+  opts: {
+    recoveryKind?: string | null | undefined;
+    allowedPairs?: ReadonlySet<string> | undefined;
+    startedIds?: ReadonlySet<string> | undefined;
+  } = {},
+): string | null {
+  if (opts.recoveryKind) return null;
+  return qcAfterOutsourceError(effectiveUserOps(ops, opts), opts.allowedPairs);
 }
 
 export type BuildJcWriteInputResult =
@@ -83,6 +131,9 @@ export function buildJcWriteInput(args: BuildJcWriteInputArgs): BuildJcWriteInpu
     rawMaterialSizeText,
     ops,
     docs,
+    recoveryKind,
+    allowedPairs,
+    startedIds,
   } = args;
 
   // Governance: manual create is JW-only. SO items go via Planning.
@@ -109,6 +160,14 @@ export function buildJcWriteInput(args: BuildJcWriteInputArgs): BuildJcWriteInpu
       return { ok: false, error: 'All outsource operations need a vendor selected.' };
     }
   }
+  // Routing rule (shared with the API, same message): a QC op cannot sit
+  // directly after an OSP op — OSP → Operation → QC. Checked on the ops in
+  // the order the user arranged them; rework/repair children are exempt.
+  const seqError = opsSequenceError(ops, { recoveryKind, allowedPairs, startedIds });
+  if (seqError) return { ok: false, error: seqError };
+  // A stale generated terminal QC is not sent either — the server would drop
+  // it anyway; leaving it out keeps the payload equal to what the form shows.
+  const userOps = effectiveUserOps(ops, { recoveryKind, startedIds });
   const payload: JobCardWriteInput = {
     jcDate,
     sourceSoLineId: sourceType === 'so' ? sourceLineId : null,
@@ -123,7 +182,7 @@ export function buildJcWriteInput(args: BuildJcWriteInputArgs): BuildJcWriteInpu
     rawMaterialGradeText: rawMaterialGradeText || null,
     rawMaterialSizeId: rawMaterialSizeId ?? null,
     rawMaterialSizeText: rawMaterialSizeText || null,
-    ops: ops.map(
+    ops: userOps.map(
       (o): JcOpInput => ({
         id: o.id,
         machineCode: o.opType === 'process' ? o.machineCode || null : null,

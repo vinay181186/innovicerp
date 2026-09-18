@@ -360,12 +360,40 @@
 }
 
 /* ═══ TOPBAR ═══ */
+/* Left half (logo + title); mirrors .tb-right so the search box is centred.
+   overflow: hidden — on a phone-width bar with no room left, the logo clips
+   inside its half rather than painting underneath the search box. */
+.tb-left {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .tb-title {
   font-family: var(--hfont);
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  flex: 1;
+  flex: 1 1 0;
+  /* Yields space to the search box on narrow bars; truncates rather than
+     spilling over it or wrapping to a second line inside the fixed-height bar. */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Right-hand cluster (SYNCED · Password · Sign out). Same flex basis as
+   .tb-left so the global search box between them is centred in the bar;
+   never shrinks below its buttons, so it cannot paint over the box. */
+.tb-right {
+  flex: 1 1 0;
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
 }
 .tb-sync {
   display: flex;
@@ -1175,4 +1203,138 @@ table.tbl-ctr td .innovic-select {
 .qc-alert-blink {
   animation: qcBlink 1s ease-in-out infinite;
   border-left: 3px solid var(--red) !important;
+}
+
+/* ── Global search (header) ── */
+/* components/shared/global-search.tsx — the search box in #topbar. It opens
+   the results in a full-window popup below the bar (.gs-overlay, below);
+   no dropdown. Input matches the lists' "Search this list…" box
+   (.innovic-input, 12px) sized to sit inside the 54px bar. */
+.gs-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.gs-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  pointer-events: none;
+}
+.innovic-input.gs-input {
+  width: 260px;
+  height: 32px;
+  padding: 6px 10px 6px 28px;
+  font-size: 12px;
+}
+/* Search popup (modules/search/components/search-popup.tsx). The usual
+   .overlay/.modal, but starting BELOW the top bar so the search box stays
+   visible, focused and editable above it, and filling that whole area so it
+   reads as a full window rather than a centred box. */
+.overlay.gs-overlay {
+  top: var(--topbar-height);
+  align-items: stretch;
+  padding: 8px 12px 12px;
+}
+.gs-overlay .modal {
+  max-width: none;
+  width: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+/* Flex column top to bottom so the results table is the popup's ONE scroller
+   (its sticky header holds) whatever height the summary + count strip take —
+   ten kinds wrap the strip to two rows, so no pixel budget would do. */
+.gs-overlay .modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.gs-overlay .modal-hdr {
+  flex: 0 0 auto;
+}
+.gs-overlay .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.gs-overlay .gs-results-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.gs-overlay .tbl-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+/* Search page results (modules/search/components/results-table.tsx).
+   Fixed layout so the table never grows a sideways scrollbar: the six short
+   columns take fixed widths, Particulars takes the slack and WRAPS (one
+   line per linked document / item), Doc No. and Party clip with an ellipsis
+   (full text on hover). */
+.gs-results .innovic-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.gs-results .innovic-table col.gs-col-date {
+  width: 100px;
+}
+.gs-results .innovic-table col.gs-col-type {
+  width: 110px;
+}
+.gs-results .innovic-table col.gs-col-docno {
+  width: 170px;
+}
+.gs-results .innovic-table col.gs-col-party {
+  width: 180px;
+}
+.gs-results .innovic-table col.gs-col-qty {
+  width: 70px;
+}
+.gs-results .innovic-table col.gs-col-status {
+  width: 120px;
+}
+.gs-results .innovic-table td.gs-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gs-results .innovic-table td.gs-lines {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.gs-results .innovic-table th {
+  cursor: default;
+}
+@media (max-width: 768px) {
+  .innovic-input.gs-input {
+    width: 150px;
+  }
+  /* #topbar is 48px at this width (see the block above), not the token. */
+  .overlay.gs-overlay {
+    top: 48px;
+  }
+  /* The mobile `.modal { height: 100vh !important }` above would make the
+     popup 48px taller than its overlay and hide the bottom of the results. */
+  .gs-overlay .modal {
+    height: auto !important;
+    max-height: 100% !important;
+  }
+  /* Phones: the six fixed columns (750px) would squeeze Particulars to
+     nothing; fall back to natural widths with a sideways scroll instead. */
+  .gs-results .innovic-table {
+    table-layout: auto;
+  }
+  /* Named per class so this outranks the desktop width rules above. */
+  .gs-results .innovic-table col.gs-col-date,
+  .gs-results .innovic-table col.gs-col-type,
+  .gs-results .innovic-table col.gs-col-docno,
+  .gs-results .innovic-table col.gs-col-party,
+  .gs-results .innovic-table col.gs-col-qty,
+  .gs-results .innovic-table col.gs-col-status {
+    width: auto;
+  }
 }

@@ -1,0 +1,350 @@
+// Runs WITHOUT a database: `../db/client` is mocked away so the drizzle store
+// is never constructed, and the plugin is given an in-memory store instead.
+import Fastify from 'fastify';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { errorHandlerPlugin } from './error-handler';
+import { ConflictError } from '../lib/errors';
+
+vi.mock('../db/client', () => ({ db: {} }));
+vi.mock('../lib/sentry', () => ({ captureUnhandledError: () => undefined }));
+
+import { idempotencyPlugin, type IdempotencyRecord, type IdempotencyStore } from './idempotency';
+
+type Row = IdempotencyRecord & { userId: string; key: string };
+
+class MemoryStore implements IdempotencyStore {
+  rows = new Map<string, Row>();
+  private seq = 0;
+  purged = 0;
+
+  private rowKey(userId: string, key: string) {
+    return `${userId}\0${key}`;
+  }
+
+  async claim(input: { userId: string; key: string; method: string; path: string }) {
+    const k = this.rowKey(input.userId, input.key);
+    if (this.rows.has(k)) return null;
+    const id = `row-${++this.seq}`;
+    this.rows.set(k, {
+      id,
+      userId: input.userId,
+      key: input.key,
+      method: input.method,
+      path: input.path,
+      statusCode: null,
+      responseBody: null,
+      completedAt: null,
+      createdAt: new Date(),
+    });
+    return id;
+  }
+
+  async find(userId: string, key: string) {
+    return this.rows.get(this.rowKey(userId, key)) ?? null;
+  }
+
+  async complete(id: string, statusCode: number, responseBody: unknown) {
+    for (const row of this.rows.values()) {
+      if (row.id === id) {
+        row.statusCode = statusCode;
+        row.responseBody = responseBody;
+        row.completedAt = new Date();
+      }
+    }
+  }
+
+  async remove(id: string) {
+    for (const [k, row] of this.rows) if (row.id === id) this.rows.delete(k);
+  }
+
+  async removeIfIncomplete(id: string) {
+    for (const [k, row] of this.rows) {
+      if (row.id === id && row.completedAt === null) this.rows.delete(k);
+    }
+  }
+
+  async purge() {
+    this.purged += 1;
+  }
+}
+
+const USER = {
+  id: 'user-1',
+  email: 'u@example.com',
+  companyId: 'c1',
+  role: 'admin',
+  isActive: true,
+};
+
+/** Deferred so a test can hold the first request open while a repeat arrives. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+async function buildApp(
+  store: MemoryStore,
+  opts: { waitMs?: number; pollIntervalMs?: number } = {},
+) {
+  const app = Fastify({ logger: false });
+  await app.register(errorHandlerPlugin);
+  // Stand-in for authPlugin: the `x-user` header decides whether req.user exists.
+  app.addHook('onRequest', async (req) => {
+    if (req.headers['x-user'] === '1') req.user = USER as never;
+  });
+  await app.register(idempotencyPlugin, {
+    store,
+    pollIntervalMs: opts.pollIntervalMs ?? 5,
+    waitMs: opts.waitMs ?? 200,
+    purgeIntervalMs: 20,
+  });
+
+  let counter = 0;
+  const gate = deferred<void>();
+  app.post('/docs', async (req, reply) => {
+    counter += 1;
+    const body = req.body as { slow?: boolean; fail?: string } | null;
+    if (body?.slow) await gate.promise;
+    if (body?.fail === 'conflict') throw new ConflictError('IN-DC-00043 already exists');
+    if (body?.fail === 'crash') throw new Error('boom');
+    if (body?.fail === 'empty') return reply.code(204).send();
+    return reply.code(201).send({ id: 'doc-1', run: counter });
+  });
+  app.get('/docs', async () => ({ ok: true }));
+  return { app, gate, calls: () => counter };
+}
+
+describe('idempotencyPlugin', () => {
+  let store: MemoryStore;
+  beforeEach(() => {
+    store = new MemoryStore();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('ignores GET, missing header and anonymous callers', async () => {
+    const { app, calls } = await buildApp(store);
+    await app.inject({
+      method: 'GET',
+      url: '/docs',
+      headers: { 'x-user': '1', 'idempotency-key': 'k' },
+    });
+    await app.inject({ method: 'POST', url: '/docs', headers: { 'x-user': '1' }, payload: {} });
+    await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers: { 'idempotency-key': 'k' },
+      payload: {},
+    });
+    expect(store.rows.size).toBe(0);
+    expect(calls()).toBe(2);
+    await app.close();
+  });
+
+  it('runs the handler once and replays the stored 201 for the repeat', async () => {
+    const { app, calls } = await buildApp(store);
+    const headers = { 'x-user': '1', 'idempotency-key': 'k-1' };
+    const first = await app.inject({ method: 'POST', url: '/docs', headers, payload: {} });
+    expect(first.statusCode).toBe(201);
+    expect(first.json()).toEqual({ id: 'doc-1', run: 1 });
+
+    const repeat = await app.inject({ method: 'POST', url: '/docs', headers, payload: {} });
+    expect(repeat.statusCode).toBe(201);
+    expect(repeat.json()).toEqual({ id: 'doc-1', run: 1 });
+    expect(repeat.headers['idempotent-replayed']).toBe('true');
+    expect(calls()).toBe(1);
+    await app.close();
+  });
+
+  it('a repeat that arrives while the first run is still going waits for it', async () => {
+    const { app, gate, calls } = await buildApp(store);
+    const headers = { 'x-user': '1', 'idempotency-key': 'k-slow' };
+    const first = app.inject({ method: 'POST', url: '/docs', headers, payload: { slow: true } });
+    // Let the first request claim the row before the repeat is sent.
+    await vi.waitFor(() => expect(store.rows.size).toBe(1));
+    const repeat = app.inject({ method: 'POST', url: '/docs', headers, payload: { slow: true } });
+    await new Promise((r) => setTimeout(r, 30));
+    gate.resolve();
+    const [a, b] = await Promise.all([first, repeat]);
+    expect(a.statusCode).toBe(201);
+    expect(b.statusCode).toBe(201);
+    expect(b.json()).toEqual(a.json());
+    expect(calls()).toBe(1);
+    await app.close();
+  });
+
+  it('answers 409 in_progress when the first run does not finish in time', async () => {
+    const { app, gate } = await buildApp(store, { waitMs: 40 });
+    const headers = { 'x-user': '1', 'idempotency-key': 'k-stuck' };
+    const first = app.inject({ method: 'POST', url: '/docs', headers, payload: { slow: true } });
+    await vi.waitFor(() => expect(store.rows.size).toBe(1));
+    const repeat = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers,
+      payload: { slow: true },
+    });
+    expect(repeat.statusCode).toBe(409);
+    expect(repeat.json()).toMatchObject({ error: 'in_progress' });
+    gate.resolve();
+    await first;
+    await app.close();
+  });
+
+  it('rejects the same key sent for a different request with 422', async () => {
+    const { app } = await buildApp(store);
+    const headers = { 'x-user': '1', 'idempotency-key': 'k-2' };
+    await app.inject({ method: 'POST', url: '/docs', headers, payload: {} });
+    const other = await app.inject({ method: 'POST', url: '/docs?x=1', headers, payload: {} });
+    expect(other.statusCode).toBe(422);
+    expect(other.json()).toMatchObject({ error: 'idempotency_key_reused' });
+    await app.close();
+  });
+
+  it('stores a 4xx from the error handler and replays it', async () => {
+    const { app, calls } = await buildApp(store);
+    const headers = { 'x-user': '1', 'idempotency-key': 'k-409' };
+    const first = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers,
+      payload: { fail: 'conflict' },
+    });
+    expect(first.statusCode).toBe(409);
+    const repeat = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers,
+      payload: { fail: 'conflict' },
+    });
+    expect(repeat.statusCode).toBe(409);
+    expect(repeat.json()).toEqual(first.json());
+    expect(calls()).toBe(1);
+    await app.close();
+  });
+
+  it('drops the row on a 5xx so a retry runs the handler again', async () => {
+    const { app, calls } = await buildApp(store);
+    const headers = { 'x-user': '1', 'idempotency-key': 'k-500' };
+    const first = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers,
+      payload: { fail: 'crash' },
+    });
+    expect(first.statusCode).toBe(500);
+    expect(store.rows.size).toBe(0);
+    const retry = await app.inject({ method: 'POST', url: '/docs', headers, payload: {} });
+    expect(retry.statusCode).toBe(201);
+    expect(calls()).toBe(2);
+    await app.close();
+  });
+
+  it('replays an empty 204 without a body', async () => {
+    const { app } = await buildApp(store);
+    const headers = { 'x-user': '1', 'idempotency-key': 'k-204' };
+    await app.inject({ method: 'POST', url: '/docs', headers, payload: { fail: 'empty' } });
+    const repeat = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers,
+      payload: { fail: 'empty' },
+    });
+    expect(repeat.statusCode).toBe(204);
+    expect(repeat.body).toBe('');
+    await app.close();
+  });
+
+  it('rejects a key longer than 128 characters', async () => {
+    const { app } = await buildApp(store);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers: { 'x-user': '1', 'idempotency-key': 'x'.repeat(129) },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+    expect(store.rows.size).toBe(0);
+    await app.close();
+  });
+
+  it('never lets a broken store break the real response', async () => {
+    store.complete = async () => {
+      throw new Error('db down');
+    };
+    const { app } = await buildApp(store);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers: { 'x-user': '1', 'idempotency-key': 'k-broken' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(201);
+    await app.close();
+  });
+
+  it('fails OPEN when the claim itself throws (table missing) — the write still runs', async () => {
+    store.claim = async () => {
+      throw new Error('relation "idempotency_keys" does not exist');
+    };
+    const { app, calls } = await buildApp(store);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers: { 'x-user': '1', 'idempotency-key': 'k-no-table' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(201);
+    expect(calls()).toBe(1);
+    await app.close();
+  });
+
+  it('reclaims an abandoned claim (process died mid-write) instead of 409', async () => {
+    const { app, calls } = await buildApp(store, { waitMs: 200 });
+    // A claim from a process that never completed it, older than the stale window.
+    await store.claim({ userId: USER.id, key: 'k-orphan', method: 'POST', path: '/docs' });
+    const row = await store.find(USER.id, 'k-orphan');
+    (row as { createdAt: Date }).createdAt = new Date(Date.now() - 60_000);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/docs',
+      headers: { 'x-user': '1', 'idempotency-key': 'k-orphan' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(201);
+    expect(calls()).toBe(1);
+    const after = await store.find(USER.id, 'k-orphan');
+    expect(after?.completedAt).not.toBeNull();
+    await app.close();
+  });
+
+  it('does not store a non-JSON text response — a repeat regenerates it', async () => {
+    const { app } = await buildApp(store);
+    app.post('/csv', async (_req, reply) => reply.code(200).type('text/csv').send('a,b;1,2'));
+    const headers = { 'x-user': '1', 'idempotency-key': 'k-csv' };
+    const first = await app.inject({ method: 'POST', url: '/csv', headers, payload: {} });
+    expect(first.statusCode).toBe(200);
+    expect(first.body).toBe('a,b;1,2');
+    expect(await store.find(USER.id, 'k-csv')).toBeNull();
+    const repeat = await app.inject({ method: 'POST', url: '/csv', headers, payload: {} });
+    expect(repeat.body).toBe('a,b;1,2');
+    expect(repeat.headers['idempotent-replayed']).toBeUndefined();
+    await app.close();
+  });
+
+  it('purges on a timer and stops the timer on close', async () => {
+    const { app } = await buildApp(store);
+    await vi.waitFor(() => expect(store.purged).toBeGreaterThan(0));
+    await app.close();
+    const after = store.purged;
+    await new Promise((r) => setTimeout(r, 60));
+    expect(store.purged).toBe(after);
+  });
+});

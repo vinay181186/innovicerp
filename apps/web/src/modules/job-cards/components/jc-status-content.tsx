@@ -37,7 +37,11 @@ import { JcStatTiles } from './jc-stat-tiles';
 import { JcOpCard } from './jc-op-card';
 import { JcOpEditCard, type JcOpEditValues } from './jc-op-edit-card';
 import { OutsourceBalanceModal } from './outsource-balance-modal';
-import { buildJcWriteInput } from '../lib/build-jc-write-input';
+import {
+  buildJcWriteInput,
+  grandfatheredOspQcPairs,
+  opsSequenceError,
+} from '../lib/build-jc-write-input';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
 
@@ -1165,6 +1169,21 @@ function JcStatusEditForm({
 
   const submitting = update.isPending;
 
+  // "No QC directly after OSP" routing rule. Pairs already saved that way on
+  // this JC are grandfathered so old cards stay editable; rework/repair
+  // children skip the rule (the server appends their terminal QC itself). The
+  // live hint above the ops list shows the same message Save / the API raise.
+  const allowedPairs = useMemo(() => grandfatheredOspQcPairs(model.ops), [model.ops]);
+  const startedIds = useMemo(
+    () => new Set(model.ops.filter((o) => o.hasStarted).map((o) => o.id)),
+    [model.ops],
+  );
+  const opsSequenceHint = opsSequenceError(ops, {
+    recoveryKind: jc.recoveryKind,
+    allowedPairs,
+    startedIds,
+  });
+
   const onSave = async (): Promise<void> => {
     setError(null);
     // Shared validation + payload build. Source/date/drawing/docs are carried
@@ -1196,6 +1215,9 @@ function JcStatusEditForm({
         storagePath: d.storagePath,
         fileSize: d.fileSize,
       })),
+      recoveryKind: jc.recoveryKind,
+      allowedPairs,
+      startedIds,
     });
     if (!result.ok) {
       setError(result.error);
@@ -1368,6 +1390,22 @@ function JcStatusEditForm({
           }}
         >
           {addNote}
+        </div>
+      ) : null}
+      {detailOpen && opsSequenceHint ? (
+        <div
+          role="alert"
+          style={{
+            color: 'var(--red)',
+            background: 'var(--red3)',
+            border: '1px solid var(--red)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {opsSequenceHint}
         </div>
       ) : null}
       {detailOpen ? (

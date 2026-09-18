@@ -1,11 +1,14 @@
 // QC Call Register (legacy renderQCDashboard L4126, page `qcdashboard`).
-// Full-bleed 2-pane split (legacy L4221): LEFT pending QC calls with an inline
-// accept/reject QC entry form; RIGHT completed QC log. Frontend-only — data from
-// the qc-history endpoint, the QC write reuses op-entry's submitQcLog mutation.
+// One ruled sheet (the user's mockup 2c): a title row with the register's
+// totals, Export, one search box and a Pending | Completed toggle; a three-cell
+// stage strip (Incoming / In-Process / Final Inspection) that also filters; and
+// a hairline-ruled table. Pending calls expand inline into the accept/reject
+// entry form exactly as before; completed calls read as a register log.
+// Frontend-only — data from the qc-history + incoming-qc endpoints, the QC
+// write reuses op-entry's submitQcLog mutation.
 //
-// No in-content .section-hdr: legacy's render returns the split directly and the
-// page title lives in the topbar (#pageTitle, legacy L2232/L2322). Same shape as
-// so-planning/workflow.tsx (legacy L9427).
+// No in-content .section-hdr: legacy's render returns the sheet directly and
+// the page title lives in the topbar (#pageTitle, legacy L2232/L2322).
 
 import {
   SHIFTS,
@@ -15,14 +18,19 @@ import {
   opSrNo,
   shortName,
 } from '@innovic/shared';
-import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
+import type {
+  IncomingQcCompletedRow,
+  IncomingQcPendingRow,
+  QcHistoryLogRow,
+  QcHistoryPendingRow,
+} from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { QcReportAttach } from '@/components/shared/qc-report-attach';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { fmtDate } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -32,13 +40,23 @@ import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '@/modules/qc-history/api';
+import { exportCompletedQc, exportPendingQc } from '@/modules/qc-history/lib/export';
 import { useIncomingQc } from '@/modules/incoming-qc/api';
 import { TpiView } from '@/modules/tpi/components/tpi-view';
+import { IncomingPendingRow } from '@/modules/incoming-qc/components/qc-call-rows';
 import {
-  IncomingCompletedRow,
-  IncomingPendingRow,
-} from '@/modules/incoming-qc/components/qc-call-rows';
-import type { IncomingQcPendingRow } from '@innovic/shared';
+  CompletedIncomingSheetRow,
+  CompletedProcessSheetRow,
+  PendingSheetRow,
+  QC_STAGES,
+  QcSheetTable,
+  QcStageStrip,
+  dayDiff,
+  processStage,
+  type QcStage,
+  type QcView,
+  type StageStat,
+} from '../components/qc-sheet';
 
 export const qcCallRegisterRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -60,13 +78,15 @@ function todayIso(): string {
   return todayLocal();
 }
 
-// Whole-day diff between two YYYY-MM-DD dates (legacy /864e5 round). Parsed at
-// UTC midnight so the result is timezone-independent.
-function dayDiff(fromIso: string, toIso: string): number {
-  const a = Date.parse(`${fromIso.slice(0, 10)}T00:00:00Z`);
-  const b = Date.parse(`${toIso.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
-  return Math.round((b - a) / 864e5);
+// The endpoint caps the completed log at 500 rows, so a browser-side count that
+// lands exactly on the cap is a floor, not a total.
+const LOG_SERVER_CAP = 500;
+// How many completed entries the register lists (the /qc-history page shows
+// the full capped feed; this screen is the working queue, not the archive).
+const LOG_SHOWN = 30;
+
+function emptyStat(): StageStat {
+  return { count: 0, pcsPending: 0, done: 0, doneCapped: false };
 }
 
 function QcCallRegisterPage(): React.JSX.Element {
@@ -76,8 +96,14 @@ function QcCallRegisterPage(): React.JSX.Element {
   const incomingQuery = useIncomingQc();
   const { line: lineParam, tab: tabParam } = qcCallRegisterRoute.useSearch();
   const [openId, setOpenId] = useState<string | null>(lineParam ? `inc:${lineParam}` : null);
-  const [pendSearch, setPendSearch] = useState('');
-  const [compSearch, setCompSearch] = useState('');
+  // Pending | Completed toggle. Opens on Pending — that is the working queue,
+  // and the ?line= deep-link lands on a pending row.
+  const [view, setView] = useState<QcView>('pending');
+  // Stage strip filter: null = every stage.
+  const [stage, setStage] = useState<QcStage | null>(null);
+  // One search box for whichever view is showing. Same fields the two old
+  // per-pane boxes covered, now one term.
+  const [search, setSearch] = useState('');
   // Screen-merge: TPI folded in as a tab (it used to be its own /tpi page, which
   // stays registered). Tab choice stays LOCAL state — clicking a tab
   // deliberately does NOT write to the URL, so this route's own ?line=
@@ -97,50 +123,79 @@ function QcCallRegisterPage(): React.JSX.Element {
     [qcUsers.data?.options],
   );
 
-  const allPending = data?.pending ?? [];
-  const allLogs = (data?.logs ?? []).slice(0, 30);
-  const incPending = incomingQuery.data?.pending ?? [];
-  const incCompleted = incomingQuery.data?.completed ?? [];
+  const allPending = useMemo(() => data?.pending ?? [], [data]);
+  const allLogsFull = useMemo(() => data?.logs ?? [], [data]);
+  const incPending = useMemo(() => incomingQuery.data?.pending ?? [], [incomingQuery.data]);
+  const incCompleted = useMemo(() => incomingQuery.data?.completed ?? [], [incomingQuery.data]);
   // Server-owned count (op_log COUNT(*) where log_type='qc'). `data.logs` is
   // capped at LIMIT 500 by the endpoint, so counting it in the browser silently
   // under-reports past 500 entries.
   const completeCount = (data?.stats.totalEntries ?? 0) + incCompleted.length;
   const pendingCount = (data?.stats.pendingOps ?? 0) + incPending.length;
+  const pcsPending =
+    allPending.reduce((n, o) => n + o.qcPending, 0) +
+    incPending.reduce((n, o) => n + o.pendingQty, 0);
 
-  const pt = pendSearch.trim().toLowerCase();
-  const ct = compSearch.trim().toLowerCase();
+  // Stage strip figures — over the whole register, not the searched subset, so
+  // the strip reads as the register's totals and clicking a cell does not zero
+  // its neighbours. "done" for the two process stages is counted over the
+  // capped 500-row log, so it shows as a floor ("500+") once the cap is hit.
+  const stageStats = useMemo(() => {
+    const st: Record<QcStage, StageStat> = {
+      incoming: emptyStat(),
+      inprocess: emptyStat(),
+      final: emptyStat(),
+    };
+    for (const o of incPending) st.incoming.pcsPending += o.pendingQty;
+    for (const o of allPending) st[processStage(o.isLastOp)].pcsPending += o.qcPending;
+    st.incoming.done = incCompleted.length;
+    for (const l of allLogsFull) st[processStage(l.isLastOp)].done += 1;
+    const capped = allLogsFull.length >= LOG_SERVER_CAP;
+    st.inprocess.doneCapped = capped;
+    st.final.doneCapped = capped;
+    if (view === 'pending') {
+      st.incoming.count = incPending.length;
+      for (const o of allPending) st[processStage(o.isLastOp)].count += 1;
+    } else {
+      st.incoming.count = incCompleted.length;
+      for (const l of allLogsFull) st[processStage(l.isLastOp)].count += 1;
+    }
+    return st;
+  }, [view, incPending, allPending, incCompleted, allLogsFull]);
+
+  // Search: the revision is part of what the row shows, so it is part of what
+  // the box searches; the part name searches on the same footing as the code
+  // because an inspector is far likelier to remember "plunger". These filters
+  // run over rows already loaded, so widening them cannot hide anything the
+  // server did send.
   const matchP = (o: QcHistoryPendingRow): boolean =>
-    pt === '' ||
-    // The revision is part of what the row shows, so it is part of what the box
-    // searches. The part name is on the row now too, and an inspector is far
-    // likelier to remember "plunger" than the code, so it searches on the same
-    // footing as the incoming-QC rows below already do. This filter runs over
-    // rows already loaded, so widening it cannot hide anything the server did
-    // send.
-    [o.jcCode, o.soCode, o.itemCode, o.itemRevision, o.itemName, o.operation].some((v) =>
-      (v ?? '').toLowerCase().includes(pt),
+    matchesSearchTerm(
+      [o.jcCode, o.soCode, o.itemCode, o.itemRevision, o.itemName, o.operation],
+      search,
     );
   const matchC = (l: QcHistoryLogRow): boolean =>
-    ct === '' ||
-    [l.jcCode, l.soCode, l.itemCode, l.itemRevision, l.itemName, l.operation].some((v) =>
-      (v ?? '').toLowerCase().includes(ct),
+    matchesSearchTerm(
+      [l.jcCode, l.soCode, l.itemCode, l.itemRevision, l.itemName, l.operation],
+      search,
     );
   const matchIncP = (o: IncomingQcPendingRow): boolean =>
-    pt === '' ||
-    [o.grnNo, o.itemCode, o.itemRevision, o.itemName, o.vendorName, o.poCode].some((v) =>
-      (v ?? '').toLowerCase().includes(pt),
+    matchesSearchTerm(
+      [o.grnNo, o.itemCode, o.itemRevision, o.itemName, o.vendorName, o.poCode],
+      search,
     );
+  const matchIncC = (l: IncomingQcCompletedRow): boolean =>
+    matchesSearchTerm([l.grnNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName], search);
+  const inStage = (s: QcStage): boolean => stage === null || stage === s;
 
-  const pending = allPending.filter(matchP);
-  const logs = allLogs.filter(matchC);
-  const incPendingF = incPending.filter(matchIncP);
-  const incCompletedF = incCompleted.filter(
-    (l) =>
-      ct === '' ||
-      [l.grnNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName].some((v) =>
-        (v ?? '').toLowerCase().includes(ct),
-      ),
-  );
+  const pending = allPending.filter((o) => inStage(processStage(o.isLastOp)) && matchP(o));
+  // Search + stage run over EVERY log the server sent (up to 500), and only
+  // then is the list cut to LOG_SHOWN — so a card inspected 40 entries ago is
+  // still found by its number instead of silently reading "no entries".
+  const logs = allLogsFull
+    .filter((l) => inStage(processStage(l.isLastOp)) && matchC(l))
+    .slice(0, LOG_SHOWN);
+  const incPendingF = inStage('incoming') ? incPending.filter(matchIncP) : [];
+  const incCompletedF = inStage('incoming') ? incCompleted.filter(matchIncC) : [];
 
   // Unified completed feed — incoming + process QC interleaved newest-first by
   // the actual QC timestamp, so a fresh entry isn't buried (previously ALL
@@ -149,18 +204,24 @@ function QcCallRegisterPage(): React.JSX.Element {
     ...incCompletedF.map((l) => ({
       key: `inc:${l.grnLineId}`,
       at: l.qcAt ?? l.qcDate ?? l.grnDate ?? '',
-      node: <IncomingCompletedRow key={`inc:${l.grnLineId}`} l={l} />,
+      node: <CompletedIncomingSheetRow key={`inc:${l.grnLineId}`} l={l} />,
     })),
     ...logs.map((l) => ({
       key: `proc:${l.logId}`,
       at: l.loggedAt ?? l.logDate ?? '',
-      node: <CompletedLog key={l.logId} l={l} />,
+      node: <CompletedProcessSheetRow key={l.logId} l={l} />,
     })),
   ].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 
+  // Export the rows on screen (after search + stage), for the view showing.
+  function onExport(): void {
+    if (view === 'pending') exportPendingQc(pending, incPendingF);
+    else exportCompletedQc(logs, incCompletedF);
+  }
+
   // Legacy L4221's full-bleed box (margin:-16, height:calc(100vh - 112px)) is
   // kept verbatim as the outer shell; it just becomes a flex COLUMN so the tab
-  // bar can sit above the panes without a negative-margin collision. Everything
+  // bar can sit above the sheet without a negative-margin collision. Everything
   // below the bar gets the leftover height via flex:1 + minHeight:0.
   const shell = (children: React.ReactNode): React.JSX.Element => (
     <div
@@ -255,145 +316,143 @@ function QcCallRegisterPage(): React.JSX.Element {
     );
   }
 
-  // Legacy L4221: full-bleed two-pane split. The `margin:-16` / height now live
-  // on `shell` above (see note there); the split keeps the pane layout and takes
-  // whatever height is left under the tab bar.
-  return shell(
-    <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 0, overflow: 'hidden' }}>
-      {/* LEFT PANEL: Pending QC Calls (legacy L4223) */}
-      <div
+  // Pending | Completed segmented toggle: the chosen side is filled dark, the
+  // other outlined — the mockup's two-button switch, built on the .btn base.
+  const viewBtn = (v: QcView, label: string): React.JSX.Element => {
+    const on = view === v;
+    return (
+      <button
+        key={v}
+        type="button"
+        className="btn btn-sm"
+        aria-pressed={on}
+        onClick={() => setView(v)}
         style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          borderRight: '1px solid var(--border)',
-          minWidth: 0,
+          background: on ? 'var(--text)' : 'var(--bg2)',
+          color: on ? 'var(--bg2)' : 'var(--text)',
+          border: `1px solid ${on ? 'var(--text)' : 'var(--border2)'}`,
+          fontSize: 12,
         }}
       >
-        <div
-          style={{
-            padding: '12px 14px',
-            background: 'var(--bg3)',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <div
-            style={{
-              background: 'rgba(251,191,36,0.12)',
-              border: '1px solid rgba(251,191,36,0.3)',
-              borderRadius: 6,
-              padding: '4px 12px',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>
-              {pendingCount}
-            </div>
-            <div className="text3" style={{ fontSize: 9 }}>
-              PENDING
-            </div>
+        {label}
+      </button>
+    );
+  };
+
+  const isEmpty =
+    view === 'pending'
+      ? pending.length === 0 && incPendingF.length === 0
+      : completedFeed.length === 0;
+  const stageName = stage ? QC_STAGES.find((s) => s.key === stage)?.label : null;
+
+  return shell(
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+        background: 'var(--bg2)',
+      }}
+    >
+      {/* Title row: register totals left; Export · search · Pending|Completed right. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '10px 16px',
+          borderBottom: '1px solid var(--border2)',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.2 }}>QC Call Register</div>
+          <div className="text3" style={{ fontSize: 12 }}>
+            {pendingCount} calls · {pcsPending} pcs pending · {completeCount} completed
           </div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>⏳ QC Pending Calls</div>
-          <div style={{ flex: 1 }} />
-          <Link to="/qc-history" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>
-            📊 History &amp; Export
-          </Link>
-          <input
-            className="innovic-input"
-            style={{ fontSize: 12, width: 180 }}
-            placeholder="🔍 Search..."
-            value={pendSearch}
-            onChange={(e) => setPendSearch(e.target.value)}
-          />
         </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {pending.length === 0 && incPendingF.length === 0 ? (
-            <div className="empty-state">
-              <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-              No pending QC calls
-            </div>
-          ) : (
-            <>
-              {incPendingF.map((o) => {
-                const key = `inc:${o.grnLineId}`;
-                return (
-                  <IncomingPendingRow
-                    key={key}
-                    o={o}
-                    open={openId === key}
-                    onToggle={() => setOpenId(openId === key ? null : key)}
-                    onDone={() => setOpenId(null)}
-                  />
-                );
-              })}
-              {pending.map((o) => (
-                <PendingCall
-                  key={o.jcOpId}
-                  o={o}
-                  open={openId === o.jcOpId}
-                  qcOptions={qcOptions}
-                  qcLoading={qcUsers.isFetching}
-                  onToggle={() => setOpenId(openId === o.jcOpId ? null : o.jcOpId)}
-                  onDone={() => setOpenId(null)}
-                />
-              ))}
-            </>
-          )}
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          style={{ fontSize: 12 }}
+          disabled={isEmpty}
+          title={`Export the ${view} rows on screen to Excel`}
+          onClick={onExport}
+        >
+          ⬇ Export
+        </button>
+        <input
+          className="innovic-input"
+          style={{ fontSize: 12, width: 230 }}
+          placeholder={
+            view === 'pending'
+              ? 'Search JC, GRN, SO, PO, item, part, vendor, op…'
+              : 'Search JC, GRN, SO, item, part, vendor, op…'
+          }
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div style={{ display: 'flex', gap: 4 }}>
+          {viewBtn('pending', 'Pending')}
+          {viewBtn('completed', 'Completed')}
         </div>
       </div>
 
-      {/* RIGHT PANEL: QC Completed Log (legacy L4236) */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <div
-          style={{
-            padding: '12px 14px',
-            background: 'var(--bg3)',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <div
-            style={{
-              background: 'rgba(34,197,94,0.08)',
-              border: '1px solid rgba(34,197,94,0.25)',
-              borderRadius: 6,
-              padding: '4px 12px',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--green)' }}>
-              {completeCount}
+      <QcStageStrip stats={stageStats} selected={stage} onSelect={setStage} />
+
+      <QcSheetTable
+        view={view}
+        empty={
+          isEmpty ? (
+            <div className="empty-state">
+              {view === 'pending' ? (
+                <>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+                  No pending QC calls{stageName ? ` in ${stageName}` : ''}
+                  {search.trim() ? ' matching your search' : ''}
+                </>
+              ) : (
+                <>
+                  No QC entries{stageName ? ` in ${stageName}` : ''}
+                  {search.trim() ? ' matching your search' : ' yet'}
+                </>
+              )}
             </div>
-            <div className="text3" style={{ fontSize: 9 }}>
-              COMPLETE
-            </div>
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>✅ QC Completed Log</div>
-          <div style={{ flex: 1 }} />
-          <div className="text3" style={{ fontSize: 11 }}>
-            Today: <b style={{ color: 'var(--green)' }}>{data.stats.today}</b> entries
-          </div>
-          <input
-            className="innovic-input"
-            style={{ fontSize: 12, width: 180 }}
-            placeholder="🔍 Search..."
-            value={compSearch}
-            onChange={(e) => setCompSearch(e.target.value)}
-          />
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {logs.length === 0 && incCompletedF.length === 0 ? (
-            <div className="empty-state">No QC entries yet</div>
-          ) : (
-            <>{completedFeed.map((it) => it.node)}</>
-          )}
-        </div>
-      </div>
+          ) : null
+        }
+      >
+        {view === 'pending' ? (
+          <>
+            {incPendingF.map((o) => {
+              const key = `inc:${o.grnLineId}`;
+              return (
+                <IncomingPendingRow
+                  key={key}
+                  o={o}
+                  open={openId === key}
+                  onToggle={() => setOpenId(openId === key ? null : key)}
+                  onDone={() => setOpenId(null)}
+                />
+              );
+            })}
+            {pending.map((o) => (
+              <PendingCall
+                key={o.jcOpId}
+                o={o}
+                open={openId === o.jcOpId}
+                qcOptions={qcOptions}
+                qcLoading={qcUsers.isFetching}
+                onToggle={() => setOpenId(openId === o.jcOpId ? null : o.jcOpId)}
+                onDone={() => setOpenId(null)}
+              />
+            ))}
+          </>
+        ) : (
+          completedFeed.map((it) => it.node)
+        )}
+      </QcSheetTable>
     </div>,
   );
 }
@@ -480,115 +539,50 @@ function PendingCall(props: {
   }
 
   return (
-    <div
+    <PendingSheetRow
       className={o.overdue ? 'qc-alert-blink' : undefined}
-      style={{
-        borderBottom: '1px solid var(--border)',
-        background: open ? 'rgba(34,197,94,0.06)' : undefined,
-      }}
+      code={
+        <Link
+          to="/job-cards/$id"
+          params={{ id: o.jobCardId }}
+          title="Open this job card"
+          style={{ color: 'inherit' }}
+        >
+          {o.jcCode}
+        </Link>
+      }
+      partName={o.itemName}
+      itemCode={itemCodeWithRev(o.itemCode, o.itemRevision)}
+      context={
+        <>
+          <span className="mono">{o.soCode ?? '—'}</span> · Op{opSrNo(o.opSeq)} {o.operation}
+        </>
+      }
+      contextLine2={
+        o.clientPoLineNo ? (
+          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>CPO:{o.clientPoLineNo}</span>
+        ) : undefined
+      }
+      qty={o.qcPending}
+      calledDate={o.qcCallDate ?? o.pendSince}
+      waitDays={(() => {
+        // Measured from the SAME date the cell shows, or "15-Sep · 7 days
+        // waiting" would contradict itself when the call came after completion.
+        const from = o.qcCallDate ?? o.pendSince;
+        return from ? dayDiff(from, todayIso()) : null;
+      })()}
+      overdue={o.overdue}
+      stage={processStage(o.isLastOp)}
+      open={open}
+      onToggle={onToggle}
     >
-      <div
-        style={{
-          padding: '10px 12px',
-          cursor: 'pointer',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-        onClick={onToggle}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div>
-            <span
-              style={{
-                fontSize: 9,
-                fontWeight: 800,
-                color: 'var(--cyan)',
-                border: '1px solid var(--cyan)',
-                borderRadius: 3,
-                padding: '0 5px',
-                marginRight: 6,
-              }}
-            >
-              IN-PROCESS
-            </span>
-            <b className="cyan" style={{ fontSize: 13 }}>
-              {o.jcCode}
-            </b>{' '}
-            <span className="text3" style={{ fontSize: 11 }}>
-              Op{opSrNo(o.opSeq)}
-            </span>
-            {o.clientPoLineNo ? (
-              <span
-                style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700, marginLeft: 6 }}
-              >
-                [CPO:{o.clientPoLineNo}]
-              </span>
-            ) : null}
-          </div>
-          <div className="text2" style={{ fontSize: 11 }}>
-            {/* The item code identifies the batch on the inspector's table, so
-                it takes the darkest text token and the bold weight. The line
-                stays `text2` so the operation name after it reads as the quiet
-                half of the pair — only the code is promoted. */}
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {itemCodeWithRev(o.itemCode, o.itemRevision)}
-            </span>{' '}
-            — {o.operation}
-          </div>
-          {/* WHAT is being inspected, under WHICH job. The card number and the
-              code above it both identify the job and the drawing, not the part
-              in words, so an inspector had to look the part up on another
-              screen before deciding what to check. A part name is free text, so
-              it truncates on one line with the full name on hover rather than
-              pushing the pending figure out of the row, and a row whose item
-              did not come back drops the line entirely and reads exactly as it
-              always has. */}
-          {o.itemName ? (
-            <div
-              className="fw-700"
-              style={{
-                fontSize: 11,
-                maxWidth: 240,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-              title={o.itemName}
-            >
-              {o.itemName}
-            </div>
-          ) : null}
-          <div className="text3" style={{ fontSize: 10 }}>
-            🏭 In-house · SO <b className="mono">{o.soCode ?? '—'}</b>
-          </div>
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>{o.qcPending}</div>
-          <div className="text3" style={{ fontSize: 9 }}>
-            PENDING
-          </div>
-        </div>
-      </div>
-
       {/* No `entry` → the form is simply not drawn. No notice either: an
           expanded row that shows only its figures reads as view-only on its own. */}
-      {open && canEntry ? (
-        <div
-          style={{
-            padding: '14px 12px',
-            background: 'rgba(34,197,94,0.04)',
-            borderTop: '2px solid var(--green)',
-          }}
-        >
+      {canEntry ? (
+        <div style={{ padding: '14px 16px', borderTop: '2px solid var(--green)' }}>
           {/* Legacy L4167: QC Entry header naming the JC/Op and the operation. */}
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
-            ✅ QC Entry — {o.jcCode} Op{opSrNo(o.opSeq)} —{' '}
-            <span
-              style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}
-            >
-              {o.operation}
-            </span>
+            ✅ QC Entry — {o.jcCode} Op{opSrNo(o.opSeq)} — {o.operation}
           </div>
           <div className="form-grid">
             <div className="form-grp">
@@ -729,107 +723,6 @@ function PendingCall(props: {
           </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function CompletedLog({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
-  // Legacy L4201: response = attended − called, "Same day" if ≤0.
-  let response: string | null = null;
-  if (l.qcCallDate) {
-    const d = dayDiff(l.qcCallDate, l.logDate);
-    response = d <= 0 ? 'Same day' : `${d} day${d > 1 ? 's' : ''}`;
-  }
-  const sameDay = response === 'Same day';
-
-  return (
-    <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ minWidth: 0 }}>
-          <b className="cyan">{l.jcCode}</b>{' '}
-          <span className="text3" style={{ fontSize: 10 }}>
-            Op{opSrNo(l.opSeq)} — {l.operation}
-          </span>
-          <div className="text2" style={{ fontSize: 11 }}>
-            {/* Same rule as the open-call card above: the item code is what
-                identifies the inspected batch when the log is read back, so it
-                is the darkest token and bold. The SO code after it keeps the
-                muted line colour. */}
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {itemCodeWithRev(l.itemCode, l.itemRevision)}
-            </span>{' '}
-            · {l.soCode ?? '—'}
-          </div>
-          {/* The part this entry passed or rejected, named in words. Reading
-              the completed log back, the job-card number says which job and the
-              code says which drawing; neither says which part, which is what
-              anyone auditing an acceptance actually wants to see. Truncated on
-              one line with the full name on hover so a long part name cannot
-              push the accepted/rejected figures off the row, and omitted whole
-              when the item name is missing. */}
-          {l.itemName ? (
-            <div
-              className="fw-700"
-              style={{
-                fontSize: 11,
-                maxWidth: 240,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-              title={l.itemName}
-            >
-              {l.itemName}
-            </div>
-          ) : null}
-          {l.qcCallDate ? (
-            <div style={{ fontSize: 10, marginTop: 2 }}>
-              <span className="text3">
-                Called: <b style={{ color: 'var(--amber)' }}>{fmtDate(l.qcCallDate)}</b>
-              </span>{' '}
-              →{' '}
-              <span>
-                Attended: <b style={{ color: 'var(--green)' }}>{fmtDate(l.logDate)}</b>
-              </span>
-              {response ? (
-                <>
-                  {' — '}
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      color: sameDay ? 'var(--green)' : 'var(--amber)',
-                    }}
-                  >
-                    Response: {response}
-                  </span>
-                </>
-              ) : null}
-            </div>
-          ) : (
-            <div className="text3" style={{ fontSize: 10 }}>
-              Attended: <b>{fmtDate(l.logDate)}</b>
-            </div>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ color: 'var(--green)', fontWeight: 700 }}>{l.accepted} ✓</span>
-          {l.rejected > 0 ? (
-            <span style={{ color: 'var(--red)', fontWeight: 700 }}>{l.rejected} ✗</span>
-          ) : null}
-        </div>
-      </div>
-      <div
-        className="text3"
-        style={{ display: 'flex', gap: 10, fontSize: 10, marginTop: 3, flexWrap: 'wrap' }}
-      >
-        <span>{l.shift ?? '—'}</span>
-        <span>{l.inspector ?? '—'}</span>
-        <span className="mono">{l.logNo}</span>
-        {l.qcReportPath ? (
-          <QcReportLink path={l.qcReportPath} name={l.qcReportName} label={l.qcReportName ?? '⬇'} />
-        ) : null}
-        {l.remarks ? <span className="text2">{l.remarks}</span> : null}
-      </div>
-    </div>
+    </PendingSheetRow>
   );
 }

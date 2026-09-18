@@ -24,6 +24,7 @@ import type { PartyGrnListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -35,9 +36,18 @@ import { PartyMaterialIssueView } from '@/modules/party-material-issues/componen
 
 const PAGE_SIZE = 50;
 
+// Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
+// IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
+// the local state below — tab clicks and typing stay local, never navigate.
+const searchSchema = z.object({
+  tab: z.enum(['receive', 'issue']).optional(),
+  search: z.string().optional(),
+});
+
 export const partyGrnListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'party-grn',
+  validateSearch: (search) => searchSchema.parse(search),
   component: PartyGrnListPage,
 });
 
@@ -53,12 +63,17 @@ function PartyGrnListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'party_create');
   const canCreate = perms.entry;
   const canCancel = perms.edit && perms.approve;
-  const [search, setSearch] = useState('');
+  const routeSearch = partyGrnListRoute.useSearch();
+  // Seed this tab's box only when the landing targets it; a `?tab=issue`
+  // landing must not pre-fill the Receive box with an issue code.
+  const [search, setSearch] = useState(() =>
+    (routeSearch.tab ?? 'receive') === 'receive' ? (routeSearch.search ?? '') : '',
+  );
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
   // Receive | Issue tabs — Issue is the former standalone Party Material Issue screen.
-  const [tab, setTab] = useState<'receive' | 'issue'>('receive');
+  const [tab, setTab] = useState<'receive' | 'issue'>(() => routeSearch.tab ?? 'receive');
 
   const { data, isLoading, isError, error } = usePartyGrnList({
     search: search.trim() || undefined,
@@ -117,7 +132,9 @@ function PartyGrnListPage(): React.JSX.Element {
       </div>
 
       {tab === 'issue' ? (
-        <PartyMaterialIssueView />
+        // key: a new ?search landing while already on this page remounts the
+        // view so it re-seeds; nothing else changes the key.
+        <PartyMaterialIssueView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
       ) : (
         <>
           {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).

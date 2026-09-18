@@ -24,7 +24,7 @@
 // Route Card table (L11799-11802) and Job Card History (L11803-11806) all need
 // route-card / job-card / running-op reads this page does not have.
 
-import type { Company, Item } from '@innovic/shared';
+import { type Company, ITEM_PROCUREMENT_TYPE_LABEL, type Item } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -325,6 +325,14 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
   return (
     <div className="form-grid">
       <Pair label="Item type" value={item.itemType} />
+      <div className="form-grp">
+        <span className="form-label">Source</span>
+        <div>
+          <span className={`badge ${item.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}>
+            {ITEM_PROCUREMENT_TYPE_LABEL[item.procurementType]}
+          </span>
+        </div>
+      </div>
       <Pair label="UOM" value={item.uom} />
       <Pair label="Revision" value={item.revision} />
       <Pair label="Drawing no." value={item.drawingNo ?? '—'} />
