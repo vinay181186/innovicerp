@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JC Status — Innovic ERP page template</title>
+<!--
+  TEMPLATE ONLY — generated for design reference. Nothing in apps/ or packages/ was modified.
+
+  Source of the look ("master template"): the Job Cards LIST screens (ref images 1 & 2)
+    topbar + breadcrumb · icon-tile page header · KPI strip · white rounded cards ·
+    pill tabs · left-accent rows · pill badges · progress bars · quick-tips footer.
+
+  Target restyled here: the JC Status DETAIL screen (ref images 3, 4 & 5)
+    drawing strip · item / SO-WO / quantity / overall-status summary · route progress ·
+    operation flow stepper · operations detail · completion log.
+
+  Palette + labels are taken from the real app so this drops in cleanly:
+    apps/web/src/styles/tokens.css
+    apps/web/src/modules/job-cards/components/jc-stat-tiles.tsx
+    apps/web/src/modules/job-cards/components/jc-op-card.tsx
+    apps/web/src/modules/job-cards/components/jc-status-content.tsx
+-->
+<style>
+/* ───────── tokens — verbatim from apps/web/src/styles/tokens.css ───────── */
+:root{
+  --bg:#f0f4f8; --bg2:#ffffff; --bg3:#f5f7fa; --bg4:#e8edf4; --bg5:#dce3ed;
+  --border:#d1d9e6; --border2:#c5cfe0; --border3:#b0bed4;
+  --text:#1a2235; --text2:#4a5a72; --text3:#7a8fa8;
+  --cyan:#0088bb; --cyan2:#006694; --cyan3:#dff0f7;
+  --amber:#c47a00; --amber2:#a06200; --amber3:#fff4d6;
+  --green:#16a34a; --green2:#15803d; --green3:#dcfce7;
+  --red:#dc2626;   --red2:#b91c1c;   --red3:#fee2e2;
+  --blue:#2563eb;  --blue2:#1d4ed8;  --blue3:#dbeafe;
+  --orange:#ea6c00; --purple:#7c3aed; --purple3:#ede9f7;
+  --shadow-sm:0 1px 2px rgba(26,34,53,.06);
+  --shadow:0 1px 3px rgba(26,34,53,.08),0 1px 2px rgba(26,34,53,.04);
+  --radius:10px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+.fw7{font-weight:700}
+.t2{color:var(--text2)} .t3{color:var(--text3)}
+a{color:var(--blue);text-decoration:none}
+.wrap{max-width:1560px;margin:0 auto;padding:0 18px 28px}
+
+/* ───────── master chrome — topbar (ref img 1) ───────── */
+.topbar{
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:18px;padding:8px 18px;position:sticky;top:0;z-index:20;
+}
+.logo{display:flex;flex-direction:column;line-height:1;padding-right:16px;border-right:1px solid var(--border)}
+.logo b{font-size:19px;letter-spacing:.06em;font-weight:800;color:var(--text)}
+.logo span{font-size:7.5px;letter-spacing:.22em;color:var(--text3);margin-top:3px}
+.crumbs{display:flex;align-items:center;gap:8px;font-size:13px}
+.crumbs .sep{color:var(--text3);font-size:11px}
+.crumbs a{color:var(--blue);font-weight:600}
+.crumbs .cur{color:var(--text);font-weight:700}
+.topbar .grow{flex:1}
+.gsearch{
+  display:flex;align-items:center;gap:8px;min-width:330px;
+  background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:7px 12px;color:var(--text3);
+}
+.gsearch input{border:0;outline:0;background:transparent;font:inherit;color:var(--text);width:100%}
+.bell{position:relative;width:34px;height:34px;border-radius:8px;display:grid;place-items:center;color:var(--text2)}
+.bell b{
+  position:absolute;top:-2px;right:-2px;background:var(--red);color:#fff;font-size:9px;font-weight:700;
+  min-width:16px;height:16px;border-radius:9px;display:grid;place-items:center;padding:0 4px;border:2px solid var(--bg2);
+}
+.who{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--text2)}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+
+/* ───────── master chrome — page header + KPI strip (ref img 1) ───────── */
+.pagehead{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;padding:18px 0 14px}
+.icontile{
+  width:46px;height:46px;border-radius:12px;background:var(--cyan3);border:1px solid var(--border);
+  display:grid;place-items:center;font-size:22px;flex:none;
+}
+.pagehead h1{margin:0;font-size:25px;font-weight:800;letter-spacing:-.01em}
+.pagehead h1 .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:23px;color:var(--blue2)}
+.pagehead .sub{color:var(--text2);font-size:12.5px;margin-top:3px}
+
+.kpis{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto}
+.kpi{
+  display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:12px;padding:9px 16px 9px 10px;box-shadow:var(--shadow-sm);min-width:120px;
+}
+.kpi .ic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:15px;flex:none}
+.kpi .n{font-size:20px;font-weight:800;line-height:1.1}
+.kpi .l{font-size:10.5px;color:var(--text2);font-weight:600;white-space:nowrap}
+.k-grey .ic{background:var(--bg4);color:var(--text2)}       .k-grey .n{color:var(--text)}
+.k-blue .ic{background:var(--blue3);color:var(--blue)}       .k-blue .n{color:var(--blue)}
+.k-amber .ic{background:var(--amber3);color:var(--amber)}    .k-amber .n{color:var(--amber)}
+.k-green .ic{background:var(--green3);color:var(--green)}     .k-green .n{color:var(--green)}
+.k-red .ic{background:var(--red3);color:var(--red)}           .k-red .n{color:var(--red)}
+.k-purple .ic{background:var(--purple3);color:var(--purple)}  .k-purple .n{color:var(--purple)}
+.k-blue{background:#eff5ff;border-color:#c9ddfb}
+.k-amber{background:#fffaf0;border-color:#f3e3bd}
+.k-green{background:#f2fdf6;border-color:#c6efd5}
+.k-red{background:#fff5f5;border-color:#f6cccc}
+
+/* ───────── buttons (ref img 1) ───────── */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:8px;
+  border:1px solid var(--border2);background:var(--bg2);color:var(--text2);
+  font:600 12.5px/1 inherit;cursor:pointer;white-space:nowrap;box-shadow:var(--shadow-sm);
+}
+.btn:hover{background:var(--bg3)}
+.btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn-primary:hover{background:var(--blue2)}
+.btn-ghost{box-shadow:none;background:transparent;border-color:var(--border)}
+.btn-sm{height:28px;padding:0 10px;font-size:11.5px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* ───────── cards ───────── */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:14px}
+.card-pad{padding:16px 18px}
+.card-hd{
+  display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--border);
+  background:var(--bg3);border-radius:var(--radius) var(--radius) 0 0;
+}
+.card-hd h2{margin:0;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--cyan2)}
+.card-hd .grow{flex:1}
+.seclbl{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:6px}
+
+/* ───────── badges (ref img 1) ───────── */
+.badge{
+  display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 9px;border-radius:999px;
+  font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;border:1px solid transparent;
+}
+.b-blue{background:var(--blue3);color:var(--blue2);border-color:#bfdbfe}
+.b-green{background:var(--green3);color:var(--green2);border-color:#bbf7d0}
+.b-amber{background:var(--amber3);color:var(--amber2);border-color:#fde68a}
+.b-red{background:var(--red3);color:var(--red2);border-color:#fecaca}
+.b-cyan{background:var(--cyan3);color:var(--cyan2);border-color:#bde3f0}
+.b-purple{background:var(--purple3);color:var(--purple);border-color:#ddd2f5}
+.b-grey{background:var(--bg4);color:var(--text2);border-color:var(--border)}
+
+/* ───────── progress (ref img 1) ───────── */
+.prog{height:8px;border-radius:999px;background:var(--bg4);overflow:hidden}
+.prog>i{display:block;height:100%;border-radius:999px;background:var(--blue)}
+.prog.green>i{background:var(--green)}
+
+/* ───────── drawing strip (ref img 3) ───────── */
+.drawing{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px}
+.filechip{
+  display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border);
+  border-radius:8px;padding:6px 11px;font-size:12px;color:var(--text2);
+}
+.filechip .mono{color:var(--cyan2);font-weight:700;font-size:11.5px}
+
+/* ───────── summary grid (ref img 3) ───────── */
+.summary{display:grid;grid-template-columns:1.5fr 1.2fr 1.3fr 1fr;gap:22px}
+.summary>div{min-width:0}
+.itemcode{font-size:19px;font-weight:800;color:var(--purple);font-family:ui-monospace,Menlo,Consolas,monospace}
+.itemdesc{font-size:12.5px;font-weight:700;color:var(--text);margin-top:2px}
+.meta{font-size:11.5px;color:var(--text2);margin-top:4px}
+.meta b{color:var(--text)}
+.qtyseg{display:flex;border:1px solid var(--border2);border-radius:8px;overflow:hidden}
+.qtyseg>div{flex:1;padding:8px 6px;text-align:center}
+.qtyseg>div+div{border-left:1px solid var(--border2)}
+.qtyseg .v{font:800 19px/1.1 ui-monospace,Menlo,Consolas,monospace}
+.qtyseg .k{font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-top:3px}
+.seg-done{background:var(--green3)} .seg-done .v{color:var(--green2)}
+.seg-pend{background:var(--green3)} .seg-pend .v{color:var(--green2)}
+.rule{margin-top:15px;padding-top:15px;border-top:1px solid var(--border)}
+
+/* ───────── operation flow stepper (ref img 4) ───────── */
+.flow{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+.step{
+  min-width:132px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;
+  padding:9px 12px;text-align:center;box-shadow:var(--shadow-sm);border-top:3px solid var(--border2);
+}
+.step .op{font:700 11px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--text2);letter-spacing:.05em}
+.step .m{font:800 13px/1.2 ui-monospace,Menlo,Consolas,monospace;margin-top:5px}
+.step .d{font-size:10.5px;color:var(--text3);margin-top:2px}
+.step .q{font:800 12px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--text2);margin-top:7px}
+.step.s-done{border-top-color:var(--green)} .step.s-done .m{color:var(--green2)}
+.step.s-qc{border-top-color:var(--cyan)}    .step.s-qc .m{color:var(--cyan2)}
+.step.s-osp{border-top-color:var(--orange)} .step.s-osp .m{color:var(--orange)}
+.arrow{display:grid;place-items:center;color:var(--text3);font-size:15px;padding:0 2px}
+
+/* ───────── tabs (ref img 1) ───────── */
+.tabs{display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--border);margin:4px 0 14px;flex-wrap:wrap}
+.tab{
+  appearance:none;border:0;background:transparent;cursor:pointer;
+  padding:10px 15px;font:700 12.5px/1 inherit;color:var(--text2);border-bottom:2px solid transparent;border-radius:8px 8px 0 0;
+}
+.tab:hover{background:var(--bg3)}
+.tab[aria-selected="true"]{color:var(--blue2);background:var(--blue3);border-bottom-color:var(--blue)}
+.tab.danger[aria-selected="true"]{color:var(--red2);background:var(--red3);border-bottom-color:var(--red)}
+.tabs .grow{flex:1}
+.panel[hidden]{display:none}
+
+/* ───────── operations detail (ref img 4 & 5) ───────── */
+.opcard{
+  position:relative;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);margin-bottom:12px;padding:14px 18px 14px 20px;overflow:hidden;
+}
+.opcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--border2)}
+.opcard.done::before{background:var(--green)}
+.opcard.qc::before{background:var(--cyan)}
+.opcard.osp::before{background:var(--orange)}
+.ophd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.opseq{
+  width:34px;height:26px;border-radius:7px;background:var(--bg4);border:1px solid var(--border);
+  display:grid;place-items:center;font:800 12px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--text2);
+}
+.opkv{font-size:11px;color:var(--text3);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.opmac{font:800 13px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--text)}
+.opname{font-size:12.5px;color:var(--text2)}
+.opbody{display:flex;gap:26px;flex-wrap:wrap}
+.qtiles{display:flex;gap:7px;flex-wrap:wrap}
+.qtile{
+  min-width:66px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 9px;text-align:center;
+}
+.qtile .v{font:800 16px/1.1 ui-monospace,Menlo,Consolas,monospace}
+.qtile .k{font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-top:3px}
+.qtile.hl{background:var(--amber3);border-color:#fde68a}
+.chips{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--text3)}
+.chips b{color:var(--text2)}
+.logs{margin-top:12px;border-top:1px dashed var(--border);padding-top:9px}
+.logline{font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;color:var(--text2)}
+.logline .plus{color:var(--green2);font-weight:700}
+.opfoot{margin-top:10px;font-size:12px;font-weight:700}
+.ospbox{margin-left:auto;text-align:right;min-width:150px}
+
+/* ───────── completion log (ref img 5) ───────── */
+.daygrp{margin-bottom:6px}
+.dayhd{
+  display:inline-flex;align-items:center;gap:7px;font:700 12px/1 ui-monospace,Menlo,Consolas,monospace;
+  color:var(--cyan2);background:var(--cyan3);border:1px solid #bde3f0;border-radius:999px;padding:6px 12px;margin:6px 0 10px;
+}
+.event{display:flex;align-items:flex-start;gap:12px;padding:9px 0;border-bottom:1px dashed var(--border)}
+.event:last-child{border-bottom:0}
+.event .ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:12px;flex:none}
+.event .ttl{font-size:12.5px;font-weight:700;color:var(--green2)}
+.event .det{font-size:11.5px;color:var(--text2);margin-top:2px}
+.event .tm{margin-left:auto;display:flex;align-items:center;gap:14px;white-space:nowrap}
+.event .tm .clock{font:11.5px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--text3)}
+.event .tm .qty{font:800 13px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--green2)}
+.ev-green .ic{background:var(--green3);color:var(--green2)}
+.ev-cyan  .ic{background:var(--cyan3);color:var(--cyan2)}
+.ev-cyan  .ttl{color:var(--cyan2)}
+.ev-amber .ic{background:var(--amber3);color:var(--amber2)}
+.ev-amber .ttl{color:var(--amber2)}
+
+/* ───────── docs / empty ───────── */
+.docgrid{display:flex;gap:10px;flex-wrap:wrap}
+.doccard{min-width:210px;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 12px}
+.doccard .t{font-size:10px;font-weight:800;color:var(--cyan2);letter-spacing:.07em;text-transform:uppercase}
+.doccard .f{font-size:12px;font-weight:700;margin-top:3px;word-break:break-all}
+.empty{padding:30px;text-align:center;color:var(--text3);font-size:12.5px}
+
+/* ───────── quick tips footer (ref img 1) ───────── */
+.tips{
+  display:flex;align-items:flex-start;gap:12px;background:#eef5ff;border:1px solid #cfe0fb;
+  border-radius:var(--radius);padding:13px 16px;margin-top:4px;
+}
+.tips .ic{width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;flex:none}
+.tips b{font-size:12px;color:var(--text)}
+.tips ul{margin:4px 0 0;padding-left:18px;color:var(--text2);font-size:12px}
+.tips li{margin:2px 0}
+.tips .tagline{margin-left:auto;font-style:italic;color:var(--blue2);font-size:12.5px;align-self:flex-end;white-space:nowrap}
+
+@media (max-width:1180px){
+  .summary{grid-template-columns:1fr 1fr}
+  .kpis{margin-left:0;width:100%}
+}
+@media (max-width:760px){
+  .summary{grid-template-columns:1fr}
+  .gsearch{min-width:0;display:none}
+  .opbody{gap:14px}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════ MASTER CHROME · topbar ══════════ -->
+<header class="topbar">
+  <div class="logo"><b>INNOVIC</b><span>ENGINEERING EXCELLENCE</span></div>
+  <nav class="crumbs">
+    <a href="#">Home</a><span class="sep">›</span>
+    <a href="#">Production</a><span class="sep">›</span>
+    <a href="#">Job Cards</a><span class="sep">›</span>
+    <span class="cur mono">IN-JC-26-00001</span>
+  </nav>
+  <div class="grow"></div>
+  <label class="gsearch">🔍<input placeholder="Search Job Card / Part No. / SO No." /></label>
+  <div class="bell">🔔<b>3</b></div>
+  <div class="who"><span class="avatar">AM</span>Admin <span class="t3">▾</span></div>
+</header>
+
+<div class="wrap">
+
+  <!-- ══════════ MASTER CHROME · page header + KPI strip ══════════ -->
+  <div class="pagehead">
+    <div class="icontile">🔧</div>
+    <div>
+      <h1>JC Status — <span class="code">IN-JC-26-00001</span></h1>
+      <div class="sub">Operations, quantities, QC and full history for this job card</div>
+      <div class="btnrow" style="margin-top:11px">
+        <button class="btn btn-ghost">← Back to Job Cards</button>
+        <button class="btn">🖨 Print Job Card</button>
+        <button class="btn">⬇ Excel</button>
+        <button class="btn btn-primary">▶ Open in Op Entry</button>
+        <button class="btn btn-primary">✎ Edit Job Card</button>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi k-grey"><span class="ic">📦</span><span><span class="n">500</span><div class="l">Ordered</div></span></div>
+      <div class="kpi k-green"><span class="ic">✔</span><span><span class="n">500</span><div class="l">Completed</div></span></div>
+      <div class="kpi k-amber"><span class="ic">⏳</span><span><span class="n">0</span><div class="l">Pending</div></span></div>
+      <div class="kpi k-blue"><span class="ic">⚙</span><span><span class="n">3 / 3</span><div class="l">Operations</div></span></div>
+      <div class="kpi k-green"><span class="ic">📈</span><span><span class="n">100%</span><div class="l">Route Progress</div></span></div>
+      <div class="kpi k-grey"><span class="ic">🔒</span><span><span class="n" style="font-size:15px">CLOSED</span><div class="l">Overall Status</div></span></div>
+    </div>
+  </div>
+
+  <!-- ══════════ Drawing strip (was the bare "DRAWING" line, ref img 3) ══════════ -->
+  <section class="card">
+    <div class="card-hd">
+      <h2>Drawing</h2>
+      <span class="badge b-cyan">Sales Order Drawing</span>
+      <span class="badge b-blue">Rev R0</span>
+      <div class="grow"></div>
+      <button class="btn btn-sm">👁 Open drawing</button>
+    </div>
+    <div class="drawing">
+      <span class="filechip">📄 <span class="mono">OSP-Challan-IN-DC-00009.pdf</span></span>
+      <span class="t3" style="font-size:12px">PDF — no inline preview. Open it to view.</span>
+    </div>
+  </section>
+
+  <!-- ══════════ Summary: item / SO-WO / quantity / status + route + flow ══════════ -->
+  <section class="card">
+    <div class="card-pad">
+      <div class="summary">
+
+        <div>
+          <div class="seclbl">Item</div>
+          <div class="itemcode">554117146000/R0</div>
+          <div class="itemdesc">LEVER CATCH RAMMER</div>
+          <div class="meta">Grade: <b>—</b> · Size: <b>—</b></div>
+          <div class="meta">Route Card: <b class="mono" style="color:var(--cyan2)">IN-RC-00001</b>
+            <span class="badge b-blue" style="height:18px;font-size:9px;margin-left:4px">Rev 0</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="seclbl">SO / WO</div>
+          <div class="mono fw7" style="font-size:17px">IN-SO-00001</div>
+          <div class="meta">Line <b>1</b> · Due <b>2026-09-23</b></div>
+          <div class="meta" style="color:var(--purple);font-weight:700">CPO Ln: 1</div>
+          <div class="meta">Production Order: <a class="mono fw7" style="color:var(--cyan2)" href="#">IN-PRO-00001</a></div>
+        </div>
+
+        <div>
+          <div class="seclbl">Quantity (pcs)</div>
+          <div class="qtyseg">
+            <div><div class="v">500</div><div class="k">Ordered</div></div>
+            <div class="seg-done"><div class="v">500</div><div class="k">Completed</div></div>
+            <div class="seg-pend"><div class="v">0</div><div class="k">Pending</div></div>
+          </div>
+          <div class="meta">RM avail <b class="mono">0</b> of 500 issued</div>
+        </div>
+
+        <div>
+          <div class="seclbl">Overall Status</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="badge b-green">Closed</span>
+            <span class="badge b-grey">Normal</span>
+          </div>
+          <div class="meta" style="margin-top:8px">All operations complete</div>
+        </div>
+      </div>
+
+      <!-- route progress -->
+      <div class="rule">
+        <div class="seclbl">Route Progress</div>
+        <div class="prog green"><i style="width:100%"></i></div>
+        <div style="margin-top:6px">
+          <b style="font-size:12px">3 of 3 operations complete · 100%</b>
+          <span class="t3" style="margin-left:10px;font-size:11.5px">Finished goods counted only after the last op</span>
+        </div>
+      </div>
+
+      <!-- operation flow -->
+      <div class="rule">
+        <div class="seclbl">Operation Flow</div>
+        <div class="flow">
+          <div class="step s-done">
+            <div class="op">Op10</div><div class="m">cnc-1</div>
+            <div class="d">turning · firts setup</div><div class="q">500 / 500</div>
+          </div>
+          <div class="arrow">›</div>
+          <div class="step s-qc">
+            <div class="op">Op20 🔬</div><div class="m">QC</div>
+            <div class="d">f</div><div class="q">500 / 500</div>
+          </div>
+          <div class="arrow">›</div>
+          <div class="step s-osp">
+            <div class="op">Op30 🏭</div><div class="m">OUTSOURCE</div>
+            <div class="d">g · Received</div><div class="q">500 / 500</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ MASTER CHROME · tabs ══════════ -->
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true"  data-panel="p-ops">Operations (3)</button>
+    <button class="tab" role="tab" aria-selected="false" data-panel="p-log">Completion Log (5)</button>
+    <button class="tab" role="tab" aria-selected="false" data-panel="p-doc">QC Documents (2)</button>
+    <button class="tab danger" role="tab" aria-selected="false" data-panel="p-nc">NC / CAPA (0)</button>
+    <div class="grow"></div>
+    <button class="btn btn-sm">▦ Expand all</button>
+    <button class="btn btn-sm">⬇ Export</button>
+  </div>
+
+  <!-- ─────── panel: operations detail ─────── -->
+  <div class="panel" id="p-ops">
+
+    <!-- Op10 — in-house, complete -->
+    <article class="opcard done">
+      <div class="ophd">
+        <span class="opseq">10</span>
+        <span><span class="opkv">Planned</span> <span class="opmac">cnc-1</span></span>
+        <span><span class="opkv">Actual</span> <span class="opmac">cnc-1</span></span>
+        <span class="opname">turning · <b>firts setup</b></span>
+        <div class="grow" style="flex:1"></div>
+        <span class="badge b-green">Complete</span>
+      </div>
+      <div class="opbody">
+        <div>
+          <div class="seclbl">Quantities</div>
+          <div class="qtiles">
+            <div class="qtile"><div class="v">500</div><div class="k">Order</div></div>
+            <div class="qtile"><div class="v" style="color:var(--green2)">500</div><div class="k">Done</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">0</div><div class="k">Pending</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">—</div><div class="k">Ready to send</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">—</div><div class="k">At vendor</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">—</div><div class="k">In QC</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="seclbl">Setup</div>
+          <div class="chips"><span><b>Cycle (min)</b> —</span><span><b>Prog/Tool</b> —</span></div>
+        </div>
+      </div>
+      <div class="logs">
+        <div class="seclbl" style="margin-bottom:4px">Recent logs <span class="t3" style="font-weight:600;text-transform:none;letter-spacing:0">latest 3 entries</span></div>
+        <div class="logline">2026-09-18 · day · <span class="plus">+100</span> · u</div>
+        <div class="logline">2026-09-18 · day · <span class="plus">+400</span> · g</div>
+        <div class="logline">2026-09-18 · day · <span class="plus">+0</span> · g</div>
+      </div>
+      <div class="opfoot" style="color:var(--green2)">✓ Done</div>
+    </article>
+
+    <!-- Op20 — QC -->
+    <article class="opcard qc">
+      <div class="ophd">
+        <span class="opseq">20</span>
+        <span class="badge b-cyan">QC</span>
+        <span class="opname">f</span>
+        <div class="grow" style="flex:1"></div>
+        <span class="badge b-green">Complete</span>
+      </div>
+      <div class="opbody">
+        <div>
+          <div class="seclbl">Quantities</div>
+          <div class="qtiles">
+            <div class="qtile"><div class="v">500</div><div class="k">Order</div></div>
+            <div class="qtile"><div class="v" style="color:var(--green2)">500</div><div class="k">Accepted</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">0</div><div class="k">Rejected</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">0</div><div class="k">Pending</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="seclbl">Setup</div>
+          <div class="chips"><span><b>Cycle (min)</b> —</span><span><b>Prog/Tool</b> —</span></div>
+        </div>
+      </div>
+      <div class="logs">
+        <div class="seclbl" style="margin-bottom:4px">Recent logs</div>
+        <div class="logline">2026-09-18 · day · <span class="plus">+100</span> accepted · jinal</div>
+        <div class="logline">2026-09-18 · day · <span class="plus">+400</span> accepted · jinal</div>
+      </div>
+      <div class="opfoot" style="color:var(--green2)">✓ QC Done</div>
+    </article>
+
+    <!-- Op30 — outsourced -->
+    <article class="opcard osp">
+      <div class="ophd">
+        <span class="opseq">30</span>
+        <span class="opmac">OSP</span>
+        <span class="opname">g</span>
+        <span class="badge b-amber">OSP</span>
+        <div class="grow" style="flex:1"></div>
+        <span class="badge b-green">Complete</span>
+      </div>
+      <div class="opbody">
+        <div>
+          <div class="seclbl">Quantities</div>
+          <div class="qtiles">
+            <div class="qtile"><div class="v">500</div><div class="k">Order</div></div>
+            <div class="qtile"><div class="v" style="color:var(--green2)">500</div><div class="k">Done</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">0</div><div class="k">Pending</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">0</div><div class="k">Ready to send</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">0</div><div class="k">At vendor</div></div>
+            <div class="qtile"><div class="v" style="color:var(--text3)">0</div><div class="k">In QC</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="seclbl">Setup</div>
+          <div class="chips"><span><b>Cycle (min)</b> —</span><span><b>Prog/Tool</b> —</span></div>
+        </div>
+        <div class="ospbox">
+          <div class="seclbl">Outsource</div>
+          <div style="font-size:12.5px;font-weight:800;color:var(--orange)">🏭 Outsource</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Amit Enterprise</div>
+          <span class="badge b-green" style="margin-top:6px">Received</span>
+        </div>
+      </div>
+      <div class="logs">
+        <div class="seclbl" style="margin-bottom:4px">Recent logs</div>
+        <div class="logline t3">No entries</div>
+      </div>
+      <div class="opfoot" style="color:var(--purple)">Received</div>
+    </article>
+  </div>
+
+  <!-- ─────── panel: completion log ─────── -->
+  <div class="panel" id="p-log" hidden>
+    <section class="card">
+      <div class="card-hd"><h2>Completion Log</h2><span class="badge b-grey">5 entries</span></div>
+      <div class="card-pad">
+        <div class="daygrp">
+          <div class="dayhd">🗓 2026-09-18</div>
+
+          <div class="event ev-cyan">
+            <span class="ic">🔬</span>
+            <div><div class="ttl">Op20: f — QC Entry</div><div class="det">+100 accepted — jinal · day</div></div>
+            <div class="tm"><span class="qty" style="color:var(--cyan2)">+100</span></div>
+          </div>
+
+          <div class="event ev-cyan">
+            <span class="ic">🔬</span>
+            <div><div class="ttl">Op20: f — QC Entry</div><div class="det">+400 accepted — jinal · day</div></div>
+            <div class="tm"><span class="qty" style="color:var(--cyan2)">+400</span></div>
+          </div>
+
+          <div class="event ev-green">
+            <span class="ic">✔</span>
+            <div><div class="ttl">Op10: firts setup — Completed</div><div class="det">+100 pcs — u · day</div></div>
+            <div class="tm"><span class="clock">12:41</span><span class="qty">+100</span></div>
+          </div>
+
+          <div class="event ev-green">
+            <span class="ic">✔</span>
+            <div><div class="ttl">Op10: firts setup — Completed</div><div class="det">+400 pcs — g · day</div></div>
+            <div class="tm"><span class="clock">12:27</span><span class="qty">+400</span></div>
+          </div>
+
+          <div class="event ev-amber">
+            <span class="ic">▶</span>
+            <div><div class="ttl">Op10: firts setup — Started</div><div class="det">on cnc-1 by g · day</div></div>
+            <div class="tm"><span class="clock">09:05</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ─────── panel: QC documents ─────── -->
+  <div class="panel" id="p-doc" hidden>
+    <section class="card">
+      <div class="card-hd"><h2>QC Documents</h2><div class="grow"></div><button class="btn btn-sm">⬆ Upload</button></div>
+      <div class="card-pad">
+        <div class="docgrid">
+          <div class="doccard">
+            <div class="t">Inspection Report</div>
+            <div class="f">IR-IN-JC-26-00001.pdf</div>
+            <div class="meta">Uploaded 2026-09-18</div>
+            <button class="btn btn-sm" style="margin-top:8px">👁 Open</button>
+          </div>
+          <div class="doccard">
+            <div class="t">Material Test Certificate</div>
+            <div class="f">MTC-554117146000.pdf</div>
+            <div class="meta">Uploaded 2026-09-12</div>
+            <button class="btn btn-sm" style="margin-top:8px">👁 Open</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ─────── panel: NC / CAPA ─────── -->
+  <div class="panel" id="p-nc" hidden>
+    <section class="card">
+      <div class="card-hd"><h2>NC / CAPA</h2></div>
+      <div class="empty">No non-conformances raised against this job card.</div>
+    </section>
+  </div>
+
+  <!-- ══════════ MASTER CHROME · quick tips footer ══════════ -->
+  <div class="tips">
+    <span class="ic">i</span>
+    <div>
+      <b>Quick Tips:</b>
+      <ul>
+        <li>Operation cards show live quantities — Done, Pending, and the outsource split (Ready to Send / At Vendor / In QC)</li>
+        <li>Use <b>Open in Op Entry</b> to log production against the next pending operation</li>
+        <li>Finished goods are credited to stock only after the last operation closes</li>
+      </ul>
+    </div>
+    <span class="tagline">Engineering Excellence Through Innovation</span>
+  </div>
+
+</div>
+
+<script>
+// Tabs — template-local only, no app wiring.
+document.querySelectorAll('.tab').forEach(function (t) {
+  t.addEventListener('click', function () {
+    document.querySelectorAll('.tab').forEach(function (x) { x.setAttribute('aria-selected', 'false'); });
+    t.setAttribute('aria-selected', 'true');
+    document.querySelectorAll('.panel').forEach(function (p) { p.hidden = p.id !== t.dataset.panel; });
+  });
+});
+</script>
+</body>
+</html>
