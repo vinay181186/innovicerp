@@ -304,7 +304,7 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                 <th>Order Qty</th>
                 <th>Plan Qty</th>
                 <th>Ops</th>
-                <th>PO No</th>
+                <th>Production Order</th>
                 <th>JC No</th>
                 <th>Status</th>
               </tr>

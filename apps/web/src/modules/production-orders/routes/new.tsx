@@ -153,7 +153,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
             <div className="form-grid form-grid-3">
               <div className="form-grp">
                 <label className="form-label" htmlFor="po-code">
-                  PO No
+                  Production Order No
                 </label>
                 <input
                   id="po-code"

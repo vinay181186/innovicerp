@@ -128,7 +128,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
   const columns = useMemo<ColumnDef<ProductionOrderListItem>[]>(
     () => [
       {
-        header: 'PO No',
+        header: 'Production Order No',
         accessorKey: 'code',
         meta: { tdClass: 'td-code' },
         cell: ({ row }) => (
@@ -332,7 +332,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               className="innovic-input"
-              placeholder="🔍 Search PO no, plan, item, JC, SO…"
+              placeholder="🔍 Search production order no, plan, item, JC, SO…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ width: 260, fontSize: 12 }}

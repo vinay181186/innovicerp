@@ -82,7 +82,7 @@ export function PlanPicker({
         placeholder={
           mode === 'create'
             ? '🔍 Type plan no, item code or SO no…'
-            : '🔍 Type plan no, PO no, item or SO no…'
+            : '🔍 Type plan no, production order no, item or SO no…'
         }
         valueLabel={selected ? planPickerLabel(selected) : label || undefined}
         emptyText={

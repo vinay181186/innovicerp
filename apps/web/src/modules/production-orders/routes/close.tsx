@@ -141,7 +141,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
 
             <div className="form-grp">
               <label className="form-label" htmlFor="close-po">
-                PO No<span className="req">★</span>
+                Production Order No<span className="req">★</span>
               </label>
               <SearchableSelect
                 id="close-po"
@@ -157,7 +157,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                     .filter(Boolean)
                     .join(' '),
                 }))}
-                placeholder="🔍 Type PO no, item or plan…"
+                placeholder="🔍 Type production order no, item or plan…"
                 valueLabel={
                   po ? `${po.code} — ${po.itemCodeText} · ${po.planCodeText}` : poLabel || undefined
                 }
