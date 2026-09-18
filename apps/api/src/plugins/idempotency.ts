@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { and, eq, lt, sql, isNull } from 'drizzle-orm';
 import fp from 'fastify-plugin';
 import { db } from '../db/client';
 import { idempotencyKeys } from '../db/schema';
@@ -52,6 +52,7 @@ export type IdempotencyRecord = {
   statusCode: number | null;
   responseBody: unknown;
   completedAt: Date | null;
+  createdAt: Date;
 };
 
 /**
@@ -68,6 +69,9 @@ export interface IdempotencyStore {
   complete(id: string, statusCode: number, responseBody: unknown): Promise<void>;
   /** Drop the row so the next request with the same key runs the handler again. */
   remove(id: string): Promise<void>;
+  /** Drop an ABANDONED claim (never completed) so the key can be claimed again.
+   *  No-op when the row has meanwhile been completed. */
+  removeIfIncomplete(id: string): Promise<void>;
   /** Purge rows older than one day. */
   purge(): Promise<void>;
 }
@@ -90,6 +94,7 @@ export const drizzleIdempotencyStore: IdempotencyStore = {
         statusCode: idempotencyKeys.statusCode,
         responseBody: idempotencyKeys.responseBody,
         completedAt: idempotencyKeys.completedAt,
+        createdAt: idempotencyKeys.createdAt,
       })
       .from(idempotencyKeys)
       .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key)))
@@ -101,6 +106,11 @@ export const drizzleIdempotencyStore: IdempotencyStore = {
       .update(idempotencyKeys)
       .set({ statusCode, responseBody, completedAt: sql`now()` })
       .where(eq(idempotencyKeys.id, id));
+  },
+  async removeIfIncomplete(id) {
+    await db
+      .delete(idempotencyKeys)
+      .where(and(eq(idempotencyKeys.id, id), isNull(idempotencyKeys.completedAt)));
   },
   async remove(id) {
     await db.delete(idempotencyKeys).where(eq(idempotencyKeys.id, id));
@@ -118,6 +128,8 @@ export type IdempotencyPluginOptions = {
   pollIntervalMs?: number;
   /** How long a repeat waits for the first run before giving up with 409 (default 25 s). */
   waitMs?: number;
+  /** A claim older than this with no result is treated as abandoned and reclaimed. */
+  staleAfterMs?: number;
   /** How often old rows are purged (default 10 min). */
   purgeIntervalMs?: number;
 };
@@ -142,13 +154,20 @@ const isStreamLike = (payload: unknown): boolean =>
   payload !== null &&
   typeof (payload as { pipe?: unknown }).pipe === 'function';
 
-/** The stored body: parsed JSON for a JSON string payload, null for anything else. */
-const bodyToStore = (payload: unknown): unknown => {
-  if (typeof payload !== 'string' || payload.length === 0) return null;
+/** The stored body: parsed JSON for a JSON string payload. Returns
+ *  `undefined` (not null — JSON `null` is a legitimate body) when the payload
+ *  is not JSON, so the caller drops the row instead of replaying an empty
+ *  body for a text/csv/html response. */
+const NOT_JSON = Symbol('not-json');
+const bodyToStore = (payload: unknown, contentType: unknown): unknown | typeof NOT_JSON => {
+  if (payload === undefined || payload === null || payload === '') return null;
+  if (typeof payload !== 'string') return NOT_JSON;
+  const ct = typeof contentType === 'string' ? contentType : '';
+  if (ct && !ct.toLowerCase().includes('application/json')) return NOT_JSON;
   try {
     return JSON.parse(payload) as unknown;
   } catch {
-    return null;
+    return NOT_JSON;
   }
 };
 
@@ -161,6 +180,8 @@ const idempotencyPluginImpl: FastifyPluginAsync<IdempotencyPluginOptions> = asyn
   const store = opts.store ?? drizzleIdempotencyStore;
   const pollIntervalMs = opts.pollIntervalMs ?? 500;
   const waitMs = opts.waitMs ?? 25_000;
+  // A claim older than this with no result is abandoned (see preHandler).
+  const staleAfterMs = opts.staleAfterMs ?? waitMs + 5_000;
   const purgeIntervalMs = opts.purgeIntervalMs ?? 10 * 60 * 1000;
 
   app.decorateRequest('idempotency', null);
@@ -182,14 +203,31 @@ const idempotencyPluginImpl: FastifyPluginAsync<IdempotencyPluginOptions> = asyn
     const deadline = Date.now() + waitMs;
 
     for (;;) {
-      const rowId = await store.claim({ userId, key, method, path });
+      // Fail OPEN: the bookkeeping must never break the real request. If the
+      // table is missing (migration 0135 not yet applied on this database) or
+      // the store blips, log and run the handler as if no key had been sent.
+      let rowId: string | null;
+      try {
+        rowId = await store.claim({ userId, key, method, path });
+      } catch (err) {
+        req.log.warn({ err }, 'idempotency: claim failed — running without idempotency');
+        req.idempotency = null;
+        return;
+      }
       if (rowId) {
         req.idempotency = { rowId, done: false };
         return;
       }
 
       // Somebody already holds this key — it is a repeat of an earlier request.
-      const existing = await store.find(userId, key);
+      let existing: IdempotencyRecord | null;
+      try {
+        existing = await store.find(userId, key);
+      } catch (err) {
+        req.log.warn({ err }, 'idempotency: find failed — running without idempotency');
+        req.idempotency = null;
+        return;
+      }
       if (existing) {
         if (existing.method !== method || existing.path !== path) {
           throw new AppError(
@@ -211,6 +249,25 @@ const idempotencyPluginImpl: FastifyPluginAsync<IdempotencyPluginOptions> = asyn
             .code(existing.statusCode)
             .type('application/json; charset=utf-8')
             .send(JSON.stringify(existing.responseBody));
+        }
+        // Claimed but never completed, and older than any request could still
+        // be running: the process that claimed it died mid-handler (restart,
+        // OOM) — which is exactly what makes a browser resend a request. Drop
+        // the abandoned claim and loop to take it over, instead of waiting the
+        // full window and then telling the user "still being processed".
+        if (Date.now() - existing.createdAt.getTime() > staleAfterMs) {
+          req.log.warn(
+            { idempotencyKey: key, rowId: existing.id },
+            'idempotency: reclaiming an abandoned claim',
+          );
+          try {
+            await store.removeIfIncomplete(existing.id);
+          } catch (err) {
+            req.log.warn({ err }, 'idempotency: reclaim failed — running without idempotency');
+            req.idempotency = null;
+            return;
+          }
+          continue;
         }
       }
       // Either the first run is still going (row present, not completed) or it
@@ -241,7 +298,13 @@ const idempotencyPluginImpl: FastifyPluginAsync<IdempotencyPluginOptions> = asyn
         // so a repeat regenerates it (exports have no side effects).
         await store.remove(state.rowId);
       } else {
-        await store.complete(state.rowId, statusCode, bodyToStore(payload));
+        const body = bodyToStore(payload, reply.getHeader('content-type'));
+        if (body === NOT_JSON) {
+          // text / csv / html cannot be replayed from jsonb — let a repeat regenerate it.
+          await store.remove(state.rowId);
+        } else {
+          await store.complete(state.rowId, statusCode, body);
+        }
       }
     } catch (err) {
       req.log.warn({ err, rowId: state.rowId }, 'idempotency: failed to store result');
