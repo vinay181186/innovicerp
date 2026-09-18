@@ -9228,3 +9228,36 @@ demand into a production order or a purchase requisition accordingly; Odoo's pro
   symmetrical (Gen production order / + PR) and both end in stock exactly once.
 - Negative: existing direct-purchase plans keep the old Execute path until they drain; an item
   wrongly left as "make" shows + Plan — the Item Master flag must be set for bought parts.
+
+## ADR-172: Idempotency-Key on every write — a resent save is answered with the first result
+
+**Date:** 2026-09-18 · **Status:** Accepted · **Migration:** 0135
+
+### Context
+In the 2026-09-17 Production Orders verification run two saves (Gen DC → IN-DC-00043/R1, GRN
+receive → IN-GRN-00044) took 14–20 s on the test API. The connection dropped, the browser
+resent the request, and the second copy failed with "already exists" although the first copy
+had created the document within a second. The same shape was recorded on 2026-09-16 (T3 GRN).
+Nothing was duplicated; the user saw an error for a save that had worked and stayed on the form.
+
+### Decision
+1. `apps/web/src/lib/api.ts` sends `idempotency-key: <random uuid>` on every POST / PATCH / PUT
+   / DELETE (one key per `apiFetch` call, so a deliberate second click is a new request).
+2. `apps/api/src/plugins/idempotency.ts` records `(user_id, key, method, path)` in
+   `idempotency_keys` before the handler runs and stores `status_code` + `response_body` after.
+   A repeat with the same key waits for the first run (poll, ≤25 s) and is answered with its
+   stored result; a repeat for a different method/path is refused (422); a 5xx result is not
+   stored so a genuine retry can run. Rows older than a day are purged by the API.
+3. Server-only bookkeeping keyed by the authenticated user: no company column, no RLS
+   policies (the API connects as `postgres`, which bypasses RLS).
+
+### Alternatives considered
+- Treat "code already exists" as success on the two affected screens — rejected: hides the
+  symptom on two screens, every other create screen keeps it.
+- Fix only the slowness — still needed separately, but a dropped connection can happen on any
+  slow network; the key makes the resend harmless wherever it happens.
+
+### Consequences
+- Positive: one click = one document, whatever the network does; every write screen benefits.
+- Negative: one small insert + update per write; a table to purge; multipart uploads are
+  outside the plugin.

@@ -6057,3 +6057,34 @@ export const productionOrders = pgTable(
     }),
   ],
 ).enableRLS();
+
+// ─── Idempotency keys (migration 0135) ──────────────────────────────────────
+// Server-only bookkeeping for the idempotency plugin (ADR-172). The web app
+// sends a one-off `Idempotency-Key` on every write; the plugin records
+// (user, key) here BEFORE the handler runs and the response AFTER, so a
+// resent request is answered with the stored result instead of running the
+// handler twice. Rows live for one day (the plugin purges them), are keyed by
+// the authenticated user and are never company-scoped — RLS is enabled with
+// NO policies on purpose: only the API's own connection (which bypasses RLS)
+// may read or write this table.
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    key: text('key').notNull(),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    statusCode: integer('status_code'),
+    responseBody: jsonb('response_body'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('idempotency_keys_user_key_uniq').on(t.userId, t.key),
+    index('idempotency_keys_created_idx').on(t.createdAt),
+  ],
+).enableRLS();
+
+export type IdempotencyKeyRow = typeof idempotencyKeys.$inferSelect;
+export type NewIdempotencyKeyRow = typeof idempotencyKeys.$inferInsert;

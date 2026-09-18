@@ -52,6 +52,15 @@ export async function apiFetch<T = unknown>(
   const headers = new Headers(init.headers);
   if (session?.access_token) headers.set('authorization', `Bearer ${session.access_token}`);
   if (init.json !== undefined) headers.set('content-type', 'application/json');
+  // ADR-172: every write carries a one-off key. When a slow save drops the
+  // connection and the browser resends the request, the API recognises the
+  // repeat and answers with the first run's result instead of running the
+  // handler again ("IN-DC-00043/R1 already exists" after a 14 s wait, while
+  // the challan had in fact been created).
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && !headers.has('idempotency-key')) {
+    headers.set('idempotency-key', crypto.randomUUID());
+  }
 
   // A dropped connection / DNS / CORS failure rejects fetch with a TypeError —
   // translate it into a friendly ApiError instead of leaking "Failed to fetch".

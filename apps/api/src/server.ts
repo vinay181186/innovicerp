@@ -102,6 +102,7 @@ import { usersRoutes } from './modules/users/routes';
 import { vendorsRoutes } from './modules/vendors/routes';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
+import { idempotencyPlugin } from './plugins/idempotency';
 
 initSentry();
 
@@ -119,6 +120,10 @@ await app.register(cors, {
 await app.register(sensible);
 await app.register(errorHandlerPlugin);
 await app.register(authPlugin);
+// ADR-172: repeat writes (same user + Idempotency-Key) are answered with the
+// first run's stored result instead of running the handler twice. Must sit
+// after authPlugin (it keys on req.user) and before every route.
+await app.register(idempotencyPlugin);
 
 // Liveness probe — used by Railway's healthcheck. ALWAYS returns 200 if
 // the server is responding. Doesn't depend on downstream services so a
