@@ -7,10 +7,11 @@ import {
   type ListJobCardsQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Package } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -23,17 +24,52 @@ import { JcRowWriteActions } from '../components/jc-row-write-actions';
 import { JcStatusBadge } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
-// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
-// JC list-query cap is 200; the count line flags a rare larger set.
+// No pagination on the fetch — mirror the SO/WO list: one fetch, cap 200. The
+// new List View pages CLIENT-SIDE over what was loaded (see PAGE_SIZE); the
+// query/limit are untouched, so nothing extra is pulled from the API.
 const LIST_LIMIT = 200;
+const PAGE_SIZE = 10;
+const VIEW_STORAGE_KEY = 'jc-list-view';
 
 /** One cell of the card's metric strip — big mono value over a tiny uppercase
  *  label, mirroring the SO/WO list (ORDER QTY / COMPLETED / PENDING / OPS). */
-function QtyBox({ label, value, color, bordered }: { label: string; value: number | string; color?: string; bordered?: boolean }): React.JSX.Element {
+function QtyBox({
+  label,
+  value,
+  color,
+  bordered,
+}: {
+  label: string;
+  value: number | string;
+  color?: string;
+  bordered?: boolean;
+}): React.JSX.Element {
   return (
-    <div style={{ padding: '4px 12px', textAlign: 'center', minWidth: 58, borderLeft: bordered ? '1px solid var(--border)' : undefined }}>
-      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>{value}</div>
-      <div className="mono" style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+    <div
+      style={{
+        padding: '4px 12px',
+        textAlign: 'center',
+        minWidth: 58,
+        borderLeft: bordered ? '1px solid var(--border)' : undefined,
+      }}
+    >
+      <div
+        className="mono fw-700"
+        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
+      >
+        {value}
+      </div>
+      <div
+        className="mono"
+        style={{
+          fontSize: 9,
+          color: 'var(--text3)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}
+      >
+        {label}
+      </div>
     </div>
   );
 }
@@ -49,6 +85,21 @@ function accentFor(jc: JobCardListItem, today: string): string {
   if (overdue) return 'var(--red)';
   if (jc.computedStatus === 'closed' || jc.computedStatus === 'complete') return 'var(--green)';
   return 'var(--blue)';
+}
+
+/** A job is "done" when it has reached complete or closed — used by both the KPI
+ *  buckets and the Days Left column so the two never disagree. */
+function isDone(jc: JobCardListItem): boolean {
+  return jc.computedStatus === 'complete' || jc.computedStatus === 'closed';
+}
+
+/** Days from today until the due date (negative = late). null when there is no
+ *  due date or the job is already done, so the column shows "—" instead of a
+ *  meaningless countdown. */
+function daysLeftFor(jc: JobCardListItem, today: string): number | null {
+  if (jc.dueDate == null || isDone(jc)) return null;
+  const ms = Date.parse(jc.dueDate) - Date.parse(today);
+  return Math.round(ms / 86_400_000);
 }
 
 const listSearchSchema = z.object({
@@ -82,6 +133,25 @@ function JobCardsListPage(): React.JSX.Element {
   useEffect(() => {
     setSearchInput(search.search ?? '');
   }, [search.search]);
+
+  // List View (new table) vs Card View (the original SO-style cards). List is the
+  // default; the choice is remembered per browser, wrapped in try/catch so a
+  // locked-down browser (no localStorage) still renders.
+  const [view, setView] = useState<'list' | 'card'>(() => {
+    try {
+      return localStorage.getItem(VIEW_STORAGE_KEY) === 'card' ? 'card' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
+  const changeView = (next: 'list' | 'card'): void => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // ignore — persistence is best-effort
+    }
+  };
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
@@ -129,11 +199,42 @@ function JobCardsListPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const canWrite = effectiveFormPerms(eff, 'jc_create').entry;
 
-  // Column definitions removed — the list renders SO-style cards below.
-
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
   const today = new Date().toISOString().slice(0, 10);
+
+  // KPI tiles — computed from the CURRENTLY LOADED/filtered rows (the API returns
+  // a filtered total, not global per-status counts). Buckets:
+  //   Open        = not started (no ops done) and not done
+  //   In Progress = started (an op done / QC pending / a running session) not done
+  //   Completed   = complete or closed
+  //   Overdue     = past due and not done
+  //   On Hold     = no such state exists in job-card data → always 0 (see report)
+  const kpis = useMemo(() => {
+    let open = 0;
+    let inProgress = 0;
+    let completed = 0;
+    let overdue = 0;
+    for (const jc of rows) {
+      if (isDone(jc)) {
+        completed += 1;
+      } else if (jc.doneOps > 0 || jc.computedStatus === 'qc_pending' || jc.runningCount > 0) {
+        inProgress += 1;
+      } else {
+        open += 1;
+      }
+      if (!isDone(jc) && jc.dueDate != null && jc.dueDate < today) overdue += 1;
+    }
+    return { total: rows.length, open, inProgress, onHold: 0, completed, overdue };
+  }, [rows, today]);
+
+  // Client-side pagination for List View only (Card View keeps its full scroll).
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(search.page, totalPages);
+  const pagedRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const gotoPage = (p: number): void => {
+    void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+  };
 
   const setNav = (
     update: Partial<
@@ -161,11 +262,12 @@ function JobCardsListPage(): React.JSX.Element {
   return (
     <div>
       {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + create buttons AND the filter panel (search / status / machine /
-          operator / dates) stay pinned while the job-card cards scroll underneath,
-          so filters stay reachable like the SO list's search. Background must be
-          opaque var(--bg) or cards show through as they pass under. Not bled
-          edge-to-edge — that would give the app a horizontal scrollbar. */}
+          Title + create buttons, KPI strip AND the filter panel (search / status /
+          machine / operator / dates) stay pinned while the list scrolls
+          underneath, so filters stay reachable like the SO list's search.
+          Background must be opaque var(--bg) or rows show through as they pass
+          under. Not bled edge-to-edge — that would give the app a horizontal
+          scrollbar. */}
       <div
         style={{
           position: 'sticky',
@@ -177,128 +279,187 @@ function JobCardsListPage(): React.JSX.Element {
           borderBottom: '1px solid var(--border)',
         }}
       >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Job Cards
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: 12,
+            gap: 8,
+          }}
+        >
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 2 }}>
+              Job Cards
+            </div>
+            <div className="text3" style={{ fontSize: 12 }}>
+              Plan, track and manage manufacturing jobs
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {canWrite ? (
+              <>
+                <Link to="/planning" className="btn btn-primary">
+                  + Plan &amp; Create Job Card
+                </Link>
+                <Link
+                  to="/job-cards/new"
+                  className="btn btn-ghost"
+                  title="Job Work Sales Orders (JWSO) only. Sales Order items are created via Planning."
+                >
+                  + New JWSO Job Card
+                </Link>
+              </>
+            ) : null}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canWrite ? (
-            <>
-              <Link to="/planning" className="btn btn-primary">
-                + Plan &amp; Create Job Card
-              </Link>
-              <Link
-                to="/job-cards/new"
-                className="btn btn-ghost"
-                title="Job Work Sales Orders (JWSO) only. Sales Order items are created via Planning."
-              >
-                + New JWSO Job Card
-              </Link>
-            </>
-          ) : null}
-        </div>
-      </div>
 
-      <div className="panel" style={{ marginBottom: 0 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 8,
-              alignItems: 'center',
-              marginBottom: 8,
-            }}
-          >
-            <input
-              className="innovic-input"
-              placeholder="Search this list…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 280, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
-              value={search.status ?? ''}
-              onChange={(e) => {
-                const v = e.target.value as JcComputedStatus | '';
-                setNav({ status: v === '' ? undefined : v });
-              }}
-              style={{ width: 180, fontSize: 12 }}
-            >
-              <option value="">All statuses</option>
-              {JC_COMPUTED_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-              gap: 8,
-            }}
-          >
-            <select
-              className="innovic-select"
-              value={search.machineId ?? ''}
-              onChange={(e) => setNav({ machineId: e.target.value || undefined })}
-              style={{ fontSize: 12 }}
-            >
-              <option value="">All machines</option>
-              {machines.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.code} — {m.name}
-                </option>
-              ))}
-            </select>
-            <select
-              className="innovic-select"
-              value={search.operatorId ?? ''}
-              onChange={(e) => setNav({ operatorId: e.target.value || undefined })}
-              style={{ fontSize: 12 }}
-            >
-              <option value="">All operators</option>
-              {operators.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.code} — {o.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              className="innovic-input"
-              value={search.fromDate ?? ''}
-              onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
-              placeholder="From date"
-              style={{ fontSize: 12 }}
-            />
-            <input
-              type="date"
-              className="innovic-input"
-              value={search.toDate ?? ''}
-              onChange={(e) => setNav({ toDate: e.target.value || undefined })}
-              placeholder="To date"
-              style={{ fontSize: 12 }}
-            />
+        {/* KPI strip — ONE single-row strip (styling skill Rule 3), reused
+          <StatStrip>. Counts reflect the loaded/filtered set, not global. */}
+        <div style={{ marginBottom: 10 }}>
+          <StatStrip
+            items={[
+              { key: 'total', label: 'Total Job Cards', count: kpis.total, color: 'var(--cyan)' },
+              { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber)' },
+              {
+                key: 'in_progress',
+                label: 'In Progress',
+                count: kpis.inProgress,
+                color: 'var(--blue)',
+              },
+              {
+                key: 'on_hold',
+                label: 'On Hold',
+                count: kpis.onHold,
+                color: 'var(--text3)',
+                title: 'No hold state exists in job-card data — see report',
+              },
+              {
+                key: 'completed',
+                label: 'Completed',
+                count: kpis.completed,
+                color: 'var(--green)',
+              },
+              { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red)' },
+            ]}
+          />
+          <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
+            Counts reflect the currently loaded / filtered list, not every job card in the system.
           </div>
         </div>
-      </div>
+
+        <div className="panel" style={{ marginBottom: 0 }}>
+          <div className="panel-body" style={{ padding: '10px 14px' }}>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 8,
+                alignItems: 'center',
+                marginBottom: 8,
+              }}
+            >
+              <input
+                className="innovic-input"
+                placeholder="Search JC no., item code / name, customer, SO no.…"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                style={{ width: 320, fontSize: 12 }}
+              />
+              <select
+                className="innovic-select"
+                value={search.status ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value as JcComputedStatus | '';
+                  setNav({ status: v === '' ? undefined : v });
+                }}
+                style={{ width: 180, fontSize: 12 }}
+              >
+                <option value="">All statuses</option>
+                {JC_COMPUTED_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s.replaceAll('_', ' ')}
+                  </option>
+                ))}
+              </select>
+              <span style={{ flex: 1 }} />
+              {/* List / Card view toggle */}
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => changeView('list')}
+                  aria-pressed={view === 'list'}
+                >
+                  List View
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${view === 'card' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => changeView('card')}
+                  aria-pressed={view === 'card'}
+                >
+                  Card View
+                </button>
+              </div>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                gap: 8,
+              }}
+            >
+              <select
+                className="innovic-select"
+                value={search.machineId ?? ''}
+                onChange={(e) => setNav({ machineId: e.target.value || undefined })}
+                style={{ fontSize: 12 }}
+              >
+                <option value="">All machines</option>
+                {machines.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.code} — {m.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="innovic-select"
+                value={search.operatorId ?? ''}
+                onChange={(e) => setNav({ operatorId: e.target.value || undefined })}
+                style={{ fontSize: 12 }}
+              >
+                <option value="">All operators</option>
+                {operators.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.code} — {o.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                className="innovic-input"
+                value={search.fromDate ?? ''}
+                onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
+                placeholder="From date"
+                style={{ fontSize: 12 }}
+              />
+              <input
+                type="date"
+                className="innovic-input"
+                value={search.toDate ?? ''}
+                onChange={(e) => setNav({ toDate: e.target.value || undefined })}
+                placeholder="To date"
+                style={{ fontSize: 12 }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {isLoading ? (
@@ -316,168 +477,551 @@ function JobCardsListPage(): React.JSX.Element {
         </div>
       ) : rows.length === 0 ? (
         <div className="panel">
-          <div className="empty-state" style={{ padding: 20 }}>No job cards match these filters.</div>
+          <div className="empty-state" style={{ padding: 20 }}>
+            No job cards match these filters.
+          </div>
         </div>
-      ) : (
-        rows.map((jc) => {
-          const done = jc.lastOpCompletedQty;
-          const pending = Math.max(0, jc.orderQty - done);
-          const pct = jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
-          const overdue =
-            jc.dueDate != null &&
-            jc.dueDate < today &&
-            jc.computedStatus !== 'closed' &&
-            jc.computedStatus !== 'complete';
-          const s = jc.sourceLink;
-          const high = jc.priority === 'high';
-          return (
-            <div
-              key={jc.id}
-              className="panel"
-              style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
-            >
-              <div style={{ width: 4, flexShrink: 0, background: accentFor(jc, today) }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {/* Band 1: identity + priority + status + actions */}
-                <div
-                  onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 14px', cursor: 'pointer' }}
-                >
-                  <Link
-                    to="/job-cards/$id"
-                    params={{ id: jc.id }}
-                    className="td-code"
-                    style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
-                    title="View job card status"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {jc.code}
-                  </Link>
-                  <span className="fw-700" style={{ fontSize: 13 }}>{jc.itemName || '—'}</span>
-                  {/* `CODE/REV` — the customer's drawing revision from the SO
-                      line this card was raised against; a JW-sourced or
-                      standalone card has none and keeps the bare code, with no
-                      trailing slash. Same helper as the Job Card view and the
-                      Sales Order screens so the three cannot spell it
-                      differently. nowrap because a short code must never break
-                      across two lines in a list row. */}
-                  <span
-                    className="td-code"
-                    style={{ color: 'var(--purple)', fontSize: 11, whiteSpace: 'nowrap' }}
-                  >
-                    {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-                  </span>
-                  {s
-                    ? (() => {
-                        const to = s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id';
-                        const sid = s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId;
-                        return (
-                          <Link
-                            to={to}
-                            params={{ id: sid }}
-                            className="mono"
-                            style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none' }}
-                            onClick={(e) => e.stopPropagation()}
+      ) : view === 'list' ? (
+        // ── LIST VIEW (new table) ────────────────────────────────────────────
+        <>
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Job Card No.</th>
+                  <th>Part / Description</th>
+                  <th>Customer / SO No.</th>
+                  <th>Qty (Plan)</th>
+                  <th>Progress</th>
+                  <th>Status</th>
+                  <th>Start Date</th>
+                  <th>Due Date</th>
+                  <th>Days Left</th>
+                  <th>Next Operation</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedRows.map((jc, i) => {
+                  const rowNo = (currentPage - 1) * PAGE_SIZE + i + 1;
+                  const done = jc.lastOpCompletedQty;
+                  const pct =
+                    jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
+                  const dLeft = daysLeftFor(jc, today);
+                  const dColor =
+                    dLeft == null
+                      ? 'var(--text3)'
+                      : dLeft < 0
+                        ? 'var(--red)'
+                        : dLeft <= 5
+                          ? 'var(--amber)'
+                          : 'var(--green)';
+                  const s = jc.sourceLink;
+                  return (
+                    <tr
+                      key={jc.id}
+                      onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td className="text3">{rowNo}</td>
+                      <td>
+                        <Link
+                          to="/job-cards/$id"
+                          params={{ id: jc.id }}
+                          className="td-code"
+                          style={{ color: 'var(--blue)', fontWeight: 800 }}
+                          title="View job card status"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {jc.code}
+                        </Link>
+                        {jc.itemRevision ? (
+                          <div className="mono" style={{ fontSize: 9, color: 'var(--text3)' }}>
+                            Rev. {jc.itemRevision}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          {/* GAP 1 — no part-photo field on the list item; neutral placeholder. */}
+                          <div
+                            title="No part image available"
+                            style={{
+                              width: 32,
+                              height: 32,
+                              flexShrink: 0,
+                              borderRadius: 4,
+                              border: '1px solid var(--border)',
+                              background: 'var(--bg4)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'var(--text3)',
+                            }}
                           >
-                            {s.code}
-                            {s.lineNo !== 1 ? (
-                              <span style={{ fontSize: 9, color: 'var(--blue)', marginLeft: 2 }}>/{s.lineNo}</span>
-                            ) : null}
+                            <Package className="h-4 w-4" />
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              className="td-code"
+                              style={{
+                                color: 'var(--purple)',
+                                fontWeight: 700,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+                            </div>
+                            <div
+                              className="text2"
+                              style={{
+                                fontSize: 11,
+                                maxWidth: 200,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title={jc.itemName}
+                            >
+                              {jc.itemName || '—'}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div>
+                          <div
+                            className="text2"
+                            style={{
+                              fontSize: 12,
+                              maxWidth: 180,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={jc.customerName ?? ''}
+                          >
+                            {jc.customerName || '—'}
+                          </div>
+                          {s ? (
+                            <Link
+                              to={s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id'}
+                              params={{ id: s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId }}
+                              className="mono"
+                              style={{ fontSize: 10, color: 'var(--blue)', textDecoration: 'none' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {s.code}
+                              {s.lineNo !== 1 ? (
+                                <span style={{ fontSize: 9 }}>/{s.lineNo}</span>
+                              ) : null}
+                            </Link>
+                          ) : (
+                            <div className="text3" style={{ fontSize: 10 }}>
+                              —
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <span className="mono fw-700">{jc.orderQty}</span>{' '}
+                        <span className="text3" style={{ fontSize: 10 }}>
+                          Nos
+                        </span>
+                      </td>
+                      <td>
+                        <div
+                          style={{
+                            display: 'inline-flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 2,
+                            minWidth: 80,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 80,
+                              height: 4,
+                              background: 'var(--bg5)',
+                              borderRadius: 2,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${pct}%`,
+                                height: '100%',
+                                background: 'var(--green)',
+                                borderRadius: 2,
+                              }}
+                            />
+                          </div>
+                          <div className="mono" style={{ fontSize: 9, color: 'var(--text3)' }}>
+                            {done} / {jc.orderQty} · {pct}%
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <JcStatusBadge status={jc.computedStatus} />
+                      </td>
+                      <td className="mono" style={{ fontSize: 11 }}>
+                        {jc.jcDate}
+                      </td>
+                      <td className="mono" style={{ fontSize: 11 }}>
+                        {jc.dueDate ?? '—'}
+                      </td>
+                      <td>
+                        <span className="mono fw-700" style={{ color: dColor }}>
+                          {dLeft == null ? '—' : dLeft}
+                        </span>
+                      </td>
+                      <td
+                        className="text3"
+                        title="Needs a list-API field (next pending op / machine)"
+                      >
+                        —
+                      </td>
+                      <td>
+                        <div
+                          style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Link
+                            to="/job-cards/$id"
+                            params={{ id: jc.id }}
+                            className="btn btn-ghost btn-sm"
+                            title="View job card status"
+                          >
+                            👁 View
                           </Link>
-                        );
-                      })()
-                    : null}
-                  {/* ADR-170 — the Production Order that built this card, in
-                      the same quiet mono as the SO link beside it. Old cards
-                      carry null and show nothing. */}
-                  {jc.productionOrderId && jc.productionOrderCode ? (
+                          <PrintJcButton jc={jc} />
+                          <ExcelJcButton jc={jc} />
+                          <JcRowWriteActions jc={jc} />
+                          <AssignTaskButton
+                            linkedRef={{
+                              type: 'job_card',
+                              id: jc.id,
+                              display: `JC ${jc.code}`,
+                              navPage: '/job-cards',
+                            }}
+                            suggestedTitle={`Follow up on JC ${jc.code}`}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
+            💡 Click a row to open the job card.
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 8,
+              fontSize: 12,
+              color: 'var(--text3)',
+            }}
+          >
+            <span>
+              {total > LIST_LIMIT
+                ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, rows.length)} of ${rows.length} job card${rows.length === 1 ? '' : 's'}`}
+            </span>
+            {totalPages > 1 ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => gotoPage(currentPage - 1)}
+                >
+                  ‹ Prev
+                </button>
+                <span className="mono">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => gotoPage(currentPage + 1)}
+                >
+                  Next ›
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        // ── CARD VIEW (original SO-style cards, unchanged) ───────────────────
+        <>
+          {rows.map((jc) => {
+            const done = jc.lastOpCompletedQty;
+            const pending = Math.max(0, jc.orderQty - done);
+            const pct = jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
+            const overdue =
+              jc.dueDate != null &&
+              jc.dueDate < today &&
+              jc.computedStatus !== 'closed' &&
+              jc.computedStatus !== 'complete';
+            const s = jc.sourceLink;
+            const high = jc.priority === 'high';
+            return (
+              <div
+                key={jc.id}
+                className="panel"
+                style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
+              >
+                <div style={{ width: 4, flexShrink: 0, background: accentFor(jc, today) }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Band 1: identity + priority + status + actions */}
+                  <div
+                    onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                    }}
+                  >
                     <Link
-                      to="/production-orders/$id"
-                      params={{ id: jc.productionOrderId }}
-                      className="mono"
-                      style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none', whiteSpace: 'nowrap' }}
-                      title="Production Order"
+                      to="/job-cards/$id"
+                      params={{ id: jc.id }}
+                      className="td-code"
+                      style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
+                      title="View job card status"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {jc.productionOrderCode}
+                      {jc.code}
                     </Link>
-                  ) : null}
-                  <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>{high ? 'High' : 'Normal'}</span>
-                  <JcStatusBadge status={jc.computedStatus} />
-                  {jc.runningCount > 0 ? (
-                    <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700 }}>▶{jc.runningCount}</span>
-                  ) : null}
-                  <span style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                    <Link to="/job-cards/$id" params={{ id: jc.id }} className="btn btn-ghost btn-sm" title="View job card status">
-                      👁 View
-                    </Link>
-                    <PrintJcButton jc={jc} />
-                    <ExcelJcButton jc={jc} />
-                    <JcRowWriteActions jc={jc} />
-                    <AssignTaskButton
-                      linkedRef={{ type: 'job_card', id: jc.id, display: `JC ${jc.code}`, navPage: '/job-cards' }}
-                      suggestedTitle={`Follow up on JC ${jc.code}`}
-                    />
-                  </div>
-                </div>
-                {/* Band 2: metric strip + progress + meta line */}
-                <div
-                  onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '0 14px 10px', cursor: 'pointer' }}
-                >
-                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
-                    <QtyBox label="Order Qty" value={jc.orderQty} />
-                    <QtyBox label="Completed" value={done} color="var(--green)" bordered />
-                    <QtyBox label="Pending" value={pending} color={pending > 0 ? 'var(--red)' : 'var(--green)'} bordered />
-                    <QtyBox label="Ops" value={`${jc.doneOps}/${jc.totalOps}`} bordered />
-                  </div>
-                  <div style={{ minWidth: 90 }}>
-                    <div style={{ width: 90, height: 4, background: 'var(--bg5)', borderRadius: 2 }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: 'var(--green)', borderRadius: 2 }} />
-                    </div>
-                    <div className="mono" style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{pct}% complete</div>
-                  </div>
-                  <div
-                    className="mono"
-                    style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
-                  >
-                    <span className="text2">{jc.jcDate}</span>
-                    {jc.clientPoLineNo ? (
-                      <>
-                        <span>·</span>
-                        <span>CPO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{jc.clientPoLineNo}</span></span>
-                      </>
-                    ) : null}
-                    <span>·</span>
-                    <span style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>
-                      {jc.dueDate ? `Due ${jc.dueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                    <span className="fw-700" style={{ fontSize: 13 }}>
+                      {jc.itemName || '—'}
                     </span>
-                    {jc.remarks ? (
-                      <>
-                        <span>·</span>
-                        <span title={jc.remarks} style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {jc.remarks}
-                        </span>
-                      </>
+                    {/* `CODE/REV` — the customer's drawing revision from the SO
+                        line this card was raised against; a JW-sourced or
+                        standalone card has none and keeps the bare code, with no
+                        trailing slash. Same helper as the Job Card view and the
+                        Sales Order screens so the three cannot spell it
+                        differently. nowrap because a short code must never break
+                        across two lines in a list row. */}
+                    <span
+                      className="td-code"
+                      style={{ color: 'var(--purple)', fontSize: 11, whiteSpace: 'nowrap' }}
+                    >
+                      {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+                    </span>
+                    {s
+                      ? (() => {
+                          const to = s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id';
+                          const sid = s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId;
+                          return (
+                            <Link
+                              to={to}
+                              params={{ id: sid }}
+                              className="mono"
+                              style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {s.code}
+                              {s.lineNo !== 1 ? (
+                                <span style={{ fontSize: 9, color: 'var(--blue)', marginLeft: 2 }}>
+                                  /{s.lineNo}
+                                </span>
+                              ) : null}
+                            </Link>
+                          );
+                        })()
+                      : null}
+                    {/* ADR-170 — the Production Order that built this card, in
+                        the same quiet mono as the SO link beside it. Old cards
+                        carry null and show nothing. */}
+                    {jc.productionOrderId && jc.productionOrderCode ? (
+                      <Link
+                        to="/production-orders/$id"
+                        params={{ id: jc.productionOrderId }}
+                        className="mono"
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--blue)',
+                          textDecoration: 'none',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title="Production Order"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {jc.productionOrderCode}
+                      </Link>
                     ) : null}
+                    <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>
+                      {high ? 'High' : 'Normal'}
+                    </span>
+                    <JcStatusBadge status={jc.computedStatus} />
+                    {jc.runningCount > 0 ? (
+                      <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700 }}>
+                        ▶{jc.runningCount}
+                      </span>
+                    ) : null}
+                    <span style={{ flex: 1 }} />
+                    <div
+                      style={{ display: 'flex', gap: 4, alignItems: 'center' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link
+                        to="/job-cards/$id"
+                        params={{ id: jc.id }}
+                        className="btn btn-ghost btn-sm"
+                        title="View job card status"
+                      >
+                        👁 View
+                      </Link>
+                      <PrintJcButton jc={jc} />
+                      <ExcelJcButton jc={jc} />
+                      <JcRowWriteActions jc={jc} />
+                      <AssignTaskButton
+                        linkedRef={{
+                          type: 'job_card',
+                          id: jc.id,
+                          display: `JC ${jc.code}`,
+                          navPage: '/job-cards',
+                        }}
+                        suggestedTitle={`Follow up on JC ${jc.code}`}
+                      />
+                    </div>
+                  </div>
+                  {/* Band 2: metric strip + progress + meta line */}
+                  <div
+                    onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                      padding: '0 14px 10px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                      }}
+                    >
+                      <QtyBox label="Order Qty" value={jc.orderQty} />
+                      <QtyBox label="Completed" value={done} color="var(--green)" bordered />
+                      <QtyBox
+                        label="Pending"
+                        value={pending}
+                        color={pending > 0 ? 'var(--red)' : 'var(--green)'}
+                        bordered
+                      />
+                      <QtyBox label="Ops" value={`${jc.doneOps}/${jc.totalOps}`} bordered />
+                    </div>
+                    <div style={{ minWidth: 90 }}>
+                      <div
+                        style={{ width: 90, height: 4, background: 'var(--bg5)', borderRadius: 2 }}
+                      >
+                        <div
+                          style={{
+                            width: `${pct}%`,
+                            height: '100%',
+                            background: 'var(--green)',
+                            borderRadius: 2,
+                          }}
+                        />
+                      </div>
+                      <div
+                        className="mono"
+                        style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}
+                      >
+                        {pct}% complete
+                      </div>
+                    </div>
+                    <div
+                      className="mono"
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--text3)',
+                        display: 'flex',
+                        gap: 6,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <span className="text2">{jc.jcDate}</span>
+                      {jc.clientPoLineNo ? (
+                        <>
+                          <span>·</span>
+                          <span>
+                            CPO{' '}
+                            <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                              {jc.clientPoLineNo}
+                            </span>
+                          </span>
+                        </>
+                      ) : null}
+                      <span>·</span>
+                      <span
+                        style={{
+                          color: overdue ? 'var(--red)' : undefined,
+                          fontWeight: overdue ? 700 : undefined,
+                        }}
+                      >
+                        {jc.dueDate ? `Due ${jc.dueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                      </span>
+                      {jc.remarks ? (
+                        <>
+                          <span>·</span>
+                          <span
+                            title={jc.remarks}
+                            style={{
+                              maxWidth: 220,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {jc.remarks}
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          );
-        })
-      )}
+            );
+          })}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        <span>
-          {total === 0
-            ? 'No job cards'
-            : total > LIST_LIMIT
-              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : `Showing all ${total} job card${total === 1 ? '' : 's'}`}
-        </span>
-      </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              marginTop: 8,
+              fontSize: 12,
+              color: 'var(--text3)',
+            }}
+          >
+            <span>
+              {total === 0
+                ? 'No job cards'
+                : total > LIST_LIMIT
+                  ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+                  : `Showing all ${total} job card${total === 1 ? '' : 's'}`}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
