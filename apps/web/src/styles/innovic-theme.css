@@ -606,6 +606,81 @@
 .innovic-table tbody tr:hover td {
   background: var(--bg4);
 }
+/* ── SHEET VARIANT (`.innovic-table.tbl-grid`) ──────────────────────────────
+   The reference the user supplied for the Plans screen (2026-09-19): a ruled
+   sheet rather than the quiet zebra list. Bold blue uppercase column names on
+   a pale band closed top and bottom by a blue rule, vertical gridlines between
+   every cell, cream / white alternating rows, one size up on the body text so
+   the codes read at a glance, and a fixed layout so the whole sheet fits the
+   page with no horizontal scroll. Opt-in per table: everything on
+   `.innovic-table` above still holds where a rule below does not override it. */
+.innovic-table.tbl-grid {
+  table-layout: fixed;
+  border-top: 2px solid var(--blue2);
+  border-bottom: 2px solid var(--blue2);
+}
+.innovic-table.tbl-grid th {
+  background: var(--bg4);
+  color: var(--blue2);
+  font-family: var(--hfont);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 8px 8px;
+  border-right: 1px solid var(--border2);
+  border-bottom: 1px solid var(--blue2);
+  box-shadow: none;
+  text-align: left;
+}
+.innovic-table.tbl-grid th:last-child {
+  border-right: none;
+  text-align: right;
+}
+.innovic-table.tbl-grid td {
+  font-size: 13px;
+  padding: 8px 8px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.innovic-table.tbl-grid td:last-child {
+  border-right: none;
+  text-align: right;
+  white-space: nowrap;
+}
+.innovic-table.tbl-grid td.td-ctr,
+.innovic-table.tbl-grid th.td-ctr {
+  text-align: center;
+}
+/* cream on the odd rows, paper on the even — the reference, not the zebra */
+.innovic-table.tbl-grid tbody tr td {
+  background: var(--bg2);
+}
+.innovic-table.tbl-grid tbody tr:nth-child(odd) td {
+  background: #fffbf2;
+}
+.innovic-table.tbl-grid tbody tr:hover td {
+  background: var(--bg4);
+}
+.innovic-table.tbl-grid .td-code {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--blue);
+}
+.innovic-table.tbl-grid .btn-sm {
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--border3);
+  background: var(--bg2);
+}
+.innovic-table.tbl-grid .btn-sm.btn-primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
 .td-code {
   font-family: var(--mono);
   font-weight: 600;
