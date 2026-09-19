@@ -205,6 +205,9 @@ export async function listPlans(
         productionOrderCode: productionOrders.code,
         productionOrderStatus: productionOrders.status,
         jcCode: jobCards.code,
+        // The card's live status off v_jc_status, so the Plans list can offer
+        // Close only when the card is actually finished.
+        jcStatus: sql<string | null>`jcs.computed_status`,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
       })
       .from(plans)
@@ -217,6 +220,7 @@ export async function listPlans(
       )
       .leftJoin(productionOrders, poJoin)
       .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+      .leftJoin(sql`public.v_jc_status jcs`, sql`jcs.job_card_id = ${jobCards.id}`)
       .where(and(...conditions))
       .orderBy(desc(plans.planDate), asc(plans.code))
       .limit(query.limit)
@@ -264,6 +268,7 @@ export async function listPlans(
           productionOrderCode: r.productionOrderCode ?? null,
           productionOrderStatus: r.productionOrderStatus ?? null,
           jcCode: r.jcCode ?? null,
+          jcStatus: r.jcStatus ?? null,
           hasRouteCard,
         };
       }),
