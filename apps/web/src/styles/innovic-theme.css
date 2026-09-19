@@ -648,7 +648,13 @@
 .innovic-table.tbl-grid td:last-child {
   border-right: none;
   text-align: right;
+}
+/* Two actions stack, one under the other, so the column never has to be wider
+   than its widest button and the sheet never scrolls sideways. */
+.innovic-table.tbl-grid td:last-child .btn-sm {
+  display: inline-block;
   white-space: nowrap;
+  margin: 1px 0;
 }
 .innovic-table.tbl-grid td.td-ctr,
 .innovic-table.tbl-grid th.td-ctr {
