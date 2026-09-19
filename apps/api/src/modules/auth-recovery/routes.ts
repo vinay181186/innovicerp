@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { env } from '../../lib/env';
+import { AuthenticationError } from '../../lib/errors';
 import { forgotPasswordInputSchema } from './schema';
-import type { ForgotPasswordResponse } from './schema';
+import type { ForgotPasswordResponse, PasswordChangedResponse } from './schema';
 import * as service from './service';
 
 const DEV_ORIGIN = 'http://localhost:5173';
@@ -42,5 +43,14 @@ export async function authRecoveryRoutes(app: FastifyInstance): Promise<void> {
     const { email } = forgotPasswordInputSchema.parse(req.body);
     const origin = resolveRedirectOrigin(req.headers.origin);
     return service.requestPasswordReset({ email, origin, ip: clientIp(req) });
+  });
+
+  // AUTHENTICATED — the reset page calls this right after `updateUser`
+  // succeeds (the new session is already in hand). Emails the caller's OWN
+  // address only; there is no body to validate. Always 200: a failed notice
+  // must never make a successful reset look failed — see service.ts.
+  app.post('/auth/password-changed', async (req): Promise<PasswordChangedResponse> => {
+    if (!req.user) throw new AuthenticationError();
+    return service.notifyPasswordChanged(req.user, clientIp(req));
   });
 }

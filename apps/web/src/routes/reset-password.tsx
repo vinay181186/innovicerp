@@ -1,16 +1,23 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createRoute, useNavigate } from '@tanstack/react-router';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { RESET_LINK_VALID_MINUTES, type PasswordChangedResponse } from '@innovic/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { apiFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { rootRoute } from './__root';
 
-// Landing page for the password-reset email link. Two link shapes arrive here:
+// Landing page for the password-reset email link. Three link shapes arrive here:
 //
+//  0. The link our API emails (reset flow v2, 2026-09-19): `?token_hash=…&type=recovery` on
+//     OUR domain. Nothing has been verified yet — we hand the hash to
+//     `auth.verifyOtp({ type: 'recovery' })`, which consumes the one-time token and gives
+//     this browser a session. Expired / already-used hashes fail right there, so the user
+//     gets the "expired, valid for N minutes, works once" message instead of a redirect.
 //  1. The link our API generates (admin generateLink, sent via Resend — or via Supabase's
 //     mailer as the API's fallback; both use the admin client's implicit flow, see
 //     packages/shared/src/schemas/auth-recovery.ts). Supabase verifies the token and
@@ -27,7 +34,13 @@ import { rootRoute } from './__root';
 //
 // If the link is expired/invalid (common when a mail scanner pre-opens the one-time
 // link), Supabase puts error params in the hash OR the query string instead.
-// Once a session exists we let the user set a new password via auth.updateUser.
+// Once a session exists we let the user set a new password via auth.updateUser. After the
+// password is saved we tell the API (confirmation email), sign out EVERY session for the
+// account (OWASP: a reset invalidates all sessions) and send the user to the sign-in page —
+// there is no auto-login.
+const LINK_VALIDITY_NOTE = `Reset links are valid for ${RESET_LINK_VALID_MINUTES} minutes and work once.`;
+const EXPIRED_MESSAGE = `This reset link has expired or was already used. Links are valid for ${RESET_LINK_VALID_MINUTES} minutes and work once. Request a new one from the sign-in page.`;
+
 const schema = z
   .object({
     password: z.string().min(6, 'Password is at least 6 characters'),
@@ -39,7 +52,23 @@ const schema = z
   });
 type Form = z.infer<typeof schema>;
 
-type Status = 'checking' | 'ready' | 'invalid' | 'done';
+type Status = 'checking' | 'ready' | 'invalid';
+
+// The token hash is single-use and React StrictMode (dev) mounts the effect twice, so both
+// runs must share ONE verifyOtp call — a second call would burn the hash and report "expired".
+let pendingVerify: {
+  tokenHash: string;
+  promise: ReturnType<typeof supabase.auth.verifyOtp>;
+} | null = null;
+function verifyRecoveryHash(tokenHash: string) {
+  if (pendingVerify?.tokenHash !== tokenHash) {
+    pendingVerify = {
+      tokenHash,
+      promise: supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' }),
+    };
+  }
+  return pendingVerify.promise;
+}
 
 export const resetPasswordRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -59,13 +88,34 @@ function ResetPasswordPage() {
     const query = new URLSearchParams(window.location.search);
     const param = (key: string) => hash.get(key) ?? query.get(key);
 
+    // (0) Link on our own domain: `?token_hash=…&type=recovery`. Verify it here; the hash is
+    // single-use, so drop it from the address bar the moment it has been consumed.
+    const tokenHash = query.get('token_hash');
+    if (tokenHash && (query.get('type') ?? 'recovery') === 'recovery') {
+      const verify = async () => {
+        const { error: err } = await verifyRecoveryHash(tokenHash);
+        if (cancelled) return;
+        if (err) {
+          setStatus('invalid');
+          setError(/expired|invalid/i.test(err.message) ? EXPIRED_MESSAGE : err.message);
+          return;
+        }
+        window.history.replaceState(null, '', window.location.pathname);
+        setStatus('ready');
+      };
+      void verify();
+      return () => {
+        cancelled = true;
+      };
+    }
+
     // (a) Expired/invalid links arrive with error params — in the hash or the query string,
     // depending on which Supabase path produced them.
     if (param('error') || param('error_code')) {
       setStatus('invalid');
       setError(
         param('error_code') === 'otp_expired'
-          ? 'This reset link has expired or was already used. Request a new one from the sign-in page.'
+          ? EXPIRED_MESSAGE
           : (param('error_description')?.replace(/\+/g, ' ') ??
               'The reset link is invalid or has expired.'),
       );
@@ -156,7 +206,7 @@ function ResetPasswordPage() {
       setTimeout(() => {
         if (cancelled) return;
         sub.subscription.unsubscribe();
-        setStatus((cur) => (cur === 'ready' || cur === 'done' ? cur : 'invalid'));
+        setStatus((cur) => (cur === 'ready' ? cur : 'invalid'));
         setError((e) => e ?? 'The reset link is invalid or has expired. Request a new one.');
       }, 8000);
     };
@@ -183,8 +233,28 @@ function ResetPasswordPage() {
       );
       return;
     }
-    setStatus('done');
-    setTimeout(() => navigate({ to: '/', replace: true }), 1200);
+    // Tell the API so it can email "your password was changed". Best effort: the reset has
+    // already happened, so a mailer problem must never stop the user from signing in.
+    let emailed = false;
+    try {
+      const res = await apiFetch<PasswordChangedResponse>('/auth/password-changed', {
+        method: 'POST',
+        json: {},
+      });
+      emailed = res.emailed;
+    } catch {
+      // ignored on purpose — the API logs it
+    }
+    // A reset invalidates every session for this account, this device included. The user
+    // signs in again with the new password; no auto-login. If the global sign-out fails,
+    // at least end THIS device's session before moving on.
+    const { error: signOutErr } = await supabase.auth.signOut({ scope: 'global' });
+    if (signOutErr) await supabase.auth.signOut({ scope: 'local' });
+    await navigate({
+      to: '/login',
+      search: { reset: emailed ? 'done' : 'done-nomail' },
+      replace: true,
+    });
   };
 
   return (
@@ -194,20 +264,22 @@ function ResetPasswordPage() {
           <div className="space-y-3 text-center">
             <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">Verifying your reset link&hellip;</p>
+            <p className="text-xs text-muted-foreground">{LINK_VALIDITY_NOTE}</p>
           </div>
         ) : status === 'invalid' ? (
           <div className="space-y-3 text-center">
             <h1 className="text-lg font-semibold text-destructive">Reset link problem</h1>
             <p className="text-sm text-muted-foreground">{error}</p>
-            <a className="text-sm underline underline-offset-4" href="/login">
-              Back to sign in
-            </a>
-          </div>
-        ) : status === 'done' ? (
-          <div className="space-y-3 text-center">
-            <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
-            <h1 className="text-xl font-semibold">Password updated</h1>
-            <p className="text-sm text-muted-foreground">Signing you in&hellip;</p>
+            <div className="flex flex-col items-center gap-3 pt-2">
+              <Button asChild className="w-full">
+                <Link to="/login" search={{ mode: 'reset' }}>
+                  Request a new link
+                </Link>
+              </Button>
+              <a className="text-sm underline underline-offset-4" href="/login">
+                Back to sign in
+              </a>
+            </div>
           </div>
         ) : (
           <>
@@ -216,6 +288,7 @@ function ResetPasswordPage() {
               <p className="text-sm text-muted-foreground">
                 Enter a new password for your account.
               </p>
+              <p className="text-xs text-muted-foreground">{LINK_VALIDITY_NOTE}</p>
             </div>
             <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
               <div className="space-y-2">
