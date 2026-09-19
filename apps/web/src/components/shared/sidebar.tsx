@@ -146,12 +146,13 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
+          // In the order the work flows (user, 2026-09-19): a Production
+          // Order is raised first (ADR-170: Plan + Route Card + Target Date →
+          // JC), then the shop floor books against it, then it is closed.
+          { to: '/production-orders/new', label: 'Create Production Order', icon: '🏭', formKey: 'prodorder_create' },
           { to: '/op-entry', label: 'Op Entry', icon: '✚', formKey: 'op_entry' },
           { to: '/jc-ops', label: 'JC Operations', icon: '⨯', formKey: 'jc_create' },
           { to: '/daily-report', label: 'Daily Report', icon: '📊' },
-          // Production Orders (ADR-170): Plan + Route Card + Target Date → JC,
-          // and the close that credits stock. Both under one form key.
-          { to: '/production-orders/new', label: 'Create Production Order', icon: '🏭', formKey: 'prodorder_create' },
           { to: '/production-orders/close', label: 'Close Production Order', icon: '🔒', formKey: 'prodorder_create' },
         ],
       },
