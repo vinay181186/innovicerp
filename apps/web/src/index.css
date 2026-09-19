@@ -15,49 +15,56 @@
  * unchanged <Button> / <Card> / <Badge> / <Input> automatically picks
  * up Innovic colours — no per-page rewrite required.
  *
- * HSL form is required by shadcn's `hsl(var(--name))` plugin.
- * Innovic palette → HSL conversions below (rounded to nearest integer).
+ * HSL form is required by shadcn's `hsl(var(--name))` plugin. The
+ * triplets are LITERALS (not var() references) and must be re-derived by
+ * hand whenever tokens.css changes. Palette → HSL (nearest integer):
  *
- *   bg2  #ffffff → 0 0% 100%
- *   bg3  #f5f7fa → 214 33% 97%
- *   bg4  #e8edf4 → 217 35% 93%
- *   border  #d1d9e6 → 218 27% 86%
- *   border2 #c5cfe0 → 219 28% 82%
- *   text  #1a2235 → 222 36% 16%
- *   text2 #4a5a72 → 217 22% 37%
- *   text3 #7a8fa8 → 213 19% 57%
- *   cyan  #0088bb → 197 100% 37%
- *   cyan2 #006694 → 198 100% 29%
- *   blue2 #1d4ed8 → 224 76% 48%
- *   red2  #b91c1c → 0 74% 42%
+ *   bg      #f5f7fa → 216 33% 97%
+ *   bg2     #ffffff → 0 0% 100%
+ *   bg3     #f8fafc → 210 40% 98%
+ *   bg4     #f2f4f7 → 216 24% 96%
+ *   border  #d8e1ec → 213 34% 89%
+ *   text    #172b4d → 218 54% 20%
+ *   text2   #667085 → 221 13% 46%
+ *   text3   #7b8aa0 → 216 16% 55%
+ *   blue    #155eef → 220 87% 51%
+ *   red2    #b42318 → 4 76% 40%
+ *
+ * NOT remapped here, on purpose: --border and --radius. tokens.css owns
+ * both, and Tailwind hoists this @layer base :root AFTER the imported
+ * tokens, so a copy here WINS and turns every `var(--border)` in the app
+ * into an HSL triplet — an invalid colour, i.e. no border at all (that
+ * was the shipped state until 2026-09). The Tailwind `border` utilities
+ * take their colour from the `*` rule below, which reads the token
+ * directly; `rounded-lg/md/sm` read var(--radius) from tokens.css.
  */
 @layer base {
   :root {
-    --background: 213 33% 95%; /* var(--bg)  #f0f4f8 */
-    --foreground: 222 36% 16%; /* var(--text) */
+    --background: 216 33% 97%; /* var(--bg) */
+    --foreground: 218 54% 20%; /* var(--text) */
     --card: 0 0% 100%; /* var(--bg2)  white */
-    --card-foreground: 222 36% 16%;
+    --card-foreground: 218 54% 20%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 36% 16%;
-    --primary: 224 76% 48%; /* var(--blue2) */
+    --popover-foreground: 218 54% 20%;
+    --primary: 220 87% 51%; /* var(--blue)  Innovic blue */
     --primary-foreground: 0 0% 100%;
-    --secondary: 217 35% 93%; /* var(--bg4)  ghost-button bg */
-    --secondary-foreground: 217 22% 37%; /* var(--text2) */
-    --muted: 214 33% 97%; /* var(--bg3) */
-    --muted-foreground: 213 19% 57%; /* var(--text3) */
-    --accent: 197 100% 37%; /* var(--cyan) */
+    --secondary: 216 24% 96%; /* var(--bg4)  ghost-button bg */
+    --secondary-foreground: 221 13% 46%; /* var(--text2) */
+    --muted: 210 40% 98%; /* var(--bg3) */
+    --muted-foreground: 216 16% 55%; /* var(--text3) */
+    --accent: 220 87% 51%; /* var(--blue) */
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 74% 42%; /* var(--red2) */
+    --destructive: 4 76% 40%; /* var(--red2) — same red as .btn-danger; white text 6.6:1 */
     --destructive-foreground: 0 0% 100%;
-    --border: 218 27% 86%; /* var(--border) */
-    --input: 219 28% 82%; /* var(--border2) — input outlines pop a bit */
-    --ring: 197 100% 37%; /* focus ring = cyan */
-    --radius: 0.5rem; /* 8px, matches var(--radius) */
+    --input: 213 34% 89%; /* var(--border) — one outline for shadcn <Input> and .innovic-input */
+    --ring: 220 87% 51%; /* focus ring = Innovic blue */
   }
   /* Dark mode intentionally NOT remapped — legacy is light-only and the
      .dark class is unused in the app. */
-  * {
-    border-color: hsl(var(--border));
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
   }
   body {
     background: var(--bg);

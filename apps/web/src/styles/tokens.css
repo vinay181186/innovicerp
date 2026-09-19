@@ -1,116 +1,157 @@
 /*
- * Innovic ERP design tokens — extracted verbatim from
- * legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html (the :root block).
+ * Innovic ERP design tokens — the :root block every component / page
+ * consumes. Values follow the approved "Professional Industrial ERP / MES"
+ * theme (Innovic_ERP_Theme_Reference_and_Claude_Prompt.pdf, 2026-09):
+ * white / light-grey surfaces, ONE Innovic-blue emphasis, subtle borders,
+ * compact controls, restrained shadows, no gradients.
  *
- * Per ADR / memory note `feedback_ui_match_legacy_html.md`: chrome must
- * now match legacy 1:1. This file IS the source of truth for colours,
- * spacing, typography, radii — every component / page must consume these
- * variables (or the Tailwind utilities derived from them) and never
- * hard-code a hex.
+ * This file IS the source of truth for colours, spacing, typography and
+ * radii — every component / page must consume these variables (or the
+ * Tailwind utilities derived from them) and never hard-code a hex.
  *
  * Loaded BEFORE Tailwind + shadcn vars so the shadcn remap in index.css
- * can reference these.
+ * can reference these. Never define a name here that shadcn also uses
+ * (--background, --primary, --muted, --input, --ring, ...): Tailwind hoists
+ * index.css's @layer base :root AFTER this file, so the shadcn copy would
+ * win and every `var(--x)` here would resolve to an HSL triplet, which is
+ * an invalid colour. `--border` and `--radius` were exactly that bug until
+ * the remap was dropped from index.css.
  */
 
 :root {
   /* ─── Surfaces ─────────────────────────────────────────────────
-   * bg   = app background (cool off-white)
+   * bg   = page background (very light cool grey)
    * bg2  = card / panel / sidebar / topbar surface (pure white)
-   * bg3  = subtle interior — table-header / form-input / modal-hdr
-   * bg4  = active row hover / muted chip background
-   * bg5  = pressed state / scrollbar thumb
+   * bg3  = soft interior — table-header / modal-hdr / hover wash
+   * bg4  = row hover / muted chip background
+   * bg5  = pressed state / scrollbar thumb / progress track
    */
-  --bg: #f0f4f8;
+  --bg: #f5f7fa;
   --bg2: #ffffff;
-  --bg3: #f5f7fa;
-  --bg4: #e8edf4;
-  --bg5: #dce3ed;
+  --bg3: #f8fafc;
+  --bg4: #f2f4f7;
+  --bg5: #eaecf0;
 
   /* ─── Borders (three depths) ───────────────────────────────────
-   * border  = default panel / card / row separator
-   * border2 = stronger — input / modal / button-ghost outline
+   * border  = default panel / card / row separator / input outline
+   * border2 = stronger — modal / section left bar
    * border3 = strongest — used sparingly (highlighted callouts)
    */
-  --border: #d1d9e6;
-  --border2: #c5cfe0;
-  --border3: #b0bed4;
+  --border: #d8e1ec;
+  --border2: #c8d3e0;
+  --border3: #b3c1d1;
 
   /* ─── Text (three weights) ─────────────────────────────────────
-   * text  = body / primary headings (~slate-900)
-   * text2 = secondary labels (~slate-600)
-   * text3 = muted captions, table-header text (~slate-400)
+   * text  = body / primary headings
+   * text2 = secondary labels, table-header text
+   * text3 = muted captions / placeholders
+   *
+   * text3: the theme sheet's text-muted is #98A2B3, but that is only
+   * 2.4:1 on the page background and it is consumed as real text
+   * (breadcrumbs, stat labels, form help, empty states). Darkened to
+   * #7b8aa0 = 3.3:1 on --bg / 3.5:1 on white, the floor for muted text.
    */
-  --text: #1a2235;
-  --text2: #4a5a72;
-  --text3: #7a8fa8;
+  --text: #172b4d;
+  --text2: #667085;
+  --text3: #7b8aa0;
 
   /* ─── Brand accents (3-tier each: solid / dark / pale-bg) ──────
    * Convention: the "3" suffix is the pale wash used for badge BG
-   * + chip BG + button-secondary background.
+   * + chip BG + active-nav background. The solid value is for FILLS
+   * only (dots, bars, borders, stat-card accents); any TEXT in that
+   * hue uses the "2" dark variant, which is what clears 4.5:1 on a
+   * white or pale-wash background. The solid ones do not.
+   *
+   * ONE interactive accent: --cyan (sidebar active, focus ring, th
+   * hover, StatStrip underline) and --blue (buttons, page tabs, links)
+   * are the same Innovic blue on purpose. The old teal "cyan" left the
+   * app with two competing emphasis colours.
    */
-  --cyan: #0088bb;
-  --cyan2: #006694;
-  --cyan3: #dff0f7;
-  --amber: #c47a00;
-  --amber2: #a06200;
-  --amber3: #fff4d6;
-  --green: #16a34a;
-  --green2: #15803d;
-  --green3: #dcfce7;
-  --red: #dc2626;
-  --red2: #b91c1c;
-  --red3: #fee2e2;
-  --blue: #2563eb;
-  --blue2: #1d4ed8;
-  --blue3: #dbeafe;
-  --orange: #ea6c00;
-  --orange2: #c25a00;
-  --purple: #7c3aed;
+  --cyan: #155eef;
+  --cyan2: #123b73;
+  --cyan3: #eff6ff;
+  --amber: #f79009;
+  --amber2: #b54708;
+  --amber3: #fffaeb;
+  --green: #12b76a;
+  --green2: #027a48;
+  --green3: #ecfdf3;
+  --red: #f04438;
+  --red2: #b42318;
+  --red3: #fef3f2;
+  /* "-hover" = one step darker than the "2" dark variant. Solid
+     success / danger buttons sit on the "2" value (white text passes
+     4.5:1) and hover DARKENS like .btn-primary does — never lightens
+     to the raw signal colour, which drops white text below 3:1. */
+  --green2-hover: #05603a;
+  --red2-hover: #912018;
+  --blue: #155eef;
+  --blue2: #123b73;
+  --blue3: #eff6ff;
+  --orange: #e04f16;
+  --orange2: #b93815;
+  --orange3: #fff6ed;
+  --purple: #7a5af8;
+  --purple2: #5925dc;
+  --purple3: #f4f3ff;
+  --teal: #0e9384;
+  --teal2: #107569;
+  --teal3: #f0fdf9;
 
   /* ─── Department identity tints ────────────────────────────────
    * Muted, used for sidebar-section borders + dashboard accents.
-   * Each has -bg pair for the subtle wash.
+   * Each has -bg pair for the subtle wash. Production is a distinct
+   * teal so it no longer equals the primary blue.
    */
-  --dept-planning: #6d4ab8;
-  --dept-planning-bg: #ede9f7;
-  --dept-sales: #128a3e;
-  --dept-sales-bg: #dcf5e4;
-  --dept-store: #a96300;
-  --dept-store-bg: #fbeeda;
-  --dept-design: #6d4ab8;
-  --dept-design-bg: #ede9f7;
-  --dept-production: #006f8f;
-  --dept-production-bg: #dff0f7;
-  --dept-qc: #b83030;
-  --dept-qc-bg: #fbe0e0;
-  --dept-purchase: #1e4db3;
-  --dept-purchase-bg: #e0e8f7;
+  --dept-planning: #7a5af8;
+  --dept-planning-bg: #f4f3ff;
+  --dept-sales: #027a48;
+  --dept-sales-bg: #ecfdf3;
+  --dept-store: #b54708;
+  --dept-store-bg: #fffaeb;
+  --dept-design: #7a5af8;
+  --dept-design-bg: #f4f3ff;
+  --dept-production: #0e7490;
+  --dept-production-bg: #e0f2fe;
+  --dept-qc: #b42318;
+  --dept-qc-bg: #fef3f2;
+  --dept-purchase: #123b73;
+  --dept-purchase-bg: #eff6ff;
   --dept-finance: #0b776e;
-  --dept-finance-bg: #d4ede9;
-  --dept-tasks: #6d4ab8;
-  --dept-tasks-bg: #ede9f7;
-  --dept-system: #4b5563;
-  --dept-system-bg: #e5e7eb;
+  --dept-finance-bg: #e6f6f4;
+  --dept-tasks: #7a5af8;
+  --dept-tasks-bg: #f4f3ff;
+  --dept-system: #667085;
+  --dept-system-bg: #f2f4f7;
 
   /* ─── Signal colours — reserved for actionable meaning ─────────
    * Each has -bg (wash) + -bd (border) so the badge/banner trio
    * is consistent.
    */
-  --sig-critical: #dc2626;
-  --sig-critical-bg: #fee2e2;
-  --sig-critical-bd: #fecaca;
-  --sig-warn: #c47a00;
-  --sig-warn-bg: #fff4d6;
-  --sig-warn-bd: #fde68a;
-  --sig-ok: #16a34a;
-  --sig-ok-bg: #dcfce7;
-  --sig-ok-bd: #bbf7d0;
-  --sig-info: #2563eb;
-  --sig-info-bg: #dbeafe;
-  --sig-info-bd: #bfdbfe;
-  --sig-neutral: #64748b;
-  --sig-neutral-bg: #f1f5f9;
-  --sig-neutral-bd: #e2e8f0;
+  --sig-critical: #f04438;
+  --sig-critical-bg: #fef3f2;
+  --sig-critical-bd: #fecdca;
+  --sig-warn: #f79009;
+  --sig-warn-bg: #fffaeb;
+  --sig-warn-bd: #fedf89;
+  --sig-ok: #12b76a;
+  --sig-ok-bg: #ecfdf3;
+  --sig-ok-bd: #a6f4c5;
+  --sig-info: #2e90fa;
+  --sig-info-bg: #eff8ff;
+  --sig-info-bd: #b2ddff;
+  --sig-neutral: #667085;
+  --sig-neutral-bg: #f2f4f7;
+  --sig-neutral-bd: #eaecf0;
+
+  /* ─── Effects — the only shadows / washes the app uses ─────────
+   * Restrained by design: panels carry no shadow at all.
+   */
+  --focus-ring: rgba(21, 94, 239, 0.15);
+  --overlay-bg: rgba(23, 43, 77, 0.45);
+  --shadow-modal: 0 8px 24px rgba(23, 43, 77, 0.12);
+  --shadow-toast: 0 4px 12px rgba(23, 43, 77, 0.15);
+  --shadow-drawer: 4px 0 20px rgba(23, 43, 77, 0.15);
 
   /* ─── Typography ──────────────────────────────────────────────
    * hfont = Barlow Condensed (headings, big numbers, panel titles)
@@ -123,26 +164,27 @@
   --mono: 'Source Code Pro', monospace;
 
   /* ─── Radii ────────────────────────────────────────────────────
-   * 8px   for inputs, buttons, small chips
-   * 12px  for panels, cards, modals, machine-cards
+   * 4px   for small controls / badges / chips
+   * 6px   for buttons, inputs, tabs
+   * 8px   for panels, cards, modals, machine-cards
    */
-  --radius: 8px;
-  --radius2: 12px;
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius2: 8px;
 
   /* ─── Layout — sidebar + topbar dimensions (legacy fixed) ──── */
   --sidebar-width: 220px;
   --topbar-height: 54px;
 
   /* ─── Content density ──────────────────────────────────────────
-   * Legacy is information-dense: 14px body, 13px controls, 10–11px
-   * uppercase mono for labels + table headers. We carry that
-   * through here so the app doesn't feel sparse / consumer-app-ey.
+   * Information-dense: 14px body, 13px controls, 11px uppercase mono
+   * for labels + table headers (11px is the floor for any text).
    */
   --fs-body: 14px;
   --fs-control: 13px;
   --fs-label: 11px;
-  --fs-mono: 10px;
+  --fs-mono: 11px;
   --fs-heading: 17px;
   --fs-section: 22px;
-  --fs-stat: 32px;
+  --fs-stat: 28px;
 }
