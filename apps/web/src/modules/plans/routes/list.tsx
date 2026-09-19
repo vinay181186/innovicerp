@@ -321,15 +321,15 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
         <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
           <table className="innovic-table tbl-grid">
             <colgroup>
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '22%' }} />
               <col style={{ width: '12%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '7%' }} />
+              <col style={{ width: '19%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '6%' }} />
               <col style={{ width: '11%' }} />
               <col style={{ width: '11%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '8%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '14%' }} />
             </colgroup>
             <thead>
               <tr>
@@ -474,7 +474,6 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                               to="/production-orders/close"
                               search={{ planId: row.id, planCode: row.code }}
                               className="btn btn-sm"
-                              style={{ marginLeft: 4 }}
                               title="Close this plan's Production Order once its Job Card is complete"
                             >
                               🔒 Close
