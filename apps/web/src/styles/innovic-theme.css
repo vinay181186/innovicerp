@@ -630,11 +630,11 @@
   border-right: 1px solid var(--border2);
   border-bottom: 1px solid var(--blue2);
   box-shadow: none;
-  text-align: left;
+  /* Table-alignment standard: names and values share one centre line. */
+  text-align: center;
 }
 .innovic-table.tbl-grid th:last-child {
   border-right: none;
-  text-align: right;
 }
 .innovic-table.tbl-grid td {
   font-size: 13px;
@@ -645,13 +645,12 @@
      no line at all. --border2 is only ever the hex colour. */
   border-right: 1px solid var(--border2);
   border-bottom: 1px solid var(--border2);
-  text-align: left;
+  text-align: center;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 .innovic-table.tbl-grid td:last-child {
   border-right: none;
-  text-align: right;
 }
 /* Two actions stack, one under the other, so the column never has to be wider
    than its widest button and the sheet never scrolls sideways. */
