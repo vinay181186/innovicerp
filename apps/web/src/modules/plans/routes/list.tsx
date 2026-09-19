@@ -367,8 +367,11 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                       >
                         {row.code}
                       </Link>
-                      <div className="text3" style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap' }}>
-                        {row.planDate} · {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
+                      <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                        {row.planDate}
+                      </div>
+                      <div className="text3" style={{ fontSize: 11 }}>
+                        {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
                       </div>
                     </td>
                     <td>
