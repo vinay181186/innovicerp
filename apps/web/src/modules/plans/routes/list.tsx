@@ -91,7 +91,9 @@ const TYPE_ICON: Record<PlanType, string> = {
   assembly: '🔧',
 };
 
-const LIMIT = 50;
+// One fetch, then scroll — no Prev / Next (user, 2026-09-19). The list-query
+// cap is 500; the count line under the table flags a rarer larger set.
+const LIMIT = 500;
 
 function PlansListPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -471,12 +473,17 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                               ▶ Op Entry
                             </Link>
                           ) : null}
-                          {canProductionOrder ? (
+                          {/* Close is offered only once the Job Card has
+                              actually finished — before that the server
+                              would refuse it, so the button would only be a
+                              way to meet an error. */}
+                          {canProductionOrder &&
+                          (row.jcStatus === 'complete' || row.jcStatus === 'closed') ? (
                             <Link
                               to="/production-orders/close"
                               search={{ planId: row.id, planCode: row.code }}
                               className="btn btn-sm"
-                              title="Close this plan's Production Order once its Job Card is complete"
+                              title="Close this plan's Production Order — its Job Card is complete"
                             >
                               🔒 Close
                             </Link>
