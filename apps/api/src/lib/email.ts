@@ -10,13 +10,55 @@
 //                        sender domain — RUNBOOK has the setup steps).
 //
 // Two senders share one Resend client + one log-only fallback:
-//   sendAlertDigest()        — alert digests (from = ALERTS_FROM_EMAIL)
+//   sendAlertDigest()        — alert digests (from = ALERTS_FROM_EMAIL);
+//                              Resend or log-only, unchanged by v2 below.
 //   sendTransactionalEmail() — generic one-off mail (password reset etc.);
-//                              the caller picks the from-address.
+//                              the caller picks the Resend from-address.
+//
+// auth-recovery v2 (2026-09-19) — SMTP transport via nodemailer. Decision
+// (ADR pending in docs/DECISIONS.md — recorded here so the dependency is
+// justified): Supabase's built-in mailer can only send ITS OWN templates
+// (recovery, magic link, …); it cannot deliver mail the app composes, such
+// as "your password was changed", and without custom SMTP it also throttles
+// to a few mails an hour to org members only. The user's Gmail (App
+// Password) over plain SMTP is the zero-cost transport that can. nodemailer
+// is the de-facto Node SMTP client (no runtime deps, maintained since 2010);
+// alternatives — Resend (needs a verified sending domain, not yet set up on
+// this stack) and Supabase custom SMTP (still only Supabase's templates) —
+// do not cover app-composed mail. Precedence: Resend → SMTP → log-only /
+// Supabase; see lib/mailer-config.ts resolveMailerFrom().
 
+import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import { Resend } from 'resend';
 import { env } from './env';
 import { logger } from './logger';
+import { resolveMailerFrom, smtpConfig } from './mailer-config';
+import type { AppMailer } from './mailer-config';
+
+/** Which mailer this deployment sends app-composed mail through. Depends
+ *  only on env, never on a request. */
+export function resolveMailer(): AppMailer {
+  return resolveMailerFrom(env);
+}
+
+let smtpTransport: Transporter | undefined;
+
+/** Lazily-created nodemailer transport for the SMTP path. `undefined` when
+ *  the SMTP variables are not all set. */
+function getSmtpTransport(): { transport: Transporter; from: string } | undefined {
+  const cfg = smtpConfig(env);
+  if (!cfg) return undefined;
+  if (!smtpTransport) {
+    smtpTransport = nodemailer.createTransport({
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.secure,
+      auth: { user: cfg.user, pass: cfg.pass },
+    });
+  }
+  return { transport: smtpTransport, from: cfg.from };
+}
 
 let resendClient: Resend | undefined;
 let warnedNoKey = false;
@@ -121,7 +163,9 @@ export async function sendAlertDigest(payload: AlertDigestEmail): Promise<Dispat
 }
 
 export interface TransactionalEmail {
-  /** Sender. Caller resolves it (e.g. AUTH_FROM_EMAIL ?? ALERTS_FROM_EMAIL). */
+  /** Sender on the Resend path. Caller resolves it (e.g. AUTH_FROM_EMAIL ??
+   *  ALERTS_FROM_EMAIL). Ignored on the SMTP path, which always sends from
+   *  SMTP_FROM ?? SMTP_USER (Gmail rewrites anything else anyway). */
   from: string | undefined;
   /** Name of the env var(s) `from` came from — for the log-only line only. */
   fromVar: string;
@@ -132,9 +176,13 @@ export interface TransactionalEmail {
   text: string;
 }
 
-/** Generic one-off email (password reset, invite, …). Same client and
- *  log-only fallback as the digest; throws on a Resend error. */
+/** Generic one-off email (password reset, password-changed notice, invite, …).
+ *  Goes through whichever mailer resolveMailer() picks: Resend, else SMTP,
+ *  else the same log-only stub as the digest. Throws on a send error so
+ *  each caller decides its own swallow / retry policy. */
 export async function sendTransactionalEmail(payload: TransactionalEmail): Promise<DispatchResult> {
+  const mailer = resolveMailer();
+  if (mailer === 'smtp') return sendViaSmtp(payload);
   return sendViaResend({
     from: payload.from,
     to: payload.to,
@@ -144,4 +192,26 @@ export async function sendTransactionalEmail(payload: TransactionalEmail): Promi
     kind: 'transactional email',
     fromVar: payload.fromVar,
   });
+}
+
+async function sendViaSmtp(payload: TransactionalEmail): Promise<DispatchResult> {
+  const smtp = getSmtpTransport();
+  if (!smtp) {
+    // Unreachable when resolveMailer() said 'smtp', but keep the same
+    // log-only behaviour rather than throwing on a race with env.
+    const stubId = `stub-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    logger.info(
+      { stubId, to: payload.to, subject: payload.subject, bodyLen: payload.html.length },
+      'transactional email dispatch — log-only (SMTP_HOST / SMTP_USER / SMTP_PASS unset)',
+    );
+    return { messageId: stubId, realSend: false };
+  }
+  const info = await smtp.transport.sendMail({
+    from: smtp.from,
+    to: payload.to,
+    subject: payload.subject,
+    html: payload.html,
+    text: payload.text,
+  });
+  return { messageId: info.messageId ?? 'unknown', realSend: true };
 }

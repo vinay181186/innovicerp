@@ -68,6 +68,32 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
+  // Plain SMTP transport for app-composed mail (auth-recovery v2, 2026-09-19):
+  // e.g. the company Gmail with an App Password. Used when RESEND_API_KEY is
+  // not set. All optional; SMTP_HOST + SMTP_USER + SMTP_PASS together switch
+  // it on. SMTP_FROM defaults to SMTP_USER; SMTP_PORT defaults to 587
+  // (465 ⇒ implicit TLS). See lib/email.ts resolveMailer().
+  SMTP_HOST: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  SMTP_PORT: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? Number(v) : undefined))
+    .pipe(z.number().int().positive().optional()),
+  SMTP_USER: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  SMTP_PASS: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  SMTP_FROM: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
 });
 
 const parsed = envSchema.safeParse(process.env);

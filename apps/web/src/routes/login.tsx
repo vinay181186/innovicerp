@@ -1,10 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { Loader2, Mail } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle2, Loader2, Mail } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import type { ForgotPasswordResponse } from '@innovic/shared';
+import { RESET_LINK_VALID_MINUTES, type ForgotPasswordResponse } from '@innovic/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ApiError, apiFetch } from '@/lib/api';
@@ -25,17 +25,37 @@ type PasswordForm = z.infer<typeof passwordSchema>;
 
 type Mode = 'password' | 'reset';
 
+// `?reset=done` / `done-nomail` — the reset page lands here after a successful password change
+// (it signs every session out first, so the user must sign in again); `done-nomail` means the
+// API could not send the confirmation email, so the panel does not claim one. `?mode=reset` — open straight
+// on the "send me a reset link" form (the "Request a new link" button on an expired link).
+const loginSearchSchema = z.object({
+  reset: z.enum(['done', 'done-nomail']).optional().catch(undefined),
+  mode: z.enum(['reset']).optional().catch(undefined),
+});
+
 export const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  validateSearch: loginSearchSchema,
   component: LoginPage,
 });
 
 function LoginPage() {
-  const [mode, setMode] = useState<Mode>('password');
+  const search = loginRoute.useSearch();
+  const [mode, setMode] = useState<Mode>(search.mode === 'reset' ? 'reset' : 'password');
+  // Captured once at mount so the panel survives the URL clean-up below.
+  const [resetDone] = useState(search.reset);
   const [sent, setSent] = useState<{ email: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Drop `?reset=done` from the address bar once shown, so a refresh does not repeat it.
+  useEffect(() => {
+    if (search.reset) {
+      void navigate({ to: '/login', search: {}, replace: true });
+    }
+  }, [search.reset, navigate]);
 
   if (sent) {
     return (
@@ -51,8 +71,12 @@ function LoginPage() {
             its way. Check your inbox (and spam), then click it to choose a new password.
           </p>
           <p className="text-xs text-muted-foreground">
-            If it doesn&rsquo;t arrive, check spam — and note some mail scanners can expire one-time
-            links before you click. Ask an admin to set your password directly if it keeps failing.
+            The link is valid for {RESET_LINK_VALID_MINUTES} minutes and works once. Check Spam if
+            you don&rsquo;t see it.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Some mail scanners can expire one-time links before you click. Ask an admin to set your
+            password directly if it keeps failing.
           </p>
           <Button variant="ghost" size="sm" onClick={() => setSent(null)}>
             Use a different email
@@ -76,6 +100,24 @@ function LoginPage() {
           </h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
+
+        {resetDone && mode === 'password' ? (
+          <div
+            role="status"
+            className="flex items-start gap-3 rounded-md border p-3 text-sm"
+            style={{
+              borderColor: 'var(--green)',
+              background: 'var(--green3)',
+              color: 'var(--green2)',
+            }}
+          >
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              Password changed. Sign in with your new password.
+              {resetDone === 'done' ? ' A confirmation email has been sent to you.' : null}
+            </p>
+          </div>
+        ) : null}
 
         {mode === 'reset' ? (
           <ResetRequestForm

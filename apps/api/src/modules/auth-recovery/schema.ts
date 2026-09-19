@@ -1,6 +1,11 @@
-export { forgotPasswordInputSchema, forgotPasswordResponseSchema } from '@innovic/shared';
+export {
+  forgotPasswordInputSchema,
+  forgotPasswordResponseSchema,
+  passwordChangedResponseSchema,
+} from '@innovic/shared';
 export type {
   ForgotPasswordInput,
   ForgotPasswordMailer,
   ForgotPasswordResponse,
+  PasswordChangedResponse,
 } from '@innovic/shared';
