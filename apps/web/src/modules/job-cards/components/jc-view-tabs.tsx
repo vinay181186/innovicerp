@@ -24,6 +24,7 @@ import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { drawingViewUrl } from '@/lib/drawing-url';
+import { fmtJcDate } from '../lib/fmt-jc-date';
 import type { JcDrawingRef } from './jc-view-summary';
 
 // ─── Completion-log feed (History tab) ──────────────────────────────────────
@@ -203,7 +204,7 @@ function HistoryFeed({
                   marginBottom: 6,
                 }}
               >
-                📅 {day.date}
+                📅 {fmtJcDate(day.date)}
               </div>
               {day.events.map((e) => (
                 <div
@@ -427,9 +428,9 @@ function DocumentsTab({
           icon="📐"
           iconBg="var(--green3)"
           title="Drawing"
-          sub={`${drawing.code}${drawing.rev ? ` (Rev. ${drawing.rev})` : ''}`}
+          sub={drawing.label}
           onClick={onOpenDrawing}
-          hint={`Open this drawing — ${drawing.label}`}
+          hint={`📄 ${drawing.fileName} — open it to view`}
         />
       ) : null}
       {qcDocs.map((d) => (
@@ -440,7 +441,7 @@ function DocumentsTab({
           title={d.docType}
           sub={d.fileName || '—'}
           onClick={d.storagePath ? () => openQcDoc(d.storagePath) : undefined}
-          hint={`${d.fileName || 'No file'}${d.uploadDate ? ` · added ${d.uploadDate}` : ''}`}
+          hint={`${d.fileName || 'No file'}${d.uploadDate ? ` · added ${fmtJcDate(d.uploadDate)}` : ''}`}
         />
       ))}
       {qcOps.length > 0 ? (

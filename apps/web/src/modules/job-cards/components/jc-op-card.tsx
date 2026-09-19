@@ -308,7 +308,10 @@ export function JcOpCard({
   });
 
   const recent = logs.slice(0, 3);
-  const rail = opAccentColor(st.cls);
+  // The rail follows the badge colour, except that an op the batch has not
+  // reached yet ("Waiting", a red badge) gets a neutral grey rail — nothing is
+  // wrong with that op, it is simply not its turn.
+  const rail = op.computedStatus === 'waiting' ? 'var(--border3)' : opAccentColor(st.cls);
   const cardStyle: React.CSSProperties = {
     display: 'flex',
     background: 'var(--bg2)',
@@ -630,6 +633,16 @@ export function JcOpCard({
                         → {actual.label}
                       </span>
                     ) : null}
+                    {/* ADR-126 — when 2+ machines made the DONE qty, each
+                        machine's share is printed, not only tooltipped. */}
+                    {actual.split.map((m) => (
+                      <div
+                        key={m.machineCode}
+                        style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}
+                      >
+                        {m.machineCode}: <b>{m.qty}</b> pcs
+                      </div>
+                    ))}
                   </InfoCell>
                   <InfoCell label="Operator">{lastLog?.operatorName ?? '—'}</InfoCell>
                   <InfoCell label="Program No.">

@@ -94,13 +94,13 @@ export function currentOp(sortedOps: JcOpEnriched[]): JcOpEnriched | undefined {
 /** Which drawing the page shows (resolved in jc-status-view.tsx — SO line, JW
  *  line, this card's own upload, or the item master, first that exists). */
 export interface JcDrawingRef {
-  /** The document the drawing belongs to: the SO / JW code, this JC's code, or
-   *  the item code. */
-  code: string;
-  /** The revision printed on it, when the source line carries one. */
-  rev: string | null;
-  /** The old chip's wording ("Sales order drawing · Rev B") — kept as a tooltip. */
+  /** Which drawing this is and its revision ("Sales order drawing · Rev B",
+   *  "Item master · IN-IT-0007"). The card carries no drawing NUMBER, so the
+   *  page never labels an SO / item code as one. */
   label: string;
+  /** The uploaded file's own name (upload stamp stripped) — the only handle a
+   *  PDF / DWG drawing has on the page. */
+  fileName: string;
   /** A thumbnail URL when the file is an image; PDFs / DWGs have none. */
   thumbUrl: string | null;
 }
@@ -124,9 +124,9 @@ export function JcViewSummary({
    *  on SO-sourced and pre-cutover Job Cards — the RM line is then not shown. */
   rmAvailable?: JobCardRmAvailable | null;
   drawing: JcDrawingRef | null;
-  /** Opens the shared drawing preview. The thumbnail (image drawings only) is
-   *  the one control for it up here; the Documents tab's Drawing card is the
-   *  other way in. */
+  /** Opens the shared drawing preview — from the `👁 Open drawing` button on
+   *  the Drawing row, the thumbnail (image drawings only), or the Documents
+   *  tab's Drawing card. */
   onOpenDrawing: () => void;
 }): React.JSX.Element {
   // ── Quantity tiles ──
@@ -143,7 +143,14 @@ export function JcViewSummary({
   // A single-op card gives 0 by construction (first op = last op).
   const first = sortedOps[0];
   const firstDone = first ? (first.opType === 'qc' ? first.qcAcceptedQty : first.completedQty) : 0;
-  const wip = opsLoaded && first ? Math.max(0, firstDone - completed) : null;
+  // Pieces scrapped mid-route left the first op's "done" count but will never
+  // reach the last op — they are Rejected (NC), not WIP. Subtract them so a
+  // scrapped piece is not counted in both tiles (review 2026-09-18). Open NCs
+  // stay in WIP: their pieces can still be reworked back into the route.
+  const scrapped = ops.reduce((s, o) => s + o.ncBreakup.scrapQty, 0);
+  // "—" only while the rows are still loading; a loaded card with no ops has
+  // nothing in progress, and says 0.
+  const wip = !opsLoaded ? null : first ? Math.max(0, firstDone - completed - scrapped) : 0;
   // Rejected (NC) = pieces rejected and NOT recovered, summed over every op
   // from v_nc_op_breakup (op.ncBreakup): ncOpenQty (rejected − cleared −
   // failed on the NCs still open) + scrapQty (closed as scrap, gone for good).
@@ -266,24 +273,38 @@ export function JcViewSummary({
             flex: '1 1 240px',
           }}
         >
-          {/* Drawing No. — the document the drawing on this page belongs to
-              (the old chip's "Sales order drawing · Rev B", now as a code + Rev
-              badge; the wording stays as the tooltip). */}
-          <Kv label="Drawing No.">
+          {/* Drawing — WHICH drawing the page shows ("Sales order drawing ·
+              Rev B"), the open button, and the file name for a PDF / DWG (an
+              image drawing shows its thumbnail instead). Not "Drawing No.":
+              the card has no drawing-number field, and an SO / item code
+              labelled as one could be read as the print number. */}
+          <Kv label="Drawing">
             {drawing ? (
-              <span
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                title={drawing.label}
-              >
-                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                  {drawing.code}
-                </span>
-                {drawing.rev ? (
-                  <span className="badge b-blue" style={{ fontSize: 9 }}>
-                    Rev {drawing.rev}
+              <>
+                <span
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+                >
+                  <span className="fw-700" style={{ color: 'var(--text)' }}>
+                    {drawing.label}
                   </span>
-                ) : null}
-              </span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={onOpenDrawing}
+                    title={`Open this drawing — ${drawing.fileName}`}
+                  >
+                    👁 Open drawing
+                  </button>
+                </span>
+                {drawing.thumbUrl ? null : (
+                  <div
+                    style={{ fontSize: 11, color: 'var(--text2)', overflowWrap: 'anywhere' }}
+                    title={drawing.fileName}
+                  >
+                    📄 {drawing.fileName} — open it to view
+                  </div>
+                )}
+              </>
             ) : (
               '—'
             )}
@@ -561,8 +582,12 @@ export function JcRouteFlowPanel({
   const opName = (o: JcOpEnriched | undefined): React.ReactNode =>
     o ? (
       <>
-        <b className="mono">OP{opSrNo(o.opSeq)}</b>{' '}
-        {o.opType === 'qc' ? 'QC' : o.opType === 'outsource' ? 'Outsource' : o.operation}
+        <b className="mono">OP{opSrNo(o.opSeq)}</b> -{' '}
+        {o.opType === 'qc'
+          ? 'QC'
+          : o.opType === 'outsource'
+            ? 'OUTSOURCE'
+            : (o.machineCode ?? o.machineCodeText ?? o.operation)}
       </>
     ) : (
       '—'

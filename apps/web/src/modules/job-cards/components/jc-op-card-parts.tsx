@@ -36,8 +36,8 @@ export function QtyTile({
         padding: '5px 8px',
         textAlign: 'center',
         borderRadius: 6,
-        border: `1px solid ${highlight ? 'rgba(245,158,11,0.45)' : 'var(--border)'}`,
-        background: highlight ? 'rgba(245,158,11,0.12)' : 'var(--bg3)',
+        border: `1px solid ${highlight ? 'var(--amber)' : 'var(--border)'}`,
+        background: highlight ? 'var(--amber3)' : 'var(--bg3)',
       }}
     >
       <div className="mono fw-700" style={{ fontSize: 14, color, lineHeight: 1.2 }}>
@@ -48,26 +48,6 @@ export function QtyTile({
       </div>
       {sub ?? null}
     </div>
-  );
-}
-
-/** SETUP chip — `label value`, read-only variant (view card). */
-export function SetupChip({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: React.ReactNode;
-  color: string;
-}): React.JSX.Element {
-  return (
-    <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-      <span style={{ color: 'var(--text3)' }}>{label} </span>
-      <span className="mono" style={{ color }}>
-        {value}
-      </span>
-    </span>
   );
 }
 

@@ -417,7 +417,8 @@ export function JcOpFlowChips({
                 }}
               >
                 <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: opColor }}>
-                  Op{opSrNo(o.opSeq)}
+                  {stateIcons ? 'OP' : 'Op'}
+                  {opSrNo(o.opSeq)}
                   {isOut ? ' 🏭' : ''}
                   {isQc ? ' 🔬' : ''}
                 </div>

@@ -51,11 +51,16 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // `opsLoading` gates the Print button: the ops come from their own query, so
   // a click landing between "job card loaded" and "ops loaded" printed a Job
   // Card whose Operation Routing table said "No operations". It also holds the
-  // derived WIP / Rejected tiles at "—" until the rows are here.
-  const { data: ops = [], isLoading: opsLoading } = useJcOpsEnriched(
+  // derived WIP / Rejected tiles at "—" until the rows are here. Loaded-ness
+  // for those tiles is read off the DATA (`opsData !== undefined`), not the
+  // flag: after a failed query `isLoading` is false with no rows, and a zero
+  // summed over no rows would print as a fact.
+  const { data: opsData, isLoading: opsLoading } = useJcOpsEnriched(
     { jobCardId: id },
     { enabled: Boolean(id) },
   );
+  const ops = useMemo(() => opsData ?? [], [opsData]);
+  const opsLoaded = opsData !== undefined;
   const { data: logs = [] } = useOpLog({ jobCardId: id, limit: 300 }, { enabled: Boolean(id) });
   // Server-computed extras: QC docs, per-op machine name + tool details, and the
   // merged completion feed (op_log ∪ NC ∪ OSP) with a real total (ISSUE-174).
@@ -98,32 +103,24 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         path: model.soLineDrawingFilePath,
         label: `Sales order drawing${revSuffix(model.soLineRevision)}`,
         source: 'so_line' as const,
-        code: jc?.sourceLink?.code ?? jc?.code ?? '',
-        rev: model.soLineRevision ?? null,
       }
     : model?.jwLineDrawingFilePath
       ? {
           path: model.jwLineDrawingFilePath,
           label: `Job work order drawing${revSuffix(model.jwLineRevision)}`,
           source: 'jw_line' as const,
-          code: jc?.sourceLink?.code ?? jc?.code ?? '',
-          rev: model.jwLineRevision ?? null,
         }
       : jc?.drawingFilePath
         ? {
             path: jc.drawingFilePath,
             label: 'Attached to this Job Card',
             source: 'job_card' as const,
-            code: jc.code,
-            rev: null,
           }
         : model?.itemDrawingFilePath
           ? {
               path: model.itemDrawingFilePath,
               label: `Item master · ${jc?.itemCode ?? ''}`.trim(),
               source: 'item' as const,
-              code: jc?.itemCode ?? '',
-              rev: null,
             }
           : null;
 
@@ -143,11 +140,16 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
     enabled: wantThumb,
     staleTime: 60_000,
   });
+  // The stored path is `<upload-stamp>-<original name>`; the stamp is stripped
+  // so the page names the file the way the user uploaded it.
   const drawingRef: JcDrawingRef | null = drawing
     ? {
-        code: drawing.code,
-        rev: drawing.rev,
         label: drawing.label,
+        fileName:
+          drawing.path
+            .split('/')
+            .pop()
+            ?.replace(/^\d{10,}-/, '') ?? 'drawing',
         thumbUrl: wantThumb ? (drawingUrl ?? null) : null,
       }
     : null;
@@ -295,7 +297,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       <JcViewSummary
         jc={jc}
         ops={ops}
-        opsLoaded={!opsLoading}
+        opsLoaded={opsLoaded}
         sortedOps={sortedOps}
         rmAvailable={extras?.rmAvailable ?? null}
         drawing={drawingRef}

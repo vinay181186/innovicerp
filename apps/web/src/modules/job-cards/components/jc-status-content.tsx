@@ -55,7 +55,10 @@ export function JcStatusContent({
   mode?: 'view' | 'edit';
 }): React.JSX.Element {
   if (mode === 'edit') return <JcStatusEditContent id={id} />;
-  return <JcStatusViewContent id={id} />;
+  // Keyed on the id: the router reuses this component when only $id changes
+  // (parent-JC link on a rework child, Related Records rows), and the view's
+  // per-op open/collapsed set, Show All and tab choice must not carry over.
+  return <JcStatusViewContent key={id} id={id} />;
 }
 
 // ─── EDIT MODE ──────────────────────────────────────────────────────────────
