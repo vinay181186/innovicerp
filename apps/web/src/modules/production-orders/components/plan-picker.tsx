@@ -19,6 +19,9 @@ export interface PlanPickerProps {
   disabled?: boolean | undefined;
   labelText?: string | undefined;
   error?: string | undefined;
+  /** What to print for `value` when the page set it (a deep link) rather than
+   *  the dropdown, and the row is not on the current search page. */
+  fallbackLabel?: string | undefined;
 }
 
 export function PlanPicker({
@@ -29,6 +32,7 @@ export function PlanPicker({
   disabled = false,
   labelText = 'Plan',
   error,
+  fallbackLabel,
 }: PlanPickerProps): React.JSX.Element {
   const [search, setSearch] = useState('');
   const { data, isFetching } = usePlanPickerList(
@@ -84,7 +88,7 @@ export function PlanPicker({
             ? '🔍 Type plan no, item code or SO no…'
             : '🔍 Type plan no, production order no, item or SO no…'
         }
-        valueLabel={selected ? planPickerLabel(selected) : label || undefined}
+        valueLabel={selected ? planPickerLabel(selected) : label || fallbackLabel || undefined}
         emptyText={
           mode === 'create'
             ? 'No plan is waiting for a Production Order'

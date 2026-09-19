@@ -158,9 +158,12 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Master',
         items: [
+          // In the order the work flows: a plan becomes a Production Order,
+          // which becomes a Job Card. Plans also stays under Planning under its
+          // own name; here it is worded for what Production does with the
+          // list — pick the plans that are ready to run.
+          { to: '/plans', label: 'Plans Available for Production', icon: '📋', formKey: 'plan_create' },
           { to: '/production-orders', label: 'Production Orders', icon: '🏭', formKey: 'prodorder_create' },
-          // Plans also stays under Planning; Production reads the same list.
-          { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
           { to: '/job-cards', label: 'Job Cards', icon: '▭', formKey: 'jc_create' },
           { to: '/machines', label: 'Machine Master', icon: '⚙', formKey: 'machine_create' },
           { to: '/operators', label: 'Operator Master', icon: '👷', formKey: 'operator_create' },

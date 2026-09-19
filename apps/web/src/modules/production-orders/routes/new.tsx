@@ -14,21 +14,38 @@ import type { CreateProductionOrderInput, PlanType, RouteCardListItem } from '@i
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { type PlanPickerItem, useCreateProductionOrder, useNextProductionOrderCode } from '../api';
+import {
+  type PlanPickerItem,
+  planPickerLabel,
+  useCreateProductionOrder,
+  useNextProductionOrderCode,
+  usePreselectedPlan,
+} from '../api';
 import { PlanPicker } from '../components/plan-picker';
+
+// ?planId=&planCode= open the form with that plan already picked — the Plans
+// list's "+ Create Production Order" button arrives this way. Both optional.
+const newSearchSchema = z.object({
+  planId: z.string().uuid().optional(),
+  planCode: z.string().optional(),
+});
 
 export const productionOrderNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'production-orders/new',
+  validateSearch: (search) => newSearchSchema.parse(search),
   component: ProductionOrderNewPage,
 });
 
 function ProductionOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
+  const search = productionOrderNewRoute.useSearch();
+  const preselected = usePreselectedPlan(search.planId, search.planCode, 'create');
   const create = useCreateProductionOrder();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/production-orders' }), [navigate]);
@@ -72,6 +89,12 @@ function ProductionOrderNewPage(): React.JSX.Element {
     setTargetDate(p?.plannedEndDate ?? '');
     setSubmitError(null);
   };
+  // The deep-linked plan lands once its row arrives; only while nothing has
+  // been picked yet, so a plan the user then changes by hand is left alone.
+  useEffect(() => {
+    if (preselected && !plan) onPickPlan(preselected);
+    // onPickPlan is a plain setter bundle; the row is the trigger.
+  }, [preselected]);
 
   const routeCard = rcItems.find((rc) => rc.id === routeCardId) ?? null;
   // The plan type lives on the ROUTE CARD. A direct-purchase item is bought,
@@ -170,6 +193,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                   mode="create"
                   value={plan?.id ?? null}
                   onChange={onPickPlan}
+                  fallbackLabel={plan ? planPickerLabel(plan) : undefined}
                 />
               </div>
 

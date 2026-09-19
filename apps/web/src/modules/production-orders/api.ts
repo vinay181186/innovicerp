@@ -163,6 +163,27 @@ export function usePlanPickerList(query: PlanPickerQuery, enabled = true) {
 }
 
 /** "PLN-0007 — ITEM-CODE — item name — qty 50 — SO IN-SO-00024/2" */
+/** The plan a deep link named (?planId=&planCode=), in picker-row shape, or
+ *  null while loading / when it is not (or no longer) in the wanted state.
+ *  Searches by CODE so the answer is one page, then matches the id — the
+ *  Plans list's "+ Create / Close Production Order" buttons arrive this way. */
+export function usePreselectedPlan(
+  planId: string | undefined,
+  planCode: string | undefined,
+  mode: 'create' | 'close',
+): PlanPickerItem | null {
+  const q = usePlanPickerList(
+    {
+      ...(mode === 'create' ? { poPending: true } : { derivedStatus: 'in_production' }),
+      ...(planCode ? { search: planCode } : {}),
+      limit: 50,
+      offset: 0,
+    },
+    Boolean(planId),
+  );
+  return planId ? (q.data?.items.find((p) => p.id === planId) ?? null) : null;
+}
+
 export function planPickerLabel(p: PlanPickerItem): string {
   const item = p.itemCode ?? p.itemCodeText ?? '—';
   const name = p.itemName ?? p.itemNameText ?? '';
