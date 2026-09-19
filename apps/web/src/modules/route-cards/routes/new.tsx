@@ -1,5 +1,6 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useState } from 'react';
+import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -13,14 +14,25 @@ import {
   rawMaterialToInput,
 } from '../components/route-card-form';
 
+// ?itemId=&itemCode=&itemName= open the form already on an item — the Plans
+// list's "+ Create Route Card" arrives this way, so the planner does not pick
+// again the item the plan already names. All optional; a bare visit is blank.
+const newSearchSchema = z.object({
+  itemId: z.string().uuid().optional(),
+  itemCode: z.string().optional(),
+  itemName: z.string().optional(),
+});
+
 export const routeCardNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'route-cards/new',
+  validateSearch: (search) => newSearchSchema.parse(search),
   component: RouteCardNewPage,
 });
 
 function RouteCardNewPage(): React.JSX.Element {
   const navigate = useNavigate();
+  const search = routeCardNewRoute.useSearch();
   const create = useCreateRouteCard();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
@@ -64,9 +76,9 @@ function RouteCardNewPage(): React.JSX.Element {
         mode="create"
         initialHeader={{
           code: '',
-          itemId: '',
-          itemCodeText: '',
-          itemName: '',
+          itemId: search.itemId ?? '',
+          itemCodeText: search.itemCode ?? '',
+          itemName: search.itemName ?? '',
           rawMaterialGradeId: null,
           rawMaterialGradeText: null,
           rawMaterialSizeId: null,

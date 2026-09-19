@@ -276,6 +276,12 @@ function PlansListPage(): React.JSX.Element {
 }
 
 function Table({ data, offset }: { data: ListPlansResponse; offset: number }): React.JSX.Element {
+  // The Status column's next-step buttons: each one is the action that moves
+  // the plan out of the state it shows, offered only to someone allowed to
+  // take it.
+  const { data: eff } = useMyAccess();
+  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
+  const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
   const navigate = useNavigate();
   if (data.items.length === 0) {
     return (
@@ -401,8 +407,52 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                         <span className="text3">—</span>
                       )}
                     </td>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span className={`badge ${badge.cls}`}>{badge.label}</span>
+                      {/* The one status that is a to-do rather than a state:
+                          "Route Card Pending" means nothing can move until a
+                          route card exists for this item, so the fix is offered
+                          right here, opened on the plan's own item. Only for
+                          people who may create route cards. */}
+                      {row.derivedStatus === 'route_card_pending' && canCreateRouteCard ? (
+                        <Link
+                          to="/route-cards/new"
+                          search={{
+                            ...(row.itemId ? { itemId: row.itemId } : {}),
+                            ...(row.itemCode ?? row.itemCodeText
+                              ? { itemCode: (row.itemCode ?? row.itemCodeText) as string }
+                              : {}),
+                            ...(row.itemName ?? row.itemNameText
+                              ? { itemName: (row.itemName ?? row.itemNameText) as string }
+                              : {}),
+                          }}
+                          className="btn btn-sm btn-primary"
+                          style={{ marginLeft: 6, fontSize: 11 }}
+                          title="Create the route card for this item, then come back to raise the Production Order"
+                        >
+                          + Create Route Card
+                        </Link>
+                      ) : row.derivedStatus === 'gen_production_order' && canProductionOrder ? (
+                        <Link
+                          to="/production-orders/new"
+                          search={{ planId: row.id, planCode: row.code }}
+                          className="btn btn-sm btn-primary"
+                          style={{ marginLeft: 6, fontSize: 11 }}
+                          title="Raise the Production Order for this plan"
+                        >
+                          + Create Production Order
+                        </Link>
+                      ) : row.derivedStatus === 'in_production' && canProductionOrder ? (
+                        <Link
+                          to="/production-orders/close"
+                          search={{ planId: row.id, planCode: row.code }}
+                          className="btn btn-sm"
+                          style={{ marginLeft: 6, fontSize: 11 }}
+                          title="Close this plan's Production Order once its Job Card is complete"
+                        >
+                          🔒 Close Production Order
+                        </Link>
+                      ) : null}
                     </td>
                   </tr>
                 );

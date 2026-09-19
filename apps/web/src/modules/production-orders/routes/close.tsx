@@ -9,28 +9,41 @@
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Lock } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   type PlanPickerItem,
+  planPickerLabel,
   useCloseProductionOrder,
+  usePreselectedPlan,
   useProductionOrder,
   useProductionOrdersList,
 } from '../api';
 import { PlanPicker } from '../components/plan-picker';
 import { PoStatusBadge } from '../components/po-status-badge';
 
+// ?planId=&planCode= open the page on that plan's order — the Plans list's
+// "+ Close Production Order" button arrives this way. Both optional.
+const closeSearchSchema = z.object({
+  planId: z.string().uuid().optional(),
+  planCode: z.string().optional(),
+});
+
 export const productionOrderCloseRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'production-orders/close',
+  validateSearch: (search) => closeSearchSchema.parse(search),
   component: ProductionOrderClosePage,
 });
 
 function ProductionOrderClosePage(): React.JSX.Element {
   const navigate = useNavigate();
+  const search = productionOrderCloseRoute.useSearch();
+  const preselected = usePreselectedPlan(search.planId, search.planCode, 'close');
   const closeMut = useCloseProductionOrder();
   const [closeError, setCloseError] = useState<string | null>(null);
 
@@ -66,6 +79,13 @@ function ProductionOrderClosePage(): React.JSX.Element {
       setPoLabel('');
     }
   };
+
+  // The deep-linked plan lands once its row arrives, only while nothing has
+  // been picked yet.
+  useEffect(() => {
+    if (preselected && !plan && !poId) onPickPlan(preselected);
+    // onPickPlan is a plain setter bundle; the row is the trigger.
+  }, [preselected]);
 
   const onPickPo = (next: string | null): void => {
     setCloseError(null);
@@ -137,6 +157,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
               mode="close"
               value={plan?.id ?? null}
               onChange={onPickPlan}
+              fallbackLabel={plan ? planPickerLabel(plan) : undefined}
             />
 
             <div className="form-grp">
