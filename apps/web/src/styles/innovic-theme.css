@@ -639,8 +639,12 @@
 .innovic-table.tbl-grid td {
   font-size: 13px;
   padding: 8px 8px;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  /* --border2, not --border: the shadcn token block in index.css redefines
+     `--border` as an HSL triplet ("218 27% 86%"), so `1px solid var(--border)`
+     is invalid at computed time and the browser drops the whole declaration —
+     no line at all. --border2 is only ever the hex colour. */
+  border-right: 1px solid var(--border2);
+  border-bottom: 1px solid var(--border2);
   text-align: left;
   white-space: normal;
   overflow-wrap: anywhere;

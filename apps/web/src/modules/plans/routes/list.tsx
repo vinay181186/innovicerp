@@ -284,20 +284,19 @@ function PlansListPage(): React.JSX.Element {
           </div>
         </div>
       ) : data ? (
-        <Table data={data} offset={off} />
+        <Table data={data} />
       ) : null}
     </div>
   );
 }
 
-function Table({ data, offset }: { data: ListPlansResponse; offset: number }): React.JSX.Element {
+function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
   // The Status column's next-step buttons: each one is the action that moves
   // the plan out of the state it shows, offered only to someone allowed to
   // take it.
   const { data: eff } = useMyAccess();
   const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
   const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
-  const navigate = useNavigate();
   if (data.items.length === 0) {
     return (
       <div className="panel">
@@ -495,46 +494,9 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 10,
-          fontSize: 12,
-        }}
-      >
-        <span className="text3">
-          {offset + 1}–{Math.min(offset + data.items.length, data.total)} of {data.total}
-        </span>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={offset === 0}
-            onClick={() =>
-              void navigate({
-                to: '/plans',
-                search: (prev) => ({ ...prev, offset: Math.max(0, offset - LIMIT) }),
-              })
-            }
-          >
-            Prev
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={offset + data.items.length >= data.total}
-            onClick={() =>
-              void navigate({
-                to: '/plans',
-                search: (prev) => ({ ...prev, offset: offset + LIMIT }),
-              })
-            }
-          >
-            Next
-          </button>
-        </div>
+      <div className="text3" style={{ marginTop: 8, fontSize: 12 }}>
+        {data.items.length} of {data.total} plans
+        {data.total > data.items.length ? ' — narrow the filter to see the rest' : ''}
       </div>
     </>
   );

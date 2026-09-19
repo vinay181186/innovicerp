@@ -192,6 +192,10 @@ export const listPlansResponseSchema = z.object({
       productionOrderStatus: z.string().nullable().default(null),
       /** Code of the JC (plans.jc_id), old or new flow. */
       jcCode: z.string().nullable().default(null),
+      /** The Job Card's live computed status (v_jc_status), so the list can
+       *  offer Close only once the card is complete / closed. Null when the
+       *  plan has no JC yet. */
+      jcStatus: z.string().nullable().default(null),
       /** True when the item has an active route card — the Create Production
        *  Order picker uses it to explain "Route card pending". */
       hasRouteCard: z.boolean().default(false),
