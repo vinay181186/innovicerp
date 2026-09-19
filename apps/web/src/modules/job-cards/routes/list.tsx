@@ -6,6 +6,7 @@ import {
   type JobCardListItem,
   type ListJobCardsQuery,
 } from '@innovic/shared';
+import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Package } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -15,6 +16,7 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { drawingViewUrl } from '@/lib/drawing-url';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -24,12 +26,73 @@ import { JcRowWriteActions } from '../components/jc-row-write-actions';
 import { JcStatusBadge } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
-// No pagination on the fetch — mirror the SO/WO list: one fetch, cap 200. The
-// new List View pages CLIENT-SIDE over what was loaded (see PAGE_SIZE); the
-// query/limit are untouched, so nothing extra is pulled from the API.
+// One fetch, cap 200 (mirrors the SO/WO list). List View paginates CLIENT-SIDE
+// at PAGE_SIZE per page — so only a page's worth of part-image thumbnails load
+// at a time (each thumbnail is a signed-URL fetch; paging keeps that bounded).
 const LIST_LIMIT = 200;
 const PAGE_SIZE = 10;
 const VIEW_STORAGE_KEY = 'jc-list-view';
+
+/** Part-image thumbnail for a List View row. The JC's drawing lives in a private
+ *  bucket, so the image needs a short-lived signed URL minted per drawing. The
+ *  server signs view URLs for 120s (VIEW_EXPIRY_SECONDS), so the cache is dropped
+ *  after 110s (gcTime) — a cached URL is therefore always still valid, never
+ *  expired. Pagination bounds how many mint at once. The Package icon sits BEHIND
+ *  the image, so a missing drawing or a non-image file (e.g. a PDF, whose <img>
+ *  errors out) simply reveals the placeholder — no error state to manage.
+ *  NOTE: minting a view URL writes a `drawing_view` audit row; a no-log
+ *  list-thumbnail endpoint would need a backend change. */
+function PartThumb({ path, jcCode }: { path: string | null; jcCode: string }): React.JSX.Element {
+  const q = useQuery({
+    queryKey: ['jc-list-thumb', path],
+    queryFn: () => drawingViewUrl({ path: path!, source: 'job_card', refCode: jcCode }),
+    enabled: path != null && path !== '',
+    staleTime: 100_000,
+    gcTime: 110_000, // < the server's 120s signed-URL expiry, so no cached URL is ever stale
+    retry: false,
+  });
+  return (
+    <div
+      title={path ? 'Part drawing' : 'No part drawing uploaded'}
+      style={{
+        position: 'relative',
+        width: 40,
+        height: 40,
+        flexShrink: 0,
+        borderRadius: 4,
+        border: '1px solid var(--border)',
+        background: 'var(--bg4)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--text3)',
+        overflow: 'hidden',
+      }}
+    >
+      <Package className="h-4 w-4" />
+      {path && q.data ? (
+        <img
+          src={q.data}
+          alt=""
+          loading="lazy"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            background: 'var(--bg4)',
+          }}
+          onError={(e) => {
+            // Not an image (e.g. a PDF) or a failed load → hide the <img> so the
+            // Package icon behind it shows through.
+            (e.currentTarget as HTMLImageElement).style.display = 'none';
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 /** One cell of the card's metric strip — big mono value over a tiny uppercase
  *  label, mirroring the SO/WO list (ORDER QTY / COMPLETED / PENDING / OPS). */
@@ -203,6 +266,15 @@ function JobCardsListPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   const today = new Date().toISOString().slice(0, 10);
 
+  // Client-side pagination for the List View (Card View keeps its full scroll).
+  // Keeps each page to PAGE_SIZE rows so only a page's worth of thumbnails load.
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(search.page, totalPages);
+  const pagedRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const gotoPage = (p: number): void => {
+    void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
+  };
+
   // KPI tiles — computed from the CURRENTLY LOADED/filtered rows (the API returns
   // a filtered total, not global per-status counts). Buckets:
   //   Open        = not started (no ops done) and not done
@@ -227,14 +299,6 @@ function JobCardsListPage(): React.JSX.Element {
     }
     return { total: rows.length, open, inProgress, onHold: 0, completed, overdue };
   }, [rows, today]);
-
-  // Client-side pagination for List View only (Card View keeps its full scroll).
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const currentPage = Math.min(search.page, totalPages);
-  const pagedRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const gotoPage = (p: number): void => {
-    void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });
-  };
 
   const setNav = (
     update: Partial<
@@ -491,14 +555,13 @@ function JobCardsListPage(): React.JSX.Element {
                   <th>#</th>
                   <th>Job Card No.</th>
                   <th>Part / Description</th>
-                  <th>Customer / SO No.</th>
+                  <th>SO No.</th>
                   <th>Qty (Plan)</th>
                   <th>Progress</th>
                   <th>Status</th>
                   <th>Start Date</th>
                   <th>Due Date</th>
                   <th>Days Left</th>
-                  <th>Next Operation</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -544,24 +607,10 @@ function JobCardsListPage(): React.JSX.Element {
                       </td>
                       <td>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          {/* GAP 1 — no part-photo field on the list item; neutral placeholder. */}
-                          <div
-                            title="No part image available"
-                            style={{
-                              width: 32,
-                              height: 32,
-                              flexShrink: 0,
-                              borderRadius: 4,
-                              border: '1px solid var(--border)',
-                              background: 'var(--bg4)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'var(--text3)',
-                            }}
-                          >
-                            <Package className="h-4 w-4" />
-                          </div>
+                          {/* Part drawing thumbnail (JC's drawing_file_path, inherited from
+                              the SO line). Signed-URL fetch, cached; paging bounds how many
+                              load at once. Placeholder when none / not an image. */}
+                          <PartThumb path={jc.drawingFilePath} jcCode={jc.code} />
                           <div style={{ minWidth: 0 }}>
                             <div
                               className="td-code"
@@ -590,39 +639,22 @@ function JobCardsListPage(): React.JSX.Element {
                         </div>
                       </td>
                       <td>
-                        <div>
-                          <div
-                            className="text2"
-                            style={{
-                              fontSize: 12,
-                              maxWidth: 180,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                            title={jc.customerName ?? ''}
+                        {s ? (
+                          <Link
+                            to={s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id'}
+                            params={{ id: s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId }}
+                            className="mono"
+                            style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none' }}
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            {jc.customerName || '—'}
-                          </div>
-                          {s ? (
-                            <Link
-                              to={s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id'}
-                              params={{ id: s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId }}
-                              className="mono"
-                              style={{ fontSize: 10, color: 'var(--blue)', textDecoration: 'none' }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {s.code}
-                              {s.lineNo !== 1 ? (
-                                <span style={{ fontSize: 9 }}>/{s.lineNo}</span>
-                              ) : null}
-                            </Link>
-                          ) : (
-                            <div className="text3" style={{ fontSize: 10 }}>
-                              —
-                            </div>
-                          )}
-                        </div>
+                            {s.code}
+                            {s.lineNo !== 1 ? (
+                              <span style={{ fontSize: 9 }}>/{s.lineNo}</span>
+                            ) : null}
+                          </Link>
+                        ) : (
+                          <span className="text3">—</span>
+                        )}
                       </td>
                       <td>
                         <span className="mono fw-700">{jc.orderQty}</span>{' '}
@@ -675,12 +707,6 @@ function JobCardsListPage(): React.JSX.Element {
                         <span className="mono fw-700" style={{ color: dColor }}>
                           {dLeft == null ? '—' : dLeft}
                         </span>
-                      </td>
-                      <td
-                        className="text3"
-                        title="Needs a list-API field (next pending op / machine)"
-                      >
-                        —
                       </td>
                       <td>
                         <div
