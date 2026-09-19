@@ -8,7 +8,6 @@
 // complete) and the stored planStatus for old plans, exactly as before.
 
 import type { ListPlansResponse, PlanDerivedStatus, PlanStatus, PlanType } from '@innovic/shared';
-import { PLAN_DERIVED_STATUS_LABEL } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
@@ -62,6 +61,22 @@ const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
 // ADR-170 — derived status of a route-card-driven plan. Same badge classes as
 // the old statuses; amber = blocked (no route card), blue = ready for a
 // Production Order, cyan = PO open, green = PO closed.
+// Status column wording (user, 2026-09-19): where the plan stands, in the
+// planner's own words — "RC" is the route card. The shared labels stay as
+// they are for the other screens that print them.
+const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
+  route_card_pending: 'RC Pending',
+  gen_production_order: 'RC Created',
+  in_production: 'In Production',
+  production_complete: 'Complete',
+};
+const TYPE_LABEL: Record<PlanType, string> = {
+  manufacture: 'Manufacture',
+  direct_purchase: 'Direct Purchase',
+  full_outsource: 'Full Outsource',
+  assembly: 'Assembly',
+};
+
 const DERIVED_BADGE: Record<PlanDerivedStatus, string> = {
   route_card_pending: 'b-amber',
   gen_production_order: 'b-blue',
@@ -298,21 +313,35 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
   return (
     <>
       <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
+        {/* The sheet look (tbl-grid) the user supplied for this screen: bold
+            blue column names, gridlines, cream / white rows, fixed widths that
+            add up to the page so nothing scrolls sideways. Plan # carries its
+            date and type underneath; Ops is gone; Status states where the plan
+            IS and Action holds the one button that moves it on. */}
+        <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+          <table className="innovic-table tbl-grid">
+            <colgroup>
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
+            </colgroup>
             <thead>
               <tr>
-                <th>Plan #</th>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Item</th>
+                <th>PLAN NO.</th>
+                <th>ITEM</th>
                 <th>SO</th>
-                <th>Order Qty</th>
-                <th>Plan Qty</th>
-                <th>Ops</th>
-                <th>Production Order</th>
-                <th>JC No</th>
-                <th>Status</th>
+                <th className="td-ctr">ORDER QTY</th>
+                <th className="td-ctr">PLAN QTY</th>
+                <th>PRODUCTION ORDER</th>
+                <th>JC NO.</th>
+                <th>STATUS</th>
+                <th>ACTION</th>
               </tr>
             </thead>
             <tbody>
@@ -322,9 +351,11 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                 const badge = row.derivedStatus
                   ? {
                       cls: DERIVED_BADGE[row.derivedStatus],
-                      label: PLAN_DERIVED_STATUS_LABEL[row.derivedStatus],
+                      label: DERIVED_LABEL[row.derivedStatus],
                     }
                   : STATUS_BADGE[row.planStatus];
+                const itemLabel = (row.itemCode ?? row.itemCodeText) as string | null;
+                const itemName = row.itemName ?? row.itemNameText;
                 return (
                   <tr key={row.id}>
                     <td>
@@ -332,55 +363,43 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                         to="/plans/$id"
                         params={{ id: row.id }}
                         className="td-code"
-                        style={{ color: 'var(--cyan)', fontWeight: 600 }}
+                        style={{ whiteSpace: 'nowrap' }}
                       >
                         {row.code}
                       </Link>
+                      <div className="text3" style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap' }}>
+                        {row.planDate} · {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
+                      </div>
                     </td>
-                    <td>
-                      <span className="text3" style={{ fontSize: 12 }}>
-                        {row.planDate}
-                      </span>
-                    </td>
-                    <td>{TYPE_ICON[row.planType]}</td>
                     <td>
                       {/* `CODE/REV` — the customer's drawing revision from the
-                          SO line this plan was raised against. A JW-sourced or
-                          ad-hoc plan has none and keeps the bare code, with no
-                          trailing slash. Same helper as Job Cards and the Sales
-                          Order screens so the three cannot spell it differently.
-                          nowrap because a short code must never break across two
-                          lines in a list row. Mono and bold because the item
-                          code is the primary value on every screen in this
-                          system; its colour already comes from the cell's own
-                          default text, the darkest token, so only the family
-                          and the weight were missing. The part name under it
-                          keeps its `text3` and stays quiet. */}
+                          SO line this plan was raised against; a JW-sourced or
+                          ad-hoc plan keeps the bare code. Item code bold: the
+                          primary value on every screen. */}
                       <div className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
-                        {itemCodeWithRev(row.itemCode ?? row.itemCodeText, row.itemRevision)}
+                        {itemCodeWithRev(itemLabel, row.itemRevision)}
                       </div>
-                      {(row.itemName ?? row.itemNameText) ? (
+                      {itemName ? (
                         <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                          {row.itemName ?? row.itemNameText}
+                          {itemName}
                         </div>
                       ) : null}
                     </td>
                     <td>
-                      <span className="text3" style={{ fontSize: 12 }}>
+                      <span className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                         {row.soCodeText ?? '—'}
                         {row.lineNo ? ` · L#${row.lineNo}` : ''}
                       </span>
                     </td>
-                    <td>{row.orderQty}</td>
-                    <td>{row.planQty}</td>
-                    <td>{row.opsCount}</td>
+                    <td className="td-ctr mono fw-700">{row.orderQty}</td>
+                    <td className="td-ctr mono fw-700">{row.planQty}</td>
                     <td>
                       {row.productionOrderId && row.productionOrderCode ? (
                         <Link
                           to="/production-orders/$id"
                           params={{ id: row.productionOrderId }}
                           className="td-code"
-                          style={{ color: 'var(--cyan)', fontWeight: 600, whiteSpace: 'nowrap' }}
+                          style={{ whiteSpace: 'nowrap' }}
                           title={
                             row.productionOrderStatus
                               ? `Production Order · ${row.productionOrderStatus}`
@@ -399,7 +418,7 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                           to="/job-cards/$id"
                           params={{ id: row.jcId }}
                           className="td-code"
-                          style={{ color: 'var(--cyan)', fontWeight: 600, whiteSpace: 'nowrap' }}
+                          style={{ whiteSpace: 'nowrap' }}
                         >
                           {row.jcCode}
                         </Link>
@@ -407,27 +426,24 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                         <span className="text3">—</span>
                       )}
                     </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
+                    <td>
                       <span className={`badge ${badge.cls}`}>{badge.label}</span>
-                      {/* The one status that is a to-do rather than a state:
-                          "Route Card Pending" means nothing can move until a
-                          route card exists for this item, so the fix is offered
-                          right here, opened on the plan's own item. Only for
-                          people who may create route cards. */}
+                    </td>
+                    <td>
+                      {/* The one action that moves the plan out of the state
+                          it shows — offered only to someone allowed to take
+                          it. In production the Job Card comes first (status,
+                          then Op Entry from there); closing the order is the
+                          later step and sits second. */}
                       {row.derivedStatus === 'route_card_pending' && canCreateRouteCard ? (
                         <Link
                           to="/route-cards/new"
                           search={{
                             ...(row.itemId ? { itemId: row.itemId } : {}),
-                            ...(row.itemCode ?? row.itemCodeText
-                              ? { itemCode: (row.itemCode ?? row.itemCodeText) as string }
-                              : {}),
-                            ...(row.itemName ?? row.itemNameText
-                              ? { itemName: (row.itemName ?? row.itemNameText) as string }
-                              : {}),
+                            ...(itemLabel ? { itemCode: itemLabel } : {}),
+                            ...(itemName ? { itemName } : {}),
                           }}
                           className="btn btn-sm btn-primary"
-                          style={{ marginLeft: 6, fontSize: 11 }}
                           title="Create the route card for this item, then come back to raise the Production Order"
                         >
                           + Create Route Card
@@ -437,24 +453,17 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                           to="/production-orders/new"
                           search={{ planId: row.id, planCode: row.code }}
                           className="btn btn-sm btn-primary"
-                          style={{ marginLeft: 6, fontSize: 11 }}
                           title="Raise the Production Order for this plan"
                         >
                           + Create Production Order
                         </Link>
                       ) : row.derivedStatus === 'in_production' ? (
                         <>
-                          {/* The order is raised and its Job Card exists: the
-                              work now is on the shop floor, so the first offer
-                              is the Job Card itself (status, then Op Entry
-                              from there). Closing the order is the later step
-                              and sits second. */}
                           {row.jcId ? (
                             <Link
                               to="/job-cards/$id"
                               params={{ id: row.jcId }}
                               className="btn btn-sm btn-primary"
-                              style={{ marginLeft: 6, fontSize: 11 }}
                               title={`Open Job Card ${row.jcCode ?? ''} — status and Op Entry`}
                             >
                               ▶ Op Entry
@@ -464,15 +473,17 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                             <Link
                               to="/production-orders/close"
                               search={{ planId: row.id, planCode: row.code }}
-                              className="btn btn-sm btn-ghost"
-                              style={{ marginLeft: 4, fontSize: 11 }}
+                              className="btn btn-sm"
+                              style={{ marginLeft: 4 }}
                               title="Close this plan's Production Order once its Job Card is complete"
                             >
                               🔒 Close
                             </Link>
                           ) : null}
                         </>
-                      ) : null}
+                      ) : (
+                        <span className="text3">—</span>
+                      )}
                     </td>
                   </tr>
                 );
