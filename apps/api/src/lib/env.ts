@@ -56,6 +56,18 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
+  // Sender for auth emails (password reset — modules/auth-recovery). Optional;
+  // the service falls back to ALERTS_FROM_EMAIL, then RESEND_FROM_EMAIL (the
+  // name the local env file uses). With none of the three set, or no
+  // RESEND_API_KEY, the reset falls back to Supabase's own mailer.
+  AUTH_FROM_EMAIL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  RESEND_FROM_EMAIL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
 });
 
 const parsed = envSchema.safeParse(process.env);

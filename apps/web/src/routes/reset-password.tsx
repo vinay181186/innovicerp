@@ -9,11 +9,25 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
 import { rootRoute } from './__root';
 
-// Landing page for the password-reset email link. Supabase (detectSessionInUrl)
-// processes the recovery token in the URL and establishes a short-lived session;
-// we then let the user set a new password via auth.updateUser. If the link is
-// expired/invalid (common when a mail scanner pre-opens the one-time link),
-// Supabase appends error params to the hash instead of a session.
+// Landing page for the password-reset email link. Two link shapes arrive here:
+//
+//  1. The link our API generates (admin generateLink, sent via Resend — or via Supabase's
+//     mailer as the API's fallback; both use the admin client's implicit flow, see
+//     packages/shared/src/schemas/auth-recovery.ts). Supabase verifies the token and
+//     redirects with `#access_token=…&refresh_token=…&type=recovery`. Our client runs in
+//     PKCE mode (lib/supabase.ts — magic links depend on it) and supabase-js REFUSES to
+//     auto-parse that implicit-style hash ("Not a valid PKCE flow url"), so we read the
+//     tokens ourselves and call setSession.
+//  2. A PKCE link that lands as `?code=…` — only from a reset sent from the Supabase
+//     dashboard or an old email. supabase-js (detectSessionInUrl) usually exchanges the
+//     code itself during start-up when the PKCE verifier is in this browser's storage,
+//     so we check for a session first and only exchange by hand if none exists. A
+//     verifier that is missing (link opened in a different browser) is the real reason
+//     the exchange fails.
+//
+// If the link is expired/invalid (common when a mail scanner pre-opens the one-time
+// link), Supabase puts error params in the hash OR the query string instead.
+// Once a session exists we let the user set a new password via auth.updateUser.
 const schema = z
   .object({
     password: z.string().min(6, 'Password is at least 6 characters'),
@@ -41,17 +55,88 @@ function ResetPasswordPage() {
   useEffect(() => {
     let cancelled = false;
 
-    // Expired/invalid links arrive as #error=...&error_description=...
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    if (hash.get('error')) {
+    const query = new URLSearchParams(window.location.search);
+    const param = (key: string) => hash.get(key) ?? query.get(key);
+
+    // (a) Expired/invalid links arrive with error params — in the hash or the query string,
+    // depending on which Supabase path produced them.
+    if (param('error') || param('error_code')) {
       setStatus('invalid');
       setError(
-        hash.get('error_description')?.replace(/\+/g, ' ') ??
-          'The reset link is invalid or has expired.',
+        param('error_code') === 'otp_expired'
+          ? 'This reset link has expired or was already used. Request a new one from the sign-in page.'
+          : (param('error_description')?.replace(/\+/g, ' ') ??
+              'The reset link is invalid or has expired.'),
       );
       return;
     }
 
+    // (b) Server-generated recovery link: tokens are in the hash. Set the session by hand.
+    const accessToken = hash.get('access_token');
+    const refreshToken = hash.get('refresh_token');
+    const hashType = hash.get('type');
+    if (accessToken && refreshToken && (!hashType || hashType === 'recovery')) {
+      const applyTokens = async () => {
+        const { error: err } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (cancelled) return;
+        if (err) {
+          setStatus('invalid');
+          setError(err.message || 'The reset link is invalid or has expired.');
+          return;
+        }
+        // Drop the tokens from the address bar so a refresh does not replay them.
+        window.history.replaceState(null, '', window.location.pathname);
+        setStatus('ready');
+      };
+      void applyTokens();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // (c) PKCE link (`?code=`): the SDK may already have exchanged it during its own
+    // initialisation, in which case a second exchange throws "code verifier missing"
+    // even though a valid session exists. So look for a session first, exchange only if
+    // there is none, and re-check once more before calling the link bad.
+    const code = query.get('code');
+    if (code) {
+      const hasSession = async () => {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        return !!session;
+      };
+      const exchange = async () => {
+        let ok = await hasSession();
+        if (cancelled) return;
+        if (!ok) {
+          const { error: err } = await supabase.auth.exchangeCodeForSession(code);
+          if (cancelled) return;
+          ok = !err || (await hasSession());
+          if (cancelled) return;
+        }
+        if (!ok) {
+          setStatus('invalid');
+          setError(
+            'This link must be opened in the same browser you requested it from. Request a new one from the sign-in page.',
+          );
+          return;
+        }
+        window.history.replaceState(null, '', window.location.pathname);
+        setStatus('ready');
+      };
+      void exchange();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // (d) Nothing recognisable in the URL: fall back to whatever session the SDK has or
+    // is about to establish, with a timeout so the page never spins forever.
     const settle = async () => {
       const {
         data: { session },
@@ -91,7 +176,11 @@ function ResetPasswordPage() {
     setError(null);
     const { error: err } = await supabase.auth.updateUser({ password });
     if (err) {
-      setError(err.message);
+      setError(
+        /same password/i.test(err.message)
+          ? 'Choose a password different from your current one.'
+          : err.message,
+      );
       return;
     }
     setStatus('done');
@@ -170,6 +259,11 @@ function ResetPasswordPage() {
                 Update password
               </Button>
             </form>
+            <div className="text-center text-sm">
+              <a className="text-muted-foreground underline-offset-4 hover:underline" href="/login">
+                Back to sign in
+              </a>
+            </div>
           </>
         )}
       </div>

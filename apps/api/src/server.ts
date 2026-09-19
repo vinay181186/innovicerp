@@ -12,6 +12,7 @@ import { initSentry } from './lib/sentry';
 import { accessControlRoutes } from './modules/access-control/routes';
 import { activityLogRoutes } from './modules/activity-log/routes';
 import { approvalConfigRoutes } from './modules/approval-config/routes';
+import { authRecoveryRoutes } from './modules/auth-recovery/routes';
 import { backupRoutes } from './modules/backup/routes';
 import { dataIntegrityRoutes } from './modules/data-integrity/routes';
 import { opLogViewerRoutes } from './modules/op-log-viewer/routes';
@@ -257,6 +258,8 @@ await app.register(soCostingRoutes);
 await app.register(stockValuationRoutes);
 await app.register(tasksRoutes);
 await app.register(dailyTaskReportsRoutes);
+// Public: forgot-password (the API emails the reset link itself).
+await app.register(authRecoveryRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

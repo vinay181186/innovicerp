@@ -9,9 +9,10 @@
 //                        we refuse to dispatch (Resend requires verified
 //                        sender domain — RUNBOOK has the setup steps).
 //
-// Today we only know about alert digests; broader transactional email
-// (password reset, invite, etc.) lands in a follow-on task that can use
-// this same wrapper or extract the Resend client cleanly.
+// Two senders share one Resend client + one log-only fallback:
+//   sendAlertDigest()        — alert digests (from = ALERTS_FROM_EMAIL)
+//   sendTransactionalEmail() — generic one-off mail (password reset etc.);
+//                              the caller picks the from-address.
 
 import { Resend } from 'resend';
 import { env } from './env';
@@ -52,37 +53,49 @@ export interface DispatchResult {
   realSend: boolean;
 }
 
-/** Dispatch a digest email. In log-only mode (no API key OR no FROM email),
- *  logs the envelope and returns a synthetic id. Idempotency must be enforced
- *  by the caller via the alert_deliveries audit table — this function only
- *  attempts a single send and returns the result. */
-export async function sendAlertDigest(payload: AlertDigestEmail): Promise<DispatchResult> {
+interface SendArgs {
+  from: string | undefined;
+  to: string;
+  subject: string;
+  html: string;
+  /** Plain-text alternative. Optional — the digest never ships one. */
+  text?: string;
+  /** Labels for the log-only line, e.g. "alert digest" / "ALERTS_FROM_EMAIL". */
+  kind: string;
+  fromVar: string;
+}
+
+/** Shared send. In log-only mode (no API key OR no from-address), logs the
+ *  envelope and returns a synthetic id. Throws on a Resend error so each
+ *  caller decides its own retry / swallow policy. */
+async function sendViaResend(args: SendArgs): Promise<DispatchResult> {
   const client = getClient();
-  const from = env.ALERTS_FROM_EMAIL;
+  const { from } = args;
 
   if (!client || !from) {
     const stubId = `stub-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     logger.info(
       {
         stubId,
-        to: payload.to,
-        subject: payload.subject,
-        bodyLen: payload.html.length,
+        to: args.to,
+        subject: args.subject,
+        bodyLen: args.html.length,
       },
-      'alert digest dispatch — log-only (RESEND_API_KEY or ALERTS_FROM_EMAIL unset)',
+      `${args.kind} dispatch — log-only (RESEND_API_KEY or ${args.fromVar} unset)`,
     );
     return { messageId: stubId, realSend: false };
   }
 
   const result = await client.emails.send({
     from,
-    to: payload.to,
-    subject: payload.subject,
-    html: payload.html,
+    to: args.to,
+    subject: args.subject,
+    html: args.html,
+    ...(args.text ? { text: args.text } : {}),
   });
 
   // Resend SDK returns `{ data, error }` shape on send. Throw on error so
-  // the worker's retry policy kicks in.
+  // the caller's retry policy kicks in.
   if (result.error) {
     throw new Error(
       `Resend send failed: ${result.error.name ?? 'unknown'} — ${result.error.message ?? ''}`,
@@ -90,4 +103,45 @@ export async function sendAlertDigest(payload: AlertDigestEmail): Promise<Dispat
   }
 
   return { messageId: result.data?.id ?? 'unknown', realSend: true };
+}
+
+/** Dispatch a digest email. In log-only mode (no API key OR no FROM email),
+ *  logs the envelope and returns a synthetic id. Idempotency must be enforced
+ *  by the caller via the alert_deliveries audit table — this function only
+ *  attempts a single send and returns the result. */
+export async function sendAlertDigest(payload: AlertDigestEmail): Promise<DispatchResult> {
+  return sendViaResend({
+    from: env.ALERTS_FROM_EMAIL,
+    to: payload.to,
+    subject: payload.subject,
+    html: payload.html,
+    kind: 'alert digest',
+    fromVar: 'ALERTS_FROM_EMAIL',
+  });
+}
+
+export interface TransactionalEmail {
+  /** Sender. Caller resolves it (e.g. AUTH_FROM_EMAIL ?? ALERTS_FROM_EMAIL). */
+  from: string | undefined;
+  /** Name of the env var(s) `from` came from — for the log-only line only. */
+  fromVar: string;
+  to: string;
+  subject: string;
+  html: string;
+  /** Plain-text alternative for clients that do not render HTML. */
+  text: string;
+}
+
+/** Generic one-off email (password reset, invite, …). Same client and
+ *  log-only fallback as the digest; throws on a Resend error. */
+export async function sendTransactionalEmail(payload: TransactionalEmail): Promise<DispatchResult> {
+  return sendViaResend({
+    from: payload.from,
+    to: payload.to,
+    subject: payload.subject,
+    html: payload.html,
+    text: payload.text,
+    kind: 'transactional email',
+    fromVar: payload.fromVar,
+  });
 }

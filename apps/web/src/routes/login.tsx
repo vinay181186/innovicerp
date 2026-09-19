@@ -4,16 +4,18 @@ import { Loader2, Mail } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import type { ForgotPasswordResponse } from '@innovic/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ApiError, apiFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
-import { authErrorMessage, isAddressSpecificOtpError } from './auth-error-message';
+import { authErrorMessage } from './auth-error-message';
 import { rootRoute } from './__root';
 
-const magicSchema = z.object({
+const emailSchema = z.object({
   email: z.string().email('Please enter a valid email'),
 });
-type MagicForm = z.infer<typeof magicSchema>;
+type EmailForm = z.infer<typeof emailSchema>;
 
 const passwordSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -21,8 +23,7 @@ const passwordSchema = z.object({
 });
 type PasswordForm = z.infer<typeof passwordSchema>;
 
-type Mode = 'magic' | 'password' | 'reset';
-type SentKind = 'magic' | 'reset';
+type Mode = 'password' | 'reset';
 
 export const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -32,7 +33,7 @@ export const loginRoute = createRoute({
 
 function LoginPage() {
   const [mode, setMode] = useState<Mode>('password');
-  const [sent, setSent] = useState<{ email: string; kind: SentKind } | null>(null);
+  const [sent, setSent] = useState<{ email: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -42,10 +43,12 @@ function LoginPage() {
         <div className="rounded-lg border bg-card p-8 text-card-foreground space-y-3 text-center">
           <Mail className="mx-auto h-12 w-12 text-muted-foreground" />
           <h1 className="text-xl font-semibold">Check your inbox</h1>
+          {/* Worded so it never confirms that an account exists for the address — the API
+              answers the same way either way, and so must we. */}
           <p className="text-sm text-muted-foreground">
-            We sent a {sent.kind === 'reset' ? 'password reset' : 'magic'} link to{' '}
-            <span className="font-medium text-foreground">{sent.email}</span>.{' '}
-            {sent.kind === 'reset' ? 'Click it to choose a new password.' : 'Click it to sign in.'}
+            If an account exists for{' '}
+            <span className="font-medium text-foreground">{sent.email}</span>, a reset link is on
+            its way. Check your inbox (and spam), then click it to choose a new password.
           </p>
           <p className="text-xs text-muted-foreground">
             If it doesn&rsquo;t arrive, check spam — and note some mail scanners can expire one-time
@@ -60,11 +63,9 @@ function LoginPage() {
   }
 
   const subtitle =
-    mode === 'magic'
-      ? "Enter your work email. We'll send you a one-time sign-in link."
-      : mode === 'reset'
-        ? "Enter your email and we'll send you a link to reset your password."
-        : 'Enter your email and password.';
+    mode === 'reset'
+      ? "Enter your email and we'll send you a link to reset your password."
+      : 'Enter your email and password.';
 
   return (
     <main className="container max-w-md py-16">
@@ -76,16 +77,9 @@ function LoginPage() {
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
 
-        {mode === 'magic' ? (
-          <MagicForm
-            onSent={(email) => setSent({ email, kind: 'magic' })}
-            onError={setError}
-            onClearError={() => setError(null)}
-            error={error}
-          />
-        ) : mode === 'reset' ? (
+        {mode === 'reset' ? (
           <ResetRequestForm
-            onSent={(email) => setSent({ email, kind: 'reset' })}
+            onSent={(email) => setSent({ email })}
             onError={setError}
             onClearError={() => setError(null)}
             error={error}
@@ -103,8 +97,8 @@ function LoginPage() {
           />
         )}
 
-        <div className="text-center text-sm">
-          {mode === 'reset' ? (
+        {mode === 'reset' ? (
+          <div className="text-center text-sm">
             <button
               type="button"
               className="text-muted-foreground underline-offset-4 hover:underline"
@@ -115,88 +109,10 @@ function LoginPage() {
             >
               Back to sign in
             </button>
-          ) : (
-            <button
-              type="button"
-              className="text-muted-foreground underline-offset-4 hover:underline"
-              onClick={() => {
-                setError(null);
-                setMode(mode === 'magic' ? 'password' : 'magic');
-              }}
-            >
-              {mode === 'magic' ? 'Sign in with password instead' : 'Send a magic link instead'}
-            </button>
-          )}
-        </div>
-      </div>
-    </main>
-  );
-}
-
-function MagicForm(props: {
-  onSent: (email: string) => void;
-  onError: (msg: string) => void;
-  onClearError: () => void;
-  error: string | null;
-}) {
-  const form = useForm<MagicForm>({
-    resolver: zodResolver(magicSchema),
-    defaultValues: { email: '' },
-  });
-
-  const onSubmit = async ({ email }: MagicForm) => {
-    props.onClearError();
-    const { error: err } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-        // signInWithOtp defaults to shouldCreateUser: true, which means anyone who typed any
-        // address into this box got a real auth.users row created — and our on_auth_user_created
-        // trigger then manufactured a stray public.users profile. That is an open
-        // account-creation hole on a page anyone can reach, so signing up is switched off here.
-        // Accounts are created by an administrator from Users, never by this form.
-        shouldCreateUser: false,
-      },
-    });
-    if (err) {
-      // With sign-up switched off, an address we have no account for now comes back as an
-      // error. We show the same "Check your inbox" screen for it as for a link we really did
-      // send, so this form cannot be used to find out which email addresses have accounts.
-      if (isAddressSpecificOtpError(err)) {
-        props.onSent(email);
-        return;
-      }
-      props.onError(authErrorMessage(err, 'magic-link'));
-      return;
-    }
-    props.onSent(email);
-  };
-
-  return (
-    <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-      <div className="space-y-2">
-        <label htmlFor="email" className="text-sm font-medium">
-          Email
-        </label>
-        <Input
-          id="email"
-          type="email"
-          placeholder="you@company.com"
-          autoComplete="email"
-          {...form.register('email')}
-        />
-        {form.formState.errors.email ? (
-          <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
+          </div>
         ) : null}
       </div>
-
-      {props.error ? <p className="text-sm text-destructive">{props.error}</p> : null}
-
-      <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-        {form.formState.isSubmitting ? <Loader2 className="animate-spin" /> : null}
-        Send magic link
-      </Button>
-    </form>
+    </main>
   );
 }
 
@@ -206,18 +122,34 @@ function ResetRequestForm(props: {
   onClearError: () => void;
   error: string | null;
 }) {
-  const form = useForm<MagicForm>({
-    resolver: zodResolver(magicSchema),
+  const form = useForm<EmailForm>({
+    resolver: zodResolver(emailSchema),
     defaultValues: { email: '' },
   });
 
-  const onSubmit = async ({ email }: MagicForm) => {
+  const onSubmit = async ({ email }: EmailForm) => {
     props.onClearError();
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    });
-    if (err) {
-      props.onError(authErrorMessage(err, 'password-reset'));
+    // The reset email is sent by OUR API, not by supabase-js from the browser.
+    // `supabase.auth.resetPasswordForEmail` used Supabase's built-in mailer, which never
+    // delivered to staff addresses on the test project (traced 2026-09-19). The API
+    // generates the recovery link with the admin API and emails it through Resend. It
+    // always answers 200 with the same body whether or not the address has an account,
+    // so this form cannot be used to find out which emails are registered.
+    try {
+      await apiFetch<ForgotPasswordResponse>('/auth/forgot-password', {
+        method: 'POST',
+        json: { email },
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        props.onError(
+          err.code === 'network_error'
+            ? 'Could not reach the server. Please try again.'
+            : err.message,
+        );
+        return;
+      }
+      props.onError('That request could not be completed. Please try again.');
       return;
     }
     props.onSent(email);
@@ -298,7 +230,8 @@ function PasswordForm(props: {
           </label>
           <button
             type="button"
-            className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+            className="text-xs underline underline-offset-4"
+            style={{ color: 'var(--blue)' }}
             onClick={props.onForgot}
           >
             Forgot password?
