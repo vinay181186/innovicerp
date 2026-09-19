@@ -442,16 +442,36 @@ function Table({ data, offset }: { data: ListPlansResponse; offset: number }): R
                         >
                           + Create Production Order
                         </Link>
-                      ) : row.derivedStatus === 'in_production' && canProductionOrder ? (
-                        <Link
-                          to="/production-orders/close"
-                          search={{ planId: row.id, planCode: row.code }}
-                          className="btn btn-sm"
-                          style={{ marginLeft: 6, fontSize: 11 }}
-                          title="Close this plan's Production Order once its Job Card is complete"
-                        >
-                          🔒 Close Production Order
-                        </Link>
+                      ) : row.derivedStatus === 'in_production' ? (
+                        <>
+                          {/* The order is raised and its Job Card exists: the
+                              work now is on the shop floor, so the first offer
+                              is the Job Card itself (status, then Op Entry
+                              from there). Closing the order is the later step
+                              and sits second. */}
+                          {row.jcId ? (
+                            <Link
+                              to="/job-cards/$id"
+                              params={{ id: row.jcId }}
+                              className="btn btn-sm btn-primary"
+                              style={{ marginLeft: 6, fontSize: 11 }}
+                              title={`Open Job Card ${row.jcCode ?? ''} — status and Op Entry`}
+                            >
+                              ▶ Op Entry
+                            </Link>
+                          ) : null}
+                          {canProductionOrder ? (
+                            <Link
+                              to="/production-orders/close"
+                              search={{ planId: row.id, planCode: row.code }}
+                              className="btn btn-sm btn-ghost"
+                              style={{ marginLeft: 4, fontSize: 11 }}
+                              title="Close this plan's Production Order once its Job Card is complete"
+                            >
+                              🔒 Close
+                            </Link>
+                          ) : null}
+                        </>
                       ) : null}
                     </td>
                   </tr>
