@@ -1,11 +1,11 @@
 // Breadcrumb trail shown at the top of every authenticated screen. Derived from
-// the sidebar nav config (SECTIONS) so the path always matches the menu:
+// the header nav config (SECTIONS, nav-sections.ts) so the path always matches the menu:
 //   Home › <Section> › <Screen>  (+ New / Edit / Detail for sub-routes)
 // Rendered once in the shared shell (_authenticated.tsx), so it covers all
 // modules with no per-screen wiring.
 
 import { Link, useLocation } from '@tanstack/react-router';
-import { SECTIONS } from './sidebar';
+import { SECTIONS } from './nav-sections';
 
 interface Crumb {
   label: string;

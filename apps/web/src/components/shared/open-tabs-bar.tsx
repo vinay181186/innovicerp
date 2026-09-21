@@ -10,7 +10,7 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { useOpenTabs } from '@/stores/open-tabs';
-import { SECTIONS } from './sidebar';
+import { SECTIONS } from './nav-sections';
 
 // Flatten the nav once: every {to,label,icon}, longest `to` first so the base
 // match below prefers the most specific route (mirrors breadcrumbs' longest-

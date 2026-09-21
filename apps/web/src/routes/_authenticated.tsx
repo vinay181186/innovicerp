@@ -1,8 +1,7 @@
 import { createRoute, Outlet, redirect } from '@tanstack/react-router';
 import { Breadcrumbs } from '@/components/shared/breadcrumbs';
 import { OpenTabsBar } from '@/components/shared/open-tabs-bar';
-import { Sidebar } from '@/components/shared/sidebar';
-import { TopBar } from '@/components/shared/topbar';
+import { TopNav } from '@/components/shared/top-nav';
 import { supabase } from '@/lib/supabase';
 import { rootRoute } from './__root';
 
@@ -20,11 +19,11 @@ export const authenticatedRoute = createRoute({
   component: AuthenticatedLayout,
 });
 
-// Innovic shell: 220px sidebar on the left, 54px topbar at the top of
-// the content column, scrolling content area below. Mirrors the legacy
-// HTML's #app / #sidebar / #main / #topbar / #content structure (see
-// legacy/InnovicERP_*.html lines 50-55) — class IDs preserved so the
-// CSS in src/styles/innovic-theme.css applies.
+// Innovic shell (2026-09-21): ONE 54px header band across the top — logo,
+// the modules as dropdown menus, search, sign-out — then the open-page tabs,
+// the breadcrumb, and the scrolling content area below. The 220px left
+// sidebar and the separate top bar it replaced are gone; the module / page
+// list they drew lives on in components/shared/nav-sections.ts.
 //
 // The breadcrumb sits OUTSIDE #content on purpose. #content is the scroll
 // container (innovic-theme.css: flex:1 + overflow-y:auto), so a trail rendered
@@ -45,12 +44,11 @@ export const authenticatedRoute = createRoute({
 function AuthenticatedLayout(): React.JSX.Element {
   return (
     <div id="app-shell">
-      <Sidebar />
       <div id="main">
         <header id="app-header">
-          <TopBar />
-          <Breadcrumbs />
+          <TopNav />
           <OpenTabsBar />
+          <Breadcrumbs />
         </header>
         <div id="content">
           <Outlet />

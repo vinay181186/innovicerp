@@ -1,28 +1,12 @@
-// Innovic ERP sidebar — port of the legacy HTML's #sidebar structure.
-// 220px fixed width, white surface, collapsible department sections,
-// active-item indicator (cyan left-border + cyan text + gradient bg).
-//
-// Per memory feedback_ui_match_legacy_html.md: data layout 1:1 from
-// legacy; chrome (this nav) matches legacy too post-2026-05-19 prompt.
-//
-// Hamburger on mobile (<768px) collapses the sidebar off-screen; the
-// .sb-open class on the root element slides it back in. Triggered from
-// TopBar.
+// Innovic ERP navigation data — the modules, their groups and pages, in the
+// order the header shows them. This used to live inside the left sidebar
+// (components/shared/sidebar.tsx); the sidebar is gone (header navigation,
+// 2026-09-21) but the breadcrumbs, the open-page tabs and the header menus
+// all still read the SAME list, so a page named here is named everywhere.
 
-import { Link, useLocation } from '@tanstack/react-router';
-import { useState } from 'react';
-import {
-  canViewForm,
-  hasDeptAccess,
-  useMyAccess,
-  type AccessDeptKey,
-  type AccessFormKey,
-} from '@/lib/access-control';
-import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
-import { useSession } from '@/lib/session';
-import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
+import { hasDeptAccess, type AccessDeptKey, type AccessFormKey } from '@/lib/access-control';
 
-interface NavItem {
+export interface NavItem {
   to: string;
   label: string;
   icon: string; // emoji glyph (matches legacy)
@@ -33,12 +17,12 @@ interface NavItem {
   formKey?: AccessFormKey;
 }
 
-interface NavSubGroup {
+export interface NavSubGroup {
   label?: string;
   items: NavItem[];
 }
 
-interface NavSection {
+export interface NavSection {
   key: string;
   label: string;
   modClass:
@@ -357,11 +341,11 @@ const SECTION_ORDER: readonly string[] = [
   'reports',
   'system',
 ];
-const ORDERED_SECTIONS: readonly NavSection[] = [...SECTIONS].sort(
+export const ORDERED_SECTIONS: readonly NavSection[] = [...SECTIONS].sort(
   (a, b) => SECTION_ORDER.indexOf(a.key) - SECTION_ORDER.indexOf(b.key),
 );
 
-function initials(email: string | undefined): string {
+export function initials(email: string | undefined): string {
   if (!email) return '??';
   const local = email.split('@')[0] ?? '';
   const parts = local.split(/[._-]/).filter(Boolean);
@@ -381,7 +365,7 @@ function initials(email: string | undefined): string {
 
 // Admin sees every section regardless of matrix (legacy behavior — admin
 // is the only role with implicit dept access on the home routing too).
-function shouldShowSection(
+export function shouldShowSection(
   sectionKey: string,
   isAdmin: boolean,
   eff: Parameters<typeof hasDeptAccess>[0],
@@ -389,151 +373,4 @@ function shouldShowSection(
   if (isAdmin) return true;
   // Section keys align 1:1 with ACCESS_DEPTS keys.
   return hasDeptAccess(eff, sectionKey as AccessDeptKey);
-}
-
-export function Sidebar(): React.JSX.Element {
-  const { data: me } = useSession();
-  const { pathname } = useLocation();
-  const { data: eff } = useMyAccess();
-  const isAdmin = me?.role === 'admin';
-  // Badge on System Settings → Approvals (ADR-130). Only fetched for someone
-  // who can actually decide; everyone else gets 0 and no request.
-  const pendingApprovals = usePendingTimeChangeCount(isAdmin || me?.role === 'manager');
-
-  // Sections collapsed by default per legacy UX — but the section
-  // containing the current route auto-opens so the active item is
-  // visible on cold load. Persisting across navigations: keep
-  // collapsed/open state in React state, seeded from pathname.
-  //
-  // ACCORDION: exactly one section open at a time — opening a department
-  // collapses whichever was open. Previously each toggled independently, so
-  // several expanded at once pushed the lower departments below the fold and
-  // the sidebar had to be scrolled to reach them. Clicking the open section
-  // still closes it, leaving none open.
-  const initialOpen =
-    SECTIONS.find((sec) =>
-      sec.groups.some((g) =>
-        g.items.some((i) => pathname === i.to || pathname.startsWith(i.to + '/')),
-      ),
-    )?.key ?? null;
-  const [openSection, setOpenSection] = useState<string | null>(initialOpen);
-
-  const toggle = (key: string): void => {
-    setOpenSection((prev) => (prev === key ? null : key));
-  };
-
-  const isActive = (to: string): boolean => pathname === to || pathname.startsWith(to + '/');
-
-  return (
-    <aside id="sidebar">
-      <div className="sb-logo">
-        <Link to="/" className="block no-underline">
-          <img
-            src={INNOVIC_LOGO_DATA_URI}
-            alt="Innovic"
-            style={{
-              display: 'block',
-              maxWidth: '100%',
-              maxHeight: 72,
-              height: 'auto',
-              margin: '0 auto 8px',
-            }}
-          />
-          <div className="sb-company">INNOVIC ERP</div>
-          <div className="sb-sub">manufacturing</div>
-        </Link>
-      </div>
-
-      <a
-        className={`sb-item ${pathname === '/' ? 'active' : ''}`}
-        onClick={() => undefined}
-        style={{ cursor: 'pointer' }}
-      >
-        <Link
-          to="/"
-          className="flex w-full items-center gap-[10px] no-underline text-inherit"
-          style={{ color: 'inherit' }}
-        >
-          <span className="sb-icon">◆</span>
-          <span>Dashboard</span>
-        </Link>
-      </a>
-
-      {ORDERED_SECTIONS.filter((sec) => shouldShowSection(sec.key, isAdmin, eff)).map((sec) => {
-        const open = openSection === sec.key;
-        return (
-          <div key={sec.key}>
-            <div className={`sb-section sb-mod-${sec.modClass}`} onClick={() => toggle(sec.key)}>
-              <span>
-                {sec.icon} {sec.label}
-              </span>
-              <span
-                style={{
-                  fontSize: 9,
-                  transition: 'transform .15s',
-                  transform: open ? 'rotate(90deg)' : 'none',
-                }}
-              >
-                ▶
-              </span>
-            </div>
-            {open ? (
-              <div>
-                {sec.groups.map((grp, gi) => (
-                  <div key={gi}>
-                    {grp.label ? <div className="sb-grp">{grp.label}</div> : null}
-                    {grp.items
-                      .filter(
-                        // "Hide page": a link with a formKey vanishes when the
-                        // user's access does not grant VIEW on it. Admin bypasses,
-                        // and links without a formKey are always shown.
-                        (it) => isAdmin || !it.formKey || canViewForm(eff, it.formKey),
-                      )
-                      .map((it) => (
-                      <Link
-                        key={it.to}
-                        to={it.to}
-                        className={`sb-item ${isActive(it.to) ? 'active' : ''}`}
-                      >
-                        <span className="sb-icon">{it.icon}</span>
-                        <span>{it.label}</span>
-                        {/* Only the Approvals item carries a count today. It is
-                            0 (and the query disabled) for anyone who cannot
-                            approve, so it never nags an operator. */}
-                        {it.to === '/approvals' && pendingApprovals > 0 ? (
-                          <span className="badge b-amber" style={{ marginLeft: 'auto' }}>
-                            {pendingApprovals}
-                          </span>
-                        ) : null}
-                      </Link>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-
-      <div className="sb-bottom">
-        <div className="sb-user" title={me?.email}>
-          <div className="sb-avatar">{initials(me?.email)}</div>
-          <div style={{ minWidth: 0 }}>
-            <div
-              className="sb-uname"
-              style={{
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: 130,
-              }}
-            >
-              {me?.email ?? 'Not signed in'}
-            </div>
-            <div className="sb-urole">{me?.role ?? ''}</div>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
 }
