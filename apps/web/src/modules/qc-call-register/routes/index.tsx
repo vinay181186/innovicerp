@@ -7,8 +7,9 @@
 // Frontend-only — data from the qc-history + incoming-qc endpoints, the QC
 // write reuses op-entry's submitQcLog mutation.
 //
-// No in-content .section-hdr: legacy's render returns the sheet directly and
-// the page title lives in the topbar (#pageTitle, legacy L2232/L2322).
+// No in-content .section-hdr: legacy's render returns the sheet directly. The
+// sheet's own title row ("QC Call Register", below) is the page's title — the
+// old top bar that used to repeat it is gone (header navigation, 2026-09-21).
 
 import {
   SHIFTS,

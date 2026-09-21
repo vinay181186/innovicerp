@@ -52,6 +52,11 @@ export function TopNav(): React.JSX.Element {
   const pendingApprovals = usePendingTimeChangeCount(isAdmin || me?.role === 'manager');
 
   const [openKey, setOpenKey] = useState<string | null>(null);
+  // Whether the open menu must anchor to its button's RIGHT edge: measured
+  // when it opens, from where the button actually sits, so a menu near the
+  // right of the screen opens leftwards and one near the left never does —
+  // whatever the count of modules this user can see.
+  const [flip, setFlip] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
   // Close on a click outside the header or on Escape. Registered only while a
@@ -108,7 +113,11 @@ export function TopNav(): React.JSX.Element {
               className={`tn-item${here || open ? ' active' : ''}`}
               aria-haspopup="menu"
               aria-expanded={open}
-              onClick={() => setOpenKey((prev) => (prev === sec.key ? null : sec.key))}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setFlip(r.left + r.width / 2 > window.innerWidth / 2);
+                setOpenKey((prev) => (prev === sec.key ? null : sec.key));
+              }}
             >
               {BUTTON_LABEL[sec.key] ?? sec.label}
               <span className="tn-caret" aria-hidden>
@@ -116,7 +125,7 @@ export function TopNav(): React.JSX.Element {
               </span>
             </button>
             {open ? (
-              <div className="tn-menu" role="menu" aria-label={sec.label}>
+              <div className={`tn-menu${flip ? ' flip' : ''}`} role="menu" aria-label={sec.label}>
                 {items.map((grp, gi) => (
                   <div key={gi} className="tn-col">
                     {grp.label ? <div className="tn-col-label">{grp.label}</div> : null}

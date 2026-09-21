@@ -97,15 +97,28 @@
    group (Entry / Master / …) with an uppercase heading, pages with their
    icons, the current page highlighted. */
 #topnav {
-  height: var(--topbar-height);
   min-height: var(--topbar-height);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
   position: relative;
   z-index: 60;
+}
+/* Narrower than the ~1350px the twelve modules plus the search box need, the
+   right cluster drops to a second line rather than being pushed off the edge
+   with no scrollbar (#main clips). The search box gives up width first. */
+@media (max-width: 1350px) {
+  #topnav .innovic-input.gs-input {
+    width: 150px;
+  }
+  .tn-right {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    padding-bottom: 6px;
+  }
 }
 .tn-logo {
   display: flex;
@@ -166,8 +179,11 @@
   box-shadow: var(--shadow-drawer, 0 10px 30px rgba(20, 28, 40, 0.16));
   z-index: 70;
 }
-/* A menu near the right edge would run off the screen; open it leftwards. */
-.tn-sec:nth-last-child(-n + 4) .tn-menu {
+/* A menu whose button sits in the right half of the screen opens leftwards
+   (the component measures the button and adds .flip), so it never runs off
+   the right edge — and a user with only two or three modules, whose buttons
+   all sit on the left, never has one pushed off the left edge either. */
+.tn-menu.flip {
   left: auto;
   right: 0;
 }
@@ -1397,10 +1413,10 @@ table.tbl-ctr td .innovic-select {
   #app-header {
     padding-bottom: 6px;
   }
-  /* The header nav scrolls sideways on a phone rather than wrapping; the
-     search box gives up most of its width so the modules stay reachable. */
+  /* On a phone the module buttons wrap onto as many lines as they need (no
+     overflow on the band: an overflow clip would cut every dropdown off at
+     the band's edge). The search box gives up most of its width. */
   #topnav {
-    overflow-x: auto;
     padding: 0 8px;
   }
   #topnav .innovic-input.gs-input {
