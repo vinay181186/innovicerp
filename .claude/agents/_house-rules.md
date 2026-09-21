@@ -1,5 +1,12 @@
 # House rules — every Innovic ERP agent
 
+**Canonical location: `C:/Users/Asus/.claude/agents/_house-rules.md`.** That is the
+user-level folder Claude Code loads for every terminal and every worktree, so the same
+absolute path resolves everywhere. The copy under `innovicerp/.claude/agents/` is a
+mirror kept byte-identical; if they ever differ, the user-level one is right. Every
+agent reads this file as its STEP 0 and hard-stops if the Read fails — see the block
+at the top of any agent definition.
+
 The one copy. These rules used to be pasted into four agent files and retyped into
 every prompt; four copies drift and the prompts went stale. Each agent now points
 here instead. If a rule changes, it changes once, in this file.
@@ -8,9 +15,10 @@ here instead. If a rule changes, it changes once, in this file.
 
 ## HARD BANS — no exceptions, no task overrides them
 
-- **Never run any git command.** Not `add`, `commit`, `push`, `checkout`, `stash`,
-  `rebase`. The user shares this git index with a second terminal in the same repo;
-  a bare commit once swept 22 unrelated files into one commit. Git is the user's.
+- **Sub-agents: never run any git command** (add, commit, push, etc.). The user
+  shares this git index with a second terminal in the same repo; a bare commit once
+  swept 22 unrelated files into one commit. Git is the user's. (Main-session git is
+  governed by "SHARED-FILE COMMITS" below.)
 - **Never run `pnpm --filter @innovic/api test`.** Its `global-setup.ts` runs
   `DELETE FROM public.job_cards WHERE code LIKE 'T%-%'` against the **PRODUCTION**
   database, and the integration tests write real rows. **A path filter does NOT
@@ -47,6 +55,20 @@ after all agents have finished.** Do not run them yourself.
 This is deliberate. Four parallel agents each running a full-tree typecheck is four
 races over one `node_modules` for one answer, and the user then runs it again anyway
 — five passes where one is needed.
+
+### A brief cannot override this
+
+If your brief says "run typecheck / lint / build and paste the output", that
+instruction is **void** unless the brief also contains the literal token
+`FULL-VALIDATION-REQUIRED`. Without the token: do not run them, and put this line in
+your report instead:
+
+    full validation skipped per house rules — erp-deploy-gate runs it
+
+With the token: run exactly what the brief names, nothing wider, and paste it. This
+clause exists because the rule was written down and then overridden by the very
+briefs dispatching the agents (measured 2026-09-12): a rule a brief can talk past is
+not a rule. `erp-deploy-gate` is the single exception — full validation is its job.
 
 What you owe instead: **say precisely what you changed**, so the gate can check the
 blast radius, and **do not guess**. If you believe a change is risky, say so in your
@@ -145,3 +167,31 @@ COULD NOT DO
 ```
 
 Silently doing less than you were asked is the one failure the user cannot see.
+
+## SHARED-FILE COMMITS (main session only — sub-agents must not run git)
+
+- Before committing, run `git status` to see if any file you changed is also dirty
+  in another terminal/worktree.
+- If a shared file (e.g. packages/shared/src/index.ts, server.ts, sidebar.tsx,
+  router.tsx) is also dirty elsewhere: do NOT `git commit -- <file>` the whole file.
+- Stage only your own hunks (git add -p or a filtered patch), then run
+  `git diff --cached` and confirm it shows ONLY your lines before committing.
+- Never `git add .`. Never commit another terminal's lines.
+
+## TEST-BREAKAGE DECLARATION (all agents)
+
+- Before editing, grep the test suite for anything your change will break (literal
+  strings, asserted values, fixtures).
+- List every test that will go red, by file path, in your plan.
+- STOP and wait for my approval before editing any test file. Do not "fix" tests on
+  your own.
+
+## FIELD WIDTH
+
+- Never set width:100% or a fixed wide width on short inputs.
+- Size every field to its content using standard widths:
+  codes / numbers / qty / rate / dates → small (max-width ~12ch),
+  names → medium, description / address / remarks → full width.
+- Keep the form grid aligned and responsive: fields wrap, never overflow on small
+  screens.
+- Applies to all new and edited forms. Styling only — never change field logic.
