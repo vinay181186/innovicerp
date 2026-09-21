@@ -211,11 +211,12 @@ export function ItemBadge({
       className={className}
       style={{
         display: 'inline-flex',
-        // Tile stacks the text UNDER the picture; every other size sits it
-        // beside.
-        flexDirection: tile ? 'column' : 'row',
+        // Every size sits the text BESIDE the picture. The tile top-aligns it
+        // so code · name · extra lines read as a block next to the 120 px
+        // picture (user decision 2026-09-21); the rest centre on the row.
+        flexDirection: 'row',
         alignItems: tile ? 'flex-start' : 'center',
-        gap: tile ? 8 : size === 'page' ? 12 : 8,
+        gap: tile ? 12 : size === 'page' ? 12 : 8,
         textAlign: 'left',
         minWidth: 0,
         maxWidth: '100%',
@@ -251,8 +252,8 @@ export function ItemBadge({
               maxWidth: maxW,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              // Under a 120 px tile a one-line name would clip after ~15
-              // characters; it may take two lines there, then clamps.
+              // Beside the 120 px tile the name may take two lines, then
+              // clamps — long names must not push the header about.
               whiteSpace: tile ? 'normal' : 'nowrap',
               display: tile ? '-webkit-box' : undefined,
               WebkitLineClamp: tile ? 2 : undefined,

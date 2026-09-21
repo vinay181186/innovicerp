@@ -240,14 +240,14 @@ export function JcViewSummary({
       >
         {/* ── Column 1: the product ──
             The Item Master's 3D render in the shared badge (user decision
-            2026-09-21), code + name under it, then the raw material planned
-            for this card (grade text and size text, both optional), then the
-            drawing controls. The revision on the code is the CUSTOMER'S
-            drawing revision off the SO line, so it reads `IN-IT-0007/B` on a
-            card raised against an SO and stays the bare `IN-IT-0007` on a
-            JW-sourced or standalone card — one string from the shared
-            helper, same as the Sales Order screens. */}
-        <div style={{ flex: '0 0 136px', minWidth: 0 }}>
+            2026-09-21), code + name BESIDE it with the raw material planned
+            for this card (grade text and size text, both optional) right
+            under the name, then the drawing controls. The revision on the
+            code is the CUSTOMER'S drawing revision off the SO line, so it
+            reads `IN-IT-0007/B` on a card raised against an SO and stays the
+            bare `IN-IT-0007` on a JW-sourced or standalone card — one string
+            from the shared helper, same as the Sales Order screens. */}
+        <div style={{ flex: '0 1 340px', minWidth: 0 }}>
           <ItemBadge
             size="tile"
             code={jc.itemCode}
@@ -256,29 +256,30 @@ export function JcViewSummary({
             imagePath={jc.itemImagePath}
             codeColor="var(--text)"
             nameMaxWidth="none"
-          />
-          <div style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.5 }}>
-            <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
-              <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Material:</span>
-              <span
-                className="mono fw-700"
-                style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                title={jc.rawMaterialGradeText || undefined}
-              >
-                {jc.rawMaterialGradeText || '—'}
-              </span>
+          >
+            <div style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.5 }}>
+              <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+                <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Material:</span>
+                <span
+                  className="mono fw-700"
+                  style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  title={jc.rawMaterialGradeText || undefined}
+                >
+                  {jc.rawMaterialGradeText || '—'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+                <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Size:</span>
+                <span
+                  className="mono fw-700"
+                  style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  title={jc.rawMaterialSizeText || undefined}
+                >
+                  {jc.rawMaterialSizeText || '—'}
+                </span>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
-              <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Size:</span>
-              <span
-                className="mono fw-700"
-                style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                title={jc.rawMaterialSizeText || undefined}
-              >
-                {jc.rawMaterialSizeText || '—'}
-              </span>
-            </div>
-          </div>
+          </ItemBadge>
           {/* Drawing controls — the open button, and the thumbnail when the
               drawing is an image (a PDF has none); both open the same preview
               the Documents tab's Drawing card does. Never `download`: opening
