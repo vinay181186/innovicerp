@@ -9,9 +9,11 @@
 // IncomingPendingRow); they render their collapsed line through
 // `PendingSheetRow` here and hand the expanded form in as children.
 //
-// Styling is inline on purpose: the shared stylesheet is frozen while other
-// agents run, and `.innovic-table` brings the zebra, the filled sticky header
-// and the centred columns this sheet is specifically meant not to have.
+// The frame is the app's ruled sheet (`.innovic-table.tbl-grid`, the same
+// one the Plans, Job Card and Incoming QC lists wear — user, 2026-09-21):
+// bold blue column names, gridlines, cream / white rows, centred columns.
+// The inline TH / TD constants below carry only what the class does not —
+// the sticky header, the cell overflow — so the two never fight.
 
 import type { IncomingQcCompletedRow, QcHistoryLogRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
@@ -58,22 +60,13 @@ const CAPS: CSSProperties = {
   color: 'var(--text2)',
 };
 const TH: CSSProperties = {
-  ...CAPS,
-  padding: '8px 12px',
-  textAlign: 'left',
   whiteSpace: 'nowrap',
-  borderBottom: '1px solid var(--border)',
-  background: 'var(--bg2)',
   position: 'sticky',
   top: 0,
   zIndex: 2,
 };
 const TD: CSSProperties = {
-  padding: '9px 12px',
-  borderBottom: '1px solid var(--border)',
   verticalAlign: 'middle',
-  fontSize: 13,
-  textAlign: 'left',
   overflow: 'hidden',
 };
 const NOWRAP: CSSProperties = { whiteSpace: 'nowrap' };
@@ -162,20 +155,20 @@ const PENDING_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['GRN / JC No.', 13],
   ['Part / Item Code', 17],
   ['Vendor · GRN / SO · Op', 26],
-  ['Qty', 6, { textAlign: 'center' }],
+  ['Qty', 6],
   ['Called', 14],
   ['Stage', 14],
-  ['', 10, { textAlign: 'right' }],
+  ['Action', 10],
 ];
 const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['GRN / JC No.', 13],
   ['Part / Item Code', 15],
   ['Vendor · GRN / SO · Op', 20],
-  ['OK', 5, { textAlign: 'center' }],
-  ['Rej', 5, { textAlign: 'center' }],
+  ['OK', 5],
+  ['Rej', 5],
   ['Called → Attended', 14],
   ['Inspector · Log Ref', 18],
-  ['Verdict', 10, { textAlign: 'right' }],
+  ['Verdict', 10],
 ];
 export const PENDING_COL_COUNT = PENDING_COLS.length;
 
@@ -187,7 +180,7 @@ export function QcSheetTable(props: {
   const cols = props.view === 'pending' ? PENDING_COLS : COMPLETED_COLS;
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--bg2)' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      <table className="innovic-table tbl-grid" style={{ width: '100%' }}>
         <colgroup>
           {cols.map(([, w], i) => (
             <col key={i} style={{ width: `${w}%` }} />
@@ -245,7 +238,7 @@ function ContextCell({ line1, line2 }: { line1: ReactNode; line2?: ReactNode }):
 
 function NumCell({ value, red }: { value: number; red?: boolean }): React.JSX.Element {
   return (
-    <td style={{ ...TD, ...NOWRAP, textAlign: 'center' }}>
+    <td style={{ ...TD, ...NOWRAP }}>
       <span
         style={{
           ...MONO,
@@ -310,7 +303,7 @@ function VerdictCell(props: {
 }): React.JSX.Element {
   const red = props.verdict !== 'ACCEPTED';
   return (
-    <td style={{ ...TD, ...NOWRAP, textAlign: 'right' }}>
+    <td style={{ ...TD, ...NOWRAP }}>
       {props.reportPath ? (
         <span style={{ marginRight: 8 }} onClick={(e) => e.stopPropagation()}>
           <QcReportLink path={props.reportPath} name={props.reportName} label="📎" />
@@ -467,7 +460,7 @@ export function PendingSheetRow(props: {
             {stage?.n} {stage?.label}
           </span>
         </td>
-        <td style={{ ...TD, ...NOWRAP, textAlign: 'right' }}>
+        <td style={{ ...TD, ...NOWRAP }}>
           {/* No form to open (viewer without `entry`) → say so instead of
               offering an "Inspect ▸" that expands nothing. */}
           {props.children ? (
