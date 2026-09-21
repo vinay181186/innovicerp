@@ -34,6 +34,7 @@ export * from './enums/invoice-status';
 export * from './enums/customer-dispatch-status';
 export * from './enums/task-status';
 export * from './enums/task-priority';
+export * from './enums/task-type';
 export * from './enums/daily-report-line-status';
 export * from './types/auth';
 export * from './schemas/traceability';

@@ -4954,10 +4954,20 @@ export const tasks = pgTable(
     assignedTo: uuid('assigned_to').references(() => users.id),
     assignedBy: uuid('assigned_by').references(() => users.id),
     priority: taskPriorityEnum('priority').notNull().default('medium'),
-    dueDate: date('due_date').notNull(),
+    dueDate: date('due_date'),
     status: taskStatusEnum('status').notNull().default('todo'),
     startedDate: date('started_date'),
     completedDate: date('completed_date'),
+    // ADR-176 (migration 0139): assigned vs personal to-do, planned start,
+    // optional reminder stamp, and who completed it / when / with what remark.
+    // due_date became nullable for personal to-dos; assigned tasks still
+    // require one (service rule). Overdue stays DERIVED, never stored.
+    taskType: text('task_type').notNull().default('assigned'),
+    startDate: date('start_date'),
+    reminderAt: timestamp('reminder_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    completedBy: uuid('completed_by').references(() => users.id),
+    completionRemark: text('completion_remark'),
     // Contextual link to a source record (PR/PO/SO/NC/CAPA/JC/GRN/DESIGN).
     linkedRefType: text('linked_ref_type'),
     linkedRefId: text('linked_ref_id'),
@@ -4984,6 +4994,9 @@ export const tasks = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('tasks_company_status_idx')
       .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('tasks_company_creator_idx')
+      .on(t.companyId, t.createdBy)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('tasks_company_read', {
       for: 'select',
@@ -5037,6 +5050,51 @@ export const taskComments = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id() AND (created_by = current_user_id() OR current_user_role() IN ('admin','manager'))`,
       withCheck: sql`company_id = current_company_id() AND (created_by = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Task History — migration 0139 (ADR-176) ─────────────────────────────
+// Append-only trail of everything that happens to a task: created,
+// reassigned, status / priority / due-date changed, edited, remark,
+// attachment, completed, cancelled. Written inside the tasks service tx in
+// the style of so_line_drawing_revisions. No updated_at / deleted_at — rows
+// are never edited or removed. The task's current values stay on `tasks`.
+export const taskHistory = pgTable(
+  'task_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    // TASK_HISTORY_ACTIONS vocabulary (text, not enum — same as revisions).
+    action: text('action').notNull(),
+    fromValue: text('from_value'),
+    toValue: text('to_value'),
+    note: text('note'),
+    // clock_timestamp(), not now(): several rows land in one transaction and
+    // the timeline must keep the order they were written in.
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    index('task_history_task_created_idx').on(t.taskId, t.createdAt),
+    pgPolicy('task_history_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('task_history_company_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`company_id = current_company_id() AND created_by = current_user_id()`,
     }),
   ],
 ).enableRLS();
@@ -5500,6 +5558,8 @@ export const fileRegistry = pgTable(
       onDelete: 'set null',
     }),
     jwLineNo: integer('jw_line_no'),
+    // Task attachment owner (migration 0139, ADR-176). category = 'task'.
+    taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     // Free-text category (drawing/qc-docs/inspection/tpi/incoming-qc/po-docs/
     // design/dispatch/other) — same vocabulary as legacy fileRegistry.category.
     category: text('category').notNull().default('other'),
@@ -5530,6 +5590,9 @@ export const fileRegistry = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('file_registry_company_status_idx')
       .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('file_registry_company_task_idx')
+      .on(t.companyId, t.taskId)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('file_registry_company_read', {
       for: 'select',
