@@ -52,6 +52,7 @@ import {
   rollupSoLine,
 } from '../../lib/calc-engine';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { loadOpenReworkByOp } from '../../lib/open-rework';
 import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -151,6 +152,11 @@ export async function getSoOverview(
               and(
                 inArray(jobCards.sourceSoLineId, lineIds),
                 isNull(jobCards.deletedAt),
+                // Rework/repair children re-inject into the PARENT's route and
+                // are counted there (sales-cascade producedForLine); summing
+                // them here too double-counted the line (QC-NC audit
+                // 2026-09-21, gap 4).
+                isNull(jobCards.recoveryKind),
               ),
             )
             .orderBy(asc(jobCards.code));
@@ -213,13 +219,23 @@ export async function getSoOverview(
     // reads complete (and stops counting as at-vendor) once the vendor has
     // returned everything.
     const ospAcceptedByOp = await loadOspAcceptedByOp(tx, companyId, jcIds);
+    // Pieces still out on a rework/repair child per op — holds the op at
+    // in_progress exactly as v_jc_op_status does (gap 6).
+    const openReworkByOp = await loadOpenReworkByOp(tx, companyId, jcIds);
 
     // Build per-JC enriched rollups once. Keyed by JC id for the per-line walk.
     const rollupByJcId = new Map<string, JCRollup>();
     for (const jc of jcRows) {
       const ops = opsByJc.get(jc.id) ?? [];
       const opLogsForJc = ops.flatMap((o) => logsByOp.get(o.id) ?? []);
-      const enriched = enrichOps(jc, ops, opLogsForJc, runningOpIds, ospAcceptedByOp);
+      const enriched = enrichOps(
+        jc,
+        ops,
+        opLogsForJc,
+        runningOpIds,
+        ospAcceptedByOp,
+        openReworkByOp,
+      );
       rollupByJcId.set(jc.id, rollupJC(jc, enriched));
     }
 
@@ -455,6 +471,9 @@ export async function getSoOverviewDetail(
               and(
                 inArray(jobCards.sourceSoLineId, lineIds),
                 isNull(jobCards.deletedAt),
+                // Rework/repair children are counted on the PARENT's route —
+                // see the list builder above (gap 4).
+                isNull(jobCards.recoveryKind),
               ),
             )
             .orderBy(asc(jobCards.code));
@@ -544,12 +563,21 @@ export async function getSoOverviewDetail(
     const runningOpIds = new Set(runningRows.map((r) => r.jcOpId));
     // G9c: GRN-accepted qty per outsource op (see the list builder above).
     const ospAcceptedByOp = await loadOspAcceptedByOp(tx, companyId, jcIds);
+    // Open rework/repair child qty per op (see the list builder above, gap 6).
+    const openReworkByOp = await loadOpenReworkByOp(tx, companyId, jcIds);
 
     const rollupByJcId = new Map<string, { rollup: JCRollup; ops: EnrichedOp[] }>();
     for (const jc of jcRows) {
       const ops = opsByJc.get(jc.id) ?? [];
       const opLogsForJc = ops.flatMap((o) => logsByOp.get(o.id) ?? []);
-      const enriched = enrichOps(jc, ops, opLogsForJc, runningOpIds, ospAcceptedByOp);
+      const enriched = enrichOps(
+        jc,
+        ops,
+        opLogsForJc,
+        runningOpIds,
+        ospAcceptedByOp,
+        openReworkByOp,
+      );
       rollupByJcId.set(jc.id, { rollup: rollupJC(jc, enriched), ops: enriched });
     }
 

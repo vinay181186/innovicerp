@@ -184,14 +184,103 @@ describe('enrichOps', () => {
     expect(enriched[0]?.status).toBe('qc_pending');
   });
 
-  it('qc op: input flows directly to qc; resolved when acc+rej >= inputAvail', () => {
+  it('qc op: input flows directly to qc; complete only when ACCEPTED >= inputAvail (0125)', () => {
+    const ops = [op({ id: 'o1', opSeq: 1, opType: 'qc', qcRequired: true })];
+    const enriched = enrichOps(jc({ orderQty: 100 }), ops, [log('o1', 'qc', 100, 0)], new Set());
+    expect(enriched[0]?.qcAccepted).toBe(100);
+    expect(enriched[0]?.qcPending).toBe(0);
+    expect(enriched[0]?.status).toBe('complete');
+  });
+
+  // QC-NC audit 2026-09-21 gap 6 — mirrors v_jc_op_status (0125): the old rule
+  // here was acc + rej >= input, so op 30 of a 10-piece JC read complete at
+  // 8 accepted / 2 rejected while the view (and the JC) said otherwise.
+  it('qc op: rejected pieces do NOT count — 95 accepted / 5 rejected of 100 is in_progress, not complete', () => {
     const ops = [op({ id: 'o1', opSeq: 1, opType: 'qc', qcRequired: true })];
     const logs = [log('o1', 'qc', 95, 5)];
     const enriched = enrichOps(jc({ orderQty: 100 }), ops, logs, new Set());
     expect(enriched[0]?.qcAccepted).toBe(95);
     expect(enriched[0]?.qcRejected).toBe(5);
-    expect(enriched[0]?.qcPending).toBe(0);
+    expect(enriched[0]?.qcPending).toBe(0); // nothing left to inspect …
+    expect(enriched[0]?.status).toBe('in_progress'); // … but not everything accepted
+  });
+
+  it('qc op: the recovered pieces come back as a qc-accepted re-inject row and complete the op', () => {
+    const ops = [op({ id: 'o1', opSeq: 1, opType: 'qc', qcRequired: true })];
+    // 8 accepted / 2 rejected, then the rework child clears 2 → re-inject row.
+    const logs = [log('o1', 'qc', 8, 2), log('o1', 'qc', 2, 0)];
+    const enriched = enrichOps(jc({ orderQty: 10 }), ops, logs, new Set());
+    expect(enriched[0]?.qcAccepted).toBe(10);
     expect(enriched[0]?.status).toBe('complete');
+  });
+
+  it('qc op: an OPEN rework/repair child on the op holds it at in_progress even when accepted >= input (0124)', () => {
+    const ops = [op({ id: 'o1', opSeq: 1, opType: 'qc', qcRequired: true })];
+    const logs = [log('o1', 'qc', 10, 0)];
+    const withOpen = enrichOps(
+      jc({ orderQty: 10 }),
+      ops,
+      logs,
+      new Set(),
+      undefined,
+      new Map([['o1', 2]]),
+    );
+    expect(withOpen[0]?.status).toBe('in_progress');
+    // Child settled (map empty / qty 0) → complete again.
+    const settled = enrichOps(jc({ orderQty: 10 }), ops, logs, new Set(), undefined, new Map());
+    expect(settled[0]?.status).toBe('complete');
+    const zero = enrichOps(
+      jc({ orderQty: 10 }),
+      ops,
+      logs,
+      new Set(),
+      undefined,
+      new Map([['o1', 0]]),
+    );
+    expect(zero[0]?.status).toBe('complete');
+  });
+
+  it('qc op: open rework on a DIFFERENT op does not hold this one', () => {
+    const ops = [op({ id: 'o1', opSeq: 1, opType: 'qc', qcRequired: true })];
+    const logs = [log('o1', 'qc', 10, 0)];
+    const r = enrichOps(
+      jc({ orderQty: 10 }),
+      ops,
+      logs,
+      new Set(),
+      undefined,
+      new Map([['o9', 2]]),
+    );
+    expect(r[0]?.status).toBe('complete');
+  });
+
+  it('process+qcRequired: open rework child holds a fully-accepted op at in_progress (0124)', () => {
+    const ops = [op({ id: 'o1', opSeq: 1, qcRequired: true })];
+    const logs = [log('o1', 'complete', 10), log('o1', 'qc', 10, 0)];
+    const held = enrichOps(
+      jc({ orderQty: 10 }),
+      ops,
+      logs,
+      new Set(),
+      undefined,
+      new Map([['o1', 1]]),
+    );
+    expect(held[0]?.status).toBe('in_progress');
+    const free = enrichOps(jc({ orderQty: 10 }), ops, logs, new Set());
+    expect(free[0]?.status).toBe('complete');
+  });
+
+  it('rollupJC: a QC last op with rejects outstanding keeps the JC in_progress and doneQty = accepted only', () => {
+    const ops = [
+      op({ id: 'o1', opSeq: 1 }),
+      op({ id: 'o2', opSeq: 2, opType: 'qc', qcRequired: true }),
+    ];
+    const logs = [log('o1', 'complete', 10), log('o2', 'qc', 8, 2)];
+    const enriched = enrichOps(jc({ orderQty: 10 }), ops, logs, new Set());
+    const rollup = rollupJC(jc({ orderQty: 10 }), enriched);
+    expect(rollup.doneQty).toBe(8);
+    expect(rollup.remainingQty).toBe(2);
+    expect(rollup.status).toBe('in_progress');
   });
 
   it('qc op: partial resolution → qc_pending', () => {

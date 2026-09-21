@@ -322,7 +322,15 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
               ),
             )
             .where(
-              and(inArray(salesOrders.id, soIds), isNull(jobCards.deletedAt), isNull(plans.id)),
+              and(
+                inArray(salesOrders.id, soIds),
+                isNull(jobCards.deletedAt),
+                isNull(plans.id),
+                // A rework/repair child inherits the line link but re-makes
+                // pieces the parent JC already covers — counting it as extra
+                // coverage read "12 of 10" (QC-NC audit 2026-09-21, gap 3).
+                isNull(jobCards.recoveryKind),
+              ),
             )
             .groupBy(salesOrders.id);
     const directMap = new Map<string, number>();
@@ -440,7 +448,13 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
               ),
             )
             .where(
-              and(inArray(jobWorkOrders.id, jwIds), isNull(jobCards.deletedAt), isNull(plans.id)),
+              and(
+                inArray(jobWorkOrders.id, jwIds),
+                isNull(jobCards.deletedAt),
+                isNull(plans.id),
+                // Rework/repair children are not extra coverage (gap 3).
+                isNull(jobCards.recoveryKind),
+              ),
             )
             .groupBy(jobWorkOrders.id);
     const jwDirectMap = new Map<string, number>();
@@ -700,7 +714,15 @@ export async function getPlanningSoDetail(
               orderQty: jobCards.orderQty,
             })
             .from(jobCards)
-            .where(and(inArray(jobCards.sourceSoLineId, lineIds), isNull(jobCards.deletedAt)))
+            .where(
+              and(
+                inArray(jobCards.sourceSoLineId, lineIds),
+                isNull(jobCards.deletedAt),
+                // Rework/repair children are not extra coverage (gap 3, see
+                // the list aggregate above).
+                isNull(jobCards.recoveryKind),
+              ),
+            )
             .orderBy(asc(jobCards.code));
     const directJcByLine = new Map<string, { qty: number; codes: string[] }>();
     for (const jc of jcRows) {
@@ -1425,7 +1447,13 @@ export async function raisePlanningPr(
           ),
         )
         .where(
-          and(eq(jobCards.sourceSoLineId, soLineId), isNull(jobCards.deletedAt), isNull(plans.id)),
+          and(
+            eq(jobCards.sourceSoLineId, soLineId),
+            isNull(jobCards.deletedAt),
+            isNull(plans.id),
+            // Rework/repair children are not extra coverage (gap 3).
+            isNull(jobCards.recoveryKind),
+          ),
         );
       const directJcQty = Number(directAgg[0]?.qty ?? 0);
 

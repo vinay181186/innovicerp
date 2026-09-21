@@ -47,6 +47,7 @@ import {
   rollupSoLine,
 } from '../../lib/calc-engine';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { loadOpenReworkByOp } from '../../lib/open-rework';
 import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -152,6 +153,14 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           and(
             inArray(jobCards.sourceSoLineId, lineIds),
             isNull(jobCards.deletedAt),
+            // A rework/repair child inherits the parent's SO-line link so its
+            // own close cascade works, but its pieces are re-injected into the
+            // PARENT's route and counted there (sales-cascade producedForLine,
+            // docs/QC-NC-HANDLING-DESIGN.md §4). Counting it here as well read
+            // "JC issued 12 of 10, done 12" on a 10-piece line with 2 reworked
+            // (QC-NC audit 2026-09-21, gap 3). Excluded from the list and every
+            // rollup; the parent card's ops carry the recovered pieces.
+            isNull(jobCards.recoveryKind),
           ),
         )
         .orderBy(asc(jobCards.code)),
@@ -277,6 +286,10 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
     // reads complete (and stops counting as at-vendor) once the vendor has
     // returned everything.
     const ospAcceptedByOp = await loadOspAcceptedByOp(tx, companyId, jcIds);
+    // Pieces still out on a rework/repair child per op — holds the op at
+    // in_progress exactly as v_jc_op_status does (QC-NC audit 2026-09-21,
+    // gap 6), so a line never reads "produced 10 of 10" while 2 are in rework.
+    const openReworkByOp = await loadOpenReworkByOp(tx, companyId, jcIds);
 
     // Build JC rollups via calc-engine.
     const rollupByJcId = new Map<string, { rollup: JCRollup; ops: EnrichedOp[] }>();
@@ -293,6 +306,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         opLogsForJc,
         runningOpIds,
         ospAcceptedByOp,
+        openReworkByOp,
       );
       const rollup = rollupJC(jcForCalc as never, enriched);
       rollupByJcId.set(jc.id, { rollup, ops: enriched });

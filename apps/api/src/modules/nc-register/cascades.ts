@@ -11,19 +11,27 @@
 //                        in-route rework it drove is the legacy path, kept
 //                        alive only for rows that already carry it.
 //   repair            → status=under_repair; same mechanics, `-RP<n>` code.
-//   scrap             → status=closed; scrap_cost stored on NC. Needs the
+//   scrap             → status=closed; failed_qty = rejected_qty (ledger
+//                        balances); scrap_cost stored on NC. Needs the
 //                        `approve` tier on NC Register (§3: "close only after
-//                        required authorization").
-//   use_as_is         → status=closed; append op_log row with type='qc',
-//                        qty=rejected_qty, operator resolved by name lookup,
-//                        remarks = 'Use As Is — from <ncCode> (...)'.
+//                        required authorization"). On a recovery child the
+//                        failed qty climbs to every ancestor NC.
+//   use_as_is         → status=closed; cleared_qty = rejected_qty; append
+//                        op_log row with type='qc', qty=rejected_qty, operator
+//                        resolved by name lookup, remarks = 'Use As Is — from
+//                        <ncCode> (...)'. On the JC's LAST op the pieces are
+//                        credited to finished stock once (same guards as a
+//                        keyed QC log). On a recovery child (last op) the
+//                        pieces climb to the ancestors like a child QC accept.
+//                        Both then run the JC-close walk up the parent chain.
 //   return_to_vendor  → status=DISPOSED (not closed — ADR-117 / migration 0093).
 //                        While it stays open, v_jc_op_status + v_osp_wip count
 //                        its rejected_qty as at_vendor and take it out of the
 //                        source op's pending, so the vendor visibly owes a
 //                        replacement and the op cannot read `complete`. The
 //                        challan is a separate action (service.createNcDc).
-//   make_fresh        → status=closed; create supplementary JC inheriting
+//   make_fresh        → status=closed; failed_qty = rejected_qty (needs view
+//                        migration 0138); create supplementary JC inheriting
 //                        origin's source SO/JW link + parent_nc_id pointing
 //                        at this NC; rework_jc_code_text stored on NC.
 //
@@ -33,11 +41,12 @@
 // exactly one disposition — there is no child table to reconcile.
 
 import { opSrNo } from '@innovic/shared';
-import { and, eq, isNull, like, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
   items,
+  jcOps,
   jobCards,
   ncRegister,
   opLog,
@@ -47,6 +56,8 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
+import { cascadeJcCompleteUpChain } from '../op-entry/sales-cascade';
 import { climbRecoveryToAncestors, createRecoveryJobCard, ncOpenQty } from './recovery';
 import type { DisposeNcInput } from './schema';
 
@@ -361,6 +372,15 @@ export async function disposeNcCascade(
         dispositionByText: ctx.userName,
         dispositionRemarks: input.remarks ?? null,
         scrapCost: scrapCost.toFixed(2),
+        // Ledger (QC-NC audit 2026-09-21, gap 8): the scrapped pieces are
+        // written off on THIS row, so cleared + failed = rejected and the NC's
+        // open qty reads 0 rather than the whole rejected qty after close.
+        // Before, only the ANCESTOR NCs received `failed` (via the climb
+        // below) and a top-level scrap left its own ledger at 0/0. Readers
+        // are unaffected: v_nc_op_breakup.scrap_qty and the production-order
+        // loss sum both key scrap on disposition + rejected_qty, and
+        // nc_closed_qty excludes scrap outright.
+        failedQty: rejectedQtyInt.toFixed(2),
         closedAt: new Date(),
         closedBy: ctx.userId,
         updatedBy: ctx.userId,
@@ -381,6 +401,13 @@ export async function disposeNcCascade(
       ctx.companyId,
       ctx.user,
     );
+    // Settling an ancestor NC lifts the "open rework child" hold on its origin
+    // op (v_jc_op_status rework_child_open), so an ancestor whose other pieces
+    // were already accepted can reach `complete` right here — run the same
+    // idempotent JC-close walk op-entry runs after a QC log (gap 2). A no-op
+    // when nothing reached complete (a scrap that leaves the op short of its
+    // input — see the completion question in the audit report).
+    await cascadeJcCompleteUpChain(tx, nc.jobCardId, ctx.user);
     return result;
   }
 
@@ -449,6 +476,14 @@ export async function disposeNcCascade(
         dispositionDate: today,
         dispositionByText: ctx.userName,
         dispositionRemarks: input.remarks ?? null,
+        // Ledger (QC-NC audit 2026-09-21, gap 8): the pieces are accepted with
+        // concession, i.e. CLEARED — the qc row above is the same mechanism a
+        // rework child's recovery uses, so the NC books it the same way and
+        // cleared + failed = rejected. Before, the row closed with 0/0 and its
+        // open qty read the whole rejected qty forever. v_nc_op_breakup
+        // (0131) counts a closed non-scrap NC by cleared_qty once a ledger is
+        // present, which equals what it counted before (rejected_qty).
+        clearedQty: rejectedQtyInt.toFixed(2),
         closedAt: new Date(),
         closedBy: ctx.userId,
         updatedBy: ctx.userId,
@@ -458,6 +493,81 @@ export async function disposeNcCascade(
     result.status = 'closed';
     const insertedId = inserted[0]?.id;
     if (insertedId) result.opLogId = insertedId;
+
+    // On a rework/repair CHILD the concession settles pieces the PARENT NC is
+    // still waiting for: climb them exactly as the child's own terminal QC
+    // accept would (recovery.ts onRecoveryJobCardQc) — credit each ancestor NC
+    // and re-inject into each ancestor's origin op. Same guard as that hook:
+    // only when the NC's op is the child's LAST op. On an intermediate op the
+    // concession row feeds the next child op instead, and the child's terminal
+    // QC climbs the pieces when they get there — climbing here as well would
+    // put them on the parent twice. The climb starts from the child's parent
+    // NC (job_cards.parent_nc_id), never from THIS NC, so the qc row already
+    // written on nc.jcOpId above is the only row this op gets — no double
+    // re-injection on the child's own op. A plain (top-level) JC has no
+    // parent NC and is skipped.
+    const jcRows = await tx
+      .select({
+        code: jobCards.code,
+        recoveryKind: jobCards.recoveryKind,
+        parentNcId: jobCards.parentNcId,
+      })
+      .from(jobCards)
+      .where(and(eq(jobCards.id, nc.jobCardId), eq(jobCards.companyId, ctx.companyId)))
+      .limit(1);
+    const lastOpRows = await tx
+      .select({ opSeq: jcOps.opSeq })
+      .from(jcOps)
+      .where(and(eq(jcOps.jobCardId, nc.jobCardId), isNull(jcOps.deletedAt)))
+      .orderBy(desc(jcOps.opSeq))
+      .limit(1);
+    const isChildLastOp = lastOpRows[0]?.opSeq != null && lastOpRows[0].opSeq === nc.opSeq;
+
+    // Finished stock, exactly ONCE per piece (ADR-069) — the same two checks
+    // submitQcLog runs after a keyed QC log. A concession on the JC's LAST op
+    // is the last inspection those pieces ever get, and the qc row above was
+    // written directly (never through submitQcLog), so nothing else would
+    // credit them: the SO line closed at 10 while the store held 8. Guard:
+    //   - tryApplyQcStockCascade is a no-op unless nc.opSeq is the JC's last op
+    //     (and skips Production-Order JCs, ADR-170);
+    //   - recoveryChildCreditsStock walks a rework chain to the TOP job card
+    //     and says yes only when the pieces re-enter the top route at ITS last
+    //     op — then the climb's re-inject rows (written directly too) are the
+    //     end of the road and this is the one place they are credited. Any
+    //     earlier re-entry op means the top JC's own terminal QC credits them.
+    // Ordinary (non-recovery) JC → the guard is simply true.
+    if (jcRows[0]?.code && (await recoveryChildCreditsStock(tx, ctx.companyId, nc.jobCardId))) {
+      await tryApplyQcStockCascade(
+        tx,
+        {
+          companyId: ctx.companyId,
+          jobCardId: nc.jobCardId,
+          jcCode: jcRows[0].code,
+          opSeq: nc.opSeq,
+          acceptedQty: rejectedQtyInt,
+          txnDate: today,
+        },
+        ctx.user,
+      );
+    }
+
+    if (jcRows[0]?.recoveryKind && jcRows[0].parentNcId && isChildLastOp) {
+      await climbRecoveryToAncestors(
+        tx,
+        nc.jobCardId,
+        rejectedQtyInt,
+        0,
+        `use_as_is ${nc.code}`,
+        today,
+        'day',
+        ctx.companyId,
+        ctx.user,
+      );
+    }
+    // The qc row (and, on a child, the re-injected ancestor rows) can be what
+    // brings this JC or any ancestor to `complete`; nothing else runs the
+    // close check for a row written here. Same idempotent walk as op-entry.
+    await cascadeJcCompleteUpChain(tx, nc.jobCardId, ctx.user);
     return result;
   }
 
@@ -543,6 +653,14 @@ export async function disposeNcCascade(
     throw new ValidationError('Failed to create supplementary JC');
   }
 
+  // Ledger (QC-NC audit 2026-09-21, gap 8): the pieces are written off and
+  // the supplementary JC replaces them, so failed_qty = rejected_qty and the
+  // NC's open qty reads 0 after close (cleared + failed = rejected).
+  // DEPENDS ON migration 0138 (v_nc_op_breakup): before it, the view counted
+  // a closed non-scrap NC by cleared_qty the moment ANY ledger was present,
+  // so this write would have dropped make_fresh pieces out of the op's
+  // "closed" strip; 0138 keys make_fresh on rejected_qty regardless. The
+  // production-order loss sum already keys make_fresh on disposition.
   await tx
     .update(ncRegister)
     .set({
@@ -552,11 +670,32 @@ export async function disposeNcCascade(
       dispositionByText: ctx.userName,
       dispositionRemarks: input.remarks ?? null,
       reworkJcCodeText: newJc.code,
+      failedQty: rejectedQtyInt.toFixed(2),
       closedAt: new Date(),
       closedBy: ctx.userId,
       updatedBy: ctx.userId,
     })
     .where(eq(ncRegister.id, ncId));
+
+  // If this NC sits on a recovery CHILD, the written-off pieces are gone from
+  // the whole chain exactly as a scrap is (the supplementary JC replaces them
+  // as its own document): climb `failed` up to every ancestor NC so each can
+  // settle instead of waiting forever for pieces that will never come back,
+  // then run the same JC-close walk the scrap branch runs — lifting the
+  // "open rework child" hold can be what lets an ancestor read `complete`.
+  // Both are no-ops on a top-level NC (no parent NC to climb to).
+  await climbRecoveryToAncestors(
+    tx,
+    nc.jobCardId,
+    0,
+    qty,
+    `make fresh ${nc.code}`,
+    today,
+    'day',
+    ctx.companyId,
+    ctx.user,
+  );
+  await cascadeJcCompleteUpChain(tx, nc.jobCardId, ctx.user);
 
   result.status = 'closed';
   result.newJcCode = newJc.code;
@@ -693,7 +832,11 @@ export async function autoCreateNcFromQcReject(
   // Look up itemId + itemCode from the JC. NC requires itemId NOT NULL +
   // snapshots itemCodeText for durable display.
   const jcRows = await tx
-    .select({ itemId: jobCards.itemId })
+    .select({
+      itemId: jobCards.itemId,
+      recoveryKind: jobCards.recoveryKind,
+      parentNcId: jobCards.parentNcId,
+    })
     .from(jobCards)
     .where(and(eq(jobCards.id, ctx.jobCardId), eq(jobCards.companyId, ctx.companyId)))
     .limit(1);
@@ -739,7 +882,18 @@ export async function autoCreateNcFromQcReject(
   // G8 (gap report 2026-09-16): an Incoming-QC reject on a GRN that itself
   // came back against an NC's return-to-vendor challan (goods_receipt_notes.nc_id)
   // is a FOLLOW-ON of that NC — the same pieces, second trip. Link the new row
-  // to it so the register can show "Continues NC <code>". Null on any other path.
+  // to it so the register can show "Continues NC <code>".
+  //
+  // Same idea for the in-house trip (QC-NC audit 2026-09-21, gap 7): a reject
+  // on a rework/repair CHILD's QC op is a follow-on of the NC that child is
+  // reworking (job_cards.parent_nc_id) — the same pieces, second attempt — so
+  // the chain reads NC-1 → P-RW1 → NC-2 → P-RW1-RW1 without a gap. Null on
+  // an ordinary job card.
+  //
+  // Order: the GRN header's nc_id wins when the GRN IS a return-to-vendor
+  // replacement; otherwise (no GRN line, or an ordinary GRN line — e.g. a
+  // rework child routed through an outsource op) fall back to the child's own
+  // parent NC. Without the fallback a reject on such a child got no link.
   let parentNcId: string | null = null;
   if (ctx.grnLineId) {
     const parentRows = await tx
@@ -757,6 +911,9 @@ export async function autoCreateNcFromQcReject(
       )
       .limit(1);
     parentNcId = parentRows[0]?.ncId ?? null;
+  }
+  if (!parentNcId && jc.recoveryKind && jc.parentNcId) {
+    parentNcId = jc.parentNcId;
   }
 
   const inserted = await tx

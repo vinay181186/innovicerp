@@ -377,6 +377,13 @@ async function loadDispatchable(
           LEFT JOIN jc_ops jo
             ON jo.job_card_id = jc.id AND jo.op_seq = vs.op_seq AND jo.deleted_at IS NULL
           WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
+            -- A rework/repair child inherits the parent's line link, but its
+            -- accepted pieces are re-injected into the PARENT's route and
+            -- counted on the parent's last op (sales-cascade producedForLine
+            -- applies the same filter). Counting the child too read "ready
+            -- 12" on a 10-piece line with 2 reworked (QC-NC audit 2026-09-21,
+            -- gap 4) and would let 2 phantom pieces be dispatched.
+            AND jc.recovery_kind IS NULL
           ORDER BY jc.id, vs.op_seq DESC
         ) x
       ) rdy ON TRUE

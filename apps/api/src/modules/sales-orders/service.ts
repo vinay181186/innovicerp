@@ -506,6 +506,10 @@ export async function listSalesOrders(
         FROM public.job_cards jc
         JOIN public.sales_order_lines sol ON jc.source_so_line_id = sol.id
         WHERE jc.deleted_at IS NULL
+          -- A rework/repair child inherits the line link but re-makes pieces
+          -- the parent JC already covers; summing it read "JC 12 of 10"
+          -- (QC-NC audit 2026-09-21, gap 3).
+          AND jc.recovery_kind IS NULL
         GROUP BY sol.sales_order_id
       ) jc_agg ON jc_agg.sales_order_id = so.id
       LEFT JOIN LATERAL (
@@ -670,6 +674,8 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
     );
 
     // JC qty per SO line = Σ job_cards.order_qty whose source_so_line_id = line.
+    // Rework/repair children excluded — they re-make pieces the parent JC
+    // already covers (QC-NC audit 2026-09-21, gap 3; same rule as the list).
     const jcRows = await tx
       .select({
         lineId: jobCards.sourceSoLineId,
@@ -677,7 +683,13 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       })
       .from(jobCards)
       .innerJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
-      .where(and(eq(salesOrderLines.salesOrderId, id), isNull(jobCards.deletedAt)))
+      .where(
+        and(
+          eq(salesOrderLines.salesOrderId, id),
+          isNull(jobCards.deletedAt),
+          isNull(jobCards.recoveryKind),
+        ),
+      )
       .groupBy(jobCards.sourceSoLineId);
     const jcByLine = new Map(
       jcRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.jcQty)]),

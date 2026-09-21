@@ -313,6 +313,9 @@ export async function listJobWorkOrders(
         JOIN public.job_work_order_lines l
           ON l.id = jc.source_jw_line_id AND l.deleted_at IS NULL
         WHERE jc.deleted_at IS NULL AND jc.source_jw_line_id IS NOT NULL
+          -- Rework/repair children re-make pieces the parent JC already
+          -- covers (QC-NC audit 2026-09-21, gap 3; same rule as SO list).
+          AND jc.recovery_kind IS NULL
         GROUP BY l.job_work_order_id
       ) jca ON jca.job_work_order_id = jw.id
       -- Actual client-material receipts = Σ party_grn_lines.received_qty across

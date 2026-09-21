@@ -9313,6 +9313,7 @@ functionality, routing, permissions and theme, change nothing unrelated.
   page. QC Call Register's sheet title row is its title.
 
 ## ADR-174: Plan carries the Customer Dispatch Date; parent / child job cards name each other in the header
+
 **Date:** 2026-09-21
 **Status:** Accepted
 
@@ -9356,3 +9357,60 @@ downstream"; (2) a parent job card's header must show its child job card(s);
   falls back to Planned End); JW-sourced plans have no SO due date to default
   from and start blank.
 - Migration 0137 applied to TEST 2026-09-21; production pending the user's go.
+
+## ADR-175: Every NC disposition settles the whole rework chain — ledger, stock once, and the job card closes all the way up
+
+**Date:** 2026-09-21
+**Status:** Accepted
+
+### Context
+
+A read-only audit of the rework chain (parent JC 10 pcs, QC rejects 2 → NC → rework child
+`-RW1` → child Final Inspection accepts 2; grandchild variant) proved the climb-back ledger,
+stock-once and SO-line close correct, and found: the parent JC never received `closed_at`
+(the child's cascade closed the SO line first; the parent's turn found it "already terminal"
+and skipped); only one ancestor level was ever re-checked; SO Status / SO Overview /
+dispatch readiness / SO & JW lists / planning / the JC-create picker counted rework children
+as extra job cards (12 of 10); the stock guard looked only one level up; the pure calc-engine
+declared a QC op complete on `accepted + rejected` and ignored open rework children; a
+second-cycle NC on a rework child had no `parent_nc_id`; `use_as_is` never set `cleared_qty`,
+never climbed from a child, never credited stock on a last op and never ran the JC-close
+check; `scrap` and `make_fresh` closed the NC with an empty ledger (open still read N on a
+closed NC) and never settled a child's ancestor.
+
+### Decision
+
+1. A JC is finished when it is `complete` and its SO/JW line is terminal — closed by this
+   call OR already; `closed_at` set once, `JC_COMPLETE` emitted only when flipped. A
+   recovery child is finished when its own ops are complete. After any QC log or
+   disposition, `cascadeJcCompleteUpChain` walks every ancestor, innermost first.
+2. Every quantity rollup keyed on `source_so_line_id` excludes `recovery_kind IS NOT NULL`
+   (matching `producedForLine`): so-status, so-overview, customer-dispatches ready qty, SO /
+   JW list jcQty, so-planning coverage, job-cards "already in JCs". Cost and label lists are
+   untouched.
+3. `recoveryChildCreditsStock` walks to the top non-recovery JC and credits only when the
+   first-level child's origin op is that JC's last op.
+4. calc-engine: a QC op is complete on `accepted ≥ input` and no open rework child
+   (`openReworkByOp`, fed by `lib/open-rework.ts`); a fully-accepted qc-required process op
+   with an open child reads in_progress.
+5. A reject raised on a recovery child's QC op sets `parent_nc_id` = the child's parent NC
+   (GRN `nc_id` still wins on a replacement receipt).
+6. Dispositions: `use_as_is` → `cleared = rejected`, credits stock on a last op (same two
+   guards as a QC log), climbs from a child, JC-close walk; `scrap` → `failed = rejected`,
+   climb, JC-close walk; `make_fresh` → `failed = rejected` (migration 0138 keeps the strip
+   counting those pieces), climb, JC-close walk; `rework`/`repair` share one path;
+   `return_to_vendor` unchanged.
+
+### Open business rule (not decided here)
+
+After `scrap` or `make_fresh` the origin op stays at 8 of 10: the JC never completes
+(scrap leaves the SO line short; make_fresh's supplementary JC closes the line while the
+origin JC stays open). Whether a written-off piece reduces the origin JC's requirement is
+the user's call — see docs/TASKS.md.
+
+### Consequences
+
+- Positive: any disposition on any level leaves the NC ledger balanced, the op counters,
+  JC status, SO figures and stock agreeing with the physical pieces.
+- Negative: rework children no longer appear in the SO Status JC list (excluded rather than
+  flagged — the shared shape has no flag); 0138 must precede the code on each database.

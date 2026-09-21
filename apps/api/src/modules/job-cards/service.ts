@@ -620,8 +620,12 @@ async function resolveLinkedSource(
             COALESCE(so.customer_name, cli.name) AS "customerName",
             sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
             sol.client_po_line_no AS "clientPoLineNo",
+            -- "Already in JCs" excludes rework/repair children, exactly as
+            -- assertLineBalance does — they re-make pieces the parent card
+            -- already covers (QC-NC audit 2026-09-21, gap 3).
             COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-              WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+              WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
+                AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
           FROM public.sales_order_lines sol
           JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
           LEFT JOIN public.items i ON i.id = sol.item_id AND i.deleted_at IS NULL
@@ -637,7 +641,8 @@ async function resolveLinkedSource(
             jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
             NULL AS "clientPoLineNo",
             COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-              WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+              WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
+                AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
           FROM public.job_work_order_lines jwl
           JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
           LEFT JOIN public.items i ON i.id = jwl.item_id AND i.deleted_at IS NULL
@@ -660,7 +665,8 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-          WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+          WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
+            AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
       FROM public.sales_order_lines sol
       JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = sol.item_id
@@ -672,7 +678,8 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         COALESCE(jw.customer_name, cli2.name),
         jwl.order_qty, jwl.due_date, NULL,
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-          WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL), 0)::int
+          WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
+            AND jc.recovery_kind IS NULL), 0)::int
       FROM public.job_work_order_lines jwl
       JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.items i2 ON i2.id = jwl.item_id
