@@ -485,6 +485,7 @@ export async function listSalesOrders(
         cu.full_name                          AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int AS "totalQty",
+        COALESCE(line_agg.dispatched_qty, 0)::int AS "dispatchedQty",
         line_agg.earliest_due_date::text      AS "earliestDueDate",
         COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty",
         cpo_file.storage_path                 AS "clientPoFilePath"
@@ -494,6 +495,7 @@ export async function listSalesOrders(
         SELECT sales_order_id,
                COUNT(*) AS line_count,
                SUM(order_qty) AS total_qty,
+               SUM(dispatched_qty) AS dispatched_qty,
                MIN(due_date) AS earliest_due_date
         FROM public.sales_order_lines
         WHERE deleted_at IS NULL
@@ -591,6 +593,7 @@ function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
+    dispatchedQty: Number(r['dispatchedQty'] ?? 0),
     jcQty: Number(r['jcQty'] ?? 0),
     earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
     clientPoFilePath: (r['clientPoFilePath'] as string | null) ?? null,

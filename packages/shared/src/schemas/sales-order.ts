@@ -161,6 +161,10 @@ export const salesOrderListItemSchema = salesOrderSchema.extend({
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
   jcQty: z.number().int().nonnegative(),
+  /** Pieces already dispatched to the customer, summed over the order's lines
+   *  (sales_order_lines.dispatched_qty). The list's Dispatched column; Balance
+   *  is totalQty minus this. */
+  dispatchedQty: z.number().int().nonnegative().default(0),
   earliestDueDate: z.string().nullable(),
   // 📎 client-PO file link (ISSUE-013): latest active file_registry row with
   // category 'client_po' for this SO; null when none. Mirrors legacy

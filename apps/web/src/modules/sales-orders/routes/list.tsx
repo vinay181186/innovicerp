@@ -5,6 +5,9 @@
 // Per-card +Line / Assign / Del; expanded component lines show JC Qty /
 // Dispatched / Balance with inline Edit + Del; expanded equipment shows the
 // BOM-status strip + exploded BOM items table. Header has Excel Export.
+// 2026-09-21: a List View (the ruled sheet, components/so-sheet-table.tsx) sits
+// beside the cards behind a List View / Card View toggle, remembered per
+// browser. Same query, same expand state, same actions and gates in both.
 
 import {
   type ListSalesOrdersQuery,
@@ -35,6 +38,7 @@ import {
   useSoftDeleteSalesOrder,
   useUpdateSalesOrder,
 } from '../api';
+import { SoSheetTable } from '../components/so-sheet-table';
 import { SoStatusBadge } from '../components/so-status-badge';
 import { exportSoListExcel } from '../lib/import-export';
 import { ItemBadge } from '@/components/shared/item-badge';
@@ -50,6 +54,8 @@ import { ItemBadge } from '@/components/shared/item-badge';
 // list (user decision: scroll, not Prev/Next pages). One fetch, offset 0. The
 // API caps `limit` at 1000; the count line flags the rare case of a larger set.
 const LIST_LIMIT = 1000;
+// Where the List / Card choice is remembered (per browser, like the JC list's).
+const VIEW_STORAGE_KEY = 'so-list-view';
 
 /** One cell of the card's metric strip — big number over a small caps label,
  *  the shape the reference uses for TOTAL QTY / JC QTY / LINES. */
@@ -134,6 +140,26 @@ function SalesOrdersListPage(): React.JSX.Element {
   useEffect(() => {
     setSearchInput(search.search ?? '');
   }, [search.search]);
+
+  // List View (the ruled sheet) vs Card View (the original cards). List is the
+  // default; the choice is remembered per browser, wrapped in try/catch so a
+  // locked-down browser (no localStorage) still renders. Same pattern as the
+  // Job Cards list.
+  const [view, setView] = useState<'list' | 'card'>(() => {
+    try {
+      return localStorage.getItem(VIEW_STORAGE_KEY) === 'card' ? 'card' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
+  const changeView = (next: 'list' | 'card'): void => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // ignore — persistence is best-effort
+    }
+  };
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
@@ -342,17 +368,39 @@ function SalesOrdersListPage(): React.JSX.Element {
               );
             })}
           </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() =>
-              setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
-            }
-            disabled={rows.length === 0}
-            title={allExpanded ? 'Hide every card’s line items' : 'Show every card’s line items'}
-          >
-            {allExpanded ? 'Collapse all' : 'Expand all'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* Expand all works on the one expandedIds set both views read,
+                so it opens every card AND every sheet row alike. */}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
+              }
+              disabled={rows.length === 0}
+              title={allExpanded ? 'Hide every order’s line items' : 'Show every order’s line items'}
+            >
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
+            <span style={{ width: 1, height: 18, background: 'var(--border2)', margin: '0 4px' }} aria-hidden />
+            {/* List / Card view toggle */}
+            <button
+              type="button"
+              className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => changeView('list')}
+              aria-pressed={view === 'list'}
+            >
+              ☰ List View
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${view === 'card' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => changeView('card')}
+              aria-pressed={view === 'card'}
+            >
+              ▦ Card View
+            </button>
+          </div>
         </div>
       </div>
 
@@ -373,7 +421,24 @@ function SalesOrdersListPage(): React.JSX.Element {
         </div>
       ) : rows.length === 0 ? (
         <div className="panel empty-state" style={{ padding: 24 }}>No orders — click + New SO/WO</div>
+      ) : view === 'list' ? (
+        // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────
+        <SoSheetTable
+          rows={rows}
+          expandedIds={expandedIds}
+          toggleExpand={toggleExpand}
+          today={today}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onOpen={(so) => void navigate({ to: '/sales-orders/$id', params: { id: so.id } })}
+          onDeleteSo={onDeleteSo}
+          onPreviewClientPo={setPreviewPath}
+          renderExpanded={(so) => (
+            <SoExpandedPanel soId={so.id} soType={so.type} canEdit={canEdit} canDelete={canDelete} />
+          )}
+        />
       ) : (
+        // ── CARD VIEW (the original cards, untouched) ────────────────────────
         rows.map((so) => {
           const isExpanded = expandedIds.has(so.id);
           const overdue =
@@ -545,7 +610,11 @@ function SalesOrdersListPage(): React.JSX.Element {
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-        💡 Click the <b>SO number</b> to open its detail page · click the card to show its line items · use <b>+ Line</b> to add or edit lines.
+        {view === 'list' ? (
+          <>💡 Click a row to open its detail page · click ▸ before the <b>SO number</b> to show its line items · use <b>+ Line</b> to add or edit lines.</>
+        ) : (
+          <>💡 Click the <b>SO number</b> to open its detail page · click the card to show its line items · use <b>+ Line</b> to add or edit lines.</>
+        )}
       </div>
       {previewPath ? (
         <FilePreviewModal storagePath={previewPath} onClose={() => setPreviewPath(null)} />
