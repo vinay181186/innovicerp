@@ -107,10 +107,10 @@ export function QcStageStrip(props: {
             style={{
               flex: 1,
               minWidth: 0,
-              background: 'none',
               border: 'none',
               borderRight: i < QC_STAGES.length - 1 ? '1px solid var(--border)' : 'none',
-              borderBottom: on ? '2px solid var(--text)' : '2px solid transparent',
+              borderBottom: on ? '2px solid var(--blue)' : '2px solid transparent',
+              background: on ? 'var(--blue3)' : 'none',
               padding: '8px 16px 6px',
               textAlign: 'left',
               cursor: 'pointer',
@@ -119,10 +119,18 @@ export function QcStageStrip(props: {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ ...CAPS, color: 'var(--text3)' }}>{s.n}</span>
-              <span style={{ ...CAPS, color: on ? 'var(--text)' : 'var(--text2)' }}>{s.label}</span>
+              <span style={{ ...CAPS, color: on ? 'var(--blue)' : 'var(--text3)' }}>{s.n}</span>
+              <span style={{ ...CAPS, color: on ? 'var(--blue)' : 'var(--text2)' }}>{s.label}</span>
               <span style={{ flex: 1 }} />
-              <span style={{ ...MONO, fontSize: 20, fontWeight: 700, lineHeight: 1 }}>
+              <span
+                style={{
+                  ...MONO,
+                  fontSize: 20,
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  color: on ? 'var(--blue)' : undefined,
+                }}
+              >
                 {st.count}
               </span>
             </div>
