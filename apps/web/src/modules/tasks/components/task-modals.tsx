@@ -5,39 +5,31 @@
 import type { TaskDetail, TaskLinkedRef, TaskRow, TaskUserOption } from '@innovic/shared';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '@innovic/shared';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useCreateTask, useNextTaskCode, useTaskDetail, useUpdateTaskStatus } from '../api';
 
-export function Overlay(props: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  wide?: boolean;
-}): React.JSX.Element {
-  return (
+export function Overlay(props: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }): React.JSX.Element {
+  // App-standard popup: portalled to <body> so the page shell can't clip it,
+  // on the theme's .overlay (z-index 500, above the 60 of #topnav) so the top
+  // bar never paints over the popup, with the dimmed + blurred backdrop.
+  return createPortal(
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: 24,
-        overflowY: 'auto',
+      className="overlay"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) props.onClose();
       }}
-      onClick={props.onClose}
     >
-      <div className="panel app-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="panel-hdr">
-          <span className="panel-title">{props.title}</span>
+      <div className={props.wide ? 'modal modal-lg' : 'modal'} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-hdr">
+          <span className="modal-title">{props.title}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={props.onClose}>
             ✕
           </button>
         </div>
-        <div className="panel-body">{props.children}</div>
+        <div className="modal-body">{props.children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

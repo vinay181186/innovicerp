@@ -11,6 +11,7 @@ import {
   type Shift,
 } from '@innovic/shared';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { todayLocal } from '@/lib/date';
 import { useCreateDailyReport, useDailyReportDetail, useUpdateDailyReport } from '../api';
 
@@ -19,21 +20,27 @@ function todayStr(): string {
 }
 
 export function Overlay(props: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }): React.JSX.Element {
-  return (
+  // App-standard popup: portalled to <body> so the page shell can't clip it,
+  // on the theme's .overlay (z-index 500, above the 60 of #topnav) so the top
+  // bar never paints over the popup, with the dimmed + blurred backdrop.
+  return createPortal(
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 50, padding: 24, overflowY: 'auto' }}
-      onClick={props.onClose}
+      className="overlay"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) props.onClose();
+      }}
     >
-      <div className="panel" style={{ width: props.wide ? 'min(1100px, 96vw)' : 'min(1100px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
-        <div className="panel-hdr">
-          <span className="panel-title">{props.title}</span>
+      <div className={props.wide ? 'modal modal-lg' : 'modal'} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-hdr">
+          <span className="modal-title">{props.title}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={props.onClose}>
             ✕
           </button>
         </div>
-        <div className="panel-body">{props.children}</div>
+        <div className="modal-body">{props.children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -130,7 +137,7 @@ function ReportEditor({
                 <th>Task Description</th>
                 <th style={{ width: 90 }}>SO/JC Ref</th>
                 <th style={{ width: 64 }}>Hours</th>
-                <th style={{ width: 110 }}>Status</th>
+                <th style={{ width: 140 }}>Status</th>
                 <th>Remarks</th>
                 <th style={{ width: 30 }} />
               </tr>
@@ -151,7 +158,7 @@ function ReportEditor({
                     <input type="number" min={0} step={0.5} className="innovic-input" style={{ width: 56, textAlign: 'center', fontWeight: 700 }} value={l.hours || ''} onChange={(e) => setLine(i, { hours: Number(e.target.value) || 0 })} />
                   </td>
                   <td>
-                    <select className="innovic-select" style={{ fontSize: 11 }} value={l.status} onChange={(e) => setLine(i, { status: e.target.value as DailyReportLineStatus })}>
+                    <select className="innovic-select" style={{ fontSize: 12, width: '100%' }} value={l.status} onChange={(e) => setLine(i, { status: e.target.value as DailyReportLineStatus })}>
                       {DAILY_REPORT_LINE_STATUSES.map((s) => (
                         <option key={s} value={s}>
                           {DAILY_REPORT_LINE_STATUS_LABELS[s]}
