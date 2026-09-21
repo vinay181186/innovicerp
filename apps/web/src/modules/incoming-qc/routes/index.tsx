@@ -1,21 +1,34 @@
 // Incoming QC (QC Wave 2). Ports legacy renderIncomingQC (HTML L23748):
 // pipeline dashboard + pending-GRN inspection queue + recently-completed
-// table. Read-only — the "Inspect" action links to the GRN detail page where
-// the existing goods-receipt-notes flow writes QC + the store transaction.
-// Legacy chrome.
+// table. The "🔬 Inspect" action opens the accept/reject form as a popup OVER
+// this queue (IncomingQcInspectModal) — the same form the QC Call Register
+// draws inline in its expanded row — so the inspector never leaves the list
+// they are working through. Legacy chrome.
 
 import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { z } from 'zod';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useIncomingQc } from '../api';
+import { IncomingQcInspectModal } from '../components/incoming-qc-inspect-modal';
+
+const searchSchema = z.object({
+  // DEEP LINK: `?line=<grnLineId>` means "open the Inspect popup for this GRN
+  // line" (the same param the QC Call Register accepts). It is consumed —
+  // taken back out of the URL — the moment the popup opens, so a refresh or
+  // Back is not a second request to open it.
+  line: z.string().optional(),
+});
 
 export const incomingQcRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'incoming-qc',
+  validateSearch: searchSchema,
   component: IncomingQcPage,
 });
 
@@ -49,6 +62,40 @@ function dispColor(d: IncomingQcCompletedRow['disposition']): string {
 function IncomingQcPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useIncomingQc();
   const { data: eff } = useMyAccess();
+  const search = incomingQcRoute.useSearch();
+  const navigate = incomingQcRoute.useNavigate();
+
+  // Which pending GRN line the Inspect popup is open on; null = closed. Only
+  // the id is kept — the row itself is always read fresh off the queue below,
+  // so a refetch (the queue polls every 30s) cannot leave the box on stale
+  // figures.
+  const [inspectLineId, setInspectLineId] = useState<string | null>(null);
+  const pending = data?.pending;
+  const inspectRow = inspectLineId
+    ? (pending?.find((r) => r.grnLineId === inspectLineId) ?? null)
+    : null;
+
+  // DEEP LINK — open the popup once the queue has loaded and the line is in
+  // it. Acted on once per id, then the param is stripped (replace, so Back
+  // does not step through it). A line that is not in the queue (already
+  // inspected elsewhere) opens nothing; the param is still consumed.
+  const autoOpenedLineRef = useRef<string | null>(null);
+  useEffect(() => {
+    const line = search.line;
+    if (!line || !pending || autoOpenedLineRef.current === line) return;
+    autoOpenedLineRef.current = line;
+    if (pending.some((r) => r.grnLineId === line)) setInspectLineId(line);
+    void navigate({ search: (prev) => ({ ...prev, line: undefined }), replace: true });
+  }, [pending, search.line, navigate]);
+
+  // The row vanished after a refetch — fully inspected elsewhere, or the GRN
+  // was changed — so there is nothing left to inspect: close rather than keep
+  // a form up for a line that no longer needs one.
+  useEffect(() => {
+    if (inspectLineId && pending && !pending.some((r) => r.grnLineId === inspectLineId)) {
+      setInspectLineId(null);
+    }
+  }, [inspectLineId, pending]);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -188,7 +235,13 @@ function IncomingQcPage(): React.JSX.Element {
                       </td>
                     </tr>
                   ) : (
-                    data.pending.map((r) => <PendingRow key={r.grnLineId} r={r} />)
+                    data.pending.map((r) => (
+                      <PendingRow
+                        key={r.grnLineId}
+                        r={r}
+                        onInspect={() => setInspectLineId(r.grnLineId)}
+                      />
+                    ))
                   )}
                 </tbody>
               </table>
@@ -251,16 +304,21 @@ function IncomingQcPage(): React.JSX.Element {
             </div>
           </div>
 
-          <div
-            className="text3"
-            style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}
-          >
-            💡 Items appear here automatically when GRN is done. Click <b>🔬 Inspect</b> to
-            accept/reject and optionally attach QC report. Accepted qty goes to Store stock,
-            rejected qty tracked for vendor action.
+          <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
+            💡 Items appear here automatically when GRN is done. Click <b>🔬 Inspect</b> to open the
+            QC form, accept/reject and optionally attach QC report. Accepted qty goes to Store
+            stock, rejected qty tracked for vendor action.
           </div>
         </>
       )}
+
+      {inspectRow ? (
+        <IncomingQcInspectModal
+          key={inspectRow.grnLineId}
+          o={inspectRow}
+          onClose={() => setInspectLineId(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -277,7 +335,10 @@ function Card(props: {
       <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
         {props.label}
       </div>
-      <div className="mono fw-700" style={{ fontSize: props.valueFontSize ?? 24, color: props.color }}>
+      <div
+        className="mono fw-700"
+        style={{ fontSize: props.valueFontSize ?? 24, color: props.color }}
+      >
         {props.value}
       </div>
       {props.sub ? (
@@ -289,7 +350,13 @@ function Card(props: {
   );
 }
 
-function PendingRow({ r }: { r: IncomingQcPendingRow }): React.JSX.Element {
+function PendingRow({
+  r,
+  onInspect,
+}: {
+  r: IncomingQcPendingRow;
+  onInspect: () => void;
+}): React.JSX.Element {
   return (
     <tr>
       <td className="td-code cyan">{r.grnNo}</td>
@@ -327,14 +394,14 @@ function PendingRow({ r }: { r: IncomingQcPendingRow }): React.JSX.Element {
         {r.pendingQty}
       </td>
       <td>
-        <Link
-          to="/qc-call-register"
-          search={{ line: r.grnLineId }}
+        <button
+          type="button"
           className="btn btn-primary btn-sm"
           style={{ fontSize: 11, fontWeight: 700 }}
+          onClick={onInspect}
         >
           🔬 Inspect
-        </Link>
+        </button>
       </td>
     </tr>
   );
@@ -350,7 +417,10 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
       <td className="text2" style={{ fontSize: 11, color: 'var(--green)' }}>
         {r.qcDate ?? '—'}
       </td>
-      <td className="td-ctr" style={{ fontSize: 11, fontWeight: 700, color: respColor(r.respDays) }}>
+      <td
+        className="td-ctr"
+        style={{ fontSize: 11, fontWeight: 700, color: respColor(r.respDays) }}
+      >
         {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : `${r.respDays}d`}
       </td>
       <td>{r.vendorName ?? '—'}</td>
