@@ -933,6 +933,10 @@ export async function getDefaultRouteOpsForItem(
         id: routeCards.id,
         code: routeCards.code,
         currentRevision: routeCards.currentRevision,
+        rawMaterialGradeId: routeCards.rawMaterialGradeId,
+        rawMaterialGradeText: routeCards.rawMaterialGradeText,
+        rawMaterialSizeId: routeCards.rawMaterialSizeId,
+        rawMaterialSizeText: routeCards.rawMaterialSizeText,
       })
       .from(routeCards)
       .where(
@@ -944,7 +948,16 @@ export async function getDefaultRouteOpsForItem(
       )
       .limit(1);
     const rc = rcRows[0];
-    if (!rc) return { ops: [], routeCardCode: null, routeCardRevision: null };
+    if (!rc)
+      return {
+        ops: [],
+        routeCardCode: null,
+        routeCardRevision: null,
+        rawMaterialGradeId: null,
+        rawMaterialGradeText: null,
+        rawMaterialSizeId: null,
+        rawMaterialSizeText: null,
+      };
 
     const ops = await tx
       .select()
@@ -968,7 +981,15 @@ export async function getDefaultRouteOpsForItem(
       outsourceCost: 0,
     }));
 
-    return { ops: mapped, routeCardCode: rc.code, routeCardRevision: rc.currentRevision };
+    return {
+      ops: mapped,
+      routeCardCode: rc.code,
+      routeCardRevision: rc.currentRevision,
+      rawMaterialGradeId: rc.rawMaterialGradeId,
+      rawMaterialGradeText: rc.rawMaterialGradeText,
+      rawMaterialSizeId: rc.rawMaterialSizeId,
+      rawMaterialSizeText: rc.rawMaterialSizeText,
+    };
   });
 }
 

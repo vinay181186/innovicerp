@@ -467,5 +467,11 @@ export const defaultRouteOpsResponseSchema = z.object({
   // nonnegative: a brand-new route card is Rev 0, and the planning screen
   // must be able to show that rather than fail validation.
   routeCardRevision: z.number().int().nonnegative().nullable(),
+  // Raw material picked on the route card, so the Plan can auto-fetch it
+  // downstream (grade + size) exactly as it auto-loads the operations.
+  rawMaterialGradeId: z.string().uuid().nullable(),
+  rawMaterialGradeText: z.string().nullable(),
+  rawMaterialSizeId: z.string().uuid().nullable(),
+  rawMaterialSizeText: z.string().nullable(),
 });
 export type DefaultRouteOpsResponse = z.infer<typeof defaultRouteOpsResponseSchema>;
