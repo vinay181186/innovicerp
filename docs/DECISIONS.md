@@ -9261,3 +9261,53 @@ Nothing was duplicated; the user saw an error for a save that had worked and sta
 - Positive: one click = one document, whatever the network does; every write screen benefits.
 - Negative: one small insert + update per write; a table to purge; multipart uploads are
   outside the plugin.
+
+## ADR-173: Header navigation replaces the left sidebar
+**Date:** 2026-09-21
+**Status:** Accepted
+
+### Context
+User direction, with a visual template: move the 220px left sidebar into a
+compact horizontal header — logo, Dashboard, then every module as a dropdown
+of its pages — keep the recently-visited page tabs under it, keep all
+functionality, routing, permissions and theme, change nothing unrelated.
+
+### Decision
+- `components/shared/top-nav.tsx` — one 54px band: small logo, Dashboard, the
+  eleven modules (Sales & CRM, Design, Planning, Production, Purchase, Quality,
+  Store, Finance, Tasks, Reports, Settings) as dropdown buttons, then search,
+  sync dot, password, sign out and the user's initials. A module's menu is a
+  card with one column per group (Entry / Master / …), pages with their
+  icons, current page highlighted. One menu open at a time; closes on pick,
+  outside click, Escape or navigation. The menu flips to open leftwards when
+  its button is in the right half of the screen (measured, not by index).
+- The nav DATA moved unchanged to `nav-sections.ts` (`SECTIONS`,
+  `ORDERED_SECTIONS`, `shouldShowSection`); breadcrumbs and the open-page
+  tabs read the same list, so nothing is named twice.
+- Same gates as the sidebar: department access per module (admin sees all),
+  per-page VIEW ("Hide page") inside a module, the Approvals badge.
+- Module buttons are label-only and two labels are shortened on the button
+  (Tasks, Settings): twelve buttons plus the search box is what fits 1366px.
+  Below ~1350px the right cluster wraps to a second line; on a phone the
+  buttons wrap. The band never sets `overflow`, which would clip the menus.
+- Chrome order under the header: tabs strip, then breadcrumb, with the
+  spacing tightened (6px page gutter instead of 20px).
+- `sidebar.tsx` and `topbar.tsx` deleted; the old `#sidebar` / `.sb-*` CSS is
+  left in place (dead, harmless) to keep this change to the navigation.
+
+### Alternatives Considered
+- Icons on the module buttons (as the template) — rejected: ~250px too wide
+  for 1366px with all twelve modules; icons stay on the pages inside.
+- A "More ▾" overflow menu for the last modules — rejected for now: hides
+  Tasks / Reports / Settings behind a second click on every screen; wrapping
+  the right cluster costs nothing on wide screens and keeps every module one
+  click away.
+- Hover-to-open menus — rejected: click-to-open is what the template shows
+  and is usable on touch.
+
+### Consequences
+- Positive: ~220px more page width on every screen; every module one click
+  away; the tabs and breadcrumb keep working unchanged.
+- Negative: the page title no longer appears in the chrome (it was the old
+  top bar's); pages carry their own headings, and the breadcrumb names the
+  page. QC Call Register's sheet title row is its title.
