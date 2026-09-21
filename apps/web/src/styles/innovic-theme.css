@@ -869,8 +869,12 @@
 /* Job Card list's action block: every button fills its grid cell so the
    2-across block reads as one tidy panel whatever the label lengths. */
 .innovic-table.tbl-grid .jc-row-acts .btn-sm {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  gap: 4px;
   padding: 2px 6px;
+  height: 24px;
   white-space: nowrap;
 }
 .td-code {
