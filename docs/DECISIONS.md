@@ -9311,3 +9311,62 @@ functionality, routing, permissions and theme, change nothing unrelated.
 - Negative: the page title no longer appears in the chrome (it was the old
   top bar's); pages carry their own headings, and the breadcrumb names the
   page. QC Call Register's sheet title row is its title.
+## ADR-176: The Task Board becomes Inbox / Outbox / My To-Do / All Tasks — one table, four server-enforced views
+
+**Date:** 2026-09-21
+**Status:** Accepted (TEST); PROD migration 0139 pending the user's go
+
+### Context
+
+The Task Board was a single company-wide list: any admin/manager could assign, every user
+saw every task, status could be changed by the assignee or a manager, and the only trail was
+two free-text `activity_log` lines. The user approved a new board
+(`Screensots/Innovic_Task_Board_Inbox_Outbox_Todo.html`) with four tabs, personal to-dos,
+a history timeline, remarks, attachments, completion remark and an admin-only company view,
+and asked that the rules be enforced on the server, not merely hidden on the web.
+
+### Decision
+
+- **One `tasks` table, four filtered views.** Inbox = `assigned_to = me AND created_by <> me`;
+  Outbox = `created_by = me AND assigned_to <> me`; My To-Do = `created_by = me AND
+  assigned_to = me`; All Tasks = every company task, **admin only** (`requireAdminRole`,
+  i.e. Access-Control Full Access). No Inbox/Outbox tables.
+- **Visibility (non-admin):** creator, assignee or assigner of the task; anything else is a
+  404, the ERP's existing convention. Tab counters and KPI cards obey the same rule.
+- **Any active user may assign** a task to another (was admin/manager) — the user's choice,
+  matching the approved board. The read-only `viewer` role stays read-only (no task writes at
+  all), as in every other module. Managers lose the company-wide list; only Admin keeps it.
+- **Identity is never trusted from the browser:** created_by / assigned_by / completed_by
+  and a personal to-do's assignee are always the authenticated user.
+- **Personal to-dos** cannot be reassigned (creator = assignee is the invariant); they are
+  the same table with `task_type = 'personal'`, numbered
+  `TODO-NNNN` (assigned tasks keep `TSK-NNNN`); due date optional, reminder stored only —
+  no reminder engine exists and none is built here.
+- **Priority** gains `urgent`; the stored `medium` is labelled "Normal" so no row changes.
+- **Overdue stays derived** (`due_date < today AND status NOT IN (completed, cancelled)`);
+  the workflow status is never overwritten to show it.
+- **`task_history`** — append-only trail in the style of `so_line_drawing_revisions`
+  (created / reassigned / status / priority / due-date changed / edited / comment /
+  attachment / completed / cancelled), written inside the service transaction.
+  `activity_log` keeps its global CREATE/UPDATE lines.
+- **Attachments ride on `file_registry`** with a new nullable `task_id` owner column and
+  `category = 'task'` — same bucket, same preview/download, no second registry.
+- **Related To** reuses the existing `linked_ref_*` columns; the standalone form gets a
+  picker for SO / JC / PO / QC call / NC / Design project. A QC call has no detail page, so
+  its link opens the QC Call Register filtered to that operation.
+
+### Alternatives Considered
+
+- Separate inbox/outbox tables — rejected: duplicate rows, two sources of truth.
+- Reuse `activity_log` as the timeline — rejected: no per-record index, free-text only,
+  manager-only insert policy.
+- A polymorphic `attachments(entity_type, entity_id)` table — rejected: a second registry
+  that every path-ownership check would have to learn.
+
+### Consequences
+
+- Positive: a user sees exactly their own work; admins see everything; every change is
+  traceable; existing task data (PROD 0 rows, TEST 1 row) is untouched.
+- Negative: the contextual "Assign" buttons on SO/PO/JC/NC/GRN/PR/CAPA/Design screens now
+  appear for every user; managers must ask an admin for the company view.
+- Risks: `due_date` is now nullable — every reader must treat it as optional.
