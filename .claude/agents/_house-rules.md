@@ -232,3 +232,17 @@ behaviour or step sequence.
 
 Example of what to prevent: a UI restyle that made JC per-op show Log directly,
 skipping Start. Look may change; flow must not.
+
+## NEW FIELD — STANDARD FLOW
+When introducing a new field:
+1. State the business need and where its value comes from.
+2. Reuse the closest existing field pattern (DB column, API, validation, form control,
+   permission) — no new pattern unless required.
+3. Add it ONLY where the business flow needs it (DB, API create/edit/detail, shared
+   schema, form, list/print, up/downstream docs) — never propagate blindly.
+4. Before coding, give the exact files changing + short plan; name what stays untouched;
+   wait for approval.
+5. Verify: typecheck + tests (+ Playwright for key UI); check create/edit/view,
+   persistence, validation, up/downstream links.
+6. Run /code-review high, fix findings, re-verify.
+7. Report: what changed, why, what was left unchanged, assumptions, risks.
