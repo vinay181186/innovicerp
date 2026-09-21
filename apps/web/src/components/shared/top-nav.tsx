@@ -14,10 +14,12 @@
 // and "Settings" on the button for the same reason — the dropdown heading and
 // the breadcrumb still say the full name.
 //
-// One dropdown open at a time; it closes on a page pick, a click anywhere
-// else, or Escape. The button for the module the current page lives in is
-// highlighted whether or not its menu is open, so the header always says
-// where you are.
+// One dropdown open at a time. Picking a page navigates but LEAVES THE MENU
+// OPEN (user, 2026-09-21): the operator can move between a module's pages
+// from the same card without re-opening it, and the card closes when they
+// click anywhere outside it, press Escape, or open another module. The
+// button for the module the current page lives in is highlighted whether or
+// not its menu is open, so the header always says where you are.
 
 import { Link, useLocation } from '@tanstack/react-router';
 import { KeyRound, LogOut } from 'lucide-react';
@@ -77,11 +79,6 @@ export function TopNav(): React.JSX.Element {
     };
   }, [openKey]);
 
-  // A navigation closes whatever was open — the pick itself, or a tab click.
-  useEffect(() => {
-    setOpenKey(null);
-  }, [pathname]);
-
   const visible = ORDERED_SECTIONS.filter((sec) => shouldShowSection(sec.key, isAdmin, eff));
 
   return (
@@ -137,7 +134,6 @@ export function TopNav(): React.JSX.Element {
                           to={it.to}
                           role="menuitem"
                           className={`tn-link${on ? ' on' : ''}`}
-                          onClick={() => setOpenKey(null)}
                         >
                           <span className="tn-link-icon" aria-hidden>
                             {it.icon}
