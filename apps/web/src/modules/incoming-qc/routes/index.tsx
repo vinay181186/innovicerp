@@ -149,8 +149,23 @@ function IncomingQcPage(): React.JSX.Element {
                 ⏳ Pending Inspection ({data.pending.length})
               </span>
             </div>
-            <div className="tbl-wrap">
-              <table className="innovic-table">
+            {/* The sheet look (tbl-grid, as the Plans and Job Card lists):
+                bold blue column names, gridlines, cream / white rows, fixed
+                widths that add up to the page so nothing scrolls sideways. */}
+            <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+              <table className="innovic-table tbl-grid">
+                <colgroup>
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '17%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '6%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>GRN No.</th>
@@ -162,7 +177,7 @@ function IncomingQcPage(): React.JSX.Element {
                     <th>Received</th>
                     <th style={{ color: 'var(--amber)' }}>⏳ Waiting</th>
                     <th style={{ color: 'var(--amber)' }}>Pending QC</th>
-                    <th></th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -187,8 +202,23 @@ function IncomingQcPage(): React.JSX.Element {
                 ✅ Recently Completed QC (last 20)
               </span>
             </div>
-            <div className="tbl-wrap">
-              <table className="innovic-table">
+            <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+              <table className="innovic-table tbl-grid">
+                <colgroup>
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '3%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>GRN No.</th>
