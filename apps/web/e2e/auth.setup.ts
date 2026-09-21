@@ -39,5 +39,9 @@ setup('authenticate', async ({ page }) => {
   // On success the app navigates to '/' (replace). Wait until we're off /login.
   await expect(page).not.toHaveURL(/\/login/, { timeout: 20_000 });
 
+  // The app ends the login when no ERP tab is alive (lib/browser-session.ts). Every test
+  // context starts as a fresh tab, so mark this browser's own login as keep-able before the
+  // state is captured — the flag travels with the storageState.
+  await page.evaluate(() => localStorage.setItem('innovic-erp-e2e-keep-login', '1'));
   await page.context().storageState({ path: STORAGE_STATE });
 });
