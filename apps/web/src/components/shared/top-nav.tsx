@@ -31,6 +31,8 @@ import { signOut, useSession } from '@/lib/session';
 import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
 import { initials, ORDERED_SECTIONS, shouldShowSection, type NavSection } from './nav-sections';
 
+const OPEN_KEY_STORAGE = 'innovic.topnav.open';
+
 /** What the module button says. Only two are shortened; every other module
  *  keeps its own name. */
 const BUTTON_LABEL: Record<string, string> = {
@@ -53,7 +55,29 @@ export function TopNav(): React.JSX.Element {
   // who can actually decide; everyone else gets 0 and no request.
   const pendingApprovals = usePendingTimeChangeCount(isAdmin || me?.role === 'manager');
 
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  // Which module's menu is open. Remembered in sessionStorage so it survives
+  // a page reload (user, 2026-09-21: pick a page, then pick "Create SO" from
+  // the same card — the exit guard / reload must not swallow the card). The
+  // tab's own storage, so a second browser tab starts closed.
+  const [openKey, setOpenKeyState] = useState<string | null>(() => {
+    try {
+      return window.sessionStorage.getItem(OPEN_KEY_STORAGE);
+    } catch {
+      return null;
+    }
+  });
+  const setOpenKey = (next: string | null | ((prev: string | null) => string | null)): void => {
+    setOpenKeyState((prev) => {
+      const v = typeof next === 'function' ? next(prev) : next;
+      try {
+        if (v) window.sessionStorage.setItem(OPEN_KEY_STORAGE, v);
+        else window.sessionStorage.removeItem(OPEN_KEY_STORAGE);
+      } catch {
+        // storage blocked: the menu still works for this render
+      }
+      return v;
+    });
+  };
   // Whether the open menu must anchor to its button's RIGHT edge: measured
   // when it opens, from where the button actually sits, so a menu near the
   // right of the screen opens leftwards and one near the left never does —
@@ -66,7 +90,13 @@ export function TopNav(): React.JSX.Element {
   useEffect(() => {
     if (!openKey) return;
     const onDown = (e: MouseEvent): void => {
-      if (navRef.current && !navRef.current.contains(e.target as Node)) setOpenKey(null);
+      const t = e.target as Element | null;
+      if (!t || (navRef.current && navRef.current.contains(t))) return;
+      // A click inside a dialog (the exit-guard's "leave this page?" box, a
+      // confirm) is not the operator leaving the menu: they are answering a
+      // question the pick raised. The card stays until they click the page.
+      if (t.closest('.overlay, [role="dialog"], [role="alertdialog"]')) return;
+      setOpenKey(null);
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setOpenKey(null);
