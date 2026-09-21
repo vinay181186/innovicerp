@@ -15,9 +15,15 @@
 //  - Dates render as the raw ISO txnDate. Legacy's fmt() (L1484) is "15-Jul-26";
 //    the shared fmtDate() is dd-MM-yyyy. Neither matches the other, so rather
 //    than approximate we leave the sortable ISO value and log the divergence.
-//  - The detail grid carries itemType / hsnCode / description / drawing-file
-//    actions, which legacy's modal has no counterpart for. Kept — dropping live
-//    fields to reach parity would lose working behaviour.
+//  - The detail grid carries itemType / hsnCode / description, which legacy's
+//    modal has no counterpart for. Kept — dropping live fields to reach parity
+//    would lose working behaviour.
+//  - NO Revision or Drawing no. (user decision 2026-09-21): both belong to the
+//    SO / JWSO line, not the item. An item that still carries a pre-cutover
+//    drawing file shows it under "Legacy drawing" so nothing already uploaded
+//    goes missing; new items never get one.
+//  - The header is the shared <ItemBadge> at its 96 px size: product image
+//    (3D render), code, name. Click the picture to see it large.
 //
 // Legacy sections with no data source in the port (reported, NOT stubbed):
 // the drawing thumbnail (L11775), the 4-tile stat grid (L11777-11798), the
@@ -29,6 +35,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
@@ -119,21 +126,18 @@ function ItemDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--purple)', fontSize: 16, fontWeight: 700 }}
-            >
-              {item.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {item.name}
+          {/* Bare code — an item has no revision of its own (see header). */}
+          <ItemBadge
+            size="page"
+            code={item.code}
+            name={item.name}
+            imagePath={item.imagePath}
+            codeColor="var(--text)"
+          >
+            <div style={{ marginTop: 6 }}>
               <OnHandBadge itemId={item.id} />
             </div>
-          </div>
+          </ItemBadge>
           <div style={{ display: 'flex', gap: 6 }}>
             {canEdit ? (
               <Link to="/items/$id/edit" params={{ id: item.id }} className="btn btn-ghost btn-sm">
@@ -334,11 +338,11 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
         </div>
       </div>
       <Pair label="UOM" value={item.uom} />
-      <Pair label="Revision" value={item.revision} />
-      <Pair label="Drawing no." value={item.drawingNo ?? '—'} />
-      <DrawingFilePair item={item} company={company} />
       <Pair label="Material" value={item.material ?? '—'} />
       <Pair label="HSN code" value={item.hsnCode ?? '—'} />
+      {/* Old items only — a drawing uploaded on the item before drawings moved
+          to the SO line. Never shown for an item without one. */}
+      {item.drawingFilePath ? <DrawingFilePair item={item} company={company} /> : null}
       <div className="form-grp form-full">
         <span className="form-label">Description</span>
         <div style={{ whiteSpace: 'pre-wrap' }}>{item.description ?? '—'}</div>
@@ -381,7 +385,10 @@ function DrawingFilePair({
   }
   return (
     <div className="form-grp">
-      <span className="form-label">Drawing file</span>
+      <span className="form-label">Legacy drawing</span>
+      <div className="form-help" style={{ marginBottom: 4 }}>
+        Legacy drawing (drawings now live on the SO line)
+      </div>
       <div style={{ fontWeight: 600, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {path ? (
           <>

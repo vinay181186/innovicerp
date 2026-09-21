@@ -16,7 +16,7 @@ import type {
 } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcOpFlowChips } from './jc-stat-tiles';
 import { JcStatusBadge } from './jc-status-badge';
@@ -236,20 +236,20 @@ export function JcViewSummary({
               the code reads `IN-IT-0007/B` on a card raised against an SO and
               stays the bare `IN-IT-0007` on a JW-sourced or standalone card.
               One string from the shared helper, same as the Sales Order screens. */}
-          <Kv label="Part Code">
-            <span
-              className="mono fw-700"
-              style={{ fontSize: 14, color: 'var(--text)' }}
-              title={itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-            >
-              {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-            </span>
-          </Kv>
-          <Kv label="Part Name">
-            <span className="fw-700" style={{ overflowWrap: 'anywhere' }}>
-              {jc.itemName || '—'}
-            </span>
-          </Kv>
+          {/* Product image + code + name in the shared badge (user decision
+              2026-09-21). This is the Item Master's 3D render — a different
+              thing from the drawing thumbnail to the left, which stays. */}
+          <div style={{ gridColumn: '1 / -1', minWidth: 0, marginBottom: 4 }}>
+            <ItemBadge
+              size="card"
+              code={jc.itemCode}
+              name={jc.itemName}
+              revision={jc.itemRevision}
+              imagePath={jc.itemImagePath}
+              codeColor="var(--text)"
+              nameMaxWidth="none"
+            />
+          </div>
           {/* Raw material planned for this job card — the grade text and the
               size text, both optional. (The card's remarks live on the
               Remarks tab below.) */}

@@ -62,6 +62,7 @@ import { qcDocumentsRoutes } from './modules/qc-documents/routes';
 import { soDocumentsRoutes } from './modules/so-documents/routes';
 import { jwsoDocumentsRoutes } from './modules/jwso-documents/routes';
 import { drawingFilesRoutes } from './modules/drawing-files/routes';
+import { itemImagesRoutes } from './modules/item-images/routes';
 import { qcCommandRoutes } from './modules/qc-command/routes';
 import { qcProcessesRoutes } from './modules/qc-processes/routes';
 import { tpiMastersRoutes } from './modules/tpi-masters/routes';
@@ -228,6 +229,9 @@ await app.register(jwsoDocumentsRoutes);
 // Server-minted links to drawing files (0120/0121). The browser no longer signs
 // its own Storage URLs — this route checks who is asking and logs every one.
 await app.register(drawingFilesRoutes);
+// Server-minted links to item product images (0136). Same private bucket,
+// no per-view log and no download gate — a picture, not a drawing.
+await app.register(itemImagesRoutes);
 await app.register(qcCommandRoutes);
 await app.register(reportsRoutes);
 await app.register(savedReportsRoutes);

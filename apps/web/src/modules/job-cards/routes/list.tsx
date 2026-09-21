@@ -6,18 +6,16 @@ import {
   type JobCardListItem,
   type ListJobCardsQuery,
 } from '@innovic/shared';
-import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2, Package } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { drawingViewUrl } from '@/lib/drawing-url';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
@@ -27,72 +25,15 @@ import { JcStatusBadge } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
 // One fetch, cap 200 (mirrors the SO/WO list). List View paginates CLIENT-SIDE
-// at PAGE_SIZE per page — so only a page's worth of part-image thumbnails load
-// at a time (each thumbnail is a signed-URL fetch; paging keeps that bounded).
+// at PAGE_SIZE per page — so only a page's worth of product-image thumbnails
+// load at a time (each is one signed-URL fetch, cached; paging keeps that
+// bounded). The thumbnail is the shared <ItemBadge> — the Item Master's PRODUCT
+// IMAGE (items.image_path), NOT the drawing (user decision 2026-09-21). The old
+// drawing-based PartThumb wrote a drawing_view audit row per row shown; the
+// product image is not a controlled document and is not logged.
 const LIST_LIMIT = 200;
 const PAGE_SIZE = 10;
 const VIEW_STORAGE_KEY = 'jc-list-view';
-
-/** Part-image thumbnail for a List View row. The JC's drawing lives in a private
- *  bucket, so the image needs a short-lived signed URL minted per drawing. The
- *  server signs view URLs for 120s (VIEW_EXPIRY_SECONDS), so the cache is dropped
- *  after 110s (gcTime) — a cached URL is therefore always still valid, never
- *  expired. Pagination bounds how many mint at once. The Package icon sits BEHIND
- *  the image, so a missing drawing or a non-image file (e.g. a PDF, whose <img>
- *  errors out) simply reveals the placeholder — no error state to manage.
- *  NOTE: minting a view URL writes a `drawing_view` audit row; a no-log
- *  list-thumbnail endpoint would need a backend change. */
-function PartThumb({ path, jcCode }: { path: string | null; jcCode: string }): React.JSX.Element {
-  const q = useQuery({
-    queryKey: ['jc-list-thumb', path],
-    queryFn: () => drawingViewUrl({ path: path!, source: 'job_card', refCode: jcCode }),
-    enabled: path != null && path !== '',
-    staleTime: 100_000,
-    gcTime: 110_000, // < the server's 120s signed-URL expiry, so no cached URL is ever stale
-    retry: false,
-  });
-  return (
-    <div
-      title={path ? 'Part drawing' : 'No part drawing uploaded'}
-      style={{
-        position: 'relative',
-        width: 40,
-        height: 40,
-        flexShrink: 0,
-        borderRadius: 4,
-        border: '1px solid var(--border)',
-        background: 'var(--bg4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'var(--text3)',
-        overflow: 'hidden',
-      }}
-    >
-      <Package className="h-4 w-4" />
-      {path && q.data ? (
-        <img
-          src={q.data}
-          alt=""
-          loading="lazy"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            background: 'var(--bg4)',
-          }}
-          onError={(e) => {
-            // Not an image (e.g. a PDF) or a failed load → hide the <img> so the
-            // Package icon behind it shows through.
-            (e.currentTarget as HTMLImageElement).style.display = 'none';
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
 
 /** One cell of the card's metric strip — big mono value over a tiny uppercase
  *  label, mirroring the SO/WO list (ORDER QTY / COMPLETED / PENDING / OPS). */
@@ -606,37 +547,16 @@ function JobCardsListPage(): React.JSX.Element {
                         ) : null}
                       </td>
                       <td>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          {/* Part drawing thumbnail (JC's drawing_file_path, inherited from
-                              the SO line). Signed-URL fetch, cached; paging bounds how many
-                              load at once. Placeholder when none / not an image. */}
-                          <PartThumb path={jc.drawingFilePath} jcCode={jc.code} />
-                          <div style={{ minWidth: 0 }}>
-                            <div
-                              className="td-code"
-                              style={{
-                                color: 'var(--purple)',
-                                fontWeight: 700,
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-                            </div>
-                            <div
-                              className="text2"
-                              style={{
-                                fontSize: 11,
-                                maxWidth: 200,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                              title={jc.itemName}
-                            >
-                              {jc.itemName || '—'}
-                            </div>
-                          </div>
-                        </div>
+                        {/* Product image + CODE/REV + name. The revision is the
+                            customer's drawing revision off the SO line (null →
+                            bare code). Click the picture to see it large. */}
+                        <ItemBadge
+                          size="row"
+                          code={jc.itemCode}
+                          name={jc.itemName}
+                          revision={jc.itemRevision}
+                          imagePath={jc.itemImagePath}
+                        />
                       </td>
                       <td>
                         {s ? (
@@ -830,22 +750,19 @@ function JobCardsListPage(): React.JSX.Element {
                     >
                       {jc.code}
                     </Link>
-                    <span className="fw-700" style={{ fontSize: 13 }}>
-                      {jc.itemName || '—'}
-                    </span>
-                    {/* `CODE/REV` — the customer's drawing revision from the SO
-                        line this card was raised against; a JW-sourced or
-                        standalone card has none and keeps the bare code, with no
-                        trailing slash. Same helper as the Job Card view and the
-                        Sales Order screens so the three cannot spell it
-                        differently. nowrap because a short code must never break
-                        across two lines in a list row. */}
-                    <span
-                      className="td-code"
-                      style={{ color: 'var(--purple)', fontSize: 11, whiteSpace: 'nowrap' }}
-                    >
-                      {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-                    </span>
+                    {/* Product image + `CODE/REV` + name — the customer's
+                        drawing revision from the SO line this card was raised
+                        against; a JW-sourced or standalone card has none and
+                        keeps the bare code, with no trailing slash. Same shared
+                        badge as the List View and the Job Card view so the
+                        screens cannot spell it differently. */}
+                    <ItemBadge
+                      size="card"
+                      code={jc.itemCode}
+                      name={jc.itemName}
+                      revision={jc.itemRevision}
+                      imagePath={jc.itemImagePath}
+                    />
                     {s
                       ? (() => {
                           const to = s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id';

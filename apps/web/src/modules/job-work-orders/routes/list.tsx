@@ -21,6 +21,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
@@ -332,14 +333,17 @@ function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolea
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = jw.priceVisible === false;
-  const cols = (canEdit ? 13 : 12) - (priceHidden ? 1 : 0);
+  // Ln · Item (badge) · Material · Drawing No · Qty · Dispatched · Balance · UOM
+  // · [Rate] · Due Date · Status · [edit] — the old Item Code + Part Name pair
+  // is one badge cell now (user decision 2026-09-21).
+  const cols = (canEdit ? 12 : 11) - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Ln</th><th>Item Code</th><th>Part Name</th><th>Material</th><th>Drawing No</th>
+            <th style={{ width: 36 }}>Ln</th><th>Item</th><th>Material</th><th>Drawing No</th>
             <th className="td-ctr">Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
             <th className="td-ctr">Balance</th>
@@ -356,8 +360,9 @@ function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolea
               return (
               <tr key={l.id} style={{ background: 'var(--bg)' }}>
                 <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
-                <td className="td-code" style={{ color: 'var(--text)' }}>{l.itemCodeText ?? '—'}</td>
-                <td style={{ color: 'var(--blue)', fontWeight: 600 }}>{l.partName}</td>
+                {/* CODE/REV — the client's drawing revision typed on this line travels
+                    with the code (the badge formats it via itemCodeWithRev). */}
+                <td><ItemBadge size="row" code={l.itemCodeText} name={l.partName} revision={l.revision} imagePath={l.itemImagePath} /></td>
                 <td className="text2" style={{ fontSize: 11 }}>{l.material ?? '—'}</td>
                 <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{l.drawingNo ?? '—'}</td>
                 <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>

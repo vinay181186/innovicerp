@@ -24,7 +24,12 @@ export const itemSchema = z.object({
    *  Planning line offers "+ PR" instead of "+ Plan"). Default 'make'. */
   procurementType: itemProcurementTypeSchema.default('make'),
   hsnCode: z.string().max(16).nullable(),
+  /** Legacy item-level drawing (ADR-032). The drawing now lives on the SO/JWSO line
+   *  (user decision 2026-09-21); this stays readable for old items only. */
   drawingFilePath: z.string().nullable(),
+  /** Product image (3D render) — storage path in the private bucket, folder
+   *  `item-images`. Shown as the fixed-size thumbnail next to code · name everywhere. */
+  imagePath: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -53,6 +58,8 @@ export const createItemInputSchema = z.object({
   procurementType: itemProcurementTypeSchema.default('make'),
   hsnCode: z.string().max(16).optional(),
   drawingFilePath: z.string().optional(),
+  /** null clears the image on update. */
+  imagePath: z.string().max(512).nullable().optional(),
 });
 export type CreateItemInput = z.infer<typeof createItemInputSchema>;
 

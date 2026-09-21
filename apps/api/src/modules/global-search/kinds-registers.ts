@@ -46,9 +46,12 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
     docNo: sql`t.code`,
     date: sql`t.created_at::date`,
     party: null,
-    text: [sql`t.description`, sql`t.material`, sql`t.hsn_code`],
-    shown: [sql`t.name`, sql`t.drawing_no`],
-    flatLines: [sql`NULLIF(t.name, '')`, sql`'Drg ' || NULLIF(t.drawing_no, '')`],
+    // drawing_no is a legacy item-level field (the drawing now lives on the
+    // SO / JWSO line, user decision 2026-09-21). Still MATCHED, so an old item
+    // is found by its drawing number, but no longer printed as a "Drg …" line.
+    text: [sql`t.description`, sql`t.material`, sql`t.hsn_code`, sql`t.drawing_no`],
+    shown: [sql`t.name`],
+    flatLines: [sql`NULLIF(t.name, '')`],
     qty: null,
     status: null,
   },

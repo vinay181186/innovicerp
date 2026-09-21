@@ -218,6 +218,10 @@ export const items = pgTable(
     procurementType: text('procurement_type').notNull().default('make'),
     hsnCode: text('hsn_code'),
     drawingFilePath: text('drawing_file_path'),
+    /** Product image (migration 0136) — storage path of the 3D render in the
+     *  private bucket under `<companyId>/item-images/…`. A product picture, not
+     *  a controlled drawing: shown as a thumbnail next to code · name. */
+    imagePath: text('image_path'),
     /** PL-SI-1 (migration 0028) — low-stock alert threshold per item.
      *  Drives the "Low Stock" tile + per-row red tint on Store/Inventory. */
     minStockQty: integer('min_stock_qty').notNull().default(0),

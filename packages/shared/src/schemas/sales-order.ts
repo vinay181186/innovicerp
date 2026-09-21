@@ -64,6 +64,8 @@ export const salesOrderLineSchema = z.object({
   // Uploaded drawing document's storage path (qc-docs bucket, folder
   // `so-line-drawings`; view via a short-lived signed URL). Nullable.
   drawingFilePath: z.string().nullable().default(null),
+  /** Item Master product image (items.image_path via itemId), for the thumbnail. */
+  itemImagePath: z.string().nullable().default(null),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
   // Billing status (migration 0050 / ADR-042). dispatchedQty is the cumulative
@@ -188,7 +190,7 @@ export const salesOrderLineInputSchema = z
     itemCodeText: z.string().min(1).max(64).optional(),
     partName: z.string().min(1).max(255),
     material: z.string().max(255).optional(),
-    drawingNo: z.string().max(64).optional(),
+    drawingNo: z.string().max(64).nullable().optional(),
     // COMPULSORY, and nothing else on the line changes it. The customer's
     // drawing revision is a fact about the paper, so the person entering the
     // order is the only one who knows it — the server used to derive it from

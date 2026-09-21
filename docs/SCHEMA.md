@@ -254,6 +254,7 @@ Master template. Mirror of legacy `items` collection. Reference module for the e
 | `drawing_no`                                                         | `text`          | nullable                                                                   |
 | `revision`                                                           | `text`          | not null, default `'A'`                                                    |
 | `material`                                                           | `text`          | nullable. Free text (e.g. `EN8`, `SS304`)                                  |
+| `image_path`                                                         | `text`          | nullable. Product image (3D render) storage path, folder `item-images` (0136) |
 | `uom`                                                                | `uom`           | not null, default `'NOS'`                                                  |
 | `item_type`                                                          | `item_type`     | not null, default `'component'`                                            |
 | `hsn_code`                                                           | `text`          | nullable. India tax classification                                         |

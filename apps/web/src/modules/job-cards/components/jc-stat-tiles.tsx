@@ -17,7 +17,7 @@ import type {
 } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
 import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
@@ -116,23 +116,17 @@ export function JcStatTiles({
               two screens spelling the same code differently is the drift the
               helper exists to prevent. nowrap + ellipsis keep the revision
               glued to its code on one line however narrow the tile folds. */}
-          <div
-            className="fw-700 mono"
-            style={{
-              fontSize: 18,
-              lineHeight: 1.15,
-              color: 'var(--purple)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-            title={itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-          >
-            {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-          </div>
-          <div className="fw-700" style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
-            {jc.itemName || '—'}
-          </div>
+          {/* The shared badge (user decision 2026-09-21): the Item Master's
+              PRODUCT IMAGE at 56 px, the code and the name. Click the picture
+              to see it large. */}
+          <ItemBadge
+            size="card"
+            code={jc.itemCode}
+            name={jc.itemName}
+            revision={jc.itemRevision}
+            imagePath={jc.itemImagePath}
+            nameMaxWidth="none"
+          />
           {/* Raw material planned for this job card (both optional — a dash
               when the plan carried neither). */}
           <div style={{ fontSize: 11, marginTop: 4 }}>

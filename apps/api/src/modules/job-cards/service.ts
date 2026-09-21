@@ -173,6 +173,7 @@ export async function listJobCards(
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
+        i.image_path AS "itemImagePath",
         -- The customer's drawing revision, read live off the SO line this card was
         -- raised against. It is deliberately NOT items.revision, which is a
         -- different column describing the item master, and not a snapshot on the
@@ -338,6 +339,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
+        i.image_path AS "itemImagePath",
         -- The customer's drawing revision, read live off the SO line this card was
         -- raised against. It is deliberately NOT items.revision, which is a
         -- different column describing the item master, and not a snapshot on the
@@ -485,6 +487,8 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     priority: r['priority'] as JobCardListItem['priority'],
     dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
     drawingFilePath: (r['drawingFilePath'] as string | null) ?? null,
+    // Item Master product image (0136) — the thumbnail next to code · name.
+    itemImagePath: (r['itemImagePath'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     closedAt: r['closedAt'] != null ? tsLike(r['closedAt']) : null,
     recoveryKind: (r['recoveryKind'] as JobCardListItem['recoveryKind']) ?? null,
@@ -672,7 +676,9 @@ export async function getJobCardEditModel(
         -- Last fallback: the item master's own drawing. Covers a hand-raised
         -- card with no source line at all, and a JWSO line that predates
         -- migration 0120 and so never had a file to carry.
-        i.drawing_file_path   AS "itemDrawingFilePath"
+        i.drawing_file_path   AS "itemDrawingFilePath",
+        -- Item Master product image (0136) for the status-page header thumbnail.
+        i.image_path          AS "itemImagePath"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
       -- Soft deletes respected exactly as the JC list queries above do it: a
@@ -760,6 +766,7 @@ export async function getJobCardEditModel(
       soLineDrawingFilePath: (h['soLineDrawingFilePath'] as string | null) ?? null,
       jwLineDrawingFilePath: (h['jwLineDrawingFilePath'] as string | null) ?? null,
       itemDrawingFilePath: (h['itemDrawingFilePath'] as string | null) ?? null,
+      itemImagePath: (h['itemImagePath'] as string | null) ?? null,
       soLineRevision: (h['soLineRevision'] as string | null) ?? null,
       jwLineRevision: (h['jwLineRevision'] as string | null) ?? null,
       remarks: (h['remarks'] as string | null) ?? null,

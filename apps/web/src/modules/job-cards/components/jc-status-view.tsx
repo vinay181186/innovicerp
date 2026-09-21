@@ -86,14 +86,17 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   //   1. the SALES ORDER line's drawing   (soLineDrawingFilePath)
   //   2. the JWSO line's drawing          (jwLineDrawingFilePath)
   //   3. this job card's own upload       (jc.drawingFilePath)
-  //   4. the item master's drawing        (itemDrawingFilePath)
   //
-  // The first, second and fourth come from the edit model, where the API
-  // resolves them LIVE off the source line on every read rather than copying
-  // them onto the card. That is the whole point: upload a corrected print
-  // against the order and the shop floor sees it on the next refresh, instead
-  // of building to a file frozen at the moment the card was raised. A card has
-  // at most one source, so 1 and 2 are never both set.
+  // The first and second come from the edit model, where the API resolves
+  // them LIVE off the source line on every read rather than copying them onto
+  // the card. That is the whole point: upload a corrected print against the
+  // order and the shop floor sees it on the next refresh, instead of building
+  // to a file frozen at the moment the card was raised. A card has at most one
+  // source, so 1 and 2 are never both set.
+  //
+  // There is NO item-master fallback any more (user decision 2026-09-21):
+  // items no longer carry drawings — they carry a product image, which is a
+  // picture, not a controlled document, and is shown by the ItemBadge instead.
   const { data: model } = useJobCardEditModel(id);
   /** Caption suffix for the revision printed on that drawing, when there is
    *  one. Blank rather than "Rev —": an empty revision is not a fact. */
@@ -116,13 +119,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
             label: 'Attached to this Job Card',
             source: 'job_card' as const,
           }
-        : model?.itemDrawingFilePath
-          ? {
-              path: model.itemDrawingFilePath,
-              label: `Item master · ${jc?.itemCode ?? ''}`.trim(),
-              source: 'item' as const,
-            }
-          : null;
+        : null;
 
   // Auto-loaded on open, and asked for as a VIEW. Never `download`: the page
   // opening a thumbnail is nobody deciding to keep a copy, and logging it as one

@@ -175,6 +175,24 @@ async function resolveItemCodesById(
   return new Map(rows.map((r) => [r.id, r.code]));
 }
 
+/** Item Master product image per item id (items.image_path, 0136) — the
+ *  thumbnail next to code · name on the SO line. Kept apart from
+ *  resolveItemCodesById on purpose: that map is also used to SNAPSHOT codes
+ *  into the drawing-revision trail, and a picture has no business there. */
+async function resolveItemImagesById(
+  tx: DbTransaction,
+  itemIds: Array<string | null>,
+  companyId: string,
+): Promise<Map<string, string | null>> {
+  const unique = Array.from(new Set(itemIds.filter((x): x is string => Boolean(x))));
+  if (unique.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: items.id, imagePath: items.imagePath })
+    .from(items)
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
+  return new Map(rows.map((r) => [r.id, r.imagePath ?? null]));
+}
+
 /** Auto-assign / validate lineNo across an array of lines. Mirrors the
  *  legacy `nextLine` counter behaviour. Returns lineNo per index. */
 function assignLineNos(lines: SalesOrderLineInput[], startFrom: number): number[] {
@@ -621,6 +639,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       .select({
         row: salesOrderLines,
         itemCode: items.code,
+        itemImagePath: items.imagePath,
       })
       .from(salesOrderLines)
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
@@ -692,7 +711,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       bomMasterCode,
       lines: lineRows.map((r) => {
         const line = {
-          ...toSalesOrderLine(r.row, r.itemCode),
+          ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null),
           billedQty: billedByLine.get(r.row.id) ?? 0,
           jcQty: jcByLine.get(r.row.id) ?? 0,
         };
@@ -1170,6 +1189,7 @@ function toSalesOrder(row: typeof salesOrders.$inferSelect): SalesOrder {
 function toSalesOrderLine(
   row: typeof salesOrderLines.$inferSelect,
   itemCode: string | null = null,
+  itemImagePath: string | null = null,
 ): SalesOrderLine {
   return {
     id: row.id,
@@ -1184,6 +1204,7 @@ function toSalesOrderLine(
     drawingNo: row.drawingNo,
     revision: row.revision,
     drawingFilePath: row.drawingFilePath,
+    itemImagePath,
     uom: row.uom,
     orderQty: row.orderQty,
     dispatchedQty: row.dispatchedQty,
@@ -1471,11 +1492,20 @@ export async function createSalesOrder(
         insertedLines.map((l) => l.itemId),
         companyId,
       );
+      const createdImageMap = await resolveItemImagesById(
+        tx,
+        insertedLines.map((l) => l.itemId),
+        companyId,
+      );
       return {
         ...toSalesOrder(header),
         createdByName: await resolveUserName(tx, header.createdBy),
         lines: insertedLines.map((row) =>
-          toSalesOrderLine(row, createdCodeMap.get(row.itemId ?? '') ?? null),
+          toSalesOrderLine(
+            row,
+            createdCodeMap.get(row.itemId ?? '') ?? null,
+            createdImageMap.get(row.itemId ?? '') ?? null,
+          ),
         ),
         milestones: insertedMilestones.map(toSoMilestone),
         clientPoFilePath: null,
@@ -1583,11 +1613,20 @@ export async function updateSalesOrder(
       lineRows.map((l) => l.itemId),
       companyId,
     );
+    const updatedImageMap = await resolveItemImagesById(
+      tx,
+      lineRows.map((l) => l.itemId),
+      companyId,
+    );
     return {
       ...toSalesOrder(updatedHdr),
       createdByName: await resolveUserName(tx, updatedHdr.createdBy),
       lines: lineRows.map((row) =>
-        toSalesOrderLine(row, updatedCodeMap.get(row.itemId ?? '') ?? null),
+        toSalesOrderLine(
+          row,
+          updatedCodeMap.get(row.itemId ?? '') ?? null,
+          updatedImageMap.get(row.itemId ?? '') ?? null,
+        ),
       ),
       milestones,
       clientPoFilePath,

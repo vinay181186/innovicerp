@@ -94,22 +94,31 @@ async function resolveItemCodes(
   return map;
 }
 
-/** Reverse of resolveItemCodes: itemId → master item code. Used on READ so the
- *  detail/edit form can show the readable code for lines that were resolved to
- *  an itemId at write time (their item_code_text is null). Fixes bugs 1.3/1.4. */
+/** What a JWSO line reads back from the item master: the readable code and,
+ *  since 0136, the product image path for the thumbnail next to it. */
+interface ItemMasterRef {
+  code: string;
+  imagePath: string | null;
+}
+
+/** Reverse of resolveItemCodes: itemId → master item code (+ image path). Used
+ *  on READ so the detail/edit form can show the readable code for lines that
+ *  were resolved to an itemId at write time (their item_code_text is null).
+ *  Fixes bugs 1.3/1.4. The image rides along in the same query so the line
+ *  thumbnail costs no extra round trip. */
 async function resolveItemCodesById(
   tx: DbTransaction,
   itemIds: Array<string | null>,
   companyId: string,
-): Promise<Map<string, string>> {
+): Promise<Map<string, ItemMasterRef>> {
   const unique = Array.from(new Set(itemIds.filter((x): x is string => Boolean(x))));
   if (unique.length === 0) return new Map();
   const rows = await tx
-    .select({ id: items.id, code: items.code })
+    .select({ id: items.id, code: items.code, imagePath: items.imagePath })
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
-  const map = new Map<string, string>();
-  for (const r of rows) map.set(r.id, r.code);
+  const map = new Map<string, ItemMasterRef>();
+  for (const r of rows) map.set(r.id, { code: r.code, imagePath: r.imagePath ?? null });
   return map;
 }
 
@@ -659,13 +668,13 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
 
 function toJobWorkOrderLine(
   row: typeof jobWorkOrderLines.$inferSelect,
-  codeByItemId?: Map<string, string>,
+  masterByItemId?: Map<string, ItemMasterRef>,
 ): JobWorkOrderLine {
   // On write, a line matched to a master item stores item_id and nulls
   // item_code_text. On read we surface the readable code (from the master) so
   // the detail page and edit form show it instead of a blank / "— linked —".
-  const resolvedCode =
-    row.itemCodeText ?? (row.itemId ? (codeByItemId?.get(row.itemId) ?? null) : null);
+  const master = row.itemId ? masterByItemId?.get(row.itemId) : undefined;
+  const resolvedCode = row.itemCodeText ?? master?.code ?? null;
   return {
     id: row.id,
     companyId: row.companyId,
@@ -682,6 +691,8 @@ function toJobWorkOrderLine(
     // what was missing was this mapper putting them on the wire.
     revision: row.revision,
     drawingFilePath: row.drawingFilePath,
+    // Item Master product image (0136) — the thumbnail next to code · name.
+    itemImagePath: master?.imagePath ?? null,
     uom: row.uom,
     orderQty: row.orderQty,
     returnedQty: row.returnedQty,
@@ -1034,8 +1045,7 @@ async function mergeLines(
       lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
     if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
-    if (u.data.rate !== undefined && showMoney)
-      lineUpdate['rate'] = (u.data.rate ?? 0).toFixed(2);
+    if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = (u.data.rate ?? 0).toFixed(2);
     if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;
     if (u.data.status !== undefined) lineUpdate['status'] = u.data.status;
     if (u.data.sourceBomMasterId !== undefined) {

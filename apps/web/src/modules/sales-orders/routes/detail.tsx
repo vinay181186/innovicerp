@@ -7,7 +7,7 @@ import { Activity, ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -253,8 +253,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>#</th>
+                {/* Image · CODE/REV · Part Name in one badge cell (user decision
+                    2026-09-21) — the former separate Part Name column folded in. */}
                 <th>Item</th>
-                <th>Part Name</th>
                 <th>Material</th>
                 <th>Drawing</th>
                 <th>Qty</th>
@@ -270,7 +271,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={priceHidden ? 12 : 13} className="empty-state">
+                  <td colSpan={priceHidden ? 11 : 12} className="empty-state">
                     No lines on this SO yet.
                   </td>
                 </tr>
@@ -502,12 +503,18 @@ function LineRow(props: {
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
-      {/* CODE/REV. The Rev is the customer's drawing revision, typed on this
-          line, and it travels with the item code wherever an SO line is shown. */}
-      <td className="mono" style={{ fontSize: 11 }}>
-        {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision)}
+      {/* Thumbnail · CODE/REV · part name. The Rev is the customer's drawing
+          revision, typed on this line, and it travels with the item code
+          wherever an SO line is shown (the badge formats it via itemCodeWithRev). */}
+      <td>
+        <ItemBadge
+          size="row"
+          code={l.itemCode ?? l.itemCodeText}
+          name={l.partName}
+          revision={l.revision}
+          imagePath={l.itemImagePath}
+        />
       </td>
-      <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.partName}</td>
       <td className="text3" style={{ fontSize: 11 }}>
         {l.material ?? '—'}
       </td>

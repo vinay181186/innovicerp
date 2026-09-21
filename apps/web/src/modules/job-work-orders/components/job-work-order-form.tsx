@@ -189,25 +189,26 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const prevMatchedCodeRef = useRef<Record<string, string>>({});
 
   /** Item Code is the unique key for a line; the master-derived fields (Part
-   *  Name, Material, Drawing No, UOM) follow it on every change:
-   *   - resolves to a master item  → REPLACE all four with the master's values
+   *  Name, Material, UOM) follow it on every change:
+   *   - resolves to a master item  → REPLACE all three with the master's values
    *     (overwrite, mirroring the SO form's line auto-fill), and remember the
    *     matched code for this line;
-   *   - cleared / no longer matches → RESET all four (and drop the stale master
+   *   - cleared / no longer matches → RESET all three (and drop the stale master
    *     link) ONLY IF this line was previously auto-filled from a master, so no
    *     stale master data lingers. A pure off-master line the user typed by hand
    *     is left exactly as typed.
-   *  Rate and Qty are always user-entered and are never touched here. */
+   *  Rate, Qty, Drawing No. and Rev are always user-entered and are never
+   *  touched here — the drawing lives on the JWSO line, not the item master
+   *  (user decision 2026-09-21). */
   function fillLineFromItem(idx: number, codeValue: string): void {
     const lineKey = fields[idx]?.id ?? String(idx);
     const it = itemsByCode.get(codeValue.trim().toUpperCase());
     if (it) {
       // Matched a master item — the code is the key, so the master wins: refresh
-      // all four derived fields (replace, not fill-only), even across a change
-      // from one valid code to another.
+      // all three derived fields (replace, not fill-only), even across a change
+      // from one valid code to another. Drawing No. is deliberately NOT here.
       setValue(`lines.${idx}.partName`, it.name);
       setValue(`lines.${idx}.material`, it.material ?? '');
-      setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '');
       setValue(`lines.${idx}.uom`, it.uom);
       // Keep the hidden master link in step with the visible code so save uses
       // the item now shown, not a stale itemId from a prior pick or an edit-mode
@@ -221,14 +222,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // auto-filled from a master — either matched earlier in this session, or
     // loaded in edit mode as a master-linked line (itemId set). A hand-typed
     // off-master line has neither signal and is left untouched, so manual Part
-    // Name / Material / Drawing entered on a non-master code is never wiped.
+    // Name / Material entered on a non-master code is never wiped. The typed
+    // Drawing No. survives either way.
     const wasAutoFilled =
       prevMatchedCodeRef.current[lineKey] !== undefined ||
       Boolean(getValues(`lines.${idx}.itemId`));
     if (!wasAutoFilled) return;
     setValue(`lines.${idx}.partName`, '');
     setValue(`lines.${idx}.material`, '');
-    setValue(`lines.${idx}.drawingNo`, '');
     setValue(`lines.${idx}.uom`, NEW_LINE.uom);
     // The code no longer resolves to a master, so drop the stale master link too
     // — leaving it would save blank/new text against the old item.
@@ -345,8 +346,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           continue;
         }
         // Item Code drives the row: link the master item + auto-fill Part Name
-        // and UOM from master; material / drawing fall back to master when the
-        // sheet cell is blank. Unresolved rows are dropped, never appended.
+        // and UOM from master; material falls back to master when the sheet
+        // cell is blank. Unresolved rows are dropped, never appended.
         newLines.push({
           ...NEW_LINE,
           ...r,
@@ -354,7 +355,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           itemCodeText: master.code,
           partName: master.name,
           material: r.material ?? master.material ?? '',
-          drawingNo: r.drawingNo ?? master.drawingNo ?? '',
+          // Drawing No. belongs to THIS order's line, not the item master (user
+          // decision 2026-09-21): from the sheet, or blank for the person to type.
+          drawingNo: r.drawingNo ?? '',
           // Set explicitly AFTER the `...r` spread, never through it: an absent
           // Rev column spreads `revision: undefined` over the value below. A
           // sheet with no Rev column leaves the box EMPTY, exactly like a
@@ -455,7 +458,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         ...refs,
         partName: l.partName.trim(),
         material: l.material?.trim() || undefined,
-        drawingNo: l.drawingNo?.trim() || undefined,
+        // null, not undefined: the server merges only PRESENT keys on update, so a
+        // Drawing No. the user cleared must be sent as null to actually clear it.
+        drawingNo: l.drawingNo?.trim() || null,
         // Always sent, and trimmed. The check above guarantees it is non-blank.
         revision: String(l.revision ?? '').trim(),
         // null, not undefined: JSON.stringify drops undefined keys, so clearing a
