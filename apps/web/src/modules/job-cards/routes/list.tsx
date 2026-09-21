@@ -32,7 +32,11 @@ import { PrintJcButton } from '../components/print-jc-button';
 // drawing-based PartThumb wrote a drawing_view audit row per row shown; the
 // product image is not a controlled document and is not logged.
 const LIST_LIMIT = 200;
-const PAGE_SIZE = 10;
+// One page = the whole loaded list (user, 2026-09-21: the sheet scrolls, no
+// Prev / Next). The image badges lazy-load, so a long page costs nothing
+// until a row is scrolled into view; the pager below still exists and simply
+// never shows while everything fits one page.
+const PAGE_SIZE = 200;
 const VIEW_STORAGE_KEY = 'jc-list-view';
 
 /** One cell of the card's metric strip — big mono value over a tiny uppercase
@@ -489,11 +493,27 @@ function JobCardsListPage(): React.JSX.Element {
       ) : view === 'list' ? (
         // ── LIST VIEW (new table) ────────────────────────────────────────────
         <>
-          <div className="tbl-wrap">
-            <table className="innovic-table">
+          {/* The sheet look (tbl-grid, the Plans list's): bold blue column
+              names, gridlines, cream / white rows, fixed widths that add up
+              to the page so nothing scrolls sideways. */}
+          <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+            <table className="innovic-table tbl-grid">
+              <colgroup>
+                <col style={{ width: '4%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '5%' }} />
+                <col style={{ width: '9%' }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Sr No</th>
                   <th>Job Card No.</th>
                   <th style={{ textAlign: 'left' }}>Part / Description</th>
                   <th>SO No.</th>
@@ -636,14 +656,17 @@ function JobCardsListPage(): React.JSX.Element {
                         </span>
                       </td>
                       <td>
+                        {/* Two buttons per line: five ghost buttons in a row
+                            were what pushed the sheet past the page edge. */}
                         <div
-                          style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+                          className="jc-row-acts"
+                          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           <Link
                             to="/job-cards/$id"
                             params={{ id: jc.id }}
-                            className="btn btn-ghost btn-sm"
+                            className="btn btn-primary btn-sm"
                             title="View job card status"
                           >
                             👁 View

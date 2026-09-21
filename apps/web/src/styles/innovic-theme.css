@@ -866,6 +866,13 @@
   border-color: var(--blue);
   color: #fff;
 }
+/* Job Card list's action block: every button fills its grid cell so the
+   2-across block reads as one tidy panel whatever the label lengths. */
+.innovic-table.tbl-grid .jc-row-acts .btn-sm {
+  justify-content: center;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
 .td-code {
   font-family: var(--mono);
   font-weight: 600;
