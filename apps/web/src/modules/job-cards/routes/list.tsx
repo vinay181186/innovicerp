@@ -16,7 +16,6 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/print/doc-print';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
@@ -659,7 +658,7 @@ function JobCardsListPage(): React.JSX.Element {
                             style={{ fontSize: 11, whiteSpace: 'nowrap' }}
                             title="Customer Dispatch Date (from the plan)"
                           >
-                            Disp {fmtDate(jc.customerDispatchDate)}
+                            Disp {jc.customerDispatchDate}
                           </div>
                         ) : null}
                       </td>

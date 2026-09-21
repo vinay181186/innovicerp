@@ -394,9 +394,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
   const validate = (): string | null => {
     if (planQty <= 0) return 'Plan Qty must be > 0';
-    if (customerDispatchDate && plannedStartDate && customerDispatchDate < plannedStartDate) {
-      return 'Customer Dispatch Date cannot be before Planned Start Date';
-    }
     if (planType === 'manufacture' || planType === 'assembly') {
       if (ops.length === 0) return 'Add at least one operation';
       const missingName = ops.find((o) => !o.operation);

@@ -410,7 +410,7 @@ async function loadDispatchable(
       LEFT JOIN LATERAL (
         SELECT MIN(p.customer_dispatch_date)::text AS customer_dispatch_date
         FROM plans p
-        WHERE p.so_line_id = sol.id AND p.deleted_at IS NULL
+        WHERE p.so_line_id = sol.id AND p.deleted_at IS NULL AND p.plan_status <> 'cancelled'
       ) cdd ON TRUE
       WHERE sol.sales_order_id = ${sid} AND sol.company_id = ${cid} AND sol.deleted_at IS NULL
       ORDER BY sol.line_no

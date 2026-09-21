@@ -226,7 +226,8 @@ export async function listJobCards(
         (
           SELECT p.customer_dispatch_date::text
           FROM public.plans p
-          WHERE (p.jc_id = jc.id OR p.id = po.plan_id) AND p.deleted_at IS NULL
+          WHERE (p.jc_id = jc.id OR p.id = po.plan_id)
+            AND p.deleted_at IS NULL AND p.plan_status <> 'cancelled'
           ORDER BY p.created_at DESC LIMIT 1
         ) AS "customerDispatchDate",
         -- Rework / repair CHILD cards raised off this card, so the parent's
@@ -411,7 +412,8 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         (
           SELECT p.customer_dispatch_date::text
           FROM public.plans p
-          WHERE (p.jc_id = jc.id OR p.id = po.plan_id) AND p.deleted_at IS NULL
+          WHERE (p.jc_id = jc.id OR p.id = po.plan_id)
+            AND p.deleted_at IS NULL AND p.plan_status <> 'cancelled'
           ORDER BY p.created_at DESC LIMIT 1
         ) AS "customerDispatchDate",
         -- Rework / repair CHILD cards raised off this card, so the parent's

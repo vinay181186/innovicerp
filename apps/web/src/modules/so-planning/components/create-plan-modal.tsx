@@ -142,10 +142,6 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       setErr('Planned End Date cannot be before Planned Start Date');
       return;
     }
-    if (customerDispatchDate && customerDispatchDate < plannedStartDate) {
-      setErr('Customer Dispatch Date cannot be before Planned Start Date');
-      return;
-    }
     setErr(null);
     const input: CreatePlanInput = {
       // code omitted → server assigns the next sequential PLN-NNNN.
