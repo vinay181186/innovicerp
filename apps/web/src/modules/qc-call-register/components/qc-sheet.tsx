@@ -4,10 +4,12 @@
 // step strip above the column headers, closest to a paper QC register book.
 //
 // Presentational only. The accept/reject entry forms, their validation,
-// mutations and permission gates stay in the row components that were there
-// before (routes/index.tsx PendingCall, incoming-qc/components/qc-call-rows.tsx
-// IncomingPendingRow); they render their collapsed line through
-// `PendingSheetRow` here and hand the expanded form in as children.
+// mutations and permission gates live in the popups the register opens
+// (components/qc-call-inspect-modal.tsx for a job-card op,
+// incoming-qc/components/incoming-qc-inspect-modal.tsx for a GRN line). The
+// row components (routes/index.tsx PendingCall, incoming-qc/components/
+// qc-call-rows.tsx IncomingPendingRow) draw their line through
+// `PendingSheetRow` here and say whether the caller may open that popup.
 //
 // The frame is the app's ruled sheet (`.innovic-table.tbl-grid`, the same
 // one the Plans, Job Card and Incoming QC lists wear — user, 2026-09-21):
@@ -178,8 +180,6 @@ const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['Inspector · Log Ref', 18],
   ['Verdict', 10],
 ];
-export const PENDING_COL_COUNT = PENDING_COLS.length;
-
 export function QcSheetTable(props: {
   view: QcView;
   children: ReactNode;
@@ -404,9 +404,9 @@ export function CompletedIncomingSheetRow({ l }: { l: IncomingQcCompletedRow }):
   );
 }
 
-// ─── pending row (collapsed line + expanded form slot) ───────────────────────
+// ─── pending row (one line; click opens the entry popup) ─────────────────────
 export function PendingSheetRow(props: {
-  /** The document number cell — a Link is fine; clicks inside it don't toggle. */
+  /** The document number cell — a Link is fine; clicks inside it don't open. */
   code: ReactNode;
   partName: string | null;
   itemCode: string;
@@ -418,12 +418,13 @@ export function PendingSheetRow(props: {
   waitDays: number | null;
   overdue: boolean;
   stage: QcStage;
-  open: boolean;
-  onToggle: () => void;
-  /** Extra className for the collapsed line (the overdue blink). */
+  /** Whether the caller may record an inspection. False → the line reads
+   *  "View only" and does not open anything. */
+  canInspect: boolean;
+  /** Open the entry popup for this call. */
+  onInspect: () => void;
+  /** Extra className for the line (the overdue blink). */
   className?: string | undefined;
-  /** The expanded entry form; rendered under the line when `open`. */
-  children?: ReactNode;
 }): React.JSX.Element {
   const stage = QC_STAGES.find((s) => s.key === props.stage);
   const wait =
@@ -433,61 +434,49 @@ export function PendingSheetRow(props: {
         ? 'Today'
         : `${props.waitDays} day${props.waitDays > 1 ? 's' : ''} waiting`;
   return (
-    <>
-      <tr
-        className={props.className}
-        style={props.children ? ROW_CLICK : undefined}
-        aria-expanded={props.children ? props.open : undefined}
-        onClick={props.children ? props.onToggle : undefined}
-      >
-        <td style={{ ...TD, ...NOWRAP }} onClick={(e) => e.stopPropagation()}>
-          <span style={{ ...MONO_STRONG, fontSize: 12 }}>{props.code}</span>
-        </td>
-        <PartCell name={props.partName} code={props.itemCode} />
-        <ContextCell line1={props.context} line2={props.contextLine2} />
-        <NumCell value={props.qty} />
-        <td style={{ ...TD, ...NOWRAP }}>
-          <div style={{ ...MONO, fontSize: 12 }}>
-            {props.calledDate ? fmtDate(props.calledDate) : '—'}
+    <tr
+      className={props.className}
+      style={props.canInspect ? ROW_CLICK : undefined}
+      onClick={props.canInspect ? props.onInspect : undefined}
+    >
+      <td style={{ ...TD, ...NOWRAP }} onClick={(e) => e.stopPropagation()}>
+        <span style={{ ...MONO_STRONG, fontSize: 12 }}>{props.code}</span>
+      </td>
+      <PartCell name={props.partName} code={props.itemCode} />
+      <ContextCell line1={props.context} line2={props.contextLine2} />
+      <NumCell value={props.qty} />
+      <td style={{ ...TD, ...NOWRAP }}>
+        <div style={{ ...MONO, fontSize: 12 }}>
+          {props.calledDate ? fmtDate(props.calledDate) : '—'}
+        </div>
+        {wait ? (
+          <div
+            style={{
+              ...QUIET,
+              color: props.overdue ? 'var(--red)' : 'var(--text3)',
+              fontWeight: props.overdue ? 700 : 400,
+            }}
+          >
+            {wait}
+            {props.overdue ? ' · overdue' : ''}
           </div>
-          {wait ? (
-            <div
-              style={{
-                ...QUIET,
-                color: props.overdue ? 'var(--red)' : 'var(--text3)',
-                fontWeight: props.overdue ? 700 : 400,
-              }}
-            >
-              {wait}
-              {props.overdue ? ' · overdue' : ''}
-            </div>
-          ) : null}
-        </td>
-        <td style={{ ...TD, ...NOWRAP }}>
-          <span style={CAPS}>
-            {stage?.n} {stage?.label}
-          </span>
-        </td>
-        <td style={{ ...TD, ...NOWRAP }}>
-          {/* No form to open (viewer without `entry`) → say so instead of
-              offering an "Inspect ▸" that expands nothing. */}
-          {props.children ? (
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)' }}>
-              {props.open ? 'Close ▾' : 'Inspect ▸'}
-            </span>
-          ) : (
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>View only</span>
-          )}
-        </td>
-      </tr>
-      {props.open && props.children ? (
-        <tr>
-          <td colSpan={PENDING_COL_COUNT} style={{ ...TD, padding: 0 }}>
-            {props.children}
-          </td>
-        </tr>
-      ) : null}
-    </>
+        ) : null}
+      </td>
+      <td style={{ ...TD, ...NOWRAP }}>
+        <span style={CAPS}>
+          {stage?.n} {stage?.label}
+        </span>
+      </td>
+      <td style={{ ...TD, ...NOWRAP }}>
+        {/* No form to open (viewer without `entry`) → say so instead of
+            offering an "Inspect ▸" that opens nothing. */}
+        {props.canInspect ? (
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)' }}>Inspect ▸</span>
+        ) : (
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>View only</span>
+        )}
+      </td>
+    </tr>
   );
 }
 

@@ -2,23 +2,18 @@
 // One ruled sheet (the user's mockup 2c): a title row with the register's
 // totals, Export, one search box and a Pending | Completed toggle; a three-cell
 // stage strip (Incoming / In-Process / Final Inspection) that also filters; and
-// a hairline-ruled table. Pending calls expand inline into the accept/reject
-// entry form exactly as before; completed calls read as a register log.
+// a hairline-ruled table. Clicking a pending call opens the accept/reject
+// entry form as a popup over the register (QcCallInspectModal for a job-card
+// op, IncomingQcInspectModal for a GRN line — the Op Entry pattern), so the
+// queue stays put behind it; completed calls read as a register log.
 // Frontend-only — data from the qc-history + incoming-qc endpoints, the QC
-// write reuses op-entry's submitQcLog mutation.
+// write reuses op-entry's submitQcLog mutation (inside the popup's form).
 //
 // No in-content .section-hdr: legacy's render returns the sheet directly. The
 // sheet's own title row ("QC Call Register", below) is the page's title — the
 // old top bar that used to repeat it is gone (header navigation, 2026-09-21).
 
-import {
-  SHIFTS,
-  SHIFT_LABELS,
-  type Shift,
-  type SubmitQcLogInput,
-  opSrNo,
-  shortName,
-} from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import type {
   IncomingQcCompletedRow,
   IncomingQcPendingRow,
@@ -27,24 +22,19 @@ import type {
 } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { QcReportAttach } from '@/components/shared/qc-report-attach';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { todayLocal } from '@/lib/date';
-import { useSession } from '@/lib/session';
-import { SearchableSelect } from '@/components/shared/searchable-select';
-import type { SearchableOption } from '@/components/shared/searchable-select';
-import { useQcUserOptions } from '@/modules/qc-users/api';
-import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
-import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '@/modules/qc-history/api';
 import { exportCompletedQc, exportPendingQc } from '@/modules/qc-history/lib/export';
 import { useIncomingQc } from '@/modules/incoming-qc/api';
 import { TpiView } from '@/modules/tpi/components/tpi-view';
 import { IncomingPendingRow } from '@/modules/incoming-qc/components/qc-call-rows';
+import { IncomingQcInspectModal } from '@/modules/incoming-qc/components/incoming-qc-inspect-modal';
+import { QcCallInspectModal } from '../components/qc-call-inspect-modal';
 import {
   CompletedIncomingSheetRow,
   CompletedProcessSheetRow,
@@ -59,22 +49,38 @@ import {
   type StageStat,
 } from '../components/qc-sheet';
 
+// `| undefined` on line / op is deliberate: the deep-link effect strips a
+// consumed param by writing `undefined` back, and exactOptionalPropertyTypes
+// rejects that on a plain `line?: string`.
+type QcCallRegisterSearch = {
+  line?: string | undefined;
+  op?: string | undefined;
+  tab?: 'qc' | 'tpi';
+  search?: string;
+};
+
+// Which pending call the entry popup is open on; null = closed. Only the id is
+// kept — the row itself is always read fresh off the feed, so a refetch cannot
+// leave the box on stale figures.
+type InspectTarget = { kind: 'op'; jcOpId: string } | { kind: 'inc'; grnLineId: string } | null;
+
 export const qcCallRegisterRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'qc-call-register',
-  // ?line=<grnLineId> deep-opens that incoming-QC row (the Incoming QC page's
-  // Inspect button lands here).
+  // ?line=<grnLineId> deep-opens the Inspect popup for that incoming-QC row;
+  // ?op=<jcOpId> does the same for an in-process / final call. Both are
+  // consumed — acted on once, then stripped from the URL (see the deep-link
+  // effect below), so a refresh does not throw the box up again.
   // ?tab=tpi opens straight on the TPI tab (the JC op card's 📋 TPI link). It
   // SEEDS the tab only — see the tab state below, which stays local.
   // ?search=<text> seeds the search box the same way (the JC op card's
   // 🔬 QC Call button passes its job-card code, so the inspector lands on that
   // card's calls instead of the whole register). Seed only — typing in the box
   // afterwards does not write back to the URL.
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { line?: string; tab?: 'qc' | 'tpi'; search?: string } => {
-    const out: { line?: string; tab?: 'qc' | 'tpi'; search?: string } = {};
+  validateSearch: (search: Record<string, unknown>): QcCallRegisterSearch => {
+    const out: QcCallRegisterSearch = {};
     if (typeof search.line === 'string') out.line = search.line;
+    if (typeof search.op === 'string') out.op = search.op;
     if (search.tab === 'qc' || search.tab === 'tpi') out.tab = search.tab;
     if (typeof search.search === 'string' && search.search.trim()) out.search = search.search;
     return out;
@@ -102,10 +108,16 @@ function QcCallRegisterPage(): React.JSX.Element {
   // Incoming-material QC (GRN lines) shown on the same approval screen. Optional
   // — if it fails to load we still render process QC rather than blocking.
   const incomingQuery = useIncomingQc();
-  const { line: lineParam, tab: tabParam, search: searchParam } = qcCallRegisterRoute.useSearch();
-  const [openId, setOpenId] = useState<string | null>(lineParam ? `inc:${lineParam}` : null);
+  const {
+    line: lineParam,
+    op: opParam,
+    tab: tabParam,
+    search: searchParam,
+  } = qcCallRegisterRoute.useSearch();
+  const navigate = qcCallRegisterRoute.useNavigate();
+  const [inspect, setInspect] = useState<InspectTarget>(null);
   // Pending | Completed toggle. Opens on Pending — that is the working queue,
-  // and the ?line= deep-link lands on a pending row.
+  // and the ?line= / ?op= deep-links open a pending row's popup.
   const [view, setView] = useState<QcView>('pending');
   // Stage strip filter: null = every stage.
   const [stage, setStage] = useState<QcStage | null>(null);
@@ -114,28 +126,68 @@ function QcCallRegisterPage(): React.JSX.Element {
   // route's validateSearch).
   const [search, setSearch] = useState(searchParam ?? '');
   // Screen-merge: TPI folded in as a tab (it used to be its own /tpi page, which
-  // stays registered). Tab choice stays LOCAL state — clicking a tab
-  // deliberately does NOT write to the URL, so this route's own ?line=
-  // deep-link param is untouched. ?tab= only SEEDS the initial value, so an
-  // outside link (the JC op card's 📋 TPI button) can land on the TPI tab.
+  // stays registered). Tab choice stays LOCAL state — clicking a tab does
+  // not write to the URL. ?tab= only SEEDS the initial value, so an outside
+  // link (the JC op card's 📋 TPI button) can land on the TPI tab.
   const [tab, setTab] = useState<'qc' | 'tpi'>(tabParam ?? 'qc');
-  // Caller's effective access — drives the "Hide page" VIEW guard below.
+  // Caller's effective access — drives the "Hide page" VIEW guard below and
+  // whether a process-QC row opens its popup (qc_submit `entry`; the incoming
+  // rows check qc_incoming themselves).
   const { data: eff } = useMyAccess();
-
-  // People for the inline QC entry "QC By" picker. Legacy L4164 filled this from
-  // db.operators (status==='Active'), which named the wrong crowd: operators are
-  // shop-floor machinists. It now comes from the QC people the user defines in
-  // Access Control, so an inspection can be linked to the person who signed it.
-  const qcUsers = useQcUserOptions();
-  const qcOptions = useMemo(
-    () => toQcSearchOptions(qcUsers.data?.options ?? []),
-    [qcUsers.data?.options],
-  );
+  const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
 
   const allPending = useMemo(() => data?.pending ?? [], [data]);
   const allLogsFull = useMemo(() => data?.logs ?? [], [data]);
   const incPending = useMemo(() => incomingQuery.data?.pending ?? [], [incomingQuery.data]);
   const incCompleted = useMemo(() => incomingQuery.data?.completed ?? [], [incomingQuery.data]);
+
+  // The popup's row, read fresh off the WHOLE feed (not the searched subset,
+  // so typing in the search box while the box is up does not close it).
+  const inspectOp =
+    inspect?.kind === 'op' ? (allPending.find((o) => o.jcOpId === inspect.jcOpId) ?? null) : null;
+  const inspectInc =
+    inspect?.kind === 'inc'
+      ? (incPending.find((o) => o.grnLineId === inspect.grnLineId) ?? null)
+      : null;
+
+  // DEEP LINK — ?line= / ?op= open the popup once the matching feed has
+  // loaded and the call is in it. Acted on once per id, then the param is
+  // stripped (replace, so Back does not step through it) — the op-entry
+  // pattern. A call that is not in the queue (already inspected elsewhere)
+  // opens nothing; the param is still consumed.
+  const autoOpenedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lineParam || !incomingQuery.data || autoOpenedRef.current === `inc:${lineParam}`) return;
+    autoOpenedRef.current = `inc:${lineParam}`;
+    if (incPending.some((o) => o.grnLineId === lineParam)) {
+      setInspect({ kind: 'inc', grnLineId: lineParam });
+    }
+    void navigate({ search: (prev) => ({ ...prev, line: undefined }), replace: true });
+  }, [lineParam, incomingQuery.data, incPending, navigate]);
+  useEffect(() => {
+    if (!opParam || !data || autoOpenedRef.current === `op:${opParam}`) return;
+    autoOpenedRef.current = `op:${opParam}`;
+    if (allPending.some((o) => o.jcOpId === opParam)) setInspect({ kind: 'op', jcOpId: opParam });
+    void navigate({ search: (prev) => ({ ...prev, op: undefined }), replace: true });
+  }, [opParam, data, allPending, navigate]);
+
+  // The row vanished after a refetch — fully inspected elsewhere, or the call
+  // was withdrawn — so there is nothing left to inspect: close rather than
+  // keep a form up for a call that no longer needs one. Only once its feed
+  // has loaded, or the box would shut on the poll's first empty render.
+  useEffect(() => {
+    if (inspect?.kind === 'op' && data && !allPending.some((o) => o.jcOpId === inspect.jcOpId)) {
+      setInspect(null);
+    }
+    if (
+      inspect?.kind === 'inc' &&
+      incomingQuery.data &&
+      !incPending.some((o) => o.grnLineId === inspect.grnLineId)
+    ) {
+      setInspect(null);
+    }
+  }, [inspect, data, allPending, incomingQuery.data, incPending]);
+
   // Server-owned count (op_log COUNT(*) where log_type='qc'). `data.logs` is
   // capped at LIMIT 500 by the endpoint, so counting it in the browser silently
   // under-reports past 500 entries.
@@ -434,27 +486,19 @@ function QcCallRegisterPage(): React.JSX.Element {
       >
         {view === 'pending' ? (
           <>
-            {incPendingF.map((o) => {
-              const key = `inc:${o.grnLineId}`;
-              return (
-                <IncomingPendingRow
-                  key={key}
-                  o={o}
-                  open={openId === key}
-                  onToggle={() => setOpenId(openId === key ? null : key)}
-                  onDone={() => setOpenId(null)}
-                />
-              );
-            })}
+            {incPendingF.map((o) => (
+              <IncomingPendingRow
+                key={`inc:${o.grnLineId}`}
+                o={o}
+                onInspect={() => setInspect({ kind: 'inc', grnLineId: o.grnLineId })}
+              />
+            ))}
             {pending.map((o) => (
               <PendingCall
                 key={o.jcOpId}
                 o={o}
-                open={openId === o.jcOpId}
-                qcOptions={qcOptions}
-                qcLoading={qcUsers.isFetching}
-                onToggle={() => setOpenId(openId === o.jcOpId ? null : o.jcOpId)}
-                onDone={() => setOpenId(null)}
+                canInspect={canEntry}
+                onInspect={() => setInspect({ kind: 'op', jcOpId: o.jcOpId })}
               />
             ))}
           </>
@@ -462,90 +506,34 @@ function QcCallRegisterPage(): React.JSX.Element {
           completedFeed.map((it) => it.node)
         )}
       </QcSheetTable>
+
+      {/* The entry popups. Keyed by the call so moving from one row to
+          another starts a fresh form, never one carrying the last row's qty. */}
+      {inspectOp ? (
+        <QcCallInspectModal key={inspectOp.jcOpId} o={inspectOp} onClose={() => setInspect(null)} />
+      ) : null}
+      {inspectInc ? (
+        <IncomingQcInspectModal
+          key={inspectInc.grnLineId}
+          o={inspectInc}
+          onClose={() => setInspect(null)}
+        />
+      ) : null}
     </div>,
   );
 }
 
+// One pending job-card operation on the sheet. The entry form itself is not
+// here any more — it is the popup (components/qc-call-inspect-modal.tsx) the
+// page opens when this line is clicked.
 function PendingCall(props: {
   o: QcHistoryPendingRow;
-  open: boolean;
-  qcOptions: SearchableOption[];
-  qcLoading: boolean;
-  onToggle: () => void;
-  onDone: () => void;
+  /** qc_submit `entry` — without it the line reads "View only" and does not
+   *  open (op-entry's submitQcLog would refuse the write anyway). */
+  canInspect: boolean;
+  onInspect: () => void;
 }): React.JSX.Element {
-  const { o, open, qcOptions, qcLoading, onToggle, onDone } = props;
-  const submitQc = useSubmitQcLog();
-  const session = useSession().data;
-  const companyId = session?.companyId ?? null;
-  // Tier-driven, per department. Recording accept/reject qty is `entry` on
-  // qc_submit (QC). op-entry's submitQcLog already refuses without it, but this
-  // screen had no check at all — an L1 Viewer was handed the whole form and only
-  // discovered the 403 on click. The session below still legitimately prefills
-  // the inspector name; only the form is gated.
-  const { data: eff } = useMyAccess();
-  const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
-  const [logDate, setLogDate] = useState(todayIso());
-  const [shift, setShift] = useState<Shift>('day');
-  const [accept, setAccept] = useState('');
-  const [reject, setReject] = useState('0');
-  // Seeded with the signed-in person (the common case: the QC person on this
-  // screen is the one inspecting). `inspectorId` is the Access Control user
-  // behind that name once it is picked from the dropdown; the two are only ever
-  // set together.
-  const [inspector, setInspector] = useState(shortName(session?.fullName ?? session?.email ?? ''));
-  const [inspectorId, setInspectorId] = useState<string | null>(null);
-  const [remarks, setRemarks] = useState('');
-  const [qcReportPath, setQcReportPath] = useState<string | null>(null);
-  const [qcReportName, setQcReportName] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function submit(): Promise<void> {
-    setErr(null);
-    const acc = Number(accept || '0');
-    const rej = Number(reject || '0');
-    if (!Number.isInteger(acc) || acc < 0 || !Number.isInteger(rej) || rej < 0) {
-      setErr('Accept/Reject must be non-negative integers.');
-      return;
-    }
-    if (acc + rej <= 0) {
-      setErr('Enter accept and/or reject qty.');
-      return;
-    }
-    if (acc + rej > o.qcPending) {
-      setErr(`Total ${acc + rej} exceeds pending ${o.qcPending}.`);
-      return;
-    }
-    if (!inspector.trim()) {
-      setErr('Enter who did the QC (QC By).');
-      return;
-    }
-    // Nobody touched the dropdown, so the field still holds the seeded name of
-    // the signed-in person. Their own user id is on the session, so link the
-    // entry to them — but only when they are genuinely on the QC list, because
-    // that list, not this screen's permissions, is what "a QC person" means.
-    const seededId = session && qcOptions.some((u) => u.id === session.id) ? session.id : null;
-    const qcUserId = inspectorId ?? seededId;
-    const input: SubmitQcLogInput = {
-      jcOpId: o.jcOpId,
-      qty: acc,
-      rejectQty: rej,
-      logDate,
-      shift,
-      // The name stays the snapshot of who signed off on the day; the id below
-      // is the extra link, sent only when there is a real user behind it.
-      operatorName: inspector.trim(),
-      ...(qcUserId ? { qcUserId } : {}),
-      ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
-      ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
-    };
-    try {
-      await submitQc.mutateAsync(input);
-      onDone();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'QC submit failed');
-    }
-  }
+  const { o, canInspect, onInspect } = props;
 
   return (
     <PendingSheetRow
@@ -582,156 +570,8 @@ function PendingCall(props: {
       })()}
       overdue={o.overdue}
       stage={processStage(o.isLastOp)}
-      open={open}
-      onToggle={onToggle}
-    >
-      {/* No `entry` → the form is simply not drawn. No notice either: an
-          expanded row that shows only its figures reads as view-only on its own. */}
-      {canEntry ? (
-        <div style={{ padding: '14px 16px', borderTop: '2px solid var(--green)' }}>
-          {/* Legacy L4167: QC Entry header naming the JC/Op and the operation. */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
-            ✅ QC Entry — {o.jcCode} Op{opSrNo(o.opSeq)} — {o.operation}
-          </div>
-          <div className="form-grid">
-            <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10 }}>
-                Date
-              </label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={logDate}
-                onChange={(e) => setLogDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10 }}>
-                Shift
-              </label>
-              <select
-                className="innovic-select"
-                value={shift}
-                onChange={(e) => setShift(e.target.value as Shift)}
-              >
-                {SHIFTS.map((s) => (
-                  <option key={s} value={s}>
-                    {SHIFT_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
-                ✅ Accept Qty (max {o.qcPending})
-              </label>
-              <input
-                type="number"
-                className="innovic-input"
-                min={0}
-                max={o.qcPending}
-                value={accept}
-                onChange={(e) => setAccept(e.target.value)}
-                placeholder="0"
-                style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  color: 'var(--green)',
-                  border: '2px solid var(--green)',
-                  textAlign: 'center',
-                }}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
-                ❌ Reject Qty
-              </label>
-              <input
-                type="number"
-                className="innovic-input"
-                min={0}
-                max={o.qcPending}
-                value={reject}
-                onChange={(e) => setReject(e.target.value)}
-                placeholder="0"
-                style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  color: 'var(--red)',
-                  border: '2px solid var(--red)',
-                  textAlign: 'center',
-                }}
-              />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label" style={{ fontSize: 10 }}>
-                👤 QC By ★
-              </label>
-              {/* The whole QC list comes back in one small response, so the
-                  picker filters it in the browser and there is no ?search= to
-                  round-trip. */}
-              <SearchableSelect
-                value={inspectorId}
-                onChange={(id) => {
-                  setInspectorId(id);
-                  const picked = qcOptions.find((u) => u.id === id);
-                  setInspector(picked ? qcSelectedLabel(picked) : '');
-                }}
-                options={qcOptions}
-                onSearch={NO_SERVER_SEARCH}
-                loading={qcLoading}
-                valueLabel={inspector}
-                selectedLabel={qcSelectedLabel}
-                placeholder="🔍 Select QC person…"
-                emptyText="No QC users — set them up in Access Control"
-              />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label" style={{ fontSize: 10 }}>
-                Remarks
-              </label>
-              <input
-                className="innovic-input"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                placeholder="NC reason, observations..."
-              />
-            </div>
-            <div className="form-grp form-full">
-              <QcReportAttach
-                companyId={companyId}
-                fileName={qcReportName}
-                onUploaded={(path, name) => {
-                  setQcReportPath(path);
-                  setQcReportName(name);
-                }}
-                onClear={() => {
-                  setQcReportPath(null);
-                  setQcReportName(null);
-                }}
-              />
-            </div>
-          </div>
-          {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
-              {err}
-            </div>
-          ) : null}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onToggle}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-success"
-              disabled={submitQc.isPending}
-              onClick={() => void submit()}
-            >
-              {submitQc.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit QC
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </PendingSheetRow>
+      canInspect={canInspect}
+      onInspect={onInspect}
+    />
   );
 }

@@ -1,30 +1,31 @@
 // Incoming-QC pending row for the unified QC Call Register: a GRN line awaiting
-// inspection with an inline accept/reject form (credits accepted qty to stock
-// via POST /incoming-qc/:id/inspect). Extracted so the QC Call Register can
-// show incoming-material QC alongside process (JC-op) QC on a single approval
-// screen. The collapsed line is drawn by the register's ruled sheet
-// (qc-call-register/components/qc-sheet.tsx PendingSheetRow); the expanded
-// form is the shared IncomingQcInspectForm — the same one the Incoming QC
-// page's "🔬 Inspect" popup shows — so the two screens cannot drift. Completed
-// incoming rows are drawn by the sheet directly (CompletedIncomingSheetRow).
+// inspection. Clicking it opens the accept/reject popup (IncomingQcInspectModal
+// — the same one the Incoming QC page's "🔬 Inspect" shows — which credits
+// accepted qty to stock via POST /incoming-qc/:id/inspect). Extracted so the
+// QC Call Register can show incoming-material QC alongside process (JC-op) QC
+// on a single approval screen. The line is drawn by the register's ruled sheet
+// (qc-call-register/components/qc-sheet.tsx PendingSheetRow); the popup is
+// mounted by the register page. Completed incoming rows are drawn by the sheet
+// directly (CompletedIncomingSheetRow).
 
 import { type IncomingQcPendingRow, opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { PendingSheetRow } from '@/modules/qc-call-register/components/qc-sheet';
-import { IncomingQcInspectFormView, useIncomingQcInspect } from './incoming-qc-inspect-form';
 
 export function IncomingPendingRow(props: {
   o: IncomingQcPendingRow;
-  open: boolean;
-  onToggle: () => void;
-  onDone: () => void;
+  /** Open the inspect popup for this line. */
+  onInspect: () => void;
 }): React.JSX.Element {
-  const { o, open, onToggle, onDone } = props;
-  // The state lives on the ROW, not inside the expanded area: the sheet
-  // unmounts that area on collapse, and a half-typed qty has always survived
-  // Close / Inspect on this row.
-  const form = useIncomingQcInspect({ o, onDone });
+  const { o, onInspect } = props;
+  // Incoming material is its OWN form key — this row sits on the QC Call
+  // Register, but accepting a GRN line is qc_incoming `entry` (what
+  // incoming-qc's submitIncomingQc enforces), not qc_submit. Same gate the
+  // popup's form applies; here it decides whether the line opens at all.
+  const { data: eff } = useMyAccess();
+  const canEntry = effectiveFormPerms(eff, 'qc_incoming').entry;
 
   return (
     <PendingSheetRow
@@ -69,13 +70,9 @@ export function IncomingPendingRow(props: {
       waitDays={o.waitDays}
       overdue={false}
       stage="incoming"
-      open={open}
-      onToggle={onToggle}
-    >
-      {/* No `entry` → the form is simply not drawn (and the sheet shows no
-          Inspect toggle). No notice either: an expanded row that shows only
-          its figures reads as view-only on its own. */}
-      {form.canEntry ? <IncomingQcInspectFormView form={form} onCancel={onToggle} /> : null}
-    </PendingSheetRow>
+      // No `entry` → the line reads "View only" and opens nothing.
+      canInspect={canEntry}
+      onInspect={onInspect}
+    />
   );
 }
