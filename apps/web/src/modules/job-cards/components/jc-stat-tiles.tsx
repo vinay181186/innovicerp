@@ -545,12 +545,13 @@ export function JcOpFlowChips({
 }
 
 /** ROUTE / OPERATION FLOW on the VIEW page (JC-Detail-Restyle-Mockup.html,
- *  2026-09-21): one card per op, every card the SAME fixed size (156 × 118)
- *  with the same four slots —
+ *  2026-09-21): one card per op, every card the SAME fixed size (150 × 92,
+ *  tightened 2026-09-21 — no slack under a one-line name) with the same
+ *  four slots —
  *
  *    OP10 · QC              op number, kind
  *    cnc-1                  machine (· name) / QC / OUTSOURCE
- *    Turning — second …     operation name, two lines then clipped
+ *    Turning — second …     operation name, ONE line then clipped (hover)
  *    ✓ 15/15 · ♻2           qty released / reached, OSP status, rework owed
  *
  *  Status changes ONLY the colours (border, fill, qty), never the size:
@@ -580,8 +581,8 @@ export function JcOpFlowCards({
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'stretch',
-        rowGap: 10,
-        padding: '4px 2px',
+        rowGap: 8,
+        padding: '2px 2px',
       }}
     >
       {sortedOps.map((o, i) => {
@@ -636,17 +637,17 @@ export function JcOpFlowCards({
           <Fragment key={o.id}>
             <div
               style={{
-                flex: '0 0 156px',
-                width: 156,
-                height: 118,
+                flex: '0 0 150px',
+                width: 150,
+                height: 92,
                 boxSizing: 'border-box',
                 border: `1.5px solid ${border}`,
-                borderRadius: 9,
+                borderRadius: 8,
                 background: bg,
-                padding: '10px 12px',
+                padding: '7px 10px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 4,
+                gap: 2,
                 minWidth: 0,
                 overflow: 'hidden',
               }}
@@ -655,10 +656,11 @@ export function JcOpFlowCards({
               <div
                 className="mono"
                 style={{
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: 800,
                   color: 'var(--text3)',
                   whiteSpace: 'nowrap',
+                  lineHeight: 1.2,
                 }}
               >
                 OP{opSrNo(o.opSeq)}
@@ -673,6 +675,7 @@ export function JcOpFlowCards({
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
+                  lineHeight: 1.25,
                 }}
                 title={line2Title}
               >
@@ -698,17 +701,15 @@ export function JcOpFlowCards({
                   </>
                 )}
               </div>
-              {/* line 3 — operation name, a fixed two-line area */}
+              {/* line 3 — operation name, one line (full name on hover) */}
               <div
                 style={{
                   fontSize: 12,
                   color: nameColor,
-                  lineHeight: 1.3,
-                  minHeight: 31,
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
+                  lineHeight: 1.25,
+                  whiteSpace: 'nowrap',
                   overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
                 title={o.operation}
               >
@@ -719,7 +720,8 @@ export function JcOpFlowCards({
                 className="mono fw-700"
                 style={{
                   marginTop: 'auto',
-                  fontSize: 12.5,
+                  fontSize: 12,
+                  lineHeight: 1.25,
                   color: qtyColor,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
@@ -735,12 +737,12 @@ export function JcOpFlowCards({
               <div
                 aria-hidden="true"
                 style={{
-                  flex: '0 0 26px',
+                  flex: '0 0 20px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: 'var(--border3)',
-                  fontSize: 18,
+                  fontSize: 16,
                 }}
               >
                 →
