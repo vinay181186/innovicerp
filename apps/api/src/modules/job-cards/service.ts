@@ -221,14 +221,19 @@ export async function listJobCards(
         po.code                AS "productionOrderCode",
         -- The plan's Customer Dispatch Date (migration 0137): the plan this card
         -- was executed from, reached either through its Production Order or
-        -- directly via plans.jc_id. Null on a card with no plan. ::text so the
-        -- date arrives as YYYY-MM-DD and not a Date at local midnight.
+        -- directly via plans.jc_id. A rework/repair child has no plan of its
+        -- own — its pieces return to the parent, so it reads the parent's plan
+        -- (pjc / its Production Order). Null on a card with no plan. ::text so
+        -- the date arrives as YYYY-MM-DD and not a Date at local midnight.
         (
           SELECT p.customer_dispatch_date::text
           FROM public.plans p
-          WHERE (p.jc_id = jc.id OR p.id = po.plan_id)
+          WHERE (
+              p.jc_id = jc.id OR p.id = po.plan_id
+              OR p.jc_id = pjc.id OR p.id = pjc_po.plan_id
+            )
             AND p.deleted_at IS NULL AND p.plan_status <> 'cancelled'
-          ORDER BY p.created_at DESC LIMIT 1
+          ORDER BY (p.jc_id = jc.id OR p.id = po.plan_id) DESC, p.created_at DESC LIMIT 1
         ) AS "customerDispatchDate",
         -- Rework / repair CHILD cards raised off this card, so the parent's
         -- header can name them. One aggregate per row — no per-card query.
@@ -268,6 +273,10 @@ export async function listJobCards(
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.production_orders po
         ON po.id = jc.production_order_id AND po.deleted_at IS NULL
+      -- The parent card's Production Order — a rework/repair child reads its
+      -- Customer Dispatch Date off the parent's plan (see the select above).
+      LEFT JOIN public.production_orders pjc_po
+        ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -307,6 +316,10 @@ export async function listJobCards(
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.production_orders po
         ON po.id = jc.production_order_id AND po.deleted_at IS NULL
+      -- The parent card's Production Order — a rework/repair child reads its
+      -- Customer Dispatch Date off the parent's plan (see the select above).
+      LEFT JOIN public.production_orders pjc_po
+        ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -407,14 +420,19 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         po.code                AS "productionOrderCode",
         -- The plan's Customer Dispatch Date (migration 0137): the plan this card
         -- was executed from, reached either through its Production Order or
-        -- directly via plans.jc_id. Null on a card with no plan. ::text so the
-        -- date arrives as YYYY-MM-DD and not a Date at local midnight.
+        -- directly via plans.jc_id. A rework/repair child has no plan of its
+        -- own — its pieces return to the parent, so it reads the parent's plan
+        -- (pjc / its Production Order). Null on a card with no plan. ::text so
+        -- the date arrives as YYYY-MM-DD and not a Date at local midnight.
         (
           SELECT p.customer_dispatch_date::text
           FROM public.plans p
-          WHERE (p.jc_id = jc.id OR p.id = po.plan_id)
+          WHERE (
+              p.jc_id = jc.id OR p.id = po.plan_id
+              OR p.jc_id = pjc.id OR p.id = pjc_po.plan_id
+            )
             AND p.deleted_at IS NULL AND p.plan_status <> 'cancelled'
-          ORDER BY p.created_at DESC LIMIT 1
+          ORDER BY (p.jc_id = jc.id OR p.id = po.plan_id) DESC, p.created_at DESC LIMIT 1
         ) AS "customerDispatchDate",
         -- Rework / repair CHILD cards raised off this card, so the parent's
         -- header can name them. One aggregate per row — no per-card query.
@@ -454,6 +472,10 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.production_orders po
         ON po.id = jc.production_order_id AND po.deleted_at IS NULL
+      -- The parent card's Production Order — a rework/repair child reads its
+      -- Customer Dispatch Date off the parent's plan (see the select above).
+      LEFT JOIN public.production_orders pjc_po
+        ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
