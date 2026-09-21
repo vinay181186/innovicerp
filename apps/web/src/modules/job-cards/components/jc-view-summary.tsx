@@ -11,7 +11,8 @@
 // each one.
 //
 // Responsive without a stylesheet: the header is a wrapping flex row whose
-// four columns carry flex-bases (136 px picture · references · KPIs · meta),
+// four columns carry flex-bases (300 px picture+text · references · KPIs ·
+// meta — 1200 px in all, so a 1280 px laptop keeps them on one line),
 // so on a narrow screen the columns fold under one another instead of
 // squeezing; the KPI tiles are an auto-fit grid that goes 5 → 3 → 2 across
 // on their own. No media query, no <style> tag.
@@ -247,7 +248,7 @@ export function JcViewSummary({
             reads `IN-IT-0007/B` on a card raised against an SO and stays the
             bare `IN-IT-0007` on a JW-sourced or standalone card — one string
             from the shared helper, same as the Sales Order screens. */}
-        <div style={{ flex: '0 1 340px', minWidth: 0 }}>
+        <div style={{ flex: '0 1 300px', minWidth: 0 }}>
           <ItemBadge
             size="tile"
             code={jc.itemCode}
@@ -337,7 +338,7 @@ export function JcViewSummary({
             alignItems: 'baseline',
             alignContent: 'start',
             minWidth: 0,
-            flex: '1.2 1 220px',
+            flex: '1.2 1 200px',
           }}
         >
           {/* Drawing — WHICH drawing the page shows ("Sales order drawing ·
