@@ -206,11 +206,21 @@ export function ItemBadge({
   const nameText = name?.trim() || '';
   const maxW = nameMaxWidth ?? (size === 'page' || tile ? 'none' : 200);
 
+  // THE RULE (user, 2026-09-21): in a table row the badge fills its cell and
+  // starts at its left edge, so the picture box sits at the SAME x in every
+  // row of a list whatever the length of the code and name beside it. An
+  // inline badge inside the app's centred cells was placed as one unit, so the
+  // box slid left or right with the text ("dancing") — seen on the SO lines
+  // after the Job Card list had already been pinned by hand. Card, page and
+  // tile sizes stay inline: they sit beside other things in a header.
+  const rowLayout = size === 'row';
   return (
     <div
       className={className}
       style={{
-        display: 'inline-flex',
+        display: rowLayout ? 'flex' : 'inline-flex',
+        width: rowLayout ? '100%' : undefined,
+        justifyContent: 'flex-start',
         // Every size sits the text BESIDE the picture. The tile top-aligns it
         // so code · name · extra lines read as a block next to the 120 px
         // picture (user decision 2026-09-21); the rest centre on the row.
