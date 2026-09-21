@@ -11,8 +11,8 @@
 // each one.
 //
 // Responsive without a stylesheet: the header is a wrapping flex row whose
-// four columns carry flex-bases (280 px picture+text · 240 references ·
-// 430 KPIs · meta ≈ 190, gaps 16 — under 1240 px, so a 1280 px laptop keeps
+// four columns carry flex-bases (280 px picture+text · 230 references ·
+// 400 KPIs · meta ≈ 180, gaps 14 — under 1240 px, so a 1280 px laptop keeps
 // them on one line with all five KPI tiles across),
 // so on a narrow screen the columns fold under one another instead of
 // squeezing; the KPI tiles are an auto-fit grid that goes 5 → 3 → 2 across
@@ -35,7 +35,7 @@ import { fmtJcDate } from '../lib/fmt-jc-date';
 
 /** The quiet caption in front of a value (`Drawing`, `Due Date`, …). */
 const kvLabel: React.CSSProperties = {
-  fontSize: 13,
+  fontSize: 12,
   color: 'var(--text3)',
   whiteSpace: 'nowrap',
 };
@@ -51,7 +51,7 @@ function Kv({ label, children }: { label: string; children: React.ReactNode }): 
   return (
     <>
       <div style={kvLabel}>{label}</div>
-      <div style={{ minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+      <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
         {children}
       </div>
     </>
@@ -104,21 +104,21 @@ function KpiTile({
       title={title}
       style={{
         border: `1px solid ${border}`,
-        borderRadius: 9,
-        padding: '9px 10px',
+        borderRadius: 7,
+        padding: '6px 8px',
         textAlign: 'center',
         background: bg,
         minWidth: 0,
       }}
     >
-      <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: num, lineHeight: 1.1 }}>
+      <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: num, lineHeight: 1.1 }}>
         {value}
       </div>
       <div
         style={{
-          fontSize: 10,
+          fontSize: 9.5,
           color: 'var(--text3)',
-          marginTop: 3,
+          marginTop: 2,
           textTransform: 'uppercase',
           letterSpacing: '.05em',
           whiteSpace: 'nowrap',
@@ -234,10 +234,10 @@ export function JcViewSummary({
         className="panel-body"
         style={{
           display: 'flex',
-          gap: 16,
+          gap: 14,
           flexWrap: 'wrap',
           alignItems: 'flex-start',
-          padding: '14px 16px',
+          padding: '10px 14px',
         }}
       >
         {/* ── Column 1: the product ──
@@ -334,12 +334,12 @@ export function JcViewSummary({
           style={{
             display: 'grid',
             gridTemplateColumns: 'auto minmax(0, 1fr)',
-            columnGap: 14,
-            rowGap: 5,
+            columnGap: 12,
+            rowGap: 4,
             alignItems: 'baseline',
             alignContent: 'start',
             minWidth: 0,
-            flex: '1 1 240px',
+            flex: '1 1 230px',
           }}
         >
           {/* Drawing — WHICH drawing the page shows ("Sales order drawing ·
@@ -454,12 +454,12 @@ export function JcViewSummary({
         {/* ── Column 3: the five KPI tiles (unit = pieces, as the old
             "Quantity (pcs)" caption said; the card carries no unit of its own).
             auto-fit: 5 across when there is room, 3 / 2 on a narrow screen. ── */}
-        <div style={{ flex: '1.5 1 430px', minWidth: 0 }}>
+        <div style={{ flex: '1.5 1 400px', minWidth: 0 }}>
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(78px, 1fr))',
-              gap: 8,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))',
+              gap: 6,
             }}
           >
             <KpiTile label="Order Qty" value={jc.orderQty} tone="plain" />
@@ -527,8 +527,8 @@ export function JcViewSummary({
           style={{
             display: 'grid',
             gridTemplateColumns: 'auto auto',
-            columnGap: 14,
-            rowGap: 8,
+            columnGap: 10,
+            rowGap: 4,
             alignItems: 'center',
             alignContent: 'start',
             flex: '0 0 auto',
@@ -538,7 +538,7 @@ export function JcViewSummary({
           <div style={kvLabel}>Due Date</div>
           <div
             className="fw-700"
-            style={{ fontSize: 13, whiteSpace: 'nowrap', textAlign: 'right' }}
+            style={{ fontSize: 12.5, whiteSpace: 'nowrap', textAlign: 'right' }}
           >
             📅 {jc.dueDate ? fmtJcDate(jc.dueDate) : '—'}
           </div>
@@ -553,7 +553,7 @@ export function JcViewSummary({
             <JcStatusBadge status={jc.computedStatus} />
           </div>
           <div style={kvLabel}>Waiting at</div>
-          <div className="fw-700" style={{ fontSize: 13, textAlign: 'right' }}>
+          <div className="fw-700" style={{ fontSize: 12.5, textAlign: 'right' }}>
             {stuck ? (
               <>
                 Op{opSrNo(stuck.opSeq)} · {stuckWhere}
