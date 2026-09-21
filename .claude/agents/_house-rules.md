@@ -195,3 +195,40 @@ Silently doing less than you were asked is the one failure the user cannot see.
 - Keep the form grid aligned and responsive: fields wrap, never overflow on small
   screens.
 - Applies to all new and edited forms. Styling only — never change field logic.
+
+## REFERENCE SCREEN = UI + BEHAVIOR
+
+When using an existing screen as a reference, follow not only its UI/theme/layout
+but also its applicable functionality — linked dropdowns, dependent fields,
+auto-fetch, validations, reset/clear behavior, data flow, save/edit behavior, and
+downstream effects. Do not copy screen-specific business logic blindly.
+
+## DEPENDENT FIELD SYNCHRONIZATION
+
+Whenever Field B depends on Field A:
+
+- A changes → B updates accordingly.
+- A clears → B clears.
+- A changes to another value → B reflects the new value.
+- Never allow stale dependent values.
+
+Example: Item Code → Item Name.
+Enforce via the shared field-cascade hook (use-field-cascade) and the form-behaviour
+agent — do not hand-roll per screen.
+
+Both rules are permanent and apply to new and modified existing screens.
+
+## SCREENSHOT / REFERENCE = LOOK ONLY, NEVER FLOW
+
+When matching a screenshot or reference screen, change only the visual side (layout,
+spacing, colours, labels, field order). NEVER change or break the screen's
+behaviour or step sequence.
+
+- Before restyling, list the screen's current behaviour AND step order (e.g. op:
+  Start → Log). Confirm your change keeps every step in the same order.
+- Keep all linked dropdowns, dependent fields, auto-fetch, validations, reset/clear,
+  data flow, save/edit, and step sequence exactly as before.
+- If a visual change would remove, reorder, or skip any step, STOP and tell me first.
+
+Example of what to prevent: a UI restyle that made JC per-op show Log directly,
+skipping Start. Look may change; flow must not.
