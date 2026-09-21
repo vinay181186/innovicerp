@@ -19,6 +19,12 @@ import { SoStatusBadge } from './so-status-badge';
 /** Column count — the expanded row's <td colSpan> must always match the
  *  <colgroup> below, so it is named once here. */
 const COLUMN_COUNT = 12;
+/** The Type chip's word. */
+const TYPE_SHORT: Record<string, string> = {
+  component_manufacturing: 'Component',
+  equipment: 'Equipment',
+  with_material: 'With Material',
+};
 
 export function SoSheetTable({
   rows,
@@ -150,7 +156,9 @@ export function SoSheetTable({
                     {/* Legacy renders the type through badge() (L11870), which
                         has no map entry for either SO type and falls through to
                         grey — same chip as the card. */}
-                    <span className="badge b-grey">{so.type.replaceAll('_', ' ')}</span>
+                    {/* One word per type: the full "component manufacturing"
+                        is wider than this column and ran into Customer. */}
+                    <span className="badge b-grey">{TYPE_SHORT[so.type] ?? so.type.replaceAll('_', ' ')}</span>
                     {so.type === 'equipment' && so.bomStatus ? (
                       <div style={{ marginTop: 3 }}>
                         <span
