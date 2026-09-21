@@ -731,13 +731,28 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
           Open full detail →
         </Link>
       </div>
-      {/* tbl-ctr — the table-alignment standard: data centred, headers untouched. */}
-      <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
+      {/* tbl-ctr — the table-alignment standard: data centred, headers untouched.
+          Fixed column widths: each expanded order draws its own lines table, and
+          auto-sized columns put the Item column — and its picture box — at a
+          slightly different x per order. Fixed, the box lines up down the page. */}
+      <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0, tableLayout: 'fixed' }}>
+        <colgroup>
+          <col style={{ width: '4%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: canEdit ? '35%' : '41%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '9%' }} />
+          <col style={{ width: '8%' }} />
+          {canEdit ? <col style={{ width: '6%' }} /> : null}
+        </colgroup>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
             {/* Item = thumbnail · CODE/REV · part name in one badge cell (user
                 decision 2026-09-21); the old Item Code + Part Name pair folded in. */}
-            <th style={{ width: 36 }}>Ln</th><th style={{ color: 'var(--purple)' }}>CPO Ln</th><th>Item</th>
+            <th>Ln</th><th style={{ color: 'var(--purple)' }}>CPO Ln</th><th style={{ textAlign: 'left' }}>Item</th>
             <th className="td-ctr">Qty</th><th className="td-ctr">JC Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
             <th className="td-ctr" style={{ color: 'var(--red)' }}>Balance</th>

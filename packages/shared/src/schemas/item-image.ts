@@ -17,7 +17,8 @@ export const ITEM_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 /** Longest edge after the browser resize; stored as JPEG/WebP at this size. */
 export const ITEM_IMAGE_MAX_EDGE = 800;
 /** Thumbnail box sizes used by the shared badge: table row / card & header / item page. */
-export const ITEM_IMAGE_SIZES = { row: 40, card: 56, page: 96 } as const;
+// row 48 (was 40 — user, 2026-09-21: "in list make the thumbnail a little big").
+export const ITEM_IMAGE_SIZES = { row: 48, card: 56, page: 96 } as const;
 /** Signed-URL lifetime; the web caches the URL a little shorter than this. */
 export const ITEM_IMAGE_URL_EXPIRES_SEC = 60 * 60;
 
