@@ -3,12 +3,15 @@ import { RouterProvider } from '@tanstack/react-router';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ErrorBoundary } from './components/shared/error-boundary';
+import { installNumberWheelGuard } from './lib/number-wheel-guard';
 import { initSentry } from './lib/sentry';
 import { setupAuthListener } from './lib/session';
 import './index.css';
 import { router } from './router';
 
 initSentry();
+// A wheel over a focused qty / rate / number field must never change its value.
+installNumberWheelGuard();
 
 const queryClient = new QueryClient({
   defaultOptions: {
