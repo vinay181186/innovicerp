@@ -63,6 +63,13 @@ function parseWholeDays(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** vendorCodeText values that mean "no vendor chosen yet", not a real vendor
+ *  code. Upper-cased, trimmed — compared against the PR's text the same way.
+ *  'TBD' is what Planning (Buy items) and the BOM cascade write; '(VENDOR TBD)'
+ *  is the OSP sentinel. A PR carrying one of these takes whatever vendor the
+ *  buyer picks on the PO. */
+const VENDOR_TBD_PLACEHOLDERS: ReadonlySet<string> = new Set(['TBD', '(VENDOR TBD)']);
+
 export type PoFormProps =
   | {
       mode: 'create';
@@ -178,7 +185,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         setValue('header.vendorId', pr.vendorId);
         setValue('header.vendorCodeText', undefined);
         setVendorSeedLabel(
-          pr.vendorCode ? `${pr.vendorCode} — ${pr.vendorName ?? ''}`.trim() : (pr.vendorName ?? ''),
+          pr.vendorCode
+            ? `${pr.vendorCode} — ${pr.vendorName ?? ''}`.trim()
+            : (pr.vendorName ?? ''),
         );
       } else if (!pr.vendorId && pr.vendorCodeText?.trim() && !getValues('header.vendorId')) {
         // FK first, TEXT second — the ADR-015 pair. In practice it is always the
@@ -395,7 +404,10 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // i.e. the buyer changed the vendor after picking PRs. Those lines are not
   // wiped (that would throw away typing); they are named in the footer and the
   // save stays blocked until they are fixed or removed. A PR with no vendor of
-  // its own (the OSP "(vendor TBD)" case) is never a mismatch.
+  // its own is never a mismatch — that covers an empty vendorCodeText AND the
+  // placeholder text the generators write when Planning does not know the
+  // vendor yet: 'TBD' (Planning Buy-item PRs, BOM-cascade PRs) and
+  // '(vendor TBD)' (OSP PRs). The buyer picks the vendor on the PO for those.
   //
   // A PR names its vendor EITHER by FK (`vendorId`) or as free text
   // (`vendorCodeText`) — the ADR-015 pattern — and in practice it is almost
@@ -411,7 +423,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         if (!pr) return false;
         if (pr.vendorId) return pr.vendorId !== vendorId;
         const text = pr.vendorCodeText?.trim().toUpperCase() ?? '';
-        if (text === '' || vendorCode === '') return false;
+        if (text === '' || VENDOR_TBD_PLACEHOLDERS.has(text) || vendorCode === '') return false;
         return text !== vendorCode;
       })
       .map((x) => x.i + 1);
@@ -526,7 +538,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         await updatePo.mutateAsync(payload);
         const editedId = props.detail.id;
         exit.leave(
-          () => void navigate({ to: '/purchase-orders/$id', params: { id: editedId }, replace: true }),
+          () =>
+            void navigate({ to: '/purchase-orders/$id', params: { id: editedId }, replace: true }),
         );
       } else {
         // `status` is deliberately NOT sent. A new PO's status is the server's
@@ -545,7 +558,12 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         } as CreatePurchaseOrderInput;
         const created = await createPo.mutateAsync(payload);
         exit.leave(
-          () => void navigate({ to: '/purchase-orders/$id', params: { id: created.id }, replace: true }),
+          () =>
+            void navigate({
+              to: '/purchase-orders/$id',
+              params: { id: created.id },
+              replace: true,
+            }),
         );
       }
     } catch (err) {
@@ -608,7 +626,13 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             <input
               id="pof-code"
               className={`pof-in pof-num ${
-                isEdit ? '' : code.trim() === '' || docNo.error ? 'pof-bad' : docNo.valid ? 'pof-ok' : ''
+                isEdit
+                  ? ''
+                  : code.trim() === '' || docNo.error
+                    ? 'pof-bad'
+                    : docNo.valid
+                      ? 'pof-ok'
+                      : ''
               }`}
               autoComplete="off"
               readOnly={isEdit}
@@ -688,7 +712,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               setVendorPickedLabel(label);
               setValue('header.vendorId', id ?? undefined);
             }}
-            initialLabel={vendorSeedLabel || (props.mode === 'edit' ? (props.detail.vendorName ?? '') : '')}
+            initialLabel={
+              vendorSeedLabel || (props.mode === 'edit' ? (props.detail.vendorName ?? '') : '')
+            }
             carriedText={vendorCodeText}
           />
 
@@ -797,11 +823,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                   <td colSpan={colCount}>
                     <div className="pof-empty">
                       No lines yet.{' '}
-                      <button
-                        type="button"
-                        className="pof-add"
-                        onClick={addLine}
-                      >
+                      <button type="button" className="pof-add" onClick={addLine}>
                         + Add Line
                       </button>
                     </div>
