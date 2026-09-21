@@ -114,6 +114,12 @@ export function OpEntryModal({
     : isQc
       ? planned
       : (pickedActual ?? planned);
+  // Who pressed Start on the open session, read off the same sessions list.
+  // Named under the actual machine on Log / Stop so the operator sees whose
+  // session is being booked — the form pre-fills the same name as Operator.
+  const startedBy = activeRunningId
+    ? (runningOps.data?.find((r) => r.id === activeRunningId)?.operatorName ?? null)
+    : null;
   // `CODE/REV` for the part, or '' when the join brought no item back. Empty
   // rather than a dash: a dash would read as "this card has no item", and every
   // job card has one.
@@ -243,7 +249,28 @@ export function OpEntryModal({
           ) : null}
           <Fact label="OPERATION" value={`Op ${fmtOpSrNo(op.opSeq)} · ${op.operation}`} />
           <Fact label="PLANNED MACHINE" value={planned} />
-          <Fact label="ACTUAL MACHINE" value={actual} />
+          <div>
+            <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
+              ACTUAL MACHINE
+            </div>
+            <div className="fw-700" style={{ fontSize: 12 }}>
+              {actual}
+            </div>
+            {startedBy ? (
+              <div
+                className="text3"
+                style={{
+                  fontSize: 10,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={`Started by ${startedBy}`}
+              >
+                · started by {startedBy}
+              </div>
+            ) : null}
+          </div>
           <div>
             <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
               AVAILABLE

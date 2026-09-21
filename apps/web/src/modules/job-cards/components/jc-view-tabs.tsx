@@ -298,11 +298,11 @@ function DocCard({
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: 32,
-          height: 32,
-          borderRadius: 8,
+          width: 30,
+          height: 30,
+          borderRadius: 7,
           background: iconBg,
-          fontSize: 16,
+          fontSize: 15,
           flexShrink: 0,
         }}
       >
@@ -311,7 +311,7 @@ function DocCard({
       <span style={{ minWidth: 0 }}>
         <span
           className="fw-700"
-          style={{ display: 'block', fontSize: 12, color: 'var(--text)', whiteSpace: 'nowrap' }}
+          style={{ display: 'block', fontSize: 12.5, color: 'var(--text)', whiteSpace: 'nowrap' }}
         >
           {title}
         </span>
@@ -320,7 +320,7 @@ function DocCard({
           style={{
             display: 'block',
             fontSize: 11,
-            color: 'var(--text2)',
+            color: 'var(--text3)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -336,11 +336,11 @@ function DocCard({
     display: 'inline-flex',
     alignItems: 'center',
     gap: 10,
-    padding: '8px 12px',
+    padding: '9px 11px',
     background: 'var(--bg2)',
     border: '1px solid var(--border)',
-    borderRadius: 8,
-    minWidth: 160,
+    borderRadius: 9,
+    minWidth: 170,
     textAlign: 'left',
     textDecoration: 'none',
     color: 'inherit',

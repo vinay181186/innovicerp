@@ -1,13 +1,22 @@
-// Job Card VIEW page — the header tile (part · references · quantity tiles ·
-// status) and the collapsible Route / Operation Flow panel, laid out to the
-// 2026-09-18 mockup. VIEW mode only: the EDIT page keeps JcStatTiles.
+// Job Card VIEW page — the header tile (product picture · references · KPI
+// tiles · due / priority / status) and the collapsible Route / Operation Flow
+// panel, laid out to the approved 2026-09-21 restyle
+// (JC-Detail-Restyle-Mockup.html, Part A). VIEW mode only: the EDIT page keeps
+// JcStatTiles.
 //
-// Every figure here is one the page already showed — same hooks, same rows —
-// re-arranged. The two tiles the old summary did not roll up (WIP and
-// Rejected (NC)) are derived below from the enriched op rows that are already
-// loaded for the operation cards; how, and why that number, is on each one.
+// STYLING ONLY. Every figure here is one the page already showed — same hooks,
+// same rows — re-arranged. The two tiles the old summary did not roll up (WIP
+// and Rejected (NC)) are derived below from the enriched op rows that are
+// already loaded for the operation cards; how, and why that number, is on
+// each one.
 //
-// Tokens only (tokens.css) — no hex, no rgba.
+// Responsive without a stylesheet: the header is a wrapping flex row whose
+// four columns carry flex-bases (136 px picture · references · KPIs · meta),
+// so on a narrow screen the columns fold under one another instead of
+// squeezing; the KPI tiles are an auto-fit grid that goes 5 → 3 → 2 across
+// on their own. No media query, no <style> tag.
+//
+// Tokens only (tokens.css) — no hex.
 import type {
   JcOpEnriched,
   JobCardListItem,
@@ -18,13 +27,13 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
-import { JcOpFlowChips } from './jc-stat-tiles';
+import { JcOpFlowCards } from './jc-stat-tiles';
 import { JcStatusBadge } from './jc-status-badge';
 import { fmtJcDate } from '../lib/fmt-jc-date';
 
-/** The quiet caption in front of a value (`Part Code`, `Due Date`, …). */
+/** The quiet caption in front of a value (`Drawing`, `Due Date`, …). */
 const kvLabel: React.CSSProperties = {
-  fontSize: 12,
+  fontSize: 13,
   color: 'var(--text3)',
   whiteSpace: 'nowrap',
 };
@@ -32,7 +41,7 @@ const kvLabel: React.CSSProperties = {
 const codeLink: React.CSSProperties = {
   color: 'var(--blue)',
   textDecoration: 'none',
-  fontSize: 13,
+  fontSize: 12,
 };
 
 /** A `label   value` pair on the two-column key/value grids. */
@@ -40,46 +49,81 @@ function Kv({ label, children }: { label: string; children: React.ReactNode }): 
   return (
     <>
       <div style={kvLabel}>{label}</div>
-      <div style={{ minWidth: 0, fontSize: 13, color: 'var(--text)' }}>{children}</div>
+      <div style={{ minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+        {children}
+      </div>
     </>
   );
 }
 
-/** One quantity tile — number, caption over it, unit under it. */
-function QtyBox({
+/** One KPI tile — big mono number over a small uppercase caption. `tone`
+ *  only tints it (background, border, number colour); the size never moves. */
+function KpiTile({
   label,
   value,
-  unit,
-  color,
-  bg,
-  border,
+  tone,
   title,
 }: {
   label: string;
   value: React.ReactNode;
-  unit: string;
-  color: string;
-  bg: string;
-  border: string;
+  tone: 'plain' | 'green' | 'blue' | 'red' | 'amber';
   title?: string;
 }): React.JSX.Element {
+  const bg =
+    tone === 'green'
+      ? 'var(--green3)'
+      : tone === 'blue'
+        ? 'var(--blue3)'
+        : tone === 'red'
+          ? 'var(--red3)'
+          : tone === 'amber'
+            ? 'var(--amber3)'
+            : 'var(--bg2)';
+  const border =
+    tone === 'green'
+      ? 'var(--green)'
+      : tone === 'blue'
+        ? 'var(--blue)'
+        : tone === 'red'
+          ? 'var(--red)'
+          : tone === 'amber'
+            ? 'var(--amber)'
+            : 'var(--border)';
+  const num =
+    tone === 'green'
+      ? 'var(--green)'
+      : tone === 'red'
+        ? 'var(--red)'
+        : tone === 'amber'
+          ? 'var(--amber)'
+          : 'var(--text)';
   return (
     <div
       title={title}
       style={{
-        minWidth: 84,
-        padding: '8px 10px',
-        textAlign: 'center',
-        borderRadius: 8,
-        background: bg,
         border: `1px solid ${border}`,
+        borderRadius: 9,
+        padding: '9px 10px',
+        textAlign: 'center',
+        background: bg,
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 10, fontWeight: 700, color, whiteSpace: 'nowrap' }}>{label}</div>
-      <div className="mono" style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.15 }}>
+      <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: num, lineHeight: 1.1 }}>
         {value}
       </div>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{unit}</div>
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--text3)',
+          marginTop: 3,
+          textTransform: 'uppercase',
+          letterSpacing: '.05em',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {label}
+      </div>
     </div>
   );
 }
@@ -124,12 +168,12 @@ export function JcViewSummary({
    *  on SO-sourced and pre-cutover Job Cards — the RM line is then not shown. */
   rmAvailable?: JobCardRmAvailable | null;
   drawing: JcDrawingRef | null;
-  /** Opens the shared drawing preview — from the `👁 Open drawing` button on
-   *  the Drawing row, the thumbnail (image drawings only), or the Documents
-   *  tab's Drawing card. */
+  /** Opens the shared drawing preview — from the `👁 Open drawing` button
+   *  under the product picture, the drawing thumbnail (image drawings only),
+   *  or the Documents tab's Drawing card. */
   onOpenDrawing: () => void;
 }): React.JSX.Element {
-  // ── Quantity tiles ──
+  // ── KPI tiles ──
   // Completed / Pending are the figures the old summary showed: completed =
   // the LAST op's done qty (finished goods are counted only after the last
   // op), pending = order − that.
@@ -183,122 +227,137 @@ export function JcViewSummary({
   const src = jc.sourceLink;
 
   return (
-    <div className="panel" style={{ marginBottom: 10 }}>
+    <div className="panel" style={{ marginBottom: 12 }}>
       <div
         className="panel-body"
         style={{
           display: 'flex',
-          gap: 22,
+          gap: 20,
           flexWrap: 'wrap',
           alignItems: 'flex-start',
-          padding: '12px 16px',
+          padding: '14px 16px',
         }}
       >
-        {/* ── Thumbnail — only when the drawing is an image (a PDF has none);
-            click opens the same preview the Documents tab's Drawing card does.
-            Never `download`: opening a thumbnail is nobody keeping a copy. ── */}
-        {drawing?.thumbUrl ? (
-          <button
-            type="button"
-            onClick={onOpenDrawing}
-            title={`Open this drawing — ${drawing.label}`}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border2)',
-              borderRadius: 8,
-              padding: 2,
-              cursor: 'pointer',
-              flex: '0 0 auto',
-              lineHeight: 0,
-            }}
-          >
-            <img
-              src={drawing.thumbUrl}
-              alt={`${drawing.label} drawing`}
-              style={{ maxHeight: 84, maxWidth: 120, borderRadius: 6, display: 'block' }}
-            />
-          </button>
-        ) : null}
-
-        {/* ── Zone 1: the part ── */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'auto minmax(0, 1fr)',
-            columnGap: 14,
-            rowGap: 4,
-            alignItems: 'baseline',
-            minWidth: 220,
-            flex: '1 1 240px',
-          }}
-        >
-          {/* The revision is the CUSTOMER'S drawing revision off the SO line, so
-              the code reads `IN-IT-0007/B` on a card raised against an SO and
-              stays the bare `IN-IT-0007` on a JW-sourced or standalone card.
-              One string from the shared helper, same as the Sales Order screens. */}
-          {/* Product image + code + name in the shared badge (user decision
-              2026-09-21). This is the Item Master's 3D render — a different
-              thing from the drawing thumbnail to the left, which stays. */}
-          <div style={{ gridColumn: '1 / -1', minWidth: 0, marginBottom: 4 }}>
-            <ItemBadge
-              size="card"
-              code={jc.itemCode}
-              name={jc.itemName}
-              revision={jc.itemRevision}
-              imagePath={jc.itemImagePath}
-              codeColor="var(--text)"
-              nameMaxWidth="none"
-            />
+        {/* ── Column 1: the product ──
+            The Item Master's 3D render in the shared badge (user decision
+            2026-09-21), code + name under it, then the raw material planned
+            for this card (grade text and size text, both optional), then the
+            drawing controls. The revision on the code is the CUSTOMER'S
+            drawing revision off the SO line, so it reads `IN-IT-0007/B` on a
+            card raised against an SO and stays the bare `IN-IT-0007` on a
+            JW-sourced or standalone card — one string from the shared
+            helper, same as the Sales Order screens. */}
+        <div style={{ flex: '0 0 136px', minWidth: 0 }}>
+          <ItemBadge
+            size="tile"
+            code={jc.itemCode}
+            name={jc.itemName}
+            revision={jc.itemRevision}
+            imagePath={jc.itemImagePath}
+            codeColor="var(--text)"
+            nameMaxWidth="none"
+          />
+          <div style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.5 }}>
+            <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+              <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Material:</span>
+              <span
+                className="mono fw-700"
+                style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                title={jc.rawMaterialGradeText || undefined}
+              >
+                {jc.rawMaterialGradeText || '—'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+              <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Size:</span>
+              <span
+                className="mono fw-700"
+                style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                title={jc.rawMaterialSizeText || undefined}
+              >
+                {jc.rawMaterialSizeText || '—'}
+              </span>
+            </div>
           </div>
-          {/* Raw material planned for this job card — the grade text and the
-              size text, both optional. (The card's remarks live on the
-              Remarks tab below.) */}
-          <Kv label="Material">
-            <span className="mono fw-700">{jc.rawMaterialGradeText || '—'}</span>
-          </Kv>
-          <Kv label="Size">
-            <span className="mono fw-700">{jc.rawMaterialSizeText || '—'}</span>
-          </Kv>
+          {/* Drawing controls — the open button, and the thumbnail when the
+              drawing is an image (a PDF has none); both open the same preview
+              the Documents tab's Drawing card does. Never `download`: opening
+              a thumbnail is nobody keeping a copy. */}
+          {drawing ? (
+            <div
+              style={{
+                marginTop: 6,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 6,
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={onOpenDrawing}
+                title={`Open this drawing — ${drawing.fileName}`}
+              >
+                👁 Open drawing
+              </button>
+              {drawing.thumbUrl ? (
+                <button
+                  type="button"
+                  onClick={onOpenDrawing}
+                  title={`Open this drawing — ${drawing.label}`}
+                  style={{
+                    background: 'none',
+                    border: '1px solid var(--border2)',
+                    borderRadius: 8,
+                    padding: 2,
+                    cursor: 'pointer',
+                    lineHeight: 0,
+                  }}
+                >
+                  <img
+                    src={drawing.thumbUrl}
+                    alt={`${drawing.label} drawing`}
+                    style={{ maxHeight: 56, maxWidth: 116, borderRadius: 6, display: 'block' }}
+                  />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
-        {/* ── Zone 2: the references ── */}
+        {/* ── Column 2: the references ── */}
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: 'auto minmax(0, 1fr)',
             columnGap: 14,
-            rowGap: 4,
+            rowGap: 5,
             alignItems: 'baseline',
-            minWidth: 220,
-            flex: '1 1 240px',
+            alignContent: 'start',
+            minWidth: 0,
+            flex: '1.2 1 220px',
           }}
         >
           {/* Drawing — WHICH drawing the page shows ("Sales order drawing ·
-              Rev B"), the open button, and the file name for a PDF / DWG (an
-              image drawing shows its thumbnail instead). Not "Drawing No.":
-              the card has no drawing-number field, and an SO / item code
-              labelled as one could be read as the print number. */}
+              Rev B") and the file name for a PDF / DWG (an image drawing
+              shows its thumbnail under the product picture instead). Not
+              "Drawing No.": the card has no drawing-number field, and an SO /
+              item code labelled as one could be read as the print number. */}
           <Kv label="Drawing">
             {drawing ? (
               <>
-                <span
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
-                >
-                  <span className="fw-700" style={{ color: 'var(--text)' }}>
-                    {drawing.label}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={onOpenDrawing}
-                    title={`Open this drawing — ${drawing.fileName}`}
-                  >
-                    👁 Open drawing
-                  </button>
+                <span className="fw-700" style={{ color: 'var(--text)' }}>
+                  {drawing.label}
                 </span>
                 {drawing.thumbUrl ? null : (
                   <div
-                    style={{ fontSize: 11, color: 'var(--text2)', overflowWrap: 'anywhere' }}
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 400,
+                      color: 'var(--text2)',
+                      overflowWrap: 'anywhere',
+                    }}
                     title={drawing.fileName}
                   >
                     📄 {drawing.fileName} — open it to view
@@ -338,13 +397,6 @@ export function JcViewSummary({
               '—'
             )}
           </Kv>
-          {/* The customer behind the source order — the row is dropped, not
-              dashed, when the card has no source / no customer. */}
-          {jc.customerName ? (
-            <Kv label="Customer">
-              <span style={{ overflowWrap: 'anywhere' }}>{jc.customerName}</span>
-            </Kv>
-          ) : null}
           {/* Route Card reference (the item's active route card + revision).
               The card carries the CODE only, so the link opens the Route Cards
               list searched for it rather than a detail page it has no id for. */}
@@ -361,7 +413,7 @@ export function JcViewSummary({
                   {jc.routeCardCode}
                 </Link>
                 {jc.routeCardRevision != null ? (
-                  <span className="badge b-blue" style={{ fontSize: 9 }}>
+                  <span className="badge b-grey" style={{ fontSize: 9, padding: '1px 7px' }}>
                     Rev {jc.routeCardRevision}
                   </span>
                 ) : null}
@@ -396,55 +448,45 @@ export function JcViewSummary({
           </Kv>
         </div>
 
-        {/* ── Zone 3: quantity tiles (unit = pieces, as the old "Quantity (pcs)"
-            caption said; the card carries no unit of its own) ── */}
-        <div style={{ flex: '0 0 auto' }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <QtyBox
-              label="Order Qty"
-              value={jc.orderQty}
-              unit="pcs"
-              color="var(--text)"
-              bg="var(--bg2)"
-              border="var(--border2)"
-            />
-            <QtyBox
+        {/* ── Column 3: the five KPI tiles (unit = pieces, as the old
+            "Quantity (pcs)" caption said; the card carries no unit of its own).
+            auto-fit: 5 across when there is room, 3 / 2 on a narrow screen. ── */}
+        <div style={{ flex: '1.5 1 440px', minWidth: 0 }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(84px, 1fr))',
+              gap: 10,
+            }}
+          >
+            <KpiTile label="Order Qty" value={jc.orderQty} tone="plain" />
+            <KpiTile
               label="Completed"
               value={completed}
-              unit="pcs"
-              color="var(--green2)"
-              bg="var(--green3)"
-              border="var(--green)"
+              tone="green"
               title="Pieces through the LAST operation — finished goods are counted only after the last op"
             />
-            <QtyBox
+            <KpiTile
               label="WIP"
               value={wip ?? '—'}
-              unit="pcs"
-              color="var(--blue2)"
-              bg="var(--blue3)"
-              border="var(--blue)"
+              tone="blue"
               title="Pieces released by the first operation and not yet through the last one (first-op done − completed)"
             />
-            <QtyBox
+            <KpiTile
               label="Rejected (NC)"
               value={rejected ?? '—'}
-              unit="pcs"
-              color="var(--red2)"
-              bg="var(--red3)"
-              border="var(--red)"
+              tone="red"
               title={
                 `Pieces rejected and not recovered: still open on an NC or scrapped, summed over every operation.` +
                 (openNcCount > 0 ? ` ${openNcCount} NC(s) open.` : '')
               }
             />
-            <QtyBox
+            {/* Amber while pieces are still owed; green once the order is
+                fully through (as the tile always did). */}
+            <KpiTile
               label="Pending"
               value={pending}
-              unit="pcs"
-              color={pending > 0 ? 'var(--amber2)' : 'var(--green2)'}
-              bg={pending > 0 ? 'var(--amber3)' : 'var(--green3)'}
-              border={pending > 0 ? 'var(--amber)' : 'var(--green)'}
+              tone={pending > 0 ? 'amber' : 'green'}
               title="Order qty − completed"
             />
           </div>
@@ -453,8 +495,8 @@ export function JcViewSummary({
             <div
               style={{
                 marginTop: 6,
-                fontSize: 11,
-                color: rmAvailable.availableQty > 0 ? 'var(--text2)' : 'var(--red)',
+                fontSize: 11.5,
+                color: rmAvailable.availableQty > 0 ? 'var(--text3)' : 'var(--red)',
                 fontWeight: rmAvailable.availableQty > 0 ? 400 : 700,
               }}
               title={
@@ -465,7 +507,10 @@ export function JcViewSummary({
                   : 'Issue more client material from Party Material Issue to continue.')
               }
             >
-              RM avail <span className="mono fw-700">{rmAvailable.availableQty}</span>
+              RM avail{' '}
+              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                {rmAvailable.availableQty}
+              </span>
               {rmAvailable.availableQty === 0
                 ? ' · issue material'
                 : ` of ${rmAvailable.issuedQty} issued`}
@@ -473,46 +518,52 @@ export function JcViewSummary({
           ) : null}
         </div>
 
-        {/* ── Zone 4: priority · overall status · where it is waiting ── */}
+        {/* ── Column 4: due date · priority · overall status · where it is
+            waiting ── */}
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: 'auto auto',
-            columnGap: 12,
+            columnGap: 14,
             rowGap: 8,
             alignItems: 'center',
             alignContent: 'start',
             flex: '0 0 auto',
-            marginLeft: 'auto',
+            minWidth: 0,
           }}
         >
           <div style={kvLabel}>Due Date</div>
-          <div className="fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+          <div
+            className="fw-700"
+            style={{ fontSize: 13, whiteSpace: 'nowrap', textAlign: 'right' }}
+          >
             📅 {jc.dueDate ? fmtJcDate(jc.dueDate) : '—'}
           </div>
           <div style={kvLabel}>Priority</div>
-          <div>
+          <div style={{ textAlign: 'right' }}>
             <span className={`badge ${jc.priority === 'high' ? 'b-amber' : 'b-grey'}`}>
               {jc.priority === 'high' ? '↑ High' : 'Normal'}
             </span>
           </div>
           <div style={kvLabel}>Overall Status</div>
-          <div>
+          <div style={{ textAlign: 'right' }}>
             <JcStatusBadge status={jc.computedStatus} />
           </div>
-          <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--text2)' }}>
+          <div style={kvLabel}>Waiting at</div>
+          <div className="fw-700" style={{ fontSize: 13, textAlign: 'right' }}>
             {stuck ? (
               <>
-                Waiting at <b>Op{opSrNo(stuck.opSeq)}</b> · {stuckWhere}
+                Op{opSrNo(stuck.opSeq)} · {stuckWhere}
                 {stuckRunningOn?.differs ? (
                   <>
                     {' '}
-                    · running on <b style={{ color: 'var(--amber)' }}>{stuckRunningOn.label}</b>
+                    · running on{' '}
+                    <span style={{ color: 'var(--amber)' }}>{stuckRunningOn.label}</span>
                   </>
                 ) : null}
               </>
             ) : (
-              'All operations complete'
+              <span style={{ color: 'var(--green)' }}>All operations complete</span>
             )}
           </div>
         </div>
@@ -548,6 +599,7 @@ export function SectionBar({
           display: 'inline-flex',
           alignItems: 'center',
           gap: 8,
+          fontSize: 15,
           color: 'var(--blue2)',
         }}
       >
@@ -559,83 +611,28 @@ export function SectionBar({
   );
 }
 
+/** Route / Operation Flow — the wrapping strip of fixed-size op cards. The
+ *  old Overall Progress side block (bar, %, current / next op) is gone from
+ *  this panel (restyle 2026-09-21); nothing else on the page showed it. */
 export function JcRouteFlowPanel({
   jc,
-  ops,
   sortedOps,
   opExtraById,
   open,
   onToggle,
 }: {
   jc: JobCardListItem;
-  ops: JcOpEnriched[];
   sortedOps: JcOpEnriched[];
   opExtraById: Map<string, JobCardStatusOpExtra>;
   open: boolean;
   onToggle: () => void;
 }): React.JSX.Element {
-  const totalOps = ops.length;
-  const doneOps = ops.filter((o) => o.computedStatus === 'complete').length;
-  const pct = totalOps > 0 ? Math.round((doneOps / totalOps) * 100) : 0;
-  const cur = currentOp(sortedOps);
-  const next = cur ? sortedOps[sortedOps.indexOf(cur) + 1] : undefined;
-  const opName = (o: JcOpEnriched | undefined): React.ReactNode =>
-    o ? (
-      <>
-        <b className="mono">OP{opSrNo(o.opSeq)}</b> -{' '}
-        {o.opType === 'qc'
-          ? 'QC'
-          : o.opType === 'outsource'
-            ? 'OUTSOURCE'
-            : (o.machineCode ?? o.machineCodeText ?? o.operation)}
-      </>
-    ) : (
-      '—'
-    );
   return (
-    <div className="panel" style={{ marginBottom: 10 }}>
+    <div className="panel" style={{ marginBottom: 12 }}>
       <SectionBar title="Route / Operation Flow" open={open} onToggle={onToggle} />
       {open ? (
-        <div
-          className="panel-body"
-          style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}
-        >
-          <div style={{ flex: '1 1 420px', minWidth: 0 }}>
-            <JcOpFlowChips jc={jc} sortedOps={sortedOps} opExtraById={opExtraById} stateIcons />
-          </div>
-          {/* Overall Progress — the old Route Progress row, boxed. */}
-          <div
-            style={{
-              flex: '0 0 280px',
-              padding: '10px 12px',
-              borderLeft: '1px solid var(--border)',
-              fontSize: 12,
-              color: 'var(--text2)',
-            }}
-          >
-            <div className="fw-700" style={{ fontSize: 13, color: 'var(--text)', marginBottom: 8 }}>
-              Overall Progress
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div className="prog-wrap" style={{ height: 8, flex: 1 }}>
-                <div
-                  className="prog-bar"
-                  style={{ width: `${pct}%`, background: 'var(--green)' }}
-                />
-              </div>
-              <b className="mono" style={{ color: 'var(--green2)', fontSize: 13 }}>
-                {pct}%
-              </b>
-            </div>
-            <div style={{ marginTop: 8 }}>
-              {doneOps} of {totalOps} operations complete
-            </div>
-            <div style={{ marginTop: 4 }}>Current Operation : {opName(cur)}</div>
-            <div style={{ marginTop: 4 }}>Next Operation : {opName(next)}</div>
-            <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text3)' }}>
-              Finished goods counted only after the last op
-            </div>
-          </div>
+        <div className="panel-body" style={{ padding: '12px 16px' }}>
+          <JcOpFlowCards jc={jc} sortedOps={sortedOps} opExtraById={opExtraById} />
         </div>
       ) : null}
     </div>

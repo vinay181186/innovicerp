@@ -1,11 +1,11 @@
 // JC Status — the VIEW body, laid out to the 2026-09-18 mockup:
 //
 //   A  header bar     Job Card : <code> + status badge · Back to List · Print
-//                     Job Card · Excel · ▶ Open in Op Entry · ✎ Edit Job Card
+//                     Job Card · Excel · ▶ Production Entry · ✎ Edit Job Card
 //   B  recovery       rework / repair child banner (only on such a card)
 //   C  header tile    part · references · Order / Completed / WIP / Rejected
 //                     (NC) / Pending tiles · due date · priority · status
-//   D  route flow     the operation-flow chips + Overall Progress box
+//   D  route flow     the wrapping strip of fixed-size operation cards
 //   E  operations     one card per op — expanded for the current op and the
 //                     next one, collapsed rows for the rest; Show All
 //                     Operations Expanded / Expand All at the section's right
@@ -240,7 +240,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           alignItems: 'center',
           gap: 10,
           flexWrap: 'wrap',
-          marginBottom: 10,
+          marginBottom: 12,
         }}
       >
         <span className="section-hdr" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>
@@ -273,7 +273,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           <Download size={13} /> Excel
         </button>
         <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
-          ▶ Open in Op Entry
+          ▶ Production Entry
         </button>
         {canWrite ? (
           <Link
@@ -313,7 +313,6 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       {/* ── D. Route / Operation Flow ── */}
       <JcRouteFlowPanel
         jc={jc}
-        ops={ops}
         sortedOps={sortedOps}
         opExtraById={opExtraById}
         open={flowOpen}
@@ -321,7 +320,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       />
 
       {/* ── E. Operations Details ── */}
-      <div className="panel" style={{ marginBottom: 10 }}>
+      <div className="panel" style={{ marginBottom: 12 }}>
         <SectionBar
           title="Operations Details"
           open={detailOpen}
@@ -371,7 +370,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           }
         />
         {detailOpen ? (
-          <div className="panel-body">
+          <div style={{ padding: '2px 0' }}>
             {sortedOps.length === 0 ? (
               <div className="empty-state">No operations</div>
             ) : (

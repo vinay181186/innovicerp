@@ -68,3 +68,58 @@ export function SetupField({
     </div>
   );
 }
+
+/** One quantity CHIP on the VIEW card's expanded body (JC-Detail-Restyle-
+ *  Mockup.html, 2026-09-21): mono number over a tiny uppercase caption, in a
+ *  bordered box that fills its grid cell. `highlight` tints it amber (pieces
+ *  waiting); `sub` holds the caller's extra lines unchanged. The EDIT card
+ *  keeps QtyTile above. */
+export function QtyChip({
+  label,
+  value,
+  color,
+  highlight = false,
+  sub,
+  title,
+}: {
+  label: string;
+  value: React.ReactNode;
+  color: string;
+  highlight?: boolean;
+  sub?: React.ReactNode;
+  title?: string | undefined;
+}): React.JSX.Element {
+  return (
+    <div
+      title={title}
+      style={{
+        minWidth: 0,
+        padding: 7,
+        textAlign: 'center',
+        borderRadius: 8,
+        border: `1px solid ${highlight ? 'var(--amber)' : 'var(--border)'}`,
+        background: highlight ? 'var(--amber3)' : 'var(--bg2)',
+      }}
+    >
+      <div className="mono" style={{ fontSize: 16, fontWeight: 800, color, lineHeight: 1.2 }}>
+        {value}
+      </div>
+      <div
+        style={{
+          fontSize: 9.5,
+          letterSpacing: '.04em',
+          textTransform: 'uppercase',
+          color: 'var(--text3)',
+          marginTop: 2,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+        title={label}
+      >
+        {label}
+      </div>
+      {sub ?? null}
+    </div>
+  );
+}

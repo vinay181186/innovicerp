@@ -6,9 +6,12 @@
 //
 // The picture is a fixed square so every row lines up: 40 px in table rows,
 // 56 px on cards and page headers, 96 px on the Item Master page
-// (ITEM_IMAGE_SIZES). It is cropped to fill the box (object-fit: cover), shows
-// the grey Package icon when the item has no image, and clicking it opens the
-// image large in the shared FilePreviewModal. Clicking the text does whatever
+// (ITEM_IMAGE_SIZES), plus a 120 px `tile` for the Job Card detail header
+// (JC-Detail-Restyle-Mockup.html, 2026-09-21) that stacks the text UNDER the
+// picture and shows the whole image (object-fit: contain, 8 px padding) rather
+// than cropping it. Every other size is cropped to fill the box (object-fit:
+// cover). The box shows the grey Package icon when the item has no image, and
+// clicking it opens the image large in the shared FilePreviewModal. Clicking the text does whatever
 // the caller wants (`onClick`) — usually nothing, the row handles that.
 //
 // This is the PRODUCT IMAGE, not the drawing. Drawings stay on the SO / JWSO
@@ -27,13 +30,19 @@ import { useItemImageUrl } from '@/lib/item-image';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { FilePreviewModal } from './file-preview-modal';
 
-export type ItemBadgeSize = keyof typeof ITEM_IMAGE_SIZES;
+export type ItemBadgeSize = keyof typeof ITEM_IMAGE_SIZES | 'tile';
+
+/** Box edge in px. The contract's three sizes plus the web-only `tile`
+ *  (120 px — a header picture, not a row thumbnail, so it is not in
+ *  ITEM_IMAGE_SIZES and the image URL endpoint never sees it). */
+const BOX_PX: Record<ItemBadgeSize, number> = { ...ITEM_IMAGE_SIZES, tile: 120 };
 
 /** Type scale per box size: code / name font sizes, icon size. */
 const SCALE: Record<ItemBadgeSize, { code: number; name: number; icon: number; radius: number }> = {
   row: { code: 12, name: 11, icon: 16, radius: 4 },
   card: { code: 14, name: 12, icon: 20, radius: 4 },
   page: { code: 16, name: 13, icon: 28, radius: 6 },
+  tile: { code: 15, name: 12.5, icon: 40, radius: 9 },
 };
 
 export interface ItemBadgeProps {
@@ -73,8 +82,9 @@ export function ItemImageBox({
   /** Override the click. Default opens the preview modal. */
   onOpen?: () => void;
 }): React.JSX.Element {
-  const px = ITEM_IMAGE_SIZES[size];
+  const px = BOX_PX[size];
   const sc = SCALE[size];
+  const tile = size === 'tile';
   const hasImage = Boolean(imagePath);
   const { data: url } = useItemImageUrl(imagePath);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -120,7 +130,10 @@ export function ItemImageBox({
           flexShrink: 0,
           borderRadius: sc.radius,
           border: '1px solid var(--border)',
-          background: 'var(--bg4)',
+          background: tile ? 'var(--bg3)' : 'var(--bg4)',
+          // The tile is a picture on a page header, not a row thumbnail — a
+          // whisper of shadow lifts it off the panel (mock-up value).
+          boxShadow: tile ? '0 1px 3px rgba(20, 40, 70, 0.08)' : undefined,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -140,8 +153,12 @@ export function ItemImageBox({
               inset: 0,
               width: '100%',
               height: '100%',
-              objectFit: 'cover',
-              background: 'var(--bg4)',
+              // Tile: the whole render, never cropped or stretched, with a
+              // little air round it. Every other size fills its box.
+              objectFit: tile ? 'contain' : 'cover',
+              padding: tile ? 8 : undefined,
+              boxSizing: 'border-box',
+              background: tile ? 'var(--bg3)' : 'var(--bg4)',
             }}
             onError={() => setFailed(true)}
           />
@@ -184,17 +201,21 @@ export function ItemBadge({
   style,
 }: ItemBadgeProps): React.JSX.Element {
   const sc = SCALE[size];
+  const tile = size === 'tile';
   const codeText = itemCodeWithRev(code, revision);
   const nameText = name?.trim() || '';
-  const maxW = nameMaxWidth ?? (size === 'page' ? 'none' : 200);
+  const maxW = nameMaxWidth ?? (size === 'page' || tile ? 'none' : 200);
 
   return (
     <div
       className={className}
       style={{
         display: 'inline-flex',
-        alignItems: 'center',
-        gap: size === 'page' ? 12 : 8,
+        // Tile stacks the text UNDER the picture; every other size sits it
+        // beside.
+        flexDirection: tile ? 'column' : 'row',
+        alignItems: tile ? 'flex-start' : 'center',
+        gap: tile ? 8 : size === 'page' ? 12 : 8,
         textAlign: 'left',
         minWidth: 0,
         maxWidth: '100%',
@@ -212,6 +233,7 @@ export function ItemBadge({
           style={{
             color: codeColor,
             fontSize: sc.code,
+            fontWeight: tile ? 800 : undefined,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -229,7 +251,12 @@ export function ItemBadge({
               maxWidth: maxW,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              // Under a 120 px tile a one-line name would clip after ~15
+              // characters; it may take two lines there, then clamps.
+              whiteSpace: tile ? 'normal' : 'nowrap',
+              display: tile ? '-webkit-box' : undefined,
+              WebkitLineClamp: tile ? 2 : undefined,
+              WebkitBoxOrient: tile ? 'vertical' : undefined,
               lineHeight: 1.25,
             }}
             title={nameText}
