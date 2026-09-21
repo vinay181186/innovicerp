@@ -1,4 +1,5 @@
-// Create Production Order (ADR-170): Plan + Route Card + Target Date → Create JC.
+// Create Production Order (ADR-170): Plan + Route Card + Customer Dispatch Date
+// (labelled so on screen; the wire field stays `targetDate`) → Create JC.
 //
 // The plan picker lists only route-card-driven plans that have no Production
 // Order yet. The Route Card is the ONLY source of operations — "no route card,
@@ -86,7 +87,9 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const onPickPlan = (p: PlanPickerItem | null): void => {
     setPlan(p);
     setRouteCardId(null);
-    setTargetDate(p?.plannedEndDate ?? '');
+    // Customer Dispatch Date on the plan is the PO's date; an older plan
+    // without one falls back to its Planned End, as before.
+    setTargetDate(p?.customerDispatchDate ?? p?.plannedEndDate ?? '');
     setSubmitError(null);
   };
   // The deep-linked plan lands once its row arrives; only while nothing has
@@ -163,8 +166,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
           <div>
             <div className="panel-title">🏭 Create Production Order</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Plan + Route Card + Target Date → Create JC. One Production Order per plan; the Job
-              Card is built from the item&apos;s Route Card.
+              Plan + Route Card + Customer Dispatch Date → Create JC. One Production Order per plan;
+              the Job Card is built from the item&apos;s Route Card.
             </div>
           </div>
           <div className="td-code" style={{ fontSize: 14, color: 'var(--text)' }}>
@@ -250,7 +253,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
 
               <div className="form-grp">
                 <label className="form-label" htmlFor="po-target-date">
-                  Target Date<span className="req">★</span>
+                  Customer Dispatch Date<span className="req">★</span>
                 </label>
                 <input
                   id="po-target-date"
@@ -356,7 +359,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                         : directPurchase
                           ? 'Direct-purchase items cannot raise a Production Order'
                           : !targetDate
-                            ? 'Set the target date'
+                            ? 'Set the customer dispatch date'
                             : undefined
                 }
               >

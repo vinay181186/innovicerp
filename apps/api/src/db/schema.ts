@@ -3206,6 +3206,11 @@ export const plans = pgTable(
 
     plannedStartDate: date('planned_start_date'),
     plannedEndDate: date('planned_end_date'),
+    /** The day the goods must leave for the customer (migration 0137). Set at
+     *  plan creation, defaulted from the SO line's due date; pre-fills the
+     *  Production Order target date and is shown on the Job Card and the
+     *  Customer Dispatch pending list. Null on older / JW-sourced plans. */
+    customerDispatchDate: date('customer_dispatch_date'),
 
     // Raw material for this plan (migration 0106) — two INDEPENDENT master
     // pickers, both optional (a Direct Purchase plan buys a finished item and

@@ -270,6 +270,7 @@ type DispatchableRow = {
   dispatched_qty: string | number;
   rate: string | number;
   ready_qty: string | number;
+  customer_dispatch_date: string | null;
 };
 
 // Which BOM does this SO line build? Two places carry it and BOTH are load-
@@ -335,6 +336,10 @@ async function loadDispatchable(
         -- the item rather than about this order's drawing.
         sol.revision::text AS item_revision,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
+        -- The plan's Customer Dispatch Date (migration 0137): earliest across
+        -- this line's live plans — the date the dispatch team works to. ::text
+        -- so it arrives as YYYY-MM-DD; NULL when no plan carries one.
+        cdd.customer_dispatch_date,
         CASE
           -- Assembly / equipment line: read the parent finished-good's on-hand
           -- stock (assembled units credited by the Tracker), gross of this
@@ -400,6 +405,13 @@ async function loadDispatchable(
               AND pr.po_id = pol.purchase_order_id
           )
       ) dp ON TRUE
+      -- Earliest Customer Dispatch Date over the non-deleted plans on this line
+      -- (one aggregate per line, no per-line query).
+      LEFT JOIN LATERAL (
+        SELECT MIN(p.customer_dispatch_date)::text AS customer_dispatch_date
+        FROM plans p
+        WHERE p.so_line_id = sol.id AND p.deleted_at IS NULL
+      ) cdd ON TRUE
       WHERE sol.sales_order_id = ${sid} AND sol.company_id = ${cid} AND sol.deleted_at IS NULL
       ORDER BY sol.line_no
     `),
@@ -445,6 +457,8 @@ async function loadDispatchable(
       // Dispatchable = produced ready + reserved-from-stock, capped at the ORDER
       // qty (never ship more than ordered), minus what already went out.
       availableQty: Math.max(0, Math.min(ready + reserved, orderQty) - dispatched),
+      // The plan's Customer Dispatch Date (migration 0137) — already ::text in SQL.
+      customerDispatchDate: r.customer_dispatch_date ?? null,
       rate: n(r.rate),
     };
   });

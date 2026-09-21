@@ -227,6 +227,8 @@ export function JcViewSummary({
       : null;
 
   const src = jc.sourceLink;
+  // Rework / repair children raised off this card (empty on an ordinary card).
+  const childJobCards = jc.childJobCards ?? [];
 
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
@@ -449,6 +451,53 @@ export function JcViewSummary({
               </span>
             ) : null}
           </Kv>
+          {/* Rework / repair relation — a CHILD card names its parent, a
+              PARENT card lists every child raised off it (one per line, with
+              the recovery kind as a badge). Neither fact renders on an
+              ordinary card, so nothing else in the column moves. The amber
+              RecoveryBanner above the header stays; this is the at-a-glance
+              fact beside the other references. */}
+          {jc.parentJobCardId ? (
+            <Kv label="Parent JC">
+              <Link
+                to="/job-cards/$id"
+                params={{ id: jc.parentJobCardId }}
+                className="mono fw-700"
+                style={codeLink}
+                title="Open the parent job card"
+              >
+                {jc.parentJobCardCode ?? '—'}
+              </Link>
+            </Kv>
+          ) : null}
+          {childJobCards.length > 0 ? (
+            <Kv label="Child JC">
+              {childJobCards.map((c) => (
+                <div
+                  key={c.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+                >
+                  <Link
+                    to="/job-cards/$id"
+                    params={{ id: c.id }}
+                    className="mono fw-700"
+                    style={codeLink}
+                    title="Open the child job card"
+                  >
+                    {c.code}
+                  </Link>
+                  {c.recoveryKind ? (
+                    <span
+                      className={`badge ${c.recoveryKind === 'rework' ? 'b-amber' : 'b-blue'}`}
+                      style={{ fontSize: 9, padding: '1px 7px' }}
+                    >
+                      {c.recoveryKind === 'rework' ? 'REWORK' : 'REPAIR'}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </Kv>
+          ) : null}
         </div>
 
         {/* ── Column 3: the five KPI tiles (unit = pieces, as the old
@@ -541,6 +590,15 @@ export function JcViewSummary({
             style={{ fontSize: 12.5, whiteSpace: 'nowrap', textAlign: 'right' }}
           >
             📅 {jc.dueDate ? fmtJcDate(jc.dueDate) : '—'}
+          </div>
+          {/* The plan's Customer Dispatch Date (the date the dispatch team
+              works to) — "—" on a card with no plan or no date. */}
+          <div style={kvLabel}>Customer Dispatch</div>
+          <div
+            className="fw-700"
+            style={{ fontSize: 12.5, whiteSpace: 'nowrap', textAlign: 'right' }}
+          >
+            🚚 {jc.customerDispatchDate ? fmtJcDate(jc.customerDispatchDate) : '—'}
           </div>
           <div style={kvLabel}>Priority</div>
           <div style={{ textAlign: 'right' }}>

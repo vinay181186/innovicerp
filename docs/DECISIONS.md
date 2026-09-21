@@ -9311,3 +9311,48 @@ functionality, routing, permissions and theme, change nothing unrelated.
 - Negative: the page title no longer appears in the chrome (it was the old
   top bar's); pages carry their own headings, and the breadcrumb names the
   page. QC Call Register's sheet title row is its title.
+
+## ADR-174: Plan carries the Customer Dispatch Date; parent / child job cards name each other in the header
+**Date:** 2026-09-21
+**Status:** Accepted
+
+### Context
+User request (2026-09-21), built under the Rule Book's NEW FIELD — STANDARD
+FLOW: (1) the plan needs a **Customer Dispatch** field that "must reflect
+downstream"; (2) a parent job card's header must show its child job card(s);
+(3) a child's header must show its parent. Plus: the Production Order's
+"Target Date" is to read "Customer Dispatch Date".
+
+### Decision
+- **Business need / source (rule step 1):** the date the goods must leave for
+  the customer. Its source is the order: the SO line's due date, which the
+  planner confirms or changes when the plan is created.
+- **Pattern reused (step 2):** `plans.customer_dispatch_date date` beside
+  `planned_end_date` (migration 0137); same Zod date shape on create / update
+  inputs; same date input, label and validation wiring as Planned End in the
+  create / edit plan modals; read-only downstream through the joins those
+  screens already run.
+- **Where it lives (step 3):** Plan (create, edit, detail, list line);
+  Production Order create — the date field pre-fills from it (falls back to
+  Planned End) and its label is now "Customer Dispatch Date" (the column stays
+  `target_date`; label only); Job Card header ("Customer Dispatch" fact) and
+  list (line under Due Date); Customer Dispatch pending lines (MIN of the SO
+  line's plans). NOT added to the SO / SO line, op entry, QC, stock, prints.
+- **Parent / child cards:** the link already existed
+  (`job_cards.parent_job_card_id`, `recovery_kind`). The JC list item gains
+  `childJobCards[] {id, code, recoveryKind}` (one aggregate, no N+1); the
+  header shows "Parent JC" on a child and "Child JC" (REWORK / REPAIR badge) on
+  a parent. The recovery banner stays.
+
+### Alternatives Considered
+- Storing the dispatch date on the Job Card as well — rejected: two copies of
+  one fact drift; the card reads it through its plan.
+- Renaming the Production Order column `target_date` — rejected: a label
+  change is what was asked; the column, API and history stay.
+
+### Consequences
+- Positive: the dispatch team works to one date entered once, at planning.
+- Negative: plans made before 0137 carry no date (the Production Order still
+  falls back to Planned End); JW-sourced plans have no SO due date to default
+  from and start blank.
+- Migration 0137 applied to TEST 2026-09-21; production pending the user's go.

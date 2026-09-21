@@ -13,6 +13,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtDate } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { PlanningKpiStrip } from '../components/planning-kpi-strip';
@@ -374,6 +375,11 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                       <div className="text3" style={{ fontSize: 11 }}>
                         {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
                       </div>
+                      {row.customerDispatchDate ? (
+                        <div className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                          Dispatch {fmtDate(row.customerDispatchDate)}
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       {/* `CODE/REV` — the customer's drawing revision from the

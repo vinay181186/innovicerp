@@ -248,6 +248,7 @@ function PlanDetailPage(): React.JSX.Element {
             <KV label="Plan qty" value={plan.planQty} />
             <KV label="Planned start" value={plan.plannedStartDate ?? '—'} />
             <KV label="Planned end" value={plan.plannedEndDate ?? '—'} />
+            <KV label="Customer Dispatch" value={plan.customerDispatchDate ?? '—'} />
             {/* Raw material — read-only here; both are optional, so a plan with
                 neither still shows the pair as dashes rather than hiding them
                 (a missing grade is a planning gap worth seeing). */}

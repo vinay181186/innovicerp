@@ -16,6 +16,7 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/print/doc-print';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
@@ -649,6 +650,18 @@ function JobCardsListPage(): React.JSX.Element {
                       </td>
                       <td className="mono" style={{ fontSize: 11 }}>
                         {jc.dueDate ?? '—'}
+                        {/* The plan's Customer Dispatch Date under the due
+                            date — a second line, not a column, so the tuned
+                            widths above still add up to the page. */}
+                        {jc.customerDispatchDate ? (
+                          <div
+                            className="text3"
+                            style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+                            title="Customer Dispatch Date (from the plan)"
+                          >
+                            Disp {fmtDate(jc.customerDispatchDate)}
+                          </div>
+                        ) : null}
                       </td>
                       <td>
                         <span className="mono fw-700" style={{ color: dColor }}>

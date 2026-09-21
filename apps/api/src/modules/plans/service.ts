@@ -582,6 +582,8 @@ export async function createPlan(input: CreatePlanInput, user: AuthContext): Pro
         planQty: input.planQty,
         plannedStartDate: input.plannedStartDate ?? null,
         plannedEndDate: input.plannedEndDate ?? null,
+        // Customer Dispatch Date (0137) — the day the goods must leave for the customer.
+        customerDispatchDate: input.customerDispatchDate ?? null,
         // Raw material (0106) — both masters optional and independent. The FK
         // and the text snapshot are stored together; the snapshot is what is
         // displayed and printed, and what gets copied onto the JC at execute.
@@ -697,6 +699,9 @@ export async function updatePlan(
     if (input.planQty !== undefined) updates['planQty'] = input.planQty;
     if (input.plannedStartDate !== undefined) updates['plannedStartDate'] = input.plannedStartDate;
     if (input.plannedEndDate !== undefined) updates['plannedEndDate'] = input.plannedEndDate;
+    // Customer Dispatch Date (0137) — the day the goods must leave for the customer.
+    if (input.customerDispatchDate !== undefined)
+      updates['customerDispatchDate'] = input.customerDispatchDate;
     // Raw material (0106). Each of the four is written only when the payload
     // carries it, so clearing the grade on the form (null) is honoured while an
     // omitted field leaves the stored value alone.
@@ -1906,6 +1911,8 @@ function toPlan(row: typeof plans.$inferSelect): Plan {
     planQty: row.planQty,
     plannedStartDate: row.plannedStartDate,
     plannedEndDate: row.plannedEndDate,
+    // The plan's Customer Dispatch Date (migration 0137).
+    customerDispatchDate: row.customerDispatchDate ?? null,
     rawMaterialGradeId: row.rawMaterialGradeId,
     rawMaterialGradeText: row.rawMaterialGradeText,
     rawMaterialSizeId: row.rawMaterialSizeId,

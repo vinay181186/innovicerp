@@ -77,6 +77,20 @@ export const jobCardListItemSchema = z.object({
   orderQty: z.number().int().positive(),
   priority: jcPrioritySchema,
   dueDate: z.string().nullable(),
+  /** The plan's Customer Dispatch Date (plans.customer_dispatch_date, via the
+   *  plan this card was executed from). Null for a card with no plan. */
+  customerDispatchDate: z.string().nullable().default(null),
+  /** Rework / repair CHILD cards raised off this card (job_cards
+   *  .parent_job_card_id = this id), so the parent's header can name them. */
+  childJobCards: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        code: z.string(),
+        recoveryKind: z.enum(['rework', 'repair']).nullable(),
+      }),
+    )
+    .default([]),
   drawingFilePath: z.string().nullable(),
   /** Item Master product image (items.image_path), for the thumbnail next to code · name. */
   itemImagePath: z.string().nullable().default(null),

@@ -219,6 +219,25 @@ export async function listJobCards(
         -- PO is closed. Code joined live — a PO is never renamed.
         jc.production_order_id AS "productionOrderId",
         po.code                AS "productionOrderCode",
+        -- The plan's Customer Dispatch Date (migration 0137): the plan this card
+        -- was executed from, reached either through its Production Order or
+        -- directly via plans.jc_id. Null on a card with no plan. ::text so the
+        -- date arrives as YYYY-MM-DD and not a Date at local midnight.
+        (
+          SELECT p.customer_dispatch_date::text
+          FROM public.plans p
+          WHERE (p.jc_id = jc.id OR p.id = po.plan_id) AND p.deleted_at IS NULL
+          ORDER BY p.created_at DESC LIMIT 1
+        ) AS "customerDispatchDate",
+        -- Rework / repair CHILD cards raised off this card, so the parent's
+        -- header can name them. One aggregate per row — no per-card query.
+        (
+          SELECT COALESCE(json_agg(json_build_object(
+                   'id', c.id, 'code', c.code, 'recoveryKind', c.recovery_kind
+                 ) ORDER BY c.code), '[]'::json)
+          FROM public.job_cards c
+          WHERE c.parent_job_card_id = jc.id AND c.deleted_at IS NULL
+        ) AS "childJobCards",
         -- Tier A (QC-NC §4): source context of the rejected work, derived live
         -- from the parent NC — WHICH operation and machine produced the rejected
         -- pieces and how many. Null on a non-recovery card (pnc left-joined).
@@ -385,6 +404,25 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         -- PO is closed. Code joined live — a PO is never renamed.
         jc.production_order_id AS "productionOrderId",
         po.code                AS "productionOrderCode",
+        -- The plan's Customer Dispatch Date (migration 0137): the plan this card
+        -- was executed from, reached either through its Production Order or
+        -- directly via plans.jc_id. Null on a card with no plan. ::text so the
+        -- date arrives as YYYY-MM-DD and not a Date at local midnight.
+        (
+          SELECT p.customer_dispatch_date::text
+          FROM public.plans p
+          WHERE (p.jc_id = jc.id OR p.id = po.plan_id) AND p.deleted_at IS NULL
+          ORDER BY p.created_at DESC LIMIT 1
+        ) AS "customerDispatchDate",
+        -- Rework / repair CHILD cards raised off this card, so the parent's
+        -- header can name them. One aggregate per row — no per-card query.
+        (
+          SELECT COALESCE(json_agg(json_build_object(
+                   'id', c.id, 'code', c.code, 'recoveryKind', c.recovery_kind
+                 ) ORDER BY c.code), '[]'::json)
+          FROM public.job_cards c
+          WHERE c.parent_job_card_id = jc.id AND c.deleted_at IS NULL
+        ) AS "childJobCards",
         -- Tier A (QC-NC §4): source context of the rejected work, derived live
         -- from the parent NC — WHICH operation and machine produced the rejected
         -- pieces and how many. Null on a non-recovery card (pnc left-joined).
@@ -470,6 +508,18 @@ function buildSourceLink(r: Record<string, unknown>): JobCardSourceLink | null {
   return null;
 }
 
+/** The "childJobCards" json_agg arrives already parsed (an array, as the
+ *  machines aggregate does below); recovery_kind is narrowed to the enum. */
+function toChildJobCards(v: unknown): JobCardListItem['childJobCards'] {
+  const rows = (v as Array<{ id: string; code: string; recoveryKind: string | null }> | null) ?? [];
+  return rows.map((c) => ({
+    id: c.id,
+    code: c.code,
+    recoveryKind:
+      c.recoveryKind === 'rework' || c.recoveryKind === 'repair' ? c.recoveryKind : null,
+  }));
+}
+
 function toListItem(r: Record<string, unknown>): JobCardListItem {
   return {
     id: r['id'] as string,
@@ -499,6 +549,9 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     parentNcCode: (r['parentNcCode'] as string | null) ?? null,
     productionOrderId: (r['productionOrderId'] as string | null) ?? null,
     productionOrderCode: (r['productionOrderCode'] as string | null) ?? null,
+    // The plan's Customer Dispatch Date (migration 0137) — already ::text in SQL.
+    customerDispatchDate: (r['customerDispatchDate'] as string | null) ?? null,
+    childJobCards: toChildJobCards(r['childJobCards']),
     // Tier A: parent NC source context (WI2), derived from the parent NC.
     parentOpName: (r['parentOpName'] as string | null) ?? null,
     parentMachineCode: (r['parentMachineCode'] as string | null) ?? null,
