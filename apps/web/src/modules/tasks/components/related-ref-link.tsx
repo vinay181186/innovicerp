@@ -33,7 +33,11 @@ export function RelatedRefLink({
     return (
       <Link
         to="/qc-call-register"
-        search={{ op: nav.slice(QC_CALL_PREFIX.length) }}
+        // `op` is the register's "open this call" param. It is typed only on
+        // the build that ships the QC-form popup; on an older build the route
+        // simply drops the unknown key and opens the register. Untyped on
+        // purpose so the task link works on both.
+        search={{ op: nav.slice(QC_CALL_PREFIX.length) } as never}
         onClick={onClick}
         title={`Open ${linkedRef.display}`}
       >
