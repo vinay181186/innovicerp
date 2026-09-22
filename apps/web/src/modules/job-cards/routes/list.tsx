@@ -10,7 +10,12 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Eye, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { ItemBadge, ItemImageBox } from '@/components/shared/item-badge';
+import {
+  ItemBadge,
+  ItemThumbnailCell,
+  ItemThumbnailHeader,
+  THUMBNAIL_COL_WIDTH,
+} from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
@@ -501,11 +506,8 @@ function JobCardsListPage(): React.JSX.Element {
               <colgroup>
                 <col style={{ width: '4%' }} />
                 <col style={{ width: '11%' }} />
-                {/* Image column in px, not %: the 48 px picture box does not
-                    shrink, so a % column narrower than 52 px on a laptop
-                    would let the box spill over the gridline. */}
-                <col style={{ width: 56 }} />
-                <col style={{ width: '14%' }} />
+                <col style={{ width: THUMBNAIL_COL_WIDTH }} />
+                <col style={{ width: '12%' }} />
                 <col style={{ width: '9%' }} />
                 <col style={{ width: '6%' }} />
                 <col style={{ width: '8%' }} />
@@ -519,7 +521,7 @@ function JobCardsListPage(): React.JSX.Element {
                 <tr>
                   <th>Sr No</th>
                   <th>Job Card No.</th>
-                  <th>Image</th>
+                  <ItemThumbnailHeader />
                   <th style={{ textAlign: 'left' }}>Part / Description</th>
                   <th>SO No.</th>
                   <th>Qty (Plan)</th>
@@ -571,21 +573,13 @@ function JobCardsListPage(): React.JSX.Element {
                           </div>
                         ) : null}
                       </td>
-                      <td style={{ padding: '4px 2px' }}>
-                        {/* The product image in its OWN column, right after
-                            the JC No. (user decision 2026-09-22 — the pattern
-                            every list/document will follow: thumbnail column
-                            before the item code · name). Centred in the cell
-                            so the box sits at one x in every row; click it to
-                            see the picture large. */}
-                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                          <ItemImageBox
-                            imagePath={jc.itemImagePath}
-                            size="row"
-                            alt={jc.itemName || jc.itemCode || ''}
-                          />
-                        </div>
-                      </td>
+                      {/* Thumbnail in its OWN column, right after the JC No.
+                          (user decision 2026-09-22 — every list/document puts
+                          the thumbnail column before the item code · name). */}
+                      <ItemThumbnailCell
+                        imagePath={jc.itemImagePath}
+                        alt={jc.itemName || jc.itemCode}
+                      />
                       <td style={{ textAlign: 'left' }}>
                         {/* CODE/REV + name, text only — the picture is the
                             column to the left. The revision is the customer's

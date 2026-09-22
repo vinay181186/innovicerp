@@ -60,7 +60,12 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Eye, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { ItemBadge } from '@/components/shared/item-badge';
+import {
+  ItemBadge,
+  ItemThumbnailCell,
+  ItemThumbnailHeader,
+  THUMBNAIL_COL_WIDTH,
+} from '@/components/shared/item-badge';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -77,7 +82,7 @@ const LIST_LIMIT = 1000;
 
 /** Column count — the loading / error / empty rows' <td colSpan> must always
  *  match the <colgroup> below, so it is named once here. */
-const COLUMN_COUNT = 7;
+const COLUMN_COUNT = 8;
 
 // One count query per stat. Module-level constants keep the query keys stable so
 // these are fetched once and served from cache, and the counts stay whole-master
@@ -426,7 +431,8 @@ function ItemsListPage(): React.JSX.Element {
           <table className="innovic-table tbl-grid">
             <colgroup>
               <col style={{ width: '4%' }} />
-              <col style={{ width: '30%' }} />
+              <col style={{ width: THUMBNAIL_COL_WIDTH }} />
+              <col style={{ width: '22%' }} />
               <col style={{ width: '24%' }} />
               <col style={{ width: '15%' }} />
               <col style={{ width: '7%' }} />
@@ -436,6 +442,7 @@ function ItemsListPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Sr No</th>
+                <ItemThumbnailHeader />
                 <th style={{ textAlign: 'left' }}>Item Code · Name</th>
                 <th>Description</th>
                 <th>Material</th>
@@ -476,12 +483,16 @@ function ItemsListPage(): React.JSX.Element {
                     style={{ cursor: 'pointer' }}
                   >
                     <td className="text3">{i + 1}</td>
+                    {/* Thumbnail column before the code · name (user decision
+                        2026-09-22, every list). */}
+                    <ItemThumbnailCell imagePath={item.imagePath} alt={item.name} />
                     <td style={{ textAlign: 'left' }}>
                       {/* No item-level revision here, deliberately (see the
                           header comment): the badge gets the bare code, never
                           `items.revision`. The name clips at the column edge. */}
                       <ItemBadge
                         size="row"
+                        showImage={false}
                         code={item.code}
                         name={item.name}
                         imagePath={item.imagePath}

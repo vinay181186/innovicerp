@@ -55,9 +55,10 @@ export interface ItemBadgeProps {
   /** Hide the name line (code only). Default: shown. */
   showName?: boolean;
   /** Hide the picture box (text only). A list that gives the thumbnail its
-   *  OWN column — the Job Card list, user decision 2026-09-22 — renders
-   *  `<ItemImageBox>` in that column and the badge with `showImage={false}`
-   *  beside it, so the code · name stay the shared badge. Default: shown. */
+   *  OWN column (user decision 2026-09-22 — every list/document: a Thumbnail
+   *  column right BEFORE the item code · name) renders `<ItemThumbnailCell>`
+   *  in that column and the badge with `showImage={false}` beside it, so the
+   *  code · name stay the shared badge. Default: shown. */
   showImage?: boolean;
   /** Colour of the code text. Lists use purple (the JC list's code colour);
    *  the item page passes `var(--text)`. */
@@ -74,18 +75,66 @@ export interface ItemBadgeProps {
   style?: React.CSSProperties;
 }
 
+/** Width of a list's Thumbnail column — a % like every other column, so a
+ *  sheet's <colgroup> still sums to 100 % and the Action column at the far
+ *  right is never pushed off a narrow window. The picture FILLS the cell
+ *  (ItemThumbnailCell), so it simply gets narrower with the column instead of
+ *  spilling over the gridline. Take the 8 % out of the item code · name
+ *  column beside it. */
+export const THUMBNAIL_COL_WIDTH = '8%';
+
+/** The `<th>` of a list's Thumbnail column. */
+export function ItemThumbnailHeader(): React.JSX.Element {
+  return (
+    <th
+      style={{ width: THUMBNAIL_COL_WIDTH, padding: '8px 2px', fontSize: 10, overflow: 'hidden' }}
+      title="Product image"
+    >
+      Thumbnail
+    </th>
+  );
+}
+
+/** The `<td>` of a list's Thumbnail column: the picture fills the whole cell
+ *  edge to edge (user decision 2026-09-22 — "full cover thumbnail in cell"),
+ *  the column's gridlines being its frame; click it to see the picture large.
+ *  Pair with `<ItemBadge showImage={false}>` in the next column. */
+export function ItemThumbnailCell({
+  imagePath,
+  alt,
+}: {
+  imagePath: string | null | undefined;
+  alt?: string | null;
+}): React.JSX.Element {
+  return (
+    <td style={{ padding: 0, position: 'relative', height: BOX_PX.row }}>
+      {/* The box is pinned to the cell's edges (fill), so it takes no part in
+          the row height or width — the text cells set the height, the column
+          the width. A table cell's `height` is a MINIMUM, so the row can never
+          be shorter than the picture box and grows with taller neighbours. */}
+      <ItemImageBox imagePath={imagePath} size="row" alt={alt ?? ''} fill />
+    </td>
+  );
+}
+
 /** Just the picture box — used on its own by the item form's image field. */
 export function ItemImageBox({
   imagePath,
   size = 'row',
   alt,
   onOpen,
+  fill = false,
 }: {
   imagePath: string | null | undefined;
   size?: ItemBadgeSize;
   alt?: string;
   /** Override the click. Default opens the preview modal. */
   onOpen?: () => void;
+  /** Fill the parent edge to edge: pinned to all four edges of a
+   *  `position: relative` parent (the Thumbnail column's cell), so the picture
+   *  is exactly the cell's size whatever the row height; no border or
+   *  rounding — the gridlines frame it. */
+  fill?: boolean;
 }): React.JSX.Element {
   const px = BOX_PX[size];
   const sc = SCALE[size];
@@ -129,12 +178,13 @@ export function ItemImageBox({
           }
         }}
         style={{
-          position: 'relative',
-          width: px,
-          height: px,
+          position: fill ? 'absolute' : 'relative',
+          inset: fill ? 0 : undefined,
+          width: fill ? '100%' : px,
+          height: fill ? '100%' : px,
           flexShrink: 0,
-          borderRadius: sc.radius,
-          border: '1px solid var(--border)',
+          borderRadius: fill ? 0 : sc.radius,
+          border: fill ? 'none' : '1px solid var(--border)',
           background: tile ? 'var(--bg3)' : 'var(--bg4)',
           // The tile is a picture on a page header, not a row thumbnail — a
           // whisper of shadow lifts it off the panel (mock-up value).
