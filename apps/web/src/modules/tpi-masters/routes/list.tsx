@@ -6,27 +6,28 @@
 //
 // `code` holds the inspector's NAME, so the column reads "Inspector Name" — see
 // packages/shared/src/schemas/tpi-master.ts.
+//
+// Laid out as the app's ruled sheet (`.innovic-table.tbl-grid`, the SO / WO
+// List view look — see sales-orders/components/so-sheet-table.tsx): Sr No
+// first, Action last, fixed `%` widths that add up to 100 so nothing scrolls
+// sideways, every column centred by the class except the name, which reads
+// from its left edge. Per-column sorting was dropped with the TanStack table
+// (the SO standard has none; it only ever re-ordered the page on screen).
 
-import type { ListTpiMastersQuery, TpiMaster } from '@innovic/shared';
+import type { ListTpiMastersQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  type SortingState,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { Loader2, Plus } from 'lucide-react';
+import { Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { SortableHead } from '@/components/shared/sortable-head';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoftDeleteTpiMaster, useTpiMastersList } from '../api';
 
 const LIST_LIMIT = 200;
+/** Column count — the loading / error / empty rows' <td colSpan> must always
+ *  match the <colgroup> below, so it is named once here. */
+const COLUMN_COUNT = 7;
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -82,142 +83,11 @@ function TpiMastersListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useTpiMastersList(query);
   const softDelete = useSoftDeleteTpiMaster();
 
-  const columns = useMemo<ColumnDef<TpiMaster>[]>(
-    () => [
-      {
-        header: '#',
-        enableSorting: false,
-        meta: { tdClass: 'td-ctr mono fw-700' },
-        cell: ({ row }) => row.index + 1,
-      },
-      {
-        header: 'Inspector Name',
-        accessorKey: 'code',
-        meta: { tdClass: 'fw-700' },
-        cell: ({ row }) => (
-          <Link
-            to="/tpi-masters/$id"
-            params={{ id: row.original.id }}
-            style={{ color: 'var(--green)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Organization',
-        accessorKey: 'organization',
-        meta: { tdClass: 'text2' },
-        // Free text that runs long — clip with an ellipsis and keep the whole
-        // value on hover, rather than letting one firm name widen the table.
-        cell: ({ row }) => (
-          <span
-            style={{
-              fontSize: 11,
-              maxWidth: 220,
-              display: 'inline-block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              verticalAlign: 'bottom',
-            }}
-            title={row.original.organization ?? ''}
-          >
-            {row.original.organization ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Contact No.',
-        accessorKey: 'contactNo',
-        meta: { tdClass: 'mono' },
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.contactNo ?? '—'}</span>,
-      },
-      {
-        header: 'Email',
-        accessorKey: 'email',
-        meta: { tdClass: 'text2' },
-        cell: ({ row }) => (
-          <span
-            style={{
-              fontSize: 11,
-              maxWidth: 200,
-              display: 'inline-block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              verticalAlign: 'bottom',
-            }}
-            title={row.original.email ?? ''}
-          >
-            {row.original.email ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Status',
-        accessorKey: 'isActive',
-        cell: ({ row }) => (
-          <span className={`badge ${row.original.isActive ? 'b-green' : 'b-amber'}`}>
-            {row.original.isActive ? 'Active' : 'Inactive'}
-          </span>
-        ),
-      },
-      {
-        header: 'Actions',
-        id: 'actions',
-        enableSorting: false,
-        // The row itself opens the detail page, so these two — which do
-        // something else — stop the click on their wrapper.
-        cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-            {perms.edit ? (
-              <Link
-                to="/tpi-masters/$id/edit"
-                params={{ id: row.original.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                Edit
-              </Link>
-            ) : null}
-            {canDelete ? (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                disabled={softDelete.isPending}
-                onClick={() => {
-                  if (confirm(`Delete inspector "${row.original.code}"?`)) {
-                    // Reset first so a second attempt clears the previous banner.
-                    softDelete.reset();
-                    softDelete.mutate(row.original.id);
-                  }
-                }}
-              >
-                Del
-              </button>
-            ) : null}
-          </div>
-        ),
-      },
-    ],
-    [perms.edit, canDelete, softDelete],
-  );
-
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
-  });
-
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
-  // user flashes this panel on cold load. Sits after every hook (incl.
-  // useReactTable) so the early return never trips rules-of-hooks.
+  // user flashes this panel on cold load. Sits after every hook so the early
+  // return never trips rules-of-hooks.
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
@@ -226,56 +96,86 @@ function TpiMastersListPage(): React.JSX.Element {
     );
   }
 
+  const rows = data?.items ?? [];
   const total = data?.total ?? 0;
 
   return (
     <div>
+      {/* Sticky header band — the SO list's shape: `#content` is the app's
+          scroll container, so `top:0` pins this band flush under the topbar
+          while the rows scroll underneath. Opaque `--bg` so the sheet never
+          shows through. */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
         }}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔍 TPI Master
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="Search this list…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 280, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.isActive === undefined ? '' : String(search.isActive)}
-            onChange={(e) => {
-              const v = e.target.value;
-              void navigate({
-                search: (prev) => ({ ...prev, isActive: v === '' ? undefined : v === 'true' }),
-                replace: true,
-              });
-            }}
-            style={{ width: 130, fontSize: 12 }}
-          >
-            <option value="">All</option>
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {perms.entry ? (
-            <Link to="/tpi-masters/new" className="btn btn-primary">
-              <Plus size={14} /> Add Inspector
-            </Link>
-          ) : null}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              🔍 TPI Master
+            </div>
+            {/* Count is the list response's `total` — the only aggregate the
+                endpoint returns. */}
+            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} inspector{total === 1 ? '' : 's'}
+              {search.isActive !== undefined ? (
+                <>
+                  {' '}
+                  · <span className="text2">{search.isActive ? 'Active' : 'Inactive'}</span> only
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="innovic-input"
+              placeholder="Search this list…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 220, fontSize: 12 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.isActive === undefined ? '' : String(search.isActive)}
+              onChange={(e) => {
+                const v = e.target.value;
+                void navigate({
+                  search: (prev) => ({ ...prev, isActive: v === '' ? undefined : v === 'true' }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 130, fontSize: 12 }}
+            >
+              <option value="">All</option>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {perms.entry ? (
+              <Link to="/tpi-masters/new" className="btn btn-primary">
+                <Plus size={14} /> Add Inspector
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -308,54 +208,170 @@ function TpiMastersListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
+      {/* The sheet: fixed widths summing to 100%, so no sideways scroll. */}
+      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+        <table className="innovic-table tbl-grid">
+          <colgroup>
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '22%' }} />
+            <col style={{ width: '24%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '19%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '10%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Sr No</th>
+              <th style={{ textAlign: 'left' }}>Inspector Name</th>
+              <th>Organization</th>
+              <th>Contact No.</th>
+              <th>Email</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={COLUMN_COUNT} className="empty-state">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                  Loading…
+                </td>
+              </tr>
+            ) : isError ? (
+              <tr>
+                <td colSpan={COLUMN_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
+                  {error instanceof Error ? error.message : 'Failed to load TPI inspectors'}
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={COLUMN_COUNT} className="empty-state">
+                  No inspectors defined. Click + Add Inspector.
+                </td>
+              </tr>
+            ) : (
+              rows.map((t, i) => (
+                <tr
+                  key={t.id}
+                  onClick={() => void navigate({ to: '/tpi-masters/$id', params: { id: t.id } })}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <td className="text3">{i + 1}</td>
                   <td
-                    colSpan={columns.length}
-                    className="empty-state"
-                    style={{ color: 'var(--red)' }}
+                    style={{
+                      textAlign: 'left',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                    title={t.code}
                   >
-                    {error instanceof Error ? error.message : 'Failed to load TPI inspectors'}
+                    {/* The master code (the inspector's name) — strong, never
+                        the faint --text3. */}
+                    <Link
+                      to="/tpi-masters/$id"
+                      params={{ id: t.id }}
+                      className="mono fw-700"
+                      style={{ color: 'var(--text)', textDecoration: 'none' }}
+                      title="Open this inspector"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {t.code}
+                    </Link>
+                  </td>
+                  {/* Free text that runs long — clip with an ellipsis and keep
+                      the whole value on hover. */}
+                  <td
+                    className="text2"
+                    style={{
+                      fontSize: 12,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                    title={t.organization ?? ''}
+                  >
+                    {t.organization ?? '—'}
+                  </td>
+                  <td className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                    {t.contactNo ?? '—'}
+                  </td>
+                  <td
+                    className="text2"
+                    style={{
+                      fontSize: 12,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                    title={t.email ?? ''}
+                  >
+                    {t.email ?? '—'}
+                  </td>
+                  <td>
+                    <span className={`badge ${t.isActive ? 'b-green' : 'b-amber'}`}>
+                      {t.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td>
+                    {/* View is open to anyone who can see the list; Edit needs edit; Del needs edit +
+                        approve. Icon buttons on one row, the action named on
+                        hover; the row navigates, so the wrapper stops the click. */}
+                    <div
+                      style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link
+                        to="/tpi-masters/$id"
+                        params={{ id: t.id }}
+                        className="btn btn-ghost btn-sm btn-icon"
+                        title="View"
+                        aria-label="View"
+                      >
+                        <Eye size={14} />
+                      </Link>
+                      {perms.edit ? (
+                        <Link
+                          to="/tpi-masters/$id/edit"
+                          params={{ id: t.id }}
+                          className="btn btn-ghost btn-sm btn-icon"
+                          title="Edit"
+                          aria-label="Edit"
+                        >
+                          <Pencil size={14} />
+                        </Link>
+                      ) : null}
+                      {canDelete ? (
+                        // The sheet paints every .btn-sm on paper (theme rule),
+                        // which would leave btn-danger's white icon invisible —
+                        // so the icon is told to be red here, tokens only.
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm btn-icon"
+                          style={{ color: 'var(--red)' }}
+                          title="Delete"
+                          aria-label="Delete"
+                          disabled={softDelete.isPending}
+                          onClick={() => {
+                            if (confirm(`Delete inspector "${t.code}"?`)) {
+                              // Reset first so a second attempt clears the previous banner.
+                              softDelete.reset();
+                              softDelete.mutate(t.id);
+                            }
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No inspectors defined. Click + Add Inspector.
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() =>
-                      void navigate({ to: '/tpi-masters/$id', params: { id: row.original.id } })
-                    }
-                    style={{ cursor: 'pointer' }}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>

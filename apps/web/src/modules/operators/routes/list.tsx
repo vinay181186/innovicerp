@@ -2,25 +2,18 @@
 // Ports legacy renderOperators (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
 // L13699-13725) to Innovic chrome. Legacy columns, in order (L13721):
 // Operator ID | Name | Department | Skills / Machines | Status | Actions.
-// Legacy row cells (L13702-13710) carry .td-code / .fw-700 / .text2 on the <td>
-// itself, so rows render as plain <tr>/<td> markup; TanStack Table is kept for
-// the column defs + client-side sort that drives <SortableHead>.
-// Legacy sorts Operator ID / Name / Department / Status only (sTh, L13721) —
-// Skills / Machines and Actions are plain <th>.
+//
+// SHEET (2026-09-21): the list renders on the ruled sheet (`tbl-grid`) the SO
+// Master List view uses — Sr No first, Action last, fixed % widths that add up
+// to 100 so nothing scrolls sideways, a sticky toolbar band above it. The
+// per-column sort (TanStack + SortableHead) is gone: the SO standard has none,
+// and it only ever re-ordered the 25 rows on screen.
 
-import type { ListOperatorsQuery, Operator } from '@innovic/shared';
+import type { ListOperatorsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  type SortingState,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { SortableHead } from '@/components/shared/sortable-head';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -28,6 +21,8 @@ import { useBulkCreateOperators, useOperatorsList, useSoftDeleteOperator } from 
 import { downloadOperatorTemplate, parseOperatorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
+// Sr No | Operator ID | Name | Department | Skills / Machines | Status | Action.
+const COLUMN_COUNT = 7;
 
 // Join a list of import warnings/failures for the status line, capping at 50 so
 // a huge sheet can't produce an unbounded banner, but still showing far more
@@ -141,31 +136,7 @@ function OperatorsListPage(): React.JSX.Element {
     }
   }
 
-  // Headers + sort accessors only — cells render as plain <td> below so legacy's
-  // per-cell classes land on the <td>, matching L13702-13710.
-  const columns = useMemo<ColumnDef<Operator>[]>(
-    () => [
-      { header: 'Operator ID', accessorKey: 'code' },
-      { header: 'Name', accessorKey: 'name' },
-      { header: 'Department', accessorKey: 'department' },
-      // Legacy L13721 renders a plain <th> here — not an sTh — so no sort.
-      { header: 'Skills / Machines', accessorKey: 'skills', enableSorting: false },
-      { header: 'Status', accessorKey: 'isActive' },
-      { header: 'Actions', enableSorting: false },
-    ],
-    [],
-  );
-
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.operators ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
-  });
-
+  const rows = data?.operators ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
@@ -184,52 +155,81 @@ function OperatorsListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Sticky header band — the same shape as the SO Master list's: pinned
+          to #content's top so the title, count, search, status filter and
+          + Add stay put while the sheet scrolls underneath. Opaque `--bg` so
+          rows do not show through. */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
         }}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Operator Master
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="🔍 Search this list…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as 'active' | 'inactive' | '';
-              void navigate({
-                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 120, fontSize: 12 }}
-          >
-            <option value="">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canAdd ? (
-            <Link to="/operators/new" className="btn btn-primary">
-              <Plus size={14} /> Add Operator
-            </Link>
-          ) : null}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              Operator Master
+            </div>
+            {/* Count comes from the list response's `total` — the only
+                aggregate GET /operators returns. */}
+            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} operator{total === 1 ? '' : 's'}
+              {search.status ? (
+                <>
+                  {' '}
+                  · <span className="text2">{search.status}</span> only
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="innovic-input"
+              placeholder="Search this list…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 220, fontSize: 12 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as 'active' | 'inactive' | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 120, fontSize: 12 }}
+            >
+              <option value="">All</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {canAdd ? (
+              <Link to="/operators/new" className="btn btn-primary">
+                <Plus size={14} /> Add Operator
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -249,92 +249,152 @@ function OperatorsListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
+      {/* The ruled sheet (tbl-grid): every column centred by the standard,
+          Name left-aligned (a name reads from its left edge). Widths live only
+          in the colgroup and sum to 100. */}
+      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+        <table className="innovic-table tbl-grid">
+          <colgroup>
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '24%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '25%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '10%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Sr No</th>
+              <th>Operator ID</th>
+              <th style={{ textAlign: 'left' }}>Name</th>
+              <th>Department</th>
+              <th>Skills / Machines</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={COLUMN_COUNT} className="empty-state">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                  Loading…
+                </td>
+              </tr>
+            ) : isError ? (
+              <tr>
+                <td colSpan={COLUMN_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
+                  {error instanceof Error ? error.message : 'Failed to load operators'}
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={COLUMN_COUNT} className="empty-state">
+                  No operators — click <strong>+ Add Operator</strong> to begin
+                </td>
+              </tr>
+            ) : (
+              rows.map((op, i) => (
+                <tr
+                  key={op.id}
+                  onClick={() => void navigate({ to: '/operators/$id', params: { id: op.id } })}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <td className="text3">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <Link
+                      to="/operators/$id"
+                      params={{ id: op.id }}
+                      className="td-code"
+                      title="Open this operator"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {op.code}
+                    </Link>
                   </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="empty-state"
-                    style={{ color: 'var(--red)' }}
-                  >
-                    {error instanceof Error ? error.message : 'Failed to load operators'}
+                  <td style={{ textAlign: 'left' }}>
+                    <div
+                      className="fw-700"
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={op.name}
+                    >
+                      {op.name}
+                    </div>
                   </td>
-                </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No operators — click <strong>+ Add Operator</strong> to begin
+                  <td className="text2">{op.department ?? '—'}</td>
+                  {/* Long free text: one line, clipped with an ellipsis, the
+                      full text on hover — never wrapped into a tall row. */}
+                  <td className="text2" style={{ fontSize: 12 }}>
+                    <div
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={op.skills ?? ''}
+                    >
+                      {op.skills ?? '—'}
+                    </div>
                   </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => {
-                  const op = row.original;
-                  return (
-                    <tr key={row.id}>
-                      <td className="td-code" style={{ color: 'var(--cyan)' }}>
+                  <td>
+                    <span className={`badge ${op.isActive ? 'b-green' : 'b-grey'}`}>
+                      {op.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td>
+                    {/* Icon buttons only, one row, hover names the action.
+                        View is open to everyone who can see the page; Edit
+                        needs the edit right; Delete the edit+approve pair.
+                        The row itself navigates, so the block stops the
+                        click. */}
+                    <div
+                      style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link
+                        to="/operators/$id"
+                        params={{ id: op.id }}
+                        className="btn btn-ghost btn-sm btn-icon"
+                        title="View"
+                        aria-label="View"
+                      >
+                        <Eye size={14} />
+                      </Link>
+                      {canEdit ? (
                         <Link
-                          to="/operators/$id"
+                          to="/operators/$id/edit"
                           params={{ id: op.id }}
-                          style={{ color: 'inherit', textDecoration: 'none' }}
+                          className="btn btn-ghost btn-sm btn-icon"
+                          title="Edit"
+                          aria-label="Edit"
                         >
-                          {op.code}
+                          <Pencil size={14} />
                         </Link>
-                      </td>
-                      <td className="fw-700">{op.name}</td>
-                      <td className="text2">{op.department ?? '—'}</td>
-                      <td className="text2" style={{ fontSize: 12 }}>
-                        {op.skills ?? '—'}
-                      </td>
-                      <td>
-                        <span className={`badge ${op.isActive ? 'b-green' : 'b-grey'}`}>
-                          {op.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {canEdit ? (
-                            <Link
-                              to="/operators/$id/edit"
-                              params={{ id: op.id }}
-                              className="btn btn-ghost btn-sm"
-                            >
-                              Edit
-                            </Link>
-                          ) : null}
-                          {canDelete ? (
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-sm"
-                              disabled={softDelete.isPending}
-                              onClick={() => {
-                                if (confirm(`Move operator "${op.name}" to Trash?`)) {
-                                  softDelete.mutate(op.id);
-                                }
-                              }}
-                            >
-                              Del
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                      ) : null}
+                      {canDelete ? (
+                        // The sheet paints every .btn-sm on paper (theme rule),
+                        // which would leave btn-danger's white icon invisible —
+                        // so the icon is told to be red here, tokens only.
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm btn-icon"
+                          style={{ color: 'var(--red)' }}
+                          title="Delete"
+                          aria-label="Delete"
+                          disabled={softDelete.isPending}
+                          onClick={() => {
+                            if (confirm(`Move operator "${op.name}" to Trash?`)) {
+                              softDelete.mutate(op.id);
+                            }
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       <div
@@ -385,7 +445,7 @@ function OperatorsListPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Excel template + import sit below the table panel (mirror of Vendors).
+      {/* Excel template + import sit below the table (mirror of Vendors).
           Import creates operators, so it follows the create (entry) right. */}
       {canAdd ? (
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

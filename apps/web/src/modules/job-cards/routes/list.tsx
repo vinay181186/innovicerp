@@ -7,7 +7,7 @@ import {
   type ListJobCardsQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import { Eye, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ItemBadge } from '@/components/shared/item-badge';
@@ -501,7 +501,7 @@ function JobCardsListPage(): React.JSX.Element {
               <colgroup>
                 <col style={{ width: '4%' }} />
                 <col style={{ width: '11%' }} />
-                <col style={{ width: '18%' }} />
+                <col style={{ width: '20%' }} />
                 <col style={{ width: '9%' }} />
                 <col style={{ width: '6%' }} />
                 <col style={{ width: '8%' }} />
@@ -509,7 +509,7 @@ function JobCardsListPage(): React.JSX.Element {
                 <col style={{ width: '7%' }} />
                 <col style={{ width: '7%' }} />
                 <col style={{ width: '5%' }} />
-                <col style={{ width: '17%' }} />
+                <col style={{ width: '15%' }} />
               </colgroup>
               <thead>
                 <tr>
@@ -667,25 +667,36 @@ function JobCardsListPage(): React.JSX.Element {
                           {dLeft == null ? '—' : dLeft}
                         </span>
                       </td>
-                      <td>
-                        {/* Two buttons per line: five ghost buttons in a row
-                            were what pushed the sheet past the page edge. */}
+                      {/* Icons only, one row, centred — the title / aria-label
+                          names the action on hover. Side padding trimmed on
+                          the cell so all six (View, Print, Excel, Edit, Delete,
+                          Assign) fit the column without spilling. Same gates
+                          as the card: Edit / Delete self-gate inside
+                          JcRowWriteActions, Assign inside AssignTaskButton. */}
+                      <td style={{ padding: '8px 2px' }}>
                         <div
                           className="jc-row-acts"
-                          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}
+                          style={{
+                            display: 'flex',
+                            gap: 4,
+                            justifyContent: 'center',
+                            flexWrap: 'nowrap',
+                          }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           <Link
                             to="/job-cards/$id"
                             params={{ id: jc.id }}
-                            className="btn btn-primary btn-sm"
-                            title="View job card status"
+                            className="btn btn-ghost btn-sm btn-icon"
+                            style={{ padding: '2px 3px' }}
+                            title="View"
+                            aria-label="View"
                           >
-                            👁 View
+                            <Eye size={13} />
                           </Link>
-                          <PrintJcButton jc={jc} />
-                          <ExcelJcButton jc={jc} />
-                          <JcRowWriteActions jc={jc} />
+                          <PrintJcButton jc={jc} iconOnly />
+                          <ExcelJcButton jc={jc} iconOnly />
+                          <JcRowWriteActions jc={jc} iconOnly />
                           <AssignTaskButton
                             linkedRef={{
                               type: 'job_card',
@@ -694,6 +705,8 @@ function JobCardsListPage(): React.JSX.Element {
                               navPage: '/job-cards',
                             }}
                             suggestedTitle={`Follow up on JC ${jc.code}`}
+                            className="btn btn-ghost btn-sm btn-icon"
+                            label=""
                           />
                         </div>
                       </td>

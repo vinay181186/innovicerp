@@ -1,16 +1,22 @@
 // Route Card list (ports legacy renderRouteCards L10078).
-// Expand-row reveals the operation sequence per legacy UX (chip-style
-// "1. M1 · turn", with QC + OSP rows highlighted). Legacy renders that sequence
-// as an inline 8th column, but `RouteCardListItem` carries only `opCount` — the
-// ops live behind the detail endpoint — so the expand-row lazily fetches them
-// instead of firing a detail request per row. See ISSUE-019.
+// Laid out as the app's ruled sheet (`.innovic-table.tbl-grid`, the SO / WO
+// Orders list view) — Sr No first, icon-only Action last, fixed % widths that
+// sum to 100 so nothing scrolls sideways, and a sticky header band (title,
+// count, search, + Add) that stays put while the sheet scrolls.
+// The ▸ chevron on the RC No. still reveals the operation sequence per legacy
+// UX (chip-style "1. M1 · turn", with QC + OSP rows highlighted). Legacy renders
+// that sequence as an inline 8th column, but `RouteCardListItem` carries only
+// `opCount` — the ops live behind the detail endpoint — so the expand-row
+// lazily fetches them instead of firing a detail request per row. See ISSUE-019.
+// The row itself now opens the detail page.
 
 import type { RouteCardListItem } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, ChevronRight, Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
@@ -27,17 +33,46 @@ export const routeCardsListRoute = createRoute({
   component: RouteCardsListPage,
 });
 
+/** One fetch, scroll — masters do not paginate. The API caps `limit` at 200. */
+const LIST_LIMIT = 100;
+
+/** Column count — every empty / loading / expanded row's <td colSpan> must
+ *  match the <colgroup> below, so it is named once here. */
+const COLUMN_COUNT = 9;
+/** Icon size and inline trim for the Action column's icon buttons — the same
+ *  numbers the SO sheet uses, so four of them sit on one row in a 10% column. */
+const ICON = 13;
+const ICON_BTN: React.CSSProperties = { padding: '2px 3px' };
+
 function RouteCardsListPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { search } = routeCardsListRoute.useSearch();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const { data, isLoading, isError, error } = useRouteCardsList({
+
+  // Search lives in the URL (`search` param) so it survives refresh and Back;
+  // the input mirrors it and a debounce writes it back — the SO list shape.
+  const [searchInput, setSearchInput] = useState(search ?? '');
+  useEffect(() => {
+    setSearchInput(search ?? '');
+  }, [search]);
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(searchInput);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === search) return;
+    const id = window.setTimeout(() => {
+      void navigate({ to: '/route-cards', search: { search: next }, replace: true });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [searchInput, search, navigate]);
+
+  const { data, isLoading, isFetching, isError, error } = useRouteCardsList({
     search,
-    limit: 100,
+    limit: LIST_LIMIT,
     offset: 0,
   });
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
+  const total = data?.total ?? 0;
 
   const toggleExpand = (id: string): void => {
     setExpanded((prev) => {
@@ -58,36 +93,54 @@ function RouteCardsListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        {/* SO-Planning section header rhythm: the title carries a muted sub-line
-            (there it names the SO/customer; here the live card count) so the
-            heading reads as a titled block, not a bare label. */}
-        <div className="section-hdr m-0">
-          Route Card Master
-          {data ? (
-            <div className="text3" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
-              {data.items.length} card{data.items.length === 1 ? '' : 's'}
+      {/* Sticky header band — same styles as the SO / WO Orders list band. */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              Route Card Master
             </div>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            className="innovic-input"
-            style={{ width: 220 }}
-            placeholder="🔍 Search item, code…"
-            value={search ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/route-cards',
-                search: { search: e.target.value || undefined },
-              })
-            }
-          />
-          {perms.entry ? (
-            <Link to="/route-cards/new" className="btn btn-primary">
-              <Plus size={14} /> Add Route Card
-            </Link>
-          ) : null}
+            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} card{total === 1 ? '' : 's'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="innovic-input"
+              placeholder="Search RC no., item code, item name…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 220, fontSize: 12 }}
+            />
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {perms.entry ? (
+              <Link to="/route-cards/new" className="btn btn-primary">
+                <Plus size={14} /> Add Route Card
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -114,59 +167,89 @@ function RouteCardsListPage(): React.JSX.Element {
         </span>
       </div>
 
-      {/* SO-Planning left-accent card: a coloured 3px stripe marks the block's
-          identity (cyan = the route-card surface). */}
-      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
+      {/* The ruled sheet: fixed % widths summing to 100, no sideways scroll.
+          Every column centred by the standard; only Item Name is left-aligned. */}
+      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+        <table className="innovic-table tbl-grid">
+          <colgroup>
+            <col style={{ width: '4%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '24%' }} />
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '6%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '10%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Sr No</th>
+              <th>RC No.</th>
+              <th>Item Code</th>
+              <th style={{ textAlign: 'left' }}>Item Name</th>
+              <th>Grade / Size</th>
+              <th>Ops</th>
+              <th>Rev</th>
+              <th>Last Updated</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
               <tr>
-                <th style={{ width: 28 }}></th>
-                <th>RC No.</th>
-                <th>Item Code</th>
-                <th>Item Name</th>
-                <th>Grade / Size</th>
-                <th className="td-ctr">Ops</th>
-                <th className="td-ctr">Rev</th>
-                <th>Last Updated</th>
-                <th>Actions</th>
+                <td colSpan={COLUMN_COUNT} className="empty-state">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                  Loading…
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={9} className="empty-state">
-                    <span style={{ color: 'var(--red)' }}>
-                      {error instanceof Error ? error.message : 'Failed to load route cards.'}
-                    </span>
-                  </td>
-                </tr>
-              ) : !data || data.items.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="empty-state">
-                    No route cards yet — click <strong>+ Add Route Card</strong>
-                  </td>
-                </tr>
-              ) : (
-                data.items.map((rc) => (
-                  <RouteCardRow
-                    key={rc.id}
-                    rc={rc}
-                    expanded={expanded.has(rc.id)}
-                    onToggle={() => toggleExpand(rc.id)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+            ) : isError ? (
+              <tr>
+                <td colSpan={COLUMN_COUNT} className="empty-state">
+                  <span style={{ color: 'var(--red)' }}>
+                    {error instanceof Error ? error.message : 'Failed to load route cards.'}
+                  </span>
+                </td>
+              </tr>
+            ) : !data || data.items.length === 0 ? (
+              <tr>
+                <td colSpan={COLUMN_COUNT} className="empty-state">
+                  No route cards yet — click <strong>+ Add Route Card</strong>
+                </td>
+              </tr>
+            ) : (
+              data.items.map((rc, i) => (
+                <RouteCardRow
+                  key={rc.id}
+                  rc={rc}
+                  srNo={i + 1}
+                  expanded={expanded.has(rc.id)}
+                  onToggle={() => toggleExpand(rc.id)}
+                  onOpen={() => void navigate({ to: '/route-cards/$id', params: { id: rc.id } })}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          marginTop: 8,
+          fontSize: 12,
+          color: 'var(--text3)',
+        }}
+      >
+        {total === 0
+          ? 'No route cards'
+          : total > LIST_LIMIT
+            ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+            : `Showing all ${total} route card${total === 1 ? '' : 's'}`}
+      </div>
+      <div className="text3" style={{ fontSize: 11, padding: '6px 4px 0', marginTop: 4 }}>
+        💡 Click a row to open it · click ▸ before the <b>RC No.</b> to show its operation sequence.
       </div>
     </div>
   );
@@ -174,11 +257,19 @@ function RouteCardsListPage(): React.JSX.Element {
 
 interface RouteCardRowProps {
   rc: RouteCardListItem;
+  srNo: number;
   expanded: boolean;
   onToggle: () => void;
+  onOpen: () => void;
 }
 
-function RouteCardRow({ rc, expanded, onToggle }: RouteCardRowProps): React.JSX.Element {
+function RouteCardRow({
+  rc,
+  srNo,
+  expanded,
+  onToggle,
+  onOpen,
+}: RouteCardRowProps): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
   const del = useDeleteRouteCard();
@@ -197,74 +288,123 @@ function RouteCardRow({ rc, expanded, onToggle }: RouteCardRowProps): React.JSX.
 
   return (
     <>
-      <tr style={{ cursor: 'pointer' }} onClick={onToggle}>
-        <td className="td-ctr">
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </td>
+      <tr style={{ cursor: 'pointer' }} onClick={onOpen}>
+        <td className="text3">{srNo}</td>
         <td>
-          <Link
-            to="/route-cards/$id"
-            params={{ id: rc.id }}
-            className="td-code cyan"
-            style={{ fontWeight: 700 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {rc.code}
-          </Link>
-        </td>
-        <td className="td-code" style={{ color: 'var(--purple)' }}>
-          {rc.itemCode ?? '—'}
-        </td>
-        <td className="fw-700">{rc.itemName ?? '— unknown item —'}</td>
-        {/* Grade over size in one column — the stock this card is cut from,
-            so the master answers "what is it made of" without opening a card. */}
-        <td className="mono" style={{ fontSize: 11 }}>
-          <span className="fw-700">{rc.rawMaterialGradeText ?? '—'}</span>
-          <span className="text3" style={{ fontSize: 10, display: 'block' }}>
-            {rc.rawMaterialSizeText ?? '—'}
-          </span>
-        </td>
-        <td className="td-ctr mono">{rc.opCount}</td>
-        <td className="td-ctr">
-          <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
-            R{rc.currentRevision}
-          </span>
-        </td>
-        <td className="text2" style={{ fontSize: 11 }}>
-          {new Date(rc.updatedAt).toISOString().slice(0, 10)}
-        </td>
-        <td>
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div style={{ whiteSpace: 'nowrap' }}>
+            {/* ▸ / ▾ opens the op sequence in place; the row itself navigates,
+                so the chevron stops the click. */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+              title={expanded ? 'Hide operation sequence' : 'Show operation sequence'}
+              aria-expanded={expanded}
+              style={{
+                background: 'none',
+                border: 0,
+                padding: 0,
+                marginRight: 2,
+                cursor: 'pointer',
+                color: 'var(--blue)',
+                display: 'inline-flex',
+                verticalAlign: 'middle',
+              }}
+            >
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
             <Link
               to="/route-cards/$id"
               params={{ id: rc.id }}
-              className="btn btn-ghost btn-sm"
+              className="td-code"
+              title="Open this route card"
               onClick={(e) => e.stopPropagation()}
             >
-              View
+              {rc.code}
+            </Link>
+          </div>
+        </td>
+        <td className="mono fw-700" style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
+          {rc.itemCode ?? '—'}
+        </td>
+        <td style={{ textAlign: 'left' }}>
+          <div
+            className="fw-700"
+            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            title={rc.itemName ?? ''}
+          >
+            {rc.itemName ?? '— unknown item —'}
+          </div>
+        </td>
+        {/* Grade then size on one line — the stock this card is cut from, so the
+            master answers "what is it made of" without opening a card. */}
+        <td
+          className="mono"
+          style={{
+            fontSize: 11,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          title={`${rc.rawMaterialGradeText ?? '—'} / ${rc.rawMaterialSizeText ?? '—'}`}
+        >
+          <span className="fw-700">{rc.rawMaterialGradeText ?? '—'}</span>
+          <span className="text3"> / {rc.rawMaterialSizeText ?? '—'}</span>
+        </td>
+        <td className="mono">{rc.opCount}</td>
+        <td className="mono fw-700" style={{ color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
+          R{rc.currentRevision}
+        </td>
+        <td className="mono text2" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          {new Date(rc.updatedAt).toISOString().slice(0, 10)}
+        </td>
+        <td>
+          {/* Icon-only actions on one row; hover names the action. Same gates
+              as before: Edit needs edit; Del needs edit + approve. */}
+          <div
+            className="jc-row-acts"
+            style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'nowrap' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Link
+              to="/route-cards/$id"
+              params={{ id: rc.id }}
+              className="btn btn-ghost btn-sm btn-icon"
+              style={ICON_BTN}
+              title="View"
+              aria-label="View"
+            >
+              <Eye size={ICON} />
             </Link>
             {perms.edit ? (
               <Link
                 to="/route-cards/$id/edit"
                 params={{ id: rc.id }}
-                className="btn btn-ghost btn-sm"
-                onClick={(e) => e.stopPropagation()}
+                className="btn btn-ghost btn-sm btn-icon"
+                style={ICON_BTN}
+                title="Edit"
+                aria-label="Edit"
               >
-                Edit
+                <Pencil size={ICON} />
               </Link>
             ) : null}
             <PrintRouteCardButton rc={rc} />
             {perms.edit && perms.approve ? (
+              // The sheet paints every .btn-sm on paper (theme rule), which
+              // would leave btn-danger's white icon invisible — so the icon is
+              // told to be red here, tokens only.
               <button
                 type="button"
-                className="btn btn-danger btn-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void onDelete();
-                }}
+                className="btn btn-danger btn-sm btn-icon"
+                style={{ ...ICON_BTN, color: 'var(--red)' }}
+                onClick={() => void onDelete()}
                 disabled={del.isPending}
+                title="Delete"
+                aria-label="Delete"
               >
-                Del
+                <Trash2 size={ICON} />
               </button>
             ) : null}
           </div>
@@ -272,7 +412,10 @@ function RouteCardRow({ rc, expanded, onToggle }: RouteCardRowProps): React.JSX.
       </tr>
       {expanded ? (
         <tr>
-          <td colSpan={9} style={{ padding: 0, background: 'var(--bg3)' }}>
+          <td
+            colSpan={COLUMN_COUNT}
+            style={{ padding: 0, background: 'var(--bg3)', textAlign: 'left' }}
+          >
             <ExpandedOps rcId={rc.id} />
           </td>
         </tr>

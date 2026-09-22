@@ -9474,3 +9474,45 @@ and asked that the rules be enforced on the server, not merely hidden on the web
 - Negative: the contextual "Assign" buttons on SO/PO/JC/NC/GRN/PR/CAPA/Design screens now
   appear for every user; managers must ask an admin for the company view.
 - Risks: `due_date` is now nullable — every reader must treat it as optional.
+
+## ADR-177: Every master list is the SO ruled sheet — Sr No first, icon-only Action column, sticky band, no per-column sort
+
+**Date:** 2026-09-22
+**Status:** Accepted
+
+### Context
+
+The SO Master list (2026-09-21) settled the list standard: the ruled sheet
+(`.innovic-table.tbl-grid` — bold blue column names, gridlines, fixed `%` widths that sum to
+100 so nothing scrolls sideways, Sr No first, every cell centred except the name column),
+under a sticky header band (title · count · search · filters · + New). Plans, Job Cards, PO,
+QC Call Register and Incoming QC already used it. The eleven master lists (Items, Vendors,
+Clients, Machines, Operators, Cost Centers, QC Processes, Users, TPI Masters, BOM Master,
+Route Cards) were still plain tables, most with clickable column sort and text action
+buttons ("View", "Edit", "Del"), some with no sticky band.
+
+### Decision
+
+1. Every master list renders the ruled sheet with the SAME data columns it showed before,
+   plus `Sr No` first and `Action` last; `<colgroup>` widths sum to 100; one `COLUMN_COUNT`
+   const drives every `colSpan`.
+2. The **Action column is icons only** — View `Eye`, Edit `Pencil`, Delete `Trash2` (danger),
+   Print `Printer`, each with `title` + `aria-label` naming the action, on one centred row; the
+   row itself still opens the detail. The SO and Job Card sheets get the same treatment; the
+   JC sub-components (`PrintJcButton`, `ExcelJcButton`, `JcRowWriteActions`) gain an opt-in
+   `iconOnly` prop so the card view is unchanged.
+3. Per-column sorting is dropped on masters (the sheet has no sortable headers, matching SO).
+   On Items / Vendors / Clients that sort was server-side; the lists now come in the API's
+   default order.
+4. Sticky header band on every master; stat strip kept where the response already carries a
+   summary, never counted client-side.
+5. Masters that already had a lazy expand row (BOM part list, Route Card op sequence) keep it
+   in the sheet's chevron-beside-the-code form — behaviour is never removed by a restyle.
+
+### Consequences
+
+- Positive: one look for every list; item/master codes strong; actions readable on hover;
+  no horizontal scroll at any width.
+- Negative: no column sort on masters; two e2e checks retired (`Del` → `Delete`, Item sort
+  toggles). If sorting is wanted back it returns as a "Sort by" select in the band, not
+  clickable headers.

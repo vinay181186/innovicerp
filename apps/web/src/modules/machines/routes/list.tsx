@@ -24,21 +24,19 @@
 // holds Grade | Size. The tab lives in the URL (?tab=groups) so it is
 // bookmarkable. A Group column sits beside the existing free-text Type column;
 // Type is unchanged and was NOT replaced.
+//
+// SHEET (2026-09-21): the list renders on the ruled sheet (`tbl-grid`) the SO
+// Master List view uses — Sr No first, Action last, fixed % widths that add up
+// to 100 so nothing scrolls sideways, a sticky toolbar band above it. The
+// per-column sort (TanStack + SortableHead) is gone: the SO standard has none,
+// and it only ever re-ordered the 25 rows on screen.
 
-import type { ListMachinesQuery, Machine } from '@innovic/shared';
+import type { ListMachinesQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  type SortingState,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, Loader2, Pencil, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { SortableHead } from '@/components/shared/sortable-head';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachineGroupLookup, useMachinesList } from '../api';
@@ -46,6 +44,10 @@ import { MachineGroupTab } from '../components/machine-group-tab';
 
 const PAGE_SIZE = 25;
 const STATUSES = ['Idle', 'Running', 'Down', 'Maintenance'] as const;
+// Sr No | Machine ID | Name | Type | Group | Cap/Shift | ₹/hr | Status | Action.
+// ₹/hr is dropped for L1 Viewers (the API withholds money), so the live count
+// is one less for them — see `columnCount` below.
+const COLUMN_COUNT = 9;
 
 const listSearchSchema = z.object({
   // Absent = the machines tab, so every existing /machines link still lands on
@@ -193,54 +195,9 @@ function MachinesTab(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
+  const columnCount = priceHidden ? COLUMN_COUNT - 1 : COLUMN_COUNT;
 
-  // Header/sort config only — rows are rendered as plain <tr>/<td> below so
-  // legacy's cell classes (td-ctr, td-code, mono…) land on the <td> itself.
-  // Legacy sTh marks Machine ID / Name / Type / Status sortable (L13107);
-  // ₹/hr and Actions are plain <th> there and stay unsortable here.
-  const columns = useMemo<ColumnDef<Machine>[]>(
-    () => [
-      { header: 'Machine ID', accessorKey: 'code' },
-      { header: 'Name', accessorKey: 'name' },
-      { header: 'Type', accessorKey: 'machineType' },
-      // Machine Group master (migration 0116) — a column BESIDE Type, not a
-      // replacement for it. Sorted on the group's own word rather than its id,
-      // which would sort by a uuid. Machines with no group sort together at the
-      // end under an empty string.
-      {
-        header: 'Group',
-        id: 'machineGroup',
-        accessorFn: (m) => (m.machineGroupId ? (groupLookup.get(m.machineGroupId)?.code ?? '') : ''),
-      },
-      { header: 'Cap/Shift', accessorKey: 'capacityPerShift' },
-      ...(priceHidden
-        ? []
-        : [
-            {
-              // Legacy: <th style="color:var(--green)">₹/hr</th> (L13107). The colour
-              // must be inline on the text — .innovic-table th sets color:var(--text3)
-              // and outranks the .green utility class.
-              header: () => <span style={{ color: 'var(--green)' }}>₹/hr</span>,
-              accessorKey: 'hourRate',
-              enableSorting: false,
-            } as ColumnDef<Machine>,
-          ]),
-      { header: 'Status', accessorKey: 'status' },
-      { header: 'Actions', enableSorting: false },
-    ],
-    [priceHidden, groupLookup],
-  );
-
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.machines ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
-  });
-
+  const rows = data?.machines ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
@@ -249,154 +206,223 @@ function MachinesTab(): React.JSX.Element {
   // above, so they cover both tabs and are not repeated here.
   return (
     <div>
+      {/* Sticky toolbar band — the same shape as the SO Master list's: pinned
+          to #content's top so the count, search, status filter and + Add stay
+          put while the sheet scrolls underneath. Opaque `--bg` so rows do not
+          show through. The page title sits in the tab shell above (it covers
+          both tabs), so the band's left side carries the count line only. */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Placeholder and tooltip stay generic on purpose: naming columns
-              here is what dated the old wording (it promised code + name only),
-              and GET /machines now matches across the columns the table shows.
-              A generic label cannot go stale the next time that list widens. */}
-          <input
-            className="innovic-input"
-            placeholder="🔍 Search machine…"
-            title="Search this list"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ minWidth: 220, fontSize: 13 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as (typeof STATUSES)[number] | '';
-              void navigate({
-                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 140, fontSize: 12 }}
-          >
-            <option value="">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canAdd ? (
-            <Link to="/machines/new" className="btn btn-primary">
-              <Plus size={14} /> Add Machine
-            </Link>
-          ) : null}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          {/* Count comes from the list response's `total` — the only aggregate
+              GET /machines returns. */}
+          <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+            {total} machine{total === 1 ? '' : 's'}
+            {search.status ? (
+              <>
+                {' '}
+                · <span className="text2">{search.status}</span> only
+              </>
+            ) : null}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* Placeholder stays generic on purpose: naming columns here is what
+                dated the old wording, and GET /machines matches across the
+                columns the table shows. */}
+            <input
+              className="innovic-input"
+              placeholder="Search this list…"
+              title="Search this list"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 220, fontSize: 12 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as (typeof STATUSES)[number] | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 140, fontSize: 12 }}
+            >
+              <option value="">All statuses</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {canAdd ? (
+              <Link to="/machines/new" className="btn btn-primary">
+                <Plus size={14} /> Add Machine
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="empty-state"
-                    style={{ color: 'var(--red)' }}
-                  >
-                    {error instanceof Error ? error.message : 'Failed to load machines'}
-                  </td>
-                </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No machines
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => {
-                  const m = row.original;
-                  return (
-                    <tr key={row.id}>
-                      {/* Legacy machLabel (L1985-1991): code in cyan mono over
-                          the machine name in 10px text3. */}
-                      <td className="td-code">
-                        <Link
-                          to="/machines/$id"
-                          params={{ id: m.id }}
-                          style={{ textDecoration: 'none', lineHeight: 1.3 }}
-                        >
-                          <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 13 }}>
-                            {m.code}
-                          </span>
-                          <div className="text3" style={{ fontSize: 10, marginTop: 1 }}>
-                            {m.name}
-                          </div>
-                        </Link>
-                      </td>
-                      <td className="fw-700">{m.name}</td>
-                      <td className="text2">{m.machineType ?? '—'}</td>
-                      {/* A machine with no group is normal — every row created
-                          before the group master existed. Show an em dash. */}
-                      <td className="text2">
-                        {(m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—'}
-                      </td>
-                      <td className="td-ctr mono">
-                        {m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'}
-                      </td>
-                      {priceHidden ? null : (
-                        <td className="td-ctr mono green">
-                          {m.hourRate ? `₹${m.hourRate.toFixed(0)}` : '—'}
-                        </td>
-                      )}
-                      <td>
-                        <span className={`badge ${statusBadgeClass(m.status)}`}>{m.status}</span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <Link
-                            to="/machines/$id"
-                            params={{ id: m.id }}
-                            className="btn btn-ghost btn-sm"
-                          >
-                            View
-                          </Link>
-                          {canEdit ? (
-                            <Link
-                              to="/machines/$id/edit"
-                              params={{ id: m.id }}
-                              className="btn btn-ghost btn-sm"
-                            >
-                              Edit
-                            </Link>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+      {/* The ruled sheet (tbl-grid): every column centred by the standard,
+          Name left-aligned (a name reads from its left edge). Widths live only
+          in the colgroup and sum to 100 — with ₹/hr hidden its 9% goes to
+          Name. */}
+      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+        <table className="innovic-table tbl-grid">
+          <colgroup>
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: priceHidden ? '35%' : '26%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '9%' }} />
+            {priceHidden ? null : <col style={{ width: '9%' }} />}
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '8%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Sr No</th>
+              <th>Machine ID</th>
+              <th style={{ textAlign: 'left' }}>Name</th>
+              <th>Type</th>
+              <th>Group</th>
+              <th>Cap/Shift</th>
+              {/* Legacy: <th style="color:var(--green)">₹/hr</th> (L13107). */}
+              {priceHidden ? null : (
+                <th>
+                  <span style={{ color: 'var(--green)' }}>₹/hr</span>
+                </th>
               )}
-            </tbody>
-          </table>
-        </div>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={columnCount} className="empty-state">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                  Loading…
+                </td>
+              </tr>
+            ) : isError ? (
+              <tr>
+                <td colSpan={columnCount} className="empty-state" style={{ color: 'var(--red)' }}>
+                  {error instanceof Error ? error.message : 'Failed to load machines'}
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={columnCount} className="empty-state">
+                  No machines
+                </td>
+              </tr>
+            ) : (
+              rows.map((m, i) => (
+                <tr
+                  key={m.id}
+                  onClick={() => void navigate({ to: '/machines/$id', params: { id: m.id } })}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <td className="text3">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <Link
+                      to="/machines/$id"
+                      params={{ id: m.id }}
+                      className="td-code"
+                      title="Open this machine"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {m.code}
+                    </Link>
+                  </td>
+                  <td style={{ textAlign: 'left' }}>
+                    <div
+                      className="fw-700"
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={m.name}
+                    >
+                      {m.name}
+                    </div>
+                  </td>
+                  <td className="text2">{m.machineType ?? '—'}</td>
+                  {/* A machine with no group is normal — every row created
+                      before the group master existed. Show an em dash. */}
+                  <td className="text2">
+                    {(m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—'}
+                  </td>
+                  <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                    {m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'}
+                  </td>
+                  {priceHidden ? null : (
+                    <td className="mono green" style={{ whiteSpace: 'nowrap' }}>
+                      {m.hourRate ? `₹${m.hourRate.toFixed(0)}` : '—'}
+                    </td>
+                  )}
+                  <td>
+                    <span className={`badge ${statusBadgeClass(m.status)}`}>{m.status}</span>
+                  </td>
+                  <td>
+                    {/* Icon buttons only, one row, hover names the action.
+                        View is open to everyone who can see the page; Edit
+                        needs the edit right. The row itself navigates, so the
+                        block stops the click. */}
+                    <div
+                      style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link
+                        to="/machines/$id"
+                        params={{ id: m.id }}
+                        className="btn btn-ghost btn-sm btn-icon"
+                        title="View"
+                        aria-label="View"
+                      >
+                        <Eye size={14} />
+                      </Link>
+                      {canEdit ? (
+                        <Link
+                          to="/machines/$id/edit"
+                          params={{ id: m.id }}
+                          className="btn btn-ghost btn-sm btn-icon"
+                          title="Edit"
+                          aria-label="Edit"
+                        >
+                          <Pencil size={14} />
+                        </Link>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       <div

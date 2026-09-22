@@ -7,7 +7,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 
-export function ExcelJcButton({ jc }: { jc: JobCardListItem }): React.JSX.Element {
+export function ExcelJcButton({
+  jc,
+  iconOnly = false,
+}: {
+  jc: JobCardListItem;
+  /** The list sheet's Action column: icon alone, the title names the action. */
+  iconOnly?: boolean | undefined;
+}): React.JSX.Element {
   const [armed, setArmed] = useState(false);
   const [pending, setPending] = useState(false);
   const doneRef = useRef(false);
@@ -30,21 +37,44 @@ export function ExcelJcButton({ jc }: { jc: JobCardListItem }): React.JSX.Elemen
 
   const loading = pending && (opsQuery.isFetching || logsQuery.isFetching);
 
+  const onClick = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    doneRef.current = false;
+    setArmed(true);
+    setPending(true);
+  };
+  const icon = loading ? (
+    <Loader2 size={13} className="inline animate-spin" />
+  ) : (
+    <Download size={13} />
+  );
+
+  if (iconOnly) {
+    return (
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm btn-icon"
+        onClick={onClick}
+        disabled={loading}
+        title="Download Excel"
+        aria-label="Download Excel"
+        style={{ padding: '2px 3px' }}
+      >
+        {icon}
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
       className="btn btn-ghost btn-sm"
-      onClick={(e) => {
-        e.stopPropagation();
-        doneRef.current = false;
-        setArmed(true);
-        setPending(true);
-      }}
+      onClick={onClick}
       disabled={loading}
       title="Download Excel (with production log)"
       style={{ whiteSpace: 'nowrap' }}
     >
-      {loading ? <Loader2 size={13} className="inline animate-spin" /> : <Download size={13} />} Excel
+      {icon} Excel
     </button>
   );
 }

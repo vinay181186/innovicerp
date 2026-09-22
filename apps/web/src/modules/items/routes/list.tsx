@@ -1,17 +1,20 @@
 // Item Master list (UI-003-01 + UI-003-02).
 // Ports legacy renderItems (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
 // L11481-11521) to the Innovic chrome (.panel + .innovic-table + .badge + .btn).
-// Columns: Item (image + code · name) | Description | Material | UOM | Source |
-// Actions. Uses TanStack Table for column defs (preserved per user direction
-// 2026-05-20) but renders via plain <table className="innovic-table"> so the
-// legacy CSS lights up.
+// Columns: Sr No | Item (image + code · name) | Description | Material | UOM |
+// Source | Action — laid out as the app's ruled sheet (`.innovic-table.tbl-grid`,
+// the SO Master / Job Cards / Plans look, 2026-09-21). Fixed `%` widths that add
+// up to 100 so nothing scrolls sideways; every column centred by the standard
+// except the Item column, which reads from its left edge.
 //
 // The Item column is the shared <ItemBadge> (user decision 2026-09-21): the
 // 40 px product image, the code (still a <Link> to the item) and the name under
-// it. Code and Name were two columns; they are one cell now, and the header
-// carries BOTH sort toggles ("Item Code ↕ · Name ↕") so sorting by either still
-// works. The Drawing No. and Drw (print) columns are gone with the item-level
+// it. The Drawing No. and Drw (print) columns are gone with the item-level
 // drawing — drawings live on the SO / JWSO line.
+//
+// Per-column sorting (the "Item Code ↕ · Name ↕" header toggles) was dropped
+// with the sheet conversion — the SO master standard has none; rows come in
+// the API's default order.
 //
 // NO Rev column, deliberately, and it must not come back (user direction
 // 2026-09-10). Legacy had one here and `items.revision` still exists, but a
@@ -23,9 +26,11 @@
 // on screen is worse than one of them being absent.
 //
 // Styled to the `styling` skill, same as the SO Master list:
-//  - Counts are ONE <StatStrip> (Rule 3) — All / Component / Assembly, each a
-//    click-to-filter. It replaces the "All types" dropdown, which set exactly
-//    the same query param but showed no numbers.
+//  - One frozen header band (title, count line, search, Source filter, import
+//    toolbar, + Add Item) with the counts as ONE <StatStrip> inside it (Rule 3)
+//    — All / Component / Assembly, each a click-to-filter. It replaces the
+//    "All types" dropdown, which set exactly the same query param but showed no
+//    numbers.
 //  - The whole <tr> opens the item (Rule 2). The Item Code stays a <Link> so
 //    middle-click and open-in-new-tab keep working — the row handler is added
 //    on top of it, not instead of it, which is how the SO list does it.
@@ -34,6 +39,8 @@
 //    of stretching the table sideways.
 //  - One fetch, one scrolling list, no Prev/Next (Rule 4) — 25-per-page turned
 //    44 items into two pages on a list you scan end to end.
+//  - The Action column is icon buttons only (Eye / Pencil / Trash2), one row,
+//    each with title + aria-label naming the action (user, 2026-09-21).
 //
 // Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-017):
 //  - UOM uses .badge.b-grey; legacy's .tag class has no port in
@@ -45,18 +52,15 @@ import {
   ITEM_PROCUREMENT_TYPES,
   ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_TYPES,
-  type Item,
   type ItemProcurementType,
   type ItemType,
   type ListItemsQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { Loader2 } from 'lucide-react';
+import { Eye, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { ItemBadge } from '@/components/shared/item-badge';
-import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -64,16 +68,16 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
 import { downloadItemTemplate, parseItemImportFile } from '../lib/import-export';
 
-// Legacy puts its cell classes on the <td> itself, not on a wrapper span, so
-// the column def can carry a `meta.tdClass` the flexRender loop puts on the
-// <td>. No column sets one today: alignment is the shared table standard
-// (innovic-theme.css centres every th/td), so the old `td-ctr` is gone.
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next),
 // per the `styling` skill Rule 4. Item Master is a master list you scan end to
 // end; 25-at-a-time made 44 items into two pages. The API caps `limit` at 1000
 // (raised from 200 so item pickers could pull the whole master), and the count
 // line below flags the rare case of a larger set.
 const LIST_LIMIT = 1000;
+
+/** Column count — the loading / error / empty rows' <td colSpan> must always
+ *  match the <colgroup> below, so it is named once here. */
+const COLUMN_COUNT = 7;
 
 // One count query per stat. Module-level constants keep the query keys stable so
 // these are fetched once and served from cache, and the counts stay whole-master
@@ -100,8 +104,6 @@ const listSearchSchema = z.object({
   itemType: z.enum(ITEM_TYPES).optional(),
   // ADR-171 — Source (make / buy) filter, same URL-param shape as itemType.
   procurementType: z.enum(ITEM_PROCUREMENT_TYPES).optional(),
-  sortBy: z.enum(['code', 'name']).optional(),
-  sortDir: z.enum(['asc', 'desc']).optional(),
 });
 
 export const itemsListRoute = createRoute({
@@ -141,12 +143,10 @@ function ItemsListPage(): React.JSX.Element {
       search: search.search,
       itemType: search.itemType,
       procurementType: search.procurementType,
-      sortBy: search.sortBy,
-      sortDir: search.sortDir,
       limit: LIST_LIMIT,
       offset: 0,
     }),
-    [search.search, search.itemType, search.procurementType, search.sortBy, search.sortDir],
+    [search.search, search.itemType, search.procurementType],
   );
 
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
@@ -176,14 +176,6 @@ function ItemsListPage(): React.JSX.Element {
   // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
   // edit without approve; L4 has approve without edit.
   const canDelete = perms.edit && perms.approve;
-
-  const toggleSort = useCallback(
-    (field: 'code' | 'name') => {
-      const next = nextSort(field, { sortBy: search.sortBy, sortDir: search.sortDir });
-      void navigate({ search: (prev) => ({ ...prev, ...next }), replace: true });
-    },
-    [navigate, search.sortBy, search.sortDir],
-  );
 
   const softDelete = useSoftDeleteItem();
 
@@ -245,160 +237,7 @@ function ItemsListPage(): React.JSX.Element {
     }
   }
 
-  const columns = useMemo<ColumnDef<Item>[]>(
-    () => [
-      {
-        // One cell for image + code + name; two sort toggles in its header.
-        header: () => (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <SortTh
-              label="Item Code"
-              field="code"
-              sortBy={search.sortBy}
-              sortDir={search.sortDir}
-              onSort={toggleSort}
-            />
-            <span aria-hidden style={{ opacity: 0.5 }}>
-              ·
-            </span>
-            <SortTh
-              label="Name"
-              field="name"
-              sortBy={search.sortBy}
-              sortDir={search.sortDir}
-              onSort={toggleSort}
-            />
-          </span>
-        ),
-        accessorKey: 'code',
-        // No item-level revision here, deliberately (see the header comment):
-        // the badge gets the bare code, never `items.revision`.
-        cell: ({ row }) => (
-          <ItemBadge
-            size="row"
-            code={row.original.code}
-            name={row.original.name}
-            imagePath={row.original.imagePath}
-            codeColor="var(--purple)"
-            nameMaxWidth={240}
-            renderCode={(text) => (
-              <Link
-                to="/items/$id"
-                params={{ id: row.original.id }}
-                className="td-code"
-                style={{ color: 'var(--purple)', textDecoration: 'none' }}
-              >
-                {text}
-              </Link>
-            )}
-          />
-        ),
-      },
-      {
-        header: 'Description',
-        accessorKey: 'description',
-        // Free text — clip it rather than let one long description stretch the
-        // table sideways. Full value on hover (styling skill Rule 1).
-        cell: ({ row }) => (
-          <span
-            className="text2"
-            style={{
-              fontSize: 11,
-              maxWidth: 220,
-              display: 'inline-block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              verticalAlign: 'bottom',
-            }}
-            title={row.original.description ?? ''}
-          >
-            {row.original.description ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Material',
-        accessorKey: 'material',
-        cell: ({ row }) => (
-          <span
-            style={{
-              maxWidth: 140,
-              display: 'inline-block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              verticalAlign: 'bottom',
-            }}
-            title={row.original.material ?? ''}
-          >
-            {row.original.material ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'UOM',
-        accessorKey: 'uom',
-        cell: ({ row }) => <span className="badge b-grey">{row.original.uom}</span>,
-      },
-      {
-        // ADR-171 — Source: Buy stands out (blue), Make is the quiet default.
-        header: 'Source',
-        accessorKey: 'procurementType',
-        cell: ({ row }) => (
-          <span className={`badge ${row.original.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}>
-            {ITEM_PROCUREMENT_TYPE_LABEL[row.original.procurementType]}
-          </span>
-        ),
-      },
-      {
-        header: 'Actions',
-        cell: ({ row }) => (
-          // One stopPropagation on the wrapper covers Edit and Del; View goes to
-          // the same page the row does, so it needs nothing.
-          <div
-            style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Link to="/items/$id" params={{ id: row.original.id }} className="btn btn-ghost btn-sm">
-              View
-            </Link>
-            {canEdit ? (
-              <Link
-                to="/items/$id/edit"
-                params={{ id: row.original.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                Edit
-              </Link>
-            ) : null}
-            {canDelete ? (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                disabled={softDelete.isPending}
-                onClick={() => {
-                  if (confirm(`Move item ${row.original.code} — ${row.original.name} to Trash?`)) {
-                    softDelete.mutate(row.original.id);
-                  }
-                }}
-              >
-                Del
-              </button>
-            ) : null}
-          </div>
-        ),
-      },
-    ],
-    [canEdit, canDelete, softDelete, search.sortBy, search.sortDir, toggleSort],
-  );
-
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
+  const rows = data?.items ?? [];
   const total = data?.total ?? 0;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -415,89 +254,116 @@ function ItemsListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Frozen header band — title, count line, toolbar and the StatStrip stay
+          put while the rows scroll underneath (the SO Master band). Opaque
+          `--bg` background so rows don't show through as they pass under it. */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
         }}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Item Master
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: 10,
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              Item Master
+            </div>
+            {/* Count comes from the list response's `total` — the size of the
+                list under the current search + filters. */}
+            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} item{total === 1 ? '' : 's'}
+              {search.itemType ? (
+                <>
+                  {' '}
+                  · <span className="text2">{search.itemType}</span> only
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="innovic-input"
+              placeholder="Search this list…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 220, fontSize: 12 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.procurementType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as ItemProcurementType | '';
+                setSourceFilter(v === '' ? undefined : v);
+              }}
+              title="Source — Make / Buy"
+              style={{ width: 130, fontSize: 12 }}
+            >
+              <option value="">All sources</option>
+              {ITEM_PROCUREMENT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {ITEM_PROCUREMENT_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </select>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {canCreate ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 12 }}
+                  title="Download Excel template"
+                  onClick={() => downloadItemTemplate()}
+                >
+                  ⬇ Template
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 12 }}
+                  disabled={importing}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import
+                  Excel
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void onImportFile(f);
+                  }}
+                />
+                <Link to="/items/new" className="btn btn-primary">
+                  + Add Item
+                </Link>
+              </>
+            ) : null}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="🔍 Search this list…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.procurementType ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as ItemProcurementType | '';
-              setSourceFilter(v === '' ? undefined : v);
-            }}
-            title="Source — Make / Buy"
-            style={{ width: 130, fontSize: 12 }}
-          >
-            <option value="">All sources</option>
-            {ITEM_PROCUREMENT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {ITEM_PROCUREMENT_TYPE_LABEL[t]}
-              </option>
-            ))}
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canCreate ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 12 }}
-                title="Download Excel template"
-                onClick={() => downloadItemTemplate()}
-              >
-                ⬇ Template
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 12 }}
-                disabled={importing}
-                onClick={() => fileRef.current?.click()}
-              >
-                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import
-                Excel
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImportFile(f);
-                }}
-              />
-              <Link to="/items/new" className="btn btn-primary">
-                + Add Item
-              </Link>
-            </>
-          ) : null}
-        </div>
-      </div>
 
-      {/* Counts + type filter in one strip (styling skill Rule 3). */}
-      <div style={{ marginBottom: 12 }}>
+        {/* Counts + type filter in one strip (styling skill Rule 3). */}
         <StatStrip
           items={[
             {
@@ -552,23 +418,36 @@ function ItemsListPage(): React.JSX.Element {
       ) : null}
 
       <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
+        {/* The sheet look (tbl-grid): bold blue column names, gridlines, cream /
+            white rows, fixed widths that add up to 100% so nothing scrolls
+            sideways. Every column is centred by the standard; only Item is
+            left-aligned (the picture box must sit at the same x in every row). */}
+        <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+          <table className="innovic-table tbl-grid">
+            <colgroup>
+              <col style={{ width: '4%' }} />
+              <col style={{ width: '30%' }} />
+              <col style={{ width: '24%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '11%' }} />
+            </colgroup>
             <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
+              <tr>
+                <th>Sr No</th>
+                <th style={{ textAlign: 'left' }}>Item Code · Name</th>
+                <th>Description</th>
+                <th>Material</th>
+                <th>UOM</th>
+                <th>Source</th>
+                <th>Action</th>
+              </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={columns.length} className="empty-state">
+                  <td colSpan={COLUMN_COUNT} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
@@ -576,33 +455,150 @@ function ItemsListPage(): React.JSX.Element {
               ) : isError ? (
                 <tr>
                   <td
-                    colSpan={columns.length}
+                    colSpan={COLUMN_COUNT}
                     className="empty-state"
                     style={{ color: 'var(--red)' }}
                   >
                     {error instanceof Error ? error.message : 'Failed to load items'}
                   </td>
                 </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="empty-state">
+                  <td colSpan={COLUMN_COUNT} className="empty-state">
                     No items
                   </td>
                 </tr>
               ) : (
-                table.getRowModel().rows.map((row) => (
+                rows.map((item, i) => (
                   <tr
-                    key={row.id}
-                    onClick={() =>
-                      void navigate({ to: '/items/$id', params: { id: row.original.id } })
-                    }
+                    key={item.id}
+                    onClick={() => void navigate({ to: '/items/$id', params: { id: item.id } })}
                     style={{ cursor: 'pointer' }}
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
+                    <td className="text3">{i + 1}</td>
+                    <td style={{ textAlign: 'left' }}>
+                      {/* No item-level revision here, deliberately (see the
+                          header comment): the badge gets the bare code, never
+                          `items.revision`. The name clips at the column edge. */}
+                      <ItemBadge
+                        size="row"
+                        code={item.code}
+                        name={item.name}
+                        imagePath={item.imagePath}
+                        codeColor="var(--purple)"
+                        nameMaxWidth="none"
+                        renderCode={(text) => (
+                          <Link
+                            to="/items/$id"
+                            params={{ id: item.id }}
+                            className="td-code"
+                            style={{ color: 'var(--purple)', textDecoration: 'none' }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {text}
+                          </Link>
+                        )}
+                      />
+                    </td>
+                    {/* Description / Material are free text — clip at the
+                        column edge rather than wrap; full value on hover
+                        (styling skill Rule 1). */}
+                    <td>
+                      <span
+                        className="text2"
+                        style={{
+                          fontSize: 11,
+                          maxWidth: '100%',
+                          display: 'inline-block',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          verticalAlign: 'bottom',
+                        }}
+                        title={item.description ?? ''}
+                      >
+                        {item.description ?? '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        style={{
+                          maxWidth: '100%',
+                          display: 'inline-block',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          verticalAlign: 'bottom',
+                        }}
+                        title={item.material ?? ''}
+                      >
+                        {item.material ?? '—'}
+                      </span>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <span className="badge b-grey">{item.uom}</span>
+                    </td>
+                    {/* ADR-171 — Source: Buy stands out (blue), Make is the
+                        quiet default. */}
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <span
+                        className={`badge ${item.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}
+                      >
+                        {ITEM_PROCUREMENT_TYPE_LABEL[item.procurementType]}
+                      </span>
+                    </td>
+                    <td>
+                      {/* Icon buttons only, one row, each named on hover. One
+                          stopPropagation on the wrapper covers all three; View
+                          goes where the row does, Edit / Delete do not. */}
+                      <div
+                        style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link
+                          to="/items/$id"
+                          params={{ id: item.id }}
+                          className="btn btn-ghost btn-sm btn-icon"
+                          style={{ padding: '3px 6px' }}
+                          title="View"
+                          aria-label="View"
+                        >
+                          <Eye size={14} />
+                        </Link>
+                        {canEdit ? (
+                          <Link
+                            to="/items/$id/edit"
+                            params={{ id: item.id }}
+                            className="btn btn-ghost btn-sm btn-icon"
+                            style={{ padding: '3px 6px' }}
+                            title="Edit"
+                            aria-label="Edit"
+                          >
+                            <Pencil size={14} />
+                          </Link>
+                        ) : null}
+                        {canDelete ? (
+                          // The sheet paints every .btn-sm on paper (theme rule),
+                          // which would leave btn-danger's white icon invisible —
+                          // so the icon is told to be red here, tokens only.
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm btn-icon"
+                            style={{ color: 'var(--red)', padding: '3px 6px' }}
+                            title="Delete"
+                            aria-label="Delete"
+                            disabled={softDelete.isPending}
+                            onClick={() => {
+                              if (confirm(`Move item ${item.code} — ${item.name} to Trash?`)) {
+                                softDelete.mutate(item.id);
+                              }
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

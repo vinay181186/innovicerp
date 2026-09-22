@@ -21,14 +21,19 @@
 // propagation (Rule 2), and one scrolling fetch instead of Prev/Next (Rule 4 —
 // status filter + counts are done client-side over the single fetch, which is
 // why the server query drops isActive).
+//
+// Laid out as the app's ruled sheet (`.innovic-table.tbl-grid`, the SO Master /
+// Job Cards look, 2026-09-21): Sr No first, Action last (icon buttons only,
+// named on hover), fixed `%` widths that add up to 100 so nothing scrolls
+// sideways. The Code / Name header sort toggles went with it — the SO master
+// standard has none; rows come in the API's default order.
 
 import type { ListVendorsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import { Eye, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -40,8 +45,11 @@ import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-exp
 // vendors list endpoint caps `limit` at 1000 (packages/shared vendor schema,
 // raised from 200 to match the SO master); the count line flags a larger set.
 const LIST_LIMIT = 1000;
-// Legacy renders 11 columns; PO/GRN is DELTA (see header note), so 10 here.
-const COL_COUNT = 10;
+/** Column count — the loading / error / empty rows' <td colSpan> must always
+ *  match the <colgroup> below, so it is named once here. Legacy renders 11
+ *  data columns; PO/GRN is DELTA (see header note), so 9 data columns + Sr No
+ *  + Action. */
+const COLUMN_COUNT = 11;
 
 // Join a list of import warnings/failures for the status line, capping at 50 so
 // a huge sheet can't produce an unbounded banner, but still showing far more
@@ -54,8 +62,6 @@ function fmtList(items: string[]): string {
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(['active', 'inactive']).optional(),
-  sortBy: z.enum(['code', 'name']).optional(),
-  sortDir: z.enum(['asc', 'desc']).optional(),
 });
 
 export const vendorsListRoute = createRoute({
@@ -102,12 +108,10 @@ function VendorsListPage(): React.JSX.Element {
   const query: ListVendorsQuery = useMemo(
     () => ({
       search: search.search,
-      sortBy: search.sortBy,
-      sortDir: search.sortDir,
       limit: LIST_LIMIT,
       offset: 0,
     }),
-    [search.search, search.sortBy, search.sortDir],
+    [search.search],
   );
 
   const { data, isLoading, isFetching, isError, error } = useVendorsList(query);
@@ -124,14 +128,6 @@ function VendorsListPage(): React.JSX.Element {
   const canAdd = perms.entry;
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
-
-  const toggleSort = useCallback(
-    (field: 'code' | 'name') => {
-      const next = nextSort(field, { sortBy: search.sortBy, sortDir: search.sortDir });
-      void navigate({ search: (prev) => ({ ...prev, ...next }), replace: true });
-    },
-    [navigate, search.sortBy, search.sortDir],
-  );
 
   const setStatus = useCallback(
     (status: 'active' | 'inactive' | undefined) => {
@@ -231,23 +227,36 @@ function VendorsListPage(): React.JSX.Element {
           style={{
             display: 'flex',
             justifyContent: 'space-between',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             marginBottom: 10,
             gap: 8,
             flexWrap: 'wrap',
           }}
         >
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            🏭 Vendor Master
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              🏭 Vendor Master
+            </div>
+            {/* Count comes from the list response's `total` — every vendor
+                matching the search; the status split is the strip's job. */}
+            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} vendor{total === 1 ? '' : 's'}
+              {search.status ? (
+                <>
+                  {' '}
+                  · <span className="text2">{search.status}</span> only
+                </>
+              ) : null}
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               className="innovic-input"
-              placeholder="🔍 Search this list…"
+              placeholder="Search this list…"
               title="Search this list"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              style={{ minWidth: 220, fontSize: 13 }}
+              style={{ width: 220, fontSize: 12 }}
             />
             {isFetching && !isLoading ? (
               <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
@@ -311,28 +320,30 @@ function VendorsListPage(): React.JSX.Element {
       ) : null}
 
       <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
+        {/* The sheet look (tbl-grid): bold blue column names, gridlines, cream /
+            white rows, fixed widths that add up to 100% so nothing scrolls
+            sideways. Every column is centred by the standard; only Name is
+            left-aligned so the vendor names share one edge. */}
+        <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+          <table className="innovic-table tbl-grid">
+            <colgroup>
+              <col style={{ width: '4%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '11%' }} />
+            </colgroup>
             <thead>
               <tr>
-                <th>
-                  <SortTh
-                    label="Code"
-                    field="code"
-                    sortBy={search.sortBy}
-                    sortDir={search.sortDir}
-                    onSort={toggleSort}
-                  />
-                </th>
-                <th>
-                  <SortTh
-                    label="Name"
-                    field="name"
-                    sortBy={search.sortBy}
-                    sortDir={search.sortDir}
-                    onSort={toggleSort}
-                  />
-                </th>
+                <th>Sr No</th>
+                <th>Code</th>
+                <th style={{ textAlign: 'left' }}>Name</th>
                 <th>Contact</th>
                 <th>Phone</th>
                 <th>Email</th>
@@ -340,26 +351,30 @@ function VendorsListPage(): React.JSX.Element {
                 <th>Address</th>
                 <th>Rating</th>
                 <th>Status</th>
-                <th>Actions</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={COL_COUNT} className="empty-state">
+                  <td colSpan={COLUMN_COUNT} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={COL_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td
+                    colSpan={COLUMN_COUNT}
+                    className="empty-state"
+                    style={{ color: 'var(--red)' }}
+                  >
                     {error instanceof Error ? error.message : 'Failed to load vendors'}
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={COL_COUNT} className="empty-state">
+                  <td colSpan={COLUMN_COUNT} className="empty-state">
                     {search.status
                       ? `No ${search.status} vendors`
                       : 'No vendors. Add vendors to create Purchase Orders.'}
@@ -367,33 +382,66 @@ function VendorsListPage(): React.JSX.Element {
                 </tr>
               ) : (
                 // Whole row navigates to the vendor's detail page (Rule 2).
-                rows.map((v) => (
+                rows.map((v, i) => (
                   <tr
                     key={v.id}
                     onClick={() => void navigate({ to: '/vendors/$id', params: { id: v.id } })}
                     style={{ cursor: 'pointer' }}
                   >
-                    <td className="td-code cyan">
+                    <td className="text3">{i + 1}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <Link
                         to="/vendors/$id"
                         params={{ id: v.id }}
-                        style={{ color: 'inherit', textDecoration: 'none' }}
+                        className="td-code"
+                        style={{ textDecoration: 'none' }}
+                        onClick={(e) => e.stopPropagation()}
                       >
                         {v.code}
                       </Link>
                     </td>
-                    <td className="fw-700">{v.name}</td>
-                    <td style={{ fontSize: 12 }}>{v.contactPerson ?? '—'}</td>
-                    <td style={{ fontSize: 12 }}>{v.phone ?? '—'}</td>
-                    <td className="text3" style={{ fontSize: 11 }}>
-                      {v.email ?? '—'}
+                    <td style={{ textAlign: 'left' }}>
+                      <div
+                        className="fw-700"
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={v.name}
+                      >
+                        {v.name}
+                      </div>
                     </td>
-                    <td style={{ fontSize: 11 }}>{v.gstNumber ?? '—'}</td>
+                    <td
+                      style={{
+                        fontSize: 12,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={v.contactPerson ?? undefined}
+                    >
+                      {v.contactPerson ?? '—'}
+                    </td>
+                    <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{v.phone ?? '—'}</td>
                     <td
                       className="text3"
                       style={{
                         fontSize: 11,
-                        maxWidth: 150,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={v.email ?? undefined}
+                    >
+                      {v.email ?? '—'}
+                    </td>
+                    <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{v.gstNumber ?? '—'}</td>
+                    <td
+                      className="text3"
+                      style={{
+                        fontSize: 11,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -402,33 +450,57 @@ function VendorsListPage(): React.JSX.Element {
                     >
                       {v.addressLine1 ?? '—'}
                     </td>
-                    <td className="td-ctr">
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span className={`badge ${ratingBadgeClass(v.rating)}`}>
                         ⭐{v.rating ?? '—'}
                       </span>
                     </td>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span className={`badge ${v.isActive ? 'b-green' : 'b-red'}`}>
                         {v.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    {/* Edit/Del go somewhere OTHER than the row's detail page, so
-                        they stop the row-navigation click (Rule 2). */}
+                    {/* Icon buttons only, one row, each named on hover: View
+                        (the detail page — the row click goes there too, but the
+                        user asked for the icon as well), Edit, Delete. One
+                        stopPropagation on the wrapper covers all three (Rule 2). */}
                     <td>
-                      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                      <div
+                        style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link
+                          to="/vendors/$id"
+                          params={{ id: v.id }}
+                          className="btn btn-ghost btn-sm btn-icon"
+                          style={{ padding: '3px 6px' }}
+                          title="View"
+                          aria-label="View"
+                        >
+                          <Eye size={14} />
+                        </Link>
                         {canEdit ? (
                           <Link
                             to="/vendors/$id/edit"
                             params={{ id: v.id }}
-                            className="btn btn-ghost btn-sm"
+                            className="btn btn-ghost btn-sm btn-icon"
+                            style={{ padding: '3px 6px' }}
+                            title="Edit"
+                            aria-label="Edit"
                           >
-                            Edit
+                            <Pencil size={14} />
                           </Link>
                         ) : null}
                         {canDelete ? (
+                          // The sheet paints every .btn-sm on paper (theme rule),
+                          // which would leave btn-danger's white icon invisible —
+                          // so the icon is told to be red here, tokens only.
                           <button
                             type="button"
-                            className="btn btn-danger btn-sm"
+                            className="btn btn-danger btn-sm btn-icon"
+                            style={{ color: 'var(--red)', padding: '3px 6px' }}
+                            title="Delete"
+                            aria-label="Delete"
                             disabled={softDelete.isPending}
                             onClick={() => {
                               if (confirm(`Move vendor ${v.code} — ${v.name} to Trash?`)) {
@@ -436,7 +508,7 @@ function VendorsListPage(): React.JSX.Element {
                               }
                             }}
                           >
-                            Del
+                            <Trash2 size={14} />
                           </button>
                         ) : null}
                       </div>
