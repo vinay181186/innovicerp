@@ -10,7 +10,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Eye, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { ItemBadge } from '@/components/shared/item-badge';
+import { ItemBadge, ItemImageBox } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
@@ -501,7 +501,11 @@ function JobCardsListPage(): React.JSX.Element {
               <colgroup>
                 <col style={{ width: '4%' }} />
                 <col style={{ width: '11%' }} />
-                <col style={{ width: '20%' }} />
+                {/* Image column in px, not %: the 48 px picture box does not
+                    shrink, so a % column narrower than 52 px on a laptop
+                    would let the box spill over the gridline. */}
+                <col style={{ width: 56 }} />
+                <col style={{ width: '14%' }} />
                 <col style={{ width: '9%' }} />
                 <col style={{ width: '6%' }} />
                 <col style={{ width: '8%' }} />
@@ -515,6 +519,7 @@ function JobCardsListPage(): React.JSX.Element {
                 <tr>
                   <th>Sr No</th>
                   <th>Job Card No.</th>
+                  <th>Image</th>
                   <th style={{ textAlign: 'left' }}>Part / Description</th>
                   <th>SO No.</th>
                   <th>Qty (Plan)</th>
@@ -566,18 +571,30 @@ function JobCardsListPage(): React.JSX.Element {
                           </div>
                         ) : null}
                       </td>
+                      <td style={{ padding: '4px 2px' }}>
+                        {/* The product image in its OWN column, right after
+                            the JC No. (user decision 2026-09-22 — the pattern
+                            every list/document will follow: thumbnail column
+                            before the item code · name). Centred in the cell
+                            so the box sits at one x in every row; click it to
+                            see the picture large. */}
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                          <ItemImageBox
+                            imagePath={jc.itemImagePath}
+                            size="row"
+                            alt={jc.itemName || jc.itemCode || ''}
+                          />
+                        </div>
+                      </td>
                       <td style={{ textAlign: 'left' }}>
-                        {/* Product image + CODE/REV + name. The revision is the
-                            customer's drawing revision off the SO line (null →
-                            bare code). Click the picture to see it large.
-                            Left-aligned and full-width on purpose: the table
-                            standard centres cells, and a centred inline badge
-                            moves its picture box left or right with the length
-                            of the text beside it — every row's box then sat at
-                            a different x ("dancing"). Filling the cell pins the
-                            box to the same left edge in every row. */}
+                        {/* CODE/REV + name, text only — the picture is the
+                            column to the left. The revision is the customer's
+                            drawing revision off the SO line (null → bare code).
+                            Left-aligned and full-width on purpose so the code
+                            starts at the same x in every row. */}
                         <ItemBadge
                           size="row"
+                          showImage={false}
                           code={jc.itemCode}
                           name={jc.itemName}
                           revision={jc.itemRevision}

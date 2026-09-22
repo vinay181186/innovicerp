@@ -54,6 +54,11 @@ export interface ItemBadgeProps {
   size?: ItemBadgeSize;
   /** Hide the name line (code only). Default: shown. */
   showName?: boolean;
+  /** Hide the picture box (text only). A list that gives the thumbnail its
+   *  OWN column — the Job Card list, user decision 2026-09-22 — renders
+   *  `<ItemImageBox>` in that column and the badge with `showImage={false}`
+   *  beside it, so the code · name stay the shared badge. Default: shown. */
+  showImage?: boolean;
   /** Colour of the code text. Lists use purple (the JC list's code colour);
    *  the item page passes `var(--text)`. */
   codeColor?: string;
@@ -192,6 +197,7 @@ export function ItemBadge({
   revision,
   size = 'row',
   showName = true,
+  showImage = true,
   codeColor = 'var(--purple)',
   nameMaxWidth,
   onClick,
@@ -233,7 +239,9 @@ export function ItemBadge({
         ...style,
       }}
     >
-      <ItemImageBox imagePath={imagePath} size={size} alt={nameText || codeText} />
+      {showImage ? (
+        <ItemImageBox imagePath={imagePath} size={size} alt={nameText || codeText} />
+      ) : null}
       <div
         style={{ minWidth: 0, cursor: onClick ? 'pointer' : undefined }}
         onClick={onClick}
