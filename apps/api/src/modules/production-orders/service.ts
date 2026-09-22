@@ -949,7 +949,10 @@ export async function closeProductionOrder(
           `Cannot finish Production Order ${current.code} — Job Card ${current.jcCodeText} is not complete yet (${st}). Close finished pieces as they clear, or wait until the order is done.`,
         );
       }
-      creditNow = input.qty === undefined ? available : input.qty;
+      // Finish credits ALL finished pieces now; only the never-made remainder is
+      // written off as lost. A supplied qty is ignored on finish so good pieces
+      // can never be silently marked lost (review finding).
+      creditNow = available;
     } else {
       // Ordinary partial close: credit finished pieces now, leave the rest open.
       // Does NOT require the JC to be complete.
@@ -1069,6 +1072,7 @@ export async function reverseProductionOrderClose(
         itemId: productionOrders.itemId,
         code: productionOrders.code,
         jcCodeText: productionOrders.jcCodeText,
+        jobCardId: productionOrders.jobCardId,
       })
       .from(productionOrders)
       .where(
@@ -1132,12 +1136,21 @@ export async function reverseProductionOrderClose(
       );
     }
 
+    // A unique store-ledger ref per reversal (the ledger row count gives the
+    // sequence), so two reversals of one PO never share a sourceRef.
+    const ledgerCount =
+      (
+        (await tx.execute(sql`
+          SELECT COUNT(*)::int AS n FROM public.production_order_closes
+          WHERE production_order_id = ${id}::uuid AND deleted_at IS NULL
+        `)) as unknown as Array<{ n: number }>
+      )[0]?.n ?? 0;
     const storeTxnId = await writeCloseStockTxn(tx, {
       companyId,
       itemId: po.itemId,
       txnType: 'out',
       qty: close.qty,
-      sourceRef: `${po.code}#rev`,
+      sourceRef: `${po.code}#rev${ledgerCount + 1}`,
       remarks: `Production Order ${po.code} — reversed close of ${close.qty}`,
       userId: user.id,
     });
@@ -1170,6 +1183,16 @@ export async function reverseProductionOrderClose(
         updatedBy: user.id,
       })
       .where(eq(productionOrders.id, id));
+
+    // A reversal that re-opens the order must also re-open its Job Card — the
+    // original full close stamped jobCards.closedAt, and leaving the JC closed
+    // while the PO is open is an inconsistent state (review finding).
+    if (finalStatus !== 'closed') {
+      await tx
+        .update(jobCards)
+        .set({ closedAt: null, updatedBy: user.id })
+        .where(eq(jobCards.id, po.jobCardId));
+    }
 
     await emitActivityLog(
       tx,

@@ -56,15 +56,24 @@ function ProductionOrderClosePage(): React.JSX.Element {
   const [poLabel, setPoLabel] = useState('');
 
   // PO picker — orders that still have something to close: open OR partially
-  // closed (ADR-179). A fully closed one has nothing left, so it is filtered
-  // out client-side (the list endpoint takes a single status).
+  // closed (ADR-179). The list endpoint takes a single status, so we ask the
+  // SERVER for each closeable status and merge — a client-side filter over one
+  // unfiltered page would drop open/partial orders whenever the first 50 rows
+  // were mostly closed ones.
   const [poSearch, setPoSearch] = useState('');
   const openPos = useProductionOrdersList({
+    status: 'open',
     ...(poSearch.trim() ? { search: poSearch.trim() } : {}),
     limit: 50,
     offset: 0,
   });
-  const poOptions = (openPos.data?.items ?? []).filter((p) => p.status !== 'closed');
+  const partialPos = useProductionOrdersList({
+    status: 'partially_closed',
+    ...(poSearch.trim() ? { search: poSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const poOptions = [...(openPos.data?.items ?? []), ...(partialPos.data?.items ?? [])];
 
   const detail = useProductionOrder(poId ?? undefined);
   const po = detail.data;
@@ -159,7 +168,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 value={poId}
                 onChange={onPickPo}
                 onSearch={setPoSearch}
-                loading={openPos.isFetching}
+                loading={openPos.isFetching || partialPos.isFetching}
                 options={poOptions.map((p) => ({
                   id: p.id,
                   code: p.code,

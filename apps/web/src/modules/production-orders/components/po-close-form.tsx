@@ -14,7 +14,7 @@
 
 import type { ProductionOrderDetail } from '@innovic/shared';
 import { Loader2, Lock } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useCloseProductionOrder } from '../api';
 
 interface PoCloseFormProps {
@@ -32,15 +32,28 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
   const [remarks, setRemarks] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // The order refetches a lower availableToClose after each partial close while
+  // this form stays mounted (detail page). Re-seed the qty field to the new
+  // ceiling so it never keeps a now-too-high value that silently blocks submit.
+  const max = po.availableToClose;
+  useEffect(() => {
+    setQty(String(max));
+    // Keyed on the order + its available ceiling; a fresh order or a new
+    // ceiling both reset the field.
+  }, [po.id, max]);
+
   // Server decides whether close is allowed at all; the caller shows the reason.
   if (!po.canClose) return null;
 
-  const max = po.availableToClose;
   const qtyNum = Number(qty);
   const qtyValid = Number.isInteger(qtyNum) && qtyNum >= 1 && qtyNum <= max;
   // Finishing short must carry a reason (why the pieces were lost / not made).
   const remarksValid = !finish || remarks.trim().length > 0;
-  const canSubmit = qtyValid && remarksValid && !closeMut.isPending;
+  // Close short: the backend ignores qty on finish — it credits ALL currently
+  // available pieces and writes off only the never-made remainder — so the qty
+  // field is not gated (it may even be 0 available). An ordinary partial close
+  // still needs a valid qty in [1, available].
+  const canSubmit = (finish ? remarksValid : qtyValid) && !closeMut.isPending;
 
   const onSubmit = (): void => {
     if (!canSubmit) return;
@@ -48,11 +61,9 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
     closeMut.mutate(
       {
         id: po.id,
-        input: {
-          qty: qtyNum,
-          ...(finish ? { finish: true } : {}),
-          ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
-        },
+        input: finish
+          ? { finish: true, ...(remarks.trim() ? { remarks: remarks.trim() } : {}) }
+          : { qty: qtyNum, ...(remarks.trim() ? { remarks: remarks.trim() } : {}) },
       },
       {
         onSuccess: (closed) => onClosed?.(closed),
@@ -100,27 +111,33 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
       </div>
 
       <div className="form-grid form-grid-3">
-        <div className="form-grp">
-          <label className="form-label" htmlFor={`close-qty-${po.id}`}>
-            Qty to close now<span className="req">★</span>
-          </label>
-          <input
-            id={`close-qty-${po.id}`}
-            type="number"
-            className="innovic-input mono"
-            min={1}
-            max={max}
-            step={1}
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            style={{ textAlign: 'right' }}
-          />
-          <div className="form-help">
-            Defaults to all {max} available. Credits this many pieces to stock.
+        {/* Qty applies only to an ordinary partial close. On "Close short
+            (finish)" the backend ignores it (it credits everything available
+            and writes off the rest), so the field is hidden to avoid implying
+            it is editable. */}
+        {finish ? null : (
+          <div className="form-grp">
+            <label className="form-label" htmlFor={`close-qty-${po.id}`}>
+              Qty to close now<span className="req">★</span>
+            </label>
+            <input
+              id={`close-qty-${po.id}`}
+              type="number"
+              className="innovic-input mono"
+              min={1}
+              max={max}
+              step={1}
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              style={{ textAlign: 'right' }}
+            />
+            <div className="form-help">
+              Defaults to all {max} available. Credits this many pieces to stock.
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="form-grp form-span-2">
+        <div className={finish ? 'form-grp form-full' : 'form-grp form-span-2'}>
           <label className="form-label" htmlFor={`close-remarks-${po.id}`}>
             {finish ? 'Reason for finishing short' : 'Remarks'}
             {finish ? <span className="req">★</span> : null}
@@ -173,7 +190,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           A reason is required when finishing short.
         </div>
       ) : null}
-      {!qtyValid && qty.trim() !== '' ? (
+      {!finish && !qtyValid && qty.trim() !== '' ? (
         <div className="form-error" style={{ marginTop: 8 }}>
           Enter a whole qty between 1 and {max}.
         </div>
@@ -205,7 +222,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           style={compact ? { padding: '4px 10px' } : undefined}
           title={
             finish
-              ? `Finish ${po.code}: credit ${qtyValid ? qtyNum : 0}, record ${po.remainingQty} lost`
+              ? `Finish ${po.code}: credit the ${po.availableToClose} available, record ${po.remainingQty} lost`
               : `Credit ${qtyValid ? qtyNum : 0} of ${po.availableToClose} to stock`
           }
         >

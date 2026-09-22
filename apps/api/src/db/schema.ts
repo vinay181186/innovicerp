@@ -6154,7 +6154,9 @@ export const productionOrderCloses = pgTable(
     // Pieces credited by this row (a reversal's qty is the amount undone).
     qty: integer('qty').notNull(),
     isReversal: boolean('is_reversal').notNull().default(false),
-    reversesCloseId: uuid('reverses_close_id'),
+    reversesCloseId: uuid('reverses_close_id').references(
+      (): AnyPgColumn => productionOrderCloses.id,
+    ),
     // Set only on the close-short row that finishes the PO under target.
     lostQty: integer('lost_qty'),
     // The store_transactions row this close wrote (null on a 0-credit short close).
