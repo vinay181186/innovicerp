@@ -83,6 +83,11 @@ export const productionOrderListItemSchema = productionOrderSchema.extend({
   ...jcProgressShape,
   /** Customer / client name read live via the plan's SO or JWSO line. */
   partyName: z.string().nullable(),
+  /** Raw material (Grade / Size) read live off the plan this order was made
+   *  from — the plan's *Text snapshots, never stored again here. Null when the
+   *  plan recorded no raw material. */
+  rawMaterialGradeText: z.string().nullable().default(null),
+  rawMaterialSizeText: z.string().nullable().default(null),
   createdByName: z.string().nullable(),
   closedByName: z.string().nullable(),
 });

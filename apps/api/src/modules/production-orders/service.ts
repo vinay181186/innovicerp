@@ -319,6 +319,9 @@ const poColumns = {
   jcClosedAt: jobCards.closedAt,
   jcExists: jobCards.id,
   partyName: PARTY_NAME_SQL,
+  // Raw material lives on the plan (the order's input); read live, not copied.
+  rawMaterialGradeText: plans.rawMaterialGradeText,
+  rawMaterialSizeText: plans.rawMaterialSizeText,
   createdByName: createdByUser.fullName,
   closedByName: closedByUser.fullName,
 };
@@ -363,6 +366,8 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     jcFinishedQty: Number(r.jcFinishedQty ?? 0),
     jcClosedAt: toIso(r.jcClosedAt),
     partyName: r.partyName ?? null,
+    rawMaterialGradeText: r.rawMaterialGradeText ?? null,
+    rawMaterialSizeText: r.rawMaterialSizeText ?? null,
     createdByName: r.createdByName ?? null,
     closedByName: r.closedByName ?? null,
   };
@@ -429,6 +434,7 @@ function baseQuery(tx: DbTransaction) {
     .select(poColumns)
     .from(productionOrders)
     .leftJoin(jobCards, eq(jobCards.id, productionOrders.jobCardId))
+    .leftJoin(plans, eq(plans.id, productionOrders.planId))
     .leftJoin(createdByUser, eq(createdByUser.id, productionOrders.createdBy))
     .leftJoin(closedByUser, eq(closedByUser.id, productionOrders.closedBy));
 }

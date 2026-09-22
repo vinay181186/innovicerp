@@ -237,6 +237,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             <Fact label="Order qty" mono>
               {data.orderQty}
             </Fact>
+            {/* Raw material the order is cut from — read off its plan (same
+                labels as Plan detail). */}
+            <Fact label="RM grade">{data.rawMaterialGradeText ?? '—'}</Fact>
+            <Fact label="RM size">{data.rawMaterialSizeText ?? '—'}</Fact>
 
             <Fact label="Route card">
               <Link
