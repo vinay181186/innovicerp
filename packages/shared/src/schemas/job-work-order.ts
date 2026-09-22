@@ -53,6 +53,8 @@ export const jobWorkOrderLineSchema = z.object({
    *  `drawingFilePath` is a path in the private `qc-docs` bucket. */
   revision: z.string().default('0'),
   drawingFilePath: z.string().nullable().default(null),
+  /** Item Master product image (items.image_path via itemId), for the thumbnail. */
+  itemImagePath: z.string().nullable().default(null),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
   /** Σ finished parts delivered back to the client (job_work_order_lines.returned_qty).
@@ -158,7 +160,7 @@ export const jobWorkOrderLineInputSchema = z
     itemCodeText: z.string().min(1).max(64).optional(),
     partName: z.string().min(1).max(255),
     material: z.string().max(255).optional(),
-    drawingNo: z.string().max(64).optional(),
+    drawingNo: z.string().max(64).nullable().optional(),
     // Compulsory on the FORM (the only layer that can ask a human), optional
     // here so the server paths that insert a JWSO line without asking anyone —
     // the BOM cascade and the SO-to-JW conversions — still work. Same split the

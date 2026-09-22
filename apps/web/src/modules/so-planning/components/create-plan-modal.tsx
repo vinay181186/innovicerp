@@ -68,6 +68,11 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const [plannedEndDate, setPlannedEndDate] = useState(
     addDaysLocal(todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
   );
+  // Customer Dispatch Date — the day the goods must leave for the customer.
+  // Defaults from the SO/JWSO line's due date when it has one; optional.
+  const [customerDispatchDate, setCustomerDispatchDate] = useState(
+    line.dueDate ? line.dueDate.slice(0, 10) : '',
+  );
   const [rmGradeId, setRmGradeId] = useState<string | null>(null);
   const [rmGradeText, setRmGradeText] = useState<string | null>(null);
   const [rmSizeId, setRmSizeId] = useState<string | null>(null);
@@ -157,6 +162,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       planQty,
       plannedStartDate,
       plannedEndDate,
+      customerDispatchDate: customerDispatchDate || null,
       rawMaterialGradeId: rmGradeId,
       rawMaterialGradeText: rmGradeText,
       rawMaterialSizeId: rmSizeId,
@@ -433,6 +439,18 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
                 className="innovic-input"
                 value={plannedEndDate}
                 onChange={(e) => setPlannedEndDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <label className="form-label" htmlFor="create-plan-dispatch">
+                Customer Dispatch Date
+              </label>
+              <input
+                id="create-plan-dispatch"
+                type="date"
+                className="innovic-input"
+                value={customerDispatchDate}
+                onChange={(e) => setCustomerDispatchDate(e.target.value)}
               />
             </div>
           </div>

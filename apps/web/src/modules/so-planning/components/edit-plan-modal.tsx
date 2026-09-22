@@ -124,6 +124,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     plan.plannedEndDate ||
       addDaysLocal(plan.plannedStartDate || todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
   );
+  // Customer Dispatch Date — the day the goods must leave for the customer.
+  // Optional; opens on whatever the plan was saved with (blank if none).
+  const [customerDispatchDate, setCustomerDispatchDate] = useState<string>(
+    plan.customerDispatchDate ?? '',
+  );
   const [remarks, setRemarks] = useState<string>(plan.remarks ?? '');
   // Raw material — two INDEPENDENT master pickers, both optional (no ★). The
   // id is the link; the *Text snapshot is what this plan still prints after the
@@ -347,6 +352,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     planQty,
     plannedStartDate: plannedStartDate || null,
     plannedEndDate: plannedEndDate || null,
+    customerDispatchDate: customerDispatchDate || null,
     remarks: remarks || null,
     rawMaterialGradeId: rmGradeId,
     rawMaterialGradeText: rmGradeText,
@@ -757,6 +763,15 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 className="innovic-input"
                 value={plannedEndDate}
                 onChange={(e) => setPlannedEndDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <label className="form-label">Customer Dispatch Date</label>
+              <input
+                type="date"
+                className="innovic-input"
+                value={customerDispatchDate}
+                onChange={(e) => setCustomerDispatchDate(e.target.value)}
               />
             </div>
           </div>

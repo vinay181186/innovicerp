@@ -77,7 +77,23 @@ export const jobCardListItemSchema = z.object({
   orderQty: z.number().int().positive(),
   priority: jcPrioritySchema,
   dueDate: z.string().nullable(),
+  /** The plan's Customer Dispatch Date (plans.customer_dispatch_date, via the
+   *  plan this card was executed from). Null for a card with no plan. */
+  customerDispatchDate: z.string().nullable().default(null),
+  /** Rework / repair CHILD cards raised off this card (job_cards
+   *  .parent_job_card_id = this id), so the parent's header can name them. */
+  childJobCards: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        code: z.string(),
+        recoveryKind: z.enum(['rework', 'repair']).nullable(),
+      }),
+    )
+    .default([]),
   drawingFilePath: z.string().nullable(),
+  /** Item Master product image (items.image_path), for the thumbnail next to code · name. */
+  itemImagePath: z.string().nullable().default(null),
   remarks: z.string().nullable(),
   closedAt: z.string().nullable(),
   // ── Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4) ────────────
@@ -364,6 +380,8 @@ export const jobCardEditModelSchema = z.object({
   soLineDrawingFilePath: z.string().nullable().default(null),
   jwLineDrawingFilePath: z.string().nullable().default(null),
   itemDrawingFilePath: z.string().nullable().default(null),
+  /** Item Master product image (items.image_path), for the status-page header badge. */
+  itemImagePath: z.string().nullable().default(null),
   /** The revision printed on that drawing, for the label beside the preview. */
   soLineRevision: z.string().nullable().default(null),
   jwLineRevision: z.string().nullable().default(null),

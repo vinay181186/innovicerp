@@ -9,8 +9,11 @@
  * continue to work via the index.css remap of shadcn HSL vars to the
  * Innovic palette.
  *
- * Convention: every selector + property here is a literal port from the
- * legacy stylesheet. New rules go in a separate "Innovic extensions" file.
+ * Convention: every selector here is a literal port from the legacy
+ * stylesheet. Values were restyled 2026-09 to the approved theme (see
+ * tokens.css): flat surfaces, one Innovic-blue accent, 4/6/8px radii,
+ * compact padding, no gradients, no zebra rows, restrained shadows.
+ * New rules go in a separate "Innovic extensions" file.
  */
 
 /* ═══ BODY / SCROLLBARS ═══ */
@@ -30,7 +33,7 @@
 }
 ::-webkit-scrollbar-thumb {
   background: var(--bg5);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 /* ═══ APP SHELL ═══ */
@@ -389,7 +392,7 @@
   color: var(--text);
 }
 .sb-sub {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--cyan);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -405,7 +408,7 @@
   font-family: var(--bfont);
   font-weight: 800;
   margin: 4px 8px 2px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border-left: 3px solid var(--border2);
   background: var(--bg3);
   transition: all 0.15s;
@@ -477,18 +480,19 @@
   color: var(--text);
 }
 .sb-item.active {
-  background: linear-gradient(90deg, var(--bg4), var(--bg3));
-  color: var(--cyan);
-  border-left-color: var(--cyan);
+  /* Flat Innovic-blue wash + blue text + blue left bar (theme 2026-09: no
+     gradients; one blue emphasis). */
+  background: var(--blue3);
+  color: var(--blue);
+  border-left-color: var(--blue);
 }
 .sb-grp {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text3);
+  color: var(--text2);
   padding: 8px 18px 2px;
-  opacity: 0.6;
   pointer-events: none;
   user-select: none;
 }
@@ -514,7 +518,7 @@
 .sb-avatar {
   width: 28px;
   height: 28px;
-  background: linear-gradient(135deg, var(--cyan2), var(--blue2));
+  background: var(--blue);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -529,7 +533,7 @@
   font-weight: 600;
 }
 .sb-urole {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text3);
 }
 
@@ -608,11 +612,11 @@
   /* 12px 16px -> 8px 14px: the header holds one line of text. */
   padding: 8px 14px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, var(--bg3), var(--bg2));
+  background: var(--bg3);
 }
 .panel-title {
   font-family: var(--hfont);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.03em;
   /* Zero so the class can be worn by an <h2> as well as a <span>. Panel titles
@@ -621,8 +625,8 @@
   margin: 0;
 }
 .panel-body {
-  /* 16 -> 11. Biggest single contributor: 32px of vertical padding per panel. */
-  padding: 11px;
+  /* 16 -> 12. Biggest single contributor: 32px of vertical padding per panel. */
+  padding: 12px;
 }
 
 /* ═══ CLICKABLE SURFACES (dashboard cards + rows) ═══
@@ -684,7 +688,7 @@
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: var(--radius2);
-  padding: 14px 16px;
+  padding: 12px 14px;
   position: relative;
   overflow: hidden;
 }
@@ -745,7 +749,7 @@
 }
 .innovic-table th {
   background: var(--bg3);
-  color: var(--text3);
+  color: var(--text2);
   font-size: var(--fs-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -756,13 +760,13 @@
   text-align: center;
   font-family: var(--mono);
   white-space: nowrap;
-  border-bottom: 1px solid var(--border2);
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
   user-select: none;
   position: sticky;
   top: 0;
   z-index: 5;
-  box-shadow: inset 0 -1px 0 var(--border2);
+  box-shadow: inset 0 -1px 0 var(--border);
 }
 .innovic-table th:hover {
   color: var(--cyan);
@@ -774,9 +778,7 @@
   vertical-align: middle;
   white-space: nowrap;
 }
-.innovic-table tbody tr:nth-child(even) td {
-  background: var(--bg3);
-}
+/* No zebra striping (theme 2026-09): rows are white, hover is the only wash. */
 .innovic-table tbody tr:hover td {
   background: var(--bg4);
 }
@@ -864,6 +866,17 @@
   border-color: var(--blue);
   color: #fff;
 }
+/* Job Card list's action block: every button fills its grid cell so the
+   2-across block reads as one tidy panel whatever the label lengths. */
+.innovic-table.tbl-grid td:last-child .jc-row-acts .btn-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 6px;
+  height: 24px;
+  white-space: nowrap;
+}
 .td-code {
   font-family: var(--mono);
   font-weight: 600;
@@ -914,9 +927,8 @@ table.tbl-ctr td .innovic-select {
    `<div class="tbl-wrap tbl-frozen">` on its widest tables: Job Cards (L5784,
    15 cols), Sales Orders (L11970), PO (L25349), GRN (L26492). The port shipped
    `tbl-wrap` alone, so those tables lost the JC/SO No. as soon as you scrolled
-   right. The three background rules exist so the pinned cell stays opaque over
-   the zebra (`nth-child(even)`) and hover rules — without them the scrolled
-   content shows through. */
+   right. The background rules exist so the pinned cell stays opaque over the
+   hover rule — without them the scrolled content shows through. */
 .tbl-frozen tbody td:first-child,
 .tbl-frozen thead th:first-child {
   position: sticky;
@@ -927,9 +939,6 @@ table.tbl-ctr td .innovic-select {
 }
 .tbl-frozen thead th:first-child {
   z-index: 6;
-  background: var(--bg3);
-}
-.tbl-frozen tbody tr:nth-child(even) td:first-child {
   background: var(--bg3);
 }
 .tbl-frozen tbody tr:hover td:first-child {
@@ -955,11 +964,11 @@ table.tbl-ctr td .innovic-select {
 .task-linked-ref {
   display: inline-block;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--sig-info-bg);
-  color: var(--sig-info);
+  border-radius: var(--radius-sm);
+  background: var(--blue3);
+  color: var(--blue);
   font-weight: 700;
   margin-left: 4px;
 }
@@ -970,8 +979,8 @@ table.tbl-ctr td .innovic-select {
 .tag {
   display: inline-block;
   padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -987,18 +996,18 @@ table.tbl-ctr td .innovic-select {
   border-collapse: collapse;
 }
 .ops-routing th {
-  padding: 10px 14px;
+  padding: 8px 12px;
   text-align: center;
   font-family: var(--mono);
   font-size: var(--fs-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 700;
-  color: var(--text3);
+  color: var(--text2);
   white-space: nowrap;
 }
 .ops-routing td {
-  padding: 12px 14px;
+  padding: 8px 12px;
   vertical-align: middle;
   border-top: 1px solid var(--border);
   text-align: center;
@@ -1013,7 +1022,9 @@ table.tbl-ctr td .innovic-select {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  border-radius: 10px;
+  /* Rounded-rect, filled, no visible outline (theme 2026-09) — the 1px
+     transparent border keeps every badge the same height as before. */
+  border-radius: var(--radius-sm);
   font-size: var(--fs-mono);
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -1024,44 +1035,51 @@ table.tbl-ctr td .innovic-select {
 .b-green {
   color: var(--green2);
   background: var(--green3);
-  border: 1px solid #86efac;
+  border: 1px solid transparent;
 }
 .b-amber {
   color: var(--amber2);
   background: var(--amber3);
-  border: 1px solid #fcd34d;
+  border: 1px solid transparent;
 }
 .b-blue {
-  color: var(--blue2);
+  color: var(--blue);
   background: var(--blue3);
-  border: 1px solid #93c5fd;
+  border: 1px solid transparent;
 }
 .b-red {
   color: var(--red2);
   background: var(--red3);
-  border: 1px solid #fca5a5;
+  border: 1px solid transparent;
 }
 .b-grey {
-  color: var(--text3);
+  color: var(--text2);
   background: var(--bg4);
-  border: 1px solid var(--border2);
+  border: 1px solid transparent;
 }
 .b-cyan {
   color: var(--cyan);
   background: var(--cyan3);
-  border: 1px solid var(--cyan2);
+  border: 1px solid transparent;
 }
 .b-orange {
   color: var(--orange2);
-  background: #ffedd5;
-  border: 1px solid var(--orange);
+  background: var(--orange3);
+  border: 1px solid transparent;
 }
 .b-teal {
   /* Legacy renderAssemblyTracker uses #14b8a6 for the "Done" assembly state
      to distinguish completed equipment-assembly from the green "Ready" state. */
-  color: #14b8a6;
-  background: rgba(20, 184, 166, 0.12);
-  border: 1px solid rgba(20, 184, 166, 0.4);
+  color: var(--teal2);
+  background: var(--teal3);
+  border: 1px solid transparent;
+}
+.b-purple {
+  /* OSP / vendor / QC op-type chip. Dark purple text on the pale wash —
+     the solid --purple is only 4.1:1 on --purple3. */
+  color: var(--purple2);
+  background: var(--purple3);
+  border: 1px solid transparent;
 }
 
 /* ═══ BUTTONS ═══ */
@@ -1069,9 +1087,11 @@ table.tbl-ctr td .innovic-select {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 14px;
+  /* 7px 14px / no border -> 7px 12px + 1px transparent border: ~32px tall,
+     the same height as .innovic-input so a filter row lines up. */
+  padding: 7px 12px;
   border-radius: var(--radius);
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   font-family: var(--bfont);
   font-size: var(--fs-control);
@@ -1080,34 +1100,35 @@ table.tbl-ctr td .innovic-select {
   white-space: nowrap;
 }
 .btn-primary {
-  background: var(--blue2);
+  background: var(--blue);
   color: #fff;
 }
 .btn-primary:hover {
-  background: var(--blue);
+  background: var(--blue2);
 }
 .btn-success {
   background: var(--green2);
   color: #fff;
 }
 .btn-success:hover {
-  background: var(--green);
+  background: var(--green2-hover);
 }
 .btn-danger {
   background: var(--red2);
   color: #fff;
 }
 .btn-danger:hover {
-  background: var(--red);
+  background: var(--red2-hover);
 }
 .btn-ghost {
-  background: var(--bg4);
+  background: var(--bg2);
   color: var(--text2);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--border);
 }
 .btn-ghost:hover {
-  background: var(--bg5);
+  background: var(--bg3);
   color: var(--text);
+  border-color: var(--border2);
 }
 .btn-sm {
   padding: 4px 10px;
@@ -1156,7 +1177,7 @@ table.tbl-ctr td .innovic-select {
 .form-grp {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .form-label {
   font-size: var(--fs-label);
@@ -1167,17 +1188,17 @@ table.tbl-ctr td .innovic-select {
   font-family: var(--mono);
 }
 .form-label .req {
-  color: var(--red);
+  color: var(--red2);
   margin-left: 2px;
 }
 .innovic-input,
 .innovic-select,
 .innovic-textarea {
-  background: var(--bg3);
+  background: var(--bg2);
   color: var(--text);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 11px;
+  padding: 7px 10px;
   font-family: var(--bfont);
   font-size: var(--fs-control);
   width: 100%;
@@ -1187,8 +1208,8 @@ table.tbl-ctr td .innovic-select {
 .innovic-input:focus,
 .innovic-select:focus,
 .innovic-textarea:focus {
-  border-color: var(--cyan);
-  box-shadow: 0 0 0 2px rgba(0, 136, 187, 0.12);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .innovic-input[readonly] {
   opacity: 0.6;
@@ -1209,7 +1230,7 @@ table.tbl-ctr td .innovic-select {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--overlay-bg);
   z-index: 500;
   display: flex;
   align-items: flex-start;
@@ -1221,14 +1242,14 @@ table.tbl-ctr td .innovic-select {
    window, not a cramped centred box. Wide + tall + internal scroll. */
 .modal {
   background: var(--bg2);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--border);
   border-radius: var(--radius2);
   width: 100%;
   max-width: min(1100px, 96vw);
   min-height: min(86vh, 640px);
   max-height: 96vh;
   overflow-y: auto;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-modal);
 }
 /* App-wide full-window sheet for inline (non-.modal) overlays — opt in by
    adding class="app-sheet" to the inner panel of a fixed overlay so its inline
@@ -1247,7 +1268,7 @@ table.tbl-ctr td .innovic-select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--bg3);
 }
@@ -1257,13 +1278,13 @@ table.tbl-ctr td .innovic-select {
   font-weight: 700;
 }
 .modal-body {
-  padding: 20px;
+  padding: 16px;
 }
 .modal-footer {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  padding: 16px 20px;
+  padding: 12px 16px;
   border-top: 1px solid var(--border);
   background: var(--bg3);
 }
@@ -1289,7 +1310,7 @@ table.tbl-ctr td .innovic-select {
   gap: 8px;
   animation: toastSlideIn 0.2s ease;
   max-width: 320px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-toast);
 }
 .toast-ok {
   background: var(--green2);
@@ -1302,9 +1323,9 @@ table.tbl-ctr td .innovic-select {
   border: 1px solid var(--red);
 }
 .toast-info {
-  background: var(--blue2);
+  background: var(--blue);
   color: #fff;
-  border: 1px solid var(--blue);
+  border: 1px solid var(--blue2);
 }
 @keyframes toastSlideIn {
   from {
@@ -1319,14 +1340,14 @@ table.tbl-ctr td .innovic-select {
 
 /* ═══ PROGRESS BAR ═══ */
 .prog-wrap {
-  background: var(--bg4);
-  border-radius: 3px;
+  background: var(--bg5);
+  border-radius: var(--radius-sm);
   height: 6px;
   overflow: hidden;
 }
 .prog-bar {
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   transition: width 0.4s ease;
 }
 
@@ -1348,7 +1369,7 @@ table.tbl-ctr td .innovic-select {
 .section-hdr {
   font-family: var(--hfont);
   font-size: var(--fs-section);
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: 16px;
   letter-spacing: 0.01em;
 }
@@ -1369,14 +1390,16 @@ table.tbl-ctr td .innovic-select {
 .cyan {
   color: var(--cyan);
 }
+/* Text-colour utilities use the dark "2" variants: the solid signal
+   colours are fills only and fail 4.5:1 as text on white. */
 .amber {
-  color: var(--amber);
+  color: var(--amber2);
 }
 .green {
-  color: var(--green);
+  color: var(--green2);
 }
 .red {
-  color: var(--red);
+  color: var(--red2);
 }
 
 /* ═══ MOBILE / TABLET FALLBACK (legacy media query) ═══ */
@@ -1389,7 +1412,7 @@ table.tbl-ctr td .innovic-select {
     width: 250px;
     z-index: 200;
     transition: left 0.25s ease;
-    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-drawer);
   }
   #sidebar.sb-open {
     left: 0;
@@ -1461,10 +1484,10 @@ table.tbl-ctr td .innovic-select {
 @keyframes qcBlink {
   0%,
   100% {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(240, 68, 56, 0.15);
   }
   50% {
-    background: rgba(239, 68, 68, 0.35);
+    background: rgba(240, 68, 56, 0.35);
   }
 }
 .qc-alert-blink {

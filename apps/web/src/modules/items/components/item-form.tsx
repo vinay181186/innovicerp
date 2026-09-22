@@ -1,10 +1,17 @@
 // Item create + edit form (UI-003-01).
 // Ported against legacy itemForm / addItem / editItem
 // (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L11523, L11598,
-// L11609). Field order mirrors legacy exactly: Code, Name, Description (full),
-// Drawing No., Revision, Material, UOM, Drawing File (full, last).
+// L11609). Field order mirrors legacy: Code, Name, Description (full),
+// Material, UOM, then Product image (full, last).
 // Item Type + HSN Code have no legacy counterpart but exist in our schema and
 // are kept — placed after UOM so legacy's relative order is untouched.
+//
+// NO Drawing No., Revision or Drawing File fields (user decision 2026-09-21):
+// the drawing and its revision belong to the SO / JWSO LINE, not the item, so
+// the form neither shows nor sends `drawingNo`, `revision` or
+// `drawingFilePath` (the server defaults `revision`). In their place the item
+// carries a PRODUCT IMAGE (3D render) — `imagePath` — shown as the thumbnail
+// beside code · name on every list.
 // Footer chrome mirrors legacy showModal (L28015): Cancel (ghost) + Save
 // (primary) in a .modal-footer.
 
@@ -24,7 +31,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNextItemCode } from '../api';
-import { DrawingUploadField } from './drawing-upload-field';
+import { ItemImageField } from './item-image-field';
 
 type CreateMode = {
   mode: 'create';
@@ -44,32 +51,30 @@ type EditMode = {
 
 type ItemFormProps = CreateMode | EditMode;
 
-const CREATE_DEFAULTS: CreateItemInput = {
+// Partial: `revision` is not a form field any more — the schema default
+// fills it and the server owns it (see header comment).
+const CREATE_DEFAULTS: Partial<CreateItemInput> = {
   code: '',
   name: '',
   description: undefined,
-  drawingNo: undefined,
-  revision: 'A',
   material: undefined,
   uom: 'NOS',
   itemType: 'component',
   procurementType: 'make',
   hsnCode: undefined,
-  drawingFilePath: undefined,
+  imagePath: null,
 };
 
 function itemToUpdateDefaults(item: Item): UpdateItemInput {
   return {
     name: item.name,
     description: item.description ?? undefined,
-    drawingNo: item.drawingNo ?? undefined,
-    revision: item.revision,
     material: item.material ?? undefined,
     uom: item.uom,
     itemType: item.itemType,
     procurementType: item.procurementType,
     hsnCode: item.hsnCode ?? undefined,
-    drawingFilePath: item.drawingFilePath ?? undefined,
+    imagePath: item.imagePath ?? null,
   };
 }
 
@@ -154,37 +159,6 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
           </div>
 
           <div className="form-grp">
-            <label className="form-label" htmlFor="drawingNo">
-              Drawing No.
-            </label>
-            <input
-              id="drawingNo"
-              className="innovic-input"
-              autoComplete="off"
-              placeholder="DRG-001"
-              {...register('drawingNo')}
-            />
-            {errors.drawingNo?.message ? (
-              <div className="form-error">{errors.drawingNo.message}</div>
-            ) : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="revision">
-              Revision
-            </label>
-            <input
-              id="revision"
-              className="innovic-input"
-              autoComplete="off"
-              placeholder="A"
-              {...register('revision')}
-            />
-            {errors.revision?.message ? (
-              <div className="form-error">{errors.revision.message}</div>
-            ) : null}
-          </div>
-
-          <div className="form-grp">
             <label className="form-label" htmlFor="material">
               Material
             </label>
@@ -263,9 +237,9 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             ) : null}
           </div>
 
-          <DrawingUploadField
-            value={watch('drawingFilePath')}
-            onChange={(p) => setValue('drawingFilePath', p, { shouldDirty: true })}
+          <ItemImageField
+            value={watch('imagePath')}
+            onChange={(p) => setValue('imagePath', p, { shouldDirty: true })}
           />
         </div>
 
@@ -336,37 +310,6 @@ function EditItemForm(props: EditMode): React.JSX.Element {
           </div>
 
           <div className="form-grp">
-            <label className="form-label" htmlFor="drawingNo">
-              Drawing No.
-            </label>
-            <input
-              id="drawingNo"
-              className="innovic-input"
-              autoComplete="off"
-              placeholder="DRG-001"
-              {...register('drawingNo')}
-            />
-            {errors.drawingNo?.message ? (
-              <div className="form-error">{errors.drawingNo.message}</div>
-            ) : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="revision">
-              Revision
-            </label>
-            <input
-              id="revision"
-              className="innovic-input"
-              autoComplete="off"
-              placeholder="A"
-              {...register('revision')}
-            />
-            {errors.revision?.message ? (
-              <div className="form-error">{errors.revision.message}</div>
-            ) : null}
-          </div>
-
-          <div className="form-grp">
             <label className="form-label" htmlFor="material">
               Material
             </label>
@@ -445,9 +388,9 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             ) : null}
           </div>
 
-          <DrawingUploadField
-            value={watch('drawingFilePath')}
-            onChange={(p) => setValue('drawingFilePath', p, { shouldDirty: true })}
+          <ItemImageField
+            value={watch('imagePath')}
+            onChange={(p) => setValue('imagePath', p, { shouldDirty: true })}
           />
         </div>
 

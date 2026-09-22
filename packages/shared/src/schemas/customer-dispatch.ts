@@ -24,6 +24,9 @@ export const dispatchableLineSchema = z.object({
   reservedQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),
   availableQty: z.number().int().nonnegative(), // min(ready + reserved, order) − dispatched
+  /** Earliest Customer Dispatch Date among the plans on this SO line — the date
+   *  the dispatch team works to. Null when no plan carries one. */
+  customerDispatchDate: z.string().nullable().default(null),
   // SO-line unit price — NULL when the viewer's access hides prices.
   rate: z.number().nonnegative().nullable(),
 });

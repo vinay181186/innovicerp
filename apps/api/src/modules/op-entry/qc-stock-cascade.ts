@@ -47,25 +47,58 @@ export async function recoveryChildCreditsStock(
   companyId: string,
   jobCardId: string,
 ): Promise<boolean> {
-  const jcRows = await tx
-    .select({
-      recoveryKind: jobCards.recoveryKind,
-      parentJobCardId: jobCards.parentJobCardId,
-      originOpSeq: jobCards.originOpSeq,
-    })
-    .from(jobCards)
-    .where(and(eq(jobCards.id, jobCardId), eq(jobCards.companyId, companyId)))
-    .limit(1);
-  const jc = jcRows[0];
+  const loadJc = async (id: string) =>
+    (
+      await tx
+        .select({
+          recoveryKind: jobCards.recoveryKind,
+          parentJobCardId: jobCards.parentJobCardId,
+          originOpSeq: jobCards.originOpSeq,
+        })
+        .from(jobCards)
+        .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId)))
+        .limit(1)
+    )[0];
+
+  const jc = await loadJc(jobCardId);
   if (!jc?.recoveryKind || !jc.parentJobCardId) return true;
-  const parentLast = await tx
+
+  // Walk to the TOP of the recovery chain (QC-NC audit 2026-09-21, gap 5).
+  // The pieces a child accepts climb ALL the way up — every ancestor NC is
+  // credited and every ancestor's origin op gets a re-inject row — so the
+  // question is never "is my origin op my parent's last op" but "when the
+  // pieces finally land on the TOP (non-recovery) job card, is there any
+  // inspection left after that op". Comparing against the IMMEDIATE parent
+  // was right for a first-level child and always-true for a grandchild: a
+  // recovery child's last op is the very QC the next NC is raised on, so
+  // P-RW1-RW1 (origin = P-RW1's QC, P-RW1's last op) credited stock even when
+  // the pieces then climbed to P's op 20 and P's op 30 QC credited them again.
+  //
+  // Follow parent_job_card_id while the card is itself a recovery child. The
+  // LAST recovery child visited is the one whose parent is the top JC; its
+  // origin_op_seq is the op the pieces re-enter the top route at.
+  let firstLevel = jc; // the recovery child whose parent is the top JC
+  let topId: string = jc.parentJobCardId;
+  for (let guard = 0; guard < 50; guard++) {
+    const above = await loadJc(topId);
+    if (!above) return true; // broken link — behave as an ordinary JC (as before)
+    if (!above.recoveryKind || !above.parentJobCardId) break; // reached the top
+    firstLevel = above;
+    topId = above.parentJobCardId;
+  }
+
+  // Credit only when the top-route re-entry op IS the top JC's last op: then
+  // the re-inject row written there (directly, never through submitQcLog) is
+  // the last time these pieces are ever inspected and nothing else credits
+  // them. Any earlier re-entry op means the top JC's own terminal QC will.
+  const topLast = await tx
     .select({ opSeq: jcOps.opSeq })
     .from(jcOps)
-    .where(and(eq(jcOps.jobCardId, jc.parentJobCardId), sql`${jcOps.deletedAt} IS NULL`))
+    .where(and(eq(jcOps.jobCardId, topId), sql`${jcOps.deletedAt} IS NULL`))
     .orderBy(desc(jcOps.opSeq))
     .limit(1);
-  const parentLastSeq = parentLast[0]?.opSeq ?? null;
-  return parentLastSeq != null && parentLastSeq === jc.originOpSeq;
+  const topLastSeq = topLast[0]?.opSeq ?? null;
+  return topLastSeq != null && topLastSeq === firstLevel.originOpSeq;
 }
 
 export interface QcStockCascadeContext {

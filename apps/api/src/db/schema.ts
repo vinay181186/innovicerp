@@ -218,6 +218,10 @@ export const items = pgTable(
     procurementType: text('procurement_type').notNull().default('make'),
     hsnCode: text('hsn_code'),
     drawingFilePath: text('drawing_file_path'),
+    /** Product image (migration 0136) — storage path of the 3D render in the
+     *  private bucket under `<companyId>/item-images/…`. A product picture, not
+     *  a controlled drawing: shown as a thumbnail next to code · name. */
+    imagePath: text('image_path'),
     /** PL-SI-1 (migration 0028) — low-stock alert threshold per item.
      *  Drives the "Low Stock" tile + per-row red tint on Store/Inventory. */
     minStockQty: integer('min_stock_qty').notNull().default(0),
@@ -3202,6 +3206,11 @@ export const plans = pgTable(
 
     plannedStartDate: date('planned_start_date'),
     plannedEndDate: date('planned_end_date'),
+    /** The day the goods must leave for the customer (migration 0137). Set at
+     *  plan creation, defaulted from the SO line's due date; pre-fills the
+     *  Production Order target date and is shown on the Job Card and the
+     *  Customer Dispatch pending list. Null on older / JW-sourced plans. */
+    customerDispatchDate: date('customer_dispatch_date'),
 
     // Raw material for this plan (migration 0106) — two INDEPENDENT master
     // pickers, both optional (a Direct Purchase plan buys a finished item and

@@ -173,6 +173,7 @@ export async function listJobCards(
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
+        i.image_path AS "itemImagePath",
         -- The customer's drawing revision, read live off the SO line this card was
         -- raised against. It is deliberately NOT items.revision, which is a
         -- different column describing the item master, and not a snapshot on the
@@ -218,6 +219,31 @@ export async function listJobCards(
         -- PO is closed. Code joined live — a PO is never renamed.
         jc.production_order_id AS "productionOrderId",
         po.code                AS "productionOrderCode",
+        -- The plan's Customer Dispatch Date (migration 0137): the plan this card
+        -- was executed from, reached either through its Production Order or
+        -- directly via plans.jc_id. A rework/repair child has no plan of its
+        -- own — its pieces return to the parent, so it reads the parent's plan
+        -- (pjc / its Production Order). Null on a card with no plan. ::text so
+        -- the date arrives as YYYY-MM-DD and not a Date at local midnight.
+        (
+          SELECT p.customer_dispatch_date::text
+          FROM public.plans p
+          WHERE (
+              p.jc_id = jc.id OR p.id = po.plan_id
+              OR p.jc_id = pjc.id OR p.id = pjc_po.plan_id
+            )
+            AND p.deleted_at IS NULL AND p.plan_status <> 'cancelled'
+          ORDER BY (p.jc_id = jc.id OR p.id = po.plan_id) DESC, p.created_at DESC LIMIT 1
+        ) AS "customerDispatchDate",
+        -- Rework / repair CHILD cards raised off this card, so the parent's
+        -- header can name them. One aggregate per row — no per-card query.
+        (
+          SELECT COALESCE(json_agg(json_build_object(
+                   'id', c.id, 'code', c.code, 'recoveryKind', c.recovery_kind
+                 ) ORDER BY c.code), '[]'::json)
+          FROM public.job_cards c
+          WHERE c.parent_job_card_id = jc.id AND c.deleted_at IS NULL
+        ) AS "childJobCards",
         -- Tier A (QC-NC §4): source context of the rejected work, derived live
         -- from the parent NC — WHICH operation and machine produced the rejected
         -- pieces and how many. Null on a non-recovery card (pnc left-joined).
@@ -247,6 +273,10 @@ export async function listJobCards(
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.production_orders po
         ON po.id = jc.production_order_id AND po.deleted_at IS NULL
+      -- The parent card's Production Order — a rework/repair child reads its
+      -- Customer Dispatch Date off the parent's plan (see the select above).
+      LEFT JOIN public.production_orders pjc_po
+        ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -286,6 +316,10 @@ export async function listJobCards(
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.production_orders po
         ON po.id = jc.production_order_id AND po.deleted_at IS NULL
+      -- The parent card's Production Order — a rework/repair child reads its
+      -- Customer Dispatch Date off the parent's plan (see the select above).
+      LEFT JOIN public.production_orders pjc_po
+        ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -338,6 +372,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
+        i.image_path AS "itemImagePath",
         -- The customer's drawing revision, read live off the SO line this card was
         -- raised against. It is deliberately NOT items.revision, which is a
         -- different column describing the item master, and not a snapshot on the
@@ -383,6 +418,31 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         -- PO is closed. Code joined live — a PO is never renamed.
         jc.production_order_id AS "productionOrderId",
         po.code                AS "productionOrderCode",
+        -- The plan's Customer Dispatch Date (migration 0137): the plan this card
+        -- was executed from, reached either through its Production Order or
+        -- directly via plans.jc_id. A rework/repair child has no plan of its
+        -- own — its pieces return to the parent, so it reads the parent's plan
+        -- (pjc / its Production Order). Null on a card with no plan. ::text so
+        -- the date arrives as YYYY-MM-DD and not a Date at local midnight.
+        (
+          SELECT p.customer_dispatch_date::text
+          FROM public.plans p
+          WHERE (
+              p.jc_id = jc.id OR p.id = po.plan_id
+              OR p.jc_id = pjc.id OR p.id = pjc_po.plan_id
+            )
+            AND p.deleted_at IS NULL AND p.plan_status <> 'cancelled'
+          ORDER BY (p.jc_id = jc.id OR p.id = po.plan_id) DESC, p.created_at DESC LIMIT 1
+        ) AS "customerDispatchDate",
+        -- Rework / repair CHILD cards raised off this card, so the parent's
+        -- header can name them. One aggregate per row — no per-card query.
+        (
+          SELECT COALESCE(json_agg(json_build_object(
+                   'id', c.id, 'code', c.code, 'recoveryKind', c.recovery_kind
+                 ) ORDER BY c.code), '[]'::json)
+          FROM public.job_cards c
+          WHERE c.parent_job_card_id = jc.id AND c.deleted_at IS NULL
+        ) AS "childJobCards",
         -- Tier A (QC-NC §4): source context of the rejected work, derived live
         -- from the parent NC — WHICH operation and machine produced the rejected
         -- pieces and how many. Null on a non-recovery card (pnc left-joined).
@@ -412,6 +472,10 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
       LEFT JOIN public.production_orders po
         ON po.id = jc.production_order_id AND po.deleted_at IS NULL
+      -- The parent card's Production Order — a rework/repair child reads its
+      -- Customer Dispatch Date off the parent's plan (see the select above).
+      LEFT JOIN public.production_orders pjc_po
+        ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -468,6 +532,18 @@ function buildSourceLink(r: Record<string, unknown>): JobCardSourceLink | null {
   return null;
 }
 
+/** The "childJobCards" json_agg arrives already parsed (an array, as the
+ *  machines aggregate does below); recovery_kind is narrowed to the enum. */
+function toChildJobCards(v: unknown): JobCardListItem['childJobCards'] {
+  const rows = (v as Array<{ id: string; code: string; recoveryKind: string | null }> | null) ?? [];
+  return rows.map((c) => ({
+    id: c.id,
+    code: c.code,
+    recoveryKind:
+      c.recoveryKind === 'rework' || c.recoveryKind === 'repair' ? c.recoveryKind : null,
+  }));
+}
+
 function toListItem(r: Record<string, unknown>): JobCardListItem {
   return {
     id: r['id'] as string,
@@ -485,6 +561,8 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     priority: r['priority'] as JobCardListItem['priority'],
     dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
     drawingFilePath: (r['drawingFilePath'] as string | null) ?? null,
+    // Item Master product image (0136) — the thumbnail next to code · name.
+    itemImagePath: (r['itemImagePath'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     closedAt: r['closedAt'] != null ? tsLike(r['closedAt']) : null,
     recoveryKind: (r['recoveryKind'] as JobCardListItem['recoveryKind']) ?? null,
@@ -495,6 +573,9 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     parentNcCode: (r['parentNcCode'] as string | null) ?? null,
     productionOrderId: (r['productionOrderId'] as string | null) ?? null,
     productionOrderCode: (r['productionOrderCode'] as string | null) ?? null,
+    // The plan's Customer Dispatch Date (migration 0137) — already ::text in SQL.
+    customerDispatchDate: (r['customerDispatchDate'] as string | null) ?? null,
+    childJobCards: toChildJobCards(r['childJobCards']),
     // Tier A: parent NC source context (WI2), derived from the parent NC.
     parentOpName: (r['parentOpName'] as string | null) ?? null,
     parentMachineCode: (r['parentMachineCode'] as string | null) ?? null,
@@ -561,8 +642,12 @@ async function resolveLinkedSource(
             COALESCE(so.customer_name, cli.name) AS "customerName",
             sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
             sol.client_po_line_no AS "clientPoLineNo",
+            -- "Already in JCs" excludes rework/repair children, exactly as
+            -- assertLineBalance does — they re-make pieces the parent card
+            -- already covers (QC-NC audit 2026-09-21, gap 3).
             COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-              WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+              WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
+                AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
           FROM public.sales_order_lines sol
           JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
           LEFT JOIN public.items i ON i.id = sol.item_id AND i.deleted_at IS NULL
@@ -578,7 +663,8 @@ async function resolveLinkedSource(
             jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
             NULL AS "clientPoLineNo",
             COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-              WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+              WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
+                AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
           FROM public.job_work_order_lines jwl
           JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
           LEFT JOIN public.items i ON i.id = jwl.item_id AND i.deleted_at IS NULL
@@ -601,7 +687,8 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-          WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+          WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
+            AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
       FROM public.sales_order_lines sol
       JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = sol.item_id
@@ -613,7 +700,8 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         COALESCE(jw.customer_name, cli2.name),
         jwl.order_qty, jwl.due_date, NULL,
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-          WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL), 0)::int
+          WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
+            AND jc.recovery_kind IS NULL), 0)::int
       FROM public.job_work_order_lines jwl
       JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.items i2 ON i2.id = jwl.item_id
@@ -672,7 +760,9 @@ export async function getJobCardEditModel(
         -- Last fallback: the item master's own drawing. Covers a hand-raised
         -- card with no source line at all, and a JWSO line that predates
         -- migration 0120 and so never had a file to carry.
-        i.drawing_file_path   AS "itemDrawingFilePath"
+        i.drawing_file_path   AS "itemDrawingFilePath",
+        -- Item Master product image (0136) for the status-page header thumbnail.
+        i.image_path          AS "itemImagePath"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
       -- Soft deletes respected exactly as the JC list queries above do it: a
@@ -760,6 +850,7 @@ export async function getJobCardEditModel(
       soLineDrawingFilePath: (h['soLineDrawingFilePath'] as string | null) ?? null,
       jwLineDrawingFilePath: (h['jwLineDrawingFilePath'] as string | null) ?? null,
       itemDrawingFilePath: (h['itemDrawingFilePath'] as string | null) ?? null,
+      itemImagePath: (h['itemImagePath'] as string | null) ?? null,
       soLineRevision: (h['soLineRevision'] as string | null) ?? null,
       jwLineRevision: (h['jwLineRevision'] as string | null) ?? null,
       remarks: (h['remarks'] as string | null) ?? null,

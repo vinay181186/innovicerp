@@ -20,6 +20,7 @@ import type {
 import { opSrNo } from '@innovic/shared';
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
@@ -362,6 +363,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 value={header.code}
                 onChange={(e) => setHeader({ ...header, code: e.target.value })}
                 placeholder={mode === 'create' ? 'IN-RC-NNNNN (auto if blank)' : ''}
+                style={{ maxWidth: '18ch' }}
               />
             </div>
             <div className="form-grp">
@@ -592,14 +594,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         </div>
       </div>
 
-      <datalist id="rc-vendors-dl">
-        {(vendorsList?.vendors ?? []).map((v) => (
-          <option key={v.id} value={v.code}>
-            {v.name}
-          </option>
-        ))}
-      </datalist>
-
       {mode === 'edit' ? (
         <div className="panel" style={{ borderLeft: '3px solid var(--amber)' }}>
           <div className="panel-hdr">
@@ -687,11 +681,8 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
     : op.machineCodeText.trim()
       ? '⚠ not in master'
       : null;
-  const vendorLabel = op.ospVendorId
-    ? vendorsList.find((v) => v.id === op.ospVendorId)?.name
-    : op.ospVendorCodeText.trim()
-      ? '⚠ not in master'
-      : null;
+  // Warning only — the vendor NAME is shown in the picker field itself (CODE — Name).
+  const vendorLabel = !op.ospVendorId && op.ospVendorCodeText.trim() ? '⚠ not in master' : null;
   return (
     <tr style={{ background: rowBg }}>
       <td className="td-ctr mono fw-700" style={{ color: accent }}>
@@ -726,13 +717,31 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
       <td>
         {op.opType === 'outsource' ? (
           <>
-            <input
-              className="innovic-input"
-              list="rc-vendors-dl"
-              value={op.ospVendorCodeText}
-              onChange={(e) => onVendorChange(e.target.value)}
-              placeholder="🔍 Vendor code"
-              style={{ fontSize: 12, color: 'var(--purple)' }}
+            <SearchableSelect
+              id={`rc-vend-${idx}`}
+              value={
+                vendorsList.find(
+                  (v) => v.code.toUpperCase() === op.ospVendorCodeText.trim().toUpperCase(),
+                )?.id ?? null
+              }
+              onChange={(id) =>
+                onVendorChange(id ? (vendorsList.find((v) => v.id === id)?.code ?? '') : '')
+              }
+              onSearch={() => {}}
+              options={vendorsList.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
+              placeholder="🔍 Vendor"
+              // Show "CODE — Name" for the picked vendor so the name is visible, not just the code.
+              valueLabel={
+                op.ospVendorCodeText.trim()
+                  ? (() => {
+                      const v = vendorsList.find(
+                        (x) => x.code.toUpperCase() === op.ospVendorCodeText.trim().toUpperCase(),
+                      );
+                      return v ? `${v.code} — ${v.name}` : op.ospVendorCodeText;
+                    })()
+                  : undefined
+              }
+              selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
             />
             {vendorLabel ? (
               <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
@@ -770,19 +779,25 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
         )}
       </td>
       <td>
-        <input
-          className="innovic-input"
-          value={op.operation}
-          onChange={(e) => onChange({ operation: e.target.value })}
-          placeholder={
-            op.opType === 'qc'
-              ? 'DIR / MIR / TPI…'
-              : op.opType === 'outsource'
-                ? 'Coating / Painting / HT…'
-                : 'od turn, mill, drill…'
-          }
-          style={{ fontSize: 12 }}
-        />
+        {op.opType === 'qc' ? (
+          // QC operation must come from the QC Process Master (searchable, master-only),
+          // the same picker Job Card / SO Planning use. Stores the process name.
+          <QcProcessPicker
+            id={`rc-qcproc-${idx}`}
+            value={op.operation}
+            onChange={(code) => onChange({ operation: code })}
+          />
+        ) : (
+          <input
+            className="innovic-input"
+            value={op.operation}
+            onChange={(e) => onChange({ operation: e.target.value })}
+            placeholder={
+              op.opType === 'outsource' ? 'Coating / Painting / HT…' : 'od turn, mill, drill…'
+            }
+            style={{ fontSize: 12 }}
+          />
+        )}
       </td>
       <td>
         <input

@@ -221,7 +221,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               )}
             </Fact>
             <Fact label="Party">{data.partyName ?? '—'}</Fact>
-            <Fact label="Target date" mono>
+            <Fact label="Customer dispatch date" mono>
               {data.targetDate}
             </Fact>
 

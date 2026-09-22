@@ -78,6 +78,11 @@ export const planSchema = z.object({
 
   plannedStartDate: z.string().nullable(),
   plannedEndDate: z.string().nullable(),
+  /** Customer Dispatch Date — the day the goods must leave for the customer
+   *  (migration 0137). Entered on the plan, defaulted from the SO line's due
+   *  date; flows to the Production Order (its date field), the Job Card header
+   *  and the Customer Dispatch pending list. */
+  customerDispatchDate: z.string().nullable().default(null),
 
   // Raw material for this plan — two INDEPENDENT master pickers (Grade and
   // Size). Both optional: a Direct Purchase plan buys a finished item and has
@@ -248,6 +253,11 @@ export const createPlanInputSchema = z.object({
 
   plannedStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   plannedEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  customerDispatchDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
 
   // Raw material (optional on every plan type) — see planSchema.
   rawMaterialGradeId: z.string().uuid().nullable().optional(),
@@ -341,6 +351,11 @@ export const updatePlanInputSchema = z.object({
   planQty: z.number().int().positive().optional(),
   plannedStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   plannedEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  customerDispatchDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
 
   // Raw material (optional on every plan type) — see planSchema.
   rawMaterialGradeId: z.string().uuid().nullable().optional(),
@@ -467,5 +482,11 @@ export const defaultRouteOpsResponseSchema = z.object({
   // nonnegative: a brand-new route card is Rev 0, and the planning screen
   // must be able to show that rather than fail validation.
   routeCardRevision: z.number().int().nonnegative().nullable(),
+  // Raw material picked on the route card, so the Plan can auto-fetch it
+  // downstream (grade + size) exactly as it auto-loads the operations.
+  rawMaterialGradeId: z.string().uuid().nullable(),
+  rawMaterialGradeText: z.string().nullable(),
+  rawMaterialSizeId: z.string().uuid().nullable(),
+  rawMaterialSizeText: z.string().nullable(),
 });
 export type DefaultRouteOpsResponse = z.infer<typeof defaultRouteOpsResponseSchema>;

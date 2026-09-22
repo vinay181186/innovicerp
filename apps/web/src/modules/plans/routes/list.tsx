@@ -374,6 +374,11 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                       <div className="text3" style={{ fontSize: 11 }}>
                         {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
                       </div>
+                      {row.customerDispatchDate ? (
+                        <div className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                          Dispatch {row.customerDispatchDate}
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       {/* `CODE/REV` — the customer's drawing revision from the

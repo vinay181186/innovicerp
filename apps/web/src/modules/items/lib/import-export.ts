@@ -6,6 +6,10 @@
 // DELTA vs legacy: legacy's template carried a "Stock Qty" column — dropped
 // here because Item Master defines items only; stock lives in Store. UOM and
 // Item Type are validated against the shared enums (invalid → safe default).
+//
+// No "Drawing No." / "Revision" columns (user decision 2026-09-21): both belong
+// to the SO / JWSO line, not the item. Older sheets that still carry those two
+// columns import fine — they are simply ignored.
 
 import { ITEM_PROCUREMENT_TYPES, ITEM_TYPES, type CreateItemInput, UOMS } from '@innovic/shared';
 import * as XLSX from 'xlsx';
@@ -17,8 +21,6 @@ const COLUMNS = [
   'Item Code*',
   'Name*',
   'Description',
-  'Drawing No.',
-  'Revision',
   'Material',
   'UOM',
   'Item Type',
@@ -30,15 +32,13 @@ export function downloadItemTemplate(): void {
     'ITM-001',
     'Shaft 50mm',
     'Main drive shaft',
-    'DRW-001',
-    'A',
     'EN8 Steel',
     'NOS',
     'component',
     'make',
   ];
   const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
-  ws['!cols'] = [14, 22, 28, 16, 10, 18, 8, 12, 8].map((wch) => ({ wch }));
+  ws['!cols'] = [14, 22, 28, 18, 8, 12, 8].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Items');
   XLSX.writeFile(wb, 'ItemMaster_ImportTemplate.xlsx');
@@ -81,11 +81,15 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
       transform: (s) => s.toUpperCase(),
     });
     if (uom.warning) errors.push(`Row ${rowNum}: ${uom.warning}`);
-    const itemType = coerceEnum(getCol(r, ['Item Type', 'ItemType', 'item_type', 'Type', 'type']), ITEM_TYPES, {
-      fallback: 'component',
-      label: 'Item Type',
-      transform: (s) => s.toLowerCase(),
-    });
+    const itemType = coerceEnum(
+      getCol(r, ['Item Type', 'ItemType', 'item_type', 'Type', 'type']),
+      ITEM_TYPES,
+      {
+        fallback: 'component',
+        label: 'Item Type',
+        transform: (s) => s.toLowerCase(),
+      },
+    );
     if (itemType.warning) errors.push(`Row ${rowNum}: ${itemType.warning}`);
     // ADR-171 — Source (make / buy); blank or unknown → make, the default.
     const source = coerceEnum(
@@ -102,8 +106,9 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
       code,
       name,
       description: getCol(r, ['Description', 'desc', 'Desc']) || undefined,
-      drawingNo: getCol(r, ['Drawing No.', 'Drawing No', 'Drawing', 'drawing']) || undefined,
-      revision: getCol(r, ['Revision', 'Rev', 'rev']) || 'A',
+      // `revision` is required by the CreateItemInput type (the schema defaults
+      // it to 'A' server-side); it is not read from the sheet any more.
+      revision: 'A',
       material: getCol(r, ['Material', 'material']) || undefined,
       uom: uom.value,
       itemType: itemType.value,

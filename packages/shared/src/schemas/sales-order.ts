@@ -64,6 +64,8 @@ export const salesOrderLineSchema = z.object({
   // Uploaded drawing document's storage path (qc-docs bucket, folder
   // `so-line-drawings`; view via a short-lived signed URL). Nullable.
   drawingFilePath: z.string().nullable().default(null),
+  /** Item Master product image (items.image_path via itemId), for the thumbnail. */
+  itemImagePath: z.string().nullable().default(null),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
   // Billing status (migration 0050 / ADR-042). dispatchedQty is the cumulative
@@ -159,6 +161,10 @@ export const salesOrderListItemSchema = salesOrderSchema.extend({
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
   jcQty: z.number().int().nonnegative(),
+  /** Pieces already dispatched to the customer, summed over the order's lines
+   *  (sales_order_lines.dispatched_qty). The list's Dispatched column; Balance
+   *  is totalQty minus this. */
+  dispatchedQty: z.number().int().nonnegative().default(0),
   earliestDueDate: z.string().nullable(),
   // 📎 client-PO file link (ISSUE-013): latest active file_registry row with
   // category 'client_po' for this SO; null when none. Mirrors legacy
@@ -188,7 +194,7 @@ export const salesOrderLineInputSchema = z
     itemCodeText: z.string().min(1).max(64).optional(),
     partName: z.string().min(1).max(255),
     material: z.string().max(255).optional(),
-    drawingNo: z.string().max(64).optional(),
+    drawingNo: z.string().max(64).nullable().optional(),
     // COMPULSORY, and nothing else on the line changes it. The customer's
     // drawing revision is a fact about the paper, so the person entering the
     // order is the only one who knows it — the server used to derive it from

@@ -3,7 +3,7 @@
 // op_log + new JC rows + flip jc_ops.reworkQty without polluting prod-shape
 // data. Same defensive prefix pattern as sales-cascade.test.ts.
 
-import { and, eq, like, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { activityLog, items, jcOps, jobCards, ncRegister, opLog, users } from '../../db/schema';
@@ -157,21 +157,17 @@ async function inUserTx<T>(fn: (tx: DbTransaction) => Promise<T>): Promise<T> {
   return withUserContext(admin, fn);
 }
 
-/** Give a recovery child ONE op (a QC op), so it has a "last op" to inspect. */
-async function addSingleQcOp(jobCardId: string): Promise<string> {
+/** The recovery child's terminal QC op — the one onRecoveryJobCardQc keys on.
+ *  createRecoveryJobCard pre-fills the child route (seedRecoveryOps: op 1 =
+ *  the producing op, op 2 = QC), so the op is read back rather than inserted;
+ *  inserting an op_seq 1 here used to collide with the pre-filled route. */
+async function childTerminalQcOp(jobCardId: string): Promise<string> {
   const rows = await db
-    .insert(jcOps)
-    .values({
-      companyId: admin.companyId!,
-      jobCardId,
-      opSeq: 1,
-      operation: 'QC',
-      opType: 'qc',
-      qcRequired: true,
-      createdBy: admin.id,
-      updatedBy: admin.id,
-    })
-    .returning({ id: jcOps.id });
+    .select({ id: jcOps.id })
+    .from(jcOps)
+    .where(and(eq(jcOps.jobCardId, jobCardId), isNull(jcOps.deletedAt)))
+    .orderBy(desc(jcOps.opSeq))
+    .limit(1);
   return rows[0]!.id;
 }
 
@@ -230,12 +226,23 @@ describe('nc-register dispose cascades (T-040b, QC–NC handling design §1–§
     expect(child[0]!.orderQty).toBe(5);
     expect(child[0]!.clientMaterialGate).toBe(false);
     expect(child[0]!.remarks).toBe(`Rework of ${f.jcCode} Op 30 — ${f.ncCode}`);
-    // No ops are copied — the user defines the recovery route (§4.3).
+    // The recovery route is pre-filled (seedRecoveryOps, §4.3): op 1 = the op
+    // that MADE the rejected pieces (the reject op itself when it is a process
+    // op — here op 3 'TURN'), op 2 = a terminal QC. Still fully editable.
     const childOps = await db
-      .select({ id: jcOps.id })
+      .select({
+        opSeq: jcOps.opSeq,
+        operation: jcOps.operation,
+        opType: jcOps.opType,
+        qcRequired: jcOps.qcRequired,
+      })
       .from(jcOps)
-      .where(eq(jcOps.jobCardId, child[0]!.id));
-    expect(childOps).toHaveLength(0);
+      .where(and(eq(jcOps.jobCardId, child[0]!.id), isNull(jcOps.deletedAt)))
+      .orderBy(jcOps.opSeq);
+    expect(childOps).toEqual([
+      { opSeq: 1, operation: 'TURN', opType: 'process', qcRequired: false },
+      { opSeq: 2, operation: 'QC', opType: 'qc', qcRequired: true },
+    ]);
     // The legacy counter on the parent's ops is untouched.
     const op2 = f.jcOpIds.find((o) => o.opSeq === 2)!;
     const reread = await db.select().from(jcOps).where(eq(jcOps.id, op2.jcOpId)).limit(1);
@@ -466,7 +473,7 @@ describe('nc-register recovery QC + closure gate (design §3–§4)', () => {
     const originOpId = f.jcOpIds.find((o) => o.opSeq === 2)!.jcOpId;
     const res = await service.disposeNcRegister(f.ncId, { action: 'rework' }, admin);
     const childId = res.childJobCardId!;
-    const childOpId = await addSingleQcOp(childId);
+    const childOpId = await childTerminalQcOp(childId);
 
     // Manual close is refused while pieces are still on the child.
     await expect(service.closeNc(f.ncId, admin)).rejects.toThrow('5 of 5 pcs still under rework');
@@ -491,14 +498,52 @@ describe('nc-register recovery QC + closure gate (design §3–§4)', () => {
         admin,
       ),
     );
+    // The child's REJECT is not booked as `failed` on the parent NC: the piece
+    // is still in rework (op-entry raises a follow-on NC for it on the child;
+    // it becomes `failed` upstream only if that NC is scrapped). So the parent
+    // NC stays open for 2 — the rejected piece and the one not yet inspected.
     let nc = await service.getNcRegister(f.ncId, admin);
     expect(nc.clearedQty).toBe('3.00');
-    expect(nc.failedQty).toBe('1.00');
-    expect(nc.openQty).toBe('1.00');
+    expect(nc.failedQty).toBe('0.00');
+    expect(nc.openQty).toBe('2.00');
     expect(nc.status).toBe('under_rework');
-    expect(nc.closeBlockedReason).toContain('1 of 5 pcs still under rework');
+    expect(nc.closeBlockedReason).toContain('2 of 5 pcs still under rework');
 
-    // Second inspection clears the last piece → auto-closed.
+    // Second inspection clears the last two pieces → auto-closed.
+    await inUserTx((tx) =>
+      onRecoveryJobCardQc(
+        tx,
+        {
+          jobCardId: childId,
+          jcOpId: childOpId,
+          acceptedQty: 2,
+          rejectedQty: 0,
+          qcLogId: '00000000-0000-0000-0000-000000000000',
+          logDate: '2026-05-05',
+          shift: 'day',
+        },
+        admin.companyId!,
+        admin,
+      ),
+    );
+    nc = await service.getNcRegister(f.ncId, admin);
+    expect(nc.status).toBe('closed');
+    expect(nc.clearedQty).toBe('5.00');
+    expect(nc.failedQty).toBe('0.00');
+    expect(nc.closedAt).not.toBeNull();
+    expect(nc.closeBlockedReason).toBeNull();
+
+    // The 5 recovered pieces are back on the parent's origin op as QC-accepted.
+    const reinjected = await db
+      .select({ qty: opLog.qty, remarks: opLog.remarks })
+      .from(opLog)
+      .where(and(eq(opLog.jcOpId, originOpId), eq(opLog.logType, 'qc')));
+    expect(reinjected.reduce((s, r) => s + r.qty, 0)).toBe(5);
+    expect(reinjected[0]!.remarks).toContain(`Recovered via ${f.jcCode}-RW1`);
+
+    // Over-crediting is CLAMPED, not refused: the climb credits at most what
+    // the ancestor NC still has open (0 here — it is closed), so a further
+    // accept neither throws nor writes another ledger / re-inject row.
     await inUserTx((tx) =>
       onRecoveryJobCardQc(
         tx,
@@ -516,38 +561,12 @@ describe('nc-register recovery QC + closure gate (design §3–§4)', () => {
       ),
     );
     nc = await service.getNcRegister(f.ncId, admin);
-    expect(nc.status).toBe('closed');
-    expect(nc.clearedQty).toBe('4.00');
-    expect(nc.closedAt).not.toBeNull();
-    expect(nc.closeBlockedReason).toBeNull();
-
-    // The 4 recovered pieces are back on the parent's origin op as QC-accepted.
-    const reinjected = await db
-      .select({ qty: opLog.qty, remarks: opLog.remarks })
+    expect(nc.clearedQty).toBe('5.00');
+    const reinjectedAfter = await db
+      .select({ qty: opLog.qty })
       .from(opLog)
       .where(and(eq(opLog.jcOpId, originOpId), eq(opLog.logType, 'qc')));
-    expect(reinjected.reduce((s, r) => s + r.qty, 0)).toBe(4);
-    expect(reinjected[0]!.remarks).toContain(`Recovered via ${f.jcCode}-RW1`);
-
-    // Over-crediting is refused.
-    await expect(
-      inUserTx((tx) =>
-        onRecoveryJobCardQc(
-          tx,
-          {
-            jobCardId: childId,
-            jcOpId: childOpId,
-            acceptedQty: 1,
-            rejectedQty: 0,
-            qcLogId: '00000000-0000-0000-0000-000000000000',
-            logDate: '2026-05-05',
-            shift: 'day',
-          },
-          admin.companyId!,
-          admin,
-        ),
-      ),
-    ).rejects.toBeInstanceOf(ConflictError);
+    expect(reinjectedAfter.reduce((s, r) => s + r.qty, 0)).toBe(5);
 
     const audit = await db
       .select({ action: activityLog.action })

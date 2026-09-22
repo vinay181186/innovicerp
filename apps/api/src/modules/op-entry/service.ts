@@ -46,7 +46,7 @@ import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
 import { generateOspPrForOp } from './osp-cascade';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from './qc-stock-cascade';
-import { tryCascadeJcComplete } from './sales-cascade';
+import { cascadeJcCompleteUpChain, tryCascadeJcComplete } from './sales-cascade';
 import type {
   DecideOpLogTimeChangeInput,
   GenerateOspPrInput,
@@ -1344,28 +1344,26 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
 
     // Look up JC code once — used for cascade audit, OP_QC audit detail, and
     // the auto-NC code prefix (T-040e).
+    // Rework / repair child fields (docs/QC-NC-HANDLING-DESIGN.md §4) are NOT
+    // read here: the recovery cascade, the stock guard and the ancestor close
+    // walk each read their own copy (onRecoveryJobCardQc,
+    // recoveryChildCreditsStock, cascadeJcCompleteUpChain).
     const jcMeta = await tx
-      .select({
-        code: jobCards.code,
-        // Rework / repair child (docs/QC-NC-HANDLING-DESIGN.md §4): the two
-        // fields the recovery cascade and the parent close check key off. The
-        // stock guard reads its own copy inside recoveryChildCreditsStock.
-        recoveryKind: jobCards.recoveryKind,
-        parentJobCardId: jobCards.parentJobCardId,
-      })
+      .select({ code: jobCards.code })
       .from(jobCards)
       .where(eq(jobCards.id, op.jobCardId))
       .limit(1);
     const jcCode = jcMeta[0]?.code;
-    const recoveryKind = jcMeta[0]?.recoveryKind ?? null;
 
     // T-040e: auto-create NC when this QC log rejects qty > 0. Mirrors legacy
     // _autoCreateNC at HTML L3946. Same tx — rollback unwinds both.
     //
     // Runs BEFORE the recovery cascade on purpose: on a rework/repair child the
-    // cascade books this inspection's reject as `failed_qty` on the parent NC,
-    // and the follow-on NC for those very pieces must already exist by then so
-    // the trail reads reject → NC → child JC → reject → NC without a gap.
+    // rejected pieces stay in rework on this follow-on NC (linked to the parent
+    // NC via parent_nc_id — they are booked `failed` upstream only if it is
+    // later scrapped), and it must already exist by the time the cascade
+    // climbs so the trail reads reject → NC → child JC → reject → NC without
+    // a gap.
     if (input.rejectQty > 0 && jcCode) {
       // WI1 (ADR-164/0095): the auto-NC must name the ACTUAL machine that MADE
       // the rejected pieces, not null. nc.opSeq/operationText still point at the
@@ -1498,14 +1496,16 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // Cascade: if this QC log brings the JC to complete (last QC op resolved),
     // close the source SO/JW line + header. Idempotent; no-op for source-less
     // JCs or already-closed lines.
-    await tryCascadeJcComplete(tx, op.jobCardId, user);
-    // A recovery child's re-injected pieces can be the ones that bring the
-    // PARENT to complete (origin op = the parent's last op), and that op_log
-    // row was written directly by the cascade, so nothing else would run the
-    // parent's close check.
-    if (recoveryKind && jcMeta[0]?.parentJobCardId) {
-      await tryCascadeJcComplete(tx, jcMeta[0].parentJobCardId, user);
-    }
+    //
+    // Walks the WHOLE ancestor chain (child → parent → grandparent …), not
+    // just this JC: a recovery child's re-injected pieces can be the ones
+    // that bring ANY ancestor to complete (the recovery cascade above writes
+    // the re-inject op_log row on every ancestor's origin op directly, never
+    // through this function), so nothing else would run their close checks.
+    // Checking only the immediate parent left a grandparent stuck at
+    // `complete` with no closed_at (QC-NC audit 2026-09-21, gap 2). For an
+    // ordinary JC (no parent) this is exactly one cascade call, as before.
+    await cascadeJcCompleteUpChain(tx, op.jobCardId, user);
 
     // Audit emit. Single OP_QC action with both qtys in detail (one log can
     // carry both per legacy; splitting into _ACCEPT/_REJECT loses the link).

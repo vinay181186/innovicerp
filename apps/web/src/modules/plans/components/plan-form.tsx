@@ -261,6 +261,34 @@ export function PlanForm({
     }
   }, [isEdit, nextCode?.code, values.code]);
 
+  // Auto-fetch the raw material chosen on the item's route card into the Plan
+  // (grade + size), the same way the operations load — but automatically. Only
+  // on create, and only while a field is still blank, so a user's own pick is
+  // never overwritten.
+  useEffect(() => {
+    if (isEdit || !defaultOps) return;
+    setValues((v) => {
+      const gradeBlank = !v.rawMaterialGradeId && !v.rawMaterialGradeText;
+      const sizeBlank = !v.rawMaterialSizeId && !v.rawMaterialSizeText;
+      if (!gradeBlank && !sizeBlank) return v;
+      return {
+        ...v,
+        ...(gradeBlank
+          ? {
+              rawMaterialGradeId: defaultOps.rawMaterialGradeId,
+              rawMaterialGradeText: defaultOps.rawMaterialGradeText,
+            }
+          : {}),
+        ...(sizeBlank
+          ? {
+              rawMaterialSizeId: defaultOps.rawMaterialSizeId,
+              rawMaterialSizeText: defaultOps.rawMaterialSizeText,
+            }
+          : {}),
+      };
+    });
+  }, [isEdit, defaultOps]);
+
   // Item master drives the code autosuggest + name/id auto-fill. Plans still
   // accept off-master free text, so a non-matching code is left as typed.
   const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });

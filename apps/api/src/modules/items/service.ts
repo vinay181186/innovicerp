@@ -185,6 +185,7 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
           procurementType: input.procurementType,
           hsnCode: input.hsnCode ?? null,
           drawingFilePath: input.drawingFilePath ?? null,
+          imagePath: input.imagePath ?? null,
           createdBy: user.id,
           updatedBy: user.id,
         })
@@ -313,6 +314,7 @@ export async function createItemsBulk(
         procurementType: it.procurementType,
         hsnCode: it.hsnCode ?? null,
         drawingFilePath: it.drawingFilePath ?? null,
+        imagePath: it.imagePath ?? null,
         createdBy: user.id,
         updatedBy: user.id,
       });
@@ -375,6 +377,8 @@ export async function updateItem(
     if (input.hsnCode !== undefined) updates.hsnCode = input.hsnCode ?? null;
     if (input.drawingFilePath !== undefined)
       updates.drawingFilePath = input.drawingFilePath ?? null;
+    // Product image: a string sets it, null clears it, undefined leaves it alone.
+    if (input.imagePath !== undefined) updates.imagePath = input.imagePath ?? null;
 
     const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();
     const row = updated[0] as unknown as Item;

@@ -13,7 +13,7 @@ import {
 } from '@innovic/shared';
 import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { AlertTriangle, Loader2, Play, PackagePlus, ShieldCheck, Square } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -253,6 +253,49 @@ export function OpEntryForm({
   // the list takes to arrive are seconds in which a busy machine looks free.
   const busyUnknown =
     !activeRunningId && isProcessOp && Boolean(actualMachineId) && runningOps.data === undefined;
+
+  // OPERATOR AUTO-FILL ON LOG / STOP (user decision 2026-09-21). The Start
+  // entry already recorded who is running the machine on the session row, so
+  // when this form opens in its Log / Stop half the person who STARTED is the
+  // likeliest answer to "Operator" — pre-filled, never locked: a night-shift
+  // session stopped next morning by somebody else is still typed over. Seeded
+  // ONCE per session id, and only while the box is untouched (blank, or still
+  // exactly the previous seed), so the 30-second re-poll of the sessions list
+  // can never overwrite a name the operator has typed. A session with no
+  // operator recorded leaves the box blank, as before. Production half only:
+  // the QC sub-form's Inspector box is a different question and stays blank.
+  const runningSession =
+    activeRunningId && !(op.opType === 'qc' || op.qcRequired)
+      ? (runningOps.data?.find((r) => r.id === activeRunningId) ?? null)
+      : null;
+  const seededForRunId = useRef<string | null>(null);
+  // What the seed put in the box, '' when nothing was seeded. The "auto-filled"
+  // note below the input shows only while the box still reads exactly this.
+  const [seedValue, setSeedValue] = useState<string>('');
+  useEffect(() => {
+    if (!activeRunningId) {
+      seededForRunId.current = null;
+      setSeedValue('');
+      return;
+    }
+    if (seededForRunId.current === activeRunningId) return;
+    if (!runningSession) return; // list not in yet (or the session is gone)
+    seededForRunId.current = activeRunningId;
+    const untouched = operatorName.trim() === '' || operatorName === seedValue;
+    if (!untouched) {
+      setSeedValue('');
+      return;
+    }
+    const name = runningSession.operatorName?.trim() ?? '';
+    setSeedValue(name);
+    setOperatorName(name);
+    // The master id rides only with a VISIBLE name. A session carrying an id
+    // but no name must not leave a hidden operator behind a blank box, or the
+    // mandatory check would pass on somebody the operator cannot see.
+    setOperatorId(name ? (runningSession.operatorId ?? undefined) : undefined);
+  }, [activeRunningId, runningSession, operatorName, seedValue]);
+  const operatorIsSeeded =
+    Boolean(activeRunningId) && seedValue !== '' && operatorName === seedValue;
 
   // Reset when the selected op changes. Quantities and notes belong to the op
   // that was on screen, never to the next one.
@@ -1137,6 +1180,13 @@ export function OpEntryForm({
                   </option>
                 ))}
               </datalist>
+              {/* Shown only while the box still holds the name the seed put
+                  there; the first keystroke hides it. */}
+              {operatorIsSeeded ? (
+                <div className="form-help">
+                  ✓ auto-filled from Start — change if another operator finished
+                </div>
+              ) : null}
             </div>
             {/* Remarks sits next to Operator. Collapsed it is a compact single
                 line (full text on hover); "show more" expands it to a full-width

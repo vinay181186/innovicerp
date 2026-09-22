@@ -1,10 +1,17 @@
 // Item Master list (UI-003-01 + UI-003-02).
 // Ports legacy renderItems (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
 // L11481-11521) to the Innovic chrome (.panel + .innovic-table + .badge + .btn).
-// Columns: Item Code | Name | Description | Drawing No. | Material | UOM | Drw |
+// Columns: Item (image + code · name) | Description | Material | UOM | Source |
 // Actions. Uses TanStack Table for column defs (preserved per user direction
 // 2026-05-20) but renders via plain <table className="innovic-table"> so the
 // legacy CSS lights up.
+//
+// The Item column is the shared <ItemBadge> (user decision 2026-09-21): the
+// 40 px product image, the code (still a <Link> to the item) and the name under
+// it. Code and Name were two columns; they are one cell now, and the header
+// carries BOTH sort toggles ("Item Code ↕ · Name ↕") so sorting by either still
+// works. The Drawing No. and Drw (print) columns are gone with the item-level
+// drawing — drawings live on the SO / JWSO line.
 //
 // NO Rev column, deliberately, and it must not come back (user direction
 // 2026-09-10). Legacy had one here and `items.revision` still exists, but a
@@ -48,20 +55,19 @@ import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tan
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useMyCompany } from '@/modules/settings/api';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
 import { downloadItemTemplate, parseItemImportFile } from '../lib/import-export';
-import { printItemDrawing } from '../lib/print-drawing';
 
-// Legacy puts its cell classes on the <td> itself (e.g. `<td class="td-ctr">`),
-// not on a wrapper span — td-ctr is text-align:center, which only takes effect
-// on the block-level cell. Carry that class through the column def so the
-// flexRender loop can put it where legacy has it.
+// Legacy puts its cell classes on the <td> itself, not on a wrapper span, so
+// the column def can carry a `meta.tdClass` the flexRender loop puts on the
+// <td>. No column sets one today: alignment is the shared table standard
+// (innovic-theme.css centres every th/td), so the old `td-ctr` is gone.
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next),
 // per the `styling` skill Rule 4. Item Master is a master list you scan end to
 // end; 25-at-a-time made 44 items into two pages. The API caps `limit` at 1000
@@ -180,21 +186,6 @@ function ItemsListPage(): React.JSX.Element {
   );
 
   const softDelete = useSoftDeleteItem();
-  const { data: company } = useMyCompany();
-
-  // Drw column print — opens the stored drawing in a print window (legacy
-  // printDrawingFile). Company gives the letterhead; falls back gracefully.
-  const printDrawing = useCallback(
-    async (item: Item): Promise<void> => {
-      try {
-        const ok = await printItemDrawing({ item, company });
-        if (!ok) window.alert('Allow popups to print.');
-      } catch (e) {
-        window.alert(e instanceof Error ? e.message : 'Could not open drawing for printing');
-      }
-    },
-    [company],
-  );
 
   // Excel import — parse the workbook, then send the WHOLE sheet in one request.
   // It used to POST one item at a time and wait for each answer, and every
@@ -257,39 +248,51 @@ function ItemsListPage(): React.JSX.Element {
   const columns = useMemo<ColumnDef<Item>[]>(
     () => [
       {
+        // One cell for image + code + name; two sort toggles in its header.
         header: () => (
-          <SortTh
-            label="Item Code"
-            field="code"
-            sortBy={search.sortBy}
-            sortDir={search.sortDir}
-            onSort={toggleSort}
-          />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <SortTh
+              label="Item Code"
+              field="code"
+              sortBy={search.sortBy}
+              sortDir={search.sortDir}
+              onSort={toggleSort}
+            />
+            <span aria-hidden style={{ opacity: 0.5 }}>
+              ·
+            </span>
+            <SortTh
+              label="Name"
+              field="name"
+              sortBy={search.sortBy}
+              sortDir={search.sortDir}
+              onSort={toggleSort}
+            />
+          </span>
         ),
         accessorKey: 'code',
+        // No item-level revision here, deliberately (see the header comment):
+        // the badge gets the bare code, never `items.revision`.
         cell: ({ row }) => (
-          <Link
-            to="/items/$id"
-            params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--purple)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: () => (
-          <SortTh
-            label="Name"
-            field="name"
-            sortBy={search.sortBy}
-            sortDir={search.sortDir}
-            onSort={toggleSort}
+          <ItemBadge
+            size="row"
+            code={row.original.code}
+            name={row.original.name}
+            imagePath={row.original.imagePath}
+            codeColor="var(--purple)"
+            nameMaxWidth={240}
+            renderCode={(text) => (
+              <Link
+                to="/items/$id"
+                params={{ id: row.original.id }}
+                className="td-code"
+                style={{ color: 'var(--purple)', textDecoration: 'none' }}
+              >
+                {text}
+              </Link>
+            )}
           />
         ),
-        accessorKey: 'name',
-        cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
       },
       {
         header: 'Description',
@@ -315,15 +318,6 @@ function ItemsListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Drawing No.',
-        accessorKey: 'drawingNo',
-        cell: ({ row }) => (
-          <span className="mono" style={{ fontSize: 11 }}>
-            {row.original.drawingNo ?? '—'}
-          </span>
-        ),
-      },
-      {
         header: 'Material',
         accessorKey: 'material',
         cell: ({ row }) => (
@@ -345,7 +339,6 @@ function ItemsListPage(): React.JSX.Element {
       {
         header: 'UOM',
         accessorKey: 'uom',
-        meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => <span className="badge b-grey">{row.original.uom}</span>,
       },
       {
@@ -357,29 +350,6 @@ function ItemsListPage(): React.JSX.Element {
             {ITEM_PROCUREMENT_TYPE_LABEL[row.original.procurementType]}
           </span>
         ),
-      },
-      {
-        header: 'Drw',
-        meta: { tdClass: 'td-ctr' },
-        cell: ({ row }) =>
-          row.original.drawingFilePath ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 11 }}
-              title="View/Print Drawing"
-              onClick={(e) => {
-                e.stopPropagation();
-                void printDrawing(row.original);
-              }}
-            >
-              🖨 Print
-            </button>
-          ) : (
-            <span className="text3" style={{ fontSize: 11 }}>
-              —
-            </span>
-          ),
       },
       {
         header: 'Actions',
@@ -420,7 +390,7 @@ function ItemsListPage(): React.JSX.Element {
         ),
       },
     ],
-    [canEdit, canDelete, softDelete, printDrawing, search.sortBy, search.sortDir, toggleSort],
+    [canEdit, canDelete, softDelete, search.sortBy, search.sortDir, toggleSort],
   );
 
   const table = useReactTable({

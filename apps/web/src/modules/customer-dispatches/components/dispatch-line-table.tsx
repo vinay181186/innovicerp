@@ -13,6 +13,7 @@ import type { DispatchableLine } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtDate } from '@/lib/print/doc-print';
 
 export interface LineCard {
   id: number;
@@ -20,7 +21,7 @@ export interface LineCard {
   qty: string;
 }
 
-const COL_COUNT = 9;
+const COL_COUNT = 10;
 
 export function DispatchLineTable(props: {
   cards: LineCard[];
@@ -57,22 +58,27 @@ export function DispatchLineTable(props: {
           borderBottom: 'none',
         }}
       >
-        <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 880 }}>
+        <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 960 }}>
           <thead>
             <tr>
-              <th style={{ width: '5%' }}>#</th>
-              <th style={{ width: '22%' }}>
+              <th style={{ width: '4%' }}>#</th>
+              <th style={{ width: '20%' }}>
                 Item Code<span className="req">★</span>
               </th>
-              <th style={{ width: '20%' }}>Item Name</th>
-              <th style={{ width: '8%' }} className="td-ctr">Order</th>
+              <th style={{ width: '18%' }}>Item Name</th>
+              <th style={{ width: '7%' }} className="td-ctr">Order</th>
               <th style={{ width: '8%', color: 'var(--green)' }} className="td-ctr">Ready</th>
-              <th style={{ width: '10%' }} className="td-ctr">Dispatched</th>
-              <th style={{ width: '9%', color: 'var(--amber)' }} className="td-ctr">Available</th>
-              <th style={{ width: '12%', color: 'var(--green)' }} className="td-ctr">
+              <th style={{ width: '9%' }} className="td-ctr">Dispatched</th>
+              <th style={{ width: '8%', color: 'var(--amber)' }} className="td-ctr">Available</th>
+              {/* Earliest Customer Dispatch Date among the plans on the SO
+                  line — the date the dispatch team works to. */}
+              <th style={{ width: '10%' }} className="td-ctr">
+                Cust. Dispatch
+              </th>
+              <th style={{ width: '11%', color: 'var(--green)' }} className="td-ctr">
                 Dispatch Qty<span className="req">★</span>
               </th>
-              <th style={{ width: '6%' }} />
+              <th style={{ width: '5%' }} />
             </tr>
           </thead>
           <tbody>
@@ -155,6 +161,9 @@ export function DispatchLineTable(props: {
                     <td className="td-ctr mono text3">{line ? line.dispatchedQty : '—'}</td>
                     <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
                       {line ? line.availableQty : '—'}
+                    </td>
+                    <td className="td-ctr mono" style={{ whiteSpace: 'nowrap' }}>
+                      {line?.customerDispatchDate ? fmtDate(line.customerDispatchDate) : '—'}
                     </td>
                     <td>
                       <input

@@ -4,14 +4,18 @@
 // step strip above the column headers, closest to a paper QC register book.
 //
 // Presentational only. The accept/reject entry forms, their validation,
-// mutations and permission gates stay in the row components that were there
-// before (routes/index.tsx PendingCall, incoming-qc/components/qc-call-rows.tsx
-// IncomingPendingRow); they render their collapsed line through
-// `PendingSheetRow` here and hand the expanded form in as children.
+// mutations and permission gates live in the popups the register opens
+// (components/qc-call-inspect-modal.tsx for a job-card op,
+// incoming-qc/components/incoming-qc-inspect-modal.tsx for a GRN line). The
+// row components (routes/index.tsx PendingCall, incoming-qc/components/
+// qc-call-rows.tsx IncomingPendingRow) draw their line through
+// `PendingSheetRow` here and say whether the caller may open that popup.
 //
-// Styling is inline on purpose: the shared stylesheet is frozen while other
-// agents run, and `.innovic-table` brings the zebra, the filled sticky header
-// and the centred columns this sheet is specifically meant not to have.
+// The frame is the app's ruled sheet (`.innovic-table.tbl-grid`, the same
+// one the Plans, Job Card and Incoming QC lists wear — user, 2026-09-21):
+// bold blue column names, gridlines, cream / white rows, centred columns.
+// The inline TH / TD constants below carry only what the class does not —
+// the sticky header, the cell overflow — so the two never fight.
 
 import type { IncomingQcCompletedRow, QcHistoryLogRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
@@ -58,22 +62,13 @@ const CAPS: CSSProperties = {
   color: 'var(--text2)',
 };
 const TH: CSSProperties = {
-  ...CAPS,
-  padding: '8px 12px',
-  textAlign: 'left',
   whiteSpace: 'nowrap',
-  borderBottom: '1px solid var(--border)',
-  background: 'var(--bg2)',
   position: 'sticky',
   top: 0,
   zIndex: 2,
 };
 const TD: CSSProperties = {
-  padding: '9px 12px',
-  borderBottom: '1px solid var(--border)',
   verticalAlign: 'middle',
-  fontSize: 13,
-  textAlign: 'left',
   overflow: 'hidden',
 };
 const NOWRAP: CSSProperties = { whiteSpace: 'nowrap' };
@@ -114,10 +109,10 @@ export function QcStageStrip(props: {
             style={{
               flex: 1,
               minWidth: 0,
-              background: 'none',
               border: 'none',
               borderRight: i < QC_STAGES.length - 1 ? '1px solid var(--border)' : 'none',
-              borderBottom: on ? '2px solid var(--text)' : '2px solid transparent',
+              borderBottom: on ? '2px solid var(--blue)' : '2px solid transparent',
+              background: on ? 'var(--blue3)' : 'none',
               padding: '8px 16px 6px',
               textAlign: 'left',
               cursor: 'pointer',
@@ -126,10 +121,18 @@ export function QcStageStrip(props: {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ ...CAPS, color: 'var(--text3)' }}>{s.n}</span>
-              <span style={{ ...CAPS, color: on ? 'var(--text)' : 'var(--text2)' }}>{s.label}</span>
+              <span style={{ ...CAPS, color: on ? 'var(--blue)' : 'var(--text3)' }}>{s.n}</span>
+              <span style={{ ...CAPS, color: on ? 'var(--blue)' : 'var(--text2)' }}>{s.label}</span>
               <span style={{ flex: 1 }} />
-              <span style={{ ...MONO, fontSize: 20, fontWeight: 700, lineHeight: 1 }}>
+              <span
+                style={{
+                  ...MONO,
+                  fontSize: 20,
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  color: on ? 'var(--blue)' : undefined,
+                }}
+              >
                 {st.count}
               </span>
             </div>
@@ -162,23 +165,21 @@ const PENDING_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['GRN / JC No.', 13],
   ['Part / Item Code', 17],
   ['Vendor · GRN / SO · Op', 26],
-  ['Qty', 6, { textAlign: 'center' }],
+  ['Qty', 6],
   ['Called', 14],
   ['Stage', 14],
-  ['', 10, { textAlign: 'right' }],
+  ['Action', 10],
 ];
 const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['GRN / JC No.', 13],
   ['Part / Item Code', 15],
   ['Vendor · GRN / SO · Op', 20],
-  ['OK', 5, { textAlign: 'center' }],
-  ['Rej', 5, { textAlign: 'center' }],
+  ['OK', 5],
+  ['Rej', 5],
   ['Called → Attended', 14],
   ['Inspector · Log Ref', 18],
-  ['Verdict', 10, { textAlign: 'right' }],
+  ['Verdict', 10],
 ];
-export const PENDING_COL_COUNT = PENDING_COLS.length;
-
 export function QcSheetTable(props: {
   view: QcView;
   children: ReactNode;
@@ -187,7 +188,7 @@ export function QcSheetTable(props: {
   const cols = props.view === 'pending' ? PENDING_COLS : COMPLETED_COLS;
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--bg2)' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      <table className="innovic-table tbl-grid" style={{ width: '100%' }}>
         <colgroup>
           {cols.map(([, w], i) => (
             <col key={i} style={{ width: `${w}%` }} />
@@ -245,7 +246,7 @@ function ContextCell({ line1, line2 }: { line1: ReactNode; line2?: ReactNode }):
 
 function NumCell({ value, red }: { value: number; red?: boolean }): React.JSX.Element {
   return (
-    <td style={{ ...TD, ...NOWRAP, textAlign: 'center' }}>
+    <td style={{ ...TD, ...NOWRAP }}>
       <span
         style={{
           ...MONO,
@@ -310,7 +311,7 @@ function VerdictCell(props: {
 }): React.JSX.Element {
   const red = props.verdict !== 'ACCEPTED';
   return (
-    <td style={{ ...TD, ...NOWRAP, textAlign: 'right' }}>
+    <td style={{ ...TD, ...NOWRAP }}>
       {props.reportPath ? (
         <span style={{ marginRight: 8 }} onClick={(e) => e.stopPropagation()}>
           <QcReportLink path={props.reportPath} name={props.reportName} label="📎" />
@@ -403,9 +404,9 @@ export function CompletedIncomingSheetRow({ l }: { l: IncomingQcCompletedRow }):
   );
 }
 
-// ─── pending row (collapsed line + expanded form slot) ───────────────────────
+// ─── pending row (one line; click opens the entry popup) ─────────────────────
 export function PendingSheetRow(props: {
-  /** The document number cell — a Link is fine; clicks inside it don't toggle. */
+  /** The document number cell — a Link is fine; clicks inside it don't open. */
   code: ReactNode;
   partName: string | null;
   itemCode: string;
@@ -417,12 +418,13 @@ export function PendingSheetRow(props: {
   waitDays: number | null;
   overdue: boolean;
   stage: QcStage;
-  open: boolean;
-  onToggle: () => void;
-  /** Extra className for the collapsed line (the overdue blink). */
+  /** Whether the caller may record an inspection. False → the line reads
+   *  "View only" and does not open anything. */
+  canInspect: boolean;
+  /** Open the entry popup for this call. */
+  onInspect: () => void;
+  /** Extra className for the line (the overdue blink). */
   className?: string | undefined;
-  /** The expanded entry form; rendered under the line when `open`. */
-  children?: ReactNode;
 }): React.JSX.Element {
   const stage = QC_STAGES.find((s) => s.key === props.stage);
   const wait =
@@ -432,61 +434,49 @@ export function PendingSheetRow(props: {
         ? 'Today'
         : `${props.waitDays} day${props.waitDays > 1 ? 's' : ''} waiting`;
   return (
-    <>
-      <tr
-        className={props.className}
-        style={props.children ? ROW_CLICK : undefined}
-        aria-expanded={props.children ? props.open : undefined}
-        onClick={props.children ? props.onToggle : undefined}
-      >
-        <td style={{ ...TD, ...NOWRAP }} onClick={(e) => e.stopPropagation()}>
-          <span style={{ ...MONO_STRONG, fontSize: 12 }}>{props.code}</span>
-        </td>
-        <PartCell name={props.partName} code={props.itemCode} />
-        <ContextCell line1={props.context} line2={props.contextLine2} />
-        <NumCell value={props.qty} />
-        <td style={{ ...TD, ...NOWRAP }}>
-          <div style={{ ...MONO, fontSize: 12 }}>
-            {props.calledDate ? fmtDate(props.calledDate) : '—'}
+    <tr
+      className={props.className}
+      style={props.canInspect ? ROW_CLICK : undefined}
+      onClick={props.canInspect ? props.onInspect : undefined}
+    >
+      <td style={{ ...TD, ...NOWRAP }} onClick={(e) => e.stopPropagation()}>
+        <span style={{ ...MONO_STRONG, fontSize: 12 }}>{props.code}</span>
+      </td>
+      <PartCell name={props.partName} code={props.itemCode} />
+      <ContextCell line1={props.context} line2={props.contextLine2} />
+      <NumCell value={props.qty} />
+      <td style={{ ...TD, ...NOWRAP }}>
+        <div style={{ ...MONO, fontSize: 12 }}>
+          {props.calledDate ? fmtDate(props.calledDate) : '—'}
+        </div>
+        {wait ? (
+          <div
+            style={{
+              ...QUIET,
+              color: props.overdue ? 'var(--red)' : 'var(--text3)',
+              fontWeight: props.overdue ? 700 : 400,
+            }}
+          >
+            {wait}
+            {props.overdue ? ' · overdue' : ''}
           </div>
-          {wait ? (
-            <div
-              style={{
-                ...QUIET,
-                color: props.overdue ? 'var(--red)' : 'var(--text3)',
-                fontWeight: props.overdue ? 700 : 400,
-              }}
-            >
-              {wait}
-              {props.overdue ? ' · overdue' : ''}
-            </div>
-          ) : null}
-        </td>
-        <td style={{ ...TD, ...NOWRAP }}>
-          <span style={CAPS}>
-            {stage?.n} {stage?.label}
-          </span>
-        </td>
-        <td style={{ ...TD, ...NOWRAP, textAlign: 'right' }}>
-          {/* No form to open (viewer without `entry`) → say so instead of
-              offering an "Inspect ▸" that expands nothing. */}
-          {props.children ? (
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)' }}>
-              {props.open ? 'Close ▾' : 'Inspect ▸'}
-            </span>
-          ) : (
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>View only</span>
-          )}
-        </td>
-      </tr>
-      {props.open && props.children ? (
-        <tr>
-          <td colSpan={PENDING_COL_COUNT} style={{ ...TD, padding: 0 }}>
-            {props.children}
-          </td>
-        </tr>
-      ) : null}
-    </>
+        ) : null}
+      </td>
+      <td style={{ ...TD, ...NOWRAP }}>
+        <span style={CAPS}>
+          {stage?.n} {stage?.label}
+        </span>
+      </td>
+      <td style={{ ...TD, ...NOWRAP }}>
+        {/* No form to open (viewer without `entry`) → say so instead of
+            offering an "Inspect ▸" that opens nothing. */}
+        {props.canInspect ? (
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)' }}>Inspect ▸</span>
+        ) : (
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>View only</span>
+        )}
+      </td>
+    </tr>
   );
 }
 

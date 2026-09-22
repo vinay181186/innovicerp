@@ -1,7 +1,8 @@
 // Production Order query hooks (ADR-170, migration 0133).
 //
 // A Production Order is the ONE document that turns a route-card-driven plan
-// into a Job Card: Plan + Route Card + Target Date → Create JC. Closing it
+// into a Job Card: Plan + Route Card + Customer Dispatch Date (the `targetDate`
+// field on the wire) → Create JC. Closing it
 // (blocked until the JC is complete) credits stock ONCE with the JC's actually
 // finished qty. Wire shapes: packages/shared/src/schemas/production-order.ts.
 //

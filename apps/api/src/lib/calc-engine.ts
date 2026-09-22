@@ -52,8 +52,18 @@
 //
 // Status priorities for one op:
 //   outsource  → outsource_pending / pr_raised / po_created / at_vendor / received
-//   qc op      → complete (input fully resolved) | qc_pending | available | waiting
+//   qc op      → complete (input fully ACCEPTED — rejected pieces do not count,
+//                mirrors v_jc_op_status 0125 — and no open rework/repair child
+//                on the op, 0124) | qc_pending | in_progress | available | waiting
 //   process op → running > qc_pending > complete > in_progress > available > waiting
+//
+// Open rework/repair children (QC-NC audit 2026-09-21, gap 6): the view holds
+// an op away from `complete` while pieces rejected on it are still out on a
+// rework/repair child JC. That needs nc_register rows, which this pure helper
+// does not have, so the caller passes the optional `openReworkByOp` map
+// (lib/open-rework.ts, same pattern as `ospAcceptedByOp`). An op with qty > 0
+// in that map reads `in_progress` instead of `complete`. Callers that omit the
+// map keep the pre-gap-6 behaviour.
 
 import type { jcOps, jobCards, opLog } from '../db/schema';
 
@@ -129,6 +139,11 @@ export function enrichOps(
    *  behaviour; pass it to have outsource ops count what the vendor's GRNs
    *  cleared, exactly as v_jc_op_status.completed_qty does (0128). */
   ospAcceptedByOp?: ReadonlyMap<string, number>,
+  /** Per-op Σ (rejected − cleared − failed) over OPEN rework/repair-child NCs
+   *  raised on the op (keyed by jc_ops.id) — lib/open-rework.ts. Optional for
+   *  the same reason; pass it to hold an op at in_progress while its rejects
+   *  are still out on a child, exactly as v_jc_op_status (0124) does. */
+  openReworkByOp?: ReadonlyMap<string, number>,
 ): EnrichedOp[] {
   const opsSorted = [...ops].sort((a, b) => a.opSeq - b.opSeq);
   const logsByOp = new Map<string, OpLogRow[]>();
@@ -201,6 +216,7 @@ export function enrichOps(
     }
 
     const running = runningOpIds.has(op.id);
+    const openRework = openReworkByOp?.get(op.id) ?? 0;
     const status = deriveOpStatus({
       opType: op.opType,
       outsourceStatus: op.outsourceStatus,
@@ -214,6 +230,7 @@ export function enrichOps(
       qcPending,
       available,
       running,
+      openRework,
     });
 
     enriched.push({
@@ -256,6 +273,9 @@ interface StatusInput {
   qcPending: number;
   available: number;
   running: boolean;
+  /** Pieces rejected on this op still out on an OPEN rework/repair child
+   *  (0 when the caller did not pass openReworkByOp). */
+  openRework: number;
 }
 
 function deriveOpStatus(s: StatusInput): OpStatus {
@@ -304,10 +324,19 @@ function deriveOpStatus(s: StatusInput): OpStatus {
   }
 
   if (s.isQcOp) {
-    if (s.inputAvail > 0 && s.qcAccepted + s.qcRejected >= s.inputAvail) {
+    // Complete = every piece fed in was ACCEPTED (view 0125: `+ qc_rejected_qty`
+    // used to be here and let an all-rejected op read complete). A rejected
+    // piece comes back as a qc-accepted re-inject row when its rework child
+    // clears it, so qcAccepted rises to the bar on recovery. And not while any
+    // of those pieces is still out on an open rework/repair child (view 0124).
+    if (s.inputAvail > 0 && s.qcAccepted >= s.inputAvail && s.openRework === 0) {
       return 'complete';
     }
     if (s.qcPending > 0) return 'qc_pending';
+    // Inspected but not (yet) fully accepted — rejects outstanding, or a
+    // rework child still open. View (0130): in_progress when any qc row
+    // exists. Nothing logged yet → available / waiting as before.
+    if (s.qcAccepted + s.qcRejected > 0) return 'in_progress';
     return s.inputAvail > 0 ? 'available' : 'waiting';
   }
 
@@ -320,7 +349,10 @@ function deriveOpStatus(s: StatusInput): OpStatus {
       s.completed >= s.inputAvail &&
       s.qcAccepted >= s.completed
     ) {
-      return 'complete';
+      // Same open-rework hold as the QC op above (view 0124 gates every
+      // `complete` branch on it): the pieces are out on a child, so this op
+      // is still in progress.
+      return s.openRework === 0 ? 'complete' : 'in_progress';
     }
   } else if (s.inputAvail > 0 && s.completed >= s.inputAvail) {
     return 'complete';

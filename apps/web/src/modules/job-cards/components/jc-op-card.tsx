@@ -1,46 +1,51 @@
-// Operations Detail — per-op CARD (read-only / VIEW mode).
+// Operations Details — per-op CARD (read-only / VIEW mode).
 //
-// DESIGN-ONLY port of the JC Status "Operations Detail" table row
-// (jc-status-content.tsx, view branch). Every value, badge, button, condition
-// and destination is copied from that table unchanged — the table's 13 columns
-// are re-laid-out as a card:
+// Laid out to the approved 2026-09-21 restyle (JC-Detail-Restyle-Mockup.html):
+// a bordered row with a 4 px status rail on its header bar, then EITHER one
+// collapsed row (`#n OP30 [CNC-2] Turning Center - Second Setup … 0 / 8
+// PENDING ›`) OR the expanded body —
 //
-//   table column          → card slot
-//   ─────────────────────────────────────────────────────────────────
-//   Op / Machine / Operation → header line (seq chip, machine, operation, tags)
-//   Status                   → header-right badge (+ left accent bar)
-//   Order/Completed/Pending/At Vendor/In QC → QUANTITIES tile row
-//   Cycle / Prog+Tool        → SETUP chip row
-//   (outsource machine cell) → OUTSOURCE block
-//   Recent Logs              → collapsible RECENT LOGS strip
-//   Action                   → footer strip
+//   bar     #n · OPnn · kind chip · operation · tags · status badge
+//           … Start : … End : … Cycle : …
+//   chips   Planned Qty / Completed / Pending / QC Pending / Rejected (NC) /
+//           At Vendor [+ RM Avail on the first op; Ready to Send / In QC on
+//           an OSP op]
+//   fields  Machine · Operator · Program No. · Tool · Setup Time · Last Entry
+//           on a process op; Inspector · QC Date · Result on a QC op; vendor
+//           + status on an OSP op
+//   actions the NEXT ACTION strip (jc-op-actions.tsx — every button in it is
+//           permission-gated on the screen it opens)
+//   logs    Recent Logs strip — the same latest-3 entries, one toggle
 //
-// No quantity, badge or calculation changed. The outsource vendor/PR/PO lookups
-// keep their original shape: the jc-ops board is fetched ONLY from inside an
-// outsource op's sub-components (now jc-op-actions.tsx), so a JC with no
-// outsource ops still issues no board request (identical query key → TanStack
-// Query dedupes).
+// Responsive without a stylesheet: the chip and field rows are auto-fit grids
+// (six across when there is room, three / two on a narrow screen).
 //
-// The footer strip is the one thing that has grown: it is the NEXT ACTION for
-// this operation, not a dead end — Gen PO / Gen DC / Receive / Incoming QC for
-// an OSP op, TPI for a third-party inspection, Report NC on every op — and
-// every button in it is permission-gated. That strip and its gating live in
-// jc-op-actions.tsx (JcOpFooter), so this file stays layout only.
+// Every value, badge, button, condition and destination is the one the card
+// showed before the re-layout. No quantity, badge or calculation changed; the
+// outsource vendor/PR/PO lookups keep their original shape (the jc-ops board
+// is fetched ONLY from inside an outsource op's sub-components, so a JC with
+// no outsource ops still issues no board request).
+//
+// NOT here, on purpose (nothing behind them): Put on Hold, Report NC (a QC
+// reject raises its NC itself), View Drawing / Process Sheet / Tool List /
+// View QC Report / View All Logs / ⋮. "Due :" on a row needs
+// jc_ops.planned_end, which the op-entry contract does not carry yet.
 import type { JcOpEnriched, JobCardListItem, JobCardRmAvailable, OpLog } from '@innovic/shared';
 import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { useState } from 'react';
-import { PlannedActualMachine } from '@/components/shared/machine-split';
-import { OP_STATUS, opAccentColor } from '../lib/jc-op-labels';
+import { machineSplitTitle, resolveActualMachine } from '@/components/shared/machine-split';
+import { OP_STATUS } from '../lib/jc-op-labels';
+import { fmtJcStamp } from '../lib/fmt-jc-date';
 import { JcOpFooter, OutsourceInfo } from './jc-op-actions';
-import { QtyTile, SetupChip, secLabel } from './jc-op-card-parts';
+import { QtyChip } from './jc-op-card-parts';
 
 // §6 of docs/QC-NC-HANDLING-DESIGN.md: an op that rejected pieces shows a
 // QUANTITY BREAKUP, not one overall status — 10 inspected, 8 accepted, 2
-// rejected → "8 accepted" in the DONE tile AND "NC raised 2" here, at the same
-// time. Every figure comes from v_nc_op_breakup (op.ncBreakup); the card adds
-// nothing up itself. Order and wording are the design's, so the strip reads
-// the same as the NC register's status column. Amber = still ours to fix,
-// blue = at/back from the vendor, red = lost, text3 = finished.
+// rejected → "8 accepted" in the COMPLETED tile AND "NC raised 2" here, at the
+// same time. Every figure comes from v_nc_op_breakup (op.ncBreakup); the card
+// adds nothing up itself. Order and wording are the design's, so the strip
+// reads the same as the NC register's status column. Amber = still ours to
+// fix, blue = at/back from the vendor, red = lost, text3 = finished.
 const NC_BREAKUP_ROWS: ReadonlyArray<{
   key: keyof JcOpEnriched['ncBreakup'];
   label: string;
@@ -56,8 +61,8 @@ const NC_BREAKUP_ROWS: ReadonlyArray<{
   { key: 'ncClosedQty', label: 'NC closed', color: 'var(--text3)' },
 ];
 
-/** One-line strip under the header tags. Renders nothing while the op has no
- *  NC history at all, so the ordinary card is pixel-identical to before. */
+/** One-line strip under the header. Renders nothing while the op has no NC
+ *  history at all, so the ordinary card carries no empty band. */
 function NcBreakupStrip({ nc }: { nc: JcOpEnriched['ncBreakup'] }): React.JSX.Element | null {
   if (!(nc.openNcCount > 0 || nc.scrapQty > 0 || nc.ncClosedQty > 0)) return null;
   const rows = NC_BREAKUP_ROWS.filter((r) => nc[r.key] > 0);
@@ -70,7 +75,6 @@ function NcBreakupStrip({ nc }: { nc: JcOpEnriched['ncBreakup'] }): React.JSX.El
         alignItems: 'center',
         flexWrap: 'wrap',
         gap: '2px 6px',
-        marginTop: -4,
         marginBottom: 10,
         padding: '3px 8px',
         fontSize: 11,
@@ -97,9 +101,112 @@ function NcBreakupStrip({ nc }: { nc: JcOpEnriched['ncBreakup'] }): React.JSX.El
   );
 }
 
+/** The `#n` ordinal box at the left of both the collapsed row and the
+ *  expanded header (position in the route, not the op number). */
+function OrdinalBox({ n }: { n: number }): React.JSX.Element {
+  return (
+    <span
+      className="mono fw-700"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 24,
+        height: 24,
+        padding: '0 5px',
+        borderRadius: 6,
+        background: 'var(--bg4)',
+        border: '1px solid var(--border)',
+        fontSize: 12,
+        color: 'var(--text)',
+        flexShrink: 0,
+      }}
+    >
+      {n}
+    </span>
+  );
+}
+
+/** The kind chip beside the op number: the PLANNED machine code on a process
+ *  op (ADR-164 — where the remaining qty is routed; the ACTUAL machine is named
+ *  in the info block), `QC` on an inspection op, `OUTSOURCE` on an OSP op. */
+function KindChip({ op }: { op: JcOpEnriched }): React.JSX.Element {
+  const isQc = op.opType === 'qc';
+  const isOut = op.opType === 'outsource';
+  // Blue for a machine, green for QC, amber for OUTSOURCE (restyle 2026-09-21).
+  const bg = isQc ? 'var(--green3)' : isOut ? 'var(--amber3)' : 'var(--blue3)';
+  const color = isQc ? 'var(--green2)' : isOut ? 'var(--amber2)' : 'var(--blue2)';
+  const text = isQc ? 'QC' : isOut ? 'OUTSOURCE' : (op.machineCode ?? op.machineCodeText ?? '—');
+  return (
+    <span className="tag" style={{ background: bg, color }}>
+      {text}
+    </span>
+  );
+}
+
+/** One cell of the field row: tiny uppercase caption over a strong value. */
+function InfoCell({
+  label,
+  children,
+  title,
+}: {
+  label: string;
+  children: React.ReactNode;
+  title?: string | undefined;
+}): React.JSX.Element {
+  return (
+    <div title={title} style={{ minWidth: 0 }}>
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--text3)',
+          textTransform: 'uppercase',
+          letterSpacing: '.04em',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="fw-700"
+        style={{
+          fontSize: 13,
+          color: 'var(--text)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          marginTop: 2,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** A ~8px caption under a tile figure (QC accepted / rejected / rework). */
+function Sub({
+  color,
+  children,
+  title,
+}: {
+  color: string;
+  children: React.ReactNode;
+  title?: string;
+}): React.JSX.Element {
+  return (
+    <div style={{ fontSize: 8, color }} title={title}>
+      {children}
+    </div>
+  );
+}
+
 export function JcOpCard({
   jc,
   op,
+  index,
+  expanded,
+  onToggle,
   machineName,
   toolDetails,
   rmAvailable,
@@ -110,6 +217,12 @@ export function JcOpCard({
 }: {
   jc: JobCardListItem;
   op: JcOpEnriched;
+  /** 1-based position in the route (the `#n` box). */
+  index: number;
+  /** Expanded card vs one collapsed row. Owned by the page (Expand All /
+   *  Show All Operations Expanded live there). */
+  expanded: boolean;
+  onToggle: () => void;
   /** Server-resolved machine name (extras.opExtras) — the enriched op omits it. */
   machineName: string | null;
   /** Server-resolved tool details (extras.opExtras). */
@@ -119,7 +232,9 @@ export function JcOpCard({
    *  the operation client material actually feeds and the only one the gate
    *  applies to — and null everywhere else. */
   rmAvailable: JobCardRmAvailable | null;
-  /** Already sliced to the latest 3 by the caller, exactly as the table did. */
+  /** EVERY loaded log of this op, latest first. The strip shows the latest 3
+   *  (as the table always did); Operator / Last Entry / Inspector / QC Date
+   *  read the latest entry, the Start / End stamps the earliest and latest. */
   logs: OpLog[];
   onStart: (opId: string) => void;
   onLog: (opId: string) => void;
@@ -143,9 +258,12 @@ export function JcOpCard({
   // definition, shared with the Op Entry table and the QC dashboards.
   const doneQty = isQc ? op.qcAcceptedQty : op.completedQty;
   const pendingQty = op.pendingQty;
+  // Collapsed row's `done / reached` — the same figure the flow chip prints
+  // (what this op released over what actually reached it; see JcOpFlowChips).
+  const flowDenom = op.inputAvail || jc.orderQty;
 
-  // What became of THIS op's rejects (0090). `reworkPendingQty` above lights the
-  // op that has to redo the work; this lights the op that found the fault, which
+  // What became of THIS op's rejects (0090). `reworkPendingQty` lights the op
+  // that has to redo the work; this lights the op that found the fault, which
   // otherwise showed a bare "✗5 rej" and no sign of the disposition. Suppressed
   // when the rework came back to this same op — the ♻ tag in the header already
   // says so and two markers for one decision reads as two decisions.
@@ -163,295 +281,495 @@ export function JcOpCard({
   const reworkOut = op.reworkRaisedQty > 0 && reworkOutTo !== '';
   const reworkOutTitle = `${op.reworkRaisedQty} piece(s) rejected here and sent back to Op${reworkOutSrNos} for rework. Clears when the NC is closed.`;
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        background: 'var(--bg2)',
-        border: '1px solid var(--border)',
-        borderRadius: 10,
-        overflow: 'hidden',
-        marginBottom: 10,
-      }}
-    >
-      {/* Left accent bar — same colour family as the status badge. */}
-      <div style={{ width: 4, flexShrink: 0, background: opAccentColor(st.cls) }} />
-      <div style={{ flex: 1, minWidth: 0, padding: '10px 14px' }}>
-        {/* ── HEADER: seq · machine · operation · tags — status badge ── */}
-        <div
+  // Start / End stamps. The DATES are the server's (op.firstLogDate = earliest
+  // entry of any kind, op.lastLogDate = latest completion / QC entry — the same
+  // two the printed traveller shows). The TIME is read off the loaded log that
+  // carries that date, when the 300-entry page reaches back that far; a date
+  // with no loaded entry shows the date alone rather than a guessed time.
+  const timeOn = (
+    date: string | null,
+    pick: (l: OpLog) => boolean,
+    earliest: boolean,
+  ): string | null => {
+    if (!date) return null;
+    const onDay = logs.filter((l) => l.logDate === date && pick(l) && l.startTime);
+    if (onDay.length === 0) return null;
+    const sorted = [...onDay].sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''));
+    return (earliest ? sorted[0] : sorted[sorted.length - 1])?.startTime ?? null;
+  };
+  const startStamp = fmtJcStamp(
+    op.firstLogDate,
+    timeOn(op.firstLogDate, () => true, true),
+  );
+  const endStamp = fmtJcStamp(
+    op.lastLogDate,
+    timeOn(op.lastLogDate, (l) => l.logType === 'complete' || l.logType === 'qc', false),
+  );
+  // The column is `jc_ops.cycle_time_min` — MINUTES (the create form and the
+  // Excel export say "Cycle (min)" too).
+  const cycleMin = Number(op.cycleTimeMin) || null;
+
+  // Latest entries, for the info block. `logs` is latest-first.
+  const lastLog = logs[0] ?? null;
+  const lastQcLog = logs.find((l) => l.logType === 'qc') ?? null;
+
+  // ADR-164 — planned vs actual machine on a process op. The chip in row 1
+  // names the PLAN; this names where the pieces were actually made when that
+  // differs (open session, else the machine(s) that made the DONE qty).
+  const plannedMachine = op.machineCode ?? op.machineCodeText ?? null;
+  const actual = resolveActualMachine({
+    planned: plannedMachine,
+    activeRunningMachineCode: op.activeRunningMachineCode,
+    machines: op.machines,
+  });
+
+  const recent = logs.slice(0, 3);
+  // The 4 px left rail says how far the op has got (restyle 2026-09-21):
+  //   complete → green
+  //   current  → amber: started / partly through, pieces waiting at QC, or
+  //              an OSP op with pieces in flight (PR raised … incoming QC)
+  //   waiting  → red, matching the red "Waiting" badge
+  //   pending / available → plain grey
+  const cs = op.computedStatus;
+  const inFlight =
+    cs === 'in_progress' ||
+    cs === 'running' ||
+    cs === 'qc_pending' ||
+    cs === 'pr_raised' ||
+    cs === 'po_created' ||
+    cs === 'at_vendor' ||
+    cs === 'received';
+  const rail =
+    cs === 'complete'
+      ? 'var(--green)'
+      : inFlight || doneQty > 0
+        ? 'var(--amber)'
+        : cs === 'waiting'
+          ? 'var(--red)'
+          : 'var(--border3)';
+  const rowStyle: React.CSSProperties = {
+    background: 'var(--bg2)',
+    border: '1px solid var(--border)',
+    borderRadius: 9,
+    overflow: 'hidden',
+    margin: '10px 16px',
+  };
+  /** The header bar of both the collapsed row and the expanded card. */
+  const barStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    padding: '10px 12px',
+    borderLeft: `4px solid ${rail}`,
+    background: 'var(--bg2)',
+  };
+
+  // ── COLLAPSED: one clickable row ──
+  if (!expanded) {
+    return (
+      <div style={rowStyle}>
+        <button
+          type="button"
+          onClick={onToggle}
+          title="Show this operation's quantities, actions and recent entries"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-            marginBottom: 10,
+            ...barStyle,
+            width: '100%',
+            minWidth: 0,
+            flexWrap: 'nowrap',
+            cursor: 'pointer',
+            textAlign: 'left',
+            font: 'inherit',
+            color: 'inherit',
+            borderTop: 'none',
+            borderRight: 'none',
+            borderBottom: 'none',
           }}
         >
-          <span
-            className="mono fw-700"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minWidth: 24,
-              height: 24,
-              padding: '0 6px',
-              borderRadius: 6,
-              background: 'var(--bg4)',
-              border: '1px solid var(--border2)',
-              fontSize: 12,
-              color: 'var(--text2)',
-            }}
-          >
-            {opSrNo(op.opSeq)}
+          <OrdinalBox n={index} />
+          <span className="mono fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+            OP{opSrNo(op.opSeq)}
           </span>
-          {isQc || isOut ? (
-            <span className="fw-700" style={{ fontSize: 14 }}>
-              {isQc ? 'QC' : 'OSP'}
-            </span>
-          ) : (
-            /* ADR-164 — a process op names BOTH machines: the PLANNED one
-               (jc_ops, where the remaining qty is routed) and the ACTUAL one
-               (open session, else the machine(s) that made the DONE qty). Same
-               name on both lines when nothing changed; amber when it differs,
-               with the per-machine breakdown when 2+ machines made pieces. */
-            <PlannedActualMachine
-              planned={op.machineCode ?? op.machineCodeText}
-              activeRunningMachineCode={op.activeRunningMachineCode}
-              machines={op.machines}
-              size={13}
-            />
-          )}
-          {machineName && !isQc && !isOut ? (
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>{machineName}</span>
-          ) : null}
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>{op.operation}</span>
-          {isOut ? (
-            <span className="tag" style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}>
-              OSP
-            </span>
-          ) : null}
-          {isQc ? (
-            <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>
-              QC
-            </span>
-          ) : null}
-          {!isQc && op.qcRequired ? (
-            <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>
-              QC YES
-            </span>
-          ) : null}
-          {/* Rework owed here — pieces an NC sent BACK to this op. The Op Entry
-              table has always shown this (♻N beside the operation); this card
-              did not, so on IN-JC-26-00085 Op1 read a bare "Complete" while it
-              still owed 5 re-cut pins. Same marker, same place. */}
+          <KindChip op={op} />
+          <span
+            style={{
+              fontSize: 13,
+              color: 'var(--text)',
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={op.operation}
+          >
+            {op.operation}
+          </span>
           {op.reworkPendingQty > 0 ? (
             <span
               className="tag"
               style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}
-              title={`${op.reworkPendingQty} piece(s) sent back to this operation for rework. Clears when the NC is closed (NC Register → Close Rework).`}
+              title={`${op.reworkPendingQty} piece(s) sent back to this operation for rework.`}
             >
               ♻ {op.reworkPendingQty}
             </span>
           ) : null}
           <span style={{ flex: 1 }} />
+          <span className="mono fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+            {doneQty} / {flowDenom}
+          </span>
           <span className={`badge ${st.cls}`}>{st.label}</span>
-        </div>
+          {/* The mockup's "Due : dd-MMM-yyyy" goes here once jc_ops.planned_end
+              reaches the op-entry contract; until then nothing is shown rather
+              than borrowing the job card's due date. */}
+          <span style={{ color: 'var(--text3)', fontSize: 14 }}>›</span>
+        </button>
+      </div>
+    );
+  }
 
+  // ── EXPANDED card ──
+  return (
+    <div style={rowStyle}>
+      {/* ── BAR: #n · OPnn · kind chip · operation · tags · badge … stamps ── */}
+      <div style={barStyle}>
+        <button
+          type="button"
+          onClick={onToggle}
+          title="Collapse this operation to one row"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            font: 'inherit',
+            color: 'inherit',
+          }}
+        >
+          <OrdinalBox n={index} />
+          <span className="mono fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+            OP{opSrNo(op.opSeq)}
+          </span>
+        </button>
+        <KindChip op={op} />
+        {machineName && !isQc && !isOut ? (
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{machineName}</span>
+        ) : null}
+        <span className="fw-700" style={{ fontSize: 13, color: 'var(--text)' }}>
+          {op.operation}
+        </span>
+        {!isQc && op.qcRequired ? (
+          <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>
+            QC YES
+          </span>
+        ) : null}
+        {/* Rework owed here — pieces an NC sent BACK to this op (same ♻N
+            marker the Op Entry table shows beside the operation). */}
+        {op.reworkPendingQty > 0 ? (
+          <span
+            className="tag"
+            style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}
+            title={`${op.reworkPendingQty} piece(s) sent back to this operation for rework. Clears when the NC is closed (NC Register → Close Rework).`}
+          >
+            ♻ {op.reworkPendingQty}
+          </span>
+        ) : null}
+        <span className={`badge ${st.cls}`}>{st.label}</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+          Start : <b style={{ color: 'var(--text)' }}>{startStamp}</b>
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+          End : <b style={{ color: 'var(--text)' }}>{endStamp}</b>
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+          Cycle :{' '}
+          <b style={{ color: 'var(--text)' }}>{cycleMin != null ? `${cycleMin} min` : '—'}</b>
+        </span>
+      </div>
+
+      {/* ── BODY ── */}
+      <div style={{ borderTop: '1px solid var(--border)', padding: 12, background: 'var(--bg3)' }}>
         {/* ── NC BREAKUP (§6): where this op's rejected pieces are right now ── */}
         <NcBreakupStrip nc={op.ncBreakup} />
 
-        {/* ── BODY: quantities · setup · outsource ── */}
+        {/* ── CHIPS: Planned · Completed · Pending · QC Pending · Rejected (NC)
+            · At Vendor, then the op-specific extras (RM Avail on the first op;
+            Ready to Send / In QC on an OSP op). auto-fit: six across when there
+            is room, fewer on a narrow screen. ── */}
         <div
           style={{
-            display: 'flex',
-            gap: 22,
-            flexWrap: 'wrap',
-            alignItems: 'flex-start',
-            // Was `logs.length > 0 || hasFooter`, but `hasFooter` was deleted
-            // along with the conditional wrapper when the footer became
-            // unconditional (f438b86) — and this one use of it survived, which
-            // is what stopped the app compiling. The footer's own visibility
-            // now lives inside JcOpFooter, where this file cannot see it, so
-            // the gap is fixed rather than guessed at.
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+            gap: 8,
             marginBottom: 10,
           }}
         >
-          <div>
-            <div style={secLabel}>Quantities</div>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              <QtyTile label="ORDER" value={jc.orderQty} color="var(--text)" />
-              {/* ADR-103 — only on the FIRST op: that is the operation client
-                  material feeds, and the only one the gate applies to. */}
-              {rmAvailable ? (
-                <QtyTile
-                  label="RM AVAIL"
-                  value={rmAvailable.availableQty}
-                  color={rmAvailable.availableQty > 0 ? 'var(--cyan)' : 'var(--red)'}
-                  sub={
-                    <div
-                      style={{ fontSize: 8, color: 'var(--text3)' }}
-                      title={
-                        `Client material issued to this job card: ${rmAvailable.issuedQty}. ` +
-                        `Already produced on this operation: ${rmAvailable.consumedQty}. ` +
-                        (rmAvailable.availableQty > 0
-                          ? `${rmAvailable.availableQty} can still be worked.`
-                          : 'Issue more client material from Party Material Issue to continue.')
-                      }
-                    >
-                      {rmAvailable.issuedQty} issued
-                      {rmAvailable.availableQty === 0 ? (
-                        <div style={{ color: 'var(--red)' }}>issue material</div>
-                      ) : null}
-                    </div>
-                  }
-                />
-              ) : null}
-              <QtyTile
-                label="DONE"
-                value={doneQty}
-                color="var(--green)"
-                sub={
-                  <>
-                    {isQc ? (
-                      <>
-                        <div style={{ fontSize: 8, color: 'var(--green)' }}>✓ accepted</div>
-                        {op.qcRejectedQty > 0 ? (
-                          <div style={{ fontSize: 8, color: 'var(--red)' }}>
-                            ✗{op.qcRejectedQty} rej
-                          </div>
-                        ) : null}
-                        {reworkOut ? (
-                          <div
-                            style={{ fontSize: 8, color: 'var(--amber)' }}
-                            title={reworkOutTitle}
-                          >
-                            ♻{op.reworkRaisedQty} rework{reworkOutTo}
-                          </div>
-                        ) : null}
-                        {op.qcPending > 0 ? (
-                          <div style={{ fontSize: 8, color: 'var(--amber)' }}>
-                            ⏳{op.qcPending} pending
-                          </div>
-                        ) : null}
-                      </>
-                    ) : op.qcRequired ? (
-                      <>
-                        <div style={{ fontSize: 8, color: 'var(--green)' }}>
-                          ✓{op.qcAcceptedQty} acc
-                        </div>
-                        {op.qcRejectedQty > 0 ? (
-                          <div style={{ fontSize: 8, color: 'var(--red)' }}>
-                            ✗{op.qcRejectedQty} rej
-                          </div>
-                        ) : null}
-                        {reworkOut ? (
-                          <div
-                            style={{ fontSize: 8, color: 'var(--amber)' }}
-                            title={reworkOutTitle}
-                          >
-                            ♻{op.reworkRaisedQty} rework{reworkOutTo}
-                          </div>
-                        ) : null}
-                        {op.qcPending > 0 ? (
-                          <div style={{ fontSize: 8, color: 'var(--amber)' }}>
-                            ⏳{op.qcPending} pend
-                          </div>
-                        ) : null}
-                      </>
-                    ) : null}
-                    {/* The per-machine breakdown of this DONE figure now lives
-                        in the PLANNED / ACTUAL pair in the heading (ADR-164),
-                        so it is not repeated here. */}
-                  </>
-                }
-              />
-              <QtyTile
-                label="PENDING"
-                value={pendingQty}
-                color={pendingQty > 0 ? 'var(--amber)' : 'var(--text3)'}
-                highlight={pendingQty > 0}
-              />
-              {/* PENDING above is the whole un-done balance and COUNTS the pieces
-                  already sitting at the vendor. This is what may go out today:
-                  upstream cleared − done in-house − already sent, read from
-                  v_osp_wip so the card, the OSP register and the outward-challan
-                  guard share ONE formula. JC-9 op 3: cleared 11, sent 10 → 1. */}
-              <QtyTile
-                label="READY TO SEND"
-                value={isOut ? op.readyToSendQty : '—'}
-                color={isOut && op.readyToSendQty > 0 ? 'var(--purple)' : 'var(--text3)'}
-                highlight={isOut && op.readyToSendQty > 0}
-              />
-              <QtyTile
-                label="AT VENDOR"
-                value={isOut ? op.atVendorQty : '—'}
-                color={isOut && op.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)'}
-              />
-              <QtyTile
-                label="IN QC"
-                value={isOut ? op.inQcQty : '—'}
-                color={isOut && op.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)'}
-              />
-            </div>
-          </div>
-
-          <div style={{ minWidth: 140 }}>
-            <div style={secLabel}>Setup</div>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', rowGap: 3 }}>
-              {/* The column is `jc_ops.cycle_time_min` — MINUTES. Legacy's
-                  "Cycle(h)" header (and the port that inherited it) mislabelled
-                  the unit; the create form and the Excel export already say
-                  "Cycle (min)". Corrected here so all four agree. */}
-              <SetupChip
-                label="Cycle (min)"
-                value={Number(op.cycleTimeMin) || '—'}
-                color="var(--text2)"
-              />
-              {op.program ? (
-                <SetupChip label="Prog" value={op.program} color="var(--blue)" />
-              ) : null}
-              {op.toolNo ? <SetupChip label="Tool" value={op.toolNo} color="var(--cyan)" /> : null}
-              {toolDetails ? (
-                <SetupChip label="Details" value={toolDetails} color="var(--text3)" />
-              ) : null}
-              {/* The table showed a single "—" for an empty Prog/Tool cell;
-                  in the card that dash needs its own caption so it does not
-                  read as a second value on the Cycle chip. */}
-              {!op.program && !op.toolNo && !toolDetails ? (
-                <SetupChip label="Prog/Tool" value="—" color="var(--text3)" />
-              ) : null}
-            </div>
-          </div>
-
-          {/* Only an outsourced op gets this block. An in-house op used to show
-              the caption with "Not outsourced" under it — a label for nothing.
-              `isOut` is read from the op each render, so the moment the user
-              switches the op to outsource the block appears on its own. */}
+          <QtyChip label="Planned Qty" value={jc.orderQty} color="var(--text)" />
+          <QtyChip
+            label="Completed"
+            value={doneQty}
+            color="var(--green)"
+            sub={
+              isQc ? (
+                <Sub color="var(--green)">✓ accepted</Sub>
+              ) : op.qcRequired ? (
+                <Sub color="var(--green)">✓{op.qcAcceptedQty} acc</Sub>
+              ) : null
+            }
+          />
+          <QtyChip
+            label="Pending"
+            value={pendingQty}
+            color={pendingQty > 0 ? 'var(--amber)' : 'var(--text3)'}
+            highlight={pendingQty > 0}
+          />
+          {/* QC PENDING = pieces waiting to be inspected (v_jc_op_status
+              qc_pending) — the ⏳ figure the DONE tile used to carry. */}
+          <QtyChip
+            label="QC Pending"
+            value={op.qcPending}
+            color={op.qcPending > 0 ? 'var(--amber)' : 'var(--text3)'}
+            highlight={op.qcPending > 0}
+          />
+          {/* REJECTED (NC) = pieces this op's QC rejected (qc_rejected_qty),
+              with what became of them underneath — the ✗ / ♻ lines the
+              DONE tile used to carry. */}
+          <QtyChip
+            label="Rejected (NC)"
+            value={op.qcRejectedQty}
+            color={op.qcRejectedQty > 0 ? 'var(--red)' : 'var(--text3)'}
+            sub={
+              reworkOut ? (
+                <Sub color="var(--amber)" title={reworkOutTitle}>
+                  ♻{op.reworkRaisedQty} rework{reworkOutTo}
+                </Sub>
+              ) : null
+            }
+          />
+          <QtyChip
+            label="At Vendor"
+            value={isOut ? op.atVendorQty : '—'}
+            color={isOut && op.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)'}
+          />
+          {/* ADR-103 — only on the FIRST op: that is the operation client
+              material feeds, and the only one the gate applies to. */}
+          {rmAvailable ? (
+            <QtyChip
+              label="RM Avail"
+              value={rmAvailable.availableQty}
+              color={rmAvailable.availableQty > 0 ? 'var(--cyan)' : 'var(--red)'}
+              title={
+                `Client material issued to this job card: ${rmAvailable.issuedQty}. ` +
+                `Already produced on this operation: ${rmAvailable.consumedQty}. ` +
+                (rmAvailable.availableQty > 0
+                  ? `${rmAvailable.availableQty} can still be worked.`
+                  : 'Issue more client material from Party Material Issue to continue.')
+              }
+              sub={
+                <div style={{ fontSize: 8, color: 'var(--text3)' }}>
+                  {rmAvailable.issuedQty} issued
+                  {rmAvailable.availableQty === 0 ? (
+                    <div style={{ color: 'var(--red)' }}>issue material</div>
+                  ) : null}
+                </div>
+              }
+            />
+          ) : null}
+          {/* OSP-only chips. PENDING above is the whole un-done balance and
+              COUNTS the pieces already sitting at the vendor. READY TO SEND
+              is what may go out today: upstream cleared − done in-house −
+              already sent, read from v_osp_wip so the card, the OSP
+              register and the outward-challan guard share ONE formula.
+              JC-9 op 3: cleared 11, sent 10 → 1. */}
           {isOut ? (
-            <div style={{ minWidth: 120, marginLeft: 'auto' }}>
-              <div style={{ ...secLabel, textAlign: 'right' }}>Outsource</div>
-              <div style={{ textAlign: 'right' }}>
-                <OutsourceInfo
-                  jcCode={jc.code}
-                  jcOpId={op.id}
-                  status={op.outsourceStatus ?? 'pending'}
-                />
-              </div>
-            </div>
+            <>
+              <QtyChip
+                label="Ready to Send"
+                value={op.readyToSendQty}
+                color={op.readyToSendQty > 0 ? 'var(--purple)' : 'var(--text3)'}
+                highlight={op.readyToSendQty > 0}
+              />
+              <QtyChip
+                label="In QC"
+                value={op.inQcQty}
+                color={op.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)'}
+              />
+            </>
           ) : null}
         </div>
 
-        {/* ── RECENT LOGS — same latest-3 the table showed, now collapsible ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ ...secLabel, marginBottom: 0 }}>Recent Logs</span>
-          {logs.length === 0 ? (
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>No entries</span>
+        {/* ── FIELDS — what kind of op decides which facts matter. ── */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+            gap: 10,
+            borderTop: '1px dashed var(--border)',
+            paddingTop: 10,
+          }}
+        >
+          {isOut ? (
+            /* Vendor + vendor-side status, resolved from the jc-ops board
+               (OutsourceInfo carries its own caption). */
+            <div>
+              <OutsourceInfo
+                jcCode={jc.code}
+                jcOpId={op.id}
+                status={op.outsourceStatus ?? 'pending'}
+              />
+            </div>
+          ) : isQc ? (
+            <>
+              <InfoCell label="Inspector">{lastQcLog?.operatorName ?? '—'}</InfoCell>
+              <InfoCell label="QC Date">
+                {lastQcLog ? fmtJcStamp(lastQcLog.logDate, lastQcLog.startTime) : '—'}
+              </InfoCell>
+              <InfoCell label="Result">
+                {/* Read off the op's own QC figures: accepted → green,
+                    rejected → red (both when the batch split), nothing
+                    inspected yet → pending / a dash. */}
+                {op.qcAcceptedQty === 0 && op.qcRejectedQty === 0 ? (
+                  op.qcPending > 0 ? (
+                    <span className="badge b-amber">Pending</span>
+                  ) : (
+                    '—'
+                  )
+                ) : (
+                  <span style={{ display: 'inline-flex', gap: 4 }}>
+                    {op.qcAcceptedQty > 0 ? (
+                      <span className="badge b-green">Accepted {op.qcAcceptedQty}</span>
+                    ) : null}
+                    {op.qcRejectedQty > 0 ? (
+                      <span className="badge b-red">Rejected {op.qcRejectedQty}</span>
+                    ) : null}
+                  </span>
+                )}
+              </InfoCell>
+            </>
           ) : (
             <>
+              <InfoCell
+                label="Machine"
+                title={
+                  actual.differs
+                    ? actual.split.length
+                      ? machineSplitTitle(actual.split)
+                      : `Planned ${plannedMachine ?? '—'} — actually made on ${actual.label}`
+                    : undefined
+                }
+              >
+                <span className="mono">{plannedMachine ?? '—'}</span>
+                {/* ADR-164 — where the pieces are ACTUALLY being made, when
+                    that is not the planned machine. */}
+                {actual.differs ? (
+                  <span className="mono" style={{ color: 'var(--amber)' }}>
+                    {' '}
+                    → {actual.label}
+                  </span>
+                ) : null}
+                {/* ADR-126 — when 2+ machines made the DONE qty, each
+                    machine's share is printed, not only tooltipped. */}
+                {actual.split.map((m) => (
+                  <div
+                    key={m.machineCode}
+                    style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}
+                  >
+                    {m.machineCode}: <b>{m.qty}</b> pcs
+                  </div>
+                ))}
+              </InfoCell>
+              <InfoCell label="Operator">{lastLog?.operatorName ?? '—'}</InfoCell>
+              <InfoCell label="Program No.">
+                <span className="mono">{op.program || '—'}</span>
+              </InfoCell>
+              <InfoCell label="Tool" title={toolDetails ?? undefined}>
+                <span className="mono">{op.toolNo || '—'}</span>
+                {toolDetails ? (
+                  <span style={{ color: 'var(--text3)', fontWeight: 400 }}> · {toolDetails}</span>
+                ) : null}
+              </InfoCell>
+              {/* No setup-time field exists on an operation yet; the slot
+                  is the mockup's and reads as a dash until one does. */}
+              <InfoCell label="Setup Time" title="No setup-time field on the operation yet">
+                —
+              </InfoCell>
+              <InfoCell label="Last Entry">
+                {lastLog ? fmtJcStamp(lastLog.logDate, lastLog.startTime) : '—'}
+              </InfoCell>
+            </>
+          )}
+          {/* A QC / OSP op rarely carries a program or tool, but when the
+              routing recorded one it is still shown (the process block
+              above has its own cells for these). */}
+          {(isQc || isOut) && op.program ? (
+            <InfoCell label="Program No.">
+              <span className="mono">{op.program}</span>
+            </InfoCell>
+          ) : null}
+          {(isQc || isOut) && (op.toolNo || toolDetails) ? (
+            <InfoCell label="Tool" title={toolDetails ?? undefined}>
+              <span className="mono">{op.toolNo || '—'}</span>
+              {toolDetails ? (
+                <span style={{ color: 'var(--text3)', fontWeight: 400 }}> · {toolDetails}</span>
+              ) : null}
+            </InfoCell>
+          ) : null}
+        </div>
+
+        {/* ── ACTIONS: the operation's NEXT ACTION. Lives in jc-op-actions.tsx
+            with the OSP ladder, because every button in it is permission-
+            gated on the screen it opens and that gating belongs in one place. ── */}
+        <JcOpFooter jc={jc} op={op} onStart={onStart} onLog={onLog} onQc={onQc} />
+
+        {/* ── RECENT LOGS — the same latest-3 the table showed ── */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            flexWrap: 'wrap',
+            marginTop: 10,
+            paddingTop: 8,
+            borderTop: '1px dashed var(--border)',
+            fontSize: 12,
+            color: 'var(--text3)',
+          }}
+        >
+          <span className="fw-700" style={{ color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+            Recent Logs
+          </span>
+          {recent.length === 0 ? (
+            <span style={{ color: 'var(--text3)' }}>No entries</span>
+          ) : (
+            <>
+              {logsOpen
+                ? recent.map((l) => (
+                    <span
+                      key={l.id}
+                      style={{ color: 'var(--text2)', whiteSpace: 'nowrap' }}
+                      title={l.remarks ?? undefined}
+                    >
+                      <span className="mono" style={{ color: 'var(--text3)' }}>
+                        {fmtJcStamp(l.logDate, l.startTime)}
+                      </span>
+                      {' · '}
+                      {l.shift}
+                      {' · Qty '}
+                      <b style={{ color: 'var(--green)' }}>+{l.qty}</b>
+                      {' · Operator '}
+                      <b style={{ color: 'var(--text)' }}>{l.operatorName ?? '—'}</b>
+                    </span>
+                  ))
+                : null}
+              <span style={{ flex: 1 }} />
               <button
                 type="button"
                 onClick={() => setLogsOpen((v) => !v)}
+                aria-label={logsOpen ? 'Hide recent logs' : 'Show recent logs'}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -460,55 +778,16 @@ export function JcOpCard({
                   fontSize: 11,
                   color: 'var(--blue)',
                   fontWeight: 600,
+                  whiteSpace: 'nowrap',
                 }}
               >
-                {`latest ${logs.length} log ${logs.length === 1 ? 'entry' : 'entries'}`}
-              </button>
-              <span style={{ flex: 1 }} />
-              <button
-                type="button"
-                onClick={() => setLogsOpen((v) => !v)}
-                aria-label={logsOpen ? 'Collapse logs' : 'Expand logs'}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  fontSize: 11,
-                  color: 'var(--text3)',
-                }}
-              >
-                {logsOpen ? '▲' : '▼'}
+                {logsOpen
+                  ? '▲ hide'
+                  : `▼ latest ${recent.length} ${recent.length === 1 ? 'entry' : 'entries'}`}
               </button>
             </>
           )}
         </div>
-        {logs.length > 0 && logsOpen ? (
-          <div
-            style={{
-              marginTop: 6,
-              padding: '6px 10px',
-              background: 'var(--bg3)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-            }}
-          >
-            {logs.map((l) => (
-              <div key={l.id} style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.9 }}>
-                <span className="mono" style={{ color: 'var(--text3)' }}>
-                  {l.logDate}
-                </span>{' '}
-                · {l.shift} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
-                {l.operatorName ?? ''}
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {/* ── FOOTER: the operation's NEXT ACTION. Lives in jc-op-actions.tsx
-            with the OSP ladder, because every button in it is permission-gated
-            on the screen it opens and that gating belongs in one place. ── */}
-        <JcOpFooter jc={jc} op={op} onStart={onStart} onLog={onLog} onQc={onQc} />
       </div>
     </div>
   );

@@ -121,13 +121,28 @@ export async function tryCascadeJcComplete(
       code: jobCards.code,
       sourceSoLineId: jobCards.sourceSoLineId,
       sourceJwLineId: jobCards.sourceJwLineId,
+      recoveryKind: jobCards.recoveryKind,
     })
     .from(jobCards)
     .where(eq(jobCards.id, jobCardId))
     .limit(1);
   const jc = jcRows[0];
   if (!jc) return { skipped: 'jc_has_no_source_link' };
+
+  // A rework/repair CHILD is finished the moment its own ops are all complete
+  // (Step 1 above), whatever its order line says: its output is re-injected
+  // into the parent's route and the line closes from the PARENT's numbers
+  // (producedForLine excludes children). Without this, a child whose parent
+  // still had ops to run after the origin op sat at `complete` with no
+  // closed_at forever — the later close walks go UP from the parent, never
+  // back down (QC-NC audit 2026-09-21, follow-up). The line cascade below
+  // still runs for a child (it may be the call that closes the line); only
+  // the "is this JC finished" rule differs.
+  const isRecoveryChild = Boolean(jc.recoveryKind);
+
   if (!jc.sourceSoLineId && !jc.sourceJwLineId) {
+    // A child of a source-less JC has no line to cascade but is still done.
+    if (isRecoveryChild) await finishJc(tx, jobCardId, jc.code, user);
     return { skipped: 'jc_has_no_source_link' };
   }
 
@@ -135,39 +150,108 @@ export async function tryCascadeJcComplete(
     ? await cascadeSo(tx, jc.sourceSoLineId, jc.code, user)
     : await cascadeJw(tx, jc.sourceJwLineId!, jc.code, user);
 
-  // Emit JC_COMPLETE only when the inner cascade actually closed a line
-  // (not on idempotent re-runs against an already-terminal line). Pairs
-  // with the SO_LINE_CLOSED / JW_LINE_CLOSED row for the same tx.
+  // "This job card is finished" and "this order line is finished" are separate
+  // facts. The JC is finished (its ops are all complete per v_jc_status — that
+  // is Step 1) whenever its line is TERMINAL after the cascade, whether this
+  // call closed it or an earlier call already had. The second case is the
+  // rework chain (QC-NC audit 2026-09-21, gaps 1+2): the child's terminal QC
+  // re-injects the recovered pieces into the parent and the child's own
+  // cascade closes the SO line first; the parent's cascade then found the
+  // line already terminal and never set the parent's closed_at, so the parent
+  // stayed `complete` forever with no JC_COMPLETE row. A line whose row is
+  // gone is reported as terminal by cascadeSo/cascadeJw too, which is right —
+  // nothing the JC can ever do would move it.
   //
   // ADR-132 — an equipment SO's line deliberately stays open until the units
   // are assembled, so its job cards would otherwise never reach `closed`
-  // (v_jc_status reads closed_at). "This job card is finished" and "this order
-  // is finished" are separate facts; the JC still closes on its own ops.
+  // (v_jc_status reads closed_at); the JC still closes on its own ops.
+  //
+  // Still NOT finished: `so_line_qty_incomplete` / `jw_line_qty_incomplete` —
+  // this JC is done but the order line still needs another JC's output.
   const jcFinished =
+    isRecoveryChild ||
     Boolean(result.closedSoLineId || result.closedJwLineId) ||
+    result.skipped === 'so_line_already_terminal' ||
+    result.skipped === 'jw_line_already_terminal' ||
     result.skipped === 'so_equipment_closes_on_assembly';
-  if (jcFinished && user.companyId) {
-    // ISSUE-007 — set closed_at when the JC transitions complete → closed.
-    // Idempotent via the closedAt IS NULL guard so re-runs are no-ops.
-    // Done in the SAME tx as the audit row so a rollback unwinds both.
-    await tx
-      .update(jobCards)
-      .set({ closedAt: new Date(), updatedBy: user.id })
-      .where(and(eq(jobCards.id, jobCardId), isNull(jobCards.closedAt)));
+  if (jcFinished) await finishJc(tx, jobCardId, jc.code, user);
+  return result;
+}
 
+/** ISSUE-007 — set closed_at when the JC transitions complete → closed.
+ *  Idempotent via the closedAt IS NULL guard so re-runs are no-ops, and the
+ *  JC_COMPLETE audit row is written ONLY when this call is the one that
+ *  flipped closed_at — so a re-run against an already-closed JC still emits
+ *  nothing. Done in the SAME tx as the audit row so a rollback unwinds both.
+ *  The caller's `skipped` reason is left untouched for the audit trail. */
+async function finishJc(
+  tx: DbTransaction,
+  jobCardId: string,
+  jcCode: string,
+  user: AuthContext,
+): Promise<void> {
+  if (!user.companyId) return;
+  const flipped = await tx
+    .update(jobCards)
+    .set({ closedAt: new Date(), updatedBy: user.id })
+    .where(and(eq(jobCards.id, jobCardId), isNull(jobCards.closedAt)))
+    .returning({ id: jobCards.id });
+
+  if (flipped.length > 0) {
     await emitActivityLog(
       tx,
       {
         action: 'JC_COMPLETE',
         entity: 'JobCard',
-        detail: `${jc.code} — All ops complete`,
-        refId: jc.code,
+        detail: `${jcCode} — All ops complete`,
+        refId: jcCode,
       },
       user.companyId,
       user,
     );
   }
-  return result;
+}
+
+/**
+ * Run tryCascadeJcComplete on a job card AND every ancestor above it —
+ * child → parent → grandparent … following job_cards.parent_job_card_id until
+ * it is null. Innermost first, so the JC that just logged settles its line
+ * before its parent is checked.
+ *
+ * Why (QC-NC audit 2026-09-21, gap 2): a rework/repair child's terminal QC
+ * (or a use_as_is / scrap disposition on one) re-injects pieces up the WHOLE
+ * chain — climbRecoveryToAncestors in nc-register/recovery.ts writes the
+ * re-inject op_log row on every ancestor's origin op directly, never through
+ * submitQcLog — so ANY ancestor can be the one that just reached `complete`,
+ * and nothing else will ever run its close check. Checking only the immediate
+ * parent left a grandparent (P → P-RW1 → P-RW1-RW1) permanently `complete`
+ * with no closed_at.
+ *
+ * Every level is the same idempotent cascade, so calling it on an ancestor
+ * that is not complete, or is already closed, changes nothing. The 50-level
+ * bound mirrors climbRecoveryToAncestors and only guards against a cyclic
+ * parent link in hand-edited data.
+ */
+export async function cascadeJcCompleteUpChain(
+  tx: DbTransaction,
+  jobCardId: string,
+  user: AuthContext,
+): Promise<CascadeResult[]> {
+  const results: CascadeResult[] = [];
+  const seen = new Set<string>();
+  let jcId: string | null = jobCardId;
+  for (let guard = 0; jcId && guard < 50; guard++) {
+    if (seen.has(jcId)) break;
+    seen.add(jcId);
+    results.push(await tryCascadeJcComplete(tx, jcId, user));
+    const rows: Array<{ parentJobCardId: string | null }> = await tx
+      .select({ parentJobCardId: jobCards.parentJobCardId })
+      .from(jobCards)
+      .where(and(eq(jobCards.id, jcId), isNull(jobCards.deletedAt)))
+      .limit(1);
+    jcId = rows[0]?.parentJobCardId ?? null;
+  }
+  return results;
 }
 
 async function cascadeSo(

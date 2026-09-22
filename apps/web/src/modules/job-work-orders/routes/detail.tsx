@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -212,8 +213,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>#</th>
+                {/* Image · CODE/REV · Part name in one badge cell (user decision
+                    2026-09-21) — the former separate Part name column folded in. */}
                 <th>Item</th>
-                <th>Part name</th>
                 <th>Material</th>
                 <th>Drawing</th>
                 <th>Qty</th>
@@ -231,7 +233,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={priceHidden ? 9 : 11} className="empty-state">
+                  <td colSpan={priceHidden ? 8 : 10} className="empty-state">
                     No lines on this JW yet.
                   </td>
                 </tr>
@@ -403,26 +405,32 @@ function LineRow(props: {
 }): React.JSX.Element {
   const { line: l, priceHidden, onPreview } = props;
   const drawingFilePath = l.drawingFilePath ?? null;
-  const revision = (l.revision ?? '').trim();
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
-      <td className="mono" style={{ fontSize: 11 }}>
-        {l.itemCodeText ?? (l.itemId ? '— linked —' : '—')}
+      {/* Thumbnail · CODE/REV · part name, the same badge the Sales Order detail
+          uses. The Rev is the client's drawing revision typed on this JWSO line,
+          and it travels with the code (the badge formats it via itemCodeWithRev). */}
+      <td>
+        <ItemBadge
+          size="row"
+          code={l.itemCodeText ?? (l.itemId ? '— linked —' : '—')}
+          name={l.partName}
+          revision={l.itemCodeText ? l.revision : null}
+          imagePath={l.itemImagePath}
+        />
       </td>
-      <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.partName}</td>
       <td className="text3" style={{ fontSize: 11 }}>
         {l.material ?? '—'}
       </td>
-      {/* Drawing No. + the client's Rev + the attached drawing file, the way the
-          Sales Order detail shows them. The 📎 records which file was asked for;
-          the shared preview modal fetches it. */}
+      {/* Drawing No. + the attached drawing file, the way the Sales Order detail
+          shows them. No Rev here any more: it is the same value the Item cell
+          now carries as CODE/REV, and printing one fact twice in one row reads
+          as two facts that might disagree. The 📎 records which file was asked
+          for; the shared preview modal fetches it. */}
       <td className="mono" style={{ fontSize: 11 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-          <span>
-            {l.drawingNo ?? '—'}
-            {revision ? <span className="text3"> · Rev {revision}</span> : null}
-          </span>
+          <span>{l.drawingNo ?? '—'}</span>
           {drawingFilePath ? (
             <button
               type="button"

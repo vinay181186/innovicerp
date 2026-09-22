@@ -235,7 +235,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   /** Controller side of the line cascade: Item Code (itemId) is the key. Picking
    *  sets the master link + its visible code; clearing drops both. The dependent
-   *  fields (Part Name / Material / Drawing No. / UOM) are refilled/reset by the
+   *  fields (Part Name / Material / UOM) are refilled/reset by the
    *  shared `useFieldCascade` hook, hosted per line in <LineItemCascade> below —
    *  so a fresh pick REPLACES them, a clear RESETS them, and Qty / Rate /
    *  Client PO Ln stay exactly as the user typed. */
@@ -422,7 +422,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         }
         // Item Code drives the row: link the master item, auto-fetch Part Name
         // (and UOM) from master; the remaining details come from the sheet
-        // (falling back to master for material / drawing when the cell is blank).
+        // (falling back to master for material when the cell is blank).
         newLines.push({
           ...NEW_LINE,
           ...r,
@@ -430,7 +430,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           itemCodeText: master.code,
           partName: master.name,
           material: r.material ?? master.material ?? '',
-          drawingNo: r.drawingNo ?? master.drawingNo ?? '',
+          // Drawing No. is a fact of THIS order's line, not of the item master
+          // (user decision 2026-09-21): it comes from the sheet or stays blank
+          // for the person to type — never from the item.
+          drawingNo: r.drawingNo ?? '',
           // Set explicitly AFTER the `...r` spread, never through it: an absent
           // Rev column spreads `revision: undefined` over the value below.
           // A sheet with no Rev column leaves the box EMPTY, exactly like a
@@ -548,7 +551,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         ...refs,
         partName: l.partName.trim(),
         material: l.material?.trim() || undefined,
-        drawingNo: l.drawingNo?.trim() || undefined,
+        // null, not undefined: the server merges only PRESENT keys on update, so a
+        // Drawing No. the user cleared must be sent as null to actually clear it.
+        drawingNo: l.drawingNo?.trim() || null,
         // null, not undefined: JSON.stringify drops undefined keys, so clearing
         // a drawing sent nothing at all and the server kept the old file. An
         // explicit null is what tells it the drawing was removed — and what
@@ -913,7 +918,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         /* ── Component / With-Material line items (legacy L12278) ── */
         <div>
           {/* One field-cascade host per line (renders nothing): Item Code drives
-              Part Name / Material / Drawing No. / UOM. Kept out of the <table>
+              Part Name / Material / UOM. Kept out of the <table>
               body so it never lands between rows. */}
           {fields.map((field, idx) => (
             <LineItemCascade
@@ -1022,7 +1027,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             `.innovic-input[readonly]` already carries the affordance. */}
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.partName` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.material` as const)} /></td>
-                        <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.drawingNo` as const)} /></td>
+                        {/* Drawing No. is TYPED per line, exactly as it reads on the
+                            customer's drawing for THIS order — the item master no longer
+                            carries one (user decision 2026-09-21; same spirit as Rev under
+                            ADR-158). Re-picking the item never overwrites it. */}
+                        <td><input className="innovic-input" autoComplete="off" placeholder="Drawing No." maxLength={64} {...register(`lines.${idx}.drawingNo` as const)} /></td>
                         <td>
                           <SoLineDrawingCell
                             value={watch(`lines.${idx}.drawingFilePath` as const)}
@@ -1233,7 +1242,7 @@ function QuickAddClient({
 
 /** Hosts the shared field-cascade for one SO line (renders nothing). Item Code
  *  (itemId) is the controller; on a fresh pick the master's Part Name / Material
- *  / Drawing No. / UOM REPLACE the row's values, on a clear they RESET. Qty,
+ *  / UOM REPLACE the row's values, on a clear they RESET. Qty, Drawing No., Rev,
  *  Rate, Client PO Ln, status and the master link itself are user/picker-owned
  *  and are hard-blocked via `userEntered`. A synchronous Map lookup backs the
  *  resolve, so nothing is fetched here and no stale reply can land — the hook's
@@ -1257,7 +1266,6 @@ function LineItemCascade({
     fields: [
       cascadeField(`lines.${idx}.partName`, (it) => it.name, ''),
       cascadeField(`lines.${idx}.material`, (it) => it.material ?? '', ''),
-      cascadeField(`lines.${idx}.drawingNo`, (it) => it.drawingNo ?? '', ''),
       cascadeField(`lines.${idx}.uom`, (it) => it.uom, NEW_LINE.uom),
     ],
     userEntered: [
@@ -1268,11 +1276,13 @@ function LineItemCascade({
       `lines.${idx}.itemId`,
       `lines.${idx}.itemCodeText`,
       // The drawing file is line-specific, uploaded by the user — never
-      // auto-filled from the item master. Rev is a fact of the same kind: it is
-      // the revision printed on the customer's drawing for THIS order, not a
-      // property of the item, so re-picking the item code must never overwrite
-      // what was typed there.
+      // auto-filled from the item master. Drawing No. and Rev are facts of the
+      // same kind: they are what is printed on the customer's drawing for THIS
+      // order, not a property of the item (the master no longer carries a
+      // drawing no. — user decision 2026-09-21), so re-picking the item code
+      // must never overwrite what was typed there.
       `lines.${idx}.drawingFilePath`,
+      `lines.${idx}.drawingNo`,
       `lines.${idx}.revision`,
     ],
     setValueOptions: { shouldDirty: true },

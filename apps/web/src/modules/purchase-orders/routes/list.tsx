@@ -9,10 +9,18 @@
 // class through the column def so the flexRender loop can put it where legacy
 // has it (ISSUE-020).
 //
+// Two layouts, one data set: "List View" is the ruled sheet (PoSheetTable,
+// components/po-sheet-table.tsx — the Job Cards list's look); "Card View" is
+// the original one-panel-per-PO layout below, untouched. The toggle sits at the
+// right end of the filter row and the choice is remembered per browser. Search,
+// filters, permissions and row actions are shared — the sheet renders the same
+// rows through the same gates.
+//
 // Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-030):
-//  - No "Value" column (legacy L25256): the list payload carries no rate/value
-//    aggregate (`purchaseOrderListItemSchema` has lineCount/totalQty/receivedQty
-//    only), and summing it needs the lines. Not faked.
+//  - The CARD shows no "Value" (legacy L25256): when it was built the list
+//    payload carried no amount. The list payload now has `totalAmount`
+//    (migration 0078, nulled when the viewer may not see prices), so the sheet
+//    shows it; the card stays as it was.
 //  - "PR ref" occupies legacy's SO/JW slot: the payload has `prCodeText` but no
 //    SO/JW back-reference (legacy reads first.soRefId → CASCADE.findOrder).
 //  - No stat-card filter row (L25332-25345) and no "PO Creation Pending —
@@ -46,11 +54,15 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
+import { PoSheetTable } from '../components/po-sheet-table';
 import { PoStatusBadge } from '../components/po-status-badge';
 
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
 // PO list-query cap is 200; the count line flags a rare larger set.
 const LIST_LIMIT = 200;
+
+// Where the List / Card choice is remembered (per browser).
+const VIEW_STORAGE_KEY = 'po-list-view';
 
 /** One cell of the card's metric strip — big mono number over a tiny uppercase
  *  label, mirroring the SO/WO list (TOTAL QTY / RECEIVED / PENDING / LINES). */
@@ -117,6 +129,25 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   useEffect(() => {
     setSearchInput(search.search ?? '');
   }, [search.search]);
+
+  // List View (the sheet) vs Card View (the original cards). List is the
+  // default; the choice is remembered per browser, wrapped in try/catch so a
+  // locked-down browser (no localStorage) still renders.
+  const [view, setView] = useState<'list' | 'card'>(() => {
+    try {
+      return localStorage.getItem(VIEW_STORAGE_KEY) === 'card' ? 'card' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
+  const changeView = (next: 'list' | 'card'): void => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // ignore — persistence is best-effort
+    }
+  };
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
@@ -260,6 +291,25 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                 <Plus size={14} /> New PO
               </Link>
             ) : null}
+            {/* List / Card view toggle */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => changeView('list')}
+                aria-pressed={view === 'list'}
+              >
+                List View
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${view === 'card' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => changeView('card')}
+                aria-pressed={view === 'card'}
+              >
+                Card View
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -308,7 +358,15 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             No purchase orders yet
           </div>
         </div>
+      ) : view === 'list' ? (
+        // ── LIST VIEW (the sheet) ────────────────────────────────────────────
+        <PoSheetTable
+          rows={rows}
+          canEdit={canEdit}
+          onOpen={(id) => void navigate({ to: '/purchase-orders/$id', params: { id } })}
+        />
       ) : (
+        // ── CARD VIEW (the original layout, unchanged) ───────────────────────
         rows.map((po) => {
           const isJW = po.poType === 'job_work';
           const isSvc = po.poType === 'service';
