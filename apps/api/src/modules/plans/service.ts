@@ -34,7 +34,6 @@ import type {
   ReleaseReservationInput,
   ReservationActionResult,
   ReserveStockInput,
-  SoStockReservation,
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
@@ -55,7 +54,6 @@ import {
   salesOrderLines,
   salesOrders,
   soStockReservations,
-  storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -67,6 +65,14 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import {
+  createReservation,
+  itemCodeFor,
+  readStockPosition,
+  readStockPositionLocked,
+  readLineItemId,
+  releaseFromLine,
+} from '../../lib/stock-reservation';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { derivePlanStatus } from '../../lib/plan-derived-status';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
@@ -2258,68 +2264,29 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
   });
 }
 
-// ─── SO stock reservation (Stage 1) ──────────────────────────────────────
-// Hard-move model: reserving posts a store_transactions 'out' (source
-// 'reservation') that debits general on-hand and records a so_stock_reservations
-// row; releasing posts the matching 'in' and flips the row to 'released'. The
-// ledger stays the single source of truth — "free stock" is on-hand, which
-// already excludes reserved qty — and every reservation leaves a dated trail.
-
-async function readOnHandLocked(
-  tx: DbTransaction,
-  companyId: string,
-  itemId: string,
-): Promise<number> {
-  // Lock the item row so concurrent reserve/release on the same item serialize.
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-  const rows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  return Number(rows[0]?.on_hand ?? 0);
-}
+// ─── SO stock reservation (ADR-180) ──────────────────────────────────────
+// Booking model: reserving marks stock as promised to an order line and does
+// NOT move it. Physical stock stays put; only AVAILABLE falls. All the
+// arithmetic, the item row lock and the audit trail live in one shared place,
+// `lib/stock-reservation.ts`, so the planning screen, the production close and
+// the dispatch path can never disagree about what is reserved.
 
 export async function reserveStock(
   input: ReserveStockInput,
   user: AuthContext,
 ): Promise<ReservationActionResult> {
   requireWriteRole(user);
+  // Booking stock to an order is a planner's act, gated by the planning form —
+  // never an open stock-changing endpoint.
+  await requireFormAccess(user, 'plan_create', 'entry');
   const companyId = requireCompany(user);
   if (input.qty <= 0) throw new ValidationError('Reserve qty must be greater than 0');
 
   return withUserContext(user, async (tx) => {
-    const before = await readOnHandLocked(tx, companyId, input.itemId);
-    if (input.qty > before) {
-      throw new ConflictError(`Only ${before} in free stock to reserve (requested ${input.qty}).`);
-    }
-    const after = before - input.qty;
-
-    const itemRow = await tx
-      .select({ code: items.code })
-      .from(items)
-      .where(eq(items.id, input.itemId))
-      .limit(1);
-    const itemCode = itemRow[0]?.code ?? null;
-
-    const txnDate = new Date().toISOString().slice(0, 10);
-    await tx.insert(storeTransactions).values({
-      companyId,
-      txnDate,
-      itemId: input.itemId,
-      txnType: 'out',
-      qty: input.qty,
-      sourceType: 'reservation',
-      sourceRef: `${input.soCodeText} / ln ${input.lineNo}`,
-      stockBefore: before,
-      stockAfter: after,
-      remarks: `Reserved ${input.qty} to ${input.soCodeText} L${input.lineNo}`,
-      createdBy: user.id,
-    });
-
-    const inserted = await tx
-      .insert(soStockReservations)
-      .values({
+    const itemCode = await itemCodeFor(tx, input.itemId);
+    const created = await createReservation(
+      tx,
+      {
         companyId,
         soLineId: input.soLineId,
         soCodeText: input.soCodeText,
@@ -2327,20 +2294,26 @@ export async function reserveStock(
         itemId: input.itemId,
         itemCodeText: itemCode,
         qty: input.qty,
-        status: 'active',
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    const row = inserted[0]!;
+        // The public route always books a MANUAL reservation. Only the
+        // Production Order close may claim 'auto_production'.
+        source: 'manual',
+        remarks: input.remarks ?? null,
+      },
+      user,
+    );
+    if (!created) {
+      const position = await readStockPosition(tx, companyId, input.itemId);
+      return { reservations: [], qtyMoved: 0, ...position };
+    }
 
     await emitActivityLog(
       tx,
       {
-        action: 'CREATE',
+        action: 'UPDATE',
         entity: 'Reservation',
         detail:
-          `${input.soCodeText} L${input.lineNo} — reserved ${input.qty} ${itemCode ?? ''}`.trim(),
+          `${input.soCodeText} L${input.lineNo} — reserved ${input.qty} of ${itemCode ?? 'item'} ` +
+          `(available ${created.position.availableQty} left, physical unchanged at ${created.position.physicalQty})`,
         refId: input.soCodeText,
       },
       companyId,
@@ -2350,15 +2323,20 @@ export async function reserveStock(
     return {
       reservations: [
         {
-          id: row.id,
-          soLineId: row.soLineId,
-          itemId: row.itemId,
+          id: created.id,
+          soLineId: input.soLineId,
+          itemId: input.itemId,
           itemCode,
-          qty: row.qty,
-          status: 'active',
+          qty: input.qty,
+          consumedQty: 0,
+          releasedQty: 0,
+          remainingQty: input.qty,
+          source: 'manual' as const,
+          status: 'active' as const,
         },
       ],
       qtyMoved: input.qty,
+      ...created.position,
     };
   });
 }
@@ -2368,69 +2346,84 @@ export async function releaseReservationsForLine(
   user: AuthContext,
 ): Promise<ReservationActionResult> {
   requireWriteRole(user);
+  // Giving promised stock back is a correction to a saved position, so it is
+  // `edit` — an L2 data-entry planner may book, not un-book.
+  await requireFormAccess(user, 'plan_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const active = await tx
-      .select()
+    // Find the item behind this line so the lock is taken before the read,
+    // exactly as a booking does — a release racing a booking must serialize.
+    const held = await tx
+      .select({ itemId: soStockReservations.itemId })
       .from(soStockReservations)
       .where(
         and(
           eq(soStockReservations.companyId, companyId),
           eq(soStockReservations.soLineId, input.soLineId),
-          eq(soStockReservations.status, 'active'),
           isNull(soStockReservations.deletedAt),
+          sql`${soStockReservations.status} IN ('active', 'partially_consumed')`,
         ),
-      );
-    if (active.length === 0) return { reservations: [], qtyMoved: 0 };
+      )
+      .orderBy(soStockReservations.createdAt)
+      .limit(1);
+    const itemId = held[0]?.itemId ?? null;
+    if (!itemId) {
+      // Nothing held (someone else released it first). Report the line item's
+      // REAL position rather than zeros — a fabricated "Physical 0" on the
+      // confirmation strip would read as "the shelf is empty" for an item that
+      // may have hundreds on it.
+      const lineItemId = await readLineItemId(tx, input.soLineId);
+      const position = lineItemId
+        ? await readStockPosition(tx, companyId, lineItemId)
+        : { physicalQty: 0, reservedQty: 0, availableQty: 0 };
+      return { reservations: [], qtyMoved: 0, ...position };
+    }
+    await readStockPositionLocked(tx, companyId, itemId);
 
-    const txnDate = new Date().toISOString().slice(0, 10);
-    const released: SoStockReservation[] = [];
-    let qtyMoved = 0;
-
-    for (const r of active) {
-      const before = await readOnHandLocked(tx, companyId, r.itemId);
-      const after = before + r.qty;
-      await tx.insert(storeTransactions).values({
+    const { released, touched } = await releaseFromLine(
+      tx,
+      {
         companyId,
-        txnDate,
-        itemId: r.itemId,
-        txnType: 'in',
-        qty: r.qty,
-        sourceType: 'reservation',
-        sourceRef: `${r.soCodeText} / ln ${r.lineNo} (release)`,
-        stockBefore: before,
-        stockAfter: after,
-        remarks: `Released ${r.qty} from ${r.soCodeText} L${r.lineNo}`,
-        createdBy: user.id,
-      });
-      await tx
-        .update(soStockReservations)
-        .set({ status: 'released', updatedBy: user.id, updatedAt: new Date() })
-        .where(eq(soStockReservations.id, r.id));
-      released.push({
+        soLineId: input.soLineId,
+        qty: input.qty ?? null,
+        reason: input.reason,
+      },
+      user,
+    );
+    const position = await readStockPosition(tx, companyId, itemId);
+
+    if (released > 0 && touched[0]) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'UPDATE',
+          entity: 'Reservation',
+          detail:
+            `${touched[0].soCodeText} L${touched[0].lineNo} — released ${released} back to free stock ` +
+            `(reason: ${input.reason}; physical unchanged at ${position.physicalQty})`,
+          refId: touched[0].soCodeText,
+        },
+        companyId,
+        user,
+      );
+    }
+
+    return {
+      reservations: touched.map((r) => ({
         id: r.id,
         soLineId: r.soLineId,
         itemId: r.itemId,
         itemCode: r.itemCodeText,
         qty: r.qty,
-        status: 'released',
-      });
-      qtyMoved += r.qty;
-    }
-
-    await emitActivityLog(
-      tx,
-      {
-        action: 'UPDATE',
-        entity: 'Reservation',
-        detail: `${active[0]!.soCodeText} L${active[0]!.lineNo} — released ${qtyMoved}`,
-        refId: active[0]!.soCodeText,
-      },
-      companyId,
-      user,
-    );
-
-    return { reservations: released, qtyMoved };
+        consumedQty: r.consumedQty,
+        releasedQty: r.releasedQty,
+        remainingQty: Math.max(0, r.qty - r.consumedQty - r.releasedQty),
+        source: r.reservationSource as 'auto_production' | 'manual',
+        status: r.status as 'active' | 'partially_consumed' | 'consumed' | 'released' | 'cancelled',
+      })),
+      qtyMoved: released,
+      ...position,
+    };
   });
 }

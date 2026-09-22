@@ -2307,10 +2307,14 @@ export const storeTransactions = pgTable(
   ],
 ).enableRLS();
 
-// ─── SO stock reservation (migration 0099) ───────────────────────────────
-// Books on-hand stock to a specific SO line ("hard move"): reserving debits
-// general stock via a store_transactions 'reservation' out row and records a
-// row here; releasing writes the matching 'in' and flips status to 'released'.
+// ─── SO stock reservation (migration 0099, reshaped by 0141 / ADR-180) ───
+// Books on-hand stock to a specific SO line WITHOUT moving it. Reserving
+// writes NO store_transactions row: physical stock stays where it is and only
+// the AVAILABLE figure falls (available = physical − active reserved).
+// Dispatch consumes the booking (consumed_qty up) and posts the one real
+// stock-out; releasing gives pieces back (released_qty up). The old "hard
+// move" of 0099 — a 'reservation' ledger row at reserve time — is retired;
+// both databases held zero such rows when 0141 landed.
 export const soStockReservations = pgTable(
   'so_stock_reservations',
   {
@@ -2327,7 +2331,27 @@ export const soStockReservations = pgTable(
       .references(() => items.id),
     itemCodeText: text('item_code_text'),
     qty: integer('qty').notNull(),
-    // 'active' | 'released' | 'dispatched'
+    /** Of `qty`, how many pieces have actually shipped (migration 0141). */
+    consumedQty: integer('consumed_qty').notNull().default(0),
+    /** Of `qty`, how many were given back to free stock. */
+    releasedQty: integer('released_qty').notNull().default(0),
+    /** 'auto_production' (written by a Production Order close) | 'manual'. */
+    reservationSource: text('reservation_source').notNull().default('manual'),
+    productionOrderId: uuid('production_order_id').references(
+      (): AnyPgColumn => productionOrders.id,
+      { onDelete: 'set null' },
+    ),
+    jobCardId: uuid('job_card_id').references((): AnyPgColumn => jobCards.id, {
+      onDelete: 'set null',
+    }),
+    /** The close that created this automatic booking. UNIQUE while live, so a
+     *  replayed close API call cannot book the same pieces twice. */
+    productionOrderCloseId: uuid('production_order_close_id').references(
+      (): AnyPgColumn => productionOrderCloses.id,
+      { onDelete: 'set null' },
+    ),
+    releaseReason: text('release_reason'),
+    // 'active' | 'partially_consumed' | 'consumed' | 'released' | 'cancelled'
     status: text('status').notNull().default('active'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2346,8 +2370,19 @@ export const soStockReservations = pgTable(
     check('so_stock_reservations_qty_positive', sql`${t.qty} > 0`),
     check(
       'so_stock_reservations_status_valid',
-      sql`${t.status} IN ('active', 'released', 'dispatched')`,
+      sql`${t.status} IN ('active', 'partially_consumed', 'consumed', 'released', 'cancelled', 'dispatched')`,
     ),
+    check(
+      'so_stock_reservations_source_valid',
+      sql`${t.reservationSource} IN ('auto_production', 'manual')`,
+    ),
+    check(
+      'so_stock_reservations_settled_within_qty',
+      sql`${t.consumedQty} >= 0 AND ${t.releasedQty} >= 0 AND ${t.consumedQty} + ${t.releasedQty} <= ${t.qty}`,
+    ),
+    uniqueIndex('so_stock_reservations_close_uniq')
+      .on(t.productionOrderCloseId)
+      .where(sql`${t.productionOrderCloseId} is not null AND ${t.deletedAt} is null`),
     pgPolicy('so_stock_reservations_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -2469,9 +2504,7 @@ export const ncRegister = pgTable(
     // is what recovery has resolved; the difference is the open qty every
     // gate reads. rtv_* track the return-to-vendor round trip.
     rtvSentQty: numeric('rtv_sent_qty', { precision: 12, scale: 2 }).notNull().default('0'),
-    rtvReceivedQty: numeric('rtv_received_qty', { precision: 12, scale: 2 })
-      .notNull()
-      .default('0'),
+    rtvReceivedQty: numeric('rtv_received_qty', { precision: 12, scale: 2 }).notNull().default('0'),
     clearedQty: numeric('cleared_qty', { precision: 12, scale: 2 }).notNull().default('0'),
     failedQty: numeric('failed_qty', { precision: 12, scale: 2 }).notNull().default('0'),
     closedAt: timestamp('closed_at', { withTimezone: true }),
@@ -3256,7 +3289,9 @@ export const plans = pgTable(
       onDelete: 'set null',
     }),
 
-    requiredDocs: jsonb('required_docs').notNull().default(sql`'[]'::jsonb`),
+    requiredDocs: jsonb('required_docs')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
 
     remarks: text('remarks'),
 
@@ -4099,10 +4134,9 @@ export const jwDcOutwardLines = pgTable(
       .notNull()
       .references((): AnyPgColumn => jwDcOutward.id, { onDelete: 'cascade' }),
     lineNo: integer('line_no').notNull(),
-    purchaseOrderLineId: uuid('purchase_order_line_id').references(
-      () => purchaseOrderLines.id,
-      { onDelete: 'set null' },
-    ),
+    purchaseOrderLineId: uuid('purchase_order_line_id').references(() => purchaseOrderLines.id, {
+      onDelete: 'set null',
+    }),
     itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
@@ -4281,7 +4315,9 @@ export const designTracker = pgTable(
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     approvedByText: text('approved_by_text'),
     reviewSubmittedAt: timestamp('review_submitted_at', { withTimezone: true }),
-    revisionHistory: jsonb('revision_history').notNull().default(sql`'[]'::jsonb`),
+    revisionHistory: jsonb('revision_history')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4374,12 +4410,16 @@ export const designProjects = pgTable(
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
     clientText: text('client_text'),
     leadText: text('lead_text'),
-    engineers: jsonb('engineers').notNull().default(sql`'[]'::jsonb`),
+    engineers: jsonb('engineers')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     status: text('status').notNull().default('Design Active'),
     startDate: date('start_date').notNull(),
     targetDate: date('target_date').notNull(),
     description: text('description'),
-    checklist: jsonb('checklist').notNull().default(sql`'{}'::jsonb`),
+    checklist: jsonb('checklist')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     releasedDate: date('released_date'),
     releasedByText: text('released_by_text'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -4431,7 +4471,9 @@ export const designTasks = pgTable(
     dueDate: date('due_date'),
     description: text('description'),
     completedAt: timestamp('completed_at', { withTimezone: true }),
-    discussions: jsonb('discussions').notNull().default(sql`'[]'::jsonb`),
+    discussions: jsonb('discussions')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -4482,7 +4524,9 @@ export const designIssues = pgTable(
     raisedDate: date('raised_date').notNull(),
     resolvedDate: date('resolved_date'),
     description: text('description'),
-    discussions: jsonb('discussions').notNull().default(sql`'[]'::jsonb`),
+    discussions: jsonb('discussions')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -5360,7 +5404,9 @@ export const capaRecords = pgTable(
     code: text('code').notNull(), // CAPA-NNNN
     type: text('type').notNull().default('Corrective'), // Corrective | Preventive
     capaDate: date('capa_date').notNull(),
-    ncRefs: jsonb('nc_refs').notNull().default(sql`'[]'::jsonb`), // [ncNo, ...]
+    ncRefs: jsonb('nc_refs')
+      .notNull()
+      .default(sql`'[]'::jsonb`), // [ncNo, ...]
     jcNo: text('jc_no'),
     soNo: text('so_no'),
     itemCode: text('item_code'),
@@ -5804,8 +5850,12 @@ export const userAccess = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex('user_access_user_uq').on(t.userId).where(sql`${t.deletedAt} is null`),
-    index('user_access_company_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    uniqueIndex('user_access_user_uq')
+      .on(t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('user_access_company_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('user_access_self_read', {
       for: 'select',
       to: 'authenticated',
@@ -5863,7 +5913,9 @@ export const approvalConfig = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex('approval_config_company_uq').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    uniqueIndex('approval_config_company_uq')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('approval_config_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -5877,6 +5929,54 @@ export const approvalConfig = pgTable(
     }),
   ],
 ).enableRLS();
+
+export const stockReservationEvents = pgTable(
+  'stock_reservation_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    reservationId: uuid('reservation_id')
+      .notNull()
+      .references((): AnyPgColumn => soStockReservations.id, { onDelete: 'cascade' }),
+    /** reserve | consume | release | cancel | amend_release */
+    eventType: text('event_type').notNull(),
+    qty: integer('qty').notNull(),
+    remainingBefore: integer('remaining_before').notNull(),
+    remainingAfter: integer('remaining_after').notNull(),
+    reason: text('reason'),
+    sourceRef: text('source_ref'),
+    customerDispatchId: uuid('customer_dispatch_id').references(
+      (): AnyPgColumn => customerDispatches.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    index('stock_reservation_events_res_idx').on(t.reservationId, t.createdAt),
+    check('stock_reservation_events_qty_positive', sql`${t.qty} > 0`),
+    check(
+      'stock_reservation_events_type_valid',
+      sql`${t.eventType} IN ('reserve', 'consume', 'release', 'cancel', 'amend_release')`,
+    ),
+    pgPolicy('stock_reservation_events_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('stock_reservation_events_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type StockReservationEventRow = typeof stockReservationEvents.$inferSelect;
 
 export type ApprovalConfigRow = typeof approvalConfig.$inferSelect;
 export type NewApprovalConfigRow = typeof approvalConfig.$inferInsert;
@@ -5911,7 +6011,9 @@ export const ospProcesses = pgTable(
     uniqueIndex('osp_processes_company_name_uq')
       .on(t.companyId, sql`lower(${t.processName})`)
       .where(sql`${t.deletedAt} is null`),
-    index('osp_processes_company_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    index('osp_processes_company_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('osp_processes_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -5979,10 +6081,18 @@ export const servicePos = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex('service_pos_company_no_uq').on(t.companyId, t.spoNo).where(sql`${t.deletedAt} is null`),
-    index('service_pos_company_status_idx').on(t.companyId, t.status).where(sql`${t.deletedAt} is null`),
-    index('service_pos_company_date_idx').on(t.companyId, t.spoDate).where(sql`${t.deletedAt} is null`),
-    index('service_pos_vendor_idx').on(t.vendorId).where(sql`${t.deletedAt} is null`),
+    uniqueIndex('service_pos_company_no_uq')
+      .on(t.companyId, t.spoNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('service_pos_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('service_pos_company_date_idx')
+      .on(t.companyId, t.spoDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('service_pos_vendor_idx')
+      .on(t.vendorId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('service_pos_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -6111,7 +6221,9 @@ export const productionOrders = pgTable(
     uniqueIndex('production_orders_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
-    uniqueIndex('production_orders_plan_uniq').on(t.planId).where(sql`${t.deletedAt} is null`),
+    uniqueIndex('production_orders_plan_uniq')
+      .on(t.planId)
+      .where(sql`${t.deletedAt} is null`),
     uniqueIndex('production_orders_job_card_uniq')
       .on(t.jobCardId)
       .where(sql`${t.deletedAt} is null`),
@@ -6177,10 +6289,7 @@ export const productionOrderCloses = pgTable(
       .on(t.productionOrderId)
       .where(sql`${t.deletedAt} is null`),
     check('production_order_closes_qty_check', sql`${t.qty} > 0`),
-    check(
-      'production_order_closes_lost_qty_check',
-      sql`${t.lostQty} is null or ${t.lostQty} >= 0`,
-    ),
+    check('production_order_closes_lost_qty_check', sql`${t.lostQty} is null or ${t.lostQty} >= 0`),
     pgPolicy('production_order_closes_company_read', {
       for: 'select',
       to: 'authenticated',

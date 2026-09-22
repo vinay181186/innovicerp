@@ -10,6 +10,7 @@ export * from './enums/op-type';
 export * from './enums/op-log-change-status';
 export * from './enums/op-log-type';
 export * from './enums/outsource-status';
+export * from './enums/reservation';
 export * from './enums/running-op-status';
 export * from './enums/shift';
 export * from './enums/jc-priority';

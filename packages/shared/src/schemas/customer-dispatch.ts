@@ -24,6 +24,13 @@ export const dispatchableLineSchema = z.object({
   reservedQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),
   availableQty: z.number().int().nonnegative(), // min(ready + reserved, order) − dispatched
+  /** Still owed to the customer on this line: orderQty − dispatchedQty. */
+  pendingQty: z.number().int().nonnegative(),
+  /** PHYSICAL stock of this line's item — on the shelf, reserved or not. */
+  physicalQty: z.number().int().nonnegative(),
+  /** Free stock of this item: physical − reserved to ANY line. A dispatch may
+   *  ship this line's own reservation first, then dip into free stock. */
+  itemAvailableQty: z.number().int().nonnegative(),
   /** Earliest Customer Dispatch Date among the plans on this SO line — the date
    *  the dispatch team works to. Null when no plan carries one. */
   customerDispatchDate: z.string().nullable().default(null),

@@ -41,13 +41,13 @@ import {
   purchaseRequests,
   salesOrderLines,
   salesOrders,
-  soStockReservations,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { derivePlanStatus } from '../../lib/plan-derived-status';
+import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 
@@ -733,46 +733,19 @@ export async function getPlanningSoDetail(
       directJcByLine.set(jc.soLineId, entry);
     }
 
-    // 7c. On-hand finished-goods stock per line item — lets the planner see how
-    // much is already in stock and plan only the shortfall (mirrors the BOM-
-    // child stock lookup in getPlanningBom).
+    // 7c. The three stock numbers per line item, in ONE query (ADR-180). The
+    // planner needs all three: PHYSICAL says what is on the shelf, RESERVED how
+    // much of it is already promised, AVAILABLE what this order may still take.
+    // Read through lib/stock-reservation so this screen can never disagree with
+    // the dispatch or production-close paths about what is reserved.
     const lineItemIds = [
       ...new Set(lineRows.map((r) => r.line.itemId).filter((id): id is string => id !== null)),
     ];
-    const lineStockRows =
-      lineItemIds.length === 0
-        ? []
-        : await tx
-            .select({ itemId: itemStockBalances.itemId, qty: itemStockBalances.onHandQty })
-            .from(itemStockBalances)
-            .where(
-              and(
-                eq(itemStockBalances.companyId, companyId),
-                inArray(itemStockBalances.itemId, lineItemIds),
-              ),
-            );
-    const stockByItem = new Map<string, number>();
-    for (const s of lineStockRows) stockByItem.set(s.itemId, Number(s.qty));
+    const positionByItem = await readStockPositions(tx, companyId, lineItemIds);
 
-    // 7d. Active reservations per line — qty booked to this SO from stock.
-    const resvRows =
-      lineIds.length === 0
-        ? []
-        : await tx
-            .select({ soLineId: soStockReservations.soLineId, qty: soStockReservations.qty })
-            .from(soStockReservations)
-            .where(
-              and(
-                eq(soStockReservations.companyId, companyId),
-                eq(soStockReservations.status, 'active'),
-                isNull(soStockReservations.deletedAt),
-                inArray(soStockReservations.soLineId, lineIds),
-              ),
-            );
-    const reservedByLine = new Map<string, number>();
-    for (const r of resvRows) {
-      reservedByLine.set(r.soLineId, (reservedByLine.get(r.soLineId) ?? 0) + Number(r.qty));
-    }
+    // 7d. Of that reserved total, how much is booked to THIS line — one query
+    // for every line, never one per line.
+    const reservedByLine = await readReservedByLine(tx, companyId, lineIds);
 
     // 7e. ADR-171 — purchase requests raised from the line (buy items).
     const prsByLine = await loadPrsByLine(tx, companyId, lineIds);
@@ -793,8 +766,15 @@ export async function getPlanningSoDetail(
       const directJcCodes = direct?.codes ?? [];
       const coveredQty = totalPlanned + directJcQty;
       const remaining = Math.max(0, orderQty - coveredQty);
-      const stockQty = r.line.itemId ? (stockByItem.get(r.line.itemId) ?? 0) : 0;
+      const position = r.line.itemId ? positionByItem.get(r.line.itemId) : undefined;
+      const physicalQty = Math.max(0, position?.physicalQty ?? 0);
+      const totalReservedQty = Math.max(0, position?.reservedQty ?? 0);
+      const availableQty = Math.max(0, position?.availableQty ?? 0);
       const reservedQty = reservedByLine.get(r.line.id) ?? 0;
+      const dispatchedQty = Math.max(0, Number(r.line.dispatchedQty ?? 0));
+      // What still has to be made or bought. Stock already booked to THIS line
+      // covers part of the order, so planning it again would double-count it.
+      const balanceToPlan = Math.max(0, orderQty - dispatchedQty - reservedQty);
       const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
       const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
@@ -832,8 +812,15 @@ export async function getPlanningSoDetail(
         directJcQty,
         directJcCodes,
         remaining,
-        stockQty,
+        // `stockQty` keeps its name and its meaning — "how much may I still
+        // use" — which is now AVAILABLE, not on-hand (ADR-180).
+        stockQty: availableQty,
         reservedQty,
+        physicalQty,
+        totalReservedQty,
+        dispatchedQty,
+        availableQty,
+        balanceToPlan,
         lineStatus: classifyPlanningPct(pct),
         hasEquipmentBom,
         hasAssemblyBom,
@@ -1022,44 +1009,14 @@ async function getJwPlanningDetail(
     directJcByLine.set(jc.jwLineId, entry);
   }
 
-  // 6b. On-hand finished-goods stock per line item — see the SO branch (7c).
+  // 6b. PHYSICAL / RESERVED / AVAILABLE per line item — see the SO branch (7c).
   const lineItemIds = [
     ...new Set(lineRows.map((r) => r.line.itemId).filter((id): id is string => id !== null)),
   ];
-  const lineStockRows =
-    lineItemIds.length === 0
-      ? []
-      : await tx
-          .select({ itemId: itemStockBalances.itemId, qty: itemStockBalances.onHandQty })
-          .from(itemStockBalances)
-          .where(
-            and(
-              eq(itemStockBalances.companyId, companyId),
-              inArray(itemStockBalances.itemId, lineItemIds),
-            ),
-          );
-  const stockByItem = new Map<string, number>();
-  for (const s of lineStockRows) stockByItem.set(s.itemId, Number(s.qty));
+  const positionByItem = await readStockPositions(tx, companyId, lineItemIds);
 
-  // 6c. Active reservations per line.
-  const resvRows =
-    lineIds.length === 0
-      ? []
-      : await tx
-          .select({ soLineId: soStockReservations.soLineId, qty: soStockReservations.qty })
-          .from(soStockReservations)
-          .where(
-            and(
-              eq(soStockReservations.companyId, companyId),
-              eq(soStockReservations.status, 'active'),
-              isNull(soStockReservations.deletedAt),
-              inArray(soStockReservations.soLineId, lineIds),
-            ),
-          );
-  const reservedByLine = new Map<string, number>();
-  for (const r of resvRows) {
-    reservedByLine.set(r.soLineId, (reservedByLine.get(r.soLineId) ?? 0) + Number(r.qty));
-  }
+  // 6c. Reserved to each line (a JW line books against the same column).
+  const reservedByLine = await readReservedByLine(tx, companyId, lineIds);
 
   // 7. Compose lines. JW lines have no BOM master → BOM branches always off.
   const lines: PlanningLine[] = lineRows.map((r) => {
@@ -1071,8 +1028,17 @@ async function getJwPlanningDetail(
     const directJcCodes = direct?.codes ?? [];
     const coveredQty = totalPlanned + directJcQty;
     const remaining = Math.max(0, orderQty - coveredQty);
-    const stockQty = r.line.itemId ? (stockByItem.get(r.line.itemId) ?? 0) : 0;
+    const position = r.line.itemId ? positionByItem.get(r.line.itemId) : undefined;
+    const physicalQty = Math.max(0, position?.physicalQty ?? 0);
+    const totalReservedQty = Math.max(0, position?.reservedQty ?? 0);
+    const availableQty = Math.max(0, position?.availableQty ?? 0);
     const reservedQty = reservedByLine.get(r.line.id) ?? 0;
+    // A job-work line has no customer dispatch counter: `dispatched_qty` is a
+    // sales-order column and `returned_qty` next door counts the OWNER's
+    // material going home, which is a different fact and must not be passed off
+    // as a dispatch. 0 is the honest answer here.
+    const dispatchedQty = 0;
+    const balanceToPlan = Math.max(0, orderQty - dispatchedQty - reservedQty);
     const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
     return {
@@ -1099,8 +1065,13 @@ async function getJwPlanningDetail(
       directJcQty,
       directJcCodes,
       remaining,
-      stockQty,
+      stockQty: availableQty,
       reservedQty,
+      physicalQty,
+      totalReservedQty,
+      dispatchedQty,
+      availableQty,
+      balanceToPlan,
       lineStatus: classifyPlanningPct(pct),
       hasEquipmentBom: false,
       hasAssemblyBom: false,

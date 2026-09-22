@@ -47,6 +47,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { readStockPositionLocked, reconcileLineReservations } from '../../lib/stock-reservation';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
@@ -1594,7 +1595,21 @@ export async function updateSalesOrder(
 
     // Lines merge — only when caller provided a `lines` array (option C).
     if (input.lines !== undefined) {
+      // Snapshot what the lines held BEFORE the merge: after it, a removed line
+      // is soft-deleted and a shrunk line already carries its new qty, so there
+      // is nothing left to compare against.
+      const before = await tx
+        .select({
+          id: salesOrderLines.id,
+          lineNo: salesOrderLines.lineNo,
+          orderQty: salesOrderLines.orderQty,
+        })
+        .from(salesOrderLines)
+        .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
+
       await mergeLines(tx, id, companyId, input.lines, user, showMoney);
+
+      await reconcileAmendedLineReservations(tx, companyId, id, existingHdr.code, before, user);
     }
 
     // Milestones merge — same option-C semantics (only when provided).
@@ -1653,6 +1668,83 @@ export async function updateSalesOrder(
       clientPoFilePath,
     };
   });
+}
+
+/**
+ * ADR-180 §N — after an SO is amended, bring its stock bookings back inside
+ * what the order still justifies.
+ *
+ * Cutting a line from 20 to 10, cancelling it, or deleting it outright leaves
+ * stock booked to pieces the customer no longer wants. That stock is invisible
+ * to everyone else — it shows as reserved and nobody can promise it — so the
+ * release has to happen in the same save, not as a later tidy-up.
+ *
+ * Already-dispatched pieces are never touched; the library enforces that, and
+ * it releases oldest booking first with the reason written onto the trail.
+ */
+async function reconcileAmendedLineReservations(
+  tx: DbTransaction,
+  companyId: string,
+  salesOrderId: string,
+  soCode: string,
+  before: Array<{ id: string; lineNo: number; orderQty: number }>,
+  user: AuthContext,
+): Promise<void> {
+  if (before.length === 0) return;
+
+  // Read back including soft-deleted rows: a line the payload dropped is now
+  // deleted, and "deleted" is exactly the case that must release everything.
+  const after = await tx
+    .select({
+      id: salesOrderLines.id,
+      orderQty: salesOrderLines.orderQty,
+      dispatchedQty: salesOrderLines.dispatchedQty,
+      status: salesOrderLines.status,
+      itemId: salesOrderLines.itemId,
+      deletedAt: salesOrderLines.deletedAt,
+    })
+    .from(salesOrderLines)
+    .where(eq(salesOrderLines.salesOrderId, salesOrderId));
+  const afterById = new Map(after.map((a) => [a.id, a]));
+
+  for (const b of before) {
+    const a = afterById.get(b.id);
+    const removed = !a || a.deletedAt !== null || a.status === 'cancelled';
+    const newOrderQty = removed ? 0 : Number(a?.orderQty ?? 0);
+    if (!removed && newOrderQty === Number(b.orderQty)) continue;
+
+    // Lock the item first, exactly as a booking does, so a release racing a
+    // planner's Allocate on the same item serialises instead of interleaving.
+    if (a?.itemId) await readStockPositionLocked(tx, companyId, a.itemId);
+
+    const reason = removed
+      ? `SO amended: line ${b.lineNo} removed`
+      : `SO amended: qty ${b.orderQty} → ${newOrderQty}`;
+    const released = await reconcileLineReservations(
+      tx,
+      {
+        companyId,
+        soLineId: b.id,
+        newOrderQty,
+        dispatchedQty: Number(a?.dispatchedQty ?? 0),
+        reason,
+      },
+      user,
+    );
+    if (released > 0) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'UPDATE',
+          entity: 'Reservation',
+          detail: `${soCode} L${b.lineNo} — ${released} released back to free stock (${reason})`,
+          refId: soCode,
+        },
+        companyId,
+        user,
+      );
+    }
+  }
 }
 
 /** Merge SO milestones with the same id-match → update / new → insert /
@@ -1933,6 +2025,32 @@ export async function softDeleteSalesOrder(id: string, user: AuthContext): Promi
       throw new NotFoundError(`Sales order ${id} not found`);
     }
     const now = new Date();
+
+    // Hand back whatever these lines are holding BEFORE they are soft-deleted
+    // (ADR-180) — reconcileLineReservations reads the line, so it must still
+    // be visible. A deleted line otherwise keeps its reservation rows alive
+    // and they go on subtracting from AVAILABLE for ever: the order is gone
+    // from Planning so nobody can reach Release, and the Store drill-down
+    // cannot even link back to it. Physical stock is untouched — only the
+    // booking ends.
+    const linesBefore = await tx
+      .select({ id: salesOrderLines.id })
+      .from(salesOrderLines)
+      .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
+    for (const line of linesBefore) {
+      await reconcileLineReservations(
+        tx,
+        {
+          companyId,
+          soLineId: line.id,
+          newOrderQty: 0,
+          dispatchedQty: 0,
+          reason: `SO ${row.code} deleted — booking released`,
+        },
+        user,
+      );
+    }
+
     await tx
       .update(salesOrderLines)
       .set({ deletedAt: now, updatedBy: user.id })

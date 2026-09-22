@@ -1,5 +1,6 @@
 import {
   adjustStockInputSchema,
+  listReservationsQuerySchema,
   listStoreInventoryQuerySchema,
   setMinStockInputSchema,
 } from '@innovic/shared';
@@ -24,5 +25,18 @@ export async function storeInventoryRoutes(app: FastifyInstance): Promise<void> 
     if (!req.user) throw new AuthenticationError();
     const input = setMinStockInputSchema.parse(req.body);
     return service.setMinStock(input, req.user);
+  });
+
+  // ADR-180 stock-booking reads. They live in this module because they are the
+  // Store screen's own numbers, and they carry its permission (item_create).
+  app.get<{ Params: { itemId: string } }>('/stock-availability/:itemId', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getStockAvailability(req.params.itemId, req.user);
+  });
+
+  app.get('/stock-reservations', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listReservationsQuerySchema.parse(req.query);
+    return service.listReservations(query, req.user);
   });
 }

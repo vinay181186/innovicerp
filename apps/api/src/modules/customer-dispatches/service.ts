@@ -21,7 +21,6 @@ import {
   items,
   salesOrderLines,
   salesOrders,
-  soStockReservations,
   storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -33,6 +32,12 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import {
+  consumeForLine,
+  readReservedByLine,
+  readStockPositions,
+  unconsumeForDispatch,
+} from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
@@ -167,102 +172,16 @@ async function moveDispatchStock(
       `${component ? ` / ${component.code}` : ''}${dir === 'in' ? ' (cancel)' : ''}`,
     stockBefore: before,
     stockAfter: after,
-    remarks: dir === 'out' ? `Customer dispatch · ${qty} pcs` : `Dispatch cancel reversal · ${qty} pcs`,
+    remarks:
+      dir === 'out' ? `Customer dispatch · ${qty} pcs` : `Dispatch cancel reversal · ${qty} pcs`,
     createdBy: userId,
   });
-}
-
-// Ship reserved stock (Stage 3). Stage 1 reservations hard-moved stock OUT of
-// on-hand; here we release the reserved portion (up to maxQty) back to on-hand
-// and mark those reservations 'dispatched', so the caller's normal dispatch
-// debit ships the full qty. Net ledger stays balanced and cancel needs no
-// special handling — it just credits the full dispatched qty back. Consumes
-// reservations FIFO; a partially-used reservation is split. Returns qty released.
-async function releaseReservedForDispatch(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
-  soLineId: string,
-  maxQty: number,
-  date: string,
-  dispatchCode: string,
-): Promise<number> {
-  if (maxQty <= 0) return 0;
-  const active = await tx
-    .select()
-    .from(soStockReservations)
-    .where(
-      and(
-        eq(soStockReservations.companyId, companyId),
-        eq(soStockReservations.soLineId, soLineId),
-        eq(soStockReservations.status, 'active'),
-        isNull(soStockReservations.deletedAt),
-      ),
-    )
-    .orderBy(asc(soStockReservations.createdAt));
-
-  let remaining = maxQty;
-  let released = 0;
-  for (const r of active) {
-    if (remaining <= 0) break;
-    const take = Math.min(remaining, r.qty);
-
-    // Credit the taken part back to on-hand so the dispatch debit can ship it.
-    await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${r.itemId}::uuid FOR UPDATE`);
-    const bal = (await tx.execute(sql`
-      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-      FROM public.v_item_stock
-      WHERE company_id = ${companyId}::uuid AND item_id = ${r.itemId}::uuid
-    `)) as unknown as Array<{ on_hand: number }>;
-    const before = Number(bal[0]?.on_hand ?? 0);
-    await tx.insert(storeTransactions).values({
-      companyId,
-      txnDate: date,
-      itemId: r.itemId,
-      txnType: 'in',
-      qty: take,
-      sourceType: 'reservation',
-      sourceRef: `${r.soCodeText} / ln ${r.lineNo} (dispatch ${dispatchCode})`,
-      stockBefore: before,
-      stockAfter: before + take,
-      remarks: `Reserved ${take} shipped via ${dispatchCode}`,
-      createdBy: userId,
-    });
-
-    if (take === r.qty) {
-      await tx
-        .update(soStockReservations)
-        .set({ status: 'dispatched', updatedBy: userId, updatedAt: new Date() })
-        .where(eq(soStockReservations.id, r.id));
-    } else {
-      // Partial: shrink the active reservation, record the shipped part.
-      await tx
-        .update(soStockReservations)
-        .set({ qty: r.qty - take, updatedBy: userId, updatedAt: new Date() })
-        .where(eq(soStockReservations.id, r.id));
-      await tx.insert(soStockReservations).values({
-        companyId,
-        soLineId: r.soLineId,
-        soCodeText: r.soCodeText,
-        lineNo: r.lineNo,
-        itemId: r.itemId,
-        itemCodeText: r.itemCodeText,
-        qty: take,
-        status: 'dispatched',
-        remarks: `Shipped via ${dispatchCode}`,
-        createdBy: userId,
-        updatedBy: userId,
-      });
-    }
-    remaining -= take;
-    released += take;
-  }
-  return released;
 }
 
 type DispatchableRow = {
   so_line_id: string;
   line_no: number;
+  item_id: string | null;
   item_code: string | null;
   item_revision: string | null;
   item_name: string;
@@ -327,7 +246,7 @@ async function loadDispatchable(
   const sid = `'${soId}'::uuid`;
   const res = await tx.execute(
     sql.raw(`
-      SELECT sol.id AS so_line_id, sol.line_no,
+      SELECT sol.id AS so_line_id, sol.line_no, sol.item_id,
         COALESCE(i.code, sol.item_code_text) AS item_code,
         -- The customer's drawing revision, typed on this SO line itself. Cast to
         -- text because the contract types it as a string and the column is only
@@ -423,34 +342,25 @@ async function loadDispatchable(
       ORDER BY sol.line_no
     `),
   );
-  // Active reservations per line (Stage 1) — booked stock that ships on top of
-  // produced qty. Scoped to this SO's lines.
+  // Booked stock per line, and the item's PHYSICAL / AVAILABLE position — all
+  // of it through lib/stock-reservation, two batched reads for the whole SO
+  // (ADR-180). Under the booking model a reservation no longer moves stock, so
+  // the shelf figure and the booked figure are separate facts and the dispatch
+  // screen must show both: "8 on the shelf, 5 of them promised to this order".
   const rows = res as unknown as DispatchableRow[];
   const lineIds = rows.map((r) => r.so_line_id);
-  const resvRows =
-    lineIds.length === 0
-      ? []
-      : await tx
-          .select({ soLineId: soStockReservations.soLineId, qty: soStockReservations.qty })
-          .from(soStockReservations)
-          .where(
-            and(
-              eq(soStockReservations.companyId, companyId),
-              eq(soStockReservations.status, 'active'),
-              isNull(soStockReservations.deletedAt),
-              inArray(soStockReservations.soLineId, lineIds),
-            ),
-          );
-  const reservedByLine = new Map<string, number>();
-  for (const rr of resvRows) {
-    reservedByLine.set(rr.soLineId, (reservedByLine.get(rr.soLineId) ?? 0) + Number(rr.qty));
-  }
+  const itemIds = [
+    ...new Set(rows.map((r) => r.item_id).filter((id): id is string => id !== null)),
+  ];
+  const reservedByLine = await readReservedByLine(tx, companyId, lineIds);
+  const positions = await readStockPositions(tx, companyId, itemIds);
 
   return rows.map((r) => {
     const ready = Math.max(0, Math.round(n(r.ready_qty)));
     const reserved = reservedByLine.get(r.so_line_id) ?? 0;
     const dispatched = Math.round(n(r.dispatched_qty));
     const orderQty = Math.round(n(r.order_qty));
+    const position = r.item_id ? positions.get(r.item_id) : undefined;
     return {
       salesOrderLineId: r.so_line_id,
       lineNo: Number(r.line_no) || 0,
@@ -461,9 +371,38 @@ async function loadDispatchable(
       readyQty: ready,
       reservedQty: reserved,
       dispatchedQty: dispatched,
-      // Dispatchable = produced ready + reserved-from-stock, capped at the ORDER
-      // qty (never ship more than ordered), minus what already went out.
-      availableQty: Math.max(0, Math.min(ready + reserved, orderQty) - dispatched),
+      // Dispatchable = what this line can actually take off the shelf today:
+      // its OWN booking plus whatever is still free, capped at what the
+      // customer is still owed.
+      //
+      // It used to read `ready + reserved`. That was right only while a
+      // reservation MOVED stock out of on-hand (migration 0099): the reserved
+      // pieces were not in `ready`, so adding them back was the whole point.
+      // Under ADR-180 a booking leaves the pieces on the shelf, and the
+      // automatic booking made at a Production Order close books the very
+      // pieces that close credited — so those pieces counted twice and the
+      // screen offered more than exists. `moveDispatchStock` would have caught
+      // it at save, but only after the user had typed a qty that could never
+      // ship.
+      //
+      // A free-text line (no item_id) has no stock record at all, so it keeps
+      // the produced-qty basis — otherwise it would read 0 and block a
+      // dispatch that works today.
+      availableQty: Math.max(
+        0,
+        Math.min(
+          position ? reserved + Math.max(0, position.availableQty) : ready + reserved,
+          Math.max(0, orderQty - dispatched),
+        ),
+      ),
+      // Still owed to the customer on this line — the hard ceiling on any one
+      // dispatch, independent of how ready the goods are.
+      pendingQty: Math.max(0, orderQty - dispatched),
+      physicalQty: Math.max(0, position?.physicalQty ?? 0),
+      // Free stock of this item: on the shelf minus everything booked to ANY
+      // line. A dispatch ships this line's own booking first and only then digs
+      // into this.
+      itemAvailableQty: Math.max(0, position?.availableQty ?? 0),
       // The plan's Customer Dispatch Date (migration 0137) — already ::text in SQL.
       customerDispatchDate: r.customer_dispatch_date ?? null,
       rate: n(r.rate),
@@ -511,7 +450,11 @@ async function loadSo(
     .select({ id: salesOrders.id, code: salesOrders.code, customer: salesOrders.customerName })
     .from(salesOrders)
     .where(
-      and(eq(salesOrders.id, soId), eq(salesOrders.companyId, companyId), isNull(salesOrders.deletedAt)),
+      and(
+        eq(salesOrders.id, soId),
+        eq(salesOrders.companyId, companyId),
+        isNull(salesOrders.deletedAt),
+      ),
     )
     .limit(1);
   const so = rows[0];
@@ -612,7 +555,10 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
       })
       .from(customerDispatchLines)
       .where(
-        and(eq(customerDispatchLines.companyId, companyId), isNull(customerDispatchLines.deletedAt)),
+        and(
+          eq(customerDispatchLines.companyId, companyId),
+          isNull(customerDispatchLines.deletedAt),
+        ),
       )
       .groupBy(customerDispatchLines.customerDispatchId);
     const agg = new Map(aggRows.map((a) => [a.id, { cnt: Number(a.cnt), qty: Number(a.qty) }]));
@@ -777,10 +723,7 @@ async function getDispatchInternal(
       qty: customerDispatchLines.qty,
     })
     .from(customerDispatchLines)
-    .leftJoin(
-      items,
-      and(eq(items.id, customerDispatchLines.itemId), isNull(items.deletedAt)),
-    )
+    .leftJoin(items, and(eq(items.id, customerDispatchLines.itemId), isNull(items.deletedAt)))
     // LEFT, never inner: customer_dispatch_lines.sales_order_line_id is
     // nullable, and a line with no SO behind it must still come back — with a
     // null revision rather than vanishing from the dispatch.
@@ -832,6 +775,24 @@ export async function createDispatch(
         .from(salesOrderLines)
         .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, lineIds)))
         .for('update');
+
+      // Also lock the ITEM rows these lines are for, in a stable order.
+      // A dispatch draws on free stock, and Allocate books free stock — but
+      // Allocate locks the item while this locks the SO line, so without this
+      // the two never meet: a dispatch and a booking on the SAME item but
+      // DIFFERENT lines could both pass their own check and between them
+      // promise more than exists, driving AVAILABLE negative. Same lock, same
+      // order as createReservation, so they serialise.
+      const lineItems = await tx
+        .select({ itemId: salesOrderLines.itemId })
+        .from(salesOrderLines)
+        .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, lineIds)));
+      const itemIds = [
+        ...new Set(lineItems.map((r) => r.itemId).filter((v): v is string => !!v)),
+      ].sort();
+      for (const itemId of itemIds) {
+        await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
+      }
     }
     const dispatchable = await loadDispatchable(tx, companyId, input.salesOrderId);
     const byLine = new Map(dispatchable.map((d) => [d.salesOrderLineId, d]));
@@ -845,6 +806,17 @@ export async function createDispatch(
       if (l.qty > d.availableQty) {
         throw new ConflictError(
           `${d.itemName}: only ${d.availableQty} ready to dispatch (requested ${l.qty})`,
+        );
+      }
+      // The order itself is the outer ceiling. Readiness is derived from
+      // production and stock and can legitimately exceed the order; shipping
+      // more than the customer asked for is never right, and it would push
+      // dispatched_qty past order_qty, which every downstream "pending" figure
+      // and the invoice cap are computed from.
+      if (l.qty > d.pendingQty) {
+        throw new ConflictError(
+          `${d.itemName}: only ${d.pendingQty} still pending on this order line ` +
+            `(ordered ${d.orderQty}, already dispatched ${d.dispatchedQty}) — requested ${l.qty}`,
         );
       }
     }
@@ -876,7 +848,10 @@ export async function createDispatch(
       .where(
         and(
           eq(salesOrderLines.companyId, companyId),
-          inArray(salesOrderLines.id, input.lines.map((l) => l.salesOrderLineId)),
+          inArray(
+            salesOrderLines.id,
+            input.lines.map((l) => l.salesOrderLineId),
+          ),
         ),
       );
     const itemIdByLine = new Map(solRows.map((r) => [r.id, r.itemId]));
@@ -901,20 +876,28 @@ export async function createDispatch(
       // Maintain cumulative dispatched qty on the SO line.
       await tx
         .update(salesOrderLines)
-        .set({ dispatchedQty: sql`${salesOrderLines.dispatchedQty} + ${l.qty}`, updatedBy: user.id })
+        .set({
+          dispatchedQty: sql`${salesOrderLines.dispatchedQty} + ${l.qty}`,
+          updatedBy: user.id,
+        })
         .where(eq(salesOrderLines.id, l.salesOrderLineId));
-      // Ship reserved stock first: release the reserved portion of this qty back
-      // to on-hand (Stage 1 hard-moved it out) and mark those reservations
-      // dispatched — so the debit below ships the full qty cleanly. Reserved or
-      // not, the finished good then leaves stock at the dispatched qty.
-      await releaseReservedForDispatch(
+      // Ship this line's booking first: mark up to `qty` of it consumed. This
+      // writes NO ledger row — the booking never held stock away from the
+      // shelf, so there is nothing to give back (ADR-180). The single 'out' row
+      // below is the only physical movement. Shipping more than is booked is
+      // fine: the surplus simply comes out of free stock and consumeForLine
+      // reports the smaller number. The SO lines were locked FOR UPDATE above,
+      // so two dispatches on one line cannot consume the same booking twice.
+      await consumeForLine(
         tx,
-        companyId,
-        user.id,
-        l.salesOrderLineId,
-        l.qty,
-        input.dispatchDate,
-        code,
+        {
+          companyId,
+          soLineId: l.salesOrderLineId,
+          qty: l.qty,
+          dispatchCode: code,
+          customerDispatchId: header.id,
+        },
+        user,
       );
       // Reduce on-hand stock (finished goods out). The line's own item leaves
       // stock at the dispatched qty. For assembly / equipment lines that item is
@@ -922,7 +905,17 @@ export async function createDispatch(
       // stock (ADR-115) — we debit it directly, NOT the components (they were
       // already consumed when the batch was assembled). Free-text lines (no
       // itemId) skip stock inside moveDispatchStock.
-      await moveDispatchStock(tx, companyId, user.id, 'out', code, input.dispatchDate, lineNo, itemId, l.qty);
+      await moveDispatchStock(
+        tx,
+        companyId,
+        user.id,
+        'out',
+        code,
+        input.dispatchDate,
+        lineNo,
+        itemId,
+        l.qty,
+      );
     }
 
     // Fix A — flip the SO header to `dispatched` once every line is fully shipped.
@@ -968,7 +961,8 @@ export async function cancelDispatch(
       .limit(1);
     const h = rows[0];
     if (!h) throw new NotFoundError(`Dispatch ${id} not found`);
-    if (h.status === 'cancelled') throw new ValidationError(`Dispatch ${h.code} is already cancelled`);
+    if (h.status === 'cancelled')
+      throw new ValidationError(`Dispatch ${h.code} is already cancelled`);
 
     const lineRows = await tx
       .select()
@@ -1037,9 +1031,26 @@ export async function cancelDispatch(
           );
         }
       } else {
-        await moveDispatchStock(tx, companyId, user.id, 'in', h.code, h.dispatchDate, l.lineNo, l.itemId, l.qty);
+        await moveDispatchStock(
+          tx,
+          companyId,
+          user.id,
+          'in',
+          h.code,
+          h.dispatchDate,
+          l.lineNo,
+          l.itemId,
+          l.qty,
+        );
       }
     }
+
+    // The goods are back on the shelf, so the booking they were shipped against
+    // must hold them again (ADR-180) — otherwise the pieces return as FREE
+    // stock and the customer's order silently loses its cover. Replayed from
+    // this dispatch's own consume events, so it can give back only what this
+    // dispatch actually took.
+    await unconsumeForDispatch(tx, { companyId, customerDispatchId: id }, user);
 
     // Fix A — a cancel may drop the SO below fully-shipped; revert the header
     // from `dispatched` back to closed/open to match.

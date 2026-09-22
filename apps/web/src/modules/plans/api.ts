@@ -4,11 +4,14 @@ import type {
   ExecutePlanResultShape,
   ListPlansQuery,
   ListPlansResponse,
+  ListReservationsQuery,
+  ListReservationsResponse,
   PlanDetail,
   PlanningDashboardResponse,
   ReleaseReservationInput,
   ReservationActionResult,
   ReserveStockInput,
+  StockAvailability,
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
@@ -106,20 +109,50 @@ export function useCreatePlan() {
   });
 }
 
-// Stage 1 SO stock reservation — book in-stock qty to an SO line. Invalidates
-// so-planning (so the modal's In Stock / Reserved tiles refresh) and plans.
+// ─── Stock reservation (ADR-180) ─────────────────────────────────────────
+//
+// A reservation BOOKS stock to an SO line; it never moves it. Three numbers
+// everywhere: PHYSICAL (on the shelf) — RESERVED (promised) = AVAILABLE.
+//
+// Every write below invalidates the four caches that show those numbers:
+// so-planning (the planning sheet), plans, store-inventory (Physical /
+// Reserved / Available columns + KPI strip) and the reservation drill-down.
+// The store keys are written literally rather than imported so this module
+// does not depend on the store-inventory module; they mirror
+// `storeInventoryKeys.all` and `stockReservationKeys.all`.
+function invalidateStockViews(qc: ReturnType<typeof useQueryClient>): void {
+  void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+  void qc.invalidateQueries({ queryKey: plansKeys.all });
+  void qc.invalidateQueries({ queryKey: ['store-inventory'] });
+  void qc.invalidateQueries({ queryKey: stockReservationKeys.all });
+}
+
+export const stockReservationKeys = {
+  all: ['stock-reservations'] as const,
+  list: (q: ListReservationsQuery) =>
+    [
+      ...stockReservationKeys.all,
+      'list',
+      q.itemId ?? null,
+      q.soLineId ?? null,
+      q.salesOrderId ?? null,
+      q.includeClosed ?? false,
+    ] as const,
+  availability: (itemId: string | null) =>
+    [...stockReservationKeys.all, 'availability', itemId] as const,
+};
+
+/** Book free stock to an SO line. Physical never changes. */
 export function useReserveStock() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: ReserveStockInput) =>
       apiFetch<ReservationActionResult>('/so-reservations', { method: 'POST', json: input }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
-      void qc.invalidateQueries({ queryKey: plansKeys.all });
-    },
+    onSuccess: () => invalidateStockViews(qc),
   });
 }
 
+/** Give a booking back to free stock. A reason is required (ADR-180). */
 export function useReleaseReservations() {
   const qc = useQueryClient();
   return useMutation({
@@ -128,10 +161,31 @@ export function useReleaseReservations() {
         method: 'POST',
         json: input,
       }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
-      void qc.invalidateQueries({ queryKey: plansKeys.all });
-    },
+    onSuccess: () => invalidateStockViews(qc),
+  });
+}
+
+/** The three numbers for ONE item — Physical, Reserved, Available. */
+export function useStockAvailability(itemId: string | null) {
+  return useQuery<StockAvailability>({
+    queryKey: stockReservationKeys.availability(itemId),
+    queryFn: () => apiFetch<StockAvailability>(`/stock-availability/${itemId ?? ''}`),
+    enabled: !!itemId,
+  });
+}
+
+/** "Where is my stock reserved?" — the drill-down behind a Reserved number. */
+export function useStockReservations(query: ListReservationsQuery, enabled = true) {
+  const params = new URLSearchParams();
+  if (query.itemId) params.set('itemId', query.itemId);
+  if (query.soLineId) params.set('soLineId', query.soLineId);
+  if (query.salesOrderId) params.set('salesOrderId', query.salesOrderId);
+  if (query.includeClosed) params.set('includeClosed', 'true');
+  const qs = params.toString();
+  return useQuery<ListReservationsResponse>({
+    queryKey: stockReservationKeys.list(query),
+    queryFn: () => apiFetch<ListReservationsResponse>(`/stock-reservations${qs ? `?${qs}` : ''}`),
+    enabled,
   });
 }
 
