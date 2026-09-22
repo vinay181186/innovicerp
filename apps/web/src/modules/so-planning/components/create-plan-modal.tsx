@@ -14,11 +14,16 @@
 
 import type { CreatePlanInput, PlanningDetailResponse, PlanningLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
-import { useCreatePlan, useReleaseReservations, useReserveStock } from '@/modules/plans/api';
+import {
+  useCreatePlan,
+  useDefaultRouteOps,
+  useReleaseReservations,
+  useReserveStock,
+} from '@/modules/plans/api';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
@@ -77,6 +82,33 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const [rmGradeText, setRmGradeText] = useState<string | null>(null);
   const [rmSizeId, setRmSizeId] = useState<string | null>(null);
   const [rmSizeText, setRmSizeText] = useState<string | null>(null);
+  // Auto-fetch the raw material chosen on the item's route card (grade + size)
+  // — the same rule the standalone Plan form applies (plan-form.tsx): only
+  // while a field is still blank, so the planner's own pick is never
+  // overwritten. User, 2026-09-22: "I already selected the raw material
+  // during RC creation" — it must not have to be picked twice.
+  const { data: defaultOps } = useDefaultRouteOps(line.itemId ?? null);
+  useEffect(() => {
+    if (!defaultOps) return;
+    if (
+      !rmGradeId &&
+      !rmGradeText &&
+      (defaultOps.rawMaterialGradeId || defaultOps.rawMaterialGradeText)
+    ) {
+      setRmGradeId(defaultOps.rawMaterialGradeId);
+      setRmGradeText(defaultOps.rawMaterialGradeText);
+    }
+    if (
+      !rmSizeId &&
+      !rmSizeText &&
+      (defaultOps.rawMaterialSizeId || defaultOps.rawMaterialSizeText)
+    ) {
+      setRmSizeId(defaultOps.rawMaterialSizeId);
+      setRmSizeText(defaultOps.rawMaterialSizeText);
+    }
+    // Prefill is a one-shot per lookup result; the field states are read, not
+    // dependencies, so a later manual clear is not refilled.
+  }, [defaultOps]);
   // Reserve qty is adjustable — it starts at everything that's free to book,
   // but the planner can dial it down (or back up) before pressing Reserve.
   // Clamped on render instead of via an effect: after a reserve succeeds the
