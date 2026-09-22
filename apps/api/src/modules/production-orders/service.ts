@@ -276,6 +276,20 @@ const PARTY_NAME_SQL = sql<string | null>`COALESCE(
    WHERE p.id = ${productionOrders.planId} LIMIT 1)
 )`;
 
+/** ADR-177: the drawing revision of the SO line (or, for a JWSO plan, the JW
+ *  line) this Production Order was raised for — read LIVE through the plan,
+ *  never snapshotted, so a reissued drawing shows on every open PO. Same
+ *  one-branch-only shape as PARTY_NAME_SQL. ::text for the pre-0119 reason
+ *  every other itemRevision read gives. Null when the plan has no line. */
+const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
+  (SELECT sol.revision::text FROM public.plans p
+     JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
+   WHERE p.id = ${productionOrders.planId} LIMIT 1),
+  (SELECT jl.revision::text FROM public.plans p
+     JOIN public.job_work_order_lines jl ON jl.id = p.jw_line_id
+   WHERE p.id = ${productionOrders.planId} LIMIT 1)
+)`;
+
 const createdByUser = alias(users, 'po_created_by');
 const closedByUser = alias(users, 'po_closed_by');
 
@@ -322,6 +336,7 @@ const poColumns = {
   // Raw material lives on the plan (the order's input); read live, not copied.
   rawMaterialGradeText: plans.rawMaterialGradeText,
   rawMaterialSizeText: plans.rawMaterialSizeText,
+  itemRevision: ITEM_REVISION_SQL,
   createdByName: createdByUser.fullName,
   closedByName: closedByUser.fullName,
 };
@@ -342,6 +357,7 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     itemId: r.itemId,
     itemCodeText: r.itemCodeText,
     itemNameText: r.itemNameText,
+    itemRevision: r.itemRevision ?? null,
     routeCardId: r.routeCardId,
     routeCardCodeText: r.routeCardCodeText,
     routeCardRevision: r.routeCardRevision,

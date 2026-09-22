@@ -66,7 +66,7 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         -- JW-sourced or standalone card still appears on its machine with a null
         -- revision. Cast to text because the contract types this as a string and
         -- a database without migration 0119 still holds the old integer here.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         jc.order_qty AS "orderQty",

@@ -13,6 +13,11 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import {
+  normalizeRevision,
+  revisionBackwardsMessage,
+  revisionGoesBackwards,
+} from '@innovic/shared';
+import {
   clients,
   items,
   jobCards,
@@ -808,7 +813,9 @@ export async function createJobWorkOrder(
           // carries, written explicitly here so the row does not depend on
           // drizzle's undefined-means-DEFAULT behaviour. The server never
           // invents or bumps a Rev; "compulsory" is a rule the FORM enforces.
-          revision: l.revision ?? '0',
+          // ADR-177: stored upper-cased; the column default when the caller
+          // (BOM cascade, SO-to-JW conversion) did not name one.
+          revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
           drawingFilePath: l.drawingFilePath ?? null,
           uom: l.uom,
           orderQty: l.orderQty,
@@ -984,6 +991,9 @@ async function mergeLines(
     .select({
       id: jobWorkOrderLines.id,
       lineNo: jobWorkOrderLines.lineNo,
+      // The stored Rev, read back only so a backwards change can be refused
+      // (ADR-177) — nothing else on the update compares against it.
+      revision: jobWorkOrderLines.revision,
     })
     .from(jobWorkOrderLines)
     .where(
@@ -1041,9 +1051,18 @@ async function mergeLines(
     //
     // Unlike the sales-order line there is no history table to feed: drawing
     // revisions are logged per SO line (so_line_drawing_revisions) and job-work
-    // lines have no equivalent. Nothing to compare against, so nothing is read
-    // back first.
-    if (u.data.revision !== undefined) lineUpdate['revision'] = u.data.revision;
+    // lines have no equivalent. The stored Rev is read back for one reason
+    // only — ADR-177: a Rev is stored upper-cased and may never go backwards
+    // on a line (B → A, 2 → 1). A change of kind (1 → A) is allowed.
+    if (u.data.revision !== undefined) {
+      const stored = existingById.get(u.id)!;
+      const nextRevision = normalizeRevision(u.data.revision);
+      if (revisionGoesBackwards(stored.revision, nextRevision)) {
+        const lineNo = u.data.lineNo ?? stored.lineNo;
+        throw new ValidationError(revisionBackwardsMessage(lineNo, stored.revision, nextRevision));
+      }
+      lineUpdate['revision'] = nextRevision;
+    }
     if (u.data.drawingFilePath !== undefined)
       lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
@@ -1084,7 +1103,8 @@ async function mergeLines(
         drawingNo: l.drawingNo ?? null,
         // Same as the create path: a line added on edit is still a new line,
         // and it takes the Rev the user typed, or '0' when nobody was asked.
-        revision: l.revision ?? '0',
+        // ADR-177: stored upper-cased (same rule as the create path).
+        revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
         drawingFilePath: l.drawingFilePath ?? null,
         uom: l.uom,
         orderQty: l.orderQty,

@@ -35,6 +35,9 @@
 import {
   type CreateSalesOrderInput,
   type ListItemsResponse,
+  normalizeRevision,
+  revisionBackwardsMessage,
+  revisionGoesBackwards,
   type SalesOrderDetail,
   SELECTABLE_SO_TYPES,
   SO_GST_DEFAULT,
@@ -47,7 +50,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useFieldArray, useForm, type UseFormReturn } from 'react-hook-form';
+import { useFieldArray, useForm, type UseFormRegisterReturn, type UseFormReturn } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { todayLocal } from '@/lib/date';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -127,6 +130,34 @@ const HEADER_DEFAULTS: FormValues['header'] = {
 // once per line, which is the whole point of making it compulsory.
 const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: '' };
 const NEW_MILESTONE: MilestoneFormValue = { lotNo: 1, qty: 0 };
+
+/** ADR-177: the Rev box capitalises AS TYPED ('b' shows as 'B' at once), so what
+ *  the person sees is what the form holds and the server stores. Wraps the
+ *  register() props so the box is upper-cased BEFORE react-hook-form reads it
+ *  (its own `onChange` option runs after the read, which would leave the form
+ *  value lowercase). The caret is put back where it was so typing in the middle
+ *  of "R1" does not jump to the end. Only the case changes — trim and the
+ *  character rule stay with the schema / `pattern`. */
+function upperCaseRevField<T extends string>(field: UseFormRegisterReturn<T>): UseFormRegisterReturn<T> {
+  return {
+    ...field,
+    onChange: (e: { target: HTMLInputElement; type?: unknown }) => {
+      const el = e.target;
+      const upper = el.value.toUpperCase();
+      if (upper !== el.value) {
+        const { selectionStart, selectionEnd } = el;
+        el.value = upper;
+        if (selectionStart !== null && selectionEnd !== null) el.setSelectionRange(selectionStart, selectionEnd);
+      }
+      return field.onChange(e);
+    },
+  };
+}
+/** HTML `pattern` mirror of REVISION_PATTERN — the box is already upper-case.
+ *  Browsers compile `pattern` with the `v` flag, where `/` and `-` inside a
+ *  class must be escaped or the whole pattern is silently ignored. */
+const REV_INPUT_PATTERN = '[A-Z0-9][A-Z0-9.\\/\\-]{0,31}';
+const REV_INPUT_TITLE = 'Rev: letters, digits, . - / only';
 
 /** Chrome for the form's own action bar. The Back link, title and breadcrumb are
  *  the page's to name, but the Save buttons must stay inside <form> to keep
@@ -524,6 +555,22 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         setLineError(`Line ${badRev + 1}: enter the drawing Rev — the revision printed on the customer's drawing.`);
         return;
       }
+      // ADR-177: a saved line's Rev never goes backwards (B → A, 2 → 1). Checked
+      // here against the revision the SO was loaded with, with the same sentence
+      // the API answers, so the person is told before the round trip. A change
+      // of kind (1 → A) cannot be ordered and is allowed.
+      if (props.mode === 'edit') {
+        const savedById = new Map(props.detail.lines.map((d) => [d.id, d]));
+        for (const l of values.lines) {
+          const saved = l.id ? savedById.get(l.id) : undefined;
+          if (!saved) continue;
+          const typed = String(l.revision ?? '');
+          if (revisionGoesBackwards(saved.revision, typed)) {
+            setLineError(revisionBackwardsMessage(saved.lineNo, saved.revision, typed));
+            return;
+          }
+        }
+      }
     }
 
     const headerOut = {
@@ -564,7 +611,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         // component line — the compulsory check above has already refused the
         // save — and exists only for the EQUIPMENT path, which has no Rev box of
         // its own and so has nobody to ask.
-        revision: String(l.revision ?? '').trim() || '0',
+        revision: normalizeRevision(String(l.revision ?? '')) || '0',
         uom: l.uom,
         orderQty: Number(l.orderQty),
         rate: Number(l.rate),
@@ -1048,7 +1095,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             without sending a new file, and the same revision can be re-uploaded
                             after a bad scan. Compulsory — onValid refuses the save when it is
                             blank, and the API rejects a blank one too. */}
-                        <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} {...register(`lines.${idx}.revision` as const)} /></td>
+                        <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} style={{ textTransform: 'uppercase' }} pattern={REV_INPUT_PATTERN} title={REV_INPUT_TITLE} {...upperCaseRevField(register(`lines.${idx}.revision` as const))} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
@@ -1319,7 +1366,11 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
             partName: l.partName,
             ...(l.material ? { material: l.material } : {}),
             ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
-            revision: l.revision,
+            // Upper-cased on load (ADR-177): a Rev stored as 'b' before the
+            // capital rule would otherwise sit in the box as 'b' (shown as 'B'
+            // by textTransform) and fail the input's `pattern`, blocking the
+            // whole SO from saving until every such line was retyped.
+            revision: normalizeRevision(l.revision),
             ...(l.drawingFilePath ? { drawingFilePath: l.drawingFilePath } : {}),
             uom: l.uom,
             orderQty: l.orderQty,

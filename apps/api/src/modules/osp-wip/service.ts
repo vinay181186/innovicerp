@@ -70,11 +70,13 @@ export async function listOspWip(
         -- column is only text on a database that has had migration 0119. On one
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type.
-        sol.revision::text AS item_revision
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision
       FROM public.v_osp_wip w
       LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       WHERE w.company_id = ${companyId}::uuid
         ${searchFrag}
       ORDER BY w.at_vendor_qty DESC, w.not_sent_qty DESC, w.jc_code ASC, w.op_seq ASC

@@ -61,7 +61,7 @@ export async function listJcOpsBoard(
         -- contract types it as a string, while a database that has not had
         -- migration 0119 still holds an integer in that column; the cast is a
         -- no-op once 0119 is applied.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         i.name AS "jcItemName",
         jc.order_qty AS "jcOrderQty",
         op.op_seq AS "opSeq",
@@ -107,6 +107,8 @@ export async function listJcOpsBoard(
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = op.machine_id AND m.deleted_at IS NULL
       LEFT JOIN public.vendors ven ON ven.id = op.outsource_vendor_id AND ven.deleted_at IS NULL
       LEFT JOIN public.purchase_requests pr ON pr.id = op.outsource_pr_id AND pr.deleted_at IS NULL

@@ -26,6 +26,7 @@ import {
   jcOpPoLines,
   jcOps,
   jobCards,
+  jobWorkOrderLines,
   jwDcOutward,
   purchaseOrderLines,
   purchaseOrders,
@@ -666,13 +667,18 @@ export async function getPurchaseOrder(
         row: purchaseOrderLines,
         itemCode: items.code,
         // The customer's drawing revision for THIS line, off the SO line it was
-        // raised against. Cast to text because the contract types it as a
-        // string and the column is only text on a database that has had
-        // migration 0119; without the cast a pre-0119 database would hand the
-        // UI a number wearing a string type. Never items.revision -- a
-        // different column about the item master, which would print a
-        // plausible-looking wrong revision on the vendor's copy of the PO.
-        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        // raised against; for an OSP line raised off a JWSO-sourced job card
+        // there is no SO line, so the job-work line the card came from is the
+        // fallback (ADR-177 -- a card has one source, never both). Cast to
+        // text because the contract types it as a string and the column is
+        // only text on a database that has had migration 0119; without the
+        // cast a pre-0119 database would hand the UI a number wearing a string
+        // type. Never items.revision -- a different column about the item
+        // master, which would print a plausible-looking wrong revision on the
+        // vendor's copy of the PO.
+        itemRevision: sql<
+          string | null
+        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         sourcePrCode: purchaseRequests.code,
       })
       .from(purchaseOrderLines)
@@ -685,6 +691,15 @@ export async function getPurchaseOrder(
           eq(salesOrderLines.id, purchaseOrderLines.sourceSoLineId),
           isNull(salesOrderLines.deletedAt),
         ),
+      )
+      // JWSO fallback: PO line -> the JC op the OSP PO was raised for -> its
+      // job card -> the job-work line it was sourced from. Each hop is a
+      // single-row FK, so nothing here can multiply the PO lines.
+      .leftJoin(jcOps, and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)))
+      .leftJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, jobCards.sourceJwLineId), isNull(jobWorkOrderLines.deletedAt)),
       )
       // Same join-the-code pattern as items above: the line stores a uuid, the
       // reader needs the PR number it can actually read.

@@ -1081,11 +1081,11 @@ async function getJwPlanningDetail(
       clientPoLineNo: null,
       itemId: r.line.itemId,
       itemCode: r.itemCode ?? r.line.itemCodeText,
-      // Always null on this path, and that is the right answer rather than a
-      // gap: these are Job Work Order lines, which have no customer SO line
-      // behind them and therefore no customer drawing revision. The screen shows
-      // the bare item code for them.
-      itemRevision: null,
+      // ADR-177: the JW line carries its own drawing revision (the customer's
+      // Rev typed on the JWSO line), read live off the line so the screen shows
+      // CODE/REV for job-work lines just as it does for SO lines. An empty
+      // Rev (allowed on a JW line) comes back null → bare item code.
+      itemRevision: r.line.revision || null,
       itemName: r.itemName ?? r.line.partName,
       orderQty,
       dueDate: r.line.dueDate,

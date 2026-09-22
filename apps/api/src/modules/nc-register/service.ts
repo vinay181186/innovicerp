@@ -22,6 +22,7 @@ import {
   items,
   jcOps,
   jobCards,
+  jobWorkOrderLines,
   ncRegister,
   purchaseOrderLines,
   salesOrderLines,
@@ -427,7 +428,7 @@ export async function listNcRegister(
         -- column is only text on a database that has had migration 0119. On one
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         i.name AS "itemName",
         cap.code AS "linkedCapaCode",
         -- Material source (Tier A, WI3): the vendor/PO/GRN the rejected pieces
@@ -447,6 +448,8 @@ export async function listNcRegister(
       -- -- the COUNT query below deliberately does not repeat it.
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       -- The rework/repair child card and the return-to-vendor challan, both
       -- one-per-NC FKs, so neither can multiply rows.
       LEFT JOIN public.job_cards cjc
@@ -651,11 +654,14 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
       nc: ncRegister,
       itemCode: items.code,
       itemName: items.name,
+      // SO line's Rev, or the JW line's for a JWSO-sourced card (ADR-177).
       // Cast to text on purpose: the contract types this as a string, and the
       // column is only text on a database that has had migration 0119. On one
       // that has not it is still the old integer and would arrive here as a
       // number wearing a string type. The cast is a no-op once 0119 is in.
-      itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+      itemRevision: sql<
+        string | null
+      >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
       // The child card and the challan live in tables joined by their own FK
       // on the NC row, so both are plain scalar subqueries — no alias juggling
       // on job_cards, which is already joined once for the SO line.
@@ -679,12 +685,16 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     // *Text snapshot columns. Mirrors the LIST reader's join (and GRN detail).
     .leftJoin(items, and(eq(items.id, ncRegister.itemId), isNull(items.deletedAt)))
     // Two more LEFT hops for the customer's drawing revision: the NC's job card,
-    // then the SO line it was raised against. Both stay LEFT so an NC on a
-    // JW-sourced or standalone card still comes back, with a null revision.
+    // then the SO line (or JW line, ADR-177) it was raised against. All stay
+    // LEFT so an NC on a standalone card still comes back, with a null revision.
     .leftJoin(jobCards, and(eq(jobCards.id, ncRegister.jobCardId), isNull(jobCards.deletedAt)))
     .leftJoin(
       salesOrderLines,
       and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+    )
+    .leftJoin(
+      jobWorkOrderLines,
+      and(eq(jobWorkOrderLines.id, jobCards.sourceJwLineId), isNull(jobWorkOrderLines.deletedAt)),
     )
     .where(
       and(eq(ncRegister.id, id), eq(ncRegister.companyId, companyId), isNull(ncRegister.deletedAt)),

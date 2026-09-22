@@ -13,6 +13,9 @@ import {
   type CreateJobWorkOrderInput,
   type JobWorkOrderDetail,
   type ListItemsResponse,
+  normalizeRevision,
+  revisionBackwardsMessage,
+  revisionGoesBackwards,
   type SoStatus,
   type UpdateJobWorkOrderInput,
   type Uom,
@@ -21,7 +24,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useBomMastersList } from '@/modules/bom-master/api';
@@ -84,6 +87,34 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   gstPercent: 18,
 };
 const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: '' };
+
+/** ADR-177: the Rev box capitalises AS TYPED ('b' shows as 'B' at once), so what
+ *  the person sees is what the form holds and the server stores. Wraps the
+ *  register() props so the box is upper-cased BEFORE react-hook-form reads it
+ *  (its own `onChange` option runs after the read, which would leave the form
+ *  value lowercase). The caret is put back where it was so typing in the middle
+ *  of "R1" does not jump to the end. Only the case changes — trim and the
+ *  character rule stay with the schema / `pattern`. Twin of the SO form's. */
+function upperCaseRevField<T extends string>(field: UseFormRegisterReturn<T>): UseFormRegisterReturn<T> {
+  return {
+    ...field,
+    onChange: (e: { target: HTMLInputElement; type?: unknown }) => {
+      const el = e.target;
+      const upper = el.value.toUpperCase();
+      if (upper !== el.value) {
+        const { selectionStart, selectionEnd } = el;
+        el.value = upper;
+        if (selectionStart !== null && selectionEnd !== null) el.setSelectionRange(selectionStart, selectionEnd);
+      }
+      return field.onChange(e);
+    },
+  };
+}
+/** HTML `pattern` mirror of REVISION_PATTERN — the box is already upper-case.
+ *  Browsers compile `pattern` with the `v` flag, where `/` and `-` inside a
+ *  class must be escaped or the whole pattern is silently ignored. */
+const REV_INPUT_PATTERN = '[A-Z0-9][A-Z0-9.\\/\\-]{0,31}';
+const REV_INPUT_TITLE = 'Rev: letters, digits, . - / only';
 
 type CreateMode = {
   mode: 'create';
@@ -421,6 +452,22 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       setLineError(`Line ${badRev + 1}: enter the drawing Rev — the revision printed on the client's drawing.`);
       return;
     }
+    // ADR-177: a saved line's Rev never goes backwards (B → A, 2 → 1). Checked
+    // here against the revision the JWSO was loaded with, with the same sentence
+    // the API answers, so the person is told before the round trip. A change of
+    // kind (1 → A) cannot be ordered and is allowed.
+    if (props.mode === 'edit') {
+      const savedById = new Map(props.detail.lines.map((d) => [d.id, d]));
+      for (const l of values.lines) {
+        const saved = l.id ? savedById.get(l.id) : undefined;
+        if (!saved) continue;
+        const typed = String(l.revision ?? '');
+        if (revisionGoesBackwards(saved.revision, typed)) {
+          setLineError(revisionBackwardsMessage(saved.lineNo, saved.revision, typed));
+          return;
+        }
+      }
+    }
 
     const h = values.header;
     // Header-level Due Date applied to every line (parity with the SO form).
@@ -462,7 +509,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         // Drawing No. the user cleared must be sent as null to actually clear it.
         drawingNo: l.drawingNo?.trim() || null,
         // Always sent, and trimmed. The check above guarantees it is non-blank.
-        revision: String(l.revision ?? '').trim(),
+        revision: normalizeRevision(String(l.revision ?? '')),
         // null, not undefined: JSON.stringify drops undefined keys, so clearing a
         // drawing would send nothing at all and the server would keep the old
         // file. An explicit null is what says the drawing was removed.
@@ -779,7 +826,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         their print ('A', 'B', 'R1', '0'). Independent of the Drawing
                         File cell beside it in BOTH directions. Compulsory — onValid
                         refuses the save when it is blank. */}
-                    <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} {...register(`lines.${idx}.revision` as const)} /></td>
+                    <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} style={{ textTransform: 'uppercase' }} pattern={REV_INPUT_PATTERN} title={REV_INPUT_TITLE} {...upperCaseRevField(register(`lines.${idx}.revision` as const))} /></td>
                     <td>
                       <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
                         {UOMS.map((u) => <option key={u} value={u}>{u}</option>)}
@@ -960,7 +1007,9 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
             // '0' fallback for a JWSO saved before migration 0120 (and for the
             // window before the API starts sending the column). Non-blank, so
             // editing an old JWSO is never blocked by the compulsory-Rev rule.
-            revision: l.revision ?? '0',
+            // Upper-cased on load (ADR-177) so a pre-capital-rule 'b' does not
+            // fail the input's `pattern` and block the save.
+            revision: normalizeRevision(l.revision ?? '0'),
             drawingFilePath: l.drawingFilePath ?? null,
             uom: l.uom,
             orderQty: l.orderQty,

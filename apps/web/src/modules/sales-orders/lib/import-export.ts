@@ -5,7 +5,7 @@
 // through + New SO / WO. What remains is the LINE import inside the SO form —
 // item code only, name/UOM fetched from Item Master by the form.
 
-import type { SalesOrderListItem } from '@innovic/shared';
+import { normalizeRevision, type SalesOrderListItem } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { coerceDate } from '@/lib/xlsx-import';
 
@@ -151,7 +151,8 @@ export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportR
       itemCodeText,
       material: String(r['Material'] ?? '').trim() || undefined,
       drawingNo: String(r['Drawing No'] ?? '').trim() || undefined,
-      revision: String(r['Rev'] ?? '').trim() || undefined,
+      // ADR-177: capital letters always — 'b' in the sheet lands as 'B'.
+      revision: normalizeRevision(String(r['Rev'] ?? '')) || undefined,
       clientPoLineNo: String(r['CPO Line'] ?? '').trim() || undefined,
       orderQty,
       rate: Number(r['Rate']) || 0,

@@ -12,6 +12,9 @@ import {
   deliveryChallanReceipts,
   deliveryChallans,
   items,
+  jcOps,
+  jobCards,
+  jobWorkOrderLines,
   purchaseOrderLines,
   purchaseOrders,
   salesOrderLines,
@@ -192,12 +195,15 @@ export async function listDeliveryChallans(
         v.name AS "vendorName",
         po.code AS "poCode",
         COALESCE(so.code, po_so.so_code) AS "soCode",
-        -- Header-level drawing revision, following soCode's two sources exactly.
+        -- Header-level drawing revision, following soCode's two sources exactly,
+        -- plus a third arm for a JWSO-sourced return-to-vendor challan: the
+        -- job card the DC was raised for carries source_jw_line_id instead of
+        -- an SO line, so the job-work line's revision is the fallback (ADR-177).
         -- Cast to text: the contract types it as a string, and the column is
         -- only text on a database that has had migration 0119; on one that has
         -- not it is still the old integer and a bare select would hand the UI a
         -- number. Never items.revision — a different column about the item.
-        COALESCE(sol.revision::text, po_so.so_revision) AS "soLineRevision",
+        COALESCE(sol.revision::text, po_so.so_revision, njc_jwl.revision::text) AS "soLineRevision",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::text AS "totalQty"
       FROM public.delivery_challans dc
@@ -206,6 +212,8 @@ export async function listDeliveryChallans(
         ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
       LEFT JOIN public.job_cards njc ON njc.id = dc.job_card_id AND njc.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines njc_jwl
+        ON njc_jwl.id = njc.source_jw_line_id AND njc_jwl.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -371,17 +379,22 @@ async function loadDeliveryChallanWithLines(
         v.name AS "vendorName",
         po.code AS "poCode",
         COALESCE(so.code, po_so.so_code) AS "soCode",
-        -- Header-level drawing revision, following soCode's two sources exactly.
+        -- Header-level drawing revision, following soCode's two sources exactly,
+        -- plus a third arm for a JWSO-sourced return-to-vendor challan: the
+        -- job card the DC was raised for carries source_jw_line_id instead of
+        -- an SO line, so the job-work line's revision is the fallback (ADR-177).
         -- ::text because the contract types it as a string and the column is
         -- only text on a database that has had migration 0119. Never
         -- items.revision — a different column, about the item master.
-        COALESCE(sol.revision::text, po_so.so_revision) AS "soLineRevision"
+        COALESCE(sol.revision::text, po_so.so_revision, njc_jwl.revision::text) AS "soLineRevision"
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
         ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
       LEFT JOIN public.job_cards njc ON njc.id = dc.job_card_id AND njc.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines njc_jwl
+        ON njc_jwl.id = njc.source_jw_line_id AND njc_jwl.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -422,12 +435,17 @@ async function loadDeliveryChallanWithLines(
       // page should show the current master code/name when the FK is set.
       itemCode: items.code,
       itemName: items.name,
-      // The customer's drawing revision — see the two joins below for why it is
-      // null on most challan lines. ::text because the contract types it as a
-      // string and the column is only text on a database that has had migration
-      // 0119; on one that has not it is still the old integer. Never
-      // items.revision, which is a different column, about the item master.
-      itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+      // The customer's drawing revision — see the joins below for why it is
+      // null on most challan lines. SO line first; for an OSP PO raised off a
+      // JWSO-sourced job card there is no SO line, so the job-work line the
+      // card came from is the fallback (ADR-177 — a card has one source, never
+      // both). ::text because the contract types it as a string and the column
+      // is only text on a database that has had migration 0119; on one that
+      // has not it is still the old integer. Never items.revision, which is a
+      // different column, about the item master.
+      itemRevision: sql<
+        string | null
+      >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
     })
     .from(deliveryChallanLines)
     .leftJoin(items, and(eq(items.id, deliveryChallanLines.itemId), isNull(items.deletedAt)))
@@ -456,6 +474,20 @@ async function loadDeliveryChallanWithLines(
         eq(salesOrderLines.id, purchaseOrderLines.sourceSoLineId),
         isNull(salesOrderLines.deletedAt),
         eq(salesOrderLines.itemId, deliveryChallanLines.itemId),
+      ),
+    )
+    // JWSO fallback: PO line -> the JC op the OSP PO was raised for -> its job
+    // card -> the job-work line the card was sourced from. Each hop is a
+    // single-row FK, so nothing here can multiply the challan lines, and the
+    // last join carries the same same-item guard as the SO-line join above.
+    .leftJoin(jcOps, and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)))
+    .leftJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
+    .leftJoin(
+      jobWorkOrderLines,
+      and(
+        eq(jobWorkOrderLines.id, jobCards.sourceJwLineId),
+        isNull(jobWorkOrderLines.deletedAt),
+        eq(jobWorkOrderLines.itemId, deliveryChallanLines.itemId),
       ),
     )
     .where(

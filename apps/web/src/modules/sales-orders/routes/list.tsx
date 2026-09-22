@@ -639,11 +639,11 @@ function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; c
     <div>
       <div style={{ padding: '10px 18px 8px 36px', display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
         {/* Same label band as <Fact>, but the value is the item badge (thumbnail ·
-            code · name) rather than a string — an equipment line has no per-line
-            revision to show, so none is passed. */}
+            code · name) rather than a string. The equipment line is an SO line
+            like any other, so its drawing revision renders as CODE/REV (ADR-177). */}
         <div>
           <div style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT</div>
-          <ItemBadge size="row" code={line.itemCode ?? line.itemCodeText} name={line.partName} imagePath={line.itemImagePath} />
+          <ItemBadge size="row" code={line.itemCode ?? line.itemCodeText} name={line.partName} revision={line.revision} imagePath={line.itemImagePath} />
         </div>
         <Fact label="EQUIP QTY" value={String(line.orderQty)} big />
         <Fact label="DUE" value={line.dueDate ?? '—'} />

@@ -289,6 +289,10 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         COALESCE(pol.source_so_line_id, jcx.source_so_line_id) AS "soLineId",
         grn.code AS "grnNo",
         COALESCE(gi.code, gl.item_code_text) AS "itemCode",
+        -- ADR-177: the SO line this GRN row hangs off (sol3, the same line the
+        -- row is attributed to) carries the drawing revision — read live, never
+        -- items.revision. ::text for the pre-0119 reason given on the line query.
+        sol3.revision::text AS "itemRevision",
         COALESCE(v.name, grn.vendor_code_text) AS "vendorName",
         gl.received_qty AS "receivedQty",
         gl.qc_accepted_qty AS "accepted",
@@ -330,6 +334,7 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
       const detail: SoQcGrnDetail = {
         grnNo: (r['grnNo'] as string) ?? '',
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
         vendorName: (r['vendorName'] as string | null) ?? null,
         receivedQty: num(r['receivedQty']),
         accepted: num(r['accepted']),

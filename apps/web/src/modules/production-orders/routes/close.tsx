@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -91,7 +92,11 @@ function ProductionOrderClosePage(): React.JSX.Element {
     setCloseError(null);
     const row = poOptions.find((x) => x.id === next);
     setPoId(next);
-    setPoLabel(row ? `${row.code} — ${row.itemCodeText} · ${row.planCodeText}` : '');
+    setPoLabel(
+      row
+        ? `${row.code} — ${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.planCodeText}`
+        : '',
+    );
     // A PO picked directly implies its plan; drop a plan that no longer matches.
     if (row && plan && plan.id !== row.planId) setPlan(null);
   };
@@ -173,14 +178,16 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 options={poOptions.map((p) => ({
                   id: p.id,
                   code: p.code,
-                  name: `${p.itemCodeText} · ${p.planCodeText} · qty ${p.orderQty}`,
+                  name: `${itemCodeWithRev(p.itemCodeText, p.itemRevision)} · ${p.planCodeText} · qty ${p.orderQty}`,
                   searchText: [p.jcCodeText, p.soCodeText, p.itemNameText]
                     .filter(Boolean)
                     .join(' '),
                 }))}
                 placeholder="🔍 Type production order no, item or plan…"
                 valueLabel={
-                  po ? `${po.code} — ${po.itemCodeText} · ${po.planCodeText}` : poLabel || undefined
+                  po
+                    ? `${po.code} — ${itemCodeWithRev(po.itemCodeText, po.itemRevision)} · ${po.planCodeText}`
+                    : poLabel || undefined
                 }
                 emptyText="No open Production Order matches"
               />
@@ -262,7 +269,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 </b>
               </span>
               <span className="mono text3" style={{ fontSize: 11 }}>
-                · {po.itemCodeText}
+                · {itemCodeWithRev(po.itemCodeText, po.itemRevision)}
               </span>
             </div>
           ) : null}

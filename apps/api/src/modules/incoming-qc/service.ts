@@ -324,7 +324,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         -- column is only text on a database that has had migration 0119. On one
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) AS "pendingQty",
@@ -337,6 +337,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       LEFT JOIN public.jc_ops jco ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
       LEFT JOIN public.job_cards jc ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id
@@ -383,7 +384,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         -- as on the pending query: PO line -> jc_op -> JC -> SO line. Null on a
         -- raw-material receipt, which has no SO behind it. Cast to text so a
         -- pre-0119 database cannot hand the UI a number. Never items.revision.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
@@ -401,6 +402,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       LEFT JOIN public.jc_ops jco ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
       LEFT JOIN public.job_cards jc ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id
       LEFT JOIN public.users u ON u.id = l.qc_inspected_by
       -- Any line that has had QC activity (accepted and/or rejected), incl.

@@ -10,6 +10,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Lock } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCloseProductionOrder, useProductionOrder } from '../api';
@@ -226,7 +227,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             </Fact>
 
             <Fact label="Item code" mono>
-              {data.itemCodeText}
+              {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
+              {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
             </Fact>
             <div className="form-grp form-span-2">
               <span className="form-label">Item name</span>

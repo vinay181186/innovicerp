@@ -667,9 +667,60 @@ async function getGoodsReceiptNoteInternal(
         gnl.remarks, gnl.created_at AS "createdAt", gnl.created_by AS "createdBy",
         gnl.updated_at AS "updatedAt", gnl.updated_by AS "updatedBy",
         gnl.deleted_at AS "deletedAt",
-        i.code AS "itemCode"
+        i.code AS "itemCode",
+        -- ADR-177: the order line's drawing revision, read LIVE through
+        -- whichever chain this GRN line came in on (never a snapshot, never
+        -- items.revision — that is a different column about the item master):
+        --   1. GRN line -> PO line -> its source SO line
+        --   2. GRN line -> PO line -> the JC op the OSP PO was raised for
+        --      -> that job card's source SO / JWSO line
+        --   3. GRN header -> the DC it was received against -> the DC's SO
+        --      line, or the DC's job card -> its source SO / JWSO line
+        --   4. GRN header -> the return-to-vendor NC it replaces -> the NC's
+        --      JC op / job card -> its source SO / JWSO line
+        -- A job card is sourced from an SO line OR a JW line, never both, so
+        -- the SO-line value wins wherever one exists and the JW-line value is
+        -- the fallback. Null when nothing traces. ::text for the same pre-0119
+        -- reason as delivery-challans (the column was integer before then).
+        COALESCE(rev_sol.revision::text, rev_jwl.revision::text) AS "itemRevision"
       FROM public.goods_receipt_note_lines gnl
+      JOIN public.goods_receipt_notes grn ON grn.id = gnl.goods_receipt_note_id
       LEFT JOIN public.items i ON i.id = gnl.item_id AND i.deleted_at IS NULL
+      -- Every join below is a single row per GRN line (each FK points at one
+      -- parent), so none of them can multiply the lines.
+      LEFT JOIN public.purchase_order_lines rev_pol
+        ON rev_pol.id = gnl.purchase_order_line_id AND rev_pol.deleted_at IS NULL
+      LEFT JOIN public.jc_ops rev_pol_op
+        ON rev_pol_op.id = rev_pol.source_jc_op_id AND rev_pol_op.deleted_at IS NULL
+      LEFT JOIN public.job_cards rev_pol_jc
+        ON rev_pol_jc.id = rev_pol_op.job_card_id AND rev_pol_jc.deleted_at IS NULL
+      LEFT JOIN public.delivery_challans rev_dc
+        ON rev_dc.id = grn.delivery_challan_id AND rev_dc.deleted_at IS NULL
+      LEFT JOIN public.job_cards rev_dc_jc
+        ON rev_dc_jc.id = rev_dc.job_card_id AND rev_dc_jc.deleted_at IS NULL
+      LEFT JOIN public.nc_register rev_nc
+        ON rev_nc.id = grn.nc_id AND rev_nc.deleted_at IS NULL
+      LEFT JOIN public.jc_ops rev_nc_op
+        ON rev_nc_op.id = rev_nc.jc_op_id AND rev_nc_op.deleted_at IS NULL
+      LEFT JOIN public.job_cards rev_nc_jc
+        ON rev_nc_jc.id = COALESCE(rev_nc_op.job_card_id, rev_nc.job_card_id)
+       AND rev_nc_jc.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines rev_sol
+        ON rev_sol.id = COALESCE(
+             rev_pol.source_so_line_id,
+             rev_pol_jc.source_so_line_id,
+             rev_dc.sales_order_line_id,
+             rev_dc_jc.source_so_line_id,
+             rev_nc_jc.source_so_line_id
+           )
+       AND rev_sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = COALESCE(
+             rev_pol_jc.source_jw_line_id,
+             rev_dc_jc.source_jw_line_id,
+             rev_nc_jc.source_jw_line_id
+           )
+       AND rev_jwl.deleted_at IS NULL
       WHERE gnl.goods_receipt_note_id = ${id}::uuid
         AND gnl.deleted_at IS NULL
       ORDER BY gnl.line_no ASC
@@ -726,6 +777,7 @@ async function getGoodsReceiptNoteInternal(
       updatedBy: r['updatedBy'] as string,
       deletedAt: maybeTsLike(r['deletedAt']),
       itemCode: (r['itemCode'] as string | null) ?? null,
+      itemRevision: (r['itemRevision'] as string | null) ?? null,
     })),
   };
 }

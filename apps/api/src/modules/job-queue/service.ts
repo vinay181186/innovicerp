@@ -71,7 +71,7 @@ export async function getJobQueue(
         -- Cast to text deliberately: this is typed as a string, yet a database that
         -- has not had migration 0119 still stores an integer and would send the
         -- queue a number. Harmless once 0119 is in.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         COALESCE(cl_so.name, cl_jw.name, so.customer_name, jw.customer_name) AS "soCustomer",

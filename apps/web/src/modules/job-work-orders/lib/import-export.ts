@@ -8,6 +8,7 @@
 // mismatch between the sheet and the master with no way to tell which won.
 // Old sheets that still carry the column import fine; it's ignored.
 
+import { normalizeRevision } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
 // 'Rev' = the revision printed on the client's drawing (migration 0120). It is
@@ -66,7 +67,8 @@ export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportR
       itemCodeText,
       material: String(r['Material'] ?? '').trim() || undefined,
       drawingNo: String(r['Drawing No'] ?? '').trim() || undefined,
-      revision: String(r['Rev'] ?? '').trim() || undefined,
+      // ADR-177: capital letters always — 'b' in the sheet lands as 'B'.
+      revision: normalizeRevision(String(r['Rev'] ?? '')) || undefined,
       orderQty,
       rate: Number(r['Rate']) || 0,
       dueDate: toDate(r['Due Date']),

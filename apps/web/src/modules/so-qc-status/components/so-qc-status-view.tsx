@@ -357,7 +357,10 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               <td className="mono" style={{ color: 'var(--cyan)' }}>
                 {g.grnNo}
               </td>
-              <td>{g.itemCode ?? '—'}</td>
+              {/* Item code is THE main thing — strong mono, CODE/REV (ADR-177). */}
+              <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                {itemCodeWithRev(g.itemCode, g.itemRevision)}
+              </td>
               <td>{g.vendorName ?? '—'}</td>
               <td className="mono">{g.receivedQty}</td>
               <td className="mono fw-700" style={{ color: 'var(--green)' }}>

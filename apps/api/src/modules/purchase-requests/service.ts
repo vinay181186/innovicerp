@@ -13,6 +13,7 @@ import {
   items,
   jcOps,
   jobCards,
+  jobWorkOrderLines,
   planOps,
   plans,
   purchaseOrders,
@@ -583,16 +584,19 @@ export async function listPurchaseRequests(
         i.code AS "itemCode",
         -- The customer's drawing revision, read live off the SO line this PR was
         -- raised against, through the SAME sol join the SO code below already
-        -- uses. Deliberately not items.revision, which is a different column
-        -- about the item master and would print a wrong revision on the card.
-        -- The join is LEFT, so a PR raised for stock or off a Job Card with no
-        -- SO behind it correctly comes back null and renders the bare code.
+        -- uses; for a PR raised off a JWSO-sourced job card there is no SO
+        -- line, so the job-work line the card came from is the fallback
+        -- (ADR-177 — a card has one source, never both). Deliberately not
+        -- items.revision, which is a different column about the item master
+        -- and would print a wrong revision on the card. Every join is LEFT, so
+        -- a PR raised for stock with no SO or JW behind it correctly comes back
+        -- null and renders the bare code.
         --
         -- Cast to text on purpose. The contract types this as a string, and the
         -- column is only text on a database that has had migration 0119; on one
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         jc.code AS "sourceJcCode",
         jo.op_seq AS "sourceJcOpSeq",
         po.code AS "poCode",
@@ -614,6 +618,8 @@ export async function listPurchaseRequests(
         ON jo.id = pr.source_jc_op_id AND jo.deleted_at IS NULL
       LEFT JOIN public.job_cards jc
         ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
         ON po.id = pr.po_id AND po.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
@@ -784,12 +790,16 @@ export async function getPurchaseRequest(
         ), '(,\s*){2,}', ', ', 'g'), '')`,
         itemCode: items.code,
         // The customer's drawing revision, taken off the SO line through the
-        // salesOrderLines join below that already resolves soCode / soLineNo.
+        // salesOrderLines join below that already resolves soCode / soLineNo;
+        // for a PR raised off a JWSO-sourced job card there is no SO line, so
+        // the job-work line the card came from is the fallback (ADR-177).
         // Cast to text: the contract types it as a string, and on a database
         // without migration 0119 the column is still the old integer, which
         // would arrive as a number wearing a string type. Never items.revision
         // -- that is a different column about the item master.
-        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        itemRevision: sql<
+          string | null
+        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         // Resolve the source/linked document codes so the detail page shows real
         // values instead of a '— linked —' placeholder.
         poCode: purchaseOrders.code,
@@ -819,6 +829,10 @@ export async function getPurchaseRequest(
       )
       .leftJoin(jcOps, and(eq(jcOps.id, purchaseRequests.sourceJcOpId), isNull(jcOps.deletedAt)))
       .leftJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, jobCards.sourceJwLineId), isNull(jobWorkOrderLines.deletedAt)),
+      )
       .leftJoin(
         salesOrderLines,
         and(

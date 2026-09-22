@@ -129,10 +129,13 @@ function detail(plan: { code: string; planType: string; itemNameText: string | n
  *  it is still the old integer and would arrive at the UI as a number wearing a
  *  string type. The cast is a no-op once 0119 is in.
  *
- *  Every use of it sits behind a LEFT JOIN on sales_order_lines, so a plan with
- *  no SO line (JW-sourced or ad-hoc) correctly reports null. It is never
+ *  Every use of it sits behind a LEFT JOIN on sales_order_lines AND one on
+ *  job_work_order_lines (ADR-177: a JWSO plan reads the JW line's Rev), so a
+ *  plan with neither line (ad-hoc) correctly reports null. It is never
  *  items.revision, which describes the item master and means something else. */
-const SO_LINE_REVISION = sql<string | null>`${salesOrderLines.revision}::text`;
+const SO_LINE_REVISION = sql<
+  string | null
+>`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`;
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
@@ -217,6 +220,10 @@ export async function listPlans(
       .leftJoin(
         salesOrderLines,
         and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+      )
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, plans.jwLineId), isNull(jobWorkOrderLines.deletedAt)),
       )
       .leftJoin(productionOrders, poJoin)
       .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
@@ -310,6 +317,10 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       .leftJoin(
         salesOrderLines,
         and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+      )
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, plans.jwLineId), isNull(jobWorkOrderLines.deletedAt)),
       )
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
       .limit(1);
@@ -1653,6 +1664,10 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           salesOrderLines,
           and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
         )
+        .leftJoin(
+          jobWorkOrderLines,
+          and(eq(jobWorkOrderLines.id, plans.jwLineId), isNull(jobWorkOrderLines.deletedAt)),
+        )
         .where(and(eq(plans.companyId, companyId), isNull(plans.deletedAt)))
         .orderBy(desc(plans.planDate), asc(plans.code))
         .limit(50),
@@ -1865,6 +1880,10 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     .leftJoin(
       salesOrderLines,
       and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+    )
+    .leftJoin(
+      jobWorkOrderLines,
+      and(eq(jobWorkOrderLines.id, plans.jwLineId), isNull(jobWorkOrderLines.deletedAt)),
     )
     .where(and(eq(plans.id, id), eq(plans.companyId, companyId)))
     .limit(1);

@@ -45,6 +45,7 @@ import type {
   GrnQcStatus,
   Vendor,
 } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 import {
@@ -65,6 +66,9 @@ function qcLabel(status: GrnQcStatus): string {
 // code path the real print uses.
 export interface GrnPrintLine {
   itemCode: string | null;
+  /** ADR-177: the SO / JWSO line's drawing revision, printed as CODE/REV.
+   *  Optional so the Print Templates sample lines need not carry one. */
+  itemRevision?: string | null;
   itemName: string | null;
   receivedQty: number;
   qcAcceptedQty: number;
@@ -145,7 +149,8 @@ export function printGrnDoc(args: {
     recipient: { label: 'Supplier', fields: supplierFields },
     document: { label: 'Document', fields: documentFields },
     lines: model.lines.map((l) => ({
-      itemCode: l.itemCode ?? '',
+      // CODE/REV (ADR-177); a line with no revision prints the bare code.
+      itemCode: itemCodeWithRev(l.itemCode, l.itemRevision, ''),
       itemName: l.itemName,
       uom: null,
       qty: String(l.receivedQty),
@@ -195,6 +200,7 @@ export function printGrn(args: {
       // LIVE master code first, the snapshot text only as the fallback —
       // same order the detail screen resolves it in.
       itemCode: l.itemCode ?? l.itemCodeText,
+      itemRevision: l.itemRevision,
       itemName: l.itemName,
       receivedQty: l.receivedQty,
       qcAcceptedQty: l.qcAcceptedQty,
