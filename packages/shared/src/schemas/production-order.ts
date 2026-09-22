@@ -41,6 +41,10 @@ export const productionOrderSchema = z.object({
   itemId: z.string().uuid(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
+  /** ADR-178: the SO / JWSO line's drawing revision, read live through the
+   *  plan's line (never snapshotted — the customer may reissue the drawing).
+   *  Rendered as CODE/REV. */
+  itemRevision: z.string().nullable().default(null),
 
   routeCardId: z.string().uuid(),
   routeCardCodeText: z.string(),

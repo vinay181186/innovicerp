@@ -9516,3 +9516,34 @@ buttons ("View", "Edit", "Del"), some with no sticky band.
 - Negative: no column sort on masters; two e2e checks retired (`Del` → `Delete`, Item sort
   toggles). If sorting is wanted back it returns as a "Sort by" select in the band, not
   clickable headers.
+
+## ADR-178: SO / JWSO line drawing revision — capital letters, never backwards, shown on every document
+
+**Date:** 2026-09-22 · **Status:** Accepted · **Migration:** none (column is text since 0119 / 0120)
+
+### Context
+The per-line drawing revision (`sales_order_lines.revision`, `job_work_order_lines.revision`) is
+free text: any case, no rule on edit, and it already renders as `CODE/REV` on most screens but
+not on GRN list/detail/print, Production Orders, the JC traveller's "Part / Item No.", SO-list
+equipment lines, SO QC-status GRN rows, the production schedule, or JWSO-sourced job cards and
+JW DC / invoice prints. The user (2026-09-22): letters must be capital; once a line is at "B" it
+can never be set back to "A" (same for numbers); the revision is per SO item and must appear on
+each and every document.
+
+### Decision
+1. `packages/shared/src/lib/revision.ts` is the one place the rule lives: `normalizeRevision`
+   (trim + upper-case), `REVISION_PATTERN` (letters, digits, `. - /`), `compareRevision`
+   (letters as letters A<B<…<Z<AA, numbers as numbers 2<10, same-prefix numbers R1<R2; a change
+   of kind is un-orderable) and `revisionGoesBackwards` / `revisionBackwardsMessage`.
+2. Input schemas for SO and JWSO lines upper-case and pattern-check the value; the forms
+   upper-case as the user types. On update the API refuses a backwards change with the shared
+   sentence ("Line 2: Rev cannot go back from B to A — a revision only moves forward"); the form
+   checks the same before submit. A change of kind (1 → A) is allowed.
+3. `itemRevision` (SO-line, or JW-line for JWSO-sourced rows) is added to the GRN line detail,
+   Production Order rows and SO QC-status GRN rows, and read live through the source line
+   everywhere it was missing; every item code on those documents and prints renders `CODE/REV`.
+
+### Consequences
+- Existing lowercase values are normalised the next time the line is saved; nothing is rewritten
+  in bulk. Un-orderable pairs are not blocked — blocking them would forbid legitimate
+  numbering-scheme changes.
