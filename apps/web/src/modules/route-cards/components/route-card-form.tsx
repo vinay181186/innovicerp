@@ -18,7 +18,8 @@ import type {
   Vendor,
 } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { Plus, Trash2 } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -31,7 +32,7 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
-import { useNextRouteCardCode } from '../api';
+import { useNextRouteCardCode, useRouteCardsList } from '../api';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
 
@@ -200,7 +201,21 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       itemCodeText: it?.code ?? '',
       itemName: it?.name ?? '',
     });
+    setDupDismissed(false); // a new pick gets a fresh warning
   };
+
+  // "This item already has a route card" banner (user, 2026-09-22). On create,
+  // the moment an item is picked we look up its existing route cards and say
+  // so at the top of the form, naming them, so a second card is never made by
+  // accident. The × only hides the banner — creating another card is still
+  // allowed (revisions vs. a fresh card is the planner's call).
+  const [dupDismissed, setDupDismissed] = useState(false);
+  const { data: existingForItem } = useRouteCardsList(
+    { itemId: header.itemId, limit: 5, offset: 0 },
+    { enabled: mode === 'create' && Boolean(header.itemId) },
+  );
+  const existingCards = mode === 'create' && header.itemId ? (existingForItem?.items ?? []) : [];
+  const showDupBanner = existingCards.length > 0 && !dupDismissed;
 
   const updateOp = (idx: number, patch: Partial<RouteCardFormOpDraft>): void => {
     setOps((prev) => prev.map((o, i) => (i === idx ? { ...o, ...patch } : o)));
@@ -343,6 +358,49 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={(e) => void submit(e)}>
+      {showDupBanner ? (
+        <div
+          role="alert"
+          style={{
+            color: 'var(--amber2)',
+            background: 'var(--amber3)',
+            border: '1px solid var(--amber)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            ⚠ A route card already exists for item <b className="mono">{header.itemCodeText}</b>:{' '}
+            {existingCards.map((rc, i) => (
+              <span key={rc.id}>
+                {i > 0 ? ', ' : ''}
+                <Link to="/route-cards/$id" params={{ id: rc.id }} className="mono fw-700">
+                  {rc.code}
+                </Link>
+              </span>
+            ))}
+            {existingForItem && existingForItem.total > existingCards.length
+              ? ` and ${existingForItem.total - existingCards.length} more`
+              : ''}
+            . Check it before creating another.
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setDupDismissed(true)}
+            title="Dismiss"
+            aria-label="Dismiss"
+            style={{ padding: '2px 6px' }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
       {/* SO-Planning left-accent card composition: a cyan identity stripe + the
           --bg3 banded header (panel-hdr) reused across every block of the form. */}
       <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
