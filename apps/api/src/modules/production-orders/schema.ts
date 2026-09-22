@@ -4,9 +4,11 @@ export {
   closeProductionOrderInputSchema,
   createProductionOrderInputSchema,
   listProductionOrdersQuerySchema,
+  productionOrderCloseSchema,
   productionOrderDetailSchema,
   productionOrderListItemSchema,
   productionOrderSchema,
+  reverseProductionOrderCloseInputSchema,
 } from '@innovic/shared';
 export type {
   CloseProductionOrderInput,
@@ -15,6 +17,8 @@ export type {
   ListProductionOrdersResponse,
   NextProductionOrderCodeResponse,
   ProductionOrder,
+  ProductionOrderClose,
   ProductionOrderDetail,
   ProductionOrderListItem,
+  ReverseProductionOrderCloseInput,
 } from '@innovic/shared';

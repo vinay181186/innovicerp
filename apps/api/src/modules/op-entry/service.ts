@@ -26,6 +26,7 @@ import {
   items,
   jcOps,
   jobCards,
+  jobWorkOrderLines,
   machines,
   opLog,
   opLogTimeChangeRequests,
@@ -174,7 +175,7 @@ export async function listJcOpsEnriched(
         -- ::text on purpose: the contract types this as a string, but a database
         -- without migration 0119 still holds an integer here and would hand the
         -- screen a number. The cast is a no-op once 0119 is applied.
-        sol.revision::text     AS "itemRevision",
+        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         COALESCE(so.code, jw.code) AS "soCode",
         o.op_seq               AS "opSeq",
         -- The PLANNED machine as an id + its group, so the Start popup can
@@ -576,7 +577,7 @@ export async function listRunningOps(
         -- ::text on purpose: the contract types this as a string, but a database
         -- without migration 0119 still holds an integer here and would hand the
         -- board a number. The cast is a no-op once 0119 is applied.
-        sol.revision::text  AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         o.op_seq            AS "opSeq",
         o.operation,
         r.machine_id        AS "machineId",
@@ -603,6 +604,8 @@ export async function listRunningOps(
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = r.machine_id
       LEFT JOIN public.machines pm ON pm.id = o.machine_id
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = r.jc_op_id
@@ -1834,7 +1837,7 @@ async function selectTimeChangeRequests(
       -- raised against. Null on a JW-sourced or standalone card, which then
       -- shows the bare code. NEVER items.revision — that column is about the
       -- item master and would print a plausible-looking lie in its place.
-      sol.revision::text                AS "itemRevision",
+      COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
       i.name                            AS "itemName",
       COALESCE(m.code, l.machine_code_text) AS "machineCode",
       l.qty                             AS "qty",
@@ -1870,6 +1873,7 @@ async function selectTimeChangeRequests(
     -- the approver with a bare job number.
     LEFT JOIN public.items i ON i.id = jc.item_id
     LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
+    LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id
     LEFT JOIN public.users ru ON ru.id = r.requested_by
     LEFT JOIN public.users du ON du.id = r.decided_by
     WHERE r.company_id = ${companyId}::uuid
@@ -2148,11 +2152,14 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
         itemCode: items.code,
         itemName: items.name,
         // The CUSTOMER's drawing revision off the SO line the card was raised
-        // against — never items.revision, a different column about the item
-        // master. Left-joined, so a JW-sourced or standalone card is null here
-        // and shows the bare code. ::text because a database without migration
-        // 0119 still holds an integer in this column.
-        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        // against — or the JW line for a JWSO-sourced card (ADR-177) — never
+        // items.revision, a different column about the item master.
+        // Left-joined, so a standalone card is null here and shows the bare
+        // code. ::text because a database without migration 0119 still holds
+        // an integer in this column.
+        itemRevision: sql<
+          string | null
+        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
       })
       .from(jcOps)
       .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
@@ -2160,6 +2167,10 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       .leftJoin(
         salesOrderLines,
         and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+      )
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, jobCards.sourceJwLineId), isNull(jobWorkOrderLines.deletedAt)),
       )
       .where(eq(jcOps.id, input.jcOpId))
       .limit(1);
@@ -2331,10 +2342,13 @@ export async function stopOp(
         operation: jcOps.operation,
         itemCode: items.code,
         itemName: items.name,
-        // Same rule as startOp: the customer's drawing revision off the SO line,
-        // left-joined (null for JW-sourced and standalone cards), cast to text
-        // for databases that predate migration 0119. Never items.revision.
-        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        // Same rule as startOp: the customer's drawing revision off the SO
+        // line, or the JW line for a JWSO-sourced card (ADR-177), left-joined
+        // (null for standalone cards), cast to text for databases that predate
+        // migration 0119. Never items.revision.
+        itemRevision: sql<
+          string | null
+        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         // The PLAN beside the session's ACTUAL machine (ADR-164): the op's own.
         plannedMachineCode: plannedMachineCodeSql,
       })
@@ -2344,6 +2358,10 @@ export async function stopOp(
       .leftJoin(
         salesOrderLines,
         and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+      )
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, jobCards.sourceJwLineId), isNull(jobWorkOrderLines.deletedAt)),
       )
       .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
       .where(eq(jcOps.id, r.jcOpId))

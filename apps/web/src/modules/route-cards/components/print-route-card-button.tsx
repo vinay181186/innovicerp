@@ -10,7 +10,7 @@
 // Mirrors the PrintJcButton precedent (job-cards/components/print-jc-button.tsx).
 
 import type { RouteCardListItem } from '@innovic/shared';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Printer } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useItem } from '@/modules/items/api';
 import { useMyCompany } from '@/modules/settings/api';
@@ -68,15 +68,19 @@ export function PrintRouteCardButton({ rc }: { rc: RouteCardListItem }): React.J
 
   const loading = pending && (rcQuery.isFetching || itemQuery.isFetching);
 
+  // Icon-only, like the other Action-column buttons on the Route Card sheet
+  // (Eye / Pencil / Trash2): same trim, hover names the action.
   return (
     <button
       type="button"
-      className="btn btn-ghost btn-sm"
+      className="btn btn-ghost btn-sm btn-icon"
+      style={{ padding: '2px 3px' }}
       onClick={onClick}
       disabled={loading}
-      title="Print Route Card"
+      title="Print"
+      aria-label="Print"
     >
-      {loading ? <Loader2 size={13} className="inline animate-spin" /> : '🖨'}
+      {loading ? <Loader2 size={13} className="inline animate-spin" /> : <Printer size={13} />}
     </button>
   );
 }

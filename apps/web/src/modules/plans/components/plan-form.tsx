@@ -3,7 +3,12 @@
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
 
-import { type CreatePlanInput, type PlanType, opSrNo } from '@innovic/shared';
+import {
+  type CreatePlanInput,
+  type PlanType,
+  opSrNo,
+  qcAfterOutsourceError,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -362,10 +367,31 @@ export function PlanForm({
 
   const showOps = !hideOps && (values.planType === 'manufacture' || values.planType === 'assembly');
 
+  // Shared routing rule (ADR-179), the same the Job Card / Route Card forms and
+  // the API enforce: a non-TPI QC op cannot sit directly after an OSP op. TPI IS
+  // allowed there, so `operation` is passed on every op — that is how the shared
+  // rule recognises and exempts a TPI step. Only checked when the ops editor is
+  // shown; opSeq drives the "Op 30" number in the message.
+  const opsSeqError = useMemo<string | null>(
+    () =>
+      showOps
+        ? qcAfterOutsourceError(
+            values.ops.map((o) => ({
+              opType: o.opType,
+              operation: o.operation,
+              opSeq: o.opSeq,
+            })),
+          )
+        : null,
+    [showOps, values.ops],
+  );
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        // Block the submit on a bad routing, exactly as the other forms do.
+        if (opsSeqError) return;
         onSubmit(values);
       }}
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
@@ -929,6 +955,23 @@ export function PlanForm({
               </tbody>
             </table>
           </div>
+          {/* Routing rule feedback, right under the ops table it refers to. */}
+          {opsSeqError ? (
+            <div
+              role="alert"
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                margin: '10px 12px 12px',
+              }}
+            >
+              {opsSeqError}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -947,7 +990,11 @@ export function PlanForm({
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={isSubmitting || Boolean(opsSeqError)}
+        >
           {isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
           {submitLabel}
         </button>

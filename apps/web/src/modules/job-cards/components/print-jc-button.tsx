@@ -15,7 +15,14 @@ import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { printJobCard } from '../lib/print-job-card';
 
-export function PrintJcButton({ jc }: { jc: JobCardListItem }): React.JSX.Element {
+export function PrintJcButton({
+  jc,
+  iconOnly = false,
+}: {
+  jc: JobCardListItem;
+  /** The list sheet's Action column: icon alone, the title names the action. */
+  iconOnly?: boolean | undefined;
+}): React.JSX.Element {
   // `armed` gates the on-demand ops fetch; `pending` means "print as soon as
   // the ops query resolves". A ref guards against printing twice if the query
   // re-settles.
@@ -53,6 +60,28 @@ export function PrintJcButton({ jc }: { jc: JobCardListItem }): React.JSX.Elemen
 
   const loading = pending && opsQuery.isFetching;
 
+  const icon = loading ? (
+    <Loader2 size={13} className="inline animate-spin" />
+  ) : (
+    <Printer size={13} />
+  );
+
+  if (iconOnly) {
+    return (
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm btn-icon"
+        onClick={onClick}
+        disabled={loading}
+        title="Print"
+        aria-label="Print"
+        style={{ padding: '2px 3px' }}
+      >
+        {icon}
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -62,12 +91,7 @@ export function PrintJcButton({ jc }: { jc: JobCardListItem }): React.JSX.Elemen
       title="Print Job Card"
       style={{ whiteSpace: 'nowrap' }}
     >
-      {loading ? (
-        <Loader2 size={13} className="inline animate-spin" />
-      ) : (
-        <Printer size={13} />
-      )}{' '}
-      Print
+      {icon} Print
     </button>
   );
 }

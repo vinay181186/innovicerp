@@ -25,6 +25,7 @@
 //     when BOM module ships).
 
 import { z } from 'zod';
+import { REVISION_PATTERN } from '../lib/revision';
 import { SO_STATUSES } from '../enums/so-status';
 import { SO_TYPES } from '../enums/so-type';
 import { uomSchema } from './item';
@@ -204,7 +205,16 @@ export const salesOrderLineInputSchema = z
     // API boundary is the only place that catches a client which skips the form.
     // Server paths that insert a line without going through this schema (the BOM
     // cascade, JW-sourced lines) fall back to the column default.
-    revision: z.string().trim().min(1, 'Rev is required').max(32),
+    /** ADR-178: upper-cased on the way in ("b" → "B"); letters, digits, . - /
+     *  only. Going backwards (B → A, 2 → 1) is refused on update by the server
+     *  and the form — see lib/revision.ts. */
+    revision: z
+      .string()
+      .trim()
+      .min(1, 'Rev is required')
+      .max(32)
+      .transform((s) => s.toUpperCase())
+      .refine((s) => REVISION_PATTERN.test(s), 'Rev: letters, digits, . - / only'),
     // Uploaded-drawing storage path, set by the web upload flow (qc-docs bucket).
     //
     // Nullable, not merely optional: an ABSENT key means "the payload does not

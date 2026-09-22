@@ -17,7 +17,7 @@ import type {
   RouteCardPlanType,
   Vendor,
 } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import { opSrNo, qcAfterOutsourceError } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -311,6 +311,15 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         }
       }
     }
+    // Shared routing rule (ADR-179), the same the Job Card form and the API
+    // enforce: a non-TPI QC op cannot sit directly after an OSP op. TPI IS
+    // allowed there (it inspects the vendor's work), so `operation` is passed
+    // on every op — that is how the shared rule recognises and exempts TPI.
+    // opSeq = i + 1 so the message names the Sr No the table shows (10, 20…).
+    const seqError = qcAfterOutsourceError(
+      ops.map((o, i) => ({ opType: o.opType, operation: o.operation, opSeq: i + 1 })),
+    );
+    if (seqError) return seqError;
     return null;
   }, [header, ops]);
 

@@ -6,10 +6,14 @@
 // would inspect the very same pieces a second time, so the routing must put a
 // manufacturing step between them:
 //
-//   OSP → QC                   ✗ not allowed
+//   OSP → QC                   ✗ not allowed (in-house QC re-inspects vendor work)
+//   OSP → TPI                  ✓ allowed     (TPI = third-party inspection of the vendor's work)
 //   OSP → Operation → QC       ✓ allowed
 //
-// QC is not blocked in general — only the pair (outsource, qc) side by side.
+// QC is not blocked in general — only the pair (outsource, non-TPI qc) side by
+// side. TPI directly after OSP is allowed: it IS the third-party inspection of
+// the vendor's work, not a second in-house QC (ADR-179). TPI is recognised by
+// name ("TPI" in the operation), the same way the rest of the system detects it.
 //
 // SHARED ON PURPOSE. The JC form refuses the routing before it is sent, and
 // the API refuses it again on create/edit, plan execute and route-card save,
@@ -39,6 +43,18 @@ export interface SequencedOp {
   /** Stored sequence when the caller has it. Plans keep gaps after a delete
    *  (1, 3, 4 …), so the message must name the REAL number, not the index. */
   opSeq?: number | null | undefined;
+  /** The op name. Used only to recognise a TPI QC step (see isTpiOp), which is
+   *  the one QC allowed directly after OSP. When absent the op is treated as a
+   *  non-TPI QC — the safe default (blocked), matching the pre-ADR-179 rule. */
+  operation?: string | null | undefined;
+}
+
+/** True when `op` is a TPI (third-party inspection) QC step. Recognised by
+ *  name — "TPI" anywhere in the operation, case-insensitive — because the whole
+ *  codebase already identifies TPI that way (there is no TPI flag on the op or
+ *  the qc_processes master). ADR-179. */
+export function isTpiOp(op: { opType: string; operation?: string | null | undefined }): boolean {
+  return op.opType === 'qc' && (op.operation ?? '').toUpperCase().includes('TPI');
 }
 
 /** Key for a grandfathered (outsource → qc) pair: both ops by their stored id. */
@@ -81,6 +97,8 @@ export function findQcDirectlyAfterOutsource(
     const prev = ops[i - 1]!;
     const cur = ops[i]!;
     if (prev.opType !== 'outsource' || cur.opType !== 'qc') continue;
+    // TPI directly after OSP is the vendor's third-party inspection — allowed (ADR-179).
+    if (isTpiOp(cur)) continue;
     if (allowedPairs && prev.id && cur.id && allowedPairs.has(opPairKey(prev.id, cur.id))) continue;
     return i;
   }
@@ -93,7 +111,7 @@ export function findQcDirectlyAfterOutsource(
 export function qcAfterOutsourceMessage(i: number, ops?: ReadonlyArray<SequencedOp>): string {
   const qcSeq = ops?.[i]?.opSeq ?? i + 1;
   const ospSeq = ops?.[i - 1]?.opSeq ?? i;
-  return `Op ${fmtOpSrNo(qcSeq)} (QC) cannot directly follow Op ${fmtOpSrNo(ospSeq)} (OSP). Add a manufacturing operation between them — the vendor's work is inspected at Incoming QC when it comes back.`;
+  return `Op ${fmtOpSrNo(qcSeq)} (QC) cannot directly follow Op ${fmtOpSrNo(ospSeq)} (OSP). Only TPI may directly follow an outsource step — the vendor's work is inspected at Incoming QC when it comes back. Add a manufacturing operation between them, or make this a TPI step.`;
 }
 
 /** Convenience: the message for the first violation, or null when clean. */
@@ -119,11 +137,16 @@ export function isGeneratedTerminalQcOp(op: { opType: string; operation: string 
 }
 
 /** On edit, drop the server-generated terminal QC op when it has become STALE
- *  — the routing now holds an outsource op, and Rule B never puts a terminal
- *  QC on such a JC (the vendor's return is credited at Incoming QC; a terminal
- *  QC on top would double-credit). Without this, retyping the op before it to
- *  OSP would trip the "no QC directly after OSP" rule and tell the person to
- *  fix an op they never entered.
+ *  — the op immediately before it is now a TERMINAL outsource step, and Rule B
+ *  never puts a terminal QC after a terminal OSP (the vendor's return is credited
+ *  at Incoming QC; a terminal QC on top would double-credit). Without this,
+ *  retyping the last real op to OSP would trip the "no QC directly after OSP"
+ *  rule and tell the person to fix an op they never entered.
+ *
+ *  Kept in lockstep with needsDefaultQcOp (ADR-179): a generated Final
+ *  Inspection is stale ONLY when the last real op is outsource. A mid-route OSP
+ *  followed by a machining op (Turning → OSP → Milling → Final Inspection) is
+ *  NOT stale — that routing DOES warrant the terminal QC, so it is kept.
  *
  *  Only the LAST op is considered, only when it carries the generated name,
  *  and never when it has logged work (`isStarted`) — a started op is the lock
@@ -139,6 +162,9 @@ export function stripStaleGeneratedTerminalQc<T extends EditedOp>(
   if (!last || !isGeneratedTerminalQcOp(last)) return list;
   if (opts.isStarted?.(last)) return list;
   const head = list.slice(0, -1);
-  if (!head.some((o) => o.opType === 'outsource')) return list;
+  // Stale only when the op immediately before the generated QC is a terminal
+  // outsource step (ADR-179). A mid-route OSP with a machining op after it keeps
+  // its terminal QC.
+  if (head[head.length - 1]?.opType !== 'outsource') return list;
   return head;
 }

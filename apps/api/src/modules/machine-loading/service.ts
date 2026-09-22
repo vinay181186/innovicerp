@@ -110,7 +110,7 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
         -- ::text on purpose: the contract types this as a string, but a database
         -- without migration 0119 still holds an integer here and would hand the
         -- board a number. The cast is a no-op once 0119 is applied.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         so.code AS "soCode",
         jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
         vos.completed_qty AS "completedQty", vos.available,
@@ -128,6 +128,8 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN LATERAL (

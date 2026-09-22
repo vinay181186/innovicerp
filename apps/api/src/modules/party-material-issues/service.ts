@@ -534,9 +534,14 @@ export async function listPartyMaterialIssues(
           jcItemCode: items.code,
           jcItemName: items.name,
           // The CUSTOMER'S drawing revision for that part, read live off the SO
-          // line the card was raised against. Never items.revision, which is
-          // about the item master and would misname the drawing.
-          jcItemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+          // line the card was raised against — or, for a JWSO-sourced card, off
+          // the job-work line (ADR-177: a card has one source or the other,
+          // never both, so the SO value wins wherever it exists). Never
+          // items.revision, which is about the item master and would misname
+          // the drawing.
+          jcItemRevision: sql<
+            string | null
+          >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         })
         .from(partyMaterialIssues)
         .leftJoin(partyMaterials, eq(partyMaterials.id, partyMaterialIssues.partyMaterialId))
@@ -547,6 +552,13 @@ export async function listPartyMaterialIssues(
         .leftJoin(jobCards, eq(jobCards.id, partyMaterialIssues.jobCardId))
         .leftJoin(items, eq(items.id, jobCards.itemId))
         .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
+        .leftJoin(
+          jobWorkOrderLines,
+          and(
+            eq(jobWorkOrderLines.id, jobCards.sourceJwLineId),
+            isNull(jobWorkOrderLines.deletedAt),
+          ),
+        )
         .where(where)
         .orderBy(desc(partyMaterialIssues.issueDate), desc(partyMaterialIssues.code))
         .limit(input.limit)

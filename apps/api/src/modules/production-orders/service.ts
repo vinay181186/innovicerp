@@ -40,6 +40,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import {
   jobCards,
   plans,
+  productionOrderCloses,
   productionOrders,
   routeCardOps,
   routeCards,
@@ -65,8 +66,10 @@ import type {
   ListProductionOrdersQuery,
   ListProductionOrdersResponse,
   NextProductionOrderCodeResponse,
+  ProductionOrderClose,
   ProductionOrderDetail,
   ProductionOrderListItem,
+  ReverseProductionOrderCloseInput,
 } from './schema';
 
 const PO_PREFIX = 'IN-PRO-';
@@ -276,6 +279,20 @@ const PARTY_NAME_SQL = sql<string | null>`COALESCE(
    WHERE p.id = ${productionOrders.planId} LIMIT 1)
 )`;
 
+/** ADR-177: the drawing revision of the SO line (or, for a JWSO plan, the JW
+ *  line) this Production Order was raised for — read LIVE through the plan,
+ *  never snapshotted, so a reissued drawing shows on every open PO. Same
+ *  one-branch-only shape as PARTY_NAME_SQL. ::text for the pre-0119 reason
+ *  every other itemRevision read gives. Null when the plan has no line. */
+const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
+  (SELECT sol.revision::text FROM public.plans p
+     JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
+   WHERE p.id = ${productionOrders.planId} LIMIT 1),
+  (SELECT jl.revision::text FROM public.plans p
+     JOIN public.job_work_order_lines jl ON jl.id = p.jw_line_id
+   WHERE p.id = ${productionOrders.planId} LIMIT 1)
+)`;
+
 const createdByUser = alias(users, 'po_created_by');
 const closedByUser = alias(users, 'po_closed_by');
 
@@ -304,6 +321,7 @@ const poColumns = {
   closedAt: productionOrders.closedAt,
   closedBy: productionOrders.closedBy,
   creditedQty: productionOrders.creditedQty,
+  lostQty: productionOrders.lostQty,
   remarks: productionOrders.remarks,
   createdAt: productionOrders.createdAt,
   createdBy: productionOrders.createdBy,
@@ -319,6 +337,10 @@ const poColumns = {
   jcClosedAt: jobCards.closedAt,
   jcExists: jobCards.id,
   partyName: PARTY_NAME_SQL,
+  // Raw material lives on the plan (the order's input); read live, not copied.
+  rawMaterialGradeText: plans.rawMaterialGradeText,
+  rawMaterialSizeText: plans.rawMaterialSizeText,
+  itemRevision: ITEM_REVISION_SQL,
   createdByName: createdByUser.fullName,
   closedByName: closedByUser.fullName,
 };
@@ -339,6 +361,7 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     itemId: r.itemId,
     itemCodeText: r.itemCodeText,
     itemNameText: r.itemNameText,
+    itemRevision: r.itemRevision ?? null,
     routeCardId: r.routeCardId,
     routeCardCodeText: r.routeCardCodeText,
     routeCardRevision: r.routeCardRevision,
@@ -349,6 +372,7 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     closedAt: toIso(r.closedAt),
     closedBy: r.closedBy,
     creditedQty: r.creditedQty,
+    lostQty: r.lostQty ?? null,
     remarks: r.remarks,
     createdAt: toIso(r.createdAt) ?? '',
     createdBy: r.createdBy,
@@ -363,6 +387,8 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     jcFinishedQty: Number(r.jcFinishedQty ?? 0),
     jcClosedAt: toIso(r.jcClosedAt),
     partyName: r.partyName ?? null,
+    rawMaterialGradeText: r.rawMaterialGradeText ?? null,
+    rawMaterialSizeText: r.rawMaterialSizeText ?? null,
     createdByName: r.createdByName ?? null,
     closedByName: r.closedByName ?? null,
   };
@@ -376,9 +402,65 @@ function toListItem(r: PoRow): ProductionOrderListItem {
 function toDetail(
   item: ProductionOrderListItem,
   jcSettledWithLosses: boolean,
+  closes: ProductionOrderClose[],
 ): ProductionOrderDetail {
-  const reason = closeBlockedReason({ ...item, jcSettledWithLosses });
-  return { ...item, canClose: reason === null, closeBlockedReason: reason };
+  const credited = item.creditedQty ?? 0;
+  const reason = closeBlockedReason({ ...item, jcSettledWithLosses, creditedQty: credited });
+  const availableToClose = Math.max(0, item.jcFinishedQty - credited);
+  const remainingQty = Math.max(0, item.orderQty - credited);
+  return {
+    ...item,
+    canClose: reason === null,
+    closeBlockedReason: reason,
+    availableToClose,
+    remainingQty,
+    closes,
+  };
+}
+
+/** The close ledger for one PO, newest first. Reads the running history the
+ *  detail view + reversal need (ADR-179). */
+async function readClosesInTx(
+  tx: DbTransaction,
+  productionOrderId: string,
+  companyId: string,
+): Promise<ProductionOrderClose[]> {
+  const closedByUserC = alias(users, 'po_close_by');
+  const rows = await tx
+    .select({
+      id: productionOrderCloses.id,
+      productionOrderId: productionOrderCloses.productionOrderId,
+      qty: productionOrderCloses.qty,
+      isReversal: productionOrderCloses.isReversal,
+      reversesCloseId: productionOrderCloses.reversesCloseId,
+      lostQty: productionOrderCloses.lostQty,
+      remarks: productionOrderCloses.remarks,
+      closedAt: productionOrderCloses.createdAt,
+      closedBy: productionOrderCloses.createdBy,
+      closedByName: closedByUserC.fullName,
+    })
+    .from(productionOrderCloses)
+    .leftJoin(closedByUserC, eq(closedByUserC.id, productionOrderCloses.createdBy))
+    .where(
+      and(
+        eq(productionOrderCloses.productionOrderId, productionOrderId),
+        eq(productionOrderCloses.companyId, companyId),
+        isNull(productionOrderCloses.deletedAt),
+      ),
+    )
+    .orderBy(desc(productionOrderCloses.createdAt));
+  return rows.map((r) => ({
+    id: r.id,
+    productionOrderId: r.productionOrderId,
+    qty: r.qty,
+    isReversal: r.isReversal,
+    reversesCloseId: r.reversesCloseId ?? null,
+    lostQty: r.lostQty ?? null,
+    remarks: r.remarks ?? null,
+    closedAt: toIso(r.closedAt) ?? '',
+    closedBy: r.closedBy,
+    closedByName: r.closedByName ?? null,
+  }));
 }
 
 /** The settled-with-losses rule for one PO's JC, evaluated on demand. Skipped
@@ -389,7 +471,7 @@ async function readJcSettledWithLosses(
   tx: DbTransaction,
   item: ProductionOrderListItem,
 ): Promise<boolean> {
-  if (item.status !== 'open') return false;
+  if (item.status === 'closed') return false;
   if (item.jcComputedStatus === 'complete' || item.jcComputedStatus === 'closed') return false;
   const rows = (await tx.execute(
     sql`SELECT ${jcSettledWithLossesSql(sql`${item.jobCardId}::uuid`)} AS settled`,
@@ -429,6 +511,7 @@ function baseQuery(tx: DbTransaction) {
     .select(poColumns)
     .from(productionOrders)
     .leftJoin(jobCards, eq(jobCards.id, productionOrders.jobCardId))
+    .leftJoin(plans, eq(plans.id, productionOrders.planId))
     .leftJoin(createdByUser, eq(createdByUser.id, productionOrders.createdBy))
     .leftJoin(closedByUser, eq(closedByUser.id, productionOrders.closedBy));
 }
@@ -450,7 +533,11 @@ async function readDetailInTx(
   const row = rows[0];
   if (!row) throw new NotFoundError(`Production Order ${id} not found`);
   const item = toListItem(row as PoRow);
-  return toDetail(item, await readJcSettledWithLosses(tx, item));
+  const [settled, closes] = await Promise.all([
+    readJcSettledWithLosses(tx, item),
+    readClosesInTx(tx, id, companyId),
+  ]);
+  return toDetail(item, settled, closes);
 }
 
 // ─── Reads ─────────────────────────────────────────────────────────────────
@@ -756,7 +843,51 @@ export async function createProductionOrder(
   );
 }
 
-// ─── Close: credit stock ONCE with the JC's finished qty ───────────────────
+// ─── Close: credit stock as pieces finish (partial close, ADR-179) ─────────
+
+/** Write ONE store_transactions row for a close (or its reversal) and return
+ *  its id. Same columns/locking as the qc_accept credit in
+ *  op-entry/qc-stock-cascade.ts: the items row is locked first to serialise
+ *  concurrent stock writes on the same item, and before/after come from
+ *  v_item_stock so the ledger stays a running total. */
+async function writeCloseStockTxn(
+  tx: DbTransaction,
+  args: {
+    companyId: string;
+    itemId: string;
+    txnType: 'in' | 'out';
+    qty: number;
+    sourceRef: string;
+    remarks: string;
+    userId: string;
+  },
+): Promise<string> {
+  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${args.itemId}::uuid FOR UPDATE`);
+  const balanceRows = (await tx.execute(sql`
+    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
+    FROM public.v_item_stock
+    WHERE company_id = ${args.companyId}::uuid AND item_id = ${args.itemId}::uuid
+  `)) as unknown as Array<{ on_hand: number }>;
+  const before = Number(balanceRows[0]?.on_hand ?? 0);
+  const after = args.txnType === 'in' ? before + args.qty : before - args.qty;
+  const ins = await tx
+    .insert(storeTransactions)
+    .values({
+      companyId: args.companyId,
+      txnDate: new Date().toISOString().slice(0, 10),
+      itemId: args.itemId,
+      txnType: args.txnType,
+      qty: args.qty,
+      sourceType: 'production_order_close',
+      sourceRef: args.sourceRef,
+      stockBefore: before,
+      stockAfter: after,
+      remarks: args.remarks,
+      createdBy: args.userId,
+    })
+    .returning({ id: storeTransactions.id });
+  return ins[0]!.id;
+}
 
 export async function closeProductionOrder(
   id: string,
@@ -782,8 +913,8 @@ export async function closeProductionOrder(
       .limit(1)
       .for('update');
     if (!locked[0]) throw new NotFoundError(`Production Order ${id} not found`);
-    if (locked[0].status !== 'open') {
-      throw new ConflictError('Production Order is already closed');
+    if (locked[0].status === 'closed') {
+      throw new ConflictError('Production Order is already fully closed');
     }
 
     // Live progress, read AFTER the lock. The guard inputs (settled flag,
@@ -791,6 +922,7 @@ export async function closeProductionOrder(
     // exactly the qty the guard judged.
     const current = await readDetailInTx(tx, id, companyId);
     const snap = await readCloseSnapshot(tx, current.jobCardId);
+    const alreadyCredited = current.creditedQty ?? 0;
     const reason = closeBlockedReason({
       status: current.status,
       jcCodeText: current.jcCodeText,
@@ -798,45 +930,82 @@ export async function closeProductionOrder(
         current.jcComputedStatus) as ProductionOrderListItem['jcComputedStatus'],
       jcFinishedQty: snap.finishedQty,
       jcSettledWithLosses: snap.settled,
+      creditedQty: alreadyCredited,
     });
     if (reason) throw new ValidationError(reason);
-    const qty = snap.finishedQty;
-    // Total loss: the guard let this through only because the JC is settled
-    // with losses and EVERY piece was lost (finished 0). Nothing to credit,
-    // so no store_transactions row at all — a 0-qty ledger line would be
-    // noise. credited_qty is recorded as 0 and the remark says why.
-    const totalLoss = qty <= 0;
-    const totalLossRemark = 'closed with no finished quantity — all pieces lost';
 
-    const today = new Date().toISOString().slice(0, 10);
-    if (!totalLoss) {
-      // ONE stock row for the whole order. Same columns as the qc_accept credit
-      // in op-entry/qc-stock-cascade.ts; the items row is locked first to
-      // serialise concurrent stock writes on the same item, and the before/after
-      // balance is read from v_item_stock so the ledger stays a running total.
-      await tx.execute(
-        sql`SELECT 1 FROM public.items WHERE id = ${current.itemId}::uuid FOR UPDATE`,
+    // available = finished so far − already credited. Capped live off the JC's
+    // output, NEVER the plan qty, so a close can never credit more than made.
+    const available = Math.max(0, snap.finishedQty - alreadyCredited);
+    const st = snap.computedStatus ?? current.jcComputedStatus ?? 'no_ops';
+    const jcDone = st === 'complete' || st === 'closed' || snap.settled;
+
+    let creditNow: number;
+    if (input.finish) {
+      // Close short: finish the order now. Only when the JC is truly done —
+      // otherwise pieces still to come would be wrongly written off as lost.
+      if (!jcDone) {
+        throw new ValidationError(
+          `Cannot finish Production Order ${current.code} — Job Card ${current.jcCodeText} is not complete yet (${st}). Close finished pieces as they clear, or wait until the order is done.`,
+        );
+      }
+      // Finish credits ALL finished pieces now; only the never-made remainder is
+      // written off as lost. A supplied qty is ignored on finish so good pieces
+      // can never be silently marked lost (review finding).
+      creditNow = available;
+    } else {
+      // Ordinary partial close: credit finished pieces now, leave the rest open.
+      // Does NOT require the JC to be complete.
+      if (available <= 0) {
+        throw new ValidationError(
+          `No finished pieces available to close for Production Order ${current.code} — Job Card ${current.jcCodeText} has finished ${snap.finishedQty}, all credited. Close more as its operations clear.`,
+        );
+      }
+      creditNow = input.qty === undefined ? available : input.qty;
+    }
+    if (creditNow > available) {
+      throw new ValidationError(
+        `Cannot close ${creditNow} — only ${available} finished piece(s) are available (JC ${current.jcCodeText} finished ${snap.finishedQty}, ${alreadyCredited} already credited).`,
       );
-      const balanceRows = (await tx.execute(sql`
-        SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-        FROM public.v_item_stock
-        WHERE company_id = ${companyId}::uuid AND item_id = ${current.itemId}::uuid
-      `)) as unknown as Array<{ on_hand: number }>;
-      const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-      const stockAfter = stockBefore + qty;
+    }
 
-      await tx.insert(storeTransactions).values({
+    const newCredited = alreadyCredited + creditNow;
+    const finalStatus: 'partially_closed' | 'closed' =
+      input.finish || newCredited >= current.orderQty ? 'closed' : 'partially_closed';
+    const lostQty: number | null = input.finish
+      ? Math.max(0, current.orderQty - newCredited)
+      : null;
+
+    // A unique store-ledger ref per close: the PO code + the close sequence.
+    const priorCloses =
+      (
+        (await tx.execute(sql`
+          SELECT COUNT(*)::int AS n FROM public.production_order_closes
+          WHERE production_order_id = ${id}::uuid AND deleted_at IS NULL
+        `)) as unknown as Array<{ n: number }>
+      )[0]?.n ?? 0;
+    const seq = priorCloses + 1;
+
+    if (creditNow > 0) {
+      const storeTxnId = await writeCloseStockTxn(tx, {
         companyId,
-        txnDate: today,
         itemId: current.itemId,
         txnType: 'in',
-        qty,
-        sourceType: 'production_order_close',
-        sourceRef: current.code,
-        stockBefore,
-        stockAfter,
-        remarks: `Production Order ${current.code} closed — JC ${current.jcCodeText} finished ${qty} of ${current.orderQty}`,
+        qty: creditNow,
+        sourceRef: `${current.code}#${seq}`,
+        remarks: `Production Order ${current.code} close #${seq} — JC ${current.jcCodeText} credited ${creditNow} (${newCredited} of ${current.orderQty})`,
+        userId: user.id,
+      });
+      await tx.insert(productionOrderCloses).values({
+        companyId,
+        productionOrderId: id,
+        qty: creditNow,
+        isReversal: false,
+        lostQty: input.finish ? lostQty : null,
+        storeTxnId,
+        remarks: input.remarks ?? null,
         createdBy: user.id,
+        updatedBy: user.id,
       });
     }
 
@@ -844,26 +1013,19 @@ export async function closeProductionOrder(
     await tx
       .update(productionOrders)
       .set({
-        status: 'closed',
-        closedAt: now,
-        closedBy: user.id,
-        creditedQty: qty,
-        // The user's remark wins; a total loss with no remark (omitted, null
-        // or blank) records why the order closed with nothing credited, so the
-        // document explains itself.
-        ...(totalLoss && !input.remarks
-          ? { remarks: totalLossRemark }
-          : input.remarks !== undefined
-            ? { remarks: input.remarks }
-            : {}),
+        status: finalStatus,
+        creditedQty: newCredited,
+        ...(input.finish ? { lostQty } : {}),
+        ...(finalStatus === 'closed' ? { closedAt: now, closedBy: user.id } : {}),
+        ...(input.remarks !== undefined ? { remarks: input.remarks } : {}),
         updatedAt: now,
         updatedBy: user.id,
       })
       .where(eq(productionOrders.id, id));
 
-    // A complete-but-not-closed JC is closed with its order. One already
-    // closed (by the sales cascade) keeps its original close time.
-    if (current.jcClosedAt === null) {
+    // Close the JC only when the ORDER is fully closed; a partial close leaves
+    // it open. One already closed (by the sales cascade) keeps its close time.
+    if (finalStatus === 'closed' && current.jcClosedAt === null) {
       await tx
         .update(jobCards)
         .set({ closedAt: now, updatedBy: user.id })
@@ -875,10 +1037,170 @@ export async function closeProductionOrder(
       {
         action: 'CLOSE',
         entity: 'Production Order',
-        detail: totalLoss
-          ? `${current.code} ${totalLossRemark} — JC ${current.jcCodeText} finished 0 of ${current.orderQty}, nothing credited`
-          : `${current.code} closed — JC ${current.jcCodeText} finished ${qty} of ${current.orderQty}, stock credited ${qty}`,
+        detail: input.finish
+          ? `${current.code} finished — JC ${current.jcCodeText} credited ${creditNow} (${newCredited} of ${current.orderQty}), ${lostQty ?? 0} lost`
+          : `${current.code} ${finalStatus === 'closed' ? 'closed' : 'partial close'} — JC ${current.jcCodeText} credited ${creditNow} (${newCredited} of ${current.orderQty})`,
         refId: current.code,
+      },
+      companyId,
+      user,
+    );
+
+    return readDetailInTx(tx, id, companyId);
+  });
+}
+
+// ─── Reverse one close: compensating stock-out + ledger row (ADR-179) ──────
+
+export async function reverseProductionOrderClose(
+  id: string,
+  input: ReverseProductionOrderCloseInput,
+  user: AuthContext,
+): Promise<ProductionOrderDetail> {
+  await requireFormAccess(user, 'prodorder_create', 'edit');
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    // Lock the PO so the reversal and its status recompute are atomic against a
+    // concurrent close.
+    const locked = await tx
+      .select({
+        id: productionOrders.id,
+        status: productionOrders.status,
+        creditedQty: productionOrders.creditedQty,
+        orderQty: productionOrders.orderQty,
+        itemId: productionOrders.itemId,
+        code: productionOrders.code,
+        jcCodeText: productionOrders.jcCodeText,
+        jobCardId: productionOrders.jobCardId,
+      })
+      .from(productionOrders)
+      .where(
+        and(
+          eq(productionOrders.id, id),
+          eq(productionOrders.companyId, companyId),
+          isNull(productionOrders.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    const po = locked[0];
+    if (!po) throw new NotFoundError(`Production Order ${id} not found`);
+
+    // The close row being reversed must belong to this PO, be a real close (not
+    // itself a reversal) and not already reversed.
+    const closeRows = await tx
+      .select({
+        id: productionOrderCloses.id,
+        qty: productionOrderCloses.qty,
+        isReversal: productionOrderCloses.isReversal,
+      })
+      .from(productionOrderCloses)
+      .where(
+        and(
+          eq(productionOrderCloses.id, input.closeId),
+          eq(productionOrderCloses.productionOrderId, id),
+          eq(productionOrderCloses.companyId, companyId),
+          isNull(productionOrderCloses.deletedAt),
+        ),
+      )
+      .limit(1);
+    const close = closeRows[0];
+    if (!close)
+      throw new NotFoundError(`Close ${input.closeId} not found on this Production Order`);
+    if (close.isReversal) throw new ValidationError('That entry is itself a reversal.');
+    const priorReversal = await tx
+      .select({ id: productionOrderCloses.id })
+      .from(productionOrderCloses)
+      .where(
+        and(
+          eq(productionOrderCloses.reversesCloseId, close.id),
+          isNull(productionOrderCloses.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (priorReversal[0]) throw new ValidationError('This close has already been reversed.');
+
+    // Guard: the pieces must still be on hand — a reversal that would drive
+    // stock negative means they were already dispatched.
+    await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${po.itemId}::uuid FOR UPDATE`);
+    const onHandRows = (await tx.execute(sql`
+      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
+      FROM public.v_item_stock
+      WHERE company_id = ${companyId}::uuid AND item_id = ${po.itemId}::uuid
+    `)) as unknown as Array<{ on_hand: number }>;
+    const onHand = Number(onHandRows[0]?.on_hand ?? 0);
+    if (onHand < close.qty) {
+      throw new ConflictError(
+        `Cannot reverse ${close.qty} — only ${onHand} on hand for ${po.code}. Those pieces have already been dispatched; reverse the dispatch first.`,
+      );
+    }
+
+    // A unique store-ledger ref per reversal (the ledger row count gives the
+    // sequence), so two reversals of one PO never share a sourceRef.
+    const ledgerCount =
+      (
+        (await tx.execute(sql`
+          SELECT COUNT(*)::int AS n FROM public.production_order_closes
+          WHERE production_order_id = ${id}::uuid AND deleted_at IS NULL
+        `)) as unknown as Array<{ n: number }>
+      )[0]?.n ?? 0;
+    const storeTxnId = await writeCloseStockTxn(tx, {
+      companyId,
+      itemId: po.itemId,
+      txnType: 'out',
+      qty: close.qty,
+      sourceRef: `${po.code}#rev${ledgerCount + 1}`,
+      remarks: `Production Order ${po.code} — reversed close of ${close.qty}`,
+      userId: user.id,
+    });
+    await tx.insert(productionOrderCloses).values({
+      companyId,
+      productionOrderId: id,
+      qty: close.qty,
+      isReversal: true,
+      reversesCloseId: close.id,
+      storeTxnId,
+      remarks: input.remarks ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    });
+
+    const newCredited = Math.max(0, (po.creditedQty ?? 0) - close.qty);
+    // A reversal re-opens the order: it can never leave it 'closed' with fewer
+    // pieces credited than ordered.
+    const finalStatus: 'open' | 'partially_closed' | 'closed' =
+      newCredited <= 0 ? 'open' : newCredited >= po.orderQty ? 'closed' : 'partially_closed';
+    const now = new Date();
+    await tx
+      .update(productionOrders)
+      .set({
+        status: finalStatus,
+        creditedQty: newCredited,
+        // Re-opening clears any short-close loss + close stamps.
+        ...(finalStatus === 'closed' ? {} : { lostQty: null, closedAt: null, closedBy: null }),
+        updatedAt: now,
+        updatedBy: user.id,
+      })
+      .where(eq(productionOrders.id, id));
+
+    // A reversal that re-opens the order must also re-open its Job Card — the
+    // original full close stamped jobCards.closedAt, and leaving the JC closed
+    // while the PO is open is an inconsistent state (review finding).
+    if (finalStatus !== 'closed') {
+      await tx
+        .update(jobCards)
+        .set({ closedAt: null, updatedBy: user.id })
+        .where(eq(jobCards.id, po.jobCardId));
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'REVERSE',
+        entity: 'Production Order',
+        detail: `${po.code} — reversed close of ${close.qty} (now ${newCredited} of ${po.orderQty} credited)`,
+        refId: po.code,
       },
       companyId,
       user,

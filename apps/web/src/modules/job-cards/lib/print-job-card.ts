@@ -152,9 +152,10 @@ export function printJobCard(args: {
   const routeCard = jc.routeCardCode
     ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / Rev ${jc.routeCardRevision}` : ''}`
     : '';
-  // The drawing is the item code with the customer's revision from the SO line
-  // (CODE / REV); items.drawing_no is not on the list row.
-  const drawing = jc.itemRevision ? `${jc.itemCode} / ${jc.itemRevision}` : jc.itemCode;
+  // The drawing is the item code with the customer's revision from the SO /
+  // JWSO line, written CODE/REV like every other document (ADR-177);
+  // items.drawing_no is not on the list row.
+  const drawing = itemCodeWithRev(jc.itemCode, jc.itemRevision);
 
   const left = [
     fact('JC No.', jc.code, { strong: true }),
@@ -167,7 +168,7 @@ export function printJobCard(args: {
     fact('JC Date', fmt(jc.jcDate)),
     fact('Due Date', fmt(jc.dueDate)),
     fact('Order Qty', `${jc.orderQty} pcs`, { strong: true }),
-    fact('Part / Item No.', itemCodeWithRev(jc.itemCode, null), { strong: true }),
+    fact('Part / Item No.', itemCodeWithRev(jc.itemCode, jc.itemRevision), { strong: true }),
     fact('Drawing No. / Rev', drawing, { last: true }),
   ].join('');
 

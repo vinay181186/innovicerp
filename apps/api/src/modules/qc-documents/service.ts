@@ -17,7 +17,7 @@ import type {
   QcMatrixResponse,
   QcMatrixRow,
 } from '@innovic/shared';
-import { items, jobCards, qcDocuments, salesOrderLines } from '../../db/schema';
+import { items, jobCards, jobWorkOrderLines, qcDocuments, salesOrderLines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
@@ -181,14 +181,17 @@ export async function listQcDocuments(
         itemCode: items.code,
         itemName: items.name,
         // The CUSTOMER's drawing revision, read live off the SO line the card
-        // was raised against. Cast to text on purpose: the contract types this
-        // as a string, and the column is only text on a database that has had
+        // was raised against — or the JW line for a JWSO-sourced card
+        // (ADR-177). Cast to text on purpose: the contract types this as a
+        // string, and the column is only text on a database that has had
         // migration 0119 — on one that has not it is still the old integer and
         // would arrive wearing a string type. It is emphatically NOT
         // items.revision, a different column about the item master; handing a
         // plausible-looking wrong revision to an inspector is worse than
         // handing them a blank.
-        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        itemRevision: sql<
+          string | null
+        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
       })
       .from(qcDocuments)
       .leftJoin(jobCards, and(eq(jobCards.id, qcDocuments.jobCardId), isNull(jobCards.deletedAt)))
@@ -196,6 +199,10 @@ export async function listQcDocuments(
       .leftJoin(
         salesOrderLines,
         and(eq(salesOrderLines.id, jobCards.sourceSoLineId), isNull(salesOrderLines.deletedAt)),
+      )
+      .leftJoin(
+        jobWorkOrderLines,
+        and(eq(jobWorkOrderLines.id, jobCards.sourceJwLineId), isNull(jobWorkOrderLines.deletedAt)),
       )
       .where(and(...conds))
       .orderBy(desc(qcDocuments.createdAt));
@@ -660,14 +667,15 @@ export async function getQcLineDetail(
         jc.id AS "jobCardId", jc.code AS "jcCode", jc.order_qty AS "orderQty",
         COALESCE(i.code, sol.item_code_text) AS "itemCode",
         -- The customer's drawing revision off the SO line this card was raised
-        -- against, through the sol LEFT JOIN already made here — null for a card
-        -- with no SO behind it. Cast to text so a pre-0119 database cannot hand
-        -- the UI a number. Never items.revision.
-        sol.revision::text AS "itemRevision",
+        -- against — or the JW line for a JWSO-sourced card (ADR-177) — through
+        -- the LEFT JOINs made here; null for a standalone card. Cast to text so
+        -- a pre-0119 database cannot hand the UI a number. Never items.revision.
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         COALESCE(i.name, sol.part_name) AS "itemName"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
+      LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id
       WHERE jc.id = ${jobCardId}::uuid AND jc.company_id = ${companyId}::uuid
         AND jc.deleted_at IS NULL
     `);

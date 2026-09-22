@@ -26,9 +26,15 @@ import { ValidationError } from './errors';
 export { grandfatheredOspQcPairs } from '@innovic/shared';
 
 /** Throws ValidationError (400) with the shared message when a QC op sits
- *  directly after an outsource op, unless that exact pair is grandfathered. */
+ *  directly after an outsource op, unless that exact pair is grandfathered.
+ *  `operation` must be passed so a TPI QC op — the one QC allowed directly after
+ *  OSP (ADR-179) — is recognised; every caller's ops carry it. */
 export function assertNoQcDirectlyAfterOutsource(
-  ops: ReadonlyArray<{ opType: string; id?: string | null | undefined }>,
+  ops: ReadonlyArray<{
+    opType: string;
+    id?: string | null | undefined;
+    operation?: string | null | undefined;
+  }>,
   allowedPairs?: ReadonlySet<string>,
 ): void {
   const msg = qcAfterOutsourceError(ops, allowedPairs);

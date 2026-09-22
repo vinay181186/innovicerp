@@ -6060,7 +6060,7 @@ export const productionOrders = pgTable(
       .notNull()
       .references(() => companies.id),
     code: text('code').notNull(),
-    status: text('status').notNull().default('open'), // 'open' | 'closed'
+    status: text('status').notNull().default('open'), // 'open' | 'partially_closed' | 'closed'
 
     planId: uuid('plan_id')
       .notNull()
@@ -6091,7 +6091,10 @@ export const productionOrders = pgTable(
 
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closedBy: uuid('closed_by').references(() => users.id),
+    // Running total credited to stock so far (sum of the close ledger, ADR-179).
     creditedQty: integer('credited_qty'),
+    // Pieces recorded as lost on a short close (order_qty − credited on finish).
+    lostQty: integer('lost_qty'),
     remarks: text('remarks'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -6115,13 +6118,75 @@ export const productionOrders = pgTable(
     index('production_orders_company_status_idx')
       .on(t.companyId, t.status)
       .where(sql`${t.deletedAt} is null`),
-    check('production_orders_status_check', sql`${t.status} in ('open', 'closed')`),
+    check(
+      'production_orders_status_check',
+      sql`${t.status} in ('open', 'partially_closed', 'closed')`,
+    ),
+    check('production_orders_lost_qty_check', sql`${t.lostQty} is null or ${t.lostQty} >= 0`),
     pgPolicy('production_orders_company_read', {
       for: 'select',
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
     pgPolicy('production_orders_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// Append-only close ledger for partial Production Order close (ADR-179,
+// migration 0140). One row per partial close; a reversal is another row
+// (isReversal) pointing at the close it undoes. production_orders.credited_qty
+// is the running sum of the signed qty here.
+export const productionOrderCloses = pgTable(
+  'production_order_closes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    productionOrderId: uuid('production_order_id')
+      .notNull()
+      .references(() => productionOrders.id),
+    // Pieces credited by this row (a reversal's qty is the amount undone).
+    qty: integer('qty').notNull(),
+    isReversal: boolean('is_reversal').notNull().default(false),
+    reversesCloseId: uuid('reverses_close_id').references(
+      (): AnyPgColumn => productionOrderCloses.id,
+    ),
+    // Set only on the close-short row that finishes the PO under target.
+    lostQty: integer('lost_qty'),
+    // The store_transactions row this close wrote (null on a 0-credit short close).
+    storeTxnId: uuid('store_txn_id').references(() => storeTransactions.id),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('production_order_closes_po_idx')
+      .on(t.productionOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    check('production_order_closes_qty_check', sql`${t.qty} > 0`),
+    check(
+      'production_order_closes_lost_qty_check',
+      sql`${t.lostQty} is null or ${t.lostQty} >= 0`,
+    ),
+    pgPolicy('production_order_closes_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('production_order_closes_manager_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,

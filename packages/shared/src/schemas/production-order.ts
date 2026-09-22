@@ -41,6 +41,10 @@ export const productionOrderSchema = z.object({
   itemId: z.string().uuid(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
+  /** ADR-178: the SO / JWSO line's drawing revision, read live through the
+   *  plan's line (never snapshotted — the customer may reissue the drawing).
+   *  Rendered as CODE/REV. */
+  itemRevision: z.string().nullable().default(null),
 
   routeCardId: z.string().uuid(),
   routeCardCodeText: z.string(),
@@ -56,8 +60,13 @@ export const productionOrderSchema = z.object({
 
   closedAt: z.string().nullable(),
   closedBy: z.string().uuid().nullable(),
-  /** Qty actually credited to stock at close (the JC's finished qty). Null while open. */
+  /** RUNNING total credited to stock so far (sum of the close ledger, ADR-179).
+   *  0 or null while nothing has been closed; grows with each partial close;
+   *  equals orderQty when fully closed (or orderQty − lost on a short close). */
   creditedQty: z.number().int().nonnegative().nullable(),
+  /** Pieces recorded as lost on a short close (order_qty − credited on finish).
+   *  Null until the PO is closed short. Invariant: credited + lost = order. */
+  lostQty: z.number().int().nonnegative().nullable().default(null),
   remarks: z.string().nullable(),
 
   createdAt: z.string(),
@@ -67,6 +76,25 @@ export const productionOrderSchema = z.object({
   deletedAt: z.string().nullable(),
 });
 export type ProductionOrder = z.infer<typeof productionOrderSchema>;
+
+/** One row of the append-only close ledger (`production_order_closes`, ADR-179).
+ *  Each partial close is one row; a reversal is another row (isReversal) that
+ *  points at the close it undoes. A short close carries lostQty. */
+export const productionOrderCloseSchema = z.object({
+  id: z.string().uuid(),
+  productionOrderId: z.string().uuid(),
+  /** Pieces credited by this row (always > 0; a reversal's qty is the amount undone). */
+  qty: z.number().int().positive(),
+  isReversal: z.boolean(),
+  reversesCloseId: z.string().uuid().nullable(),
+  /** Set only on the close-short row that finishes the PO under target. */
+  lostQty: z.number().int().nonnegative().nullable(),
+  remarks: z.string().nullable(),
+  closedAt: z.string(),
+  closedBy: z.string().uuid(),
+  closedByName: z.string().nullable(),
+});
+export type ProductionOrderClose = z.infer<typeof productionOrderCloseSchema>;
 
 /** Live Job Card progress, joined on every read (never stored on the PO). */
 const jcProgressShape = {
@@ -83,17 +111,29 @@ export const productionOrderListItemSchema = productionOrderSchema.extend({
   ...jcProgressShape,
   /** Customer / client name read live via the plan's SO or JWSO line. */
   partyName: z.string().nullable(),
+  /** Raw material (Grade / Size) read live off the plan this order was made
+   *  from — the plan's *Text snapshots, never stored again here. Null when the
+   *  plan recorded no raw material. */
+  rawMaterialGradeText: z.string().nullable().default(null),
+  rawMaterialSizeText: z.string().nullable().default(null),
   createdByName: z.string().nullable(),
   closedByName: z.string().nullable(),
 });
 export type ProductionOrderListItem = z.infer<typeof productionOrderListItemSchema>;
 
 export const productionOrderDetailSchema = productionOrderListItemSchema.extend({
-  /** True when Close is allowed right now: status open AND jcComputedStatus in
-   *  ('complete','closed'). */
+  /** True when a (partial) Close is allowed right now: status not closed AND
+   *  availableToClose > 0. ADR-179. */
   canClose: z.boolean(),
   /** Plain-English reason Close is blocked (null when canClose). */
   closeBlockedReason: z.string().nullable(),
+  /** Pieces that can be closed right now = max(0, jcFinishedQty − creditedQty).
+   *  The close qty field defaults to and is capped at this. */
+  availableToClose: z.number().int().nonnegative(),
+  /** Pieces still to be closed = max(0, orderQty − creditedQty). */
+  remainingQty: z.number().int().nonnegative(),
+  /** The close ledger, newest first — every partial close + reversal. */
+  closes: z.array(productionOrderCloseSchema),
 });
 export type ProductionOrderDetail = z.infer<typeof productionOrderDetailSchema>;
 
@@ -131,9 +171,29 @@ export const createProductionOrderInputSchema = z.object({
 export type CreateProductionOrderInput = z.infer<typeof createProductionOrderInputSchema>;
 
 export const closeProductionOrderInputSchema = z.object({
+  /** Pieces to close (credit to stock) now. Omitted = close everything currently
+   *  available (jcFinishedQty − creditedQty). The server re-derives the ceiling
+   *  under a row lock and rejects a qty above it. ADR-179. */
+  qty: z.number().int().positive().optional(),
+  /** Close short: finish the PO now even though credited < order. Allowed only
+   *  when the JC is complete / settled-with-losses. Records order − credited as
+   *  lost, credits the currently-available qty, and marks the PO closed.
+   *  Optional (no default) so the inferred input type stays `finish?: boolean`;
+   *  the service treats a missing value as false. */
+  finish: z.boolean().optional(),
   remarks: z.string().trim().max(500).nullable().optional(),
 });
 export type CloseProductionOrderInput = z.infer<typeof closeProductionOrderInputSchema>;
+
+/** Undo one close-ledger row: writes a compensating stock-out + reversal row and
+ *  lowers credited_qty. Refused if the pieces have already been dispatched. */
+export const reverseProductionOrderCloseInputSchema = z.object({
+  closeId: z.string().uuid(),
+  remarks: z.string().trim().max(500).nullable().optional(),
+});
+export type ReverseProductionOrderCloseInput = z.infer<
+  typeof reverseProductionOrderCloseInputSchema
+>;
 
 /** `GET /production-orders/next-code` */
 export interface NextProductionOrderCodeResponse {

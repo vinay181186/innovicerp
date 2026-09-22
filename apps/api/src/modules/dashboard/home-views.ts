@@ -57,7 +57,7 @@ export async function buildOperator(
         -- master and would misname the drawing being worked to. Cast to text
         -- because the contract types it as a string and the column is only text
         -- on a database that has had migration 0119.
-        sol.revision::text AS item_revision,
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision,
         EXTRACT(EPOCH FROM (now() - (ro.start_date::timestamp + ro.start_time)))/60 AS elapsed_min,
         vs.completed_qty, jc.order_qty
      FROM running_ops ro
@@ -71,6 +71,7 @@ export async function buildOperator(
      -- in progress, which is far worse than showing it unnamed.
      LEFT JOIN items i ON i.id = jc.item_id
      LEFT JOIN sales_order_lines sol ON sol.id = jc.source_so_line_id
+     LEFT JOIN job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
      WHERE ro.company_id='${cid}'::uuid AND ro.status='running'
        AND (ro.operator_name IN (${nameList}) OR ro.operator_name IS NULL)
      ORDER BY ro.start_date, ro.start_time`,
@@ -114,13 +115,14 @@ export async function buildOperator(
         -- still lists, with a null revision. Cast to text because the contract
         -- types it as a string and the column is only text on a database that
         -- has had migration 0119; without it, it is still an integer.
-        sol.revision::text AS item_revision,
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision,
         vs.available, jc.due_date
      FROM v_jc_op_status vs
      JOIN jc_ops o ON o.id = vs.jc_op_id AND o.deleted_at IS NULL
      JOIN job_cards jc ON jc.id = o.job_card_id AND jc.deleted_at IS NULL
      LEFT JOIN machines m ON m.id = o.machine_id
      LEFT JOIN sales_order_lines sol ON sol.id = jc.source_so_line_id
+     LEFT JOIN job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
      WHERE vs.company_id='${cid}'::uuid AND vs.available > 0
        AND vs.computed_status IN ('available','in_progress')
        AND vs.op_type NOT IN ('outsource','qc')

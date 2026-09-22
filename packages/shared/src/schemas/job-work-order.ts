@@ -27,6 +27,7 @@
 //   - JWs always require ≥ 1 line (no Equipment exception).
 
 import { z } from 'zod';
+import { REVISION_PATTERN } from '../lib/revision';
 import { SO_STATUSES } from '../enums/so-status';
 import { uomSchema } from './item';
 
@@ -165,7 +166,16 @@ export const jobWorkOrderLineInputSchema = z
     // here so the server paths that insert a JWSO line without asking anyone —
     // the BOM cascade and the SO-to-JW conversions — still work. Same split the
     // sales-order line makes.
-    revision: z.string().max(32).optional(),
+    /** ADR-178: upper-cased on the way in ("b" → "B"); letters, digits, . - /
+     *  only. Going backwards (B → A, 2 → 1) is refused on update by the server
+     *  and the form — see lib/revision.ts. */
+    revision: z
+      .string()
+      .trim()
+      .max(32)
+      .transform((s) => s.toUpperCase())
+      .refine((s) => s === '' || REVISION_PATTERN.test(s), 'Rev: letters, digits, . - / only')
+      .optional(),
     drawingFilePath: z.string().max(512).nullable().optional(),
     uom: uomSchema.default('NOS'),
     orderQty: z.number().int().positive(), // CHECK > 0 in DB too

@@ -39,7 +39,7 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
         -- column is only text on a database that has had migration 0119. On one
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- WHAT is being made. A job-card number tells the inspector which job,
         -- not which part, so the item name rides along beside the code off the
         -- items LEFT JOIN that is already here for i.code.
@@ -54,6 +54,8 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       WHERE vos.company_id = ${companyId}::uuid
@@ -88,7 +90,7 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
         -- rides the existing sol LEFT JOIN, is null for cards with no SO behind
         -- them, and is cast to text so a pre-0119 database cannot hand the UI a
         -- number. Never items.revision.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- The part the third party actually signed off, named beside its code so
         -- a completed TPI record can be read back without opening the job card.
         i.name AS "itemName",
@@ -105,6 +107,8 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       WHERE ol.company_id = ${companyId}::uuid

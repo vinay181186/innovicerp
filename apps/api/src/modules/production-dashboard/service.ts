@@ -81,7 +81,7 @@ export async function getProductionDashboard(
         -- reports null. Cast to text because the contract types it as a string
         -- and a database without migration 0119 still holds an integer there;
         -- the cast is a no-op once 0119 is applied.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         jc.priority, jc.order_qty AS "orderQty", jc.due_date AS "dueDate",
         s.total_ops AS "totalOps", s.done_ops AS "doneOps"
       FROM public.v_jc_status s
@@ -89,6 +89,8 @@ export async function getProductionDashboard(
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       WHERE s.company_id = ${companyId}::uuid AND s.computed_status = 'open'
       ORDER BY (jc.priority = 'high') DESC, jc.due_date ASC NULLS LAST, jc.code
       LIMIT 60
@@ -131,7 +133,7 @@ export async function getProductionDashboard(
         -- different column about the item master. Cast to text for the same
         -- reason as above: the contract types it as a string and a database
         -- without migration 0119 still holds an integer there.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         jc.order_qty AS "orderQty", vos.completed_qty AS "completedQty",
         vos.available, vos.computed_status AS "computedStatus",
         ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs",
@@ -150,6 +152,8 @@ export async function getProductionDashboard(
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = jo.machine_id
       LEFT JOIN LATERAL (
         SELECT json_agg(

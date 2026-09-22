@@ -113,6 +113,10 @@ export type GoodsReceiptNote = z.infer<typeof goodsReceiptNoteSchema>;
 export const goodsReceiptNoteLineDetailSchema = goodsReceiptNoteLineSchema.extend({
   /** Resolved item code from items.code via the FK; null when no FK is set. */
   itemCode: z.string().nullable(),
+  /** ADR-178: the SO line's drawing revision, traced GRN line → PO line →
+   *  source SO line (or the DC / NC the GRN was made against). Null when the
+   *  line traces to no SO line. Rendered as CODE/REV. */
+  itemRevision: z.string().nullable().default(null),
 });
 export type GoodsReceiptNoteLineDetail = z.infer<typeof goodsReceiptNoteLineDetailSchema>;
 

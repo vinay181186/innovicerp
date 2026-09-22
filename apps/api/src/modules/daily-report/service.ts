@@ -45,7 +45,7 @@ export async function getDailyReport(
         -- job-work or standalone card still appears in the day's report with a
         -- null revision. Cast to text: the contract types this as a string, and
         -- a database that has not had migration 0119 still holds an integer.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         i.name AS "itemName",
         op.op_seq AS "opSeq",
         op.operation,
@@ -61,6 +61,7 @@ export async function getDailyReport(
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.machines m
         ON m.id = COALESCE(l.machine_id, op.machine_id) AND m.deleted_at IS NULL
       WHERE l.company_id = ${companyId}::uuid

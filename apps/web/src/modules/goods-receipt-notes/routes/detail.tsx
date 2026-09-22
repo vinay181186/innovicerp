@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSession } from '@/lib/session';
 import { useMyCompany } from '@/modules/settings/api';
@@ -307,8 +308,9 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
   return (
     <tr>
       <td className="mono">{l.lineNo}</td>
-      <td className="mono" style={{ fontSize: 11 }}>
-        {l.itemCode ?? l.itemCodeText ?? '—'}
+      {/* Item code is THE main thing — strong; CODE/REV (ADR-177). */}
+      <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
+        {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
       </td>
       <td>{l.itemName}</td>
       <td className="mono">{l.receivedQty}</td>

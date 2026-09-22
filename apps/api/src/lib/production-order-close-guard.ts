@@ -34,24 +34,29 @@ export interface CloseGuardInput {
   jcCodeText: string;
   /** v_jc_status.computed_status of the linked JC; null when the JC row is gone. */
   jcComputedStatus: string | null;
-  /** Output of the JC's last live op — the qty Close would credit. */
+  /** Output of the JC's last live op — the TOTAL finished so far. */
   jcFinishedQty: number;
   /** True when the JC is settled with losses (see header). */
   jcSettledWithLosses: boolean;
+  /** Running total already credited by earlier partial closes (ADR-179). */
+  creditedQty: number;
 }
 
-/** Null when Close is allowed; otherwise the plain-English reason it is not. */
+/** Null when SOME close action is possible right now; otherwise the plain-English
+ *  reason none is. Partial close (ADR-179): a close is possible when the order is
+ *  not already fully closed AND either
+ *   - there are new finished pieces to credit now (availableToClose > 0), OR
+ *   - the JC is done (complete / closed / settled-with-losses) so it can be
+ *     finished / closed short.
+ *  The service then enforces the action-specific rules (a "close short" still
+ *  requires the JC to be done; a plain partial close does not). */
 export function closeBlockedReason(item: CloseGuardInput): string | null {
-  if (item.status !== 'open') return `Production Order is already closed`;
+  if (item.status === 'closed') return `Production Order is already fully closed`;
   const st = item.jcComputedStatus ?? 'no_ops';
   const jcDone = st === 'complete' || st === 'closed' || item.jcSettledWithLosses;
-  if (!jcDone) {
-    return `Job Card ${item.jcCodeText} is not complete yet (${st}) — finish all operations before closing`;
-  }
-  // "Nothing to credit" blocks only the ordinary path. A settled-with-losses
-  // JC with 0 finished is a total loss and closes with nothing credited.
-  if (item.jcFinishedQty <= 0 && !item.jcSettledWithLosses) {
-    return `Job Card ${item.jcCodeText} reads ${st} but has no finished quantity to credit — nothing was accepted at its last operation; check its QC entries before closing`;
+  const available = Math.max(0, item.jcFinishedQty - item.creditedQty);
+  if (available <= 0 && !jcDone) {
+    return `No finished pieces to close yet for Job Card ${item.jcCodeText} (${st}) — credit pieces as its operations clear, or finish the order once it is complete`;
   }
   return null;
 }

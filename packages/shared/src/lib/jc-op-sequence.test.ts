@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isGeneratedTerminalQcOp,
+  isTpiOp,
   stripStaleGeneratedTerminalQc,
   findQcDirectlyAfterOutsource,
   opPairKey,
@@ -65,6 +66,29 @@ describe('findQcDirectlyAfterOutsource (OSP → QC rule)', () => {
   });
 });
 
+describe('TPI is allowed directly after OSP (ADR-179)', () => {
+  const osp = { opType: 'outsource' };
+  it('exempts a TPI QC op right after OSP, still blocks other QC', () => {
+    expect(findQcDirectlyAfterOutsource([osp, { opType: 'qc', operation: 'TPI' }])).toBeNull();
+    expect(
+      findQcDirectlyAfterOutsource([osp, { opType: 'qc', operation: 'TPI Final Inspection' }]),
+    ).toBeNull();
+    // a non-TPI QC directly after OSP is still refused
+    expect(findQcDirectlyAfterOutsource([osp, { opType: 'qc', operation: 'MIR' }])).toBe(1);
+    // a QC op with no name is treated as non-TPI (the safe default)
+    expect(findQcDirectlyAfterOutsource([osp, { opType: 'qc' }])).toBe(1);
+  });
+
+  it('isTpiOp recognises TPI by name, case-insensitively, only for QC ops', () => {
+    expect(isTpiOp({ opType: 'qc', operation: 'TPI' })).toBe(true);
+    expect(isTpiOp({ opType: 'qc', operation: ' third-party tpi ' })).toBe(true);
+    expect(isTpiOp({ opType: 'qc', operation: 'MIR' })).toBe(false);
+    expect(isTpiOp({ opType: 'qc' })).toBe(false);
+    // a process/outsource op is never a TPI op even if named "TPI"
+    expect(isTpiOp({ opType: 'process', operation: 'TPI' })).toBe(false);
+  });
+});
+
 describe('qcAfterOutsourceMessage with stored op numbers (plans keep gaps)', () => {
   it('names the REAL stored sequence when the caller supplies opSeq', () => {
     const ops = [
@@ -87,6 +111,17 @@ describe('stripStaleGeneratedTerminalQc (edit: generated op after an OSP retype)
   });
   it('keeps it when the routing is still pure in-house (it would be re-appended anyway)', () => {
     const ops = [{ opType: 'process', operation: 'Turning' }, gen];
+    expect(stripStaleGeneratedTerminalQc(ops)).toEqual(ops);
+  });
+  it('keeps it when a mid-route OSP is followed by a machining op (ADR-179)', () => {
+    // Turning → OSP → Milling → Final Inspection: the op before the generated
+    // QC is a machining step, not a terminal OSP, so the QC is NOT stale.
+    const ops = [
+      { opType: 'process', operation: 'Turning' },
+      { opType: 'outsource', operation: 'Plating' },
+      { opType: 'process', operation: 'Milling' },
+      gen,
+    ];
     expect(stripStaleGeneratedTerminalQc(ops)).toEqual(ops);
   });
   it('never touches a user-named QC, a non-terminal op, a started op, or a recovery child', () => {

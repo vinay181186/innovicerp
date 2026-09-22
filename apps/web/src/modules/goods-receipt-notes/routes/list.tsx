@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNote, useGoodsReceiptNotesList } from '../api';
@@ -611,9 +612,10 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
             data.lines.map((l) => (
               <tr key={l.id} style={{ background: 'var(--bg)' }}>
                 <td className="mono fw-700">{l.lineNo}</td>
-                {/* Item code is THE main thing — strong, never the faint text3. */}
+                {/* Item code is THE main thing — strong, never the faint text3.
+                    CODE/REV (ADR-177); bare code when the line has no revision. */}
                 <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                  {l.itemCode ?? l.itemCodeText ?? '—'}
+                  {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
                 </td>
                 <td
                   style={{

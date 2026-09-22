@@ -7,12 +7,14 @@
 // 50 → 48), which is why the confirm names that number before asking.
 
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Lock } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCloseProductionOrder, useProductionOrder } from '../api';
+import { useProductionOrder } from '../api';
+import { PoCloseForm } from '../components/po-close-form';
+import { PoCloseLedger } from '../components/po-close-ledger';
 import { PoStatusBadge } from '../components/po-status-badge';
 
 export const productionOrderDetailRoute = createRoute({
@@ -43,9 +45,6 @@ function Fact({
 function ProductionOrderDetailPage(): React.JSX.Element {
   const { id } = productionOrderDetailRoute.useParams();
   const { data, isLoading, isError, error } = useProductionOrder(id);
-  const closeMut = useCloseProductionOrder();
-  const [confirmClose, setConfirmClose] = useState(false);
-  const [closeError, setCloseError] = useState<string | null>(null);
 
   // Tier-driven (Production). Close is an EDIT on the order, not an entry.
   const { data: eff } = useMyAccess();
@@ -83,18 +82,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
     );
   }
 
-  const onClose = (): void => {
-    setCloseError(null);
-    closeMut.mutate(
-      { id: data.id },
-      {
-        onSuccess: () => setConfirmClose(false),
-        onError: (e) => setCloseError(e instanceof Error ? e.message : 'Close failed.'),
-      },
-    );
-  };
-
-  const isOpen = data.status === 'open';
+  // ADR-179: close is progressive. It stays available while the order is not
+  // fully closed and the server still allows it (`canClose`).
+  const notClosed = data.status !== 'closed';
+  const showCloseForm = notClosed && perms.edit && data.canClose;
   const pct =
     data.orderQty > 0 ? Math.min(100, Math.round((data.jcFinishedQty / data.orderQty) * 100)) : 0;
 
@@ -121,69 +112,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <PoStatusBadge status={data.status} />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            {isOpen && perms.edit && data.canClose ? (
-              confirmClose ? (
-                <>
-                  <span className="text2" style={{ fontSize: 12 }}>
-                    Close <b className="mono">{data.code}</b>? Stock will be credited with the
-                    finished qty <b className="mono">{data.jcFinishedQty}</b> of{' '}
-                    <b className="mono">{data.orderQty}</b>.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-success btn-sm"
-                    onClick={onClose}
-                    disabled={closeMut.isPending}
-                  >
-                    {closeMut.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Lock size={13} />
-                    )}
-                    Confirm close
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmClose(false)}
-                    disabled={closeMut.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={() => setConfirmClose(true)}
-                >
-                  <Lock size={13} /> Close Production Order
-                </button>
-              )
-            ) : null}
-          </div>
         </div>
 
         <div className="panel-body">
-          {closeError ? (
-            <div
-              role="alert"
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {closeError}
-            </div>
-          ) : null}
-
-          {isOpen && !data.canClose && data.closeBlockedReason ? (
+          {notClosed && !data.canClose && data.closeBlockedReason ? (
             <div
               className="text3"
               style={{
@@ -226,7 +158,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             </Fact>
 
             <Fact label="Item code" mono>
-              {data.itemCodeText}
+              {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
+              {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
             </Fact>
             <div className="form-grp form-span-2">
               <span className="form-label">Item name</span>
@@ -237,6 +170,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             <Fact label="Order qty" mono>
               {data.orderQty}
             </Fact>
+            {/* Raw material the order is cut from — read off its plan (same
+                labels as Plan detail). */}
+            <Fact label="RM grade">{data.rawMaterialGradeText ?? '—'}</Fact>
+            <Fact label="RM size">{data.rawMaterialSizeText ?? '—'}</Fact>
 
             <Fact label="Route card">
               <Link
@@ -320,7 +257,34 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      {!isOpen ? (
+      {/* Close (progressive) — credit finished pieces as they come off the JC. */}
+      {showCloseForm ? (
+        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--cyan)' }}>
+          <div className="panel-hdr">
+            <div className="panel-title">🔒 Close Production Order</div>
+          </div>
+          <div className="panel-body">
+            <PoCloseForm po={data} />
+          </div>
+        </div>
+      ) : null}
+
+      {/* Close ledger — every partial close + reversal, newest first. */}
+      {data.closes.length > 0 ? (
+        <div className="panel" style={{ marginTop: 12 }}>
+          <div className="panel-hdr">
+            <div className="panel-title">📒 Close ledger ({data.closes.length})</div>
+            <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--text)' }}>
+              {data.creditedQty ?? 0} <span className="text3">/ {data.orderQty} credited</span>
+            </div>
+          </div>
+          <div className="panel-body">
+            <PoCloseLedger po={data} canReverse={perms.edit} />
+          </div>
+        </div>
+      ) : null}
+
+      {data.status === 'closed' ? (
         <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--green)' }}>
           <div className="panel-hdr">
             <div className="panel-title">✓ Closed — stock credited</div>
@@ -330,7 +294,9 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <Fact label="Credited qty" mono>
                 {data.creditedQty ?? '—'}
               </Fact>
-              <Fact label="Closed by">{data.closedByName ?? '—'}</Fact>
+              <Fact label="Lost qty" mono>
+                {data.lostQty ?? '—'}
+              </Fact>
               <Fact label="Closed on" mono>
                 {data.closedAt ? data.closedAt.slice(0, 10) : '—'}
               </Fact>

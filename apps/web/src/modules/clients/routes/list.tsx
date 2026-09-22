@@ -15,16 +15,20 @@
 //     (Rule 2);
 //   • one scrolling fetch, no Prev/Next — the master-list conversion Rule 4
 //     names for Clients (status filter + counts are done client-side over the
-//     single fetch, which is why the server query drops isActive).
+//     single fetch, which is why the server query drops isActive);
+//   • laid out as the app's ruled sheet (`.innovic-table.tbl-grid`, the SO
+//     Master / Job Cards look, 2026-09-21): Sr No first, Action last (icon
+//     buttons only, named on hover), fixed `%` widths that add up to 100 so
+//     nothing scrolls sideways. The Code / Client Name header sort toggles went
+//     with it — the SO master standard has none; rows come in the API's
+//     default order.
 
-import type { Client, ListClientsQuery } from '@innovic/shared';
+import type { ListClientsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { Loader2, Plus } from 'lucide-react';
+import { Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -37,6 +41,10 @@ import { downloadClientTemplate, parseClientImportFile } from '../lib/import-exp
 // raised from 200 to match the SO master); the count line flags a larger set.
 const LIST_LIMIT = 1000;
 
+/** Column count — the loading / error / empty rows' <td colSpan> must always
+ *  match the <colgroup> below, so it is named once here. */
+const COLUMN_COUNT = 8;
+
 // Join a list of import warnings/failures for the status line, capping at 50 so
 // a huge sheet can't produce an unbounded banner, but still showing far more
 // than the old 3-item cap that hid most problems.
@@ -48,8 +56,6 @@ function fmtList(items: string[]): string {
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(['active', 'inactive']).optional(),
-  sortBy: z.enum(['code', 'name']).optional(),
-  sortDir: z.enum(['asc', 'desc']).optional(),
 });
 
 export const clientsListRoute = createRoute({
@@ -88,12 +94,10 @@ function ClientsListPage(): React.JSX.Element {
   const query: ListClientsQuery = useMemo(
     () => ({
       search: search.search,
-      sortBy: search.sortBy,
-      sortDir: search.sortDir,
       limit: LIST_LIMIT,
       offset: 0,
     }),
-    [search.search, search.sortBy, search.sortDir],
+    [search.search],
   );
 
   const { data, isLoading, isFetching, isError, error } = useClientsList(query);
@@ -149,142 +153,11 @@ function ClientsListPage(): React.JSX.Element {
     }
   }
 
-  const toggleSort = useCallback(
-    (field: 'code' | 'name') => {
-      const next = nextSort(field, { sortBy: search.sortBy, sortDir: search.sortDir });
-      void navigate({ search: (prev) => ({ ...prev, ...next }), replace: true });
-    },
-    [navigate, search.sortBy, search.sortDir],
-  );
-
   const setStatus = useCallback(
     (status: 'active' | 'inactive' | undefined) => {
       void navigate({ search: (prev) => ({ ...prev, status }), replace: true });
     },
     [navigate],
-  );
-
-  const columns = useMemo<ColumnDef<Client>[]>(
-    () => [
-      {
-        header: () => (
-          <SortTh
-            label="Code"
-            field="code"
-            sortBy={search.sortBy}
-            sortDir={search.sortDir}
-            onSort={toggleSort}
-          />
-        ),
-        accessorKey: 'code',
-        cell: ({ row }) => (
-          <Link
-            to="/clients/$id"
-            params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: () => (
-          <SortTh
-            label="Client Name"
-            field="name"
-            sortBy={search.sortBy}
-            sortDir={search.sortDir}
-            onSort={toggleSort}
-          />
-        ),
-        accessorKey: 'name',
-        cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
-      },
-      {
-        id: 'address',
-        header: 'Address',
-        // Long free text — clip with ellipsis + full value on hover (Rule 1),
-        // rather than forcing it onto one unbounded line.
-        cell: ({ row }) => (
-          <span
-            className="text2"
-            style={{
-              fontSize: 11,
-              maxWidth: 180,
-              display: 'inline-block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={row.original.addressLine1 ?? ''}
-          >
-            {row.original.addressLine1 ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Contact',
-        accessorKey: 'contactPerson',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.contactPerson ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Email',
-        accessorKey: 'email',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.email ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Status',
-        accessorKey: 'isActive',
-        cell: ({ row }) => (
-          <span className={`badge ${row.original.isActive ? 'b-green' : 'b-grey'}`}>
-            {row.original.isActive ? 'active' : 'inactive'}
-          </span>
-        ),
-      },
-      {
-        id: 'actions',
-        header: '',
-        // Edit/Del go somewhere OTHER than the row's detail page, so they stop
-        // the row-navigation click (Rule 2).
-        cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-            {canEdit ? (
-              <Link
-                to="/clients/$id/edit"
-                params={{ id: row.original.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                Edit
-              </Link>
-            ) : null}
-            {canDelete ? (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                disabled={softDelete.isPending}
-                onClick={() => {
-                  if (confirm(`Move client ${row.original.name} to Trash?`)) {
-                    softDelete.mutate(row.original.id);
-                  }
-                }}
-              >
-                Del
-              </button>
-            ) : null}
-          </div>
-        ),
-      },
-    ],
-    [canEdit, canDelete, softDelete, search.sortBy, search.sortDir, toggleSort],
   );
 
   // All rows matching the search; the Active/Inactive filter is client-side.
@@ -296,12 +169,6 @@ function ClientsListPage(): React.JSX.Element {
     if (search.status === 'inactive') return allRows.filter((c) => !c.isActive);
     return allRows;
   }, [allRows, search.status]);
-
-  const table = useReactTable({
-    data: visibleRows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
 
   const total = data?.total ?? 0;
 
@@ -333,22 +200,35 @@ function ClientsListPage(): React.JSX.Element {
           style={{
             display: 'flex',
             justifyContent: 'space-between',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             marginBottom: 10,
             gap: 8,
             flexWrap: 'wrap',
           }}
         >
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Client Master
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              Client Master
+            </div>
+            {/* Count comes from the list response's `total` — every client
+                matching the search; the status split is the strip's job. */}
+            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} client{total === 1 ? '' : 's'}
+              {search.status ? (
+                <>
+                  {' '}
+                  · <span className="text2">{search.status}</span> only
+                </>
+              ) : null}
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               className="innovic-input"
-              placeholder="🔍 Search this list…"
+              placeholder="Search this list…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 200, fontSize: 12 }}
+              style={{ width: 220, fontSize: 12 }}
             />
             {isFetching && !isLoading ? (
               <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
@@ -412,23 +292,38 @@ function ClientsListPage(): React.JSX.Element {
       ) : null}
 
       <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
+        {/* The sheet look (tbl-grid): bold blue column names, gridlines, cream /
+            white rows, fixed widths that add up to 100% so nothing scrolls
+            sideways. Every column is centred by the standard; only Client Name
+            is left-aligned so the names share one edge. */}
+        <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+          <table className="innovic-table tbl-grid">
+            <colgroup>
+              <col style={{ width: '4%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '19%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '11%' }} />
+            </colgroup>
             <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
+              <tr>
+                <th>Sr No</th>
+                <th>Code</th>
+                <th style={{ textAlign: 'left' }}>Client Name</th>
+                <th>Address</th>
+                <th>Contact</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={columns.length} className="empty-state">
+                  <td colSpan={COLUMN_COUNT} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
@@ -436,16 +331,16 @@ function ClientsListPage(): React.JSX.Element {
               ) : isError ? (
                 <tr>
                   <td
-                    colSpan={columns.length}
+                    colSpan={COLUMN_COUNT}
                     className="empty-state"
                     style={{ color: 'var(--red)' }}
                   >
                     {error instanceof Error ? error.message : 'Failed to load clients'}
                   </td>
                 </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
+              ) : visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="empty-state">
+                  <td colSpan={COLUMN_COUNT} className="empty-state">
                     {search.status
                       ? `No ${search.status} clients`
                       : 'No clients yet — click + New Client'}
@@ -453,19 +348,133 @@ function ClientsListPage(): React.JSX.Element {
                 </tr>
               ) : (
                 // Whole row navigates to the client's detail page (Rule 2).
-                table.getRowModel().rows.map((row) => (
+                visibleRows.map((c, i) => (
                   <tr
-                    key={row.id}
-                    onClick={() =>
-                      void navigate({ to: '/clients/$id', params: { id: row.original.id } })
-                    }
+                    key={c.id}
+                    onClick={() => void navigate({ to: '/clients/$id', params: { id: c.id } })}
                     style={{ cursor: 'pointer' }}
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
+                    <td className="text3">{i + 1}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <Link
+                        to="/clients/$id"
+                        params={{ id: c.id }}
+                        className="td-code"
+                        style={{ textDecoration: 'none' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {c.code}
+                      </Link>
+                    </td>
+                    <td style={{ textAlign: 'left' }}>
+                      <div
+                        className="fw-700"
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={c.name}
+                      >
+                        {c.name}
+                      </div>
+                    </td>
+                    {/* Long free text — clip with ellipsis + full value on hover
+                        (Rule 1), rather than letting it wrap the row taller. */}
+                    <td
+                      className="text2"
+                      style={{
+                        fontSize: 11,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={c.addressLine1 ?? ''}
+                    >
+                      {c.addressLine1 ?? '—'}
+                    </td>
+                    <td
+                      className="text2"
+                      style={{
+                        fontSize: 11,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={c.contactPerson ?? ''}
+                    >
+                      {c.contactPerson ?? '—'}
+                    </td>
+                    <td
+                      className="text2"
+                      style={{
+                        fontSize: 11,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={c.email ?? ''}
+                    >
+                      {c.email ?? '—'}
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <span className={`badge ${c.isActive ? 'b-green' : 'b-grey'}`}>
+                        {c.isActive ? 'active' : 'inactive'}
+                      </span>
+                    </td>
+                    {/* Icon buttons only, one row, each named on hover: View
+                        (the detail page — the row click goes there too, but the
+                        user asked for the icon as well), Edit, Delete. One
+                        stopPropagation on the wrapper covers all three (Rule 2). */}
+                    <td>
+                      <div
+                        style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link
+                          to="/clients/$id"
+                          params={{ id: c.id }}
+                          className="btn btn-ghost btn-sm btn-icon"
+                          style={{ padding: '3px 6px' }}
+                          title="View"
+                          aria-label="View"
+                        >
+                          <Eye size={14} />
+                        </Link>
+                        {canEdit ? (
+                          <Link
+                            to="/clients/$id/edit"
+                            params={{ id: c.id }}
+                            className="btn btn-ghost btn-sm btn-icon"
+                            style={{ padding: '3px 6px' }}
+                            title="Edit"
+                            aria-label="Edit"
+                          >
+                            <Pencil size={14} />
+                          </Link>
+                        ) : null}
+                        {canDelete ? (
+                          // The sheet paints every .btn-sm on paper (theme rule),
+                          // which would leave btn-danger's white icon invisible —
+                          // so the icon is told to be red here, tokens only.
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm btn-icon"
+                            style={{ color: 'var(--red)', padding: '3px 6px' }}
+                            title="Delete"
+                            aria-label="Delete"
+                            disabled={softDelete.isPending}
+                            onClick={() => {
+                              if (confirm(`Move client ${c.name} to Trash?`)) {
+                                softDelete.mutate(c.id);
+                              }
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

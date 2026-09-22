@@ -175,17 +175,19 @@ export async function listJobCards(
         i.code AS "itemCode", i.name AS "itemName",
         i.image_path AS "itemImagePath",
         -- The customer's drawing revision, read live off the SO line this card was
-        -- raised against. It is deliberately NOT items.revision, which is a
-        -- different column describing the item master, and not a snapshot on the
-        -- card either: if the customer reissues the drawing, every card against
-        -- that line should report the new revision. The sol join is a LEFT JOIN,
-        -- so JW-sourced and standalone cards correctly come back null.
+        -- raised against — or, for a JWSO-sourced card, off the JW line
+        -- (ADR-177; a card has one source, never both). It is deliberately NOT
+        -- items.revision, which is a different column describing the item
+        -- master, and not a snapshot on the card either: if the customer
+        -- reissues the drawing, every card against that line should report the
+        -- new revision. Both joins are LEFT JOINs, so standalone cards
+        -- correctly come back null.
         --
         -- Cast to text on purpose. The contract types this as a string, and the
         -- column is only text on a database that has had migration 0119; on one
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
         COALESCE(s.total_ops, 0)::int        AS "totalOps",
         COALESCE(s.done_ops, 0)::int         AS "doneOps",
@@ -374,17 +376,19 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         i.code AS "itemCode", i.name AS "itemName",
         i.image_path AS "itemImagePath",
         -- The customer's drawing revision, read live off the SO line this card was
-        -- raised against. It is deliberately NOT items.revision, which is a
-        -- different column describing the item master, and not a snapshot on the
-        -- card either: if the customer reissues the drawing, every card against
-        -- that line should report the new revision. The sol join is a LEFT JOIN,
-        -- so JW-sourced and standalone cards correctly come back null.
+        -- raised against — or, for a JWSO-sourced card, off the JW line
+        -- (ADR-177; a card has one source, never both). It is deliberately NOT
+        -- items.revision, which is a different column describing the item
+        -- master, and not a snapshot on the card either: if the customer
+        -- reissues the drawing, every card against that line should report the
+        -- new revision. Both joins are LEFT JOINs, so standalone cards
+        -- correctly come back null.
         --
         -- Cast to text on purpose. The contract types this as a string, and the
         -- column is only text on a database that has had migration 0119; on one
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        sol.revision::text AS "itemRevision",
+        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
         COALESCE(s.total_ops, 0)::int        AS "totalOps",
         COALESCE(s.done_ops, 0)::int         AS "doneOps",

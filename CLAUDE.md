@@ -951,3 +951,13 @@ When introducing a new field:
    persistence, validation, up/downstream links.
 6. Run /code-review high, fix findings, re-verify.
 7. Report: what changed, why, what was left unchanged, assumptions, risks.
+
+---
+
+## Section 16 — Number Inputs — No Wheel Edit
+
+- Mouse-wheel scrolling must never change a number/qty input's value.
+- Enforce in the shared number-input component so every number field is covered — do
+  not patch per screen.
+- Typing and arrow keys still work; only wheel editing is disabled.
+- Applies to all new and existing number/qty fields.

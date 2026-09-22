@@ -41,7 +41,7 @@ import {
 import { SoSheetTable } from '../components/so-sheet-table';
 import { SoStatusBadge } from '../components/so-status-badge';
 import { exportSoListExcel } from '../lib/import-export';
-import { ItemBadge } from '@/components/shared/item-badge';
+import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 
 // ISSUE-020 — legacy puts its cell classes on the <td> itself (e.g. L11867
 // `<td class="td-ctr mono fw-700">`), not on a wrapper span. td-ctr is
@@ -639,11 +639,11 @@ function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; c
     <div>
       <div style={{ padding: '10px 18px 8px 36px', display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
         {/* Same label band as <Fact>, but the value is the item badge (thumbnail ·
-            code · name) rather than a string — an equipment line has no per-line
-            revision to show, so none is passed. */}
+            code · name) rather than a string. The equipment line is an SO line
+            like any other, so its drawing revision renders as CODE/REV (ADR-177). */}
         <div>
           <div style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT</div>
-          <ItemBadge size="row" code={line.itemCode ?? line.itemCodeText} name={line.partName} imagePath={line.itemImagePath} />
+          <ItemBadge size="row" code={line.itemCode ?? line.itemCodeText} name={line.partName} revision={line.revision} imagePath={line.itemImagePath} />
         </div>
         <Fact label="EQUIP QTY" value={String(line.orderQty)} big />
         <Fact label="DUE" value={line.dueDate ?? '—'} />
@@ -739,7 +739,8 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
         <colgroup>
           <col style={{ width: '4%' }} />
           <col style={{ width: '7%' }} />
-          <col style={{ width: canEdit ? '35%' : '41%' }} />
+          <col style={{ width: THUMBNAIL_COL_WIDTH }} />
+          <col style={{ width: canEdit ? '27%' : '33%' }} />
           <col style={{ width: '7%' }} />
           <col style={{ width: '8%' }} />
           <col style={{ width: '8%' }} />
@@ -752,7 +753,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
           <tr style={{ background: 'var(--bg4)' }}>
             {/* Item = thumbnail · CODE/REV · part name in one badge cell (user
                 decision 2026-09-21); the old Item Code + Part Name pair folded in. */}
-            <th>Ln</th><th style={{ color: 'var(--purple)' }}>CPO Ln</th><th style={{ textAlign: 'left' }}>Item</th>
+            <th>Ln</th><th style={{ color: 'var(--purple)' }}>CPO Ln</th><ItemThumbnailHeader /><th style={{ textAlign: 'left' }}>Item</th>
             <th className="td-ctr">Qty</th><th className="td-ctr">JC Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
             <th className="td-ctr" style={{ color: 'var(--red)' }}>Balance</th>
@@ -761,7 +762,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
         </thead>
         <tbody>
           {so.lines.length === 0 ? (
-            <tr><td colSpan={canEdit ? 10 : 9} className="empty-state">No lines yet</td></tr>
+            <tr><td colSpan={canEdit ? 11 : 10} className="empty-state">No lines yet</td></tr>
           ) : (
             so.lines.map((l) => {
               const balance = Math.max(0, l.orderQty - l.dispatchedQty);
@@ -771,7 +772,8 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
                   <td className="mono" style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 700 }}>{l.clientPoLineNo ?? '—'}</td>
                   {/* CODE/REV — the customer's drawing revision travels with the code
                       (the badge formats it via itemCodeWithRev). */}
-                  <td><ItemBadge size="row" code={l.itemCode ?? l.itemCodeText} name={l.partName} revision={l.revision} imagePath={l.itemImagePath} /></td>
+                  <ItemThumbnailCell imagePath={l.itemImagePath} alt={l.partName} />
+                  <td><ItemBadge size="row" showImage={false} code={l.itemCode ?? l.itemCodeText} name={l.partName} revision={l.revision} imagePath={l.itemImagePath} /></td>
                   <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
                   <td className="td-ctr mono" style={{ fontSize: 11 }}>
                     <span style={{ color: l.jcQty >= l.orderQty ? 'var(--green)' : l.jcQty > 0 ? 'var(--amber)' : 'var(--text3)' }}>{l.jcQty}</span>

@@ -11,6 +11,11 @@
 // is omitted, only the header is updated; existing lines untouched. This
 // avoids the footgun where a header-only PATCH would wipe lines.
 
+import {
+  normalizeRevision,
+  revisionBackwardsMessage,
+  revisionGoesBackwards,
+} from '@innovic/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   assemblyUnits,
@@ -1430,11 +1435,12 @@ export async function createSalesOrder(
             partName: l.partName,
             material: l.material ?? null,
             drawingNo: l.drawingNo ?? null,
-            // The customer's drawing Rev, exactly as the user typed it. The
-            // input schema makes it compulsory, so there is nothing to default
-            // here — a line is born holding the Rev printed on the drawing,
-            // not at some number the server made up.
-            revision: l.revision,
+            // The customer's drawing Rev as the user typed it, upper-cased
+            // (ADR-177: letters are always capital). The input schema makes it
+            // compulsory, so there is nothing to default here — a line is born
+            // holding the Rev printed on the drawing, not at some number the
+            // server made up.
+            revision: normalizeRevision(l.revision),
             drawingFilePath: l.drawingFilePath ?? null,
             uom: l.uom,
             orderQty: l.orderQty,
@@ -1795,17 +1801,27 @@ async function mergeLines(
     if (u.data.partName !== undefined) lineUpdate['partName'] = u.data.partName;
     if (u.data.material !== undefined) lineUpdate['material'] = u.data.material ?? null;
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
+    const stored = existingById.get(u.id)!;
     // The customer's Rev is written like any other field the user typed. It is
     // deliberately NOT inside the drawing block below: the Rev is a fact about
     // the paper the customer sent, so it moves when they say it moved, not
-    // when somebody uploads a file.
-    if (u.data.revision !== undefined) lineUpdate['revision'] = u.data.revision;
+    // when somebody uploads a file. ADR-177: it is stored upper-cased and may
+    // never go backwards on a line (B → A, 2 → 1); a change of kind (1 → A)
+    // cannot be ordered and is allowed.
+    const nextRevision =
+      u.data.revision !== undefined ? normalizeRevision(u.data.revision) : undefined;
+    if (nextRevision !== undefined) {
+      if (revisionGoesBackwards(stored.revision, nextRevision)) {
+        const lineNo = u.data.lineNo ?? stored.lineNo;
+        throw new ValidationError(revisionBackwardsMessage(lineNo, stored.revision, nextRevision));
+      }
+      lineUpdate['revision'] = nextRevision;
+    }
     if (u.data.drawingFilePath !== undefined) {
       lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
       // A history row is written only when the file genuinely differs from
       // what is stored. Clearing a drawing counts: the drawing record changed,
       // so it gets its own row — one that points at no file.
-      const stored = existingById.get(u.id)!;
       const action = drawingTransition(
         normalizeDrawingPath(stored.drawingFilePath),
         normalizeDrawingPath(u.data.drawingFilePath),
@@ -1831,7 +1847,7 @@ async function mergeLines(
             // save, so the trail says which customer revision this drawing
             // belonged to. Falls back to the stored Rev when the payload does
             // not mention one.
-            lineRevisionText: u.data.revision !== undefined ? u.data.revision : stored.revision,
+            lineRevisionText: nextRevision !== undefined ? nextRevision : stored.revision,
             createdBy: user.id,
           },
         });
@@ -1869,8 +1885,8 @@ async function mergeLines(
         material: l.material ?? null,
         drawingNo: l.drawingNo ?? null,
         // Same as the create path: the Rev is whatever the user typed on the
-        // new line, never a number the server chose.
-        revision: l.revision,
+        // new line (upper-cased, ADR-177), never a number the server chose.
+        revision: normalizeRevision(l.revision),
         drawingFilePath: l.drawingFilePath ?? null,
         uom: l.uom,
         orderQty: l.orderQty,

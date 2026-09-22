@@ -1,27 +1,17 @@
 // QC Process Master list — Phase A item 3. Mirrors legacy renderQCProcessMaster (L23446).
 //
-// Legacy puts the alignment/format classes on the <td> itself (L23450
-// `td-ctr mono fw-700`, L23451 `fw-700`, L23453 `td-ctr mono`) — not on a
-// wrapper span. `.td-ctr` is text-align:center (innovic-theme.css:401), which
-// is inert on an inline <span>, so those columns rendered left-aligned
-// (ISSUE-020). Carry the class through the column def's `meta.tdClass` so the
-// flexRender loop can put it where legacy has it. The ColumnMeta augmentation
-// lives once, in @/types/tanstack-table.d.ts — do not re-declare it here.
+// Laid out as the app's ruled sheet (`.innovic-table.tbl-grid`, the SO / WO
+// List view look — see sales-orders/components/so-sheet-table.tsx): Sr No
+// first, Action last, fixed `%` widths that add up to 100 so nothing scrolls
+// sideways, every column centred by the class except the name, which reads
+// from its left edge. Per-column sorting was dropped with the TanStack table
+// (the SO standard has none; it only ever re-ordered the page on screen).
 
-import type { ListQcProcessesQuery, QcProcess } from '@innovic/shared';
+import type { ListQcProcessesQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  type SortingState,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { SortableHead } from '@/components/shared/sortable-head';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -29,6 +19,9 @@ import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
 import { ReportTypesPanel } from '@/modules/report-types/components/report-types-panel';
 
 const PAGE_SIZE = 25;
+/** Column count — the loading / error / empty rows' <td colSpan> must always
+ *  match the <colgroup> below, so it is named once here. */
+const COLUMN_COUNT = 6;
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -92,111 +85,11 @@ function QcProcessesListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useQcProcessesList(query);
   const softDelete = useSoftDeleteQcProcess();
 
-  const columns = useMemo<ColumnDef<QcProcess>[]>(
-    () => [
-      {
-        header: '#',
-        enableSorting: false,
-        meta: { tdClass: 'td-ctr mono fw-700' },
-        cell: ({ row }) => (search.page - 1) * PAGE_SIZE + row.index + 1,
-      },
-      {
-        header: 'QC Process Name',
-        accessorKey: 'code',
-        meta: { tdClass: 'fw-700' },
-        cell: ({ row }) => (
-          <Link
-            to="/qc-processes/$id"
-            params={{ id: row.original.id }}
-            style={{ color: 'var(--green)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Description',
-        accessorKey: 'description',
-        meta: { tdClass: 'text2' },
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.description ?? '—'}</span>,
-      },
-      {
-        header: 'Std Time (min)',
-        id: 'defaultCycleTimeMin',
-        accessorFn: (r) => Number(r.defaultCycleTimeMin),
-        meta: { tdClass: 'td-ctr mono' },
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>
-            {Number(row.original.defaultCycleTimeMin) > 0
-              ? Number(row.original.defaultCycleTimeMin).toFixed(2)
-              : '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Status',
-        accessorKey: 'isActive',
-        cell: ({ row }) => (
-          <span className={`badge ${row.original.isActive ? 'b-green' : 'b-amber'}`}>
-            {row.original.isActive ? 'Active' : 'Inactive'}
-          </span>
-        ),
-      },
-      {
-        header: 'Actions',
-        id: 'actions',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4 }}>
-            {perms.edit ? (
-              <Link
-                to="/qc-processes/$id/edit"
-                params={{ id: row.original.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                Edit
-              </Link>
-            ) : null}
-            {canDelete ? (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                disabled={softDelete.isPending}
-                onClick={() => {
-                  if (confirm(`Delete QC process "${row.original.code}"?`)) {
-                    // The server refuses a process that job cards, plans or
-                    // route cards still name (qc-processes/service.ts). Reset
-                    // first so a second attempt clears the previous banner.
-                    softDelete.reset();
-                    softDelete.mutate(row.original.id);
-                  }
-                }}
-              >
-                Del
-              </button>
-            ) : null}
-          </div>
-        ),
-      },
-    ],
-    [search.page, perms.edit, canDelete, softDelete],
-  );
-
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
-  });
-
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
-  // user flashes this panel on cold load. Sits after every hook (incl.
-  // useReactTable) so the early return never trips rules-of-hooks.
+  // user flashes this panel on cold load. Sits after every hook so the early
+  // return never trips rules-of-hooks.
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
@@ -205,6 +98,7 @@ function QcProcessesListPage(): React.JSX.Element {
     );
   }
 
+  const rows = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
@@ -253,56 +147,88 @@ function QcProcessesListPage(): React.JSX.Element {
         <ReportTypesPanel />
       ) : (
         <>
+          {/* Sticky header band — the SO list's shape: `#content` is the app's
+              scroll container, so `top:0` pins this band flush under the
+              topbar while the rows scroll underneath. Opaque `--bg` so the
+              sheet never shows through. */}
           <div
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 14,
-              gap: 8,
+              position: 'sticky',
+              top: 0,
+              zIndex: 20,
+              background: 'var(--bg)',
+              paddingBottom: 8,
+              marginBottom: 10,
+              borderBottom: '1px solid var(--border)',
             }}
           >
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              ⚙ QC Process Master
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                className="innovic-input"
-                placeholder="Search this list…"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                style={{ width: 280, fontSize: 12 }}
-              />
-              <select
-                className="innovic-select"
-                value={search.isActive === undefined ? '' : String(search.isActive)}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  void navigate({
-                    search: (prev) => ({
-                      ...prev,
-                      isActive: v === '' ? undefined : v === 'true',
-                      page: 1,
-                    }),
-                    replace: true,
-                  });
-                }}
-                style={{ width: 130, fontSize: 12 }}
-              >
-                <option value="">All</option>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
-              {isFetching && !isLoading ? (
-                <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                  <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-                </span>
-              ) : null}
-              {perms.entry ? (
-                <Link to="/qc-processes/new" className="btn btn-primary">
-                  <Plus size={14} /> Add QC Process
-                </Link>
-              ) : null}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <div>
+                <div className="section-hdr" style={{ marginBottom: 0 }}>
+                  ⚙ QC Process Master
+                </div>
+                {/* Count is the list response's `total` — the only aggregate the
+                    endpoint returns. */}
+                <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+                  {total} process{total === 1 ? '' : 'es'}
+                  {search.isActive !== undefined ? (
+                    <>
+                      {' '}
+                      · <span className="text2">
+                        {search.isActive ? 'Active' : 'Inactive'}
+                      </span>{' '}
+                      only
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <input
+                  className="innovic-input"
+                  placeholder="Search this list…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  style={{ width: 220, fontSize: 12 }}
+                />
+                <select
+                  className="innovic-select"
+                  value={search.isActive === undefined ? '' : String(search.isActive)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    void navigate({
+                      search: (prev) => ({
+                        ...prev,
+                        isActive: v === '' ? undefined : v === 'true',
+                        page: 1,
+                      }),
+                      replace: true,
+                    });
+                  }}
+                  style={{ width: 130, fontSize: 12 }}
+                >
+                  <option value="">All</option>
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                {isFetching && !isLoading ? (
+                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                    <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+                  </span>
+                ) : null}
+                {perms.entry ? (
+                  <Link to="/qc-processes/new" className="btn btn-primary">
+                    <Plus size={14} /> Add QC Process
+                  </Link>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -337,48 +263,163 @@ function QcProcessesListPage(): React.JSX.Element {
             </div>
           ) : null}
 
-          <div className="panel">
-            <div className="tbl-wrap">
-              <table className="innovic-table">
-                <SortableHead table={table} />
-                <tbody>
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={columns.length} className="empty-state">
-                        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                        Loading…
-                      </td>
-                    </tr>
-                  ) : isError ? (
-                    <tr>
+          {/* The sheet: fixed widths summing to 100%, so no sideways scroll. */}
+          <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+            <table className="innovic-table tbl-grid">
+              <colgroup>
+                <col style={{ width: '5%' }} />
+                <col style={{ width: '24%' }} />
+                <col style={{ width: '40%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Sr No</th>
+                  <th style={{ textAlign: 'left' }}>QC Process Name</th>
+                  <th>Description</th>
+                  <th>Std Time (min)</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={COLUMN_COUNT} className="empty-state">
+                      <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                      Loading…
+                    </td>
+                  </tr>
+                ) : isError ? (
+                  <tr>
+                    <td
+                      colSpan={COLUMN_COUNT}
+                      className="empty-state"
+                      style={{ color: 'var(--red)' }}
+                    >
+                      {error instanceof Error ? error.message : 'Failed to load QC processes'}
+                    </td>
+                  </tr>
+                ) : rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={COLUMN_COUNT} className="empty-state">
+                      No QC processes defined. Click + Add QC Process.
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((p, i) => (
+                    <tr
+                      key={p.id}
+                      onClick={() =>
+                        void navigate({ to: '/qc-processes/$id', params: { id: p.id } })
+                      }
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td className="text3">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
                       <td
-                        colSpan={columns.length}
-                        className="empty-state"
-                        style={{ color: 'var(--red)' }}
+                        style={{
+                          textAlign: 'left',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                        title={p.code}
                       >
-                        {error instanceof Error ? error.message : 'Failed to load QC processes'}
+                        {/* The master code — strong, never the faint --text3. */}
+                        <Link
+                          to="/qc-processes/$id"
+                          params={{ id: p.id }}
+                          className="mono fw-700"
+                          style={{ color: 'var(--text)', textDecoration: 'none' }}
+                          title="Open this QC process"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {p.code}
+                        </Link>
+                      </td>
+                      <td
+                        className="text2"
+                        style={{
+                          fontSize: 12,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                        title={p.description ?? ''}
+                      >
+                        {p.description ?? '—'}
+                      </td>
+                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                        {Number(p.defaultCycleTimeMin) > 0
+                          ? Number(p.defaultCycleTimeMin).toFixed(2)
+                          : '—'}
+                      </td>
+                      <td>
+                        <span className={`badge ${p.isActive ? 'b-green' : 'b-amber'}`}>
+                          {p.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td>
+                        {/* View is open to anyone who can see the list; Edit needs edit; Del needs edit +
+                            approve. Icon buttons on one row, the action named on
+                            hover; the row navigates, so the wrapper stops the click. */}
+                        <div
+                          style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Link
+                            to="/qc-processes/$id"
+                            params={{ id: p.id }}
+                            className="btn btn-ghost btn-sm btn-icon"
+                            title="View"
+                            aria-label="View"
+                          >
+                            <Eye size={14} />
+                          </Link>
+                          {perms.edit ? (
+                            <Link
+                              to="/qc-processes/$id/edit"
+                              params={{ id: p.id }}
+                              className="btn btn-ghost btn-sm btn-icon"
+                              title="Edit"
+                              aria-label="Edit"
+                            >
+                              <Pencil size={14} />
+                            </Link>
+                          ) : null}
+                          {canDelete ? (
+                            // The sheet paints every .btn-sm on paper (theme rule),
+                            // which would leave btn-danger's white icon invisible —
+                            // so the icon is told to be red here, tokens only.
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm btn-icon"
+                              style={{ color: 'var(--red)' }}
+                              title="Delete"
+                              aria-label="Delete"
+                              disabled={softDelete.isPending}
+                              onClick={() => {
+                                if (confirm(`Delete QC process "${p.code}"?`)) {
+                                  // The server refuses a process that job cards, plans or
+                                  // route cards still name (qc-processes/service.ts). Reset
+                                  // first so a second attempt clears the previous banner.
+                                  softDelete.reset();
+                                  softDelete.mutate(p.id);
+                                }
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
-                  ) : table.getRowModel().rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={columns.length} className="empty-state">
-                        No QC processes defined. Click + Add QC Process.
-                      </td>
-                    </tr>
-                  ) : (
-                    table.getRowModel().rows.map((row) => (
-                      <tr key={row.id}>
-                        {row.getVisibleCells().map((cell) => (
-                          <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
 
           <div

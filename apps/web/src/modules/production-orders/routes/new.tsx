@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -425,7 +426,12 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
       }}
     >
       <div className="form-grid form-grid-4" style={{ gap: 8 }}>
-        <Fact label="Item" value={plan.itemCode ?? plan.itemCodeText ?? '—'} mono />
+        {/* CODE/REV (ADR-177); bare code when the plan's line has no revision. */}
+        <Fact
+          label="Item"
+          value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+          mono
+        />
         <Fact label="Item name" value={plan.itemName ?? plan.itemNameText ?? '—'} />
         <Fact label="Plan qty" value={String(plan.planQty)} mono />
         <Fact label="SO / JWSO" value={so} mono />

@@ -66,6 +66,8 @@ export type SoQcJcStage = z.infer<typeof soQcJcStageSchema>;
 export const soQcGrnDetailSchema = z.object({
   grnNo: z.string(),
   itemCode: z.string().nullable(),
+  /** ADR-178: the SO line's drawing revision for this GRN row (CODE/REV). */
+  itemRevision: z.string().nullable().default(null),
   vendorName: z.string().nullable(),
   receivedQty: z.number().int(),
   accepted: z.number().int(),

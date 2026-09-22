@@ -253,13 +253,16 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
           so.code AS so_code,
           i.code AS item_code, COALESCE(i.name, pol.item_name) AS item_name,
           -- The customer's drawing revision, read live off the SO line this PO
-          -- line was raised against via the sol LEFT JOIN already below. It is
+          -- line was raised against via the sol LEFT JOIN already below; for
+          -- an OSP line raised off a JWSO-sourced job card there is no SO
+          -- line, so the job-work line the card came from is the fallback
+          -- (ADR-177 -- a card has one source, never both). It is
           -- deliberately not items.revision, which describes the item master
           -- and would be a plausible-looking lie in this column. Cast to text
           -- because the contract types it as a string and the column is only
           -- text on a database that has had migration 0119; on one that has
           -- not it is still an integer and would arrive wearing a string type.
-          sol.revision::text AS item_revision,
+          COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision,
           pol.qty, pol.received_qty, pol.rate,
           GREATEST(0, pol.qty - pol.received_qty) AS pending_qty,
           GREATEST(0, (pol.qty - pol.received_qty) * pol.rate) AS pending_val,
@@ -271,6 +274,11 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
         LEFT JOIN items i ON i.id = pol.item_id
         LEFT JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id
         LEFT JOIN sales_orders so ON so.id = sol.sales_order_id
+        -- JWSO fallback: PO line -> JC op -> job card -> job-work line. Each
+        -- hop is a single-row FK, so the lines are never multiplied.
+        LEFT JOIN jc_ops rev_op ON rev_op.id = pol.source_jc_op_id AND rev_op.deleted_at IS NULL
+        LEFT JOIN job_cards rev_jc ON rev_jc.id = rev_op.job_card_id AND rev_jc.deleted_at IS NULL
+        LEFT JOIN job_work_order_lines rev_jwl ON rev_jwl.id = rev_jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
         WHERE po.company_id = ${cid}
           AND po.deleted_at IS NULL
           AND po.status IN ('open', 'partial', 'qc_pending')
