@@ -74,14 +74,17 @@ export function QcProcessPicker({
       }
       onSearch={setSearch}
       loading={isFetching}
-      // A process with no description carries its name in `name` and no `code`,
-      // so SearchableSelect renders a clean "DIR" instead of a dangling "DIR — ".
-      options={items.map((p) =>
-        p.description
-          ? { id: p.id, code: p.code, name: p.description }
-          : { id: p.id, name: p.code },
-      )}
-      selectedLabel={(o) => o.code ?? o.name}
+      // The dropdown shows the process NAME only ("Final Inspection", "DIR").
+      // The master's description used to trail it ("Final Inspection — …") and
+      // the user asked for it to go (2026-09-22): the name is the whole point
+      // of the pick. Description still feeds the search so typing a word from
+      // it still finds the process.
+      options={items.map((p) => ({
+        id: p.id,
+        name: p.code,
+        ...(p.description ? { searchText: `${p.code} ${p.description}` } : {}),
+      }))}
+      selectedLabel={(o) => o.name}
       valueLabel={value || undefined}
       placeholder={placeholder}
       emptyText="No active QC processes — add one in the QC Process master"
