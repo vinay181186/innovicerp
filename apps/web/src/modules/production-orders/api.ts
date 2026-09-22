@@ -20,6 +20,7 @@ import type {
   ListProductionOrdersResponse,
   NextProductionOrderCodeResponse,
   ProductionOrderDetail,
+  ReverseProductionOrderCloseInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -110,6 +111,8 @@ export function useCloseProductionOrder() {
     Error,
     { id: string; input?: CloseProductionOrderInput }
   >({
+    // ADR-179: partial/progressive close. `input` carries { qty?, finish?,
+    // remarks? }; omitting qty closes everything currently available.
     mutationFn: ({ id, input }) =>
       apiFetch<ProductionOrderDetail>(`/production-orders/${id}/close`, {
         method: 'POST',
@@ -120,7 +123,37 @@ export function useCloseProductionOrder() {
       // Close credits stock — the store screens read the same item.
       void qc.invalidateQueries({ queryKey: ['store-inventory'] });
       void qc.invalidateQueries({ queryKey: ['store-transactions'] });
+      // The detail carries the running ledger + credited/remaining, so replace
+      // it wholesale, then refresh the detail query so the ledger is authoritative.
       qc.setQueryData(productionOrdersKeys.detail(closed.id), closed);
+      void qc.invalidateQueries({ queryKey: productionOrdersKeys.detail(closed.id) });
+    },
+  });
+}
+
+/** Undo one close-ledger row (ADR-179): writes a compensating stock-out +
+ *  reversal row and lowers credited_qty. The server refuses when the pieces
+ *  have already been dispatched — that error flows back through onError so the
+ *  caller can surface it. Invalidates the PO detail + list + store caches. */
+export function useReverseProductionOrderClose() {
+  const qc = useQueryClient();
+  return useMutation<
+    ProductionOrderDetail,
+    Error,
+    { id: string; input: ReverseProductionOrderCloseInput }
+  >({
+    mutationFn: ({ id, input }) =>
+      apiFetch<ProductionOrderDetail>(`/production-orders/${id}/reverse-close`, {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: (updated) => {
+      invalidateNeighbours(qc);
+      // A reversal removes stock — the store screens read the same item.
+      void qc.invalidateQueries({ queryKey: ['store-inventory'] });
+      void qc.invalidateQueries({ queryKey: ['store-transactions'] });
+      qc.setQueryData(productionOrdersKeys.detail(updated.id), updated);
+      void qc.invalidateQueries({ queryKey: productionOrdersKeys.detail(updated.id) });
     },
   });
 }

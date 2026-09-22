@@ -8,7 +8,7 @@
 // which shows the credited qty.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Lock } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -19,12 +19,13 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   type PlanPickerItem,
   planPickerLabel,
-  useCloseProductionOrder,
   usePreselectedPlan,
   useProductionOrder,
   useProductionOrdersList,
 } from '../api';
 import { PlanPicker } from '../components/plan-picker';
+import { PoCloseForm } from '../components/po-close-form';
+import { PoCloseLedger } from '../components/po-close-ledger';
 import { PoStatusBadge } from '../components/po-status-badge';
 
 // ?planId=&planCode= open the page on that plan's order — the Plans list's
@@ -45,8 +46,6 @@ function ProductionOrderClosePage(): React.JSX.Element {
   const navigate = useNavigate();
   const search = productionOrderCloseRoute.useSearch();
   const preselected = usePreselectedPlan(search.planId, search.planCode, 'close');
-  const closeMut = useCloseProductionOrder();
-  const [closeError, setCloseError] = useState<string | null>(null);
 
   // Tier-driven (Production). Close is an EDIT on the order.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
@@ -56,22 +55,22 @@ function ProductionOrderClosePage(): React.JSX.Element {
   const [poId, setPoId] = useState<string | null>(null);
   const [poLabel, setPoLabel] = useState('');
 
-  // PO picker — open orders only; a closed one has nothing left to close.
+  // PO picker — orders that still have something to close: open OR partially
+  // closed (ADR-179). A fully closed one has nothing left, so it is filtered
+  // out client-side (the list endpoint takes a single status).
   const [poSearch, setPoSearch] = useState('');
   const openPos = useProductionOrdersList({
-    status: 'open',
     ...(poSearch.trim() ? { search: poSearch.trim() } : {}),
     limit: 50,
     offset: 0,
   });
-  const poOptions = openPos.data?.items ?? [];
+  const poOptions = (openPos.data?.items ?? []).filter((p) => p.status !== 'closed');
 
   const detail = useProductionOrder(poId ?? undefined);
   const po = detail.data;
 
   const onPickPlan = (p: PlanPickerItem | null): void => {
     setPlan(p);
-    setCloseError(null);
     if (p?.productionOrderId) {
       setPoId(p.productionOrderId);
       setPoLabel(p.productionOrderCode ?? '');
@@ -89,7 +88,6 @@ function ProductionOrderClosePage(): React.JSX.Element {
   }, [preselected]);
 
   const onPickPo = (next: string | null): void => {
-    setCloseError(null);
     const row = poOptions.find((x) => x.id === next);
     setPoId(next);
     setPoLabel(
@@ -99,19 +97,6 @@ function ProductionOrderClosePage(): React.JSX.Element {
     );
     // A PO picked directly implies its plan; drop a plan that no longer matches.
     if (row && plan && plan.id !== row.planId) setPlan(null);
-  };
-
-  const onClose = (): void => {
-    if (!po || !po.canClose) return;
-    setCloseError(null);
-    closeMut.mutate(
-      { id: po.id },
-      {
-        onSuccess: (closed) =>
-          void navigate({ to: '/production-orders/$id', params: { id: closed.id } }),
-        onError: (e) => setCloseError(e instanceof Error ? e.message : 'Close failed.'),
-      },
-    );
   };
 
   if (accessLoading) {
@@ -290,47 +275,35 @@ function ProductionOrderClosePage(): React.JSX.Element {
             </div>
           ) : null}
 
-          {closeError ? (
-            <div
-              role="alert"
-              style={{
-                marginTop: 10,
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-              }}
-            >
-              {closeError}
+          {/* The partial-close form: qty (capped at available), close-short and
+              remarks. On success go to the PO detail, which shows the running
+              credited total and the ledger. */}
+          {po && po.canClose ? (
+            <div style={{ marginTop: 16 }}>
+              <PoCloseForm
+                po={po}
+                onClosed={(closed) =>
+                  void navigate({ to: '/production-orders/$id', params: { id: closed.id } })
+                }
+              />
+            </div>
+          ) : null}
+
+          {/* Already-closed pieces on this order, so a partial close shows its
+              history before adding more. */}
+          {po && po.closes.length > 0 ? (
+            <div style={{ marginTop: 16 }}>
+              <div className="form-label" style={{ marginBottom: 6 }}>
+                Close ledger
+              </div>
+              <PoCloseLedger po={po} canReverse={perms.edit} />
             </div>
           ) : null}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
             <Link to="/production-orders" className="btn btn-ghost">
-              Cancel
+              Back to Production Orders
             </Link>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!po || !po.canClose || closeMut.isPending}
-              onClick={onClose}
-              title={
-                !po
-                  ? 'Pick a Production Order first'
-                  : po.canClose
-                    ? `Credit stock with ${po.jcFinishedQty} of ${po.orderQty}`
-                    : (po.closeBlockedReason ?? 'Blocked')
-              }
-            >
-              {closeMut.isPending ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Lock size={14} />
-              )}{' '}
-              Close
-            </button>
           </div>
         </div>
       </div>
