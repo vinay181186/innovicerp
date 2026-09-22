@@ -30,7 +30,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionOrdersList } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
@@ -144,6 +143,14 @@ function ProductionOrdersListPage(): React.JSX.Element {
         ),
       },
       {
+        header: 'PRO create date',
+        accessorKey: 'createdAt',
+        meta: { tdClass: 'mono' },
+        cell: ({ row }) => (
+          <span style={{ fontSize: 11 }}>{row.original.createdAt.slice(0, 10)}</span>
+        ),
+      },
+      {
         header: 'Plan',
         accessorKey: 'planCodeText',
         meta: { tdClass: 'mono' },
@@ -215,16 +222,6 @@ function ProductionOrdersListPage(): React.JSX.Element {
             {row.original.jcCodeText}
           </Link>
         ),
-      },
-      {
-        header: 'JC status',
-        accessorKey: 'jcComputedStatus',
-        cell: ({ row }) =>
-          row.original.jcComputedStatus ? (
-            <JcStatusBadge status={row.original.jcComputedStatus} />
-          ) : (
-            <span className="text3">—</span>
-          ),
       },
       {
         header: 'Finished qty',
