@@ -17,6 +17,13 @@
 // The "Shifts" column previously rendered here is not a legacy column —
 // legacy carries shifts on the machine FORM only — so it is dropped and its
 // slot returns to legacy's ₹/hr.
+//
+// TABS (migration 0116): this one screen now holds TWO masters — the machines
+// themselves and the Machine Group master they are picked from (VMC, CNC…) —
+// behind a Machines | Machine Groups strip, exactly as Raw Material Master
+// holds Grade | Size. The tab lives in the URL (?tab=groups) so it is
+// bookmarkable. A Group column sits beside the existing free-text Type column;
+// Type is unchanged and was NOT replaced.
 
 import type { ListMachinesQuery, Machine } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -33,16 +40,25 @@ import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useMachinesList } from '../api';
+import { useMachineGroupLookup, useMachinesList } from '../api';
+import { MachineGroupTab } from '../components/machine-group-tab';
 
 const PAGE_SIZE = 25;
 const STATUSES = ['Idle', 'Running', 'Down', 'Maintenance'] as const;
 
 const listSearchSchema = z.object({
+  // Absent = the machines tab, so every existing /machines link still lands on
+  // the machines list.
+  tab: z.enum(['groups']).optional(),
   search: z.string().optional(),
   status: z.enum(STATUSES).optional(),
   page: z.coerce.number().int().positive().default(1),
 });
+
+const TABS = [
+  { key: 'machines', label: '🏭 Machines' },
+  { key: 'groups', label: '🗂 Machine Groups' },
+] as const;
 
 export const machinesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -60,6 +76,74 @@ function statusBadgeClass(status: string): string {
 }
 
 function MachinesListPage(): React.JSX.Element {
+  const search = machinesListRoute.useSearch();
+  const navigate = machinesListRoute.useNavigate();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'machine_create');
+  const tab = search.tab ?? 'machines';
+
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
+  // is undefined only while access loads — don't block then, or every legitimate
+  // user flashes this panel on cold load. Checked once here, so it covers both
+  // tabs.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="section-hdr">Machine Master</div>
+
+      {/* Machines | Machine Groups switch — the same strip as Raw Material
+          Master's Grade | Size. */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 14,
+        }}
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() =>
+              void navigate({
+                // Switching master clears the machine filters — a machine
+                // search means nothing on the group list.
+                search: () => (t.key === 'groups' ? { tab: 'groups', page: 1 } : { page: 1 }),
+                replace: true,
+              })
+            }
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t.key ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: tab === t.key ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'groups' ? <MachineGroupTab /> : <MachinesTab />}
+    </div>
+  );
+}
+
+function MachinesTab(): React.JSX.Element {
   const search = machinesListRoute.useSearch();
   const navigate = machinesListRoute.useNavigate();
 
@@ -89,6 +173,10 @@ function MachinesListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useMachinesList(query);
+  // A machine stores only the group's id, so the whole (small) group master
+  // comes down once — the same cached fetch the detail page and the machine
+  // form use.
+  const groupLookup = useMachineGroupLookup();
   // Tier-driven, per department (machine_create sits in Production). Replaces
   // the old admin/manager flag, which collapsed all seven tiers into two.
   //   Add   -> entry (L2 Data Entry and up)
@@ -112,6 +200,15 @@ function MachinesListPage(): React.JSX.Element {
       { header: 'Machine ID', accessorKey: 'code' },
       { header: 'Name', accessorKey: 'name' },
       { header: 'Type', accessorKey: 'machineType' },
+      // Machine Group master (migration 0116) — a column BESIDE Type, not a
+      // replacement for it. Sorted on the group's own word rather than its id,
+      // which would sort by a uuid. Machines with no group sort together at the
+      // end under an empty string.
+      {
+        header: 'Group',
+        id: 'machineGroup',
+        accessorFn: (m) => (m.machineGroupId ? (groupLookup.get(m.machineGroupId)?.code ?? '') : ''),
+      },
       { header: 'Cap/Shift', accessorKey: 'capacityPerShift' },
       ...(priceHidden
         ? []
@@ -128,7 +225,7 @@ function MachinesListPage(): React.JSX.Element {
       { header: 'Status', accessorKey: 'status' },
       { header: 'Actions', enableSorting: false },
     ],
-    [priceHidden],
+    [priceHidden, groupLookup],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -145,32 +242,19 @@ function MachinesListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
 
-  // "Hide page" (Access Control → Config): once access has loaded, a user whose
-  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
-  // is undefined only while access loads — don't block then, or every legitimate
-  // user flashes this panel on cold load.
-  if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
-  }
-
+  // The page title and the "Hide page" access gate now live in the tab shell
+  // above, so they cover both tabs and are not repeated here.
   return (
     <div>
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           alignItems: 'center',
           marginBottom: 14,
           gap: 8,
         }}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Machine Master
-        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Legacy placeholder is "🔍 Search machine, type…" (L13103) because
               legacy searchFilter (L1513-1520) text-matches the whole rendered
@@ -269,6 +353,11 @@ function MachinesListPage(): React.JSX.Element {
                       </td>
                       <td className="fw-700">{m.name}</td>
                       <td className="text2">{m.machineType ?? '—'}</td>
+                      {/* A machine with no group is normal — every row created
+                          before the group master existed. Show an em dash. */}
+                      <td className="text2">
+                        {(m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—'}
+                      </td>
                       <td className="td-ctr mono">
                         {m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'}
                       </td>

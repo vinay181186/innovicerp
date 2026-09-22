@@ -77,24 +77,58 @@ const OSP_MOVED_STATUSES: ReadonlySet<string> = new Set(['po_created', 'sent', '
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the Job Card search box gets a wildcard
+ *  pattern instead of a literal search — a bare "%" returned every job card.
+ *  The SQL side must pair it with an ESCAPE '\' clause on every ILIKE, or the
+ *  escapes match literally.
+ *  Deliberately a local copy of the sales-orders helper rather than an export
+ *  across modules: it is three lines, and each list must be free to change its
+ *  own search behaviour without dragging the others with it. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listJobCards(
   input: ListJobCardsQuery,
   user: AuthContext,
 ): Promise<ListJobCardsResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    // Search covers every field the JC list card actually shows — band 1 (JC
+    // code, item name, item code, the SO/JWSO source code, the priority badge
+    // and the computed-status badge) and band 2's meta line (JC date, client PO
+    // line no, due date, remarks). Customer name is kept from the original
+    // clause set: the search box placeholder advertises "customer", even though
+    // the card itself resolves the customer only on the detail page.
+    // Deliberately NOT searched: order qty, completed / pending / ops counts and
+    // the running-op count — matching numbers would make "1" hit nearly every
+    // job card. No money column either: the JC list shows none, and this module
+    // hides prices behind `canSeeFormPrice` elsewhere, so a searchable amount
+    // would let a user without that right confirm a value by guessing.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (
-          jc.code ILIKE ${term}
-          OR i.code ILIKE ${term}
-          OR i.name ILIKE ${term}
-          OR so.code ILIKE ${term}
-          OR jw.code ILIKE ${term}
-          OR so.customer_name ILIKE ${term}
-          OR jw.customer_name ILIKE ${term}
-          OR cli_so.name ILIKE ${term}
-          OR cli_jw.name ILIKE ${term}
+          jc.code ILIKE ${term} ESCAPE '\\'
+          OR i.code ILIKE ${term} ESCAPE '\\'
+          OR i.name ILIKE ${term} ESCAPE '\\'
+          OR so.code ILIKE ${term} ESCAPE '\\'
+          OR jw.code ILIKE ${term} ESCAPE '\\'
+          OR so.customer_name ILIKE ${term} ESCAPE '\\'
+          OR jw.customer_name ILIKE ${term} ESCAPE '\\'
+          OR cli_so.name ILIKE ${term} ESCAPE '\\'
+          OR cli_jw.name ILIKE ${term} ESCAPE '\\'
+          -- Badges on band 1: priority renders as High/Normal, status as the
+          -- computed status. Both are matched on the stored value.
+          OR jc.priority::text ILIKE ${term} ESCAPE '\\'
+          OR COALESCE(s.computed_status, 'no_ops')::text ILIKE ${term} ESCAPE '\\'
+          -- Band 2 meta line, in the order the card prints it.
+          OR jc.jc_date::text ILIKE ${term} ESCAPE '\\'
+          OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
+          -- Same COALESCE the SELECT uses for "dueDate", so what the card shows
+          -- is what the search matches.
+          OR COALESCE(jc.due_date, sol.due_date, jwl.due_date)::text ILIKE ${term} ESCAPE '\\'
+          OR jc.remarks ILIKE ${term} ESCAPE '\\'
         )`
       : sql``;
     const statusFrag = input.status

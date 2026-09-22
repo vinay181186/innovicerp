@@ -26,6 +26,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useSoftDeleteCostCenter } from '../api';
@@ -64,7 +65,9 @@ function CostCentersListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  MACHINE  SHOP " and "MACHINE SHOP" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -145,7 +148,7 @@ function CostCentersListPage(): React.JSX.Element {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             className="innovic-input"
-            placeholder="Search code, name, description…"
+            placeholder="Search this list…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 240, fontSize: 12 }}

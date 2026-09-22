@@ -193,7 +193,13 @@ export function JcStatusContent({
 function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: jc, isLoading, isError, error } = useJobCard(id);
-  const { data: ops = [] } = useJcOpsEnriched({ jobCardId: id }, { enabled: Boolean(id) });
+  // `opsLoading` gates the Print button: the ops come from their own query, so
+  // a click landing between "job card loaded" and "ops loaded" printed a Job
+  // Card whose Operation Routing table said "No operations".
+  const { data: ops = [], isLoading: opsLoading } = useJcOpsEnriched(
+    { jobCardId: id },
+    { enabled: Boolean(id) },
+  );
   const { data: logs = [] } = useOpLog({ jobCardId: id, limit: 300 }, { enabled: Boolean(id) });
   // Server-computed extras: QC docs, per-op machine name + tool details, and the
   // merged completion feed (op_log ∪ NC ∪ OSP) with a real total (ISSUE-174).
@@ -271,7 +277,14 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => printJobCard({ jc, ops, company })}>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          disabled={opsLoading}
+          onClick={() => {
+            if (!printJobCard({ jc, ops, company })) window.alert('Allow popups to print.');
+          }}
+        >
           <Printer size={13} /> Print Job Card
         </button>
         <button

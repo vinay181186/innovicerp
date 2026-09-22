@@ -7,6 +7,7 @@
 import { type CreateJwInvoiceInput } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -25,16 +26,17 @@ export function JwInvoiceView(): React.JSX.Element {
 
   const { data, isLoading, isError, error } = useJwInvoicesList();
 
+  // GET /jw-invoices returns the whole list in one fetch (no page/limit sent),
+  // so the match happens here across every text column the table shows —
+  // invoice no, date, JWSO, client and part. Qty and the money columns are
+  // deliberately out: "5" would match nearly every row, and Rate/Taxable/GST/
+  // Total are hidden from viewers without price access.
   const items = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = normalizeSearchTerm(search);
     const all = data?.items ?? [];
     if (!q) return all;
-    return all.filter(
-      (r) =>
-        r.code.toLowerCase().includes(q) ||
-        (r.jwCodeText ?? '').toLowerCase().includes(q) ||
-        (r.clientName ?? '').toLowerCase().includes(q) ||
-        (r.partName ?? '').toLowerCase().includes(q),
+    return all.filter((r) =>
+      matchesSearchTerm([r.code, r.invoiceDate, r.jwCodeText, r.clientName, r.partName], q),
     );
   }, [data, search]);
 
@@ -51,7 +53,7 @@ export function JwInvoiceView(): React.JSX.Element {
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search invoice, JWSO, client, part…"
+            placeholder="🔍 Search invoice, date, JWSO, client, part…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: 260, fontSize: 12 }}
@@ -91,14 +93,14 @@ export function JwInvoiceView(): React.JSX.Element {
                   <th>JWSO</th>
                   <th>Client</th>
                   <th>Part</th>
-                  <th style={{ textAlign: 'right' }}>Qty</th>
+                  <th>Qty</th>
                   {priceHidden ? null : (
                     <>
-                      <th style={{ textAlign: 'right' }}>Rate</th>
-                      <th style={{ textAlign: 'right' }}>Taxable</th>
-                      <th style={{ textAlign: 'right' }}>GST%</th>
-                      <th style={{ textAlign: 'right' }}>GST Amt</th>
-                      <th style={{ textAlign: 'right', color: 'var(--green)' }}>Total</th>
+                      <th>Rate</th>
+                      <th>Taxable</th>
+                      <th>GST%</th>
+                      <th>GST Amt</th>
+                      <th style={{ color: 'var(--green)' }}>Total</th>
                     </>
                   )}
                 </tr>
@@ -131,26 +133,26 @@ export function JwInvoiceView(): React.JSX.Element {
                     <td className="text2" style={{ fontSize: 12 }}>
                       {r.partName ?? '—'}
                     </td>
-                    <td className="mono" style={{ textAlign: 'right' }}>
+                    <td className="mono">
                       {r.qty}
                     </td>
                     {priceHidden ? null : (
                       <>
-                        <td className="mono" style={{ textAlign: 'right' }}>
+                        <td className="mono">
                           {money(r.rate ?? 0)}
                         </td>
-                        <td className="mono" style={{ textAlign: 'right' }}>
+                        <td className="mono">
                           {money(r.taxableAmount ?? 0)}
                         </td>
-                        <td className="mono text3" style={{ textAlign: 'right', fontSize: 11 }}>
+                        <td className="mono text3" style={{ fontSize: 11 }}>
                           {r.gstPercent}%
                         </td>
-                        <td className="mono" style={{ textAlign: 'right' }}>
+                        <td className="mono">
                           {money(r.gstAmount ?? 0)}
                         </td>
                         <td
                           className="mono fw-700"
-                          style={{ textAlign: 'right', fontSize: 14, color: 'var(--green)' }}
+                          style={{ fontSize: 14, color: 'var(--green)' }}
                         >
                           {money(r.totalAmount ?? 0)}
                         </td>

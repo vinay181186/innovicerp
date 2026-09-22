@@ -445,7 +445,7 @@ export function PoFormLine({
             {...register(`lines.${idx}.lineRemarks` as const)}
           />
         </td>
-        <td style={{ textAlign: 'right' }}>
+        <td>
           <button type="button" className="pof-add" onClick={onAddLine}>
             + Add Line
           </button>

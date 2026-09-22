@@ -289,7 +289,7 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
               <th>Type</th>
               <th>Category</th>
               <th>Uploaded by</th>
-              <th className="td-right">Size</th>
+              <th>Size</th>
               <th />
             </tr>
           </thead>
@@ -351,8 +351,8 @@ function DocRow(props: {
       <td className="text3" style={{ fontSize: 11 }}>{f.docType ?? '—'}</td>
       <td className="mono" style={{ fontSize: 11 }}>{f.category}</td>
       <td className="text3" style={{ fontSize: 11 }}>{f.uploadedByText ?? '—'}</td>
-      <td className="td-right mono" style={{ fontSize: 11 }}>{sizeKb}</td>
-      <td className="td-right">
+      <td className="mono" style={{ fontSize: 11 }}>{sizeKb}</td>
+      <td>
         {props.canDelete ? (
           <button
             type="button"

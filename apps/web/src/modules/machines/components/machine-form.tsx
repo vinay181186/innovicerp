@@ -1,8 +1,15 @@
-// Machine create + edit form (UI-003-03). Field order matches legacy
-// machineForm (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L13113):
-// Machine ID, Machine Name, Type (full), Capacity/Shift, Shifts/Day,
-// 💰 Hour Rate (₹/hr), Status. hourRate feeds SO Costing machine-time
-// (migration 0050 / ADR-041).
+// Machine create + edit form (UI-003-03). Field order:
+// Machine Group, Machine ID, Machine Name, Product Code, Type (full),
+// Capacity/Shift, Shifts/Day, 💰 Hour Rate (₹/hr), Status.
+// hourRate feeds SO Costing machine-time (migration 0050 / ADR-041).
+//
+// Legacy machineForm (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L13113) had no Machine Group and no Product Code; both are additions
+// (migration 0116). Machine Group is a type-to-search picker off the Machine
+// Group master — the second tab of the Machine Master screen — and sits
+// ALONGSIDE the free-text Type, which is unchanged and still typed. A machine
+// with no group is normal (every row created before this change): the picker
+// simply starts empty.
 //
 // Legacy builds ONE form for both modes — machineForm(m={}) — so create and
 // edit are field-identical by construction; only Machine ID flips to readonly
@@ -27,6 +34,8 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { useMachineGroupLookup } from '../api';
+import { MachineGroupPicker } from './machine-group-picker';
 
 const MACHINE_STATUSES = ['Idle', 'Running', 'Down', 'Maintenance'] as const;
 // Legacy <select id="fShifts"> offers exactly 1 / 2 / 3 (L13120).
@@ -55,6 +64,8 @@ type MachineFormProps = CreateMode | EditMode;
 const CREATE_DEFAULTS: CreateMachineInput = {
   code: '',
   name: '',
+  machineGroupId: undefined,
+  productCode: undefined,
   machineType: undefined,
   capacityPerShift: undefined,
   shiftsPerDay: 1,
@@ -65,6 +76,11 @@ const CREATE_DEFAULTS: CreateMachineInput = {
 function machineToUpdateDefaults(m: Machine): UpdateMachineInput {
   return {
     name: m.name,
+    // Straight through, null included — a machine with no group starts the
+    // form as null, so leaving the picker alone re-sends null rather than
+    // "unchanged".
+    machineGroupId: m.machineGroupId,
+    productCode: m.productCode ?? undefined,
     machineType: m.machineType ?? undefined,
     capacityPerShift: m.capacityPerShift ?? undefined,
     shiftsPerDay: m.shiftsPerDay,
@@ -86,6 +102,14 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
   const { register, formState } = form;
   const errors = formState.errors;
 
+  // The group's own word ('VMC') for the picker to show. The lookup is the whole
+  // group master in one cached fetch, shared with the list and detail pages, so
+  // an edit form shows the machine's current group before the picker's own
+  // search page has loaded — and still shows it for a group since retired.
+  const groupLookup = useMachineGroupLookup();
+  const machineGroupId = form.watch('machineGroupId') ?? null;
+  const machineGroupLabel = machineGroupId ? (groupLookup.get(machineGroupId)?.code ?? null) : null;
+
   return (
     <form
       onSubmit={form.handleSubmit(async (values) => {
@@ -93,6 +117,25 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
       })}
     >
       <div className="form-grid">
+        {/* Picked from the Machine Group master (Machine Master → Machine
+            Groups tab), never typed — the shared type-to-search dropdown, per
+            the `searchable-field` skill. Optional: existing machines have no
+            group and must stay editable. */}
+        <div className="form-grp">
+          <label className="form-label" htmlFor="machineGroupId">
+            Machine Group
+          </label>
+          <MachineGroupPicker
+            id="machineGroupId"
+            valueId={machineGroupId}
+            valueText={machineGroupLabel}
+            // null, never undefined: on the edit form undefined means "leave
+            // this field alone", so clearing the group would silently do
+            // nothing. null is the explicit "no group".
+            onChange={(picked) => form.setValue('machineGroupId', picked, { shouldValidate: true })}
+          />
+        </div>
+
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
             Machine ID<span className="req">★</span>
@@ -106,6 +149,13 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
           </label>
           <input id="name" className="innovic-input" autoComplete="off" placeholder="CNC Turning Centre" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="productCode">
+            Product Code
+          </label>
+          <input id="productCode" className="innovic-input" autoComplete="off" placeholder="Product this machine runs" {...register('productCode')} />
         </div>
 
         <div className="form-grp form-full">
@@ -182,6 +232,14 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
   const { register, formState } = form;
   const errors = formState.errors;
 
+  // The group's own word ('VMC') for the picker to show. The lookup is the whole
+  // group master in one cached fetch, shared with the list and detail pages, so
+  // an edit form shows the machine's current group before the picker's own
+  // search page has loaded — and still shows it for a group since retired.
+  const groupLookup = useMachineGroupLookup();
+  const machineGroupId = form.watch('machineGroupId') ?? null;
+  const machineGroupLabel = machineGroupId ? (groupLookup.get(machineGroupId)?.code ?? null) : null;
+
   return (
     <form
       onSubmit={form.handleSubmit(async (values) => {
@@ -189,6 +247,25 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
       })}
     >
       <div className="form-grid">
+        {/* Picked from the Machine Group master (Machine Master → Machine
+            Groups tab), never typed — the shared type-to-search dropdown, per
+            the `searchable-field` skill. Optional: existing machines have no
+            group and must stay editable. */}
+        <div className="form-grp">
+          <label className="form-label" htmlFor="machineGroupId">
+            Machine Group
+          </label>
+          <MachineGroupPicker
+            id="machineGroupId"
+            valueId={machineGroupId}
+            valueText={machineGroupLabel}
+            // null, never undefined: on the edit form undefined means "leave
+            // this field alone", so clearing the group would silently do
+            // nothing. null is the explicit "no group".
+            onChange={(picked) => form.setValue('machineGroupId', picked, { shouldValidate: true })}
+          />
+        </div>
+
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
             Machine ID<span className="req">★</span>
@@ -207,6 +284,13 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
           </label>
           <input id="name" className="innovic-input" autoComplete="off" placeholder="CNC Turning Centre" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="productCode">
+            Product Code
+          </label>
+          <input id="productCode" className="innovic-input" autoComplete="off" placeholder="Product this machine runs" {...register('productCode')} />
         </div>
 
         <div className="form-grp form-full">

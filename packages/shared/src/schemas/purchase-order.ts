@@ -110,6 +110,11 @@ export const purchaseOrderSchema = z.object({
   rejectedAt: z.string().nullable(),
   rejectionReason: z.string().nullable(),
   remarks: z.string().nullable(),
+  /** users.full_name of whoever raised the PO -- the "Contact Person" a
+   *  vendor rings about it. `createdBy` alone is a uuid, which is useless on
+   *  paper. Mirrors createdByName on the Sales Order. Null on rows whose
+   *  creator was deleted. */
+  createdByName: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),

@@ -101,6 +101,9 @@ Your brief names the files. Start there, not with a survey.
 - **Tables:** `<div className="tbl-wrap"><table className="innovic-table">` — that gives you
   no-wrap cells and horizontal scroll for free.
 - **Counts/KPIs:** ONE `StatStrip` row. Never a row of separate cards.
+- **Forms:** one 12-column grid, every field a wrapper `div` with an explicit `grid-column`
+  span (3 short / 3–6 picker / 9–12 remark, 12 on mobile), no flex rows or pixel widths;
+  before finishing, add a dummy field, confirm nothing shifts, remove it (house rule FORM LAYOUT).
 - **Rows are clickable** to the detail page; wrap any action buttons in
   `<div onClick={(e) => e.stopPropagation()}>`.
 - **Masters scroll, they do not paginate.** No Prev/Next. Load the whole list in one fetch.

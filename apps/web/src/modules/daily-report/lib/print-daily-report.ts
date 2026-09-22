@@ -14,8 +14,8 @@ function machineSection(group: DailyReportResponse['groups'][number]): string {
     .map(
       (r) => `<tr>
       <td style="font-family:monospace">${esc(r.jcCode)}</td>
-      <td style="color:#7c3aed">${esc(r.itemCode ?? '')}</td>
-      <td>${esc(r.itemName ?? '')}</td>
+      <td style="color:#7c3aed">${esc(r.itemCode ?? '—')}</td>
+      <td>${esc(r.itemName ?? '—')}</td>
       <td style="text-align:center">${r.opSeq}</td>
       <td>${esc(r.operation)}</td>
       <td style="text-align:center">${esc(r.shift)}</td>

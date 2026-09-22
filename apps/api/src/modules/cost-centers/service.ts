@@ -23,6 +23,20 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the Cost Center Master search box gets a wildcard pattern
+ *  instead of a literal search — i.e. the search box becomes a "show
+ *  everything" button. Postgres's DEFAULT LIKE/ILIKE escape character is
+ *  backslash, so no explicit ESCAPE clause is needed here (and drizzle's
+ *  `ilike()` builder, which this list is written with, cannot emit one) —
+ *  verified against the live database.
+ *  Deliberately a local copy of the sales-orders / purchase-orders helper
+ *  rather than an export across modules: it is three lines, and each list must
+ *  be free to change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listCostCenters(
   input: ListCostCentersQuery,
   user: AuthContext,
@@ -31,10 +45,22 @@ export async function listCostCenters(
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(costCenters.companyId, companyId), isNull(costCenters.deletedAt)];
     if (input.search) {
+      // Search covers every column the Cost Center Master list actually shows —
+      // Code, Name, Department, Type and Description (the column defs in
+      // apps/web/src/modules/cost-centers/routes/list.tsx).
+      // Deliberately NOT searched: Status — it is a boolean rendered as an
+      // "Active"/"Inactive" badge, and a substring match on "active" also
+      // matches "inactive", so it would return every row. The list already has
+      // its own status filter.
+      // No money or quantity column exists on this table, so there is nothing
+      // here that could leak a value to someone without price access.
+      const term = `%${escapeLikeTerm(input.search)}%`;
       const s = or(
-        ilike(costCenters.code, `%${input.search}%`),
-        ilike(costCenters.name, `%${input.search}%`),
-        ilike(costCenters.description, `%${input.search}%`),
+        ilike(costCenters.code, term),
+        ilike(costCenters.name, term),
+        ilike(costCenters.department, term),
+        ilike(costCenters.type, term),
+        ilike(costCenters.description, term),
       );
       if (s) conditions.push(s);
     }

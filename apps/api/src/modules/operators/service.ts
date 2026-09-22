@@ -26,6 +26,20 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the Operator Master search box gets a wildcard pattern instead
+ *  of a literal search — i.e. the search box becomes a "show everything"
+ *  button. Postgres's DEFAULT LIKE/ILIKE escape character is backslash, so no
+ *  explicit ESCAPE clause is needed here (and drizzle's `ilike()` builder,
+ *  which this list is written with, cannot emit one) — verified against the
+ *  live database.
+ *  Deliberately a local copy of the sales-orders / purchase-orders helper
+ *  rather than an export across modules: it is three lines, and each list must
+ *  be free to change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listOperators(
   input: ListOperatorsQuery,
   user: AuthContext,
@@ -34,10 +48,22 @@ export async function listOperators(
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(operators.companyId, companyId), isNull(operators.deletedAt)];
     if (input.search) {
+      // Search covers every column the Operator Master list actually shows —
+      // Operator ID, Name, Department and Skills / Machines (the column defs in
+      // apps/web/src/modules/operators/routes/list.tsx).
+      // Deliberately NOT searched:
+      //  - the linked user id — an internal id, not on the screen;
+      //  - Status — it is a boolean rendered as an "Active"/"Inactive" badge,
+      //    and a substring match on "active" also matches "inactive", so it
+      //    would return every row. The list already has a status filter.
+      // No money or quantity column exists on this table, so there is nothing
+      // here that could leak a value to someone without price access.
+      const term = `%${escapeLikeTerm(input.search)}%`;
       const s = or(
-        ilike(operators.code, `%${input.search}%`),
-        ilike(operators.name, `%${input.search}%`),
-        ilike(operators.department, `%${input.search}%`),
+        ilike(operators.code, term),
+        ilike(operators.name, term),
+        ilike(operators.department, term),
+        ilike(operators.skills, term),
       );
       if (s) conditions.push(s);
     }

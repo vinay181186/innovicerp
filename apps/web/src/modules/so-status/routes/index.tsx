@@ -7,6 +7,7 @@
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoOverview } from '../../so-overview/api';
 import { SoStatusDetailView } from '../components/so-status-detail';
@@ -40,13 +41,20 @@ function SoStatusIndexPage(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { data, isLoading, isError, error } = useSoOverview({});
 
+  // The left pane holds every SO the overview returns (one fetch, no paging),
+  // so the search matches in the browser across everything a card shows — SO
+  // code, customer, client PO, the SO type and both status values behind the
+  // dot. Not the Qty / Done numbers: a bare "5" would match nearly every card.
   const filtered = useMemo(() => {
     if (!data) return [];
-    const q = search.trim().toLowerCase();
+    const q = normalizeSearchTerm(search);
     const sorted = [...data.rows].sort((a, b) => (b.soDate ?? '').localeCompare(a.soDate ?? ''));
     if (!q) return sorted;
     return sorted.filter((r) =>
-      `${r.code} ${r.customerName ?? ''} ${r.clientPoNo ?? ''}`.toLowerCase().includes(q),
+      matchesSearchTerm(
+        [r.code, r.customerName, r.clientPoNo, r.type, r.status, r.overallStatus],
+        q,
+      ),
     );
   }, [data, search]);
 
@@ -88,7 +96,7 @@ function SoStatusIndexPage(): React.JSX.Element {
           <input
             className="innovic-input"
             style={{ width: '100%', fontSize: 12 }}
-            placeholder="🔍 Search SO / customer…"
+            placeholder="🔍 Search SO, customer, client PO, status…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />

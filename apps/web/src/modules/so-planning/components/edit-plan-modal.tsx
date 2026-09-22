@@ -736,7 +736,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <table className="ops-routing">
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 44, textAlign: 'center' }}>#</th>
+                    <th style={{ width: 44 }}>#</th>
                     <th style={{ width: '34%' }}>Machine</th>
                     <th style={{ width: '30%' }}>Operation</th>
                     <th style={{ width: 110 }}>Cycle(h)</th>
@@ -757,7 +757,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             borderLeft: '3px solid var(--green)',
                           }}
                         >
-                          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                          <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                             {i + 1}
                           </td>
                           <td>
@@ -838,7 +838,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         key={op.uid}
                         style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}
                       >
-                        <td className="td-ctr mono fw-700">{i + 1}</td>
+                        <td className="mono fw-700">{i + 1}</td>
                         <td>
                           {isOS ? (
                             <span
@@ -1204,7 +1204,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <table className="ops-routing">
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 44, textAlign: 'center' }}>#</th>
+                    <th style={{ width: 44 }}>#</th>
                     <th>Document Name ★</th>
                     <th style={{ width: 180 }}>Requirement</th>
                     <th style={{ width: 56 }} />
@@ -1216,7 +1216,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       key={i}
                       style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}
                     >
-                      <td className="td-ctr mono fw-700">{i + 1}</td>
+                      <td className="mono fw-700">{i + 1}</td>
                       <td>
                         <input
                           className="innovic-input"

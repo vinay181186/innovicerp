@@ -935,3 +935,13 @@ When you finish reading this file, your first response in the session must inclu
 > "I've loaded project memory. CLAUDE.md sections read: 0–15. Last task per TASKS.md: <X> (or 'no TASKS.md yet — running First Session Bootstrap'). Ready to proceed with: <Y>."
 
 Do not skip this acknowledgment. It tells the user you have context.
+
+---
+
+## Section 16 — Number Inputs — No Wheel Edit
+
+- Mouse-wheel scrolling must never change a number/qty input's value.
+- Enforce in the shared number-input component so every number field is covered — do
+  not patch per screen.
+- Typing and arrow keys still work; only wheel editing is disabled.
+- Applies to all new and existing number/qty fields.

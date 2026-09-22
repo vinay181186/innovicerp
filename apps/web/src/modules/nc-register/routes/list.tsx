@@ -23,6 +23,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -58,7 +59,9 @@ function NcRegisterListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  NC  0012 " and "NC 0012" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
@@ -415,7 +418,7 @@ function NcRegisterListPage(): React.JSX.Element {
           >
             <input
               className="innovic-input"
-              placeholder="🔍 Search NC code, item, reason…"
+              placeholder="🔍 Search this list…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ minWidth: 220, fontSize: 13 }}

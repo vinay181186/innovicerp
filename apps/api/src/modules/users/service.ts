@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -30,6 +30,19 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the Users search box gets a wildcard pattern instead of a
+ *  literal search — i.e. the search box becomes a "show everything" button.
+ *  Postgres's DEFAULT LIKE/ILIKE escape character is backslash, so no explicit
+ *  ESCAPE clause is needed here (and drizzle's `ilike()` builder, which this
+ *  list is written with, cannot emit one) — verified against the live database.
+ *  Deliberately a local copy of the sales-orders / purchase-orders helper
+ *  rather than an export across modules: it is three lines, and each list must
+ *  be free to change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listUsers(
   input: ListUsersQuery,
   user: AuthContext,
@@ -39,9 +52,31 @@ export async function listUsers(
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(users.companyId, companyId), isNull(users.deletedAt)];
     if (input.search) {
+      // Search covers the columns of THIS table that the user list (users/
+      // routes/list.tsx) prints: Name, Email, Phone and the Active/Inactive
+      // Status badge. Nothing else on `users` is searchable.
+      //
+      // This is a sensitive table, so the exclusions are deliberate:
+      //  - No credential can be reached from here. public.users holds no
+      //    password hash, no token and no reset secret — logins live in
+      //    Supabase Auth — and nothing here is to go looking for them.
+      //  - `role` is NOT searched: the list has no Role column (it drives the
+      //    Approver tick and the role dropdown filter, neither of which prints
+      //    the value), and there is already a dedicated All-roles filter.
+      //  - `approval_limit` is money and is not on this screen.
+      //  - Department / Access are on screen but are NOT columns of this
+      //    table: they come from the separate admin access endpoint and are
+      //    rendered as client-side labels, so there is no column here to match.
+      const pattern = `%${escapeLikeTerm(input.search)}%`;
       const s = or(
-        ilike(users.fullName, `%${input.search}%`),
-        ilike(users.email, `%${input.search}%`),
+        ilike(users.fullName, pattern),
+        ilike(users.email, pattern),
+        ilike(users.phone, pattern),
+        // Status badge — is_active is a boolean, and 'true'/'false' is not what
+        // the screen prints, so match the rendered word instead. Note "active"
+        // is a substring of "Inactive", so that term matches both; "inactive"
+        // narrows to the disabled logins, which is the useful direction.
+        sql`(CASE WHEN ${users.isActive} THEN 'Active' ELSE 'Inactive' END) ILIKE ${pattern}`,
       );
       if (s) conditions.push(s);
     }

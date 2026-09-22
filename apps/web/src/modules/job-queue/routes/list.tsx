@@ -232,20 +232,20 @@ function JobQueuePage(): React.JSX.Element {
                   <thead>
                     <tr>
                       <th style={{ width: 44 }}>Order</th>
-                      <th className="td-ctr" style={{ width: 30 }}>
+                      <th style={{ width: 30 }}>
                         #
                       </th>
                       <th>JC No.</th>
                       <th>Part / SO</th>
-                      <th className="td-ctr">Op</th>
+                      <th>Op</th>
                       <th>Operation</th>
                       <th>Priority</th>
                       <th>Due</th>
-                      <th className="td-ctr">Order</th>
-                      <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                      <th>Order</th>
+                      <th style={{ color: 'var(--green)' }}>
                         Done
                       </th>
-                      <th className="td-ctr" style={{ color: 'var(--amber)' }}>
+                      <th style={{ color: 'var(--amber)' }}>
                         Avail★
                       </th>
                       <th>Status</th>
@@ -277,7 +277,7 @@ function JobQueuePage(): React.JSX.Element {
                             isNext ? { background: 'rgba(255,176,32,0.04)' } : undefined
                           }
                         >
-                          <td style={{ width: 44, textAlign: 'center' }}>
+                          <td style={{ width: 44 }}>
                             <div
                               style={{
                                 display: 'flex',
@@ -313,7 +313,7 @@ function JobQueuePage(): React.JSX.Element {
                             </div>
                           </td>
                           <td
-                            className="td-ctr mono fw-700"
+                            className="mono fw-700"
                             style={{ color: isNext ? 'var(--amber)' : 'var(--text3)', width: 28 }}
                           >
                             {idx + 1}
@@ -342,16 +342,16 @@ function JobQueuePage(): React.JSX.Element {
                               {r.soCustomer ? ` · ${r.soCustomer}` : ''}
                             </div>
                           </td>
-                          <td className="td-ctr mono">{r.opSeq}</td>
+                          <td className="mono">{r.opSeq}</td>
                           <td>{r.operation}</td>
                           <td>
                             <PriorityBadge priority={r.priority} />
                           </td>
-                          <td className="text2 td-ctr" style={{ fontSize: 11 }}>
+                          <td className="text2" style={{ fontSize: 11 }}>
                             {r.dueDate ?? '—'}
                           </td>
-                          <td className="td-ctr mono">{r.orderQty}</td>
-                          <td className="td-ctr green mono fw-700">
+                          <td className="mono">{r.orderQty}</td>
+                          <td className="green mono fw-700">
                             {r.completed}
                             {/* The per-machine breakdown of that total (ADR-126).
                                 This row sits in THIS machine's queue, but after a
@@ -359,7 +359,7 @@ function JobQueuePage(): React.JSX.Element {
                                 nothing unless the op ran on more than one machine. */}
                             <MachineSplitLines machines={r.machines} />
                           </td>
-                          <td className="td-ctr">
+                          <td>
                             <span
                               className="mono fw-700"
                               style={{

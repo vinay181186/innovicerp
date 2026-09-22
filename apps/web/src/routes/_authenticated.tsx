@@ -34,14 +34,24 @@ export const authenticatedRoute = createRoute({
 // sales-orders/routes/list.tsx): a second element at `top: 0` would collide
 // with it, and the trail wraps to two lines when narrow so no fixed offset
 // would hold. Keeping it out of the scroller sidesteps both.
+//
+// The three chrome bands are wrapped in <header id="app-header"> so the header
+// is ONE surface: the wrapper carries the background for all three bands and
+// the page's top gutter, and the tab strip's border is the chrome's one
+// hairline. Loose bands each painted their own colour, and the gutter used to
+// be #content's padding-top — i.e. inside the scroller, page-coloured, and 20px
+// of it showed between the chrome and whatever a list pinned at `top: 0`. See
+// the #app-header block in innovic-theme.css for the full reasoning.
 function AuthenticatedLayout(): React.JSX.Element {
   return (
     <div id="app-shell">
       <Sidebar />
       <div id="main">
-        <TopBar />
-        <Breadcrumbs />
-        <OpenTabsBar />
+        <header id="app-header">
+          <TopBar />
+          <Breadcrumbs />
+          <OpenTabsBar />
+        </header>
         <div id="content">
           <Outlet />
         </div>

@@ -315,6 +315,14 @@ function hideSoLineMoney<T extends { rate: string | null }>(l: T): T {
   return { ...l, rate: null };
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a
+ *  user typing "50%" or "a_b" in the Sales Order search box gets a wildcard
+ *  pattern instead of a literal search. The SQL side must pair it with an
+ *  ESCAPE '\' clause on every ILIKE, or the escapes match literally. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listSalesOrders(
   input: ListSalesOrdersQuery,
   user: AuthContext,
@@ -324,9 +332,46 @@ export async function listSalesOrders(
   return withUserContext(user, async (tx) => {
     // Build conditional WHERE fragments inline. Mirrors legacy
     // `renderSOmaster` filter set (line 19308 status / line 19542 search).
-    const term = input.search ? `%${input.search}%` : null;
+    // Search covers every field the SO list card actually shows — the header
+    // cells (code, customer, client PO, SO date, Raised By, Remarks), the three
+    // badges (type, status, BOM status) and, via EXISTS, the expandable line
+    // rows (Part Name, Item Code, Item Name, CPO Ln, Due Date, line Status).
+    // One matching line surfaces its whole order. Deliberately NOT searched:
+    // material, drawing no, rate and every quantity column — none of them are
+    // on the card, and matching quantities would make "5" hit almost every order.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (so.code ILIKE ${term} OR so.customer_name ILIKE ${term} OR so.client_po_no ILIKE ${term})`
+      ? sql`AND (
+          so.code ILIKE ${term} ESCAPE '\\'
+          OR so.customer_name ILIKE ${term} ESCAPE '\\'
+          OR so.client_po_no ILIKE ${term} ESCAPE '\\'
+          OR so.remarks ILIKE ${term} ESCAPE '\\'
+          OR so.type::text ILIKE ${term} ESCAPE '\\'
+          OR so.status::text ILIKE ${term} ESCAPE '\\'
+          OR so.bom_status ILIKE ${term} ESCAPE '\\'
+          OR so.so_date::text ILIKE ${term} ESCAPE '\\'
+          -- "Raised By" on the card is cu.full_name, joined above.
+          OR cu.full_name ILIKE ${term} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM public.sales_order_lines sol
+            LEFT JOIN public.items it ON it.id = sol.item_id AND it.deleted_at IS NULL
+            WHERE sol.sales_order_id = so.id
+              AND sol.deleted_at IS NULL
+              AND (
+                sol.part_name ILIKE ${term} ESCAPE '\\'
+                -- Item Code is matched on BOTH the text the line stored and the
+                -- live master code: an item renamed after the SO was raised keeps
+                -- the old code on the line, and users search either one.
+                OR sol.item_code_text ILIKE ${term} ESCAPE '\\'
+                OR it.code ILIKE ${term} ESCAPE '\\'
+                OR it.name ILIKE ${term} ESCAPE '\\'
+                OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
+                OR sol.due_date::text ILIKE ${term} ESCAPE '\\'
+                OR sol.status::text ILIKE ${term} ESCAPE '\\'
+              )
+          )
+        )`
       : sql``;
     const statusFrag = input.status ? sql`AND so.status = ${input.status}::so_status` : sql``;
     const typeFrag = input.type ? sql`AND so.type = ${input.type}::so_type` : sql``;

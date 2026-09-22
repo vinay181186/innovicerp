@@ -5,7 +5,7 @@
 // directly via withUserContext — kept out of this module to avoid
 // circular module dependencies.
 
-import { and, count, desc, eq, gte, ilike, lte, or, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, lte, or, sql, type SQL } from 'drizzle-orm';
 import { activityLog } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
@@ -31,6 +31,19 @@ function rowToEntry(r: typeof activityLog.$inferSelect): ActivityLogEntry {
   };
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the Activity Log search box gets a wildcard pattern instead of a
+ *  literal search — i.e. the search box becomes a "show everything" button.
+ *  Postgres's DEFAULT LIKE/ILIKE escape character is backslash, so no explicit
+ *  ESCAPE clause is needed here (and drizzle's `ilike()` builder, which this
+ *  list is written with, cannot emit one) — verified against the live database.
+ *  Deliberately a local copy of the sales-orders / purchase-orders helper
+ *  rather than an export across modules: it is three lines, and each list must
+ *  be free to change its own search behaviour without dragging the others. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listActivityLog(
   input: ListActivityLogQuery,
   user: AuthContext,
@@ -40,13 +53,25 @@ export async function listActivityLog(
     const conditions: SQL[] = [eq(activityLog.companyId, companyId)];
 
     if (input.search) {
-      const pattern = `%${input.search}%`;
+      // Search covers exactly the seven columns the log table (activity-log/
+      // routes/list.tsx) shows: Date, Time, Action, Entity, Detail, Ref, User.
+      // Detail is matched because it IS a visible column here — it holds the
+      // one-line human summary the row prints, not a hidden payload or diff
+      // blob. This table stores no such blob, and nothing that is not on the
+      // screen is searchable: an audit trail must not become a way to probe for
+      // records the search box never displays.
+      const pattern = `%${escapeLikeTerm(input.search)}%`;
       const searchCondition = or(
         ilike(activityLog.action, pattern),
         ilike(activityLog.entity, pattern),
         ilike(activityLog.detail, pattern),
         ilike(activityLog.userName, pattern),
         ilike(activityLog.refId, pattern),
+        // Date + Time columns. Both are rendered from `ts`, which is stored in
+        // UTC and displayed in IST (CLAUDE.md §6.5), so the text a user reads
+        // is the IST one — match that, or an evening entry would answer to
+        // yesterday's date. Gives "2026-09-07" and "18:04" style searches.
+        sql`(${activityLog.ts} AT TIME ZONE 'Asia/Kolkata')::text ILIKE ${pattern}`,
       );
       if (searchCondition) conditions.push(searchCondition);
     }

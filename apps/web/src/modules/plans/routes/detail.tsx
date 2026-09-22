@@ -328,10 +328,10 @@ function PlanDetailPage(): React.JSX.Element {
                   <th>Operation</th>
                   <th>Type</th>
                   <th>Machine</th>
-                  <th className="td-right">Cycle (hrs)</th>
-                  <th className="td-ctr">QC?</th>
+                  <th>Cycle (hrs)</th>
+                  <th>QC?</th>
                   <th>OSP vendor</th>
-                  {priceHidden ? null : <th className="td-right">OSP cost</th>}
+                  {priceHidden ? null : <th>OSP cost</th>}
                 </tr>
               </thead>
               <tbody>
@@ -341,10 +341,10 @@ function PlanDetailPage(): React.JSX.Element {
                     <td>{op.operation}</td>
                     <td>{op.opType}</td>
                     <td>{op.machineCodeText ?? '—'}</td>
-                    <td className="td-right">{op.cycleTimeMin}</td>
-                    <td className="td-ctr">{op.qcRequired ? '✓' : ''}</td>
+                    <td>{op.cycleTimeMin}</td>
+                    <td>{op.qcRequired ? '✓' : ''}</td>
                     <td>{op.outsourceVendorText ?? '—'}</td>
-                    {priceHidden ? null : <td className="td-right">{op.outsourceCost}</td>}
+                    {priceHidden ? null : <td>{op.outsourceCost}</td>}
                   </tr>
                 ))}
               </tbody>

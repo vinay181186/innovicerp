@@ -93,6 +93,11 @@ Check whether the diff includes any of:
 
 If yes, grep for who else imports the changed symbol and name the other pages affected.
 
+**Form layout check (any `.tsx` form / dialog in the diff):** every field is a wrapper `div`
+with an explicit `grid-column` span inside one 12-column grid — a `display: flex` row,
+a pixel `width`, `flexGrow` or `width: auto` used to lay out fields is a NO-GO (house rule
+FORM LAYOUT). Report whether the dummy-field shift test was declared.
+
 **And say whether it was frozen first.** The workflow is: the user edits the shared files
 BEFORE fanning out, then dispatches agents who may not touch them. A shared file appearing in
 an agent's diff means that pre-pass was skipped or an agent broke its boundary — either way

@@ -509,13 +509,13 @@ function ComponentsPanel({
               <th>Child Item</th>
               <th>Type</th>
               {/* Qty/Set + Stock have no legacy counterpart — kept (live system). */}
-              <th style={{ textAlign: 'center' }}>Qty/Set</th>
-              <th style={{ textAlign: 'center' }}>Need</th>
-              <th style={{ textAlign: 'center' }}>Stock</th>
-              <th style={{ textAlign: 'center' }}>In Assembly</th>
-              <th style={{ textAlign: 'center' }}>Assembled</th>
-              <th style={{ textAlign: 'center', color: 'var(--red)' }}>Short</th>
-              <th style={{ textAlign: 'center' }}>Enough For</th>
+              <th>Qty/Set</th>
+              <th>Need</th>
+              <th>Stock</th>
+              <th>In Assembly</th>
+              <th>Assembled</th>
+              <th style={{ color: 'var(--red)' }}>Short</th>
+              <th>Enough For</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -525,7 +525,7 @@ function ComponentsPanel({
                 key={c.childItemCode}
                 style={{ background: c.status === 'ready' ? 'rgba(34,197,94,0.04)' : undefined }}
               >
-                <td className="td-ctr">{i + 1}</td>
+                <td>{i + 1}</td>
                 <td>
                   <div className="td-code" style={{ color: 'var(--purple)' }}>
                     {c.childItemCode}
@@ -541,29 +541,28 @@ function ComponentsPanel({
                     {TYPE_META[c.bomType].label}
                   </span>
                 </td>
-                <td className="td-ctr">{c.qtyPerSet}</td>
-                <td className="td-ctr fw-700">{c.totalNeed}</td>
-                <td className="td-ctr" style={{ color: 'var(--green2)' }}>
+                <td>{c.qtyPerSet}</td>
+                <td className="fw-700">{c.totalNeed}</td>
+                <td style={{ color: 'var(--green2)' }}>
                   {c.stockQty}
                 </td>
                 {/* In Assembly = components tied up in STARTED-but-not-completed
                     batches (qtyPerSet × in-progress units, ADR-129). Assembled =
                     components already consumed into completed units (qtyPerSet ×
                     units built). Both derive from the rollup — no fabricated data. */}
-                <td className="td-ctr" style={{ color: 'var(--amber2)', fontWeight: 600 }}>
+                <td style={{ color: 'var(--amber2)', fontWeight: 600 }}>
                   {c.qtyPerSet * inProgressQty}
                 </td>
-                <td className="td-ctr fw-700" style={{ color: 'var(--green)' }}>
+                <td className="fw-700" style={{ color: 'var(--green)' }}>
                   {c.qtyPerSet * assembledQty}
                 </td>
                 <td
-                  className="td-ctr fw-700"
+                  className="fw-700"
                   style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}
                 >
                   {c.shortfall}
                 </td>
                 <td
-                  className="td-ctr"
                   style={{
                     fontWeight: 600,
                     color: c.enoughForUnits >= orderQty ? 'var(--green)' : 'var(--amber)',
@@ -663,15 +662,15 @@ function UnitsPanel({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th style={{ textAlign: 'center' }}>Batch #</th>
-              <th style={{ textAlign: 'center' }}>Status</th>
-              <th style={{ textAlign: 'center' }}>Qty</th>
+              <th>Batch #</th>
+              <th>Status</th>
+              <th>Qty</th>
               <th>Serial No.</th>
               <th>Date</th>
               <th>By</th>
               <th>Remarks</th>
-              <th style={{ textAlign: 'center' }}>Dispatch</th>
-              <th style={{ textAlign: 'center' }}>Actions</th>
+              <th>Dispatch</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -680,17 +679,17 @@ function UnitsPanel({
               const wip = u.status === 'in_progress';
               return (
                 <tr key={u.id}>
-                  <td className="td-ctr fw-700" style={{ fontSize: 16 }}>
+                  <td className="fw-700" style={{ fontSize: 16 }}>
                     {u.unitNo}
                   </td>
-                  <td className="td-ctr">
+                  <td>
                     {wip ? (
                       <span className="badge b-amber">In assembly</span>
                     ) : (
                       <span className="badge b-green">Completed ✓</span>
                     )}
                   </td>
-                  <td className="td-ctr fw-700">
+                  <td className="fw-700">
                     {u.qty}
                     {wip ? (
                       <span className="text3" style={{ fontSize: 10 }}> left</span>
@@ -706,7 +705,7 @@ function UnitsPanel({
                   <td className="text3" style={{ fontSize: 12 }}>
                     {u.remarks ?? '—'}
                   </td>
-                  <td className="td-ctr">
+                  <td>
                     {wip ? (
                       <span className="text3" style={{ fontSize: 11 }}>—</span>
                     ) : u.dispatched ? (
@@ -717,7 +716,7 @@ function UnitsPanel({
                       <span className="badge b-amber">Pending</span>
                     )}
                   </td>
-                  <td className="td-ctr">
+                  <td>
                     {wip ? (
                       /* STOP: enter how many came out good; the rest stays in
                          assembly (ADR-129). */

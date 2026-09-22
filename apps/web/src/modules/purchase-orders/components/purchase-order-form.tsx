@@ -314,7 +314,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
                   <th>Mat.</th>
                   <th style={{ width: 80 }}>Qty ★</th>
                   <th style={{ width: 90 }}>Rate (₹)</th>
-                  <th style={{ width: 85, textAlign: 'right' }}>Amount</th>
+                  <th style={{ width: 85 }}>Amount</th>
                   <th style={{ width: 85 }}>Due Date</th>
                   {isEdit ? <th style={{ width: 80 }}>Received</th> : null}
                   <th style={{ width: 28 }} />

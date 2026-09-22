@@ -46,13 +46,38 @@ export function MachineOpEntryView(): React.JSX.Element {
     selectedMachineId && !selectedRunning ? { machineId: selectedMachineId } : { machineId: '' },
     { enabled: Boolean(selectedMachineId && !selectedRunning) },
   );
-  const pendingOps = useMemo<JcOpEnriched[]>(
-    () =>
-      (machineOps.data ?? []).filter(
-        (o) => o.available > 0 && (o.computedStatus === 'available' || o.computedStatus === 'waiting'),
-      ),
-    [machineOps.data],
-  );
+  // PENDING = work that still RUNS here. The endpoint also returns ops this
+  // machine merely PRODUCED on (ADR-125/126: past production keeps its own
+  // machine, the op's machine moves with the remaining qty), so the assigned-
+  // to-this-machine test below is load-bearing — without it a re-routed op
+  // would offer a ▶ Start on the machine it no longer runs on and production
+  // would be logged against the wrong machine.
+  const pendingOps = useMemo<JcOpEnriched[]>(() => {
+    const code = selectedMachine?.code;
+    if (!code) return [];
+    return (machineOps.data ?? []).filter(
+      (o) =>
+        o.available > 0 &&
+        (o.computedStatus === 'available' || o.computedStatus === 'waiting') &&
+        (o.machineCode === code || o.machineCodeText === code),
+    );
+  }, [machineOps.data, selectedMachine]);
+
+  // MADE HERE = the honest per-machine history. An op can appear in BOTH lists
+  // (still running here AND has already made pieces here) — that is correct,
+  // so the two lists are deliberately not de-duplicated. The qty shown is the
+  // breakdown entry's qty, never the op's total completedQty, which may span
+  // several machines and would overstate what this machine did.
+  const producedOps = useMemo<MadeHereRow[]>(() => {
+    const code = selectedMachine?.code;
+    if (!code) return [];
+    const rows: MadeHereRow[] = [];
+    for (const o of machineOps.data ?? []) {
+      const entry = o.machines.find((m) => m.machineCode === code);
+      if (entry && entry.qty > 0) rows.push({ op: o, qty: entry.qty });
+    }
+    return rows;
+  }, [machineOps.data, selectedMachine]);
 
   const runningOpEnriched = useJcOpsEnriched(
     selectedRunning ? { jobCardCode: selectedRunning.jobCardCode } : { jobCardCode: '' },
@@ -145,6 +170,7 @@ export function MachineOpEntryView(): React.JSX.Element {
             machineCode={selectedMachine.code}
             machineName={selectedMachine.name}
             ops={pendingOps}
+            producedOps={producedOps}
             isLoading={machineOps.isLoading}
           />
         )
@@ -162,14 +188,28 @@ export function MachineOpEntryView(): React.JSX.Element {
   );
 }
 
+/** One op that this machine actually produced on, with THAT machine's share of
+ *  the completed qty pulled out of the op's per-machine breakdown. */
+interface MadeHereRow {
+  op: JcOpEnriched;
+  qty: number;
+}
+
 interface PendingOpsSectionProps {
   machineCode: string;
   machineName: string;
   ops: JcOpEnriched[];
+  producedOps: MadeHereRow[];
   isLoading: boolean;
 }
 
-function PendingOpsSection({ machineCode, machineName, ops, isLoading }: PendingOpsSectionProps) {
+function PendingOpsSection({
+  machineCode,
+  machineName,
+  ops,
+  producedOps,
+  isLoading,
+}: PendingOpsSectionProps) {
   const start = useStartOp();
   // Starting a session records shop-floor work → op_entry entry (Production).
   const { data: eff } = useMyAccess();
@@ -325,7 +365,7 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
                     <td className="mono fw-700 cyan">{op.jobCardCode}</td>
                     <td className="mono">Op{op.opSeq}</td>
                     <td>{op.operation}</td>
-                    <td className="td-ctr mono fw-700 amber">{op.available}</td>
+                    <td className="mono fw-700 amber">{op.available}</td>
                     <td>
                       {canOpEntry ? (
                         <button
@@ -350,6 +390,53 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
           complete or waiting for input.
         </div>
       )}
+      {/* MADE ON THIS MACHINE — history, not work. An op lands here because the
+          per-machine breakdown says this machine produced pieces on it, even if
+          the op has since been re-routed elsewhere. Informational only: no
+          Start / entry buttons, because you cannot log production against an
+          operation that no longer runs here. */}
+      {!isLoading && producedOps.length > 0 ? (
+        <>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: 'var(--green)',
+              marginTop: 16,
+              marginBottom: 8,
+            }}
+          >
+            Made on this Machine ({producedOps.length})
+          </div>
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>JC No.</th>
+                  <th>Op</th>
+                  <th>Operation</th>
+                  <th style={{ color: 'var(--green)' }}>Qty Made Here</th>
+                </tr>
+              </thead>
+              <tbody>
+                {producedOps.map((row) => (
+                  <tr key={row.op.id}>
+                    <td className="mono fw-700 cyan">{row.op.jobCardCode}</td>
+                    <td className="mono">Op{row.op.opSeq}</td>
+                    <td>{row.op.operation}</td>
+                    <td className="mono fw-700 green">{row.qty}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+      {!isLoading && producedOps.length === 0 ? (
+        <div className="text3" style={{ fontSize: 11, marginTop: 12 }}>
+          No production has been recorded on {machineCode} yet.
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -475,6 +475,11 @@ function ChangeMachineModal({
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
   const mut = useChangeJcOpMachine();
 
+  // A finished op has no remaining qty to route anywhere, so the server refuses
+  // the swap. Say so as the dialog OPENS rather than after a pointless round
+  // trip -- the user should not fill in a form that cannot be saved.
+  const finished = row.status === 'complete';
+
   const onSave = (): void => {
     setErr(null);
     if (!machineId) {
@@ -584,29 +589,45 @@ function ChangeMachineModal({
             ))}
           </select>
         </div>
-        {err ? (
+        {finished || err ? (
           <div
             style={{
               marginTop: 12,
-              padding: 8,
+              padding: '10px 12px',
               background: 'rgba(239,68,68,0.08)',
+              border: '1px solid var(--red)',
               color: 'var(--red)',
-              borderRadius: 4,
+              borderRadius: 6,
               fontSize: 12,
+              lineHeight: 1.5,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 8,
             }}
           >
-            {err}
+            <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+              &#10007;
+            </span>
+            <span>
+              {err ??
+                `This operation is finished — all ${row.completed} ` +
+                  `${row.completed === 1 ? 'pc is' : 'pcs are'} made, so there is nothing ` +
+                  `left to run on another machine.` +
+                  (row.machineCode
+                    ? ` The finished qty stays recorded against ${row.machineCode}.`
+                    : '')}
+            </span>
           </div>
         ) : null}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
+            {finished ? 'Close' : 'Cancel'}
           </button>
           <button
             type="button"
             className="btn btn-primary"
             onClick={onSave}
-            disabled={mut.isPending}
+            disabled={mut.isPending || finished}
           >
             {mut.isPending ? (
               <>

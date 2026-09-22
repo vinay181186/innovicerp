@@ -700,13 +700,13 @@ function WeeklyTab(): React.JSX.Element {
               <tr>
                 <th>Engineer</th>
                 {weekDates.map((dt) => (
-                  <th key={dt} style={{ textAlign: 'center', fontSize: 10 }}>
+                  <th key={dt} style={{ fontSize: 10 }}>
                     {dayName(dt)}
                     <br />
                     {dt.slice(5)}
                   </th>
                 ))}
-                <th style={{ textAlign: 'center' }}>Total</th>
+                <th>Total</th>
               </tr>
             </thead>
             <tbody>
@@ -723,7 +723,7 @@ function WeeklyTab(): React.JSX.Element {
                       return (
                         <td
                           key={dt}
-                          className="td-ctr mono"
+                          className="mono"
                           style={{
                             fontWeight: 700,
                             color:
@@ -739,7 +739,7 @@ function WeeklyTab(): React.JSX.Element {
                       );
                     })}
                     <td
-                      className="td-ctr mono fw-700"
+                      className="mono fw-700"
                       style={{
                         color:
                           wt >= 30 ? 'var(--green)' : wt >= 20 ? 'var(--amber)' : 'var(--red)',
@@ -760,12 +760,12 @@ function WeeklyTab(): React.JSX.Element {
                 {weekDates.map((dt) => {
                   const ct = engineers.reduce((s, eng) => s + getHrs(eng, dt), 0);
                   return (
-                    <td key={dt} className="td-ctr mono fw-700">
+                    <td key={dt} className="mono fw-700">
                       {ct.toFixed(1)}
                     </td>
                   );
                 })}
-                <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>
+                <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
                   {gt.toFixed(1)}h
                 </td>
               </tr>

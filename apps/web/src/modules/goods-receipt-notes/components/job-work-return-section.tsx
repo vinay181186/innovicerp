@@ -205,7 +205,7 @@ export function JobWorkReturnSection(): React.JSX.Element {
                   <td className="td-ctr">
                     <input
                       className="innovic-input"
-                      style={{ width: 70, textAlign: 'right' }}
+                      style={{ width: 70, textAlign: 'center' }}
                       type="number"
                       min={0}
                       value={l.receivedQty}
@@ -215,7 +215,7 @@ export function JobWorkReturnSection(): React.JSX.Element {
                   <td className="td-ctr">
                     <input
                       className="innovic-input"
-                      style={{ width: 70, textAlign: 'right' }}
+                      style={{ width: 70, textAlign: 'center' }}
                       type="number"
                       min={0}
                       value={l.okQty}
@@ -225,7 +225,7 @@ export function JobWorkReturnSection(): React.JSX.Element {
                   <td className="td-ctr">
                     <input
                       className="innovic-input"
-                      style={{ width: 70, textAlign: 'right' }}
+                      style={{ width: 70, textAlign: 'center' }}
                       type="number"
                       min={0}
                       value={l.rejectedQty}

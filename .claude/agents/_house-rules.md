@@ -15,9 +15,10 @@ here instead. If a rule changes, it changes once, in this file.
 
 ## HARD BANS — no exceptions, no task overrides them
 
-- **Never run any git command.** Not `add`, `commit`, `push`, `checkout`, `stash`,
-  `rebase`. The user shares this git index with a second terminal in the same repo;
-  a bare commit once swept 22 unrelated files into one commit. Git is the user's.
+- **Sub-agents: never run any git command** (add, commit, push, etc.). The user
+  shares this git index with a second terminal in the same repo; a bare commit once
+  swept 22 unrelated files into one commit. Git is the user's. (Main-session git is
+  governed by "SHARED-FILE COMMITS" below.)
 - **Never run `pnpm --filter @innovic/api test`.** Its `global-setup.ts` runs
   `DELETE FROM public.job_cards WHERE code LIKE 'T%-%'` against the **PRODUCTION**
   database, and the integration tests write real rows. **A path filter does NOT
@@ -166,3 +167,105 @@ COULD NOT DO
 ```
 
 Silently doing less than you were asked is the one failure the user cannot see.
+
+## SHARED-FILE COMMITS (main session only — sub-agents must not run git)
+
+- Before committing, run `git status` to see if any file you changed is also dirty
+  in another terminal/worktree.
+- If a shared file (e.g. packages/shared/src/index.ts, server.ts, sidebar.tsx,
+  router.tsx) is also dirty elsewhere: do NOT `git commit -- <file>` the whole file.
+- Stage only your own hunks (git add -p or a filtered patch), then run
+  `git diff --cached` and confirm it shows ONLY your lines before committing.
+- Never `git add .`. Never commit another terminal's lines.
+
+## TEST-BREAKAGE DECLARATION (all agents)
+
+- Before editing, grep the test suite for anything your change will break (literal
+  strings, asserted values, fixtures).
+- List every test that will go red, by file path, in your plan.
+- STOP and wait for my approval before editing any test file. Do not "fix" tests on
+  your own.
+
+## FORM LAYOUT
+
+- Every form / dialog body is ONE 12-column CSS grid with the standard gap.
+- Every field is a wrapper `div` with an explicit `grid-column: span N`. Helper / hint
+  text lives INSIDE the wrapper, never as a sibling.
+- No flex rows, no pixel widths, no `flex-grow`, no auto widths for field layout.
+- Standard spans: number / date / short select = 3; searchable picker = 3 (6 if the
+  codes are long); textarea / remark = 9 or 12.
+- Section labels span the full row (12).
+- Mobile < 768px: every field spans 12.
+- Adding a field = add a wrapper in an empty slot or on a new row. Nothing else may move.
+- Every new or edited form: before finishing, add a dummy field, confirm nothing shifts,
+  remove it. Say in the report that you did.
+
+## FIELD WIDTH — superseded for layout by FORM LAYOUT above
+
+A field's footprint comes from its grid span, never from a width. What survives here:
+- Short values (codes / numbers / qty / rate / dates) sit in a span-3 wrapper; names in
+  span 3–6; description / address / remarks in span 9–12 — the span IS the width.
+- Never a fixed pixel width or `max-width: Nch` on an input; never `width:100%` outside
+  its wrapper.
+- Applies to all new and edited forms. Styling only — never change field logic.
+
+## REFERENCE SCREEN = UI + BEHAVIOR
+
+When using an existing screen as a reference, follow not only its UI/theme/layout
+but also its applicable functionality — linked dropdowns, dependent fields,
+auto-fetch, validations, reset/clear behavior, data flow, save/edit behavior, and
+downstream effects. Do not copy screen-specific business logic blindly.
+
+## DEPENDENT FIELD SYNCHRONIZATION
+
+Whenever Field B depends on Field A:
+
+- A changes → B updates accordingly.
+- A clears → B clears.
+- A changes to another value → B reflects the new value.
+- Never allow stale dependent values.
+
+Example: Item Code → Item Name.
+Enforce via the shared field-cascade hook (use-field-cascade) and the form-behaviour
+agent — do not hand-roll per screen.
+
+Both rules are permanent and apply to new and modified existing screens.
+
+## SCREENSHOT / REFERENCE = LOOK ONLY, NEVER FLOW
+
+When matching a screenshot or reference screen, change only the visual side (layout,
+spacing, colours, labels, field order). NEVER change or break the screen's
+behaviour or step sequence.
+
+- Before restyling, list the screen's current behaviour AND step order (e.g. op:
+  Start → Log). Confirm your change keeps every step in the same order.
+- Keep all linked dropdowns, dependent fields, auto-fetch, validations, reset/clear,
+  data flow, save/edit, and step sequence exactly as before.
+- If a visual change would remove, reorder, or skip any step, STOP and tell me first.
+
+Example of what to prevent: a UI restyle that made JC per-op show Log directly,
+skipping Start. Look may change; flow must not.
+
+## NUMBER INPUTS — NO WHEEL EDIT
+- Mouse-wheel scrolling must never change a number/qty input's value.
+- Enforce in the shared number-input component so every number field is covered — do
+  not patch per screen.
+- Typing and arrow keys still work; only wheel editing is disabled.
+- Applies to all new and existing number/qty fields.
+
+## UPSTREAM + DOWNSTREAM PROPAGATION
+
+For any new or existing business field, trace the complete document chain in BOTH
+directions: Upstream → Source of Truth → Downstream. First name the canonical source of
+truth. Then ask, upstream: where does the value originate, should this document inherit
+it, is it required to create this document, does changing it here touch the source or
+only this document? Downstream: which generated / related documents need it, is it
+carried forward automatically, is it editable or read-only there?
+
+Do not assume only downstream propagation is needed. Propagate through the real chain
+(source-of-truth → API/service → DB → downstream document), never a browser-only copy.
+No duplicate manual entry, no blind propagation to every screen, never overwrite the
+source of truth. Verify the complete chain after implementation and say so in the report.
+
+Example: Raw Material — Route Card (source) → Plan (every entry point, prefilled while
+blank) → Production Order → Job Card (snapshot copy) → child JCs → JC print (read-only).

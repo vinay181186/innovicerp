@@ -27,15 +27,36 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
+/** Escape the ILIKE metacharacters in a user's search term. Without this a user
+ *  typing "%" in the Store Inventory search box gets a wildcard pattern instead
+ *  of a literal search — i.e. the search box becomes a "show everything"
+ *  button. Deliberately a local copy of the sales-orders / purchase-orders
+ *  helper rather than an export across modules: it is three lines, and each
+ *  list must be free to change its own search behaviour without dragging the
+ *  others along. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export async function listStoreInventory(
   input: ListStoreInventoryQuery,
   user: AuthContext,
 ): Promise<ListStoreInventoryResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    // Every text column the Store Inventory row shows: Item Code, Name,
+    // Material and UOM. The rest of the row is quantities — In Stock, Min Qty,
+    // On PO, At Vendor, Mfg Pending — which stay out: a partial match on a
+    // number makes "5" hit almost every item and the box stops being useful.
+    // `uom` is a Postgres enum, so it needs the ::text cast the others do not.
+    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
-      ? sql`AND (i.code ILIKE ${term} OR i.name ILIKE ${term} OR i.material ILIKE ${term})`
+      ? sql`AND (
+          i.code ILIKE ${term} ESCAPE '\\'
+          OR i.name ILIKE ${term} ESCAPE '\\'
+          OR i.material ILIKE ${term} ESCAPE '\\'
+          OR i.uom::text ILIKE ${term} ESCAPE '\\'
+        )`
       : sql``;
 
     const result = await tx.execute(sql`

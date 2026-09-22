@@ -152,9 +152,9 @@ function AssemblyListPage(): React.JSX.Element {
                       <th>Customer</th>
                       <th>BOM</th>
                       <th>Due</th>
-                      <th className="td-right">Required</th>
-                      <th className="td-right">Assembled</th>
-                      <th className="td-right">Dispatched</th>
+                      <th>Required</th>
+                      <th>Assembled</th>
+                      <th>Dispatched</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -194,11 +194,11 @@ function AssemblyListPage(): React.JSX.Element {
                           <td style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 600 : undefined }}>
                             {row.dueDate ?? '—'}
                           </td>
-                          <td className="td-right">{row.orderQty}</td>
-                          <td className="td-right" style={{ color: 'var(--green2)' }}>
+                          <td>{row.orderQty}</td>
+                          <td style={{ color: 'var(--green2)' }}>
                             {row.assembledQty}
                           </td>
-                          <td className="td-right" style={{ color: 'var(--cyan)' }}>
+                          <td style={{ color: 'var(--cyan)' }}>
                             {row.dispatchedQty}
                           </td>
                           <td>

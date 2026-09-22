@@ -587,7 +587,13 @@ export function OpEntryForm({
   // Production form for non-QC / non-outsource ops. Legacy renderOpEntry
   // (L5277-5331) switches between a Start and a Complete sub-form via
   // _opEntryMode; the header toggle mirrors legacy L5278-5283.
-  const isStart = mode === 'start';
+  // No open session means there is nothing to complete, so Complete is not
+  // offered at all -- neither as a button nor as a form. `mode` is forced back
+  // to 'start' rather than trusted, because it can also arrive from ?mode= in
+  // the URL (a bookmark, a shared link) and would otherwise reach the Complete
+  // form with no button having been pressed.
+  const canComplete = Boolean(activeRunningId);
+  const isStart = !canComplete || mode === 'start';
   const modeToggle = onModeChange ? (
     <div style={{ display: 'flex', gap: 4 }}>
       <button
@@ -603,21 +609,24 @@ export function OpEntryForm({
       >
         ▶ Start
       </button>
-      <button
-        type="button"
-        className="btn btn-sm"
-        onClick={() => onModeChange('complete')}
-        style={{
-          borderColor: !isStart ? 'var(--green)' : 'var(--border2)',
-          background: !isStart ? 'var(--green3)' : 'transparent',
-          color: !isStart ? 'var(--green)' : 'var(--text2)',
-          fontWeight: 700,
-        }}
-      >
-        ✓ Complete
-      </button>
+      {canComplete ? (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => onModeChange('complete')}
+          style={{
+            borderColor: !isStart ? 'var(--green)' : 'var(--border2)',
+            background: !isStart ? 'var(--green3)' : 'transparent',
+            color: !isStart ? 'var(--green)' : 'var(--text2)',
+            fontWeight: 700,
+          }}
+        >
+          ✓ Complete
+        </button>
+      ) : null}
     </div>
   ) : null;
+
 
   return (
     <form onSubmit={(e) => void handleProductionSubmit(e)}>

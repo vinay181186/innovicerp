@@ -140,7 +140,7 @@ export function SoDrawingHistory({ salesOrderId }: { salesOrderId: string }): Re
             <span className="mono" style={{ color: 'var(--text2)' }}>{active.currentRevision}</span>
           </div>
           <div className="tbl-wrap">
-            <table className="innovic-table" style={{ width: '100%' }}>
+            <table className="innovic-table tbl-ctr" style={{ width: '100%' }}>
               <thead>
                 <tr>
                   <th style={{ width: '14%' }}>Rev</th>

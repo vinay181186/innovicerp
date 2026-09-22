@@ -24,9 +24,9 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
         <thead>
           <tr>
             <th>Machine</th>
-            <th style={{ textAlign: 'center' }}>Entries</th>
-            <th style={{ textAlign: 'center' }}>Qty</th>
-            <th style={{ textAlign: 'center' }}>Reject</th>
+            <th>Entries</th>
+            <th>Qty</th>
+            <th>Reject</th>
             <th>From</th>
             <th>To</th>
           </tr>
@@ -55,15 +55,15 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                       {r.machineName ?? '—'}
                     </div>
                   </td>
-                  <td className="td-ctr mono" style={{ fontSize: 11 }}>
+                  <td className="mono" style={{ fontSize: 11 }}>
                     {r.entryCount}
                   </td>
-                  <td className="td-ctr">
+                  <td>
                     <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--green)' }}>
                       {r.completedQty}
                     </span>
                   </td>
-                  <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                  <td className="mono" style={{ color: 'var(--red)' }}>
                     {r.rejectQty || ''}
                   </td>
                   <td className="mono" style={{ fontSize: 11 }}>
@@ -79,12 +79,12 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                   Total
                 </td>
                 <td />
-                <td className="td-ctr">
+                <td>
                   <span className="mono fw-700" style={{ fontSize: 15 }}>
                     {totalQty}
                   </span>
                 </td>
-                <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+                <td className="mono fw-700" style={{ color: 'var(--red)' }}>
                   {totalReject || ''}
                 </td>
                 <td />

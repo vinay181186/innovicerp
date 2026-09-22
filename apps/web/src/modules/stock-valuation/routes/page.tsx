@@ -187,15 +187,11 @@ function StockValuationPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>UOM</th>
-                {/* Legacy L21032 right-aligns these three. Inline, not .td-right,
-                    because `.innovic-table th` (0,1,1) sets text-align:left and
-                    outranks any single utility class on a <th> — see ISSUE-044.
-                    Legacy uses inline here for the same reason. */}
-                <th style={{ textAlign: 'right' }}>Stock Qty</th>
+                <th>Stock Qty</th>
                 {priceHidden ? null : (
                   <>
-                    <th style={{ textAlign: 'right' }}>Rate</th>
-                    <th style={{ textAlign: 'right' }}>Stock Value</th>
+                    <th>Rate</th>
+                    <th>Stock Value</th>
                   </>
                 )}
                 <th>Last GRN</th>
@@ -220,40 +216,49 @@ function StockValuationPage(): React.JSX.Element {
                       {r.code}
                     </td>
                     <td>{r.name}</td>
-                    <td className="td-ctr" style={{ fontSize: 11 }}>
-                      {r.uom}
-                    </td>
+                    <td style={{ fontSize: 11 }}>{r.uom}</td>
                     <td
-                      className="td-right mono fw-700"
-                      style={{ color: r.stockQty > 0 ? (r.lowStock ? 'var(--red)' : 'var(--green)') : 'var(--text3)' }}
+                      className="mono fw-700"
+                      style={{
+                        color:
+                          r.stockQty > 0
+                            ? r.lowStock
+                              ? 'var(--red)'
+                              : 'var(--green)'
+                            : 'var(--text3)',
+                      }}
                     >
                       {r.stockQty}
                       {r.lowStock ? ' ⚠' : ''}
                     </td>
                     {priceHidden ? null : (
                       <>
-                        <td className="td-right mono" style={{ color: r.hasRate ? undefined : 'var(--text3)' }}>
+                        <td
+                          className="mono"
+                          style={{ color: r.hasRate ? undefined : 'var(--text3)' }}
+                        >
                           {r.hasRate ? inr(r.rate) : 'No Rate'}
                         </td>
-                        <td className="td-right mono fw-700" style={{ color: (r.value ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}>
+                        <td
+                          className="mono fw-700"
+                          style={{ color: (r.value ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}
+                        >
                           {inr(r.value)}
                         </td>
                       </>
                     )}
-                    <td className="td-ctr" style={{ fontSize: 11 }}>
-                      {r.lastGrnDate ?? '—'}
-                    </td>
+                    <td style={{ fontSize: 11 }}>{r.lastGrnDate ?? '—'}</td>
                   </tr>
                 ))
               )}
             </tbody>
             <tfoot>
               <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-                <td colSpan={priceHidden ? 5 : 6} className="td-right" style={{ fontSize: 12, color: 'var(--text2)' }}>
+                <td colSpan={priceHidden ? 5 : 6} style={{ fontSize: 12, color: 'var(--text2)' }}>
                   TOTAL ({filtered.length} items)
                 </td>
                 {priceHidden ? null : (
-                  <td className="td-right mono" style={{ color: 'var(--cyan)' }}>
+                  <td className="mono" style={{ color: 'var(--cyan)' }}>
                     {inr(tblTotal)}
                   </td>
                 )}
