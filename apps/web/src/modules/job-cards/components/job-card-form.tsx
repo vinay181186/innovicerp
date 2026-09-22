@@ -31,6 +31,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
 import { useItemsList } from '@/modules/items/api';
+import { useDefaultRouteOps } from '@/modules/plans/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import {
   MaterialGradePicker,
@@ -227,6 +228,27 @@ export function JobCardForm({
   );
   const [rmSizeId, setRmSizeId] = useState<string | null>(model?.rawMaterialSizeId ?? null);
   const [rmSizeText, setRmSizeText] = useState<string | null>(model?.rawMaterialSizeText ?? null);
+  // Downstream inheritance (CLAUDE.md §17): a hand-raised JC (JW path) reads
+  // the raw material off the item's Route Card, exactly as a Plan does — the
+  // route card is the source of truth for what the part is cut from. Create
+  // mode only, and only while a field is still blank, so a manual pick or a
+  // plan-carried value is never overwritten.
+  const pickedItemId = isEdit
+    ? null
+    : (items.find((i) => i.code.toUpperCase() === itemCode.trim().toUpperCase())?.id ?? null);
+  const { data: itemRouteDefaults } = useDefaultRouteOps(pickedItemId);
+  useEffect(() => {
+    if (isEdit || !itemRouteDefaults) return;
+    const d = itemRouteDefaults;
+    if (!rmGradeId && !rmGradeText && (d.rawMaterialGradeId || d.rawMaterialGradeText)) {
+      setRmGradeId(d.rawMaterialGradeId);
+      setRmGradeText(d.rawMaterialGradeText);
+    }
+    if (!rmSizeId && !rmSizeText && (d.rawMaterialSizeId || d.rawMaterialSizeText)) {
+      setRmSizeId(d.rawMaterialSizeId);
+      setRmSizeText(d.rawMaterialSizeText);
+    }
+  }, [isEdit, itemRouteDefaults, rmGradeId, rmGradeText, rmSizeId, rmSizeText]);
   const [drawingName, setDrawingName] = useState<string>(model?.drawingFilePath ? 'Attached' : '');
 
   const [ops, setOps] = useState<FormOp[]>(
