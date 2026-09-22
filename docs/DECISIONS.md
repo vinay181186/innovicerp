@@ -9547,3 +9547,42 @@ each and every document.
 - Existing lowercase values are normalised the next time the line is saved; nothing is rewritten
   in bulk. Un-orderable pairs are not blocked — blocking them would forbid legitimate
   numbering-scheme changes.
+
+## ADR-179: Partial Production Order close, TPI after OSP, and Final Inspection after a mid-route OSP
+
+**Date:** 2026-09-22
+**Status:** Accepted
+
+### Context
+Three related gaps surfaced while reviewing the route-card → Production Order → stock flow. The crediting engine itself is NOT changing — ADR-170 already makes a PO-linked Job Card credit finished stock ONLY at Production Order close (its qc_accept and grn_qc credits are suppressed), and ADR-092 already skips crediting a mid-route OSP return. The gaps are:
+
+1. **Close is one-shot.** `production_orders.status` is a binary `open|closed`; close credits the whole finished qty once. Users need to close **as pieces finish** — e.g. JC-001 (order 50): last op has cleared 11, credit those 11 now, close the rest later.
+2. **No QC may follow OSP — including TPI.** The shared rule `findQcDirectlyAfterOutsource` blocks any (outsource, qc) adjacency by opType alone. The business rule is: after OSP a user MAY add a manufacturing op, another OSP, or **TPI**; only a *non-TPI* QC is disallowed (the vendor's return is inspected at Incoming QC).
+3. **Final Inspection is skipped whenever there is any OSP.** `needsDefaultQcOp` returns false if any op is outsource, so `Turning → OSP → Milling` gets no terminal QC and its milled output is never inspected/credited.
+
+### Decision
+**Change A — Partial (progressive) Production Order close.**
+- Status ladder becomes `open → partially_closed → closed` (relax the CHECK constraint; add the enum value in packages/shared).
+- New append-only ledger table `production_order_closes`: `{ id, company_id, production_order_id, qty (>0), is_reversal bool, reverses_close_id nullable, store_txn_id, closed_by, closed_at, remarks }`. One row per partial close (and one per reversal).
+- `production_orders.credited_qty` becomes the RUNNING total = sum of the ledger's signed qty. `remaining_qty` is derived (order_qty − credited_qty), never stored.
+- Close endpoint becomes repeatable and takes a `qty`. Server, inside a `FOR UPDATE` lock on the PO row: `available = lastOpFinishedQty (live, readCloseSnapshot) − credited_qty`; reject `qty > available` or `qty <= 0`; write one `store_transactions` (`in`, sourceType `production_order_close`, sourceRef `<po.code>#<n>` where n is the close sequence) + one `production_order_closes` row + `credited_qty += qty`; set status `closed` when `credited_qty >= order_qty`, else `partially_closed`.
+- **Close short (finish):** an explicit action that closes a PO under target when the JC is complete/settled-with-losses: records `lost_qty = order_qty − credited_qty` + a reason on the ledger row, writes NO stock for the lost pieces, sets status `closed`. Reuses the existing settled-with-losses machinery (`jcSettledWithLossesSql`, `lossSql`). Invariant: `credited_qty + lost_qty = order_qty`.
+- **Reversal:** a compensating `store_transactions` (`out`) + a `production_order_closes` reversal row referencing the original; `credited_qty -= qty`; status recomputed (may move `closed → partially_closed → open`). Guarded: under the items `FOR UPDATE` lock, on-hand (`v_item_stock`) must be `>= qty`, else block ("pieces already dispatched — reverse the dispatch first"). Never deletes rows (matches the append-only ledger).
+- Concurrency: the PO-row lock + a conditional `UPDATE ... WHERE credited_qty + :qty <= <live finished>` makes double/over-credit structurally impossible.
+- UI: the close screen shows `Available to close`, a qty field defaulting to and capped at it, a running `Credited X of <order>`, and a `Close short` action with a reason.
+
+**Change B — Allow TPI directly after OSP.**
+- In `findQcDirectlyAfterOutsource` (packages/shared/src/lib/jc-op-sequence.ts), exempt a QC op that is TPI. TPI is identified by name (`operation` contains "TPI", case-insensitive) — consistent with how the whole system already detects TPI (tpi/service.ts, jc-op-actions.tsx, tpi.ts). Reword the message to "Only TPI may directly follow an outsource step; other QC is inspected at Incoming QC when it comes back." This one shared function is enforced server-side for Job Cards, Plans, Route Cards and Production Orders, so the rule lands everywhere at once. Add the immediate client-side hint to the Route Card and Plan forms (they have none today; the Job Card form already shows it).
+
+**Change C — Append Final Inspection when the last op is a machining op, even with an OSP earlier.**
+- In `needsDefaultQcOp` (apps/api/src/lib/jc-default-qc.ts), drop the "any op is outsource → return false" clause. Terminal QC is appended iff the last op is `process` (a last-op OSP still returns false via the existing `last !== 'process'` check; a last-op QC still returns false). Safe because: mid-route OSP returns are not credited (ADR-092), PO jobs credit only at close (ADR-170), so no double-credit. Keep the web-side `stripStaleGeneratedTerminalQc` in lockstep — strip a generated terminal Final Inspection only when the op immediately before it is a terminal OSP, not when any OSP exists.
+
+### Alternatives Considered
+- **Add an `is_tpi` flag to the qc_processes master** — rejected: the entire codebase already identifies TPI by name; a new flag would be inconsistent and need extra schema + UI. Name-matching is the established convention.
+- **Store `remaining_qty` on the PO** — rejected: derivable from `order_qty − credited_qty`; a stored copy can drift. Running `credited_qty` + derived remaining is the single source of truth.
+- **Keep close one-shot and let users pre-split the plan qty** — rejected: forces artificial JC splitting; partial close matches how the floor actually finishes work.
+
+### Consequences
+- Positive: pieces enter stock as they finish (less time invisible), the routing rules match the shop's real OSP/TPI process, and every finished op has an inspection gate — all without touching the crediting engine or risking double-credit.
+- Negative: one migration (status values + `production_order_closes` table) to run on BOTH Supabase DBs, test-first; the close service and its guard grow to handle qty, reversal, and short-close.
+- Risks: available-to-close must always be `live finished − credited` (never order_qty); close-short must record the loss (so `credited + lost = order`); a close whose pieces already shipped cannot be reversed. All three are handled in the decision above.

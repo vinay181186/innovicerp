@@ -1,8 +1,12 @@
-// Production Order (IN-PRO-#####) header status. Migration 0133.
+// Production Order (IN-PRO-#####) header status. Migration 0133; partial close
+// added in ADR-179 (migration 0140-series).
 //
-// Only two states, on purpose: the order is either still being made or it has
-// been closed. Everything in between ("is the Job Card finished yet?") is READ
-// off the Job Card (`v_jc_status.computed_status`), never copied here — one
-// source of truth for progress, one for the close.
-export const PRODUCTION_ORDER_STATUSES = ['open', 'closed'] as const;
+// - open            nothing credited yet
+// - partially_closed  some finished pieces credited, more still to come
+// - closed          fully credited (credited_qty = order_qty) OR closed short
+//
+// Job-Card progress ("is the JC finished yet?") is still READ off
+// `v_jc_status.computed_status`, never copied here. This header status tracks
+// only how much of the order has been closed-and-credited.
+export const PRODUCTION_ORDER_STATUSES = ['open', 'partially_closed', 'closed'] as const;
 export type ProductionOrderStatus = (typeof PRODUCTION_ORDER_STATUSES)[number];
