@@ -961,3 +961,37 @@ When introducing a new field:
   not patch per screen.
 - Typing and arrow keys still work; only wheel editing is disabled.
 - Applies to all new and existing number/qty fields.
+
+---
+
+## Section 17 — Upstream + Downstream Propagation Rule
+
+For any new or existing business field, trace the **complete document chain in both
+directions**: **Upstream → Source of Truth → Downstream.**
+
+First determine the canonical source of truth. Then inspect:
+
+**Upstream documents**
+- Where does the value originate?
+- Should it be inherited / auto-fetched into the current document?
+- Is it required for creating the current document?
+- Does changing it affect the source document or only the current document?
+
+**Downstream documents**
+- Which generated / related documents require the value?
+- Should it be automatically carried forward?
+- Should it be editable or read-only?
+
+Do not assume that only downstream propagation is required. Propagate through the real
+chain (source-of-truth → API/service → DB → downstream document), never a browser-only
+copy. Do not duplicate manual data entry, do not blindly propagate to every screen, and
+do not overwrite the canonical source of truth. **Verify the complete chain after
+implementation.**
+
+Worked example — Raw Material (grade + size), verified 2026-09-22:
+`Item Master (free-text material, deliberately NOT the source — 0108) → Route Card
+(source of truth) → Plan (standalone form + SO-Planning "+ Plan" box: prefilled while
+blank, editable) → Production Order → Job Card (copied from the plan's snapshot,
+never re-read — 0106) → rework / recovery child JC (copied from the parent) → JC
+header, status page, printed job card (read-only)`. BOM child JCs take theirs from the
+BOM line. A hand-raised JW Job Card prefills from the item's Route Card while blank.
