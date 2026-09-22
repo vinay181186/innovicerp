@@ -7,6 +7,7 @@ import {
   closeProductionOrderInputSchema,
   createProductionOrderInputSchema,
   listProductionOrdersQuerySchema,
+  reverseProductionOrderCloseInputSchema,
 } from './schema';
 import * as service from './service';
 
@@ -44,5 +45,12 @@ export async function productionOrdersRoutes(app: FastifyInstance): Promise<void
     const { id } = idParamSchema.parse(req.params);
     const body = closeProductionOrderInputSchema.parse(req.body ?? {});
     return service.closeProductionOrder(id, body, req.user);
+  });
+
+  app.post('/production-orders/:id/reverse-close', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = reverseProductionOrderCloseInputSchema.parse(req.body ?? {});
+    return service.reverseProductionOrderClose(id, body, req.user);
   });
 }

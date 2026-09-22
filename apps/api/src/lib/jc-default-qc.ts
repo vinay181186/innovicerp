@@ -47,7 +47,15 @@ export function needsDefaultQcOp(
   // procedure demands — recovered pieces can never merge back into WIP
   // without an inspection saying they are good now.
   if (opts.recoveryKind) return ops[ops.length - 1]!.opType !== 'qc';
+  // Append the terminal QC whenever the last op is a plain machining/process
+  // step. ADR-179 dropped the old "any outsource anywhere → skip" carve-out:
+  //  - a last-op OSP still returns false above (last !== 'process'), so a
+  //    routing that ENDS at OSP still gets no terminal QC (credited on receive);
+  //  - a MID-route OSP followed by a machining op (Turning → OSP → Milling) now
+  //    DOES get a Final Inspection — its machined output was never inspected,
+  //    and it cannot double-credit: a mid-route OSP return is not credited
+  //    (ADR-092), and a PO-linked JC credits only at Production Order close
+  //    (ADR-170), never at this QC.
   if (ops[ops.length - 1]!.opType !== 'process') return false;
-  if (ops.some((o) => o.opType === 'outsource')) return false;
   return true;
 }

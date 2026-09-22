@@ -1,5 +1,5 @@
-// Unit test for the ADR-170 Production Order close guard. Pure function, no
-// database. Runnable on its own with
+// Unit test for the Production Order close guard (ADR-170, partial close in
+// ADR-179). Pure function, no database. Runnable on its own with
 // `npx vitest run src/lib/production-order-close-guard.test.ts` — vitest's
 // globalSetup is a no-op without DATABASE_URL in the environment.
 
@@ -12,9 +12,10 @@ const base: CloseGuardInput = {
   jcComputedStatus: 'open',
   jcFinishedQty: 48,
   jcSettledWithLosses: false,
+  creditedQty: 0,
 };
 
-describe('closeBlockedReason (ADR-170)', () => {
+describe('closeBlockedReason (ADR-170 + partial close ADR-179)', () => {
   it('allows Close when the JC is complete', () => {
     expect(closeBlockedReason({ ...base, jcComputedStatus: 'complete' })).toBeNull();
   });
@@ -23,65 +24,66 @@ describe('closeBlockedReason (ADR-170)', () => {
     expect(closeBlockedReason({ ...base, jcComputedStatus: 'closed' })).toBeNull();
   });
 
-  it('blocks an open JC with nothing lost, naming the JC and its status', () => {
-    expect(closeBlockedReason(base)).toBe(
-      'Job Card IN-JC-26-00055 is not complete yet (open) — finish all operations before closing',
-    );
+  // ADR-179: partial close no longer needs the JC to be complete — finished
+  // pieces can be credited as they clear. An open JC with 48 finished / 0
+  // credited has 48 available to close now.
+  it('allows a partial close of an in-progress JC that has finished pieces', () => {
+    expect(closeBlockedReason(base)).toBeNull();
   });
 
-  // TEST run 2026-09-17, flow-po.spec.ts S1-d: 50 ordered, 2 scrapped at DIR,
-  // 48 finished — v_jc_status says 'open' for good, yet nothing is left to do.
   it('allows Close for an open JC that is settled with losses (48 of 50, 2 scrapped)', () => {
     expect(closeBlockedReason({ ...base, jcSettledWithLosses: true })).toBeNull();
   });
 
-  // Total loss: every piece scrapped / failed / made fresh. The service closes
-  // it with credited_qty 0 and no stock row — the guard must let it through.
   it('allows Close for a settled-with-losses JC that lost every piece (finished 0)', () => {
     expect(closeBlockedReason({ ...base, jcSettledWithLosses: true, jcFinishedQty: 0 })).toBeNull();
   });
 
-  it('blocks a complete JC whose last op accepted nothing (not settled — inconsistent data)', () => {
-    expect(closeBlockedReason({ ...base, jcComputedStatus: 'complete', jcFinishedQty: 0 })).toBe(
-      'Job Card IN-JC-26-00055 reads complete but has no finished quantity to credit — nothing was accepted at its last operation; check its QC entries before closing',
-    );
+  // ADR-179: a partially-closed PO with more finished pieces to credit.
+  it('allows another close when finished > credited (48 finished, 20 credited)', () => {
+    expect(closeBlockedReason({ ...base, status: 'partially_closed', creditedQty: 20 })).toBeNull();
   });
 
-  it('blocks a closed JC whose last op accepted nothing, naming the status it reads', () => {
-    expect(closeBlockedReason({ ...base, jcComputedStatus: 'closed', jcFinishedQty: 0 })).toBe(
-      'Job Card IN-JC-26-00055 reads closed but has no finished quantity to credit — nothing was accepted at its last operation; check its QC entries before closing',
-    );
-  });
-
-  it('blocks a PO that is already closed, before looking at the JC', () => {
-    expect(closeBlockedReason({ ...base, status: 'closed', jcComputedStatus: 'complete' })).toBe(
-      'Production Order is already closed',
-    );
-  });
-
-  it('blocks a PO that is already closed even when the JC is settled with losses', () => {
-    expect(closeBlockedReason({ ...base, status: 'closed', jcSettledWithLosses: true })).toBe(
-      'Production Order is already closed',
-    );
-  });
-
-  it('reads a missing JC row (null status) as no_ops and blocks', () => {
-    expect(closeBlockedReason({ ...base, jcComputedStatus: null })).toBe(
-      'Job Card IN-JC-26-00055 is not complete yet (no_ops) — finish all operations before closing',
-    );
-  });
-
-  it('blocks qc_pending even when pieces were lost but the JC is not settled', () => {
+  it('blocks when nothing new is available and the JC is not done (all finished credited)', () => {
     expect(
-      closeBlockedReason({ ...base, jcComputedStatus: 'qc_pending', jcSettledWithLosses: false }),
+      closeBlockedReason({
+        ...base,
+        status: 'partially_closed',
+        jcFinishedQty: 20,
+        creditedQty: 20,
+      }),
     ).toBe(
-      'Job Card IN-JC-26-00055 is not complete yet (qc_pending) — finish all operations before closing',
+      'No finished pieces to close yet for Job Card IN-JC-26-00055 (open) — credit pieces as its operations clear, or finish the order once it is complete',
     );
   });
 
-  it('blocks an open JC with 0 finished when it is not settled (nothing lost, nothing done)', () => {
+  it('blocks an in-progress JC with nothing finished yet', () => {
     expect(closeBlockedReason({ ...base, jcFinishedQty: 0 })).toBe(
-      'Job Card IN-JC-26-00055 is not complete yet (open) — finish all operations before closing',
+      'No finished pieces to close yet for Job Card IN-JC-26-00055 (open) — credit pieces as its operations clear, or finish the order once it is complete',
+    );
+  });
+
+  it('allows finishing a complete JC even when everything finished is already credited', () => {
+    // available 0 but jcDone (complete) → finish/close-short is possible.
+    expect(
+      closeBlockedReason({
+        ...base,
+        jcComputedStatus: 'complete',
+        jcFinishedQty: 48,
+        creditedQty: 48,
+      }),
+    ).toBeNull();
+  });
+
+  it('blocks a PO that is already fully closed, before looking at the JC', () => {
+    expect(closeBlockedReason({ ...base, status: 'closed', jcComputedStatus: 'complete' })).toBe(
+      'Production Order is already fully closed',
+    );
+  });
+
+  it('reads a missing JC row (null status) with nothing finished as no_ops and blocks', () => {
+    expect(closeBlockedReason({ ...base, jcComputedStatus: null, jcFinishedQty: 0 })).toBe(
+      'No finished pieces to close yet for Job Card IN-JC-26-00055 (no_ops) — credit pieces as its operations clear, or finish the order once it is complete',
     );
   });
 });

@@ -24,6 +24,22 @@ describe('assertNoQcDirectlyAfterOutsource (OSP → QC routing rule)', () => {
     expect(() => assertNoQcDirectlyAfterOutsource([])).not.toThrow();
   });
 
+  // ADR-179: TPI (third-party inspection) IS allowed directly after OSP.
+  it('allows a TPI QC op directly after OSP, still refuses a non-TPI QC', () => {
+    expect(() =>
+      assertNoQcDirectlyAfterOutsource([
+        { opType: 'outsource', id: undefined, operation: 'Plating' },
+        { opType: 'qc', id: undefined, operation: 'TPI' },
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      assertNoQcDirectlyAfterOutsource([
+        { opType: 'outsource', id: undefined, operation: 'Plating' },
+        { opType: 'qc', id: undefined, operation: 'MIR' },
+      ]),
+    ).toThrow(ValidationError);
+  });
+
   it('lets a grandfathered pair through but still refuses a new one', () => {
     const allowed = new Set([opPairKey('osp-1', 'qc-1')]);
     expect(() =>

@@ -177,8 +177,10 @@ export const closeProductionOrderInputSchema = z.object({
   qty: z.number().int().positive().optional(),
   /** Close short: finish the PO now even though credited < order. Allowed only
    *  when the JC is complete / settled-with-losses. Records order − credited as
-   *  lost, credits the currently-available qty, and marks the PO closed. */
-  finish: z.boolean().optional().default(false),
+   *  lost, credits the currently-available qty, and marks the PO closed.
+   *  Optional (no default) so the inferred input type stays `finish?: boolean`;
+   *  the service treats a missing value as false. */
+  finish: z.boolean().optional(),
   remarks: z.string().trim().max(500).nullable().optional(),
 });
 export type CloseProductionOrderInput = z.infer<typeof closeProductionOrderInputSchema>;

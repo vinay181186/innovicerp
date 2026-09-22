@@ -22,8 +22,12 @@ describe('needsDefaultQcOp (Rule B — terminal QC gate)', () => {
     expect(needsDefaultQcOp([op('process'), op('outsource')])).toBe(false);
   });
 
-  it('leaves any JC containing an outsource op untouched (avoids grn_qc + qc_accept double-credit)', () => {
-    expect(needsDefaultQcOp([op('process'), op('outsource'), op('process')])).toBe(false);
+  // ADR-179: a mid-route OSP followed by a machining op DOES get a terminal QC.
+  // The machined output was never inspected, and it cannot double-credit (a
+  // mid-route OSP return is not credited — ADR-092 — and a PO-linked JC credits
+  // only at Production Order close — ADR-170).
+  it('appends Final Inspection for a mid-route OSP followed by a process op (Turning → OSP → Milling)', () => {
+    expect(needsDefaultQcOp([op('process'), op('outsource'), op('process')])).toBe(true);
   });
 
   it('leaves an empty routing untouched', () => {
