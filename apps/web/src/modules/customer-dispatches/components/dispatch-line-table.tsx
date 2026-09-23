@@ -21,7 +21,7 @@ export interface LineCard {
   qty: string;
 }
 
-const COL_COUNT = 13;
+const COL_COUNT = 14;
 
 export function DispatchLineTable(props: {
   cards: LineCard[];
@@ -65,10 +65,15 @@ export function DispatchLineTable(props: {
           <thead>
             <tr>
               <th style={{ width: '3%' }}>#</th>
+              {/* POL — the line number on the CUSTOMER's purchase order. Its
+                  4% comes out of Item Name, which wraps; the code must not. */}
+              <th style={{ width: '4%', color: 'var(--purple)' }} className="td-ctr">
+                POL
+              </th>
               <th style={{ width: '14%' }}>
                 Item Code<span className="req">★</span>
               </th>
-              <th style={{ width: '12%' }}>Item Name</th>
+              <th style={{ width: '8%' }}>Item Name</th>
               <th style={{ width: '5%' }} className="td-ctr">
                 Ordered
               </th>
@@ -150,6 +155,9 @@ export function DispatchLineTable(props: {
                   <tr key={card.id}>
                     <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {idx + 1}
+                    </td>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {line?.clientPoLineNo ?? '—'}
                     </td>
                     <td>
                       <SearchableSelect

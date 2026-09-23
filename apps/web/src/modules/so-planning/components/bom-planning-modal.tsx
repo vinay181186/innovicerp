@@ -17,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useCreatePlan } from '@/modules/plans/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { usePlanningBom } from '../api';
@@ -241,7 +242,9 @@ export function BomPlanningModal({
   const title =
     mode === 'equipment'
       ? `📦 Equipment BOM Planning — ${soCode}`
-      : `📦 BOM Planning — ${data?.parentItemCode ?? ''} × ${data?.orderQty ?? ''}`;
+      : // The parent IS the SO line, so it is written CODE/REV with the
+        // customer's PO line beside it, like every other document.
+        `📦 BOM Planning — ${itemCodeWithRev(data?.parentItemCode, data?.parentItemRevision, '')} × ${data?.orderQty ?? ''}`;
 
   const footer = (
     <>
@@ -363,7 +366,9 @@ function BomBody({
                 <span style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT</span>
                 <br />
                 <b style={{ color: 'var(--purple)' }}>
-                  {data.parentItemCode} {data.parentItemName}
+                  {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
+                  {itemCodeWithRev(data.parentItemCode, data.parentItemRevision)}{' '}
+                  {data.parentItemName}
                 </b>
               </div>
               <div>
@@ -389,7 +394,10 @@ function BomBody({
               <div>
                 <span style={{ fontSize: 10, color: 'var(--text3)' }}>ASSEMBLY</span>
                 <br />
-                <b style={{ color: 'var(--purple)' }}>{data.parentItemCode}</b>{' '}
+                <b style={{ color: 'var(--purple)' }}>
+                  {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
+                  {itemCodeWithRev(data.parentItemCode, data.parentItemRevision)}
+                </b>{' '}
                 {data.parentItemName}
               </div>
               <div>

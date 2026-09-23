@@ -16,6 +16,10 @@ export const dispatchableLineSchema = z.object({
    *  column and substituting it would put a plausible-looking wrong revision on
    *  the dispatch. Null is correct and renders as the bare code. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) typed on this same SO line — shown
+   *  beside the item code on the dispatch form, as on every other document
+   *  (user rule, 2026-09-23). Null when the customer's PO gave no line. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string(),
   orderQty: z.number().int().nonnegative(),
   readyQty: z.number().int().nonnegative(), // produced + QC-accepted (final op)

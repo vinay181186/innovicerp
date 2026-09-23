@@ -1184,6 +1184,9 @@ export async function getPlanningBom(
         bomNo: bom.bomNo,
         bomRev: bom.revision,
         parentItemCode: row.itemCode ?? row.line.itemCodeText,
+        // Both read straight off the parent SO line this BOM hangs from.
+        parentItemRevision: row.line.revision ?? null,
+        parentClientPoLineNo: row.line.clientPoLineNo ?? null,
         parentItemName: row.itemName ?? row.line.partName,
         orderQty: row.line.orderQty,
         supportsAssemblyPlan: !isEquipment && row.itemType === 'assembly',
@@ -1291,6 +1294,9 @@ export async function getPlanningBom(
       bomNo: bom.bomNo,
       bomRev: bom.revision,
       parentItemCode: row.itemCode ?? row.line.itemCodeText,
+      // Both read straight off the parent SO line this BOM hangs from.
+      parentItemRevision: row.line.revision ?? null,
+      parentClientPoLineNo: row.line.clientPoLineNo ?? null,
       parentItemName: row.itemName ?? row.line.partName,
       orderQty,
       supportsAssemblyPlan: !isEquipment && row.itemType === 'assembly',

@@ -184,6 +184,7 @@ type DispatchableRow = {
   item_id: string | null;
   item_code: string | null;
   item_revision: string | null;
+  client_po_line_no: string | null;
   item_name: string;
   order_qty: string | number;
   dispatched_qty: string | number;
@@ -254,6 +255,8 @@ async function loadDispatchable(
         -- is still the old integer. Never i.revision — a different column, about
         -- the item rather than about this order's drawing.
         sol.revision::text AS item_revision,
+        -- POL: the line number on the CUSTOMER's own purchase order, not ours.
+        sol.client_po_line_no,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
         -- The plan's Customer Dispatch Date (migration 0137): earliest across
         -- this line's live plans — the date the dispatch team works to. ::text
@@ -366,6 +369,7 @@ async function loadDispatchable(
       lineNo: Number(r.line_no) || 0,
       itemCode: r.item_code,
       itemRevision: r.item_revision ?? null,
+      clientPoLineNo: r.client_po_line_no ?? null,
       itemName: r.item_name,
       orderQty,
       readyQty: ready,

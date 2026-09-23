@@ -204,6 +204,12 @@ export const planningBomResponseSchema = z.object({
   bomNo: z.string(),
   bomRev: z.number().int().nonnegative(),
   parentItemCode: z.string().nullable(),
+  /** The customer's drawing revision on the parent SO line, so the modal's
+   *  title and chips read CODE/REV like the screen behind them. */
+  parentItemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for that parent SO line. The BOM
+   *  CHILDREN keep neither — a child is not itself an order line. */
+  parentClientPoLineNo: z.string().nullable().default(null),
   parentItemName: z.string().nullable(),
   orderQty: z.number().int().positive(),
   /** §9 'Final Assembly Job Card' applies only to assembly items, not Equipment SOs. */
