@@ -93,6 +93,9 @@ export function ReservationDrilldown({
                 <tr>
                   <th>SO No.</th>
                   <th>Line</th>
+                  {/* POL — the CUSTOMER's own purchase-order line number, an
+                      extra value beside our SO line number. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Customer</th>
                   <th>Item</th>
                   <th style={{ color: 'var(--purple)' }}>Reserved</th>
@@ -109,7 +112,7 @@ export function ReservationDrilldown({
               <tbody>
                 {(data?.rows.length ?? 0) === 0 ? (
                   <tr>
-                    <td colSpan={13} className="empty-state">
+                    <td colSpan={14} className="empty-state">
                       No stock is reserved for this item.
                     </td>
                   </tr>
@@ -131,6 +134,9 @@ export function ReservationDrilldown({
                         )}
                       </td>
                       <td className="mono text3">{row.lineNo}</td>
+                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        {row.clientPoLineNo ?? '—'}
+                      </td>
                       <td
                         style={{
                           maxWidth: 160,

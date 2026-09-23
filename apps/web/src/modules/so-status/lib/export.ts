@@ -12,6 +12,9 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
   const lineRows = lines.map((l) => ({
     SO: header.code,
     Line: l.lineNo,
+    // POL — the line number on the CUSTOMER'S OWN purchase order, an extra
+    // column beside our `Line`, never a replacement for it.
+    POL: l.clientPoLineNo ?? '',
     // CODE/REV, the way an SO-traceable row reads everywhere else (user rule
     // 2026-09-23) — every line on this sheet IS a Sales Order line.
     'Item Code': itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
@@ -36,6 +39,7 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
     l.jobCards.map((jc) => ({
       SO: header.code,
       Line: l.lineNo,
+      POL: jc.clientPoLineNo ?? l.clientPoLineNo ?? '',
       'JC No': jc.code,
       'Item Code': itemCodeWithRev(jc.itemCode, jc.itemRevision, ''),
       'Drawing Rev': jc.itemRevision ?? '',

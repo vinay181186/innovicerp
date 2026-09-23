@@ -38,7 +38,9 @@ interface LineCard {
 
 // Shared grid: # | Item Code | Item Name | Order | Dispatched | Invoiced |
 // Available | Invoice Qty | Rate | ×
-const GRID = '30px 1.3fr 1.6fr 60px 84px 70px 78px 92px 92px 30px';
+// The 50px slot after '#' is POL — the CUSTOMER's own purchase-order line
+// number, which sits immediately before the item code everywhere.
+const GRID = '30px 50px 1.3fr 1.6fr 60px 84px 70px 78px 92px 92px 30px';
 
 function InvoiceNewPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -265,6 +267,7 @@ function InvoiceNewPage(): React.JSX.Element {
                   }}
                 >
                   <span>#</span>
+                  <span style={{ textAlign: 'center', color: 'var(--purple)' }}>POL</span>
                   <span>Item Code ★</span>
                   <span>Item Name</span>
                   <span style={{ textAlign: 'center' }}>Order</span>
@@ -311,6 +314,12 @@ function InvoiceNewPage(): React.JSX.Element {
                   >
                     <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--text3)' }}>
                       {idx + 1}
+                    </span>
+                    <span
+                      className="mono fw-700"
+                      style={{ textAlign: 'center', color: 'var(--purple)' }}
+                    >
+                      {line?.clientPoLineNo ?? '—'}
                     </span>
                     <SearchableSelect
                       value={card.soLineId}

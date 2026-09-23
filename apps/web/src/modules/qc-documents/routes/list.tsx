@@ -779,6 +779,15 @@ function LineDetailBody({
         }}
       >
         <div>
+          {/* POL — the customer's own PO line number, read-only here; it is
+              typed only on the Sales Order. */}
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>POL</span>
+          <br />
+          <b className="mono" style={{ color: 'var(--purple)' }}>
+            {data.clientPoLineNo ?? '—'}
+          </b>
+        </div>
+        <div>
           <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
           <br />
           <b style={{ color: 'var(--purple)' }}>
@@ -1274,7 +1283,10 @@ function RegisterView(): React.JSX.Element {
                 <th>JC</th>
                 {/* A job-card number says WHICH JOB, not which part, so the
                     register names the item right beside the JC it belongs to —
-                    same pairing the matrix tab and the line-detail modal use. */}
+                    same pairing the matrix tab and the line-detail modal use.
+                    POL is the CUSTOMER's own purchase-order line number, which
+                    sits immediately before the item code everywhere. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>SO</th>
@@ -1286,19 +1298,19 @@ function RegisterView(): React.JSX.Element {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={10} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={11} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error ? error.message : 'Failed to load QC documents'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     No QC documents. Click 📎 Upload Document to attach MIR / MCR / inspection
                     reports.
                   </td>
@@ -1315,6 +1327,9 @@ function RegisterView(): React.JSX.Element {
                     </td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                       {d.jcCodeText ?? '—'}
+                    </td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {d.clientPoLineNo ?? '—'}
                     </td>
                     {/* `CODE/REV` via the one helper, so the separator and the
                         empty cases cannot drift from the other QC screens. The

@@ -16,6 +16,7 @@ import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -133,6 +134,10 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>#</th>
+                {/* POL — the CUSTOMER's own purchase-order line number off the
+                    SO line behind this challan line; an em dash on a purely
+                    job-work line, which has no sales order behind it. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Process</th>
@@ -145,7 +150,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
             <tbody>
               {dc.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     No lines on this DC.
                   </td>
                 </tr>
@@ -153,8 +158,11 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                 dc.lines.map((l) => (
                   <tr key={l.id}>
                     <td className="mono">{l.lineNo}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {l.clientPoLineNo ?? '—'}
+                    </td>
                     <td className="mono" style={{ fontSize: 11 }}>
-                      {l.itemCode ?? l.itemCodeText ?? '—'}
+                      {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
                     </td>
                     <td>{l.itemName ?? l.itemNameText ?? '—'}</td>
                     <td style={{ fontSize: 11, color: 'var(--purple)' }}>

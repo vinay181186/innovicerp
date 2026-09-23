@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
@@ -139,6 +140,10 @@ function DesignTrackerListPage(): React.JSX.Element {
                 <tr>
                   <th>Design No.</th>
                   <th>SO</th>
+                  {/* POL — the CUSTOMER's own purchase-order line number off the
+                      SO line behind this design. Nothing to do with the "Rev"
+                      column further right, which counts OUR design revisions. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item</th>
                   <th>Designer</th>
                   <th>Start</th>
@@ -152,7 +157,7 @@ function DesignTrackerListPage(): React.JSX.Element {
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-state">
+                    <td colSpan={11} className="empty-state">
                       No designs assigned yet
                     </td>
                   </tr>
@@ -357,8 +362,13 @@ function Row({
           {row.soCodeText ?? '—'}
         </span>
       </td>
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {row.clientPoLineNo ?? '—'}
+      </td>
       <td style={{ fontSize: 11 }}>
-        <span style={{ color: 'var(--purple)', fontWeight: 600 }}>{row.itemCodeText ?? ''}</span>
+        <span style={{ color: 'var(--purple)', fontWeight: 600 }}>
+          {itemCodeWithRev(row.itemCodeText, row.itemRevision, '')}
+        </span>
         <br />
         {row.itemNameText ?? ''}
       </td>
@@ -665,11 +675,21 @@ function EditDesignModal({
             style={{ color: 'var(--cyan)', fontWeight: 700 }}
           />
         </Field>
+        {/* POL — read-only here; it is typed only on the Sales Order. */}
+        <Field label="POL">
+          <input
+            type="text"
+            className="innovic-input"
+            value={row.clientPoLineNo ?? '—'}
+            readOnly
+            style={{ color: 'var(--purple)', fontWeight: 700 }}
+          />
+        </Field>
         <Field label="Item">
           <input
             type="text"
             className="innovic-input"
-            value={row.itemCodeText ?? ''}
+            value={itemCodeWithRev(row.itemCodeText, row.itemRevision, '')}
             readOnly
             style={{ color: 'var(--purple)' }}
           />
@@ -789,8 +809,12 @@ function LogTimeModal({
           fontSize: 12,
         }}
       >
-        <b style={{ color: 'var(--cyan)' }}>{row.soCodeText ?? '—'}</b> | {row.itemCodeText ?? ''} |
-        Designer: <b>{row.designer}</b>
+        <b style={{ color: 'var(--cyan)' }}>{row.soCodeText ?? '—'}</b> | POL{' '}
+        <b className="mono" style={{ color: 'var(--purple)' }}>
+          {row.clientPoLineNo ?? '—'}
+        </b>{' '}
+        | {itemCodeWithRev(row.itemCodeText, row.itemRevision, '')} | Designer:{' '}
+        <b>{row.designer}</b>
       </div>
       <div className="form-grid">
         <Field label="Date">

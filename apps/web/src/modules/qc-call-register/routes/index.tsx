@@ -231,21 +231,21 @@ function QcCallRegisterPage(): React.JSX.Element {
   // server did send.
   const matchP = (o: QcHistoryPendingRow): boolean =>
     matchesSearchTerm(
-      [o.jcCode, o.soCode, o.itemCode, o.itemRevision, o.itemName, o.operation],
+      [o.jcCode, o.soCode, o.clientPoLineNo, o.itemCode, o.itemRevision, o.itemName, o.operation],
       search,
     );
   const matchC = (l: QcHistoryLogRow): boolean =>
     matchesSearchTerm(
-      [l.jcCode, l.soCode, l.itemCode, l.itemRevision, l.itemName, l.operation],
+      [l.jcCode, l.soCode, l.clientPoLineNo, l.itemCode, l.itemRevision, l.itemName, l.operation],
       search,
     );
   const matchIncP = (o: IncomingQcPendingRow): boolean =>
     matchesSearchTerm(
-      [o.grnNo, o.itemCode, o.itemRevision, o.itemName, o.vendorName, o.poCode],
+      [o.grnNo, o.clientPoLineNo, o.itemCode, o.itemRevision, o.itemName, o.vendorName, o.poCode],
       search,
     );
   const matchIncC = (l: IncomingQcCompletedRow): boolean =>
-    matchesSearchTerm([l.grnNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName], search);
+    matchesSearchTerm([l.grnNo, l.clientPoLineNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName], search);
   const inStage = (s: QcStage): boolean => stage === null || stage === s;
 
   const pending = allPending.filter((o) => inStage(processStage(o.isLastOp)) && matchP(o));
@@ -548,17 +548,14 @@ function PendingCall(props: {
           {o.jcCode}
         </Link>
       }
+      // POL has its own column on the sheet now, beside the item code.
+      clientPoLineNo={o.clientPoLineNo}
       partName={o.itemName}
       itemCode={itemCodeWithRev(o.itemCode, o.itemRevision)}
       context={
         <>
           <span className="mono">{o.soCode ?? '—'}</span> · Op{opSrNo(o.opSeq)} {o.operation}
         </>
-      }
-      contextLine2={
-        o.clientPoLineNo ? (
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>POL:{o.clientPoLineNo}</span>
-        ) : undefined
       }
       qty={o.qcPending}
       calledDate={o.qcCallDate ?? o.pendSince}

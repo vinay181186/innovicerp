@@ -21,6 +21,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useNcRegisterList } from '@/modules/nc-register/api';
@@ -642,8 +643,13 @@ function EditCapaModal({
         >
           {capa.type}
         </span>{' '}
-        | NC: {capa.ncRefs.join(', ') || '—'} | JC: {capa.jcNo ?? '—'} | Item:{' '}
-        {capa.itemCode ?? '—'}
+        | NC: {capa.ncRefs.join(', ') || '—'} | JC: {capa.jcNo ?? '—'} | POL:{' '}
+        {/* POL — the CUSTOMER's own purchase-order line number off the SO line
+            behind this CAPA. Read-only; it is typed only on the Sales Order. */}
+        <b className="mono" style={{ color: 'var(--purple)' }}>
+          {capa.clientPoLineNo ?? '—'}
+        </b>{' '}
+        | Item: {itemCodeWithRev(capa.itemCode, capa.itemRevision)}
       </div>
 
       <fieldset disabled={readOnly} style={{ border: 'none', padding: 0, margin: 0 }}>

@@ -1243,8 +1243,11 @@ function SearchResults({
           <colgroup>
             <col style={{ width: '16%' }} />
             <col style={{ width: '5%' }} />
+            {/* POL. The 5% comes out of Item Name (27% → 22%) so the set still
+                totals exactly 100. */}
+            <col style={{ width: '5%' }} />
             <col style={{ width: '16%' }} />
-            <col style={{ width: '27%' }} />
+            <col style={{ width: '22%' }} />
             <col style={{ width: '8%' }} />
             <col style={{ width: '10%' }} />
             <col style={{ width: '18%' }} />
@@ -1253,6 +1256,9 @@ function SearchResults({
             <tr>
               <th style={{ cursor: 'default' }}>Order No</th>
               <th style={{ cursor: 'default' }}>Line</th>
+              {/* POL is the CUSTOMER's own line number — an extra value beside
+                  our "Line", never a substitute for it. */}
+              <th style={{ cursor: 'default', color: 'var(--purple)' }}>POL</th>
               <th style={{ cursor: 'default' }}>Item Code</th>
               <th style={{ cursor: 'default' }}>Item Name</th>
               <th style={{ cursor: 'default' }}>Order Qty</th>
@@ -1280,6 +1286,9 @@ function SearchResults({
                       </span>
                     </td>
                     <td className="mono text3">{line.lineNo}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {line.clientPoLineNo ?? '—'}
+                    </td>
                     {/* Item code is the thing the planner searched for —
                         strong, never muted. */}
                     <td style={wrapCell}>

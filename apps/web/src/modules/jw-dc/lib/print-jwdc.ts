@@ -16,6 +16,7 @@ import {
   challanEndDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 
@@ -93,7 +94,11 @@ export function printJwDc(args: {
       // shows. The snapshot `itemCodeText` falls back to the item NAME when the
       // source PO line had no code text, so printing it alone put a name under
       // the item code.
-      itemCode: l.itemCode ?? l.itemCodeText,
+      itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
+      // POL — the CUSTOMER's own purchase-order line number. The sheet drops
+      // the column entirely when every line leaves it empty, so a purely
+      // job-work challan prints exactly as it did before.
+      pol: l.clientPoLineNo,
       itemName: l.itemName ?? l.itemNameText,
       // Legacy's printed line column is "Description / Process" (L24614). This
       // layout has a Remarks column, so the process it names prints there —

@@ -15,7 +15,7 @@ import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useSoQcStatus } from '../api';
 
-const TABLE_COLS = 9;
+const TABLE_COLS = 10;
 
 function pctColor(pct: number): string {
   if (pct >= 100) return 'var(--green)';
@@ -119,6 +119,9 @@ export function SoQcStatusView(): React.JSX.Element {
                 <thead>
                   <tr>
                     <th style={{ width: 40 }}>Line</th>
+                    {/* POL — the CUSTOMER's own line number off their purchase
+                        order, beside (never instead of) our SO line number. */}
+                    <th style={{ width: 50, color: 'var(--purple)' }}>POL</th>
                     <th style={{ width: 100 }}>Item Code</th>
                     <th>Item Name</th>
                     <th style={{ width: 40 }}>Qty</th>
@@ -238,6 +241,9 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
         style={{ cursor: hasDetail ? 'pointer' : 'default' }}
       >
         <td className="fw-700">{l.lineNo}</td>
+        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+          {l.clientPoLineNo ?? '—'}
+        </td>
         <td className="td-code mono fw-700" style={{ color: 'var(--cyan)' }}>
           {itemCodeWithRev(l.itemCode, l.itemRevision)}
         </td>
@@ -341,6 +347,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
         <thead>
           <tr>
             <th>GRN No</th>
+            <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item</th>
             <th>Vendor</th>
             <th>Received</th>
@@ -356,6 +363,9 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <tr key={`${g.grnNo}-${i}`}>
               <td className="mono" style={{ color: 'var(--cyan)' }}>
                 {g.grnNo}
+              </td>
+              <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                {g.clientPoLineNo ?? '—'}
               </td>
               {/* Item code is THE main thing — strong mono, CODE/REV (ADR-177). */}
               <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
@@ -406,6 +416,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
         <thead>
           <tr>
             <th>JC No</th>
+            <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Organization</th>
             <th>Inspector</th>
             <th>Accepted</th>
@@ -420,6 +431,11 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <tr key={`${t.jcCode}-${i}`}>
               <td className="mono" style={{ color: 'var(--cyan)' }}>
                 {t.jcCode}
+              </td>
+              {/* POL comes off the SO line this TPI sub-table is nested under —
+                  the TPI row itself carries no line of its own. */}
+              <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                {l.clientPoLineNo ?? '—'}
               </td>
               <td>{t.organization ?? '—'}</td>
               <td>{t.inspector ?? '—'}</td>
@@ -511,7 +527,7 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
 
   return (
     <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border2)' }}>
-      <td colSpan={4} style={{ fontSize: 11, color: 'var(--text2)' }}>
+      <td colSpan={5} style={{ fontSize: 11, color: 'var(--text2)' }}>
         TOTAL ({lines.length} lines)
       </td>
       <td style={{ fontSize: 11, color: 'var(--text2)' }}>

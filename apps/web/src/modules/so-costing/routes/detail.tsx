@@ -123,6 +123,9 @@ function SoCostingDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Ln</th>
+                {/* POL is the CUSTOMER's own purchase-order line number — an
+                    ADDITIONAL value beside our "Ln", never a substitute. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="td-ctr">Qty</th>
@@ -161,6 +164,9 @@ function LineRows({
         <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
           {line.lineNo}
         </td>
+        <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
+          {line.clientPoLineNo ?? '—'}
+        </td>
         <td className="td-code" style={{ color: 'var(--purple)' }}>
           {itemCodeWithRev(line.itemCode, line.itemRevision)}
         </td>
@@ -175,6 +181,8 @@ function LineRows({
       </tr>
       {!priceHidden && (line.materialCost ?? 0) > 0 ? (
         <tr style={{ background: 'var(--bg3)', fontSize: 11 }}>
+          {/* Ln · POL · Item Code · Item Name · Qty all blank on a sub-row. */}
+          <td />
           <td />
           <td />
           <td />
@@ -199,6 +207,7 @@ function LineRows({
             key={`${op.jcNo}-${op.opSeq}-${i}`}
             style={{ background: 'var(--bg3)', fontSize: 11 }}
           >
+            <td />
             <td />
             <td />
             <td />

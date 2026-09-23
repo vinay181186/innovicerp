@@ -18,6 +18,7 @@
 //     document, and the sheet says so out loud (see MATERIAL_NOTE).
 
 import type { Client, Company, EffectivePrintTemplate, JwInvoiceListItem } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import {
@@ -181,12 +182,11 @@ export function printJwInvoice(args: {
     // (`jobWorkOrderLineId` is a single id on the row, not a list).
     lines: [
       {
-        // There is NO item code on this document. The invoice row carries the
-        // JW line's `partName` and nothing else that identifies the part, and
-        // the job-work part is the CLIENT's part — it has no code in our item
-        // master to print. Blank, rather than a value invented to fill the
-        // column; the same choice the OSP challan makes for HSN.
-        itemCode: '',
+        // The row now carries the JWSO line's item code and the customer's
+        // drawing revision, so the invoice prints CODE/REV instead of a part
+        // name alone. A JWSO line with no coded item still prints blank rather
+        // than a value invented to fill the column.
+        itemCode: itemCodeWithRev(invoice.itemCode, invoice.itemRevision, ''),
         itemName: invoice.partName ?? '',
         uom: JW_INVOICE_UOM,
         qty: String(invoice.qty),

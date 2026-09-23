@@ -45,6 +45,9 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'JC',
       'OP',
       'SO',
+      // POL — the CUSTOMER's own purchase-order line number, its own column
+      // immediately before the item code, as on every other export.
+      'POL',
       'Item Code',
       // The drawing revision gets its own column instead of riding inside the
       // item code as CODE/REV. This sheet is filtered and VLOOKUP-ed against
@@ -69,6 +72,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       l.jcCode,
       `Op${opSrNo(l.opSeq)}`,
       l.soCode ?? '',
+      l.clientPoLineNo ?? '',
       l.itemCode ?? '',
       l.itemRevision ?? '',
       l.itemName ?? '',
@@ -210,6 +214,9 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                     <th>JC</th>
                     <th>OP</th>
                     <th>SO</th>
+                    {/* POL — the CUSTOMER's own purchase-order line number,
+                        immediately before the item code. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item</th>
                     {/* The item code says which part number was inspected but not
                         what the part IS, so the name gets its own column next to
@@ -230,7 +237,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                 <tbody>
                   {completed.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="empty-state">
+                      <td colSpan={16} className="empty-state">
                         No TPI records yet
                       </td>
                     </tr>
@@ -249,6 +256,9 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         </td>
                         <td style={{ fontSize: 11 }}>Op{opSrNo(l.opSeq)}</td>
                         <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{l.soCode ?? '—'}</td>
+                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                          {l.clientPoLineNo ?? '—'}
+                        </td>
                         <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                           {itemCodeWithRev(l.itemCode, l.itemRevision)}
                         </td>
