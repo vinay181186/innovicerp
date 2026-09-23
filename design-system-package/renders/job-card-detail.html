@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job Card detail — reference render</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700;800&family=Source+Code+Pro:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../01-tokens.css" />
+    <link rel="stylesheet" href="../02-innovic-theme.css" />
+    <link rel="stylesheet" href="./_render-helpers.css" />
+    <style>
+      body {
+        margin: 0;
+        background: var(--bg);
+        font-family: var(--bfont);
+        font-size: var(--fs-body);
+        color: var(--text);
+      }
+      #content {
+        padding: 0 20px 20px;
+      }
+      .fact-l {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text3);
+      }
+      .fact-v {
+        font-size: 13px;
+        font-weight: 600;
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="shell"></div>
+    <div id="main">
+      <div id="content">
+        <!-- Page header -->
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; margin: 14px 0"
+        >
+          <div style="display: flex; align-items: center; gap: 12px">
+            <div class="section-hdr" style="margin-bottom: 0">
+              📋 <span class="mono">IN-JC-26-00012</span>
+            </div>
+            <span class="badge b-blue">IN PROGRESS</span>
+            <span class="badge b-amber">DUE IN 3 DAYS</span>
+          </div>
+          <div style="display: flex; gap: 8px">
+            <button class="btn btn-ghost">Print</button>
+            <button class="btn btn-ghost">Assign Task</button>
+            <button class="btn btn-primary">Edit Job Card</button>
+          </div>
+        </div>
+
+        <!-- Header card: identity + facts, left-accent stripe -->
+        <div class="panel" style="border-left: 3px solid var(--cyan); margin-bottom: 12px">
+          <div class="panel-hdr"><span class="panel-title">Job Card Details</span></div>
+          <div class="panel-body">
+            <div style="display: flex; gap: 16px; align-items: flex-start">
+              <div
+                style="
+                  width: 120px;
+                  height: 120px;
+                  flex: none;
+                  border: 1px solid var(--border);
+                  border-radius: var(--radius);
+                  background: var(--bg3);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: var(--text3);
+                  font-size: 11px;
+                "
+              >
+                item image
+              </div>
+              <div
+                style="
+                  flex: 1;
+                  display: grid;
+                  grid-template-columns: repeat(6, minmax(0, 1fr));
+                  gap: 12px 16px;
+                "
+              >
+                <div>
+                  <div class="fact-l">Item Code</div>
+                  <div class="fact-v mono" style="color: var(--text)">MC-1042-A</div>
+                </div>
+                <div style="grid-column: span 2">
+                  <div class="fact-l">Part / Description</div>
+                  <div class="fact-v">Hydraulic End Cap — Ø90 flange</div>
+                </div>
+                <div>
+                  <div class="fact-l">SO No.</div>
+                  <div class="fact-v mono" style="color: var(--blue)">IN-SO-26-0044</div>
+                </div>
+                <div>
+                  <div class="fact-l">Customer</div>
+                  <div class="fact-v">Kirloskar Pneumatic</div>
+                </div>
+                <div>
+                  <div class="fact-l">Qty (Plan)</div>
+                  <div class="fact-v mono">120</div>
+                </div>
+                <div>
+                  <div class="fact-l">RM Grade</div>
+                  <div class="fact-v">EN8 / C45</div>
+                </div>
+                <div>
+                  <div class="fact-l">RM Size</div>
+                  <div class="fact-v">Ø95 × 42 mm</div>
+                </div>
+                <div>
+                  <div class="fact-l">Route Card</div>
+                  <div class="fact-v mono" style="color: var(--blue)">IN-RC-00007</div>
+                </div>
+                <div>
+                  <div class="fact-l">Start Date</div>
+                  <div class="fact-v mono">02-Sep-2026</div>
+                </div>
+                <div>
+                  <div class="fact-l">Due Date</div>
+                  <div class="fact-v mono">26-Sep-2026</div>
+                </div>
+                <div>
+                  <div class="fact-l">Dispatch Date</div>
+                  <div class="fact-v mono">30-Sep-2026</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI strip for this card -->
+        <div class="panel" style="display: flex; flex-wrap: wrap; padding: 0; overflow: hidden">
+          <div class="ds-stat" style="border-left: none">
+            <div class="ds-stat-l">PLANNED</div>
+            <div class="mono fw-700 ds-stat-n">120</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">CLEARED</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--green)">78</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">IN PROCESS</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--blue)">30</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">REJECTED</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--red)">4</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">BALANCE</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--amber)">42</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">OPS DONE</div>
+            <div class="mono fw-700 ds-stat-n">3 / 6</div>
+          </div>
+        </div>
+
+        <!-- Operation routing -->
+        <div class="panel" style="margin-top: 12px">
+          <div class="panel-hdr">
+            <span class="panel-title">Operation Routing</span>
+            <button class="btn btn-ghost btn-sm">+ Add Operation</button>
+          </div>
+          <div class="tbl-wrap">
+            <table class="innovic-table">
+              <thead>
+                <tr>
+                  <th>Op</th>
+                  <th style="text-align: left">Operation</th>
+                  <th>Machine / Vendor</th>
+                  <th>Operator</th>
+                  <th>Input</th>
+                  <th>Cleared</th>
+                  <th>Rejected</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="ops"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./_shell.js"></script>
+    <script>
+      document.getElementById('shell').innerHTML = window.INNOVIC_SHELL({
+        activeModule: 'Production',
+        crumbGroup: 'Production',
+        crumbPage: 'Job Card IN-JC-26-00012',
+      });
+      const ops = [
+        [10, 'CNC Turning — rough + finish', 'VMC-04', 'R. Pawar', 120, 120, 0, 'completed'],
+        [20, 'Drilling — 6 × Ø8 PCD 70', 'RD-02', 'S. Kale', 120, 118, 2, 'completed'],
+        [30, 'Milling — flange face', 'VMC-02', 'A. Jadhav', 118, 96, 2, 'completed'],
+        [40, 'Heat Treatment (OSP)', 'Precision Heat Treatment Co.', '—', 96, 78, 0, 'in_progress'],
+        [50, 'Final Inspection', 'QC Bay 1', 'M. Desai', 78, 0, 0, 'pending'],
+        [60, 'Packing & Dispatch', '—', '—', 0, 0, 0, 'pending'],
+      ];
+      const pill = {
+        completed: ['b-green', 'COMPLETED'],
+        in_progress: ['b-blue', 'RUNNING'],
+        pending: ['b-grey', 'PENDING'],
+      };
+      document.getElementById('ops').innerHTML = ops
+        .map((o) => {
+          const [seq, name, mc, opr, inp, cl, rj, st] = o;
+          const [c, l] = pill[st];
+          return `<tr class="ds-row">
+          <td class="td-ctr mono fw-700">${seq}</td>
+          <td style="text-align:left">${name}</td>
+          <td class="td-ctr" style="font-size:12px">${mc}</td>
+          <td class="td-ctr" style="font-size:12px">${opr}</td>
+          <td class="td-ctr mono">${inp}</td>
+          <td class="td-ctr mono fw-700" style="color:var(--green2)">${cl}</td>
+          <td class="td-ctr mono fw-700" style="color:${rj ? 'var(--red2)' : 'var(--text3)'}">${rj}</td>
+          <td class="td-ctr"><span class="badge ${c}">${l}</span></td>
+          <td class="td-ctr"><button class="btn btn-ghost btn-sm">Op Entry</button></td>
+        </tr>`;
+        })
+        .join('');
+    </script>
+  </body>
+</html>

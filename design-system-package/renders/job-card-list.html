@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job Cards — reference render</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700;800&family=Source+Code+Pro:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../01-tokens.css" />
+    <link rel="stylesheet" href="../02-innovic-theme.css" />
+    <link rel="stylesheet" href="./_render-helpers.css" />
+    <style>
+      body {
+        margin: 0;
+        background: var(--bg);
+        font-family: var(--bfont);
+        font-size: var(--fs-body);
+        color: var(--text);
+      }
+      #content {
+        padding: 0 20px 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="shell"></div>
+    <div id="main">
+      <div id="content">
+        <!-- Page header: section title left, primary action right -->
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 14px 0;
+          "
+        >
+          <div class="section-hdr" style="margin-bottom: 0">📋 Job Cards</div>
+          <div style="display: flex; gap: 8px">
+            <button class="btn btn-ghost">⤓ Excel</button>
+            <button class="btn btn-primary">+ New Job Card</button>
+          </div>
+        </div>
+
+        <!-- KPI: ONE strip, never separate cards. Active = coloured underline. -->
+        <div class="panel" style="display: flex; flex-wrap: wrap; padding: 0; overflow: hidden">
+          <div class="ds-stat" style="border-left: none; border-bottom-color: var(--cyan)">
+            <div class="ds-stat-l" style="color: var(--cyan)">TOTAL</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--cyan)">48</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">PLANNED</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--amber)">9</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">IN PROGRESS</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--blue)">14</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">COMPLETED</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--green)">23</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">OVERDUE</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--red)">2</div>
+          </div>
+          <div class="ds-stat">
+            <div class="ds-stat-l">ON HOLD</div>
+            <div class="mono fw-700 ds-stat-n" style="color: var(--text)">0</div>
+          </div>
+        </div>
+
+        <!-- Filter row -->
+        <div
+          style="
+            display: flex;
+            gap: 8px;
+            margin: 12px 0;
+            flex-wrap: wrap;
+            align-items: center;
+          "
+        >
+          <input
+            class="innovic-input"
+            placeholder="🔍 Search JC No., item code, part name, SO No.…"
+            style="flex: 1 1 320px; max-width: 420px"
+          />
+          <select class="innovic-select" style="width: 150px">
+            <option>All Status</option>
+          </select>
+          <select class="innovic-select" style="width: 150px">
+            <option>All Machines</option>
+          </select>
+          <select class="innovic-select" style="width: 150px">
+            <option>All Operators</option>
+          </select>
+        </div>
+
+        <div class="panel">
+          <div class="tbl-wrap tbl-frozen">
+            <table class="innovic-table">
+              <thead>
+                <tr>
+                  <th>Sr No</th>
+                  <th>Job Card No.</th>
+                  <th>Item</th>
+                  <th style="text-align: left">Part / Description</th>
+                  <th>SO No.</th>
+                  <th>Qty (Plan)</th>
+                  <th>Progress</th>
+                  <th>Status</th>
+                  <th>Start Date</th>
+                  <th>Due Date</th>
+                  <th>Days Left</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="ds-hint">💡 Click a row to open the job card</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./_shell.js"></script>
+    <script src="./_data.js"></script>
+    <script>
+      document.getElementById('shell').innerHTML = window.INNOVIC_SHELL({
+        activeModule: 'Production',
+        crumbGroup: 'Production',
+        crumbPage: 'Job Cards',
+      });
+      document.getElementById('rows').innerHTML = window.INNOVIC_JC_ROWS();
+    </script>
+  </body>
+</html>
