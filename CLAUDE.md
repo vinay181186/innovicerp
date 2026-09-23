@@ -939,7 +939,9 @@ Do not skip this acknowledgment. It tells the user you have context.
 ---
 
 ## NEW FIELD — STANDARD FLOW
+
 When introducing a new field:
+
 1. State the business need and where its value comes from.
 2. Reuse the closest existing field pattern (DB column, API, validation, form control,
    permission) — no new pattern unless required.
@@ -972,12 +974,14 @@ directions**: **Upstream → Source of Truth → Downstream.**
 First determine the canonical source of truth. Then inspect:
 
 **Upstream documents**
+
 - Where does the value originate?
 - Should it be inherited / auto-fetched into the current document?
 - Is it required for creating the current document?
 - Does changing it affect the source document or only the current document?
 
 **Downstream documents**
+
 - Which generated / related documents require the value?
 - Should it be automatically carried forward?
 - Should it be editable or read-only?
@@ -995,3 +999,51 @@ blank, editable) → Production Order → Job Card (copied from the plan's snaps
 never re-read — 0106) → rework / recovery child JC (copied from the parent) → JC
 header, status page, printed job card (read-only)`. BOM child JCs take theirs from the
 BOM line. A hand-raised JW Job Card prefills from the item's Route Card while blank.
+
+---
+
+## Section 18 — Names — One Fact, One Name
+
+`docs/NAMING.md` is the register of every name this system uses. It is not
+documentation; it is the lookup you perform BEFORE inventing a name.
+
+**Before creating any new name** — a screen label, a column header, a Zod field, a
+database column, a document code prefix, an Excel header, a print heading:
+
+1. Look the fact up in `docs/NAMING.md` section A (facts) or B (documents). If it is
+   there, use that name. There is no second name for it, and no shortened variant.
+2. If it is not there, add the row to `docs/NAMING.md` in the SAME commit as the code.
+   A name that exists only in code is a name nobody else can find.
+3. If the fact already has a name and you believe it is wrong, change the register and
+   every use of it together. Never add a second name and leave both alive.
+
+**The two faults this prevents**, both found in the 2026-09-23 audit:
+
+- **One fact under many names.** The customer's PO line number was `CPO`, `CPO Ln`,
+  `Client PO Ln` and `PO Line#`. The sales-order number had seventeen labels. The
+  job-card number had eleven.
+- **One name over many facts.** `Rev` labelled four different revisions. A bare `Date`
+  header meant seventeen different dates, `Qty` twelve, `Type` eleven, `Status` sixty-one
+  tables' worth of unrelated states.
+
+**The rules that follow from that:**
+
+- A column header names the FACT, not the row's subject. `Date`, `Status`, `Type`, `Qty`
+  and `By` are not facts. Write `GRN Date`, `PO Status`, `Issue Qty`, `Closed By`. A bare
+  one is allowed only where the table has exactly one such fact.
+- A short form is allowed only if it is unique across the whole app. `POL` qualified;
+  `Rev` did not.
+- One field name carries one fact. When a fact is joined in from another table it takes
+  the qualified name — the SO line owns `revision`, everyone downstream calls it
+  `itemRevision`.
+- `xxxText` means a SNAPSHOT of a value whose live row may be gone. It is only ever a
+  fallback: read `xxx ?? xxxText`. A `xxxText` with no live `xxx` behind it is a defect.
+- A field named `date`, `qty`, `status`, `type` or `code` with no qualifier is banned in
+  a shared schema unless the object it sits on makes it unambiguous by itself.
+- New document codes follow `IN-<ABBR>-#####`. Live series are never renumbered.
+- Never write one fact into another fact's field. Our line number is `lineNo`; the
+  customer's is `clientPoLineNo`; on live data our line 11 is their line 20.
+
+**Verify before you finish.** Grep the label you added across `apps/web/src`. If the same
+words already appear on another screen meaning something else, you have created the fault
+this section exists to stop.
