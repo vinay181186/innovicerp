@@ -5,6 +5,7 @@
 
 import type { CustomerDispatchRegisterRow } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 const COLUMNS = [
   'Dispatch No',
@@ -14,10 +15,11 @@ const COLUMNS = [
   'JC No',
   'POL',
   'Item Code',
-  // The customer's drawing revision gets its OWN column rather than being
-  // pasted onto the item code. People filter this sheet and VLOOKUP the code
-  // column against Item Master; "IN-IT-0007/B" would match nothing there. Same
-  // decision as the Job Card export.
+  // The Item Code cell above reads CODE/REV, the way a dispatch line — which
+  // always traces back to a Sales Order line — reads everywhere else (user
+  // rule 2026-09-23). The customer's drawing revision ALSO keeps its own
+  // column here so it stays filterable and sortable on its own. Same decision
+  // as the Job Card export.
   'Drawing Rev',
   'Item Name',
   'Qty',
@@ -37,7 +39,7 @@ export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFi
     r.customer ?? '',
     r.jcNo ?? '',
     r.clientPoLineNo ?? '',
-    r.itemCode ?? r.itemCodeText ?? '',
+    itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision, ''),
     r.itemRevision ?? '',
     r.itemName,
     r.qty,

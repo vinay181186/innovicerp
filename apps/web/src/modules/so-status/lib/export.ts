@@ -4,6 +4,7 @@
 
 import type { SoStatusResponse } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 export function exportSoStatusExcel(data: SoStatusResponse): void {
   const { header, lines } = data;
@@ -11,12 +12,12 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
   const lineRows = lines.map((l) => ({
     SO: header.code,
     Line: l.lineNo,
-    'Item Code': l.itemCode ?? l.itemCodeText ?? '',
-    // The customer's drawing revision gets its OWN column rather than being
-    // appended to Item Code as "CODE/REV". On screen the slash reads well, but in
-    // a spreadsheet people filter this column and VLOOKUP Item Code against Item
-    // Master, and a suffixed code matches nothing. Same split as the Job Card
-    // export.
+    // CODE/REV, the way an SO-traceable row reads everywhere else (user rule
+    // 2026-09-23) — every line on this sheet IS a Sales Order line.
+    'Item Code': itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
+    // The customer's drawing revision ALSO keeps its own column: in a
+    // spreadsheet people filter and sort on the bare revision, so it has to
+    // stay available on its own. Same split as the Job Card export.
     'Drawing Rev': l.itemRevision ?? '',
     'Part Name': l.partName ?? '',
     'SO Qty': l.orderQty,
@@ -36,13 +37,13 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
       SO: header.code,
       Line: l.lineNo,
       'JC No': jc.code,
-      'Item Code': jc.itemCode ?? '',
+      'Item Code': itemCodeWithRev(jc.itemCode, jc.itemRevision, ''),
       'Drawing Rev': jc.itemRevision ?? '',
       // WHAT the job card makes. A JC number says which job, not which part, and
       // this sheet is read away from the screen where nothing else names the
-      // item. Its OWN column for the same reason Drawing Rev has one: people
-      // VLOOKUP the Item Code column against Item Master, so nothing may be
-      // glued into that cell.
+      // item. Its OWN column for the same reason Drawing Rev keeps one: each
+      // fact stays filterable on its own, even though the Item Code cell now
+      // carries the revision with it.
       'Item Name': jc.itemName ?? '',
       'JC Qty': jc.orderQty,
       Completed: jc.doneQty,

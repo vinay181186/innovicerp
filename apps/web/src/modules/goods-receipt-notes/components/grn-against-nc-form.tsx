@@ -38,6 +38,8 @@ interface LineDraft {
   lineNo: number;
   itemCode: string;
   itemRevision: string | null;
+  /** The CUSTOMER's PO line number off the SO line behind this challan line. */
+  clientPoLineNo: string | null;
   itemName: string;
   sentQty: number;
   receivedSoFar: number;
@@ -145,6 +147,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
             lineNo: l.lineNo,
             itemCode: l.itemCode ?? l.itemCodeText,
             itemRevision: l.itemRevision,
+            clientPoLineNo: l.clientPoLineNo,
             itemName: l.itemName ?? l.itemNameText ?? '',
             sentQty: sent,
             receivedSoFar: got,
@@ -363,21 +366,24 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
           <thead>
             <tr>
               <th style={{ width: '4%' }}>#</th>
-              <th style={{ width: '17%' }}>Item Code</th>
-              <th style={{ width: '25%' }}>Item Name</th>
+              {/* POL = the CUSTOMER's own PO line number off the SO line behind
+                  this challan line. Widths below still total 100. */}
+              <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
+              <th style={{ width: '16%' }}>Item Code</th>
+              <th style={{ width: '22%' }}>Item Name</th>
               <th style={{ width: '8%' }}>Sent Qty</th>
               <th style={{ width: '9%' }}>Received so far</th>
               <th style={{ width: '8%' }}>Balance</th>
               <th style={{ width: '11%' }}>
                 Receive Now<span className="req">★</span>
               </th>
-              <th style={{ width: '18%' }}>Remarks</th>
+              <th style={{ width: '17%' }}>Remarks</th>
             </tr>
           </thead>
           <tbody>
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={8} className="empty-state" style={{ padding: 14 }}>
+                <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
                   {!ncId
                     ? 'Pick an NC to load its return challan.'
                     : !dc
@@ -390,6 +396,11 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
                 <tr key={l.deliveryChallanLineId}>
                   <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
                     {idx + 1}
+                  </td>
+                  {/* POL — the customer's PO line number; '—' when this line has
+                      no sales order behind it. */}
+                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    {l.clientPoLineNo ?? '—'}
                   </td>
                   <td
                     className="mono fw-700"

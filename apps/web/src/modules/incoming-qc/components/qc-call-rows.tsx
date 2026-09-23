@@ -47,6 +47,18 @@ export function IncomingPendingRow(props: {
       context={
         <>
           {o.vendorName ?? '—'} · GRN <span className="mono">{o.grnNo}</span>
+          {/* POL — the CUSTOMER's own PO line number off the SO line behind this
+              receipt. Same purple mono chip the Job Card list uses; absent on a
+              raw-material receipt, which has no sales order behind it. */}
+          {o.clientPoLineNo ? (
+            <>
+              {' '}
+              · POL{' '}
+              <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                {o.clientPoLineNo}
+              </span>
+            </>
+          ) : null}
           {o.soCode ? (
             <>
               {' '}

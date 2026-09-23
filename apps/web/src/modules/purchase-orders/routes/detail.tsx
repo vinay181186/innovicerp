@@ -372,6 +372,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>#</th>
+                {/* POL = the customer's own PO line number, carried down from
+                    the Sales Order line this PO line was raised against. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Source</th>
@@ -391,7 +394,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={priceHidden ? 9 : 11} className="empty-state">
+                  <td colSpan={priceHidden ? 10 : 12} className="empty-state">
                     No lines on this PO yet.
                   </td>
                 </tr>
@@ -670,6 +673,11 @@ function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): Reac
     <tr>
       <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
         {l.lineNo}
+      </td>
+      {/* POL — the CUSTOMER's PO line number off the SO line behind this row.
+          Not our line number above it; the two rarely match. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {l.clientPoLineNo ?? '—'}
       </td>
       {/* CODE/REV — the customer's drawing revision off the SO line THIS line
           was raised against. A hand-typed line has no SO behind it and keeps

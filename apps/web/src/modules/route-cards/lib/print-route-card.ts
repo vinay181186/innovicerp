@@ -38,8 +38,14 @@ export function printRouteCard(args: {
     .join('');
 
   const itemCode = rc.itemCode ?? '—';
+  // Drawing number ONLY. This box used to print `items.revision` beside it as
+  // "Rev", and on a shop-floor document a reader takes any "Rev" for the
+  // CUSTOMER'S drawing revision — which is a different column with a different
+  // meaning (ADR-178). A route card is a master document with no order behind
+  // it, so there is no customer revision to show here at all. The route card's
+  // own revision keeps its own box below, labelled so it cannot be mistaken
+  // for the drawing's.
   const drawing = item?.drawingNo ?? '—';
-  const rev = item?.revision ?? '—';
 
   const body = `
     <div class="doc-title"><h1>ROUTE CARD — ${esc(rc.code || itemCode)}</h1><span class="print-meta">${printedMeta()}</span></div>
@@ -48,10 +54,10 @@ export function printRouteCard(args: {
       <div class="info-box"><div class="info-lbl">Item Name</div><div class="info-val">${esc(rc.itemName ?? item?.name ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Grade</div><div class="info-val">${esc(rc.rawMaterialGradeText ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Size</div><div class="info-val">${esc(rc.rawMaterialSizeText ?? '—')}</div></div>
-      <div class="info-box"><div class="info-lbl">Drawing / Rev</div><div class="info-val" style="font-family:monospace">${esc(drawing)} Rev ${esc(rev)}</div></div>
+      <div class="info-box"><div class="info-lbl">Drawing No</div><div class="info-val" style="font-family:monospace">${esc(drawing)}</div></div>
       <div class="info-box"><div class="info-lbl">Material</div><div class="info-val">${esc(item?.material ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Total Operations</div><div class="info-val">${rc.ops.length}</div></div>
-      <div class="info-box"><div class="info-lbl">Revision</div><div class="info-val">${rc.currentRevision}</div></div>
+      <div class="info-box"><div class="info-lbl">Route Card Rev</div><div class="info-val">${rc.currentRevision}</div></div>
     </div>
     <h2>Operation Sequence</h2>
     <table><thead><tr><th>Sr No</th><th>Machine</th><th>Operation</th><th>Cycle Time (h)</th><th>Program No.</th><th>Tool No.</th><th>Tool Details / Setup Notes</th></tr></thead>

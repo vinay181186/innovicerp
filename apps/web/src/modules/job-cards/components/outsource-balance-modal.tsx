@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useOutsourceOpBalance } from '@/modules/jc-ops/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { jobCardsKeys } from '../api';
@@ -24,6 +25,7 @@ export function OutsourceBalanceModal({
   opSeq,
   operation,
   itemCode,
+  itemRevision,
   available,
   defaultVendorCode,
   onClose,
@@ -35,6 +37,10 @@ export function OutsourceBalanceModal({
   opSeq: number;
   operation: string;
   itemCode: string;
+  /** The customer's drawing revision from the SO line behind this card, so the
+   *  item reads `CODE/REV`. Optional: the create/edit form has no revision to
+   *  hand and `itemCodeWithRev` then leaves the bare code alone. */
+  itemRevision?: string | null;
   available: number;
   defaultVendorCode: string;
   onClose: () => void;
@@ -129,7 +135,7 @@ export function OutsourceBalanceModal({
             Operation: <b>{operation}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            Item: {itemCode || '—'} · Available:{' '}
+            Item: {itemCodeWithRev(itemCode, itemRevision)} · Available:{' '}
             <b style={{ color: 'var(--amber)' }}>{available}</b> pcs. Sends the balance to a vendor
             as a JW OSP purchase request.
           </div>

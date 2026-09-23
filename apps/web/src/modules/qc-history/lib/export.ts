@@ -3,12 +3,15 @@
 // (xlsx — an existing dependency). Dates are formatted DD-MM-YYYY (IST-safe via
 // fmtDate, no timezone shift) to match the on-screen tables.
 //
-// Item Code, Drawing Rev and Item Name are three separate columns rather than
-// one glued "CODE/REV" cell the way the screen shows it. A spreadsheet is
-// filtered and VLOOKUP-ed against Item Master, and neither a slashed code nor a
-// code with a name appended matches anything there. Same call as the Job Card
-// export (export-job-card-excel.ts). The name is on the sheet at all because a
-// job-card number says WHICH JOB and never which part.
+// The Item Code cell is written `CODE/REV`, the same way it reads on screen and
+// on every print for a row that traces back to a Sales Order line (user rule
+// 2026-09-23). Drawing Rev and Item Name KEEP their own columns beside it: a
+// spreadsheet is filtered and sorted, so the bare revision has to stay usable
+// on its own, and a job-card number says WHICH JOB and never which part. Same
+// call as the Job Card export (export-job-card-excel.ts).
+// Rows with no SO line behind them — a raw-material receipt from a vendor —
+// have a null revision and correctly keep the bare code; itemCodeWithRev never
+// prints a trailing slash.
 //
 // The QC Call Register exports the same two sheets but its register also holds
 // incoming-material (GRN line) calls. Those are passed as the optional second
@@ -24,6 +27,7 @@ import {
   opSrNo,
 } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/print/doc-print';
 
 function stamp(): string {
@@ -58,7 +62,7 @@ export function exportCompletedQc(
         JC: l.jcCode,
         Op: `Op${opSrNo(l.opSeq)}`,
         SO: l.soCode ?? '',
-        'Item Code': l.itemCode ?? '',
+        'Item Code': itemCodeWithRev(l.itemCode, l.itemRevision, ''),
         'Drawing Rev': l.itemRevision ?? '',
         'Item Name': l.itemName ?? '',
         Operation: l.operation,
@@ -76,7 +80,7 @@ export function exportCompletedQc(
         JC: '',
         Op: '',
         SO: '',
-        'Item Code': l.itemCode ?? '',
+        'Item Code': itemCodeWithRev(l.itemCode, l.itemRevision, ''),
         'Drawing Rev': l.itemRevision ?? '',
         'Item Name': l.itemName ?? '',
         Operation: `Incoming · ${l.vendorName ?? ''}`,
@@ -104,7 +108,7 @@ export function exportPendingQc(
         JC: o.jcCode,
         Op: `Op${opSrNo(o.opSeq)}`,
         SO: o.soCode ?? '',
-        'Item Code': o.itemCode ?? '',
+        'Item Code': itemCodeWithRev(o.itemCode, o.itemRevision, ''),
         'Drawing Rev': o.itemRevision ?? '',
         'Item Name': o.itemName ?? '',
         Operation: o.operation,
@@ -122,7 +126,7 @@ export function exportPendingQc(
         JC: o.jcCode ?? '',
         Op: o.opSeq != null ? `Op${opSrNo(o.opSeq)}` : '',
         SO: o.soCode ?? '',
-        'Item Code': o.itemCode ?? '',
+        'Item Code': itemCodeWithRev(o.itemCode, o.itemRevision, ''),
         'Drawing Rev': o.itemRevision ?? '',
         'Item Name': o.itemName ?? '',
         Operation: `Incoming · ${o.vendorName ?? ''}`,

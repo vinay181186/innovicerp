@@ -312,6 +312,9 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>#</th>
+                  {/* POL = the CUSTOMER's own PO line number off the SO line
+                      behind this challan line. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th>Ship qty</th>
@@ -323,7 +326,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               <tbody>
                 {dc.lines.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="empty-state">
+                    <td colSpan={8} className="empty-state">
                       No lines
                     </td>
                   </tr>
@@ -337,6 +340,11 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                     return (
                       <tr key={line.id}>
                         <td className="mono">{line.lineNo}</td>
+                        {/* POL — the customer's PO line number off the SO line
+                            behind this row; '—' on a raw-material line. */}
+                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                          {line.clientPoLineNo ?? '—'}
+                        </td>
                         {/* SO document format: the code is its own strong-mono
                             column (td-code, var(--text)) and the name a second
                             column beside it. The drawing revision joins the code
@@ -364,7 +372,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               {dc.lines.length > 0 ? (
                 <tfoot>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <td colSpan={3} style={{ fontWeight: 700 }}>
+                    <td colSpan={4} style={{ fontWeight: 700 }}>
                       Total
                     </td>
                     <td className="mono fw-700">{totals.ship.toFixed(2)}</td>

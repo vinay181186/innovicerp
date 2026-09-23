@@ -201,13 +201,16 @@ function IncomingQcPage(): React.JSX.Element {
                 widths that add up to the page so nothing scrolls sideways. */}
             <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
               <table className="innovic-table tbl-grid">
+                {/* POL added before Item Code; Vendor and Item Name gave up
+                    the width so these still total 100. */}
                 <colgroup>
                   <col style={{ width: '10%' }} />
                   <col style={{ width: '9%' }} />
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '5%' }} />
                   <col style={{ width: '12%' }} />
-                  <col style={{ width: '17%' }} />
+                  <col style={{ width: '14%' }} />
                   <col style={{ width: '7%' }} />
                   <col style={{ width: '7%' }} />
                   <col style={{ width: '6%' }} />
@@ -219,6 +222,9 @@ function IncomingQcPage(): React.JSX.Element {
                     <th>GRN Date</th>
                     <th>PO</th>
                     <th>Vendor</th>
+                    {/* POL = the CUSTOMER's own PO line number off the SO line
+                        behind this receipt. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Received</th>
@@ -230,7 +236,7 @@ function IncomingQcPage(): React.JSX.Element {
                 <tbody>
                   {data.pending.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="empty-state">
+                      <td colSpan={11} className="empty-state">
                         ✅ No items pending QC inspection
                       </td>
                     </tr>
@@ -257,14 +263,17 @@ function IncomingQcPage(): React.JSX.Element {
             </div>
             <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
               <table className="innovic-table tbl-grid">
+                {/* POL added before Item Code; Vendor, Item Code and Item Name
+                    gave up the width so these still total 100. */}
                 <colgroup>
                   <col style={{ width: '9%' }} />
                   <col style={{ width: '8%' }} />
                   <col style={{ width: '8%' }} />
                   <col style={{ width: '7%' }} />
-                  <col style={{ width: '13%' }} />
                   <col style={{ width: '11%' }} />
-                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '11%' }} />
                   <col style={{ width: '5%' }} />
                   <col style={{ width: '5%' }} />
                   <col style={{ width: '5%' }} />
@@ -279,6 +288,9 @@ function IncomingQcPage(): React.JSX.Element {
                     <th style={{ color: 'var(--green)' }}>QC Date</th>
                     <th>Response</th>
                     <th>Vendor</th>
+                    {/* POL = the CUSTOMER's own PO line number off the SO line
+                        behind this receipt. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Received</th>
@@ -292,7 +304,7 @@ function IncomingQcPage(): React.JSX.Element {
                 <tbody>
                   {data.completed.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="empty-state">
+                      <td colSpan={14} className="empty-state">
                         No completed QC inspections yet
                       </td>
                     </tr>
@@ -367,6 +379,11 @@ function PendingRow({
         {r.poCode ?? 'Manual'}
       </td>
       <td>{r.vendorName ?? '—'}</td>
+      {/* POL — the customer's own PO line number; '—' on a raw-material
+          receipt, which has no sales order behind it. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {r.clientPoLineNo ?? '—'}
+      </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
         {/* An OSP return traces back to an SO line and shows CODE/REV; a vendor's
             raw-material receipt has no SO behind it and shows the bare code. Half
@@ -424,6 +441,11 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
         {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : `${r.respDays}d`}
       </td>
       <td>{r.vendorName ?? '—'}</td>
+      {/* POL — the customer's own PO line number; '—' on a raw-material
+          receipt, which has no sales order behind it. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {r.clientPoLineNo ?? '—'}
+      </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>

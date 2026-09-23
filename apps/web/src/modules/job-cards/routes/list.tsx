@@ -21,6 +21,7 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
@@ -578,7 +579,7 @@ function JobCardsListPage(): React.JSX.Element {
                           the thumbnail column before the item code · name). */}
                       <ItemThumbnailCell
                         imagePath={jc.itemImagePath}
-                        alt={jc.itemName || jc.itemCode}
+                        alt={jc.itemName || itemCodeWithRev(jc.itemCode, jc.itemRevision)}
                       />
                       <td style={{ textAlign: 'left' }}>
                         {/* CODE/REV + name, text only — the picture is the

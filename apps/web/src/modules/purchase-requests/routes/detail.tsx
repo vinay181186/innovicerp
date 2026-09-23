@@ -178,7 +178,14 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              {detail.itemName ?? detail.itemCodeText ?? 'Untitled item'}
+              {/* Falls back to CODE/REV, never the bare snapshot code — the
+                  revision travels with the code everywhere else on this page. */}
+              {detail.itemName ??
+                itemCodeWithRev(
+                  detail.itemCode ?? detail.itemCodeText,
+                  detail.itemRevision,
+                  'Untitled item',
+                )}
               <PrStatusBadge status={detail.status} />
             </div>
           </div>
@@ -297,9 +304,20 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                 : 'Failed to delete purchase request.'}
             </div>
           ) : null}
-          {/* The six facts a buyer scans for, in the SO detail strip idiom. */}
+          {/* The facts a buyer scans for, in the SO detail strip idiom. */}
           <div style={STRIP}>
             <Fact label="SO No." title={soNo} value={<span className="mono">{soNo}</span>} />
+            {/* POL = the CUSTOMER's own PO line number off the SO line behind
+                this PR. Not our SO line number — the two rarely match. */}
+            <Fact
+              label="POL"
+              title={detail.clientPoLineNo ?? '—'}
+              value={
+                <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                  {detail.clientPoLineNo ?? '—'}
+                </span>
+              }
+            />
             <Fact
               label="Item Code"
               title={itemCode}

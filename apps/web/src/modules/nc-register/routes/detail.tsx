@@ -605,6 +605,13 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
         </CtxField>
       </div>
       <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>
+        {/* POL — the CUSTOMER's own PO line number off the SO line behind this
+            NC's job card. Not our SO line number; the two rarely match. */}
+        <InlinePair label="POL:">
+          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+            {detail.clientPoLineNo ?? '—'}
+          </span>
+        </InlinePair>
         <InlinePair label="Item:">
           {/* SO pattern: the code strong-mono (td-code) in var(--text) so the
               part reads as THE value; the name quiet beside it. CODE/REV only on

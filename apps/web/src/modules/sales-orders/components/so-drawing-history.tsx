@@ -28,6 +28,7 @@ import type { SoDrawingAction, SoDrawingHistory, SoDrawingHistoryLine } from '@i
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { FilePreviewModal, fileNameFromPath } from '@/components/shared/file-preview-modal';
 import { fmtIstDateTime } from '../lib/format';
 
@@ -59,16 +60,19 @@ const ACTION_CLASS: Record<SoDrawingAction, string> = {
   removed: 'b-red',
 };
 
-/** Chip caption for one line. The item code alone is what the user thinks in,
- *  so keep it bare — but the same code can legitimately sit on two lines of
- *  one SO (different due dates, different lots), and then two identical chips
- *  are worse than useless. In that case BOTH get the line number, so no chip
- *  is ever ambiguous about which one it is. */
+/** Chip caption for one line. Every chip here IS a Sales Order line, so the
+ *  code carries the customer's drawing revision with it — `CODE/REV` (user
+ *  rule 2026-09-23). On a drawing-history tab of all places, a code without
+ *  its revision is the one thing the reader must not have to guess at.
+ *  The same code can still sit on two lines of one SO (different due dates,
+ *  different lots) at the SAME revision, and then two identical chips are
+ *  worse than useless. In that case BOTH get the line number, so no chip is
+ *  ever ambiguous about which one it is. */
 function chipLabels(lines: SoDrawingHistoryLine[]): Map<string, string> {
   const base = new Map<string, string>();
   const seen = new Map<string, number>();
   for (const l of lines) {
-    const label = l.itemCode ?? l.partName;
+    const label = l.itemCode ? itemCodeWithRev(l.itemCode, l.currentRevision) : l.partName;
     base.set(l.soLineId, label);
     seen.set(label, (seen.get(label) ?? 0) + 1);
   }

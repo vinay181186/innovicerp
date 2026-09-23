@@ -32,6 +32,8 @@ interface LineDraft {
   /** The PO line's snapshot text — the ref sent when the line has no itemId. */
   itemCodeText: string;
   itemRevision: string | null;
+  /** The CUSTOMER's PO line number off the SO line behind this PO line. */
+  clientPoLineNo: string | null;
   itemName: string;
   poQty: number;
   receivedSoFar: number;
@@ -141,6 +143,7 @@ export function GrnAgainstPoForm({
             itemCodeDisplay: l.itemCode ?? l.itemCodeText ?? '',
             itemCodeText: l.itemCodeText ?? '',
             itemRevision: l.itemRevision,
+            clientPoLineNo: l.clientPoLineNo,
             itemName: l.itemName,
             poQty: l.qty,
             receivedSoFar: l.receivedQty,
@@ -342,8 +345,11 @@ export function GrnAgainstPoForm({
           <thead>
             <tr>
               <th style={{ width: '4%' }}>#</th>
-              <th style={{ width: '15%' }}>Item Code</th>
-              <th style={{ width: '20%' }}>Item Name</th>
+              {/* POL = the CUSTOMER's own PO line number off the SO line behind
+                  this PO line. Widths below still total 100. */}
+              <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
+              <th style={{ width: '14%' }}>Item Code</th>
+              <th style={{ width: '17%' }}>Item Name</th>
               <th style={{ width: '7%' }}>PO Qty</th>
               <th style={{ width: '8%' }}>Received so far</th>
               <th style={{ width: '7%' }}>Balance</th>
@@ -351,14 +357,14 @@ export function GrnAgainstPoForm({
                 Receive Now<span className="req">★</span>
               </th>
               <th style={{ width: '12%' }}>DC Ref</th>
-              <th style={{ width: '13%' }}>Remarks</th>
+              <th style={{ width: '12%' }}>Remarks</th>
               <th style={{ width: '4%' }} />
             </tr>
           </thead>
           <tbody>
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
+                <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
                   {!poId
                     ? 'Pick a purchase order to load its pending lines.'
                     : !po
@@ -371,6 +377,11 @@ export function GrnAgainstPoForm({
                 <tr key={l.purchaseOrderLineId}>
                   <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
                     {idx + 1}
+                  </td>
+                  {/* POL — the customer's PO line number; '—' when this line has
+                      no sales order behind it (a stock buy). */}
+                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    {l.clientPoLineNo ?? '—'}
                   </td>
                   <td
                     className="mono fw-700"

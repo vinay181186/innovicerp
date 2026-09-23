@@ -15,6 +15,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClientsList } from '../../clients/api';
 import { useItem } from '../../items/api';
@@ -362,11 +363,19 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   }, [orderSource, soDetail.data, jwDetail.data]);
   const itemOptions = useMemo(
     () =>
-      orderLines.map((l) => ({
-        id: l.id,
-        code: (l as { itemCode?: string | null }).itemCode ?? l.itemCodeText ?? null,
-        name: l.partName,
-      })),
+      orderLines.map((l) => {
+        const code = (l as { itemCode?: string | null }).itemCode ?? l.itemCodeText ?? null;
+        // CODE/REV: the row IS an order line (SO or JWSO), so the customer's
+        // drawing revision typed on that line belongs with the code wherever it
+        // is shown (user rule 2026-09-23). A line with no code stays null.
+        return {
+          id: l.id,
+          code: code
+            ? itemCodeWithRev(code, (l as { revision?: string | null }).revision, code)
+            : null,
+          name: l.partName,
+        };
+      }),
     [orderLines],
   );
   const selectedLine = useMemo(

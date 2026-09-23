@@ -174,6 +174,15 @@ export function PrCard({
           >
             {pr.code}
           </Link>
+          {/* POL — the CUSTOMER's own PO line number off the SO line behind this
+              request. Same purple mono chip the Job Card list uses; absent when
+              the PR has no sales order behind it (a stock buy). */}
+          {pr.clientPoLineNo ? (
+            <span className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+              POL{' '}
+              <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{pr.clientPoLineNo}</span>
+            </span>
+          ) : null}
           <span style={{ fontSize: 12 }}>
             <span className="mono" style={{ color: 'var(--purple)' }}>
               {/* CODE/REV — the customer's drawing revision off the SO line this

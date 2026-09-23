@@ -781,6 +781,7 @@ function JcStatusEditForm({
           opSeq={enrichedById.get(ops[balanceOpIdx]!.id!)?.opSeq ?? balanceOpIdx + 1}
           operation={ops[balanceOpIdx]!.operation}
           itemCode={itemCode}
+          itemRevision={jc.itemRevision}
           available={ops[balanceOpIdx]!.available}
           defaultVendorCode={ops[balanceOpIdx]!.outsourceVendorCode}
           onClose={() => setBalanceOpIdx(null)}

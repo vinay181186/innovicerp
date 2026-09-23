@@ -273,6 +273,9 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>#</th>
+                {/* POL = the CUSTOMER's own PO line number, carried down from
+                    the Sales Order line behind this receipt. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item</th>
                 <th>Item Name</th>
                 <th>Received</th>
@@ -286,7 +289,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td colSpan={10} className="empty-state">
                     No lines on this GRN yet.
                   </td>
                 </tr>
@@ -308,6 +311,10 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
   return (
     <tr>
       <td className="mono">{l.lineNo}</td>
+      {/* POL — the CUSTOMER's PO line number off the SO line behind this row. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {l.clientPoLineNo ?? '—'}
+      </td>
       {/* Item code is THE main thing — strong; CODE/REV (ADR-177). */}
       <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}

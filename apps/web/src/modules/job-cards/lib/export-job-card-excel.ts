@@ -7,6 +7,7 @@ import type { JcOpEnriched, JobCardListItem, MachineSplit, OpLog } from '@innovi
 import { opSrNo } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { resolveActualMachine } from '@/components/shared/machine-split';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 // The op's PLANNED machine — where the REMAINING qty runs, not who made the
 // completed qty (ADR-126). See actualMachine / machineSplitCell for the rest.
@@ -62,14 +63,16 @@ export function exportJobCardExcel(args: {
   const headerAoa: (string | number)[][] = [
     ['JOB CARD', jc.code],
     ['Date', jc.jcDate],
-    // The item code is kept CLEAN here — no `/REV` suffix — and the customer's
-    // drawing revision gets its own row. This sheet is read in Excel, not looked
-    // at as a picture of the screen: the code is the value people filter on and
-    // VLOOKUP against the Items master, and writing "IN-IT-0007/B" into it would
-    // break every one of those lookups. A separate cell keeps both usable, and
-    // stays blank for a JW-sourced or standalone card that has no SO line behind
-    // it (rather than printing a dash into a column someone will sort).
-    ['Item Code', jc.itemCode],
+    // The item code is written `CODE/REV` here, the same way it reads on every
+    // screen and print for a row that traces back to a Sales Order line (user
+    // rule 2026-09-23) — a job card is always made against one order's drawing,
+    // so the code must never appear without that revision.
+    // The separate "Drawing Rev" row below STAYS: this sheet is read in Excel,
+    // and keeping the bare revision in its own cell leaves it sortable and
+    // filterable. It stays blank for a JW-sourced or standalone card that has
+    // no SO line behind it, and `itemCodeWithRev` then leaves the code bare
+    // rather than printing a trailing slash.
+    ['Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision)],
     ['Drawing Rev', jc.itemRevision ?? ''],
     ['Item Name', jc.itemName || ''],
     ['SO / WO', jc.sourceLink?.code ?? ''],

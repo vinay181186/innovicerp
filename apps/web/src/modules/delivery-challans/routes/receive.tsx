@@ -32,6 +32,8 @@ interface LineDraft {
    *  line the API could not prove is the customer's part — raw material and
    *  bought-in lines — and those show the bare code. */
   itemRevision: string | null;
+  /** The CUSTOMER's PO line number off the SO line behind this challan line. */
+  clientPoLineNo: string | null;
   itemNameText: string | null;
   sentQty: number;
   alreadyReceived: number;
@@ -75,6 +77,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           lineNo: l.lineNo,
           itemCodeText: l.itemCodeText,
           itemRevision: l.itemRevision,
+          clientPoLineNo: l.clientPoLineNo,
           itemNameText: l.itemNameText,
           sentQty: sent,
           alreadyReceived: already,
@@ -261,6 +264,9 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                 <thead>
                   <tr>
                     <th>#</th>
+                    {/* POL = the CUSTOMER's own PO line number off the SO line
+                        behind this challan line. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item</th>
                     <th>Sent</th>
                     <th>Already recv</th>
@@ -272,6 +278,9 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   {lineDrafts.map((d, idx) => (
                     <tr key={d.dcLineId}>
                       <td className="mono">{d.lineNo}</td>
+                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        {d.clientPoLineNo ?? '—'}
+                      </td>
                       <td>
                         <span className="mono">
                           {itemCodeWithRev(d.itemCodeText, d.itemRevision)}

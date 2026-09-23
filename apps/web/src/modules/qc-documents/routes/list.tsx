@@ -606,9 +606,10 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
     'Ln',
     'POL',
     'Item Code',
-    // The drawing revision rides its own column instead of being glued into Item
-    // Code. People filter and VLOOKUP this sheet against Item Master, where
-    // "IN-IT-0007/B" matches nothing. Same call as the Job Card export.
+    // Item Code above is written CODE/REV, the way it reads everywhere else on
+    // an SO-traceable row (user rule 2026-09-23). The drawing revision ALSO
+    // keeps its own column, so it stays sortable and filterable on its own.
+    // Same call as the Job Card export.
     'Drawing Rev',
     'Item Name',
     'Qty',
@@ -630,7 +631,7 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
     aoa.push([
       r.lineNo,
       r.clientPoLineNo ?? '',
-      r.itemCode ?? '',
+      itemCodeWithRev(r.itemCode, r.itemRevision, ''),
       r.itemRevision ?? '',
       r.itemName ?? '',
       r.orderQty,
