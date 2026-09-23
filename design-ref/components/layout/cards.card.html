@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="900x560" name="Doc cards & dashboard blocks" subtitle="DocCard + LinesPanel, WorkList, AttentionList, StatRow, QuickLinks" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script><style>body{background:var(--bg);padding:16px}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115 || {};
+
+const { DocCard, LinesPanel, QtyStrip, Badge, Button, WorkList, AttentionList, StatRow, QuickLinks, Panel } = NS;
+function App(){const [o,setO]=React.useState(true);return <div>
+<DocCard accent="var(--amber)" expanded={o} onToggle={()=>setO(!o)} onOpen={()=>{}} code="IN-GRN-26-0142" title="Precision Heat Treat" badges={<><Badge tone="amber">QC Pending</Badge><Badge tone="grey">Against PO</Badge></>} actions={<Button size="sm" variant="ghost" icon={<NS.Icon name="user-round" size={13}/>}>Assign</Button>}
+metrics={<QtyStrip items={[{label:'Received',value:60},{label:'Accepted',value:0},{label:'Rejected',value:0},{label:'Lines',value:2}]}/>} meta={[<span className="text2">2026-09-23</span>,<>PO <b style={{color:'var(--purple)'}}>IN-MPO-26-0311</b></>,<>DC <span className="text2">4471</span></>,'—']}>
+<LinesPanel title="LINES" code="IN-GRN-26-0142" onOpenDetail={()=>{}}><table className="innovic-table tbl-grid tbl-compact tbl-auto"><thead><tr><th>#</th><th>Item Code</th><th>Item Name</th><th>Received</th><th style={{color:'var(--green)'}}>Accepted</th><th style={{color:'var(--red)'}}>Rejected</th><th>QC</th></tr></thead><tbody><tr><td className="mono fw-700" >1</td><td className="mono fw-700" >RM-EN19-45</td><td >EN19 Round Bar Ø45</td><td className="mono fw-700" >12</td><td className="mono fw-700" >0</td><td className="mono" >0</td><td ><span className="badge b-amber">pending</span></td></tr></tbody></table></LinesPanel>
+</DocCard>
+<div style={{display:'grid',gridTemplateColumns:'1.2fr 1fr',gap:12}}>
+<WorkList items={[{severity:'critical',icon:'⚠️',title:'NC-0214 awaiting disposition',detail:'JC-0917 · Pinion Shaft · 4 pcs',age:5,action:'Dispose'},{severity:'warn',icon:'📄',title:'PR-26-0311 pending approval',detail:'EN19 Ø45 × 12',age:2,action:'Approve'},{severity:'info',icon:'🔬',title:'QC call — JC-0922 Op 30',detail:'first-off',age:0,action:'Inspect'}]}/>
+<div><Panel title="Needs Attention" bodyPadding={0}><AttentionList items={[{icon:'🔴',label:'2 SOs overdue',severity:'critical'},{icon:'⏱',label:'3 JCs past target',severity:'warn'}]}/></Panel>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}><StatRow icon="📥" label="GRNs received" value={4}/><StatRow icon="▶" label="Ops running" value={11}/></div>
+<QuickLinks links={[{icon:'📋',label:'SO Master',color:'var(--dept-sales)'},{icon:'✚',label:'Op Entry',color:'var(--dept-production)'},{icon:'📥',label:'GRN',color:'var(--dept-store)'}]}/></div>
+</div></div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>

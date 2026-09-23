@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="1280x470" name="Navigation" subtitle="TopNav, PageTabs, Breadcrumbs, TabStrip, FilterBar" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:16px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.lbl{font:600 10px var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em;width:78px;flex-shrink:0}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115 || {};
+
+const { TopNav, PageTabs, Breadcrumbs, Input, SyncDot, TabStrip, FilterBar } = NS;
+const SECTIONS=[{key:'sales',label:'Sales & CRM',groups:[{label:'Entry',items:[{label:'SO Master',icon:'📋'},{label:'JWSO Master',icon:'🔧'},{label:'Customer Dispatch',icon:'🚚'}]},{label:'Master',items:[{label:'Client Master',icon:'🏢'}]}]},...['Design','Planning','Production','Purchase','Quality','Store','Finance','Tasks','Reports','Settings'].map(l=>({key:l,label:l,groups:[{items:[]}]}))];
+function App(){const [open,setOpen]=React.useState(null);const [tab,setTab]=React.useState('inbox');return <div style={{margin:-16,background:'var(--bg)',minHeight:470}}>
+<div style={{background:'var(--bg2)',paddingBottom:6}}>
+<TopNav logoSrc="../../assets/innovic-logo.jpeg" sections={SECTIONS} activeKey="sales" openKey={open} onToggle={k=>setOpen(open===k?null:k)} currentPage="SO Master" right={<><div className="gs-wrap"><span className="gs-icon">⌕</span><input className="innovic-input gs-input" style={{width:190}} placeholder="Search anything… (Ctrl+K)"/></div><SyncDot/></>}/>
+<PageTabs tabs={[{key:'h',label:'Dashboard',icon:'📊'},{key:'so',label:'SO Master',icon:'📋'},{key:'jc',label:'Job Cards',icon:'▭'},{key:'t',label:'Task Board',icon:'📋'}]} activeKey="so"/>
+<Breadcrumbs crumbs={[{label:'Home',link:true},{label:'Sales & CRM'},{label:'SO Master',link:true},{label:'Detail'}]}/></div>
+<div style={{padding:'14px 20px'}}>
+<TabStrip activeKey={tab} onChange={setTab} tabs={[{key:'inbox',label:'Inbox',count:4},{key:'outbox',label:'Outbox',count:2},{key:'todo',label:'My To-Do',count:1},{key:'all',label:'All Tasks',note:'(Admin)'}]}/>
+<FilterBar placeholder="Search Task#, title, related document…" filters={[{key:'s',options:['All Status','To Do','In Progress','Completed','Cancelled']},{key:'p',options:['All Priority','Urgent','High','Normal','Low']},{key:'a',options:['Assigned By: All']},{key:'d',options:['Due Date: All','Today','This Week','Overdue']}]}/>
+</div></div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>

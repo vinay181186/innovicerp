@@ -1,0 +1,19 @@
+/* Printed documents (PO / OSP DC / JW DC / GRN) — from apps/web/src/lib/print/doc-print.ts DOC_STYLE. Scoped under .print-doc. */
+.print-doc{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;background:#fff}
+.print-doc .doc-border{border:2px solid #333;padding:0}
+.print-doc .doc-hdr{display:flex;align-items:center;padding:14px;border-bottom:2px solid #333}
+.print-doc .title-bar{text-align:center;padding:10px;border-bottom:2px solid #333;font-size:18px;font-weight:900;letter-spacing:3px;background:#f8fafc}
+.print-doc .addr-row{display:flex;border-bottom:1px solid #999}
+.print-doc .addr-box{flex:1;padding:10px 14px;font-size:10px;line-height:1.45}
+.print-doc .addr-box:first-child{border-right:1px solid #999}
+.print-doc .addr-lbl{font-weight:700;color:#333;text-decoration:underline;margin-bottom:3px}
+.print-doc .addr-name{font-weight:700;font-size:11px}
+.print-doc .meta-lbl{color:#666}
+.print-doc .section{padding:10px 14px;border-bottom:1px solid #999;font-size:11px}
+.print-doc .note-block{white-space:pre-wrap;line-height:1.6}
+.print-doc table{width:100%;border-collapse:collapse;font-size:11px}
+.print-doc th{background:#f1f5f9;padding:6px;border:1px solid #cbd5e1;font-size:10px;text-align:left}
+.print-doc td{padding:5px 8px;border:1px solid #cbd5e1}
+.print-doc .amt-words{padding:8px 14px;border-bottom:1px solid #999;font-size:10px}
+.print-doc .sign-row{display:flex;justify-content:space-between;border-top:1px solid #999}
+.print-doc .test-banner{background:#fef3c7;border:2px dashed #d97706;padding:10px;text-align:center;margin-bottom:14px;border-radius:6px;color:#92400e;font-weight:700}

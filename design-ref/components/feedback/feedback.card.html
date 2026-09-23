@@ -1,0 +1,18 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Feedback" subtitle="Modal, Toast" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:16px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.lbl{font:600 10px var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em;width:70px}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115;
+
+const { Modal, Toast, Button, FormGrid, FormField, Input } = NS;
+function App(){return <div style={{display:'flex',gap:16,alignItems:'flex-start'}}>
+<div style={{flex:1}}><Modal inline title="New Purchase Request" onClose={()=>{}} footer={<><Button variant="ghost">Cancel</Button><Button>Save PR</Button></>}>
+<FormGrid><FormField label="Item" required><Input placeholder="Search item…"/></FormField><FormField label="Qty"><Input defaultValue="25"/></FormField></FormGrid></Modal></div>
+<div style={{display:'flex',flexDirection:'column',gap:8,width:220}}><Toast kind="ok">✓ SO saved</Toast><Toast kind="err">✕ Save failed — retry</Toast><Toast kind="info">ℹ Export started</Toast></div>
+</div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Innovic ERP — UI kit</title>
+<meta name="ext-resource-dependency" content="../../assets/innovic-logo.jpeg" data-resource-id="logo" />
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+</head><body>
+<template id="__bundler_thumbnail" data-bg-color="#155EEF"><svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg"><rect width="1200" height="800" fill="#155EEF"/><text x="600" y="460" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" font-weight="800" font-size="200" fill="#fff">Innovic ERP</text></svg></template>
+<div id="root"></div>
+<script type="text/babel" src="kit-data.jsx"></script>
+<script type="text/babel" src="Shell.jsx"></script>
+<script type="text/babel" src="Dashboard.jsx"></script>
+<script type="text/babel" src="SalesOrders.jsx"></script>
+<script type="text/babel" src="SoForm.jsx"></script>
+<script type="text/babel" src="Screens2.jsx"></script>
+<script type="text/babel">
+function App() {
+  if (!window.InnovicERPDesignSystem_4a2115) return <div className="empty-state">Design-system bundle not built yet — reload in a moment.</div>;
+  const { Toast, ToastStack } = window.InnovicERPDesignSystem_4a2115;
+  const [authed, setAuthed] = useState(() => localStorage.getItem('innovic-kit-authed') !== '0');
+  const PAGES = ['home','so','so-new','so-detail','ops','tasks','po'];
+  const [page, setPage] = useState(() => { const p = localStorage.getItem('innovic-kit-page'); return PAGES.includes(p) ? p : 'home'; });
+  const [tabs, setTabs] = useState(['home', 'so', 'ops', 'tasks']);
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => { localStorage.setItem('innovic-kit-page', page); }, [page]);
+  useEffect(() => { localStorage.setItem('innovic-kit-authed', authed ? '1' : '0'); }, [authed]);
+  const toast = (kind, msg) => { const id = Math.random(); setToasts((t) => [...t, { id, kind, msg }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2600); };
+  const go = (p) => { setPage(p); const k = p.startsWith('so') ? 'so' : p; setTabs((t) => t.includes(k) ? t : [...t, k]); };
+  if (!authed) return <Login onSignIn={() => { setAuthed(true); setPage('home'); }} />;
+  return <>
+    <Shell page={page} setPage={setPage} tabs={tabs} setTabs={setTabs} onSignOut={() => setAuthed(false)}>
+      {page === 'home' ? <Dashboard go={go} /> : page === 'so' ? <SalesOrders go={go} toast={toast} /> : page === 'so-detail' ? <SoDetail go={go} /> : page === 'ops' ? <LiveOps toast={toast} /> : page === 'tasks' ? <TaskBoard toast={toast} /> : page === 'po' ? <PoCompact go={go} toast={toast} /> : <SoForm go={go} toast={toast} />}
+    </Shell>
+    <ToastStack>{toasts.map((t) => <Toast key={t.id} kind={t.kind}>{t.msg}</Toast>)}</ToastStack>
+  </>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body></html>

@@ -1,0 +1,28 @@
+<!-- @dsCard group="Components" viewport="700x520" name="Forms" subtitle="FormGrid, FormField, DocNumberInput, SearchableSelect, LineItemPicker, Input, Select, Textarea" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:16px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.lbl{font:600 11px var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em;width:78px;flex-shrink:0}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115 || {};
+
+const { FormGrid, FormField, Input, Select, Textarea, DocNumberInput, SearchableSelect, LineItemPicker } = NS;
+const VEND=[{id:'1',code:'VND-012',name:'Precision Heat Treat'},{id:'2',code:'VND-031',name:'Shree Ganesh Plating'},{id:'3',code:'VND-044',name:'Metro Gear Hobbing'}];
+const ITEMS=[{code:'BF-SH-2210',name:'Pinion Shaft',material:'EN19'},{code:'BF-GR-1180',name:'Spur Gear 42T',material:'20MnCr5'}];
+function App(){const [v,setV]=React.useState('1');const [li,setLi]=React.useState({code:'BF-SH-2210',name:''});
+return <div className="panel" style={{padding:12,margin:0,overflow:'visible'}}><FormGrid>
+<DocNumberInput label="SO No." required value="IN-SO-26-0143" state="ok"/>
+<DocNumberInput size="md" label="PO No." value="IN-MPO-26-0311" state="bad" message="IN-MPO-26-0311 already exists"/>
+<FormField label="SO Date" size="sm"><Input type="date" defaultValue="2026-09-23" /></FormField>
+<FormField label="Type" size="md"><Select options={['Component','Equipment','With Material']} /></FormField>
+<FormField label="Vendor" size="lg" required><SearchableSelect value={v} onChange={setV} options={VEND}/></FormField>
+<FormField label="Client PO" size="md" help="As printed on the client's PO"><Input placeholder="e.g. 4500012345" /></FormField>
+<FormField label="Client" size="lg" required error="Client is required"><Input className="is-bad" placeholder="Search client…" /></FormField>
+<LineItemPicker code={li.code} name={li.name} items={ITEMS} onChange={setLi}/>
+<FormField label="Raised By" size="md"><Input readOnly defaultValue="Vinay K." /></FormField>
+<FormField label="Remarks" size="full"><Textarea placeholder="Remarks" rows={2} /></FormField>
+</FormGrid></div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>

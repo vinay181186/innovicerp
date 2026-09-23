@@ -1,0 +1,25 @@
+<!-- @dsCard group="Components" viewport="700x620" name="Data" subtitle="Panel, StatStrip, StatCard, DataTable, ProgressBar, EmptyState" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:16px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.lbl{font:600 10px var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em;width:70px}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115;
+
+const { Panel, StatStrip, StatCard, DataTable, ProgressBar, EmptyState, StatusBadge, Badge } = NS;
+function App(){const [f,setF]=React.useState('open');
+const rows=[{code:'IN-SO-26-0142',cust:'Bharat Forge Ltd',qty:120,due:'2026-09-30',st:'open'},{code:'IN-SO-26-0139',cust:'Kirloskar Pneumatic',qty:40,due:'2026-09-12',st:'open'},{code:'IN-SO-26-0131',cust:'Thermax Ltd',qty:8,due:'2026-08-28',st:'closed'}];
+const cols=[{header:'SO No.',key:'code',className:'td-code'},{header:'Customer',key:'cust',align:'left'},{header:'Qty',key:'qty',className:'mono fw-700'},{header:'Due Date',key:'due',className:'mono'},{header:'Status',render:r=><StatusBadge status={r.st}/>}];
+return <div>
+<StatStrip items={[{key:'open',label:'Open',count:12,color:'var(--amber)',active:f==='open',onClick:()=>setF('open')},{key:'appr',label:'Approved',count:7,color:'var(--blue)',active:f==='appr',onClick:()=>setF('appr')},{key:'done',label:'PO Created',count:29,color:'var(--green)',active:f==='done',onClick:()=>setF('done')},{key:'all',label:'All PRs',count:48,color:'var(--cyan)',active:f==='all',onClick:()=>setF('all')}]}/>
+<Panel title="SO / WO Orders" actions={<Badge tone="red">1 overdue</Badge>} bodyPadding={0}><DataTable columns={cols} rows={rows} onRowClick={()=>{}}/></Panel>
+<Panel title="Same table, frozen + compact" bodyPadding={0}><DataTable frozen density="compact" columns={cols} rows={rows}/></Panel>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+<StatCard label="Open SOs" value={17} sub="3 awaiting BOM" accent="cyan"/>
+<div className="panel" style={{padding:12,margin:0}}><div className="stat-label">JC progress</div><ProgressBar value={62} color="var(--green)"/><div style={{height:8}}/><ProgressBar value={28} color="var(--amber)"/></div>
+<div className="panel" style={{margin:0}}><EmptyState tone="ok">✅ All clear</EmptyState></div>
+</div></div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>
