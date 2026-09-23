@@ -14,15 +14,15 @@ export const operatorProductivityReport: RegisteredReport = {
       'Per-operator total qty + log count + reject rate over a date range. Aggregates op_log; operators with zero logs in the window do not appear.',
     group: 'Operations',
     filters: [
-      { key: 'fromDate', label: 'From date', kind: 'date' },
-      { key: 'toDate', label: 'To date', kind: 'date' },
+      { key: 'fromDate', label: 'Log Date From', kind: 'date' },
+      { key: 'toDate', label: 'Log Date To', kind: 'date' },
     ],
     columns: [
       { key: 'operator_name', label: 'Operator', type: 'text' },
-      { key: 'log_count', label: 'Logs', type: 'number' },
-      { key: 'total_qty', label: 'Total qty', type: 'number' },
-      { key: 'total_reject_qty', label: 'Reject qty', type: 'number' },
-      { key: 'reject_pct', label: 'Reject %', type: 'number' },
+      { key: 'log_count', label: 'Log Count', type: 'number' },
+      { key: 'total_qty', label: 'Completed', type: 'number' },
+      { key: 'total_reject_qty', label: 'Rejected', type: 'number' },
+      { key: 'reject_pct', label: 'Rejected %', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {

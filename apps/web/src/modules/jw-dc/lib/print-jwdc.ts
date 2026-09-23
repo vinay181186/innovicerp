@@ -58,7 +58,7 @@ export function printJwDc(args: {
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
   const recipientFields: SheetField[] = [
-    { label: 'Vendor code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
       label: 'Address',
@@ -69,15 +69,15 @@ export function printJwDc(args: {
   ];
 
   const documentFields: SheetField[] = [
-    { label: 'Challan No.', value: dc.code, variant: 'mono' },
-    { label: 'Challan date', value: challanDate(dc.dcDate), variant: 'mono' },
+    { label: 'DC No.', value: dc.code, variant: 'mono' },
+    { label: 'DC Date', value: challanDate(dc.dcDate), variant: 'mono' },
     // Resolved through the JWPO's lines back to the sales order; null when the
     // source job card came from a JWSO, and then this prints as a blank rule.
     { label: 'SO No.', value: dc.soCode ?? '', variant: 'mono' },
     { label: 'PO No.', value: linkedPo, variant: 'mono' },
     // Not a stored field — challan date + 3 months, which is the return window
     // the printed conditions promise.
-    { label: 'Challan end date', value: challanEndDate(dc.dcDate), variant: 'mono', strong: true },
+    { label: 'DC End Date', value: challanEndDate(dc.dcDate), variant: 'mono', strong: true },
   ];
   if (vehicleNo) documentFields.push({ label: 'Vehicle No.', value: vehicleNo, variant: 'mono' });
 

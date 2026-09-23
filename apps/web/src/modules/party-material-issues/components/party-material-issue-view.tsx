@@ -124,18 +124,18 @@ export function PartyMaterialIssueView({
               <thead>
                 <tr>
                   <th>Issue No.</th>
-                  <th>Date</th>
-                  <th>JWSO</th>
-                  <th>Job Card</th>
+                  <th>Issue Date</th>
+                  <th>JWSO No.</th>
+                  <th>JC No.</th>
                   {/* TWO different items sit side by side here and the headers
                       have to keep them apart. "Item Made" is OUR produced part,
                       off the job card; "Material" is the CLIENT'S supplied
                       stock this issue debits. A JC number alone says WHICH JOB,
                       not WHICH PART, which is why the first column now exists. */}
-                  <th>Item Made</th>
+                  <th>Item Name</th>
                   <th>Material</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                    Qty
+                    Issue Qty
                   </th>
                   <th>Remarks</th>
                   {canCancel ? <th className="td-ctr">Actions</th> : null}
@@ -477,7 +477,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               onChange={(e) => setIssueDate(e.target.value)}
             />
           </Field>
-          <Field label="Qty ★">
+          <Field label="Issue Qty ★">
             <input
               type="number"
               min={1}
@@ -513,7 +513,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Job Card ★">
+            <Field label="JC No. ★">
               <SearchableSelect
                 id="pmi-jc"
                 value={jobCardId}

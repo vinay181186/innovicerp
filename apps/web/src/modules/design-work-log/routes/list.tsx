@@ -219,7 +219,7 @@ function EntryTab(): React.JSX.Element {
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📝 Log Work Entry</div>
           <div className="form-grid">
             <div className="form-grp">
-              <label className="form-label">Date</label>
+              <label className="form-label">Log Date</label>
               <input
                 type="date"
                 className="innovic-input"
@@ -516,7 +516,7 @@ function DailyTab(): React.JSX.Element {
           value={viewEng}
           onChange={(e) => setViewEng(e.target.value)}
         >
-          <option value="All">All Engineers</option>
+          <option value="All">All Design Engineers</option>
           {engineers.map((e) => (
             <option key={e}>{e}</option>
           ))}
@@ -698,7 +698,7 @@ function WeeklyTab(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Engineer</th>
+                <th>Design Engineer</th>
                 {weekDates.map((dt) => (
                   <th key={dt} style={{ fontSize: 10 }}>
                     {dayName(dt)}
@@ -835,7 +835,7 @@ function ProjectTab(): React.JSX.Element {
                 className="text3"
                 style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}
               >
-                BY ENGINEER
+                BY DESIGN ENGINEER
               </div>
               {Object.entries(p.byEng)
                 .sort((a, b) => b[1] - a[1])
@@ -981,9 +981,9 @@ function AlertsTab(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Log Date</th>
                   <th>Day</th>
-                  <th>Engineer</th>
+                  <th>Design Engineer</th>
                 </tr>
               </thead>
               <tbody>
@@ -1017,9 +1017,9 @@ function AlertsTab(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Log Date</th>
                   <th>Day</th>
-                  <th>Engineer</th>
+                  <th>Design Engineer</th>
                   <th>Hours</th>
                 </tr>
               </thead>
@@ -1055,7 +1055,7 @@ function AlertsTab(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Engineer</th>
+                <th>Design Engineer</th>
                 <th>Logged</th>
                 <th>Missing</th>
                 <th>Hours</th>

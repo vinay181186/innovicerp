@@ -354,8 +354,8 @@ function MatrixView(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th>Qty</th>
-                <th>JC No</th>
+                <th>Order Qty</th>
+                <th>JC No.</th>
                 {cols.map((c) => (
                   <th key={c} style={{ color: 'var(--green)', minWidth: 90 }}>
                     {c}
@@ -612,8 +612,8 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
     // Same call as the Job Card export.
     'Drawing Rev',
     'Item Name',
-    'Qty',
-    'JC No',
+    'Order Qty',
+    'JC No.',
     ...matrix.qcColumns,
     'Overall',
   ];
@@ -788,7 +788,7 @@ function LineDetailBody({
           </b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM CODE</span>
           <br />
           <b style={{ color: 'var(--purple)' }}>
             {itemCodeWithRev(data.itemCode, data.itemRevision, '')}
@@ -796,7 +796,7 @@ function LineDetailBody({
           {data.itemName ?? ''}
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC NO.</span>
           <br />
           <b style={{ color: 'var(--cyan)' }}>{data.jcCode}</b>
         </div>
@@ -857,11 +857,11 @@ function LineDetailBody({
                 Op{opSrNo(b.opSeq)}: <b>{b.operation}</b>
               </span>
               <span style={{ color: 'var(--green)' }}>
-                Acc: <b>{b.accepted}</b>
+                Accepted: <b>{b.accepted}</b>
               </span>
               {b.rejected > 0 ? (
                 <span style={{ color: 'var(--red)' }}>
-                  Rej: <b>{b.rejected}</b>
+                  Rejected: <b>{b.rejected}</b>
                 </span>
               ) : null}
               <span className="mono fw-700" style={{ color: 'var(--cyan)', marginLeft: 'auto' }}>
@@ -1280,7 +1280,7 @@ function RegisterView(): React.JSX.Element {
                 <th>Doc Type</th>
                 <th>File Name</th>
                 <th>Category</th>
-                <th>JC</th>
+                <th>JC No.</th>
                 {/* A job-card number says WHICH JOB, not which part, so the
                     register names the item right beside the JC it belongs to —
                     same pairing the matrix tab and the line-detail modal use.
@@ -1289,9 +1289,9 @@ function RegisterView(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th>SO</th>
+                <th>SO No.</th>
                 <th>Uploaded By</th>
-                <th>Date</th>
+                <th>Upload Date</th>
                 <th />
               </tr>
             </thead>

@@ -64,7 +64,7 @@ export function DispatchLineTable(props: {
         >
           <thead>
             <tr>
-              <th style={{ width: '3%' }}>#</th>
+              <th style={{ width: '3%' }}>Ln</th>
               {/* POL — the line number on the CUSTOMER's purchase order. Its
                   4% comes out of Item Name, which wraps; the code must not. */}
               <th style={{ width: '4%', color: 'var(--purple)' }} className="td-ctr">
@@ -75,7 +75,7 @@ export function DispatchLineTable(props: {
               </th>
               <th style={{ width: '8%' }}>Item Name</th>
               <th style={{ width: '5%' }} className="td-ctr">
-                Ordered
+                Order Qty
               </th>
               <th style={{ width: '6%', color: 'var(--green)' }} className="td-ctr">
                 Ready
@@ -115,7 +115,7 @@ export function DispatchLineTable(props: {
               {/* Earliest Customer Dispatch Date among the plans on the SO
                   line — the date the dispatch team works to. */}
               <th style={{ width: '9%' }} className="td-ctr">
-                Cust. Dispatch
+                Customer Dispatch Date
               </th>
               <th style={{ width: '10%', color: 'var(--green)' }} className="td-ctr">
                 Dispatch Qty<span className="req">★</span>

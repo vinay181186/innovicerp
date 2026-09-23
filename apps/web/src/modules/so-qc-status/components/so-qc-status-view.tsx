@@ -118,13 +118,13 @@ export function SoQcStatusView(): React.JSX.Element {
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 40 }}>Line</th>
+                    <th style={{ width: 40 }}>Ln</th>
                     {/* POL — the CUSTOMER's own line number off their purchase
                         order, beside (never instead of) our SO line number. */}
                     <th style={{ width: 50, color: 'var(--purple)' }}>POL</th>
                     <th style={{ width: 100 }}>Item Code</th>
                     <th>Item Name</th>
-                    <th style={{ width: 40 }}>Qty</th>
+                    <th style={{ width: 40 }}>Order Qty</th>
                     <th style={{ minWidth: 240 }}>QC Stages (in JC)</th>
                     <th style={{ width: 80 }}>Incoming QC</th>
                     <th style={{ width: 60 }}>TPI</th>
@@ -346,7 +346,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
       <table className="innovic-table" style={{ marginBottom: 14 }}>
         <thead>
           <tr>
-            <th>GRN No</th>
+            <th>GRN No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item</th>
             <th>Vendor</th>
@@ -354,7 +354,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>Accepted</th>
             <th>Rejected</th>
             <th>Pending</th>
-            <th>Status</th>
+            <th>QC Status</th>
             <th>Report</th>
           </tr>
         </thead>
@@ -415,14 +415,14 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
       <table className="innovic-table" style={{ marginBottom: 14 }}>
         <thead>
           <tr>
-            <th>JC No</th>
+            <th>JC No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Organization</th>
             <th>Inspector</th>
             <th>Accepted</th>
             <th>Rejected</th>
-            <th>Date</th>
-            <th>Status</th>
+            <th>Inspection Date</th>
+            <th>TPI Status</th>
             <th>Report</th>
           </tr>
         </thead>
@@ -476,10 +476,10 @@ function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
       <table className="innovic-table" style={{ marginBottom: 14 }}>
         <thead>
           <tr>
-            <th>JC No</th>
+            <th>JC No.</th>
             <th>Document Type</th>
             <th>File Name</th>
-            <th>Status</th>
+            <th>Doc Status</th>
           </tr>
         </thead>
         <tbody>

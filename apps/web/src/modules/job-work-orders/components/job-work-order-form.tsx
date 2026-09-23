@@ -563,7 +563,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           onValidityChange={setDocNoValid}
         />
         <div className="form-grp">
-          <label className="form-label" htmlFor="jwDate">Date<span className="req">★</span></label>
+          <label className="form-label" htmlFor="jwDate">JWSO Date<span className="req">★</span></label>
           <input id="jwDate" type="date" className="innovic-input" {...register('header.jwDate', { required: 'Date is required' })} />
         </div>
         <div className="form-grp">
@@ -579,7 +579,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         </div>
         {isEdit ? (
           <div className="form-grp">
-            <label className="form-label" htmlFor="status">Status</label>
+            <label className="form-label" htmlFor="status">JWSO Status</label>
             {/* Status is read-only on edit: it is driven by the JC-completion
                 cascade (open→closed), the JW-Return cascade (→dispatched) and
                 soft-delete for cancel — a manual edit only causes drift, and the
@@ -589,7 +589,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         ) : null}
 
         <div className="form-grp form-span-2">
-          <label className="form-label">Client<span className="req">★</span> (type to search)</label>
+          <label className="form-label">Customer<span className="req">★</span> (type to search)</label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <SearchableSelect
@@ -695,7 +695,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         <div style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '.08em', marginBottom: 8 }}>▸ CLIENT MATERIAL DETAILS</div>
         <div className="form-grid">
           <div className="form-grp">
-            <label className="form-label">Client Material (Party Supplied Item)</label>
+            <label className="form-label">Customer Material (Party Supplied Item)</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input className="innovic-input" style={{ flex: 1 }} autoComplete="off" list="dlRmItems" placeholder="🔍 Search -rm items…" {...register('header.clientMaterial')} />
               <Link to="/items/new" className="btn btn-ghost btn-sm" title="Create a new -rm item" style={{ whiteSpace: 'nowrap' }}>+ New</Link>
@@ -713,7 +713,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             ) : null}
           </div>
           <div className="form-grp">
-            <label className="form-label">Material Qty (Client Supplied)</label>
+            <label className="form-label">Material Qty (Customer Supplied)</label>
             <input type="number" min={0} step="0.01" className="innovic-input" placeholder="0" {...register('header.clientMaterialQty', { valueAsNumber: true })} />
           </div>
         </div>
@@ -775,15 +775,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         <table className="innovic-table tbl-ctr" style={{ width: '100%', tableLayout: 'fixed', minWidth: 1180 }}>
           <thead>
             <tr>
-              <th style={{ width: '3%' }}>#</th>
+              <th style={{ width: '3%' }}>Ln</th>
               <th style={{ width: '12%' }}>Item Code</th>
-              <th style={{ width: '12%' }}>Part Name <span className="req">★</span></th>
+              <th style={{ width: '12%' }}>Item Name <span className="req">★</span></th>
               <th style={{ width: '8%' }}>Material</th>
               <th style={{ width: '8%' }}>Drawing No.</th>
               <th style={{ width: '11%' }}>Drawing File</th>
               <th style={{ width: '5%' }}>Rev <span className="req">★</span></th>
               <th style={{ width: '5%' }}>UOM</th>
-              <th style={{ width: '6%' }}>Qty <span className="req">★</span></th>
+              <th style={{ width: '6%' }}>Order Qty <span className="req">★</span></th>
               <th style={{ width: '6%', color: 'var(--green)' }}>Rate ₹</th>
               <th style={{ width: '7%', color: 'var(--green)' }}>Amount</th>
               <th style={{ width: '14%' }}>Assembly BOM</th>
@@ -937,9 +937,9 @@ function QuickAddClient({
         style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, width: 'min(420px, 94vw)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="section-hdr" style={{ marginBottom: 12 }}>🏢 New Client</div>
+        <div className="section-hdr" style={{ marginBottom: 12 }}>🏢 New Customer</div>
         <div className="form-grp">
-          <label className="form-label">Client Name<span className="req">★</span></label>
+          <label className="form-label">Customer<span className="req">★</span></label>
           <input className="innovic-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Company / client name" />
         </div>
         <div className="form-grp">

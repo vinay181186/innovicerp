@@ -111,16 +111,16 @@ export function JwDispatchView({
               <thead>
                 <tr>
                   <th>Return No.</th>
-                  <th>Date</th>
-                  <th>JWSO</th>
-                  <th>Client</th>
-                  <th>Part</th>
+                  <th>Return Date</th>
+                  <th>JWSO No.</th>
+                  <th>Customer</th>
+                  <th>Item Name</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                    Qty
+                    Return Qty
                   </th>
                   <th>Transport</th>
                   <th>Vehicle</th>
-                  <th>Status</th>
+                  <th>Return Status</th>
                   {canWrite ? <th className="td-ctr">Actions</th> : null}
                 </tr>
               </thead>
@@ -318,7 +318,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Date">
+          <Field label="Return Date">
             <input
               type="date"
               className="innovic-input"
@@ -350,7 +350,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JW Line ★">
+            <Field label="Ln ★">
               <select
                 className="innovic-input"
                 value={jobWorkOrderLineId}
@@ -376,7 +376,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
             </Field>
           </div>
 
-          <Field label="Qty ★">
+          <Field label="Return Qty ★">
             <input
               type="number"
               min={1}

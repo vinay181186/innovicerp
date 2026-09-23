@@ -20,10 +20,10 @@ export const al013MachinesIdle: RegisteredAlert = {
     description:
       'Machines whose status is "Running" but have no actively-running op against them — likely a forgotten stop.',
     columns: [
-      { key: 'machine_code', label: 'Machine code', type: 'text' },
+      { key: 'machine_code', label: 'Code', type: 'text' },
       { key: 'machine_name', label: 'Name', type: 'text' },
-      { key: 'machine_type', label: 'Type', type: 'text' },
-      { key: 'status', label: 'Status', type: 'text' },
+      { key: 'machine_type', label: 'Machine Type', type: 'text' },
+      { key: 'status', label: 'Machine Status', type: 'text' },
     ],
     defaultActive: true,
   },

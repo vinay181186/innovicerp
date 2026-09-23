@@ -221,9 +221,9 @@ function Section({ section }: { section: RelatedSection }): React.JSX.Element {
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Code</th>
-              <th>Status</th>
-              <th>Date</th>
+              <th>Document No.</th>
+              <th>Document Status</th>
+              <th>Document Date</th>
             </tr>
           </thead>
           <tbody>

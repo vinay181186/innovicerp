@@ -128,10 +128,10 @@ function SoCostingDetailPage(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Qty</th>
+                <th className="td-ctr">Order Qty</th>
                 <th>JC / Detail</th>
                 <th>Operation</th>
-                <th>Type</th>
+                <th>Op Type</th>
                 {priceHidden ? null : (
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
                     Cost

@@ -102,7 +102,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Client Code
+            Code
           </label>
           <input
             id="code"
@@ -122,7 +122,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
         </div>
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="name">
-            Client Name<span className="req">★</span>
+            Customer<span className="req">★</span>
           </label>
           <input id="name" className="innovic-input" autoFocus autoComplete="off" placeholder="Full company name" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
@@ -225,14 +225,14 @@ function EditClientForm(props: EditMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Client Code
+            Code
           </label>
           <input id="code" className="innovic-input" value={props.client.code} readOnly />
           <div className="form-help">Code cannot be changed after creation.</div>
         </div>
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="name">
-            Client Name<span className="req">★</span>
+            Customer<span className="req">★</span>
           </label>
           <input id="name" className="innovic-input" autoComplete="off" placeholder="Full company name" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}

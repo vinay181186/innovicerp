@@ -588,19 +588,19 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
           flexWrap: 'wrap',
         }}
       >
-        <CtxField label="REJ NO.">
+        <CtxField label="NC NO.">
           <b className="red">{detail.code}</b>
         </CtxField>
-        <CtxField label="DATE">
+        <CtxField label="NC DATE">
           <b>{detail.ncDate}</b>
         </CtxField>
-        <CtxField label="JC">
+        <CtxField label="JC NO.">
           <b className="cyan">{jcCode ?? '—'}</b>
         </CtxField>
-        <CtxField label="SO">
+        <CtxField label="SO NO.">
           <b>{detail.soCodeText ?? '—'}</b>
         </CtxField>
-        <CtxField label="STATUS">
+        <CtxField label="NC STATUS">
           <NcStatusBadge status={detail.status} />
         </CtxField>
       </div>
@@ -612,7 +612,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
             {detail.clientPoLineNo ?? '—'}
           </span>
         </InlinePair>
-        <InlinePair label="Item:">
+        <InlinePair label="Item Code:">
           {/* SO pattern: the code strong-mono (td-code) in var(--text) so the
               part reads as THE value; the name quiet beside it. CODE/REV only on
               the live joined code; the itemCodeText fallback is what the reporter
@@ -669,7 +669,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
             {operation ?? (detail.opSeq == null ? '—' : '')}
           </InlinePair>
         )}
-        <InlinePair label="Rejected Qty:">
+        <InlinePair label="Rejected:">
           <span className="red">{Number(detail.rejectedQty)} pcs</span>
         </InlinePair>
         <InlinePair label="Operator:">{detail.operatorText ?? '—'}</InlinePair>
@@ -710,8 +710,8 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         <InlinePair label="Action:">
           <NcDispositionBadge disposition={detail.disposition} />
         </InlinePair>
-        <InlinePair label="Date:">{detail.dispositionDate ?? '—'}</InlinePair>
-        <InlinePair label="By:">{detail.dispositionByText ?? ''}</InlinePair>
+        <InlinePair label="Disposition Date:">{detail.dispositionDate ?? '—'}</InlinePair>
+        <InlinePair label="Disposed By:">{detail.dispositionByText ?? ''}</InlinePair>
         {/* Legacy in-route rework only — a new rework raises a child JC
             (linked below) and never sets rework_op_seq. */}
         {detail.reworkOpSeq != null ? (
@@ -720,7 +720,7 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         {/* Not in legacy `_viewNC`, but legacy's LIST row shows "♻ n/m done"
             (HTML L22536) and our close-rework flow captures it. Kept. */}
         {detail.disposition === 'rework' && detail.reworkDoneQty ? (
-          <InlinePair label="Rework Done Qty:">
+          <InlinePair label="Rework Completed:">
             {Number(detail.reworkDoneQty)}/{Number(detail.rejectedQty)} done
           </InlinePair>
         ) : null}

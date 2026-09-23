@@ -263,15 +263,15 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>#</th>
+                    <th>Ln</th>
                     {/* POL = the CUSTOMER's own PO line number off the SO line
                         behind this challan line. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item</th>
+                    <th>Item Code · Name</th>
                     <th>Sent</th>
-                    <th>Already recv</th>
-                    <th>Remaining</th>
-                    <th>Receive now</th>
+                    <th>Received so far</th>
+                    <th>Pending</th>
+                    <th>Receive Now</th>
                   </tr>
                 </thead>
                 <tbody>

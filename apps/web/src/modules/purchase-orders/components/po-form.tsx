@@ -758,7 +758,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           {props.mode === 'edit' ? (
             <div className="pof-f-type">
               <label className="pof-lbl" htmlFor="pof-status">
-                Status
+                PO Status
               </label>
               <input
                 id="pof-status"
@@ -806,9 +806,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 <th>
                   Item Code<span className="pof-req">★</span>
                 </th>
-                <th>Name</th>
+                <th>Item Name</th>
                 <th className="pof-th-r">
-                  Qty<span className="pof-req">★</span>
+                  Order Qty<span className="pof-req">★</span>
                 </th>
                 <th className="pof-th-r">Rate ₹</th>
                 <th className="pof-th-r">Amount</th>

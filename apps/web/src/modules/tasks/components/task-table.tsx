@@ -186,13 +186,13 @@ export function TaskTable({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Task#</th>
+              <th>Task No.</th>
               <th>Title</th>
               <th>{PERSON_LABEL[view]}</th>
               <th>Related To</th>
               <th>Priority</th>
               <th>Due Date</th>
-              <th>Status</th>
+              <th>Task Status</th>
               <th>Last Update</th>
               <th>Actions</th>
             </tr>

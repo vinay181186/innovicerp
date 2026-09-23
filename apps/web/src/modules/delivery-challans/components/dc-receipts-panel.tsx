@@ -64,7 +64,7 @@ export function DcReceiptsPanel({
                     {/* POL = the CUSTOMER's own PO line number, read off the
                         challan line this receipt row books against. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item</th>
+                    <th>Item Code · Name</th>
                     <th>Received</th>
                     <th>Rejected</th>
                     <th>Reject reason</th>

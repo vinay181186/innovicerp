@@ -110,7 +110,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>JC</th>
+                <th>JC No.</th>
                 {/* POL — the CUSTOMER's own PO line number, before the item. */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
@@ -120,7 +120,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                 <th>Machine (Planned / Actual)</th>
                 <th>Operator</th>
                 <th>Started</th>
-                <th>Status</th>
+                <th>Op Status</th>
                 <th></th>
               </tr>
             </thead>
@@ -197,7 +197,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>JC</th>
+                  <th>JC No.</th>
                   {/* POL — the CUSTOMER's own PO line number, before the item. */}
                   <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
@@ -207,7 +207,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                   <th>Machine (Planned / Actual)</th>
                   <th>Operator</th>
                   <th>Ended</th>
-                  <th>Status</th>
+                  <th>Op Status</th>
                 </tr>
               </thead>
               <tbody>

@@ -57,7 +57,7 @@ export function PoSheetTable({
             <tr>
               <th>Sr No</th>
               <th>PO No.</th>
-              <th>Type</th>
+              <th>PO Type</th>
               <th style={{ textAlign: 'left' }}>Vendor</th>
               <th>PR Ref</th>
               <th>Lines</th>
@@ -65,7 +65,7 @@ export function PoSheetTable({
               <th>Received</th>
               <th>Pending</th>
               <th>Value</th>
-              <th>Status</th>
+              <th>PO Status</th>
               <th>Action</th>
             </tr>
           </thead>

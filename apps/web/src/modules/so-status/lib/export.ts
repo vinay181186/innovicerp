@@ -10,8 +10,8 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
   const { header, lines } = data;
 
   const lineRows = lines.map((l) => ({
-    SO: header.code,
-    Line: l.lineNo,
+    'SO No.': header.code,
+    Ln: l.lineNo,
     // POL — the line number on the CUSTOMER'S OWN purchase order, an extra
     // column beside our `Line`, never a replacement for it.
     POL: l.clientPoLineNo ?? '',
@@ -22,11 +22,11 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
     // spreadsheet people filter and sort on the bare revision, so it has to
     // stay available on its own. Same split as the Job Card export.
     'Drawing Rev': l.itemRevision ?? '',
-    'Part Name': l.partName ?? '',
-    'SO Qty': l.orderQty,
-    Done: l.doneQty,
+    'Item Name': l.partName ?? '',
+    'Order Qty': l.orderQty,
+    Completed: l.doneQty,
     'Progress %': l.completionPct,
-    Status: l.status,
+    'SO Status': l.status,
     'JC Issued': l.chips.jcIssued.qty,
     'PO Raised': l.chips.poRaised.qty,
     'GRN Recd': l.chips.grnReceived.qty,
@@ -37,10 +37,10 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
 
   const jcRows = lines.flatMap((l) =>
     l.jobCards.map((jc) => ({
-      SO: header.code,
-      Line: l.lineNo,
+      'SO No.': header.code,
+      Ln: l.lineNo,
       POL: jc.clientPoLineNo ?? l.clientPoLineNo ?? '',
-      'JC No': jc.code,
+      'JC No.': jc.code,
       'Item Code': itemCodeWithRev(jc.itemCode, jc.itemRevision, ''),
       'Drawing Rev': jc.itemRevision ?? '',
       // WHAT the job card makes. A JC number says which job, not which part, and
@@ -49,13 +49,13 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
       // fact stays filterable on its own, even though the Item Code cell now
       // carries the revision with it.
       'Item Name': jc.itemName ?? '',
-      'JC Qty': jc.orderQty,
+      'Order Qty': jc.orderQty,
       Completed: jc.doneQty,
-      Remaining: jc.remainingQty,
+      Pending: jc.remainingQty,
       'Progress %': jc.completionPct,
       Priority: jc.priority,
-      Due: jc.dueDate ?? '',
-      Status: jc.status,
+      'Due Date': jc.dueDate ?? '',
+      'JC Status': jc.status,
     })),
   );
 
@@ -63,7 +63,7 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lineRows), 'Lines');
   XLSX.utils.book_append_sheet(
     wb,
-    XLSX.utils.json_to_sheet(jcRows.length ? jcRows : [{ SO: header.code, note: 'No job cards' }]),
+    XLSX.utils.json_to_sheet(jcRows.length ? jcRows : [{ 'SO No.': header.code, note: 'No job cards' }]),
     'Job Cards',
   );
   XLSX.writeFile(wb, `so-status-${header.code}.xlsx`);

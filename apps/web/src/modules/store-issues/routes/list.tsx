@@ -166,10 +166,10 @@ function StoreIssuesListPage(): React.JSX.Element {
                   <thead>
                     <tr>
                       <th>Issue No.</th>
-                      <th>Date</th>
+                      <th>Issue Date</th>
                       <th>Item Code</th>
                       <th>Item Name</th>
-                      <th className="td-ctr">Qty</th>
+                      <th className="td-ctr">Issue Qty</th>
                       <th>Issued To</th>
                       <th>Reference</th>
                       <th>Purpose</th>
@@ -384,7 +384,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
 
             <div className="form-grp">
-              <label className="form-label">Date</label>
+              <label className="form-label">Issue Date</label>
               <input
                 type="date"
                 className="innovic-input"

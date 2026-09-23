@@ -99,10 +99,10 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
             <th>Op</th>
             <th>Operation</th>
             <th>Machine (Planned / Actual)</th>
-            <th>Type</th>
+            <th>Op Type</th>
             <th style={{ color: 'var(--green)' }}>Completed</th>
             <th style={{ color: 'var(--amber)' }}>Pending</th>
-            <th>Status</th>
+            <th>Op Status</th>
             <th>Action</th>
           </tr>
         </thead>

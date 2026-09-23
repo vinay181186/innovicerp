@@ -149,7 +149,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Active
           </label>
           <select id="isActive" className="innovic-select" {...register('isActive', {
             setValueAs: (v) => v === 'true' || v === true,

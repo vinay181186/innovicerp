@@ -92,19 +92,19 @@ export function ReservationDrilldown({
               <thead>
                 <tr>
                   <th>SO No.</th>
-                  <th>Line</th>
+                  <th>Ln</th>
                   {/* POL — the CUSTOMER's own purchase-order line number, an
                       extra value beside our SO line number. */}
                   <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Customer</th>
-                  <th>Item</th>
+                  <th>Item Code</th>
                   <th style={{ color: 'var(--purple)' }}>Reserved</th>
                   <th>Consumed</th>
-                  <th style={{ color: 'var(--green)' }}>Remaining</th>
+                  <th style={{ color: 'var(--green)' }}>Pending</th>
                   <th>Source</th>
-                  <th>Status</th>
-                  <th>Production Order</th>
-                  <th>Job Card</th>
+                  <th>Reservation Status</th>
+                  <th>Production Order No</th>
+                  <th>JC No.</th>
                   <th>Reserved On</th>
                   <th>Reserved By</th>
                 </tr>

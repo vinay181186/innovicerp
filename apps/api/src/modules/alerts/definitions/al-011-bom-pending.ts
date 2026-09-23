@@ -16,10 +16,10 @@ export const al011BomPending: RegisteredAlert = {
     description:
       'Equipment-type SOs whose bom_status indicates the bill of materials has not been finalised.',
     columns: [
-      { key: 'so_code', label: 'SO no.', type: 'text' },
+      { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'customer', label: 'Customer', type: 'text' },
-      { key: 'bom_status', label: 'BOM status', type: 'text' },
-      { key: 'so_date', label: 'SO date', type: 'date' },
+      { key: 'bom_status', label: 'BOM Status', type: 'text' },
+      { key: 'so_date', label: 'SO Date', type: 'date' },
     ],
     defaultActive: true,
   },

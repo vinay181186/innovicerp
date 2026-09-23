@@ -442,7 +442,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
           ) : null}
         </div>
         <div className="form-grp">
-          <label className="form-label">Client</label>
+          <label className="form-label">Customer</label>
           <input
             className="innovic-input"
             value={client}
@@ -455,7 +455,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
             className="innovic-input"
             value={lead}
             onChange={(e) => setLead(e.target.value)}
-            placeholder="Engineer name"
+            placeholder="Design engineer name"
           />
         </div>
         <div className="form-grp">
@@ -490,7 +490,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
           />
         </div>
         <div className="form-grp form-full">
-          <label className="form-label">Engineers</label>
+          <label className="form-label">Design Engineers</label>
           <input
             className="innovic-input"
             value={engineersStr}

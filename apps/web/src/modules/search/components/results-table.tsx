@@ -40,13 +40,13 @@ export function ResultsTable({
         </colgroup>
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Type</th>
-            <th>Doc No.</th>
-            <th>Party</th>
+            <th>Document Date</th>
+            <th>Document Type</th>
+            <th>Document No.</th>
+            <th>Customer / Vendor</th>
             <th>Particulars</th>
             <th>Qty</th>
-            <th>Status</th>
+            <th>Document Status</th>
           </tr>
         </thead>
         <tbody>

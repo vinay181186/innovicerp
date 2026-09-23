@@ -211,10 +211,10 @@ function BomMastersListPage(): React.JSX.Element {
               <th style={{ textAlign: 'left' }}>BOM Name</th>
               <th>Parent Item</th>
               <th>Items</th>
-              <th>Revision</th>
-              <th>Rev Date</th>
+              <th>BOM Rev</th>
+              <th>Revision Date</th>
               <th>Linked SOs</th>
-              <th>Status</th>
+              <th>BOM Status</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -441,11 +441,11 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
       <table style={{ width: '100%' }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>#</th>
+            <th style={{ width: 36 }}>Sr No</th>
             <th>Item Code</th>
             <th>Item Name</th>
             <th className="td-ctr">Qty / Set</th>
-            <th>Type</th>
+            <th>BOM Type</th>
           </tr>
         </thead>
         <tbody>

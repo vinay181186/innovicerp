@@ -220,7 +220,7 @@ function IncomingQcPage(): React.JSX.Element {
                   <tr>
                     <th>GRN No.</th>
                     <th>GRN Date</th>
-                    <th>PO</th>
+                    <th>PO No.</th>
                     <th>Vendor</th>
                     {/* POL = the CUSTOMER's own PO line number off the SO line
                         behind this receipt. */}

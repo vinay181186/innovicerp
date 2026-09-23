@@ -252,7 +252,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
           <table className="innovic-table tbl-ctr">
             <thead>
               <tr>
-                <th>#</th>
+                <th>Ln</th>
                 {/* The customer's PO line number. It is typed on this line and
                     every downstream document repeats it, so it belongs next to
                     the line number here, where it is authored. */}
@@ -262,14 +262,14 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 <th>Item</th>
                 <th>Material</th>
                 <th>Drawing</th>
-                <th>Qty</th>
+                <th>Order Qty</th>
                 <th style={{ color: 'var(--green)' }}>Dispatched</th>
                 <th style={{ color: 'var(--green)' }}>Billed</th>
                 <th style={{ color: 'var(--red)' }}>Pending</th>
                 <th>UOM</th>
                 {priceHidden ? null : <th>Rate</th>}
-                <th>Due date</th>
-                <th>Status</th>
+                <th>Due Date</th>
+                <th>SO Status</th>
               </tr>
             </thead>
             <tbody>
@@ -595,10 +595,10 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
   };
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
-      <StripItem label="Type" value={detail.type.replaceAll('_', ' ')} />
-      <StripItem label="Date" value={<span className="mono">{detail.soDate}</span>} />
+      <StripItem label="SO Type" value={detail.type.replaceAll('_', ' ')} />
+      <StripItem label="SO Date" value={<span className="mono">{detail.soDate}</span>} />
       <StripItem
-        label="Client PO"
+        label="Client PO No."
         value={
           detail.clientPoNo ? (
             <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
@@ -617,7 +617,7 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
           }
         />
       )}
-      <StripItem label="Cost center" value={detail.costCenter ?? '—'} />
+      <StripItem label="Cost Centre" value={detail.costCenter ?? '—'} />
       {detail.type !== 'component_manufacturing' ? (
         <StripItem
           label="BOM master"

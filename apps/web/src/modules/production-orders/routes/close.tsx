@@ -191,7 +191,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
 
             <div className="form-grp">
               <label className="form-label" htmlFor="close-jc">
-                JC No
+                JC No.
               </label>
               <input
                 id="close-jc"

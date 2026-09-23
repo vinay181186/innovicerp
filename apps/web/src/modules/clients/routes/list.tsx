@@ -312,11 +312,11 @@ function ClientsListPage(): React.JSX.Element {
               <tr>
                 <th>Sr No</th>
                 <th>Code</th>
-                <th style={{ textAlign: 'left' }}>Client Name</th>
+                <th style={{ textAlign: 'left' }}>Customer</th>
                 <th>Address</th>
                 <th>Contact</th>
                 <th>Email</th>
-                <th>Status</th>
+                <th>Active</th>
                 <th>Action</th>
               </tr>
             </thead>

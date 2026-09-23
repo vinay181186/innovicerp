@@ -122,7 +122,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                   color: 'var(--cyan)',
                 }}
               >
-                Rev {detail.currentRevision}
+                Route Card Rev {detail.currentRevision}
               </span>
             </div>
           </div>
@@ -237,13 +237,13 @@ function RouteCardDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 40 }}>Sr No</th>
+                <th style={{ width: 40 }}>Op</th>
                 {/* Group replaces Type, as on the form: the kind of row is told
                     by its tint and by the QC / OSP badge in this column. */}
                 <th>Group</th>
                 <th>Machine / Vendor</th>
                 <th>Operation</th>
-                <th className="td-ctr">Cycle(h)</th>
+                <th className="td-ctr">Cycle Time (h)</th>
                 <th>Program / Lead</th>
                 <th>Tool No.</th>
                 <th>Tool Details</th>
@@ -417,9 +417,9 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
           <thead>
             <tr>
               <th style={{ width: 28 }} />
-              <th>Rev</th>
-              <th>Date</th>
-              <th>By</th>
+              <th>Route Card Rev</th>
+              <th>Revision Date</th>
+              <th>Revised By</th>
               <th>Notes</th>
               <th className="td-ctr">Ops</th>
             </tr>
@@ -472,13 +472,13 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                           <table className="innovic-table">
                             <thead>
                               <tr>
-                                <th className="td-ctr">Sr No</th>
-                                <th>Type</th>
+                                <th className="td-ctr">Op</th>
+                                <th>Op Type</th>
                                 <th>Machine / Vendor</th>
                                 <th>Operation</th>
-                                <th className="td-ctr">Cycle</th>
+                                <th className="td-ctr">Cycle Time (h)</th>
                                 <th>Program / Lead</th>
-                                <th>Tool No</th>
+                                <th>Tool No.</th>
                                 <th>Tool Details</th>
                                 <th className="td-ctr">QC</th>
                               </tr>

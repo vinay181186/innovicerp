@@ -311,7 +311,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Ln</th>
                   {/* POL = the CUSTOMER's own PO line number off the SO line
                       behind this challan line. */}
                   <th style={{ color: 'var(--purple)' }}>POL</th>
@@ -320,7 +320,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                   <th>Ship qty</th>
                   <th>Received</th>
                   <th>Rejected</th>
-                  <th>Remaining</th>
+                  <th>Pending</th>
                 </tr>
               </thead>
               <tbody>
@@ -421,13 +421,13 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
   // sixth cell carries "Issued on" instead of a blank — no orphan cells.
   return (
     <div className="form-grid-3">
-      <Pair label="DC date" value={dc.dcDate} />
+      <Pair label="DC Date" value={dc.dcDate} />
       <Pair label="Vendor" value={dc.vendorName ?? dc.vendorCodeText} />
       {/* An NC challan has no PO: po_code_text carries the NC code (the column
           is NOT NULL), so the same cell is labelled NC and linked to the NC,
           instead of showing that code as an amber "snapshot PO". */}
       <Pair
-        label={dc.ncId ? 'NC' : 'PO'}
+        label={dc.ncId ? 'NC' : 'PO No.'}
         value={
           dc.ncId ? (
             <Link
@@ -451,7 +451,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
       />
       {/* Resolved through the PO's lines when the DC has no SO line of its own,
           which is the normal shape for an OSP/vendor challan. */}
-      <Pair label="SO" value={dc.soCode ?? dc.soRefText ?? '—'} />
+      <Pair label="SO No." value={dc.soCode ?? dc.soRefText ?? '—'} />
       {/* Its own labelled field, NOT "IN-SO-0012/B" — a slash after an SO
           number reads as a revision OF THE SALES ORDER, which is not a thing.
           This is the customer's DRAWING revision, so it is said in words. It is

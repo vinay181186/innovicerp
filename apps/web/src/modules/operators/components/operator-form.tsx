@@ -92,7 +92,7 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Operator ID
+            Code
           </label>
           <input
             id="code"
@@ -183,10 +183,10 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Operator ID
+            Code
           </label>
           <input id="code" className="innovic-input" value={props.operator.code} readOnly />
-          <div className="form-help">Operator ID cannot be changed after creation.</div>
+          <div className="form-help">Code cannot be changed after creation.</div>
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="name">

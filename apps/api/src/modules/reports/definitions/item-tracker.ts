@@ -22,13 +22,13 @@ export const itemTrackerReport: RegisteredReport = {
     filters: [
       {
         key: 'search',
-        label: 'Item search',
+        label: 'Item Search',
         kind: 'text',
         placeholder: 'Item code or name (substring match)',
       },
     ],
     columns: [
-      { key: 'item_code', label: 'Item', type: 'text' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
       // The customer drawing revision(s) currently in production for this
       // item. This report's grain is ONE ROW PER ITEM — in_stock is a single
       // on-hand figure that is not held per revision — so the revision cannot
@@ -38,7 +38,7 @@ export const itemTrackerReport: RegisteredReport = {
       // ("A, B" when the same item is running at two revisions at once), and
       // blank when no open JC traces back to an SO line.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'item_name', label: 'Name', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'in_stock', label: 'In Stock', type: 'number' },
       { key: 'in_production', label: 'In Production', type: 'number' },
       { key: 'in_po_ordered', label: 'In PO (Ordered)', type: 'number' },

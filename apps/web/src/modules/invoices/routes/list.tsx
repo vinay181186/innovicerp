@@ -162,9 +162,9 @@ function InvoiceListPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Invoice No.</th>
-                <th>Date</th>
-                <th>SO</th>
-                <th>Client</th>
+                <th>Invoice Date</th>
+                <th>SO No.</th>
+                <th>Customer</th>
                 {priceHidden ? null : (
                   <>
                     <th>Amount</th>
@@ -172,7 +172,7 @@ function InvoiceListPage(): React.JSX.Element {
                     <th>Balance</th>
                   </>
                 )}
-                <th>Status</th>
+                <th>Invoice Status</th>
                 <th>Due Date</th>
                 <th>Actions</th>
               </tr>

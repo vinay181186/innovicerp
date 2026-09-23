@@ -6,7 +6,7 @@
 //
 // STYLING ONLY. Every figure here is one the page already showed — same hooks,
 // same rows — re-arranged. The two tiles the old summary did not roll up (WIP
-// and Rejected (NC)) are derived below from the enriched op rows that are
+// and Rejected) are derived below from the enriched op rows that are
 // already loaded for the operation cards; how, and why that number, is on
 // each one.
 //
@@ -190,14 +190,14 @@ export function JcViewSummary({
   const first = sortedOps[0];
   const firstDone = first ? (first.opType === 'qc' ? first.qcAcceptedQty : first.completedQty) : 0;
   // Pieces scrapped mid-route left the first op's "done" count but will never
-  // reach the last op — they are Rejected (NC), not WIP. Subtract them so a
+  // reach the last op — they are Rejected, not WIP. Subtract them so a
   // scrapped piece is not counted in both tiles (review 2026-09-18). Open NCs
   // stay in WIP: their pieces can still be reworked back into the route.
   const scrapped = ops.reduce((s, o) => s + o.ncBreakup.scrapQty, 0);
   // "—" only while the rows are still loading; a loaded card with no ops has
   // nothing in progress, and says 0.
   const wip = !opsLoaded ? null : first ? Math.max(0, firstDone - completed - scrapped) : 0;
-  // Rejected (NC) = pieces rejected and NOT recovered, summed over every op
+  // Rejected = pieces rejected and NOT recovered, summed over every op
   // from v_nc_op_breakup (op.ncBreakup): ncOpenQty (rejected − cleared −
   // failed on the NCs still open) + scrapQty (closed as scrap, gone for good).
   // NOT Σ qcRejectedQty — that is every rejection ever raised, and a piece
@@ -373,7 +373,7 @@ export function JcViewSummary({
               '—'
             )}
           </Kv>
-          <Kv label={src?.type === 'jw' ? 'JW No. / Line' : 'SO No. / Line'}>
+          <Kv label={src?.type === 'jw' ? 'JWSO No. / Ln' : 'SO No. / Ln'}>
             {src ? (
               <>
                 {src.type === 'so' ? (
@@ -525,7 +525,7 @@ export function JcViewSummary({
               title="Pieces released by the first operation and not yet through the last one (first-op done − completed)"
             />
             <KpiTile
-              label="Rejected (NC)"
+              label="Rejected"
               value={rejected ?? '—'}
               tone="red"
               title={

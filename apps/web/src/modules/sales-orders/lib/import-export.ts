@@ -39,8 +39,8 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 // a Save-As dialog where the browser supports it, else downloads to Downloads.
 export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<void> {
   const header = [
-    'SO No', 'Date', 'Customer', 'Client PO', 'Type', 'Lines', 'Total Qty',
-    'JC Qty', 'Earliest Due', 'Status', 'BOM Status', 'Raised By', 'Raised On (IST)', 'Remarks',
+    'SO No.', 'SO Date', 'Customer', 'Client PO No.', 'SO Type', 'Lines', 'Total Qty',
+    'JC Qty', 'Earliest Due Date', 'SO Status', 'BOM Status', 'Raised By', 'Raised On (IST)', 'Remarks',
   ];
   const body = rows.map((r) => [
     r.code,

@@ -196,16 +196,16 @@ export function ShopFloorView(): React.JSX.Element {
                       <th style={{ color: 'var(--purple)' }}>POL</th>
                       <th>Item Code</th>
                       <th>Item Name</th>
-                      <th>SO/WO</th>
-                      <th className="td-ctr">Order</th>
+                      <th>SO No.</th>
+                      <th className="td-ctr">Order Qty</th>
                       <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                        Done
+                        Completed
                       </th>
                       <th className="td-ctr" style={{ color: 'var(--red)' }}>
                         Pending
                       </th>
                       <th>Priority</th>
-                      <th>Due</th>
+                      <th>Due Date</th>
                       <th>Operator</th>
                       <th>Started</th>
                       <th></th>

@@ -75,7 +75,7 @@ export function printOspDc(args: {
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
   const recipientFields: SheetField[] = [
-    { label: 'Vendor code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
       label: 'Address',
@@ -86,8 +86,8 @@ export function printOspDc(args: {
   ];
 
   const documentFields: SheetField[] = [
-    { label: 'Challan No.', value: dc.code, variant: 'mono' },
-    { label: 'Challan date', value: challanDate(dc.dcDate), variant: 'mono' },
+    { label: 'DC No.', value: dc.code, variant: 'mono' },
+    { label: 'DC Date', value: challanDate(dc.dcDate), variant: 'mono' },
     // Live SO code first, snapshot text second. Both are null on every
     // production challan today, so this normally prints as a blank rule.
     { label: 'SO No.', value: dc.soCode ?? dc.soRefText ?? '', variant: 'mono' },
@@ -100,7 +100,7 @@ export function printOspDc(args: {
     // challan detail screen, which is not paper the vendor keeps.
     // Not a stored field — challan date + 3 months, which is the return window
     // the printed conditions promise.
-    { label: 'Challan end date', value: challanEndDate(dc.dcDate), variant: 'mono', strong: true },
+    { label: 'DC End Date', value: challanEndDate(dc.dcDate), variant: 'mono', strong: true },
   ];
   if (transporter) documentFields.push({ label: 'Transport', value: transporter });
   if (vehicleNo) documentFields.push({ label: 'Vehicle No.', value: vehicleNo, variant: 'mono' });

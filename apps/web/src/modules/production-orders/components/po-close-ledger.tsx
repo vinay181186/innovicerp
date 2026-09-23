@@ -113,9 +113,9 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Qty</th>
-              <th>By</th>
+              <th>Txn Date</th>
+              <th>Txn Qty</th>
+              <th>Closed By</th>
               <th>Note</th>
               <th>Reversal?</th>
               {canReverse ? <th></th> : null}

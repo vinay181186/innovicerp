@@ -16,20 +16,20 @@ export const openPoAgeingReport: RegisteredReport = {
     filters: [
       {
         key: 'status',
-        label: 'Status',
+        label: 'PO Status',
         kind: 'enum',
         options: ['draft', 'open', 'partial', 'qc_pending'],
       },
     ],
     columns: [
-      { key: 'po_code', label: 'PO no.', type: 'text' },
-      { key: 'po_date', label: 'PO date', type: 'date' },
-      { key: 'days_open', label: 'Days open', type: 'number' },
+      { key: 'po_code', label: 'PO No.', type: 'text' },
+      { key: 'po_date', label: 'PO Date', type: 'date' },
+      { key: 'days_open', label: 'Days Open', type: 'number' },
       { key: 'vendor_name', label: 'Vendor', type: 'text' },
-      { key: 'status', label: 'Status', type: 'text' },
-      { key: 'total_qty', label: 'Total qty', type: 'number' },
-      { key: 'received_qty', label: 'Received qty', type: 'number' },
-      { key: 'pending_qty', label: 'Pending qty', type: 'number' },
+      { key: 'status', label: 'PO Status', type: 'text' },
+      { key: 'total_qty', label: 'Order Qty', type: 'number' },
+      { key: 'received_qty', label: 'Received', type: 'number' },
+      { key: 'pending_qty', label: 'Pending', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {

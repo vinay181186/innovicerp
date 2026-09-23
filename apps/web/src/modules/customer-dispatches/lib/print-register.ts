@@ -45,7 +45,7 @@ export function printCustomerDispatchRegister(args: {
       <div class="info-box"><div class="info-lbl">Dispatch Entries</div><div class="info-val">${rows.length}</div></div>
       <div class="info-box"><div class="info-lbl">Items Dispatched</div><div class="info-val">${itemCount}</div></div>
     </div>
-    <table><thead><tr><th>Date</th><th>SO No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>Qty</th><th>UOM</th><th>Customer</th><th>Dispatched By</th><th>Remarks</th></tr></thead>
+    <table><thead><tr><th>Dispatch Date</th><th>SO No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>Dispatch Qty</th><th>UOM</th><th>Customer</th><th>Dispatched By</th><th>Remarks</th></tr></thead>
     <tbody>${tableRows || '<tr><td colspan="10" style="text-align:center;color:#aaa">No dispatch records</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Store In-Charge</div>

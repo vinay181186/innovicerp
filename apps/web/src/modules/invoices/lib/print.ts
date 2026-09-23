@@ -145,7 +145,7 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
         </div>
       </div>
       <table style="width:100%;border-collapse:collapse">
-        <thead><tr><th style="${TH}">Sr No.</th><th style="${TH}">POL</th><th style="${TH};text-align:left">Item Code</th><th style="${TH};text-align:left">Item Name</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
+        <thead><tr><th style="${TH}">Sr No.</th><th style="${TH}">POL</th><th style="${TH};text-align:left">Item Code</th><th style="${TH};text-align:left">Item Name</th><th style="${TH}">Invoice Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
         <tbody>${lineRows}
           ${
             priceHidden

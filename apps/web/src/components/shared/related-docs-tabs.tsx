@@ -166,10 +166,10 @@ export function RelatedDocsTabs({
               >
                 <thead>
                   <tr>
-                    <th>Code</th>
+                    <th>Document No.</th>
                     <th>Name / Ref</th>
-                    <th>Status</th>
-                    <th>Date</th>
+                    <th>Document Status</th>
+                    <th>Document Date</th>
                   </tr>
                 </thead>
                 <tbody>

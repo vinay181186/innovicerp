@@ -140,7 +140,7 @@ export function printJwInvoice(args: {
   // the challan and the PO use for their vendor, so a reader who handles all
   // three documents reads them the same way — only the party changes.
   const recipientFields: SheetField[] = [
-    { label: 'Client code', value: client?.code ?? '', variant: 'mono' },
+    { label: 'Code', value: client?.code ?? '', variant: 'mono' },
     { label: 'Name', value: clientName, variant: 'name' },
     {
       label: 'Address',
@@ -160,7 +160,7 @@ export function printJwInvoice(args: {
   // when they query the bill.
   const documentFields: SheetField[] = [
     { label: 'Invoice No.', value: invoice.code, variant: 'mono', strong: true },
-    { label: 'Invoice date', value: challanDate(invoice.invoiceDate), variant: 'mono' },
+    { label: 'Invoice Date', value: challanDate(invoice.invoiceDate), variant: 'mono' },
     { label: 'JWSO No.', value: invoice.jwCodeText ?? '', variant: 'mono' },
     // Spelled out as a field, not left to the reader: this is a service bill
     // against material the client already owns.
@@ -176,7 +176,7 @@ export function printJwInvoice(args: {
     blocks,
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Bill to / Client', fields: recipientFields },
+    recipient: { label: 'Customer', fields: recipientFields },
     document: { label: 'Invoice', fields: documentFields },
     // ONE line, always: a JW invoice bills exactly one Job Work Order line
     // (`jobWorkOrderLineId` is a single id on the row, not a list).

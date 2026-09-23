@@ -504,7 +504,7 @@ function MaterialRowModal({
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">Status</label>
+              <label className="form-label">Active</label>
               <select
                 className="innovic-select"
                 value={isActive ? 'active' : 'inactive'}

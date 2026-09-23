@@ -200,7 +200,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                 }}
               >
                 <div className="text3" style={{ fontSize: 9 }}>
-                  JOB CARD
+                  JC NO.
                 </div>
                 <div className="mono fw-700 cyan">{selectedRunning.jobCardCode}</div>
               </div>
@@ -223,7 +223,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                   }}
                 >
                   <div className="text3" style={{ fontSize: 9 }}>
-                    ITEM
+                    ITEM CODE
                   </div>
                   {/* POL — the line number printed on the CUSTOMER's own
                       purchase order, immediately before the item code. Dropped
@@ -504,7 +504,7 @@ function PendingOpsSection({
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th style={{ color: 'var(--amber)' }}>Avail</th>
+                  <th style={{ color: 'var(--amber)' }}>Available</th>
                   <th></th>
                 </tr>
               </thead>
@@ -593,7 +593,7 @@ function PendingOpsSection({
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th style={{ color: 'var(--green)' }}>Qty Made Here</th>
+                  <th style={{ color: 'var(--green)' }}>Completed</th>
                 </tr>
               </thead>
               <tbody>

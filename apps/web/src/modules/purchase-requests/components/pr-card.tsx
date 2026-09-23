@@ -315,12 +315,12 @@ export function PrCard({
           }}
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <QtyBox label="Qty" value={pr.qty} />
-            <QtyBox label="Ordered" value={bal.ordered} bordered />
+            <QtyBox label="PR Qty" value={pr.qty} />
+            <QtyBox label="Order Qty" value={bal.ordered} bordered />
             {/* Negative = more ordered than requested. Red and flagged, never
                 clamped to 0 — somebody has to go and look at it. */}
             <QtyBox
-              label="Balance"
+              label="Pending"
               value={bal.balance < 0 ? `⚠ ${bal.balance}` : bal.balance}
               color={prBalanceColor(bal.state)}
               bordered

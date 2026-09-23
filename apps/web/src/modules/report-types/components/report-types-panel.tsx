@@ -58,11 +58,11 @@ export function ReportTypesPanel(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>#</th>
+                <th>Sr No</th>
                 <th>Report / Document Name</th>
                 <th>Description</th>
                 <th>Default</th>
-                <th>Status</th>
+                <th>Active</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -236,7 +236,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
               </select>
             </div>
             <div className="form-grp">
-              <label className="form-label">Status</label>
+              <label className="form-label">Active</label>
               <select
                 className="innovic-select"
                 value={status}

@@ -87,16 +87,16 @@ export function OspAtVendorRegister(): React.JSX.Element {
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>Job Card</th>
+                    <th>JC No.</th>
                     {/* POL — the line number printed on the CUSTOMER's own
                         purchase order, immediately before the item code. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
-                    <th>Name</th>
+                    <th>Item Name</th>
                     <th>SO No.</th>
                     <th>Vendor</th>
                     <th>Operation</th>
-                    <th className="td-ctr">Ordered</th>
+                    <th className="td-ctr">Order Qty</th>
                     <th className="td-ctr">Sent</th>
                     <th className="td-ctr" style={{ color: 'var(--amber)' }}>
                       At Vendor
@@ -136,7 +136,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
 
           <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
             💡 Every ordered piece reconciles as{' '}
-            <b>Ordered = Accepted + In-QC + At-Vendor + Not-Sent</b>. "Accepted" is incoming-QC
+            <b>Order Qty = Accepted + In-QC + At-Vendor + Not-Sent</b>. "Accepted" is incoming-QC
             passed; "In QC" is returned but QC still pending; "At Vendor" is material physically out
             (sent − returned) — all tracked here, not in finished stock. <b>Not Sent</b> is the
             order balance still to be outsourced eventually; <b>Ready to Send</b> is how much the

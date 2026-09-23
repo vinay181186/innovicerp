@@ -62,7 +62,7 @@ export function exportJobCardExcel(args: {
   // ── Sheet 1: Job Card header (key/value rows) ──
   const headerAoa: (string | number)[][] = [
     ['JOB CARD', jc.code],
-    ['Date', jc.jcDate],
+    ['JC Date', jc.jcDate],
     // The item code is written `CODE/REV` here, the same way it reads on every
     // screen and print for a row that traces back to a Sales Order line (user
     // rule 2026-09-23) — a job card is always made against one order's drawing,
@@ -75,22 +75,22 @@ export function exportJobCardExcel(args: {
     ['Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision)],
     ['Drawing Rev', jc.itemRevision ?? ''],
     ['Item Name', jc.itemName || ''],
-    ['SO / WO', jc.sourceLink?.code ?? ''],
-    ['SO / WO Line', jc.sourceLink?.lineNo ?? ''],
+    ['SO / JWSO No.', jc.sourceLink?.code ?? ''],
+    ['Ln', jc.sourceLink?.lineNo ?? ''],
     ['POL', jc.clientPoLineNo ?? ''],
     ['Order Qty', jc.orderQty],
-    ['Completed Qty', completed],
-    ['Pending Qty', pending],
+    ['Completed', completed],
+    ['Pending', pending],
     ['Due Date', jc.dueDate ?? ''],
     ['Priority', jc.priority === 'high' ? 'High' : 'Normal'],
-    ['Status', jc.computedStatus.replaceAll('_', ' ')],
+    ['JC Status', jc.computedStatus.replaceAll('_', ' ')],
   ];
   const wsHeader = XLSX.utils.aoa_to_sheet(headerAoa);
   wsHeader['!cols'] = [{ wch: 18 }, { wch: 36 }];
 
   // ── Sheet 2: Operations ──
   const opCols = [
-    'Op Sr No',
+    'Op',
     'Machine',
     // The machine the pieces were / are being made on (ADR-164); equals
     // "Machine" (the plan) unless the operator ran the op elsewhere.
@@ -99,17 +99,17 @@ export function exportJobCardExcel(args: {
     'Cycle (min)',
     'Program',
     'Tool No.',
-    'Order',
+    'Order Qty',
     'Input',
-    'Done',
-    // Who actually made "Done", per machine (ADR-126). Blank unless the op ran
-    // on more than one machine.
+    'Completed',
+    // Who actually made "Completed", per machine (ADR-126). Blank unless the op
+    // ran on more than one machine.
     'Machine Split',
-    'Avail',
-    'QC Accepted',
-    'QC Rejected',
+    'Available',
+    'Accepted',
+    'Rejected',
     'QC Pending',
-    'Status',
+    'Op Status',
   ];
   const opAoa: (string | number)[][] = [
     opCols,
@@ -140,17 +140,17 @@ export function exportJobCardExcel(args: {
   // so this sheet is the honest machine-wise production history: no aggregation,
   // no "current machine" label standing in for machines that did the work.
   const logCols = [
-    'Date',
+    'Log Date',
     'Shift',
-    'Op Sr No',
+    'Op',
     'Operation',
-    'Type',
+    'Log Type',
     'Machine',
     // The op's PLANNED machine beside the one this entry was actually made on
     // (ADR-164). Same name unless the op was run elsewhere.
     'Planned Machine',
-    'Qty',
-    'Reject Qty',
+    'Completed',
+    'Rejected',
     'Operator',
     'Remarks',
   ];

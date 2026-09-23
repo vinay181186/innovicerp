@@ -591,7 +591,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
       <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>#</th>
+            <th style={{ width: 36 }}>Ln</th>
             {/* POL = the CUSTOMER's own PO line number off the SO line behind
                 this receipt line. Not our SO line number. */}
             <th style={{ color: 'var(--purple)' }}>POL</th>

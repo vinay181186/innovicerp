@@ -167,7 +167,7 @@ function QcProcessDetailPage(): React.JSX.Element {
               <div style={{ whiteSpace: 'pre-wrap' }}>{data.description ?? '—'}</div>
             </div>
             <div className="form-grp">
-              <span className="form-label">Default cycle time (minutes)</span>
+              <span className="form-label">Default Cycle Time (min)</span>
               <div className="mono fw-700">
                 {Number(data.defaultCycleTimeMin) > 0
                   ? Number(data.defaultCycleTimeMin).toFixed(2)
@@ -175,7 +175,7 @@ function QcProcessDetailPage(): React.JSX.Element {
               </div>
             </div>
             <div className="form-grp">
-              <span className="form-label">Status</span>
+              <span className="form-label">Active</span>
               <div className="fw-700">{data.isActive ? 'Active' : 'Inactive'}</div>
             </div>
           </div>

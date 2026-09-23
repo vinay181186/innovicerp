@@ -209,7 +209,7 @@ function RequestCard({
           <span className="mono">{req.qty} pcs</span>
           {req.rejectQty > 0 ? (
             <span className="mono" style={{ color: 'var(--red)' }}>
-              {req.rejectQty} rej
+              {req.rejectQty} rejected
             </span>
           ) : null}
         </div>
@@ -222,14 +222,14 @@ function RequestCard({
             marginBottom: 8,
           }}
         >
-          <Field label="DATE / TIME">
+          <Field label="LOG DATE / TIME">
             <span className="mono">{when(req.prevLogDate, req.prevStartTime)}</span>
             <span className="text3"> → </span>
             <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>
               {when(req.requestedLogDate, req.requestedStartTime)}
             </span>
           </Field>
-          <Field label="QTY">
+          <Field label="COMPLETED">
             <span className="mono">{req.qty}</span>
             <span className="text3" style={{ fontSize: 10 }}>
               {' '}

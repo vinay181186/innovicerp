@@ -243,20 +243,20 @@ function QcHistoryPage(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr>
-                      <th>JC</th>
+                      <th>JC No.</th>
                       <th>Op</th>
-                      <th>SO</th>
+                      <th>SO No.</th>
                       {/* POL — the CUSTOMER's own purchase-order line number,
                           immediately before the item code as everywhere else. */}
                       <th style={{ color: 'var(--purple)' }}>POL</th>
-                      <th>Item</th>
+                      <th>Item Code</th>
                       {/* The code says which part number is waiting; it does not
                           say what the part is. The name gets its own column so
                           the code column stays a clean key. */}
                       <th>Item Name</th>
                       <th>Operation</th>
-                      <th>Order</th>
-                      <th>Done</th>
+                      <th>Order Qty</th>
+                      <th>Completed</th>
                       <th style={{ color: 'var(--green)' }}>Accepted</th>
                       <th style={{ color: 'var(--red)' }}>Rejected</th>
                       <th style={{ color: 'var(--amber)' }}>Pending</th>
@@ -291,11 +291,11 @@ function QcHistoryPage(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr>
-                      <th>JC</th>
+                      <th>JC No.</th>
                       <th>Op</th>
-                      <th>SO</th>
+                      <th>SO No.</th>
                       <th style={{ color: 'var(--purple)' }}>POL</th>
-                      <th>Item</th>
+                      <th>Item Code</th>
                       {/* Same reason as the pending table above: reading a QC
                           entry back months later, the part number alone does not
                           tell you what was inspected. */}
@@ -303,7 +303,7 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>Operation</th>
                       <th style={{ color: 'var(--green)' }}>Accepted</th>
                       <th style={{ color: 'var(--red)' }}>Rejected</th>
-                      <th>Date</th>
+                      <th>QC Date</th>
                       <th>Shift</th>
                       <th>Inspector</th>
                       <th>Remarks</th>

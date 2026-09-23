@@ -558,8 +558,8 @@ function PrintTemplatesPage(): React.JSX.Element {
                     </div>
                   </div>
 
-                  {/* 4. The recipient box (Vendor / Supplier on a PO, Service
-                      provider on a Service PO) and Order, side by side with
+                  {/* 4. The recipient box (Vendor on a PO and on a Service
+                      PO) and Order, side by side with
                       one vertical rule between them. */}
                   <div
                     style={{
@@ -571,7 +571,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                   >
                     {(
                       [
-                        [isSpo ? 'Service provider' : 'Vendor / Supplier', poRecipient],
+                        ['Vendor', poRecipient],
                         ['Order', poOrder],
                       ] as [string, SheetField[]][]
                     ).map(([boxLabel, fields], i) => (
@@ -884,7 +884,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                     <div style={{ padding: '10px 14px', fontSize: 11 }}>
                       <b>PO No.:</b> {sample.poNo}
                       <br />
-                      <b>Vendor DC No.:</b> {sample.dcNo}
+                      <b>Vendor Challan No.:</b> {sample.dcNo}
                       <br />
                       <b>Invoice No.:</b> {sample.invoiceNo}
                     </div>
@@ -907,9 +907,9 @@ function PrintTemplatesPage(): React.JSX.Element {
                     <div style={{ padding: '10px 14px', fontSize: 11 }}>
                       <b>Recipient:</b> {sample.recipientName}
                       <br />
-                      <b>Vehicle:</b> {sample.vehicleNo}
+                      <b>Vehicle No.:</b> {sample.vehicleNo}
                       <br />
-                      <b>Linked PO:</b> {sample.linkedPONo}
+                      <b>PO No.:</b> {sample.linkedPONo}
                     </div>
                   </div>
                 )}
@@ -967,7 +967,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               width: 78,
                             }}
                           >
-                            Received Qty
+                            Received
                           </th>
                           <th
                             style={{
@@ -977,7 +977,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               width: 78,
                             }}
                           >
-                            QC Accepted
+                            Accepted
                           </th>
                           <th
                             style={{
@@ -987,7 +987,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               width: 78,
                             }}
                           >
-                            QC Rejected
+                            Rejected
                           </th>
                           <th
                             style={{

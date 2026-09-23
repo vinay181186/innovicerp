@@ -38,7 +38,7 @@ function CostCenterNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to Cost Center Master. Ask an admin for L2 Data Entry or
+        ⛔ You do not have create access to Cost Centre Master. Ask an admin for L2 Data Entry or
         above in Finance.
       </div>
     );
@@ -48,12 +48,12 @@ function CostCenterNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <Link to="/cost-centers" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Cost Center Master
+        <ArrowLeft size={14} /> Back to Cost Centre Master
       </Link>
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">🏢 Add Cost Center</div>
+            <div className="panel-title">🏢 Add Cost Centre</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Master record for budgeting + reporting. Used by Sales Orders + Daily Production
               Reports + SO Costing.
@@ -75,7 +75,7 @@ function CostCenterNewPage(): React.JSX.Element {
                   () => void navigate({ to: '/cost-centers/$id', params: { id: created.id } }),
                 );
               } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Failed to create cost center.');
+                setSubmitError(e instanceof Error ? e.message : 'Failed to create cost centre.');
               }
             }}
           />

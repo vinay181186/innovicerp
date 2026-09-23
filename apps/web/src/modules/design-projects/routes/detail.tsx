@@ -55,7 +55,7 @@ const CHECKLIST: Array<{ key: string; label: string; cat: string }> = [
   { key: 'materialSpecified', label: 'Materials and surface finish specified', cat: 'Quality' },
   { key: 'standardsCompliance', label: 'Relevant standards compliance verified', cat: 'Standards' },
   { key: 'safetyReviewed', label: 'Safety requirements addressed', cat: 'Standards' },
-  { key: 'clientApproval', label: 'Client approval obtained (if required)', cat: 'Approval' },
+  { key: 'clientApproval', label: 'Customer approval obtained (if required)', cat: 'Approval' },
   { key: 'leadApproval', label: 'Design lead sign-off', cat: 'Approval' },
 ];
 
@@ -335,11 +335,11 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
               <thead>
                 <tr>
                   <th>Task</th>
-                  <th>Part</th>
+                  <th>Item Name</th>
                   <th>Assignee</th>
                   <th>Priority</th>
-                  <th>Status</th>
-                  <th>Due</th>
+                  <th>Task Status</th>
+                  <th>Due Date</th>
                   <th className="td-ctr">Issues</th>
                   {canEdit ? <th></th> : null}
                 </tr>
@@ -611,7 +611,7 @@ function TaskFormModal({
             />
           </Field>
         </div>
-        <Field label="Part / Assembly">
+        <Field label="Item Name">
           <input
             className="innovic-input"
             value={part}
@@ -623,7 +623,7 @@ function TaskFormModal({
             className="innovic-input"
             value={assignee}
             onChange={(e) => setAssignee(e.target.value)}
-            placeholder="Engineer name"
+            placeholder="Design engineer name"
           />
         </Field>
         <Field label="Priority">
@@ -637,7 +637,7 @@ function TaskFormModal({
             ))}
           </select>
         </Field>
-        <Field label="Status">
+        <Field label="Task Status">
           <select
             className="innovic-select"
             value={status}
@@ -720,7 +720,7 @@ function ViewTaskModal({
         </div>
         <div>
           <div className="text3" style={{ fontSize: 10 }}>
-            Part
+            Item Name
           </div>
           <div>{task.partText ?? '—'}</div>
         </div>
@@ -732,13 +732,13 @@ function ViewTaskModal({
         </div>
         <div>
           <div className="text3" style={{ fontSize: 10 }}>
-            Due
+            Due Date
           </div>
           <div>{task.dueDate ?? '—'}</div>
         </div>
         <div>
           <div className="text3" style={{ fontSize: 10 }}>
-            Status
+            Task Status
           </div>
           <Badge value={task.status} kind="status" />
         </div>
@@ -872,12 +872,12 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
             <thead>
               <tr>
                 <th>Issue</th>
-                <th>Part</th>
+                <th>Item Name</th>
                 <th>Severity</th>
-                <th>Status</th>
+                <th>Issue Status</th>
                 <th>Raised By</th>
                 <th>Assigned To</th>
-                <th>Date</th>
+                <th>Raised Date</th>
                 <th>Age</th>
                 {canEdit ? <th></th> : null}
               </tr>
@@ -1059,7 +1059,7 @@ function IssueFormModal({
             ))}
           </select>
         </Field>
-        <Field label="Part">
+        <Field label="Item Name">
           <input
             className="innovic-input"
             value={part}
@@ -1078,7 +1078,7 @@ function IssueFormModal({
           </select>
         </Field>
         {mode === 'edit' ? (
-          <Field label="Status">
+          <Field label="Issue Status">
             <select
               className="innovic-select"
               value={status}
@@ -1162,7 +1162,7 @@ function ViewIssueModal({
         </div>
         <div>
           <div className="text3" style={{ fontSize: 10 }}>
-            Status
+            Issue Status
           </div>
           <Badge value={issue.status} kind="status" />
         </div>
@@ -1174,7 +1174,7 @@ function ViewIssueModal({
         </div>
         <div>
           <div className="text3" style={{ fontSize: 10 }}>
-            Raised
+            Raised Date
           </div>
           <div>
             {issue.raisedDate} ({ageDays}d)
@@ -1182,7 +1182,7 @@ function ViewIssueModal({
         </div>
         <div>
           <div className="text3" style={{ fontSize: 10 }}>
-            Resolved
+            Resolved Date
           </div>
           <div>{issue.resolvedDate ?? '—'}</div>
         </div>
@@ -1558,14 +1558,14 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>DCR No</th>
+                  <th>DCR No.</th>
                   <th>Title</th>
-                  <th>Type</th>
-                  <th>Part</th>
+                  <th>Change Type</th>
+                  <th>Item Name</th>
                   <th>Priority</th>
-                  <th>Status</th>
+                  <th>DCR Status</th>
                   <th>Requested By</th>
-                  <th>Date</th>
+                  <th>Request Date</th>
                   <th>Age</th>
                   <th>DCN</th>
                 </tr>
@@ -1645,11 +1645,11 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>DCN No</th>
+                  <th>DCN No.</th>
                   <th>Title</th>
                   <th>Linked DCR</th>
-                  <th>Status</th>
-                  <th>Released</th>
+                  <th>DCN Status</th>
+                  <th>Released Date</th>
                 </tr>
               </thead>
               <tbody>
@@ -1822,7 +1822,7 @@ function DcrFormModal({
             ))}
           </select>
         </Field>
-        <Field label="Part Affected">
+        <Field label="Item Name">
           <input
             className="innovic-input"
             value={partAffected}
@@ -1841,7 +1841,7 @@ function DcrFormModal({
           </select>
         </Field>
         {mode === 'edit' ? (
-          <Field label="Status">
+          <Field label="DCR Status">
             <select
               className="innovic-select"
               value={status}
@@ -1976,7 +1976,7 @@ function DcnFormModal({
           </select>
         </Field>
         {mode === 'edit' ? (
-          <Field label="Status">
+          <Field label="DCN Status">
             <select
               className="innovic-select"
               value={status}

@@ -142,7 +142,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 {data.planCodeText}
               </Link>
             </Fact>
-            <Fact label="SO / JWSO" mono>
+            <Fact label="SO / JWSO No." mono>
               {data.soCodeText ? (
                 <>
                   {data.soCodeText}
@@ -152,8 +152,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 '—'
               )}
             </Fact>
-            <Fact label="Party">{data.partyName ?? '—'}</Fact>
-            <Fact label="Customer dispatch date" mono>
+            <Fact label="Customer">{data.partyName ?? '—'}</Fact>
+            <Fact label="Customer Dispatch Date" mono>
               {data.targetDate}
             </Fact>
 
@@ -166,17 +166,17 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 {data.clientPoLineNo ?? '—'}
               </span>
             </Fact>
-            <Fact label="Item code" mono>
+            <Fact label="Item Code" mono>
               {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
               {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
             </Fact>
             <div className="form-grp form-span-2">
-              <span className="form-label">Item name</span>
+              <span className="form-label">Item Name</span>
               <div className="fw-700" style={{ color: 'var(--text)' }}>
                 {data.itemNameText ?? '—'}
               </div>
             </div>
-            <Fact label="Order qty" mono>
+            <Fact label="Order Qty" mono>
               {data.orderQty}
             </Fact>
             {/* Raw material the order is cut from — read off its plan (same
@@ -198,7 +198,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 · Rev {data.routeCardRevision}
               </span>
             </Fact>
-            <Fact label="Job card">
+            <Fact label="JC No.">
               <Link
                 to="/job-cards/$id"
                 params={{ id: data.jobCardId }}
@@ -208,7 +208,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 {data.jcCodeText}
               </Link>
             </Fact>
-            <Fact label="Created by">
+            <Fact label="Created By">
               {data.createdByName ?? '—'}
               <span className="text3 mono" style={{ fontSize: 11 }}>
                 {' '}

@@ -202,7 +202,7 @@ export function OpEntryModal({
         >
           <div>
             <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
-              JOB CARD
+              JC NO.
             </div>
             <div className="mono fw-700 cyan" style={{ fontSize: 13 }}>
               {op.jobCardCode}
@@ -223,7 +223,7 @@ export function OpEntryModal({
           {itemCode || op.itemName ? (
             <div>
               <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
-                ITEM
+                ITEM CODE
               </div>
               {/* POL — the line number printed on the CUSTOMER's own purchase
                   order, immediately before the item code. Dropped when no sales

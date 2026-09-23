@@ -14,11 +14,11 @@ export const al008GrnPendingQc: RegisteredAlert = {
     description:
       'GRN lines whose QC has not been completed yet (qc_status pending or in_progress).',
     columns: [
-      { key: 'grn_code', label: 'GRN no.', type: 'text' },
-      { key: 'grn_date', label: 'GRN date', type: 'date' },
-      { key: 'item', label: 'Item', type: 'text' },
+      { key: 'grn_code', label: 'GRN No.', type: 'text' },
+      { key: 'grn_date', label: 'GRN Date', type: 'date' },
+      { key: 'item', label: 'Item Code', type: 'text' },
       { key: 'received_qty', label: 'Received', type: 'number' },
-      { key: 'qc_status', label: 'QC status', type: 'text' },
+      { key: 'qc_status', label: 'QC Status', type: 'text' },
     ],
     defaultActive: true,
   },

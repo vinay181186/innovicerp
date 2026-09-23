@@ -148,14 +148,14 @@ function AssemblyListPage(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr>
-                      <th>SO #</th>
+                      <th>SO No.</th>
                       <th>Customer</th>
-                      <th>BOM</th>
-                      <th>Due</th>
+                      <th>BOM No.</th>
+                      <th>Due Date</th>
                       <th>Required</th>
                       <th>Assembled</th>
                       <th>Dispatched</th>
-                      <th>Status</th>
+                      <th>Assembly Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -185,7 +185,7 @@ function AssemblyListPage(): React.JSX.Element {
                                   independently, so for a few minutes the old
                                   API returns no bomRevision at all. Strict
                                   !== null would print "Rev undefined". */}
-                              {row.bomRevision != null ? ` Rev ${row.bomRevision}` : ''}
+                              {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
                             </span>
                             {row.bomName ? (
                               <div style={{ fontSize: 11 }}>{row.bomName}</div>

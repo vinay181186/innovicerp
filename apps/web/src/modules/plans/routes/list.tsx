@@ -342,12 +342,12 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                     number (that stays in the SO column as "L#"). */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>ITEM</th>
-                <th>SO</th>
+                <th>SO NO.</th>
                 <th className="td-ctr">ORDER QTY</th>
                 <th className="td-ctr">PLAN QTY</th>
-                <th>PRODUCTION ORDER</th>
+                <th>PRODUCTION ORDER NO</th>
                 <th>JC NO.</th>
-                <th>STATUS</th>
+                <th>PLAN STATUS</th>
                 <th>ACTION</th>
               </tr>
             </thead>

@@ -371,14 +371,14 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>#</th>
+                <th>Ln</th>
                 {/* POL = the customer's own PO line number, carried down from
                     the Sales Order line this PO line was raised against. */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Source</th>
-                <th>Qty</th>
+                <th>Order Qty</th>
                 {priceHidden ? null : (
                   <>
                     <th>Rate</th>
@@ -387,7 +387,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 )}
                 <th style={{ color: 'var(--green)' }}>Received</th>
                 <th style={{ color: 'var(--red)' }}>Pending</th>
-                <th>Due</th>
+                <th>Due Date</th>
                 <th>Remarks</th>
               </tr>
             </thead>

@@ -1,4 +1,4 @@
-// Cost Center Master list — Phase A item 4.
+// Cost Centre Master list — Phase A item 4.
 // Ports legacy renderCostCenters (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
 // L17165-17189) to Innovic chrome. Legacy columns, in order (L17186):
 // Code | Name | Department | Type | Description | Status | Actions.
@@ -131,12 +131,12 @@ function CostCentersListPage(): React.JSX.Element {
         >
           <div>
             <div className="section-hdr" style={{ marginBottom: 0 }}>
-              🏢 Cost Center Master
+              🏢 Cost Centre Master
             </div>
             {/* Count comes from the list response's `total` — the only
                 aggregate GET /cost-centers returns. */}
             <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} cost center{total === 1 ? '' : 's'}
+              {total} cost centre{total === 1 ? '' : 's'}
               {search.isActive !== undefined ? (
                 <>
                   {' '}
@@ -224,7 +224,7 @@ function CostCentersListPage(): React.JSX.Element {
             ) : null}
             {canAdd ? (
               <Link to="/cost-centers/new" className="btn btn-primary">
-                <Plus size={14} /> Add Cost Center
+                <Plus size={14} /> Add Cost Centre
               </Link>
             ) : null}
           </div>
@@ -252,9 +252,9 @@ function CostCentersListPage(): React.JSX.Element {
               <th>Code</th>
               <th style={{ textAlign: 'left' }}>Name</th>
               <th>Department</th>
-              <th>Type</th>
+              <th>Cost Centre Type</th>
               <th>Description</th>
-              <th>Status</th>
+              <th>Active</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -269,13 +269,13 @@ function CostCentersListPage(): React.JSX.Element {
             ) : isError ? (
               <tr>
                 <td colSpan={COLUMN_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load cost centers'}
+                  {error instanceof Error ? error.message : 'Failed to load cost centres'}
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={COLUMN_COUNT} className="empty-state">
-                  No cost centers. Click + Add Cost Center.
+                  No cost centres. Click + Add Cost Centre.
                 </td>
               </tr>
             ) : (
@@ -291,7 +291,7 @@ function CostCentersListPage(): React.JSX.Element {
                       to="/cost-centers/$id"
                       params={{ id: cc.id }}
                       className="td-code"
-                      title="Open this cost center"
+                      title="Open this cost centre"
                       onClick={(e) => e.stopPropagation()}
                     >
                       {cc.code}
@@ -365,7 +365,7 @@ function CostCentersListPage(): React.JSX.Element {
                           aria-label="Delete"
                           disabled={softDelete.isPending}
                           onClick={() => {
-                            if (confirm('Delete this cost center?')) {
+                            if (confirm('Delete this cost centre?')) {
                               softDelete.mutate(cc.id);
                             }
                           }}
@@ -394,7 +394,7 @@ function CostCentersListPage(): React.JSX.Element {
       >
         <span>
           {total === 0
-            ? 'No cost centers'
+            ? 'No cost centres'
             : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

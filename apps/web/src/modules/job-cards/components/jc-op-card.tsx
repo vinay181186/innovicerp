@@ -7,7 +7,7 @@
 //
 //   bar     #n · OPnn · kind chip · operation · tags · status badge
 //           … Start : … End : … Cycle : …
-//   chips   Planned Qty / Completed / Pending / QC Pending / Rejected (NC) /
+//   chips   Order Qty / Completed / Pending / QC Pending / Rejected /
 //           At Vendor [+ RM Avail on the first op; Ready to Send / In QC on
 //           an OSP op]
 //   fields  Machine · Operator · Program No. · Tool · Setup Time · Last Entry
@@ -389,7 +389,7 @@ export function JcOpCard({
         >
           <OrdinalBox n={index} />
           <span className="mono fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
-            OP{opSrNo(op.opSeq)}
+            Op{opSrNo(op.opSeq)}
           </span>
           <KindChip op={op} />
           <span
@@ -451,7 +451,7 @@ export function JcOpCard({
         >
           <OrdinalBox n={index} />
           <span className="mono fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
-            OP{opSrNo(op.opSeq)}
+            Op{opSrNo(op.opSeq)}
           </span>
         </button>
         <KindChip op={op} />
@@ -486,7 +486,7 @@ export function JcOpCard({
           End : <b style={{ color: 'var(--text)' }}>{endStamp}</b>
         </span>
         <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
-          Cycle :{' '}
+          Cycle Time :{' '}
           <b style={{ color: 'var(--text)' }}>{cycleMin != null ? `${cycleMin} min` : '—'}</b>
         </span>
       </div>
@@ -496,7 +496,7 @@ export function JcOpCard({
         {/* ── NC BREAKUP (§6): where this op's rejected pieces are right now ── */}
         <NcBreakupStrip nc={op.ncBreakup} />
 
-        {/* ── CHIPS: Planned · Completed · Pending · QC Pending · Rejected (NC)
+        {/* ── CHIPS: Order Qty · Completed · Pending · QC Pending · Rejected
             · At Vendor, then the op-specific extras (RM Avail on the first op;
             Ready to Send / In QC on an OSP op). auto-fit: six across when there
             is room, fewer on a narrow screen. ── */}
@@ -508,7 +508,7 @@ export function JcOpCard({
             marginBottom: 10,
           }}
         >
-          <QtyChip label="Planned Qty" value={jc.orderQty} color="var(--text)" />
+          <QtyChip label="Order Qty" value={jc.orderQty} color="var(--text)" />
           <QtyChip
             label="Completed"
             value={doneQty}
@@ -517,7 +517,7 @@ export function JcOpCard({
               isQc ? (
                 <Sub color="var(--green)">✓ accepted</Sub>
               ) : op.qcRequired ? (
-                <Sub color="var(--green)">✓{op.qcAcceptedQty} acc</Sub>
+                <Sub color="var(--green)">✓{op.qcAcceptedQty} accepted</Sub>
               ) : null
             }
           />
@@ -539,7 +539,7 @@ export function JcOpCard({
               with what became of them underneath — the ✗ / ♻ lines the
               DONE tile used to carry. */}
           <QtyChip
-            label="Rejected (NC)"
+            label="Rejected"
             value={op.qcRejectedQty}
             color={op.qcRejectedQty > 0 ? 'var(--red)' : 'var(--text3)'}
             sub={
@@ -559,7 +559,7 @@ export function JcOpCard({
               material feeds, and the only one the gate applies to. */}
           {rmAvailable ? (
             <QtyChip
-              label="RM Avail"
+              label="RM Available"
               value={rmAvailable.availableQty}
               color={rmAvailable.availableQty > 0 ? 'var(--cyan)' : 'var(--red)'}
               title={

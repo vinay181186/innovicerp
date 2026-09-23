@@ -782,7 +782,7 @@ export function OpEntryForm({
               </div>
               <div className="form-grp" style={{ width: 100 }}>
                 <label className="form-label" htmlFor="opf-rej">
-                  Reject
+                  Rejected
                 </label>
                 <input
                   id="opf-rej"
@@ -1117,7 +1117,7 @@ export function OpEntryForm({
               <>
                 <div className="form-grp" style={{ width: 100 }}>
                   <label className="form-label" htmlFor="opf-qty">
-                    Qty done<span className="req">★</span>
+                    Completed<span className="req">★</span>
                   </label>
                   {/* min is 0, not 1: a Stop that made nothing is a real and
                       required answer. The completion path still refuses 0 in
@@ -1142,7 +1142,7 @@ export function OpEntryForm({
                 </div>
                 <div className="form-grp" style={{ width: 100 }}>
                   <label className="form-label" htmlFor="opf-rej">
-                    Reject
+                    Rejected
                   </label>
                   {/* Optional — left blank it counts as none scrapped. */}
                   <input

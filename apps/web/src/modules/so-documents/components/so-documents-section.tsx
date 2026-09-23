@@ -262,7 +262,7 @@ function LinePanel({
         <span className="panel-title" style={{ color: 'var(--green)' }}>
           {/* POL is the line number on the CUSTOMER'S OWN purchase order — an
               extra value beside our line number, never a substitute for it. */}
-          📦 Line {line.lineNo} ·{' '}
+          📦 Ln {line.lineNo} ·{' '}
           <span className="mono" style={{ color: 'var(--purple)' }}>
             POL {line.clientPoLineNo ?? '—'}
           </span>
@@ -483,7 +483,7 @@ function UploadDialog({
         </div>
         <div className="panel-body" style={{ display: 'grid', gap: 12 }}>
           <div>
-            <label className="form-label">SO Line</label>
+            <label className="form-label">Ln</label>
             <select
               className="innovic-select"
               value={lineKey}

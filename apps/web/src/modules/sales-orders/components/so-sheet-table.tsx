@@ -89,15 +89,15 @@ export function SoSheetTable({
             <tr>
               <th>Sr No</th>
               <th>SO No.</th>
-              <th>Type</th>
+              <th>SO Type</th>
               <th style={{ textAlign: 'left' }}>Customer</th>
               <th>Lines</th>
               <th>Order Qty</th>
               <th>JC Qty</th>
               <th>Dispatched</th>
-              <th>Balance</th>
+              <th>Pending</th>
               <th>Due Date</th>
-              <th>Status</th>
+              <th>SO Status</th>
               <th>Action</th>
             </tr>
           </thead>

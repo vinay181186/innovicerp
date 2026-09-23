@@ -196,7 +196,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
 
         <div className="form-grp">
           <label className="form-label" htmlFor="prDate">
-            Date<span className="req">★</span>
+            PR Date<span className="req">★</span>
           </label>
           <input
             id="prDate"
@@ -242,7 +242,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
         {isEdit ? (
           <div className="form-grp">
             <label className="form-label" htmlFor="status">
-              Status
+              PR Status
             </label>
             <select
               id="status"
@@ -343,7 +343,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
 
         <div className="form-grp">
           <label className="form-label" htmlFor="qty">
-            Qty<span className="req">★</span>
+            PR Qty<span className="req">★</span>
           </label>
           <input
             id="qty"

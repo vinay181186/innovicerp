@@ -59,7 +59,7 @@ export function UpdateStatusModal({
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="us-status">
-            Status
+            Task Status
           </label>
           <select
             id="us-status"

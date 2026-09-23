@@ -117,9 +117,9 @@ export function QueueTab({
                     <th>JC / Op</th>
                     <th>Operation</th>
                     <th>SO / Customer</th>
-                    <th className="td-ctr">Qty</th>
+                    <th className="td-ctr">Pending QC</th>
                     <th className="td-ctr">Attempt</th>
-                    <th>Due</th>
+                    <th>Due Date</th>
                     <th>Assigned To</th>
                     {showActions ? <th>Actions</th> : null}
                   </tr>

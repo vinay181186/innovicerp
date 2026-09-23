@@ -533,7 +533,7 @@ function NcRegisterListPage(): React.JSX.Element {
                       </span>
                       <span>·</span>
                       <span>
-                        JC{' '}
+                        JC No.{' '}
                         <span className="mono" style={{ color: 'var(--cyan)' }}>
                           {nc.jcCode ?? '—'}
                         </span>
@@ -546,7 +546,7 @@ function NcRegisterListPage(): React.JSX.Element {
                       ) : null}
                       <span>·</span>
                       <span>
-                        Qty{' '}
+                        Rejected{' '}
                         <span className="mono fw-700" style={{ color: 'var(--red)' }}>
                           {Number(nc.rejectedQty).toFixed(0)}
                         </span>

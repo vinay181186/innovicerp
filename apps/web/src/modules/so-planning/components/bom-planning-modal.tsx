@@ -446,17 +446,17 @@ function BomBody({
         <table style={{ width: '100%' }}>
           <thead>
             <tr style={{ background: 'var(--bg4)' }}>
-              <th>#</th>
-              <th>{mode === 'equipment' ? 'Item Code' : 'Child Item'}</th>
-              <th>{mode === 'equipment' ? 'Item Name' : 'Name'}</th>
+              <th>Sr No</th>
+              <th>Item Code</th>
+              <th>Item Name</th>
               <th>{mode === 'equipment' ? 'Qty/Set' : 'Per Unit'}</th>
               <th>Total Need</th>
               <th style={{ color: 'var(--green)' }}>Stock</th>
-              <th style={{ color: 'var(--red)' }}>Shortfall</th>
-              <th>Type</th>
+              <th style={{ color: 'var(--red)' }}>Pending</th>
+              <th>BOM Type</th>
               <th>Plan Status</th>
               <th>Plan?</th>
-              <th>{mode === 'equipment' ? 'Qty' : 'Qty to Plan'}</th>
+              <th>Qty to Plan</th>
             </tr>
           </thead>
           <tbody>
@@ -681,8 +681,8 @@ function BomBody({
         {/* The two modes have different footnotes in legacy — equipment L8901,
             assembly L7185. They are not interchangeable. */}
         {mode === 'equipment'
-          ? 'ℹ Total Need = Equipment Qty × Qty per Set. Shortfall = Total Need − Current Stock.'
-          : 'ℹ Shortfall = Total Need − Current Stock. You can adjust Qty to Plan up to Total Need if you want to plan more than shortfall.'}
+          ? 'ℹ Total Need = Equipment Qty × Qty per Set. Pending = Total Need − Current Stock.'
+          : 'ℹ Pending = Total Need − Current Stock. You can adjust Qty to Plan up to Total Need if you want to plan more than the pending qty.'}
       </div>
 
       {submitErr ? (

@@ -264,7 +264,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="ncJobCard">
-            Job Card
+            JC No.
           </label>
           <input
             id="ncJobCard"
@@ -277,7 +277,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="ncReturnChallan">
-            Return Challan
+            DC No.
           </label>
           <input
             id="ncReturnChallan"
@@ -312,7 +312,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
       <div className="form-grid-4" style={{ marginBottom: 16 }}>
         <div className="form-grp">
           <label className="form-label" htmlFor="ncReceiptDate">
-            Receipt Date<span className="req">★</span>
+            GRN Date<span className="req">★</span>
           </label>
           <input
             id="ncReceiptDate"
@@ -365,7 +365,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
         >
           <thead>
             <tr>
-              <th style={{ width: '4%' }}>#</th>
+              <th style={{ width: '4%' }}>Ln</th>
               {/* POL = the CUSTOMER's own PO line number off the SO line behind
                   this challan line. Widths below still total 100. */}
               <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
@@ -373,7 +373,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
               <th style={{ width: '22%' }}>Item Name</th>
               <th style={{ width: '8%' }}>Sent Qty</th>
               <th style={{ width: '9%' }}>Received so far</th>
-              <th style={{ width: '8%' }}>Balance</th>
+              <th style={{ width: '8%' }}>Pending</th>
               <th style={{ width: '11%' }}>
                 Receive Now<span className="req">★</span>
               </th>

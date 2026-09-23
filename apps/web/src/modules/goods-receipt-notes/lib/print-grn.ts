@@ -108,15 +108,15 @@ export function printGrnDoc(args: {
   // optional document cells.
   const documentFields: SheetField[] = [
     { label: 'GRN No.', value: model.code, variant: 'mono', strong: true },
-    { label: 'GRN date', value: challanDate(model.grnDate), variant: 'mono' },
+    { label: 'GRN Date', value: challanDate(model.grnDate), variant: 'mono' },
   ];
   if (model.poNo) documentFields.push({ label: 'PO No.', value: model.poNo, variant: 'mono' });
   if (model.dcNo)
-    documentFields.push({ label: 'Vendor DC No.', value: model.dcNo, variant: 'mono' });
+    documentFields.push({ label: 'Vendor Challan No.', value: model.dcNo, variant: 'mono' });
   if (model.invoiceNo)
     documentFields.push({ label: 'Invoice No.', value: model.invoiceNo, variant: 'mono' });
 
-  // The GRN is INWARD, so the counterparty SUPPLIED the goods -- "Supplier",
+  // The GRN is INWARD, so the counterparty SUPPLIED the goods -- "Vendor",
   // not "Recipient". Address / GSTIN / contact come from the same substitution
   // bag the template blocks read, which is where both entry points resolve them.
   const vendorName = model.vendorName || (data.vendorName ?? '');
@@ -149,7 +149,7 @@ export function printGrnDoc(args: {
     blocks,
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Supplier', fields: supplierFields },
+    recipient: { label: 'Vendor', fields: supplierFields },
     document: { label: 'Document', fields: documentFields },
     lines: model.lines.map((l) => ({
       // CODE/REV (ADR-177); a line with no revision prints the bare code.
@@ -164,7 +164,7 @@ export function printGrnDoc(args: {
       // The per-line DC reference has no column of its own -- it would be a
       // column of dashes on most GRNs -- so it rides under the item, labelled,
       // and only on the lines that carry one.
-      ...(l.dcRefNo ? { description: l.dcRefNo, descLabel: 'DC Ref' } : {}),
+      ...(l.dcRefNo ? { description: l.dcRefNo, descLabel: 'DC No.' } : {}),
     })),
     totalQty: String(totalReceived),
     totalAccepted: String(totalAccepted),

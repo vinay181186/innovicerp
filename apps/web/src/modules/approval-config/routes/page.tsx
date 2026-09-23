@@ -481,9 +481,9 @@ function ApprovalConfigPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Date</th>
+                <th>Log Date</th>
                 <th>Action</th>
-                <th>Document</th>
+                <th>Document Type</th>
                 <th>Details</th>
                 <th>User</th>
               </tr>

@@ -127,25 +127,25 @@ function JcOpsPage(): React.JSX.Element {
                   {/* POL — the line number printed on the CUSTOMER's own
                       purchase order, not any line number of ours. */}
                   <th style={{ color: 'var(--purple)' }}>POL</th>
-                  <th>Item</th>
+                  <th>Item Code</th>
                   <th className="td-ctr">Op</th>
                   <th>Machine (Planned / Actual)</th>
                   <th>Operation</th>
-                  <th className="td-ctr">Cycle(h)</th>
+                  <th className="td-ctr">Cycle Time (h)</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
                     QC
                   </th>
                   <th className="td-ctr">Order Qty</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                    Completed Qty
+                    Completed
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--amber)' }}>
-                    Pending Qty
+                    Pending
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--red)' }}>
                     Pend Hrs
                   </th>
-                  <th>Status</th>
+                  <th>Op Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>

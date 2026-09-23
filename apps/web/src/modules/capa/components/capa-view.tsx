@@ -175,14 +175,14 @@ export function CapaView(props: {
                 <thead>
                   <tr>
                     <th>CAPA No.</th>
-                    <th>Type</th>
-                    <th>Date</th>
+                    <th>CAPA Type</th>
+                    <th>CAPA Date</th>
                     <th>NC Ref</th>
                     <th>Problem</th>
                     <th>Root Cause</th>
                     <th>Responsible</th>
-                    <th>Target</th>
-                    <th>Status</th>
+                    <th>Target Date</th>
+                    <th>CAPA Status</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -460,7 +460,7 @@ function NewCapaModal({
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">Type ★</label>
+          <label className="form-label">CAPA Type ★</label>
           <select
             className="innovic-select"
             value={type}
@@ -472,7 +472,7 @@ function NewCapaModal({
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label">Date</label>
+          <label className="form-label">CAPA Date</label>
           <input
             type="date"
             className="innovic-input"
@@ -497,7 +497,7 @@ function NewCapaModal({
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label">JC / SO Reference</label>
+          <label className="form-label">JC No. / SO No.</label>
           <input
             className="innovic-input"
             value={jcNo}
@@ -788,7 +788,7 @@ function EditCapaModal({
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">Status</label>
+              <label className="form-label">CAPA Status</label>
               <select
                 className="innovic-select"
                 value={f.status}

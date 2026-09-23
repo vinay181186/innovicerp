@@ -347,9 +347,9 @@ export function JcOpEditCard({
           <div>
             <div style={secLabel}>Quantities</div>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              <QtyTile label="ORDER" value={orderQty} color="var(--text)" />
+              <QtyTile label="ORDER QTY" value={orderQty} color="var(--text)" />
               <QtyTile
-                label="DONE"
+                label="COMPLETED"
                 value={!en ? '—' : doneQty}
                 color={en ? 'var(--green)' : 'var(--text3)'}
                 sub={
@@ -358,13 +358,13 @@ export function JcOpEditCard({
                       <div style={{ fontSize: 8, color: 'var(--green)' }}>✓ accepted</div>
                       {en.qcRejectedQty > 0 ? (
                         <div style={{ fontSize: 8, color: 'var(--red)' }}>
-                          ✗{en.qcRejectedQty} rej
+                          ✗{en.qcRejectedQty} rejected
                         </div>
                       ) : null}
                     </>
                   ) : en.qcRequired && en.qcAcceptedQty > 0 ? (
                     <div style={{ fontSize: 8, color: 'var(--green)' }}>
-                      ✓{en.qcAcceptedQty} acc
+                      ✓{en.qcAcceptedQty} accepted
                     </div>
                   ) : null
                 }

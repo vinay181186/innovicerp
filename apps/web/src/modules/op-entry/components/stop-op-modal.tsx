@@ -406,7 +406,7 @@ export function StopOpModal({
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div className="form-grp" style={{ width: 150 }}>
               <label className="form-label" htmlFor="stop-op-qty">
-                Quantity made <span className="req">★</span>
+                Completed <span className="req">★</span>
               </label>
               <input
                 id="stop-op-qty"
@@ -423,7 +423,7 @@ export function StopOpModal({
             </div>
             <div className="form-grp" style={{ width: 150 }}>
               <label className="form-label" htmlFor="stop-op-rej">
-                Rejects
+                Rejected
               </label>
               <input
                 id="stop-op-rej"

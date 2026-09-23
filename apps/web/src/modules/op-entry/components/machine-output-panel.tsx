@@ -25,8 +25,8 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
           <tr>
             <th>Machine</th>
             <th>Entries</th>
-            <th>Qty</th>
-            <th>Reject</th>
+            <th>Completed</th>
+            <th>Rejected</th>
             <th>From</th>
             <th>To</th>
           </tr>

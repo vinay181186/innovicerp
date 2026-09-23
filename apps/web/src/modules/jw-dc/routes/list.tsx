@@ -175,21 +175,21 @@ function OutwardView(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>DC No.</th>
-                  <th>Date</th>
+                  <th>DC Date</th>
                   <th>JWPO</th>
-                  <th>SO</th>
+                  <th>SO No.</th>
                   <th>Vendor</th>
                   <th className="td-ctr">Items</th>
                   <th className="td-ctr" style={{ color: 'var(--purple)' }}>
                     Sent
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                    Returned
+                    Received
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--red)' }}>
                     Pending
                   </th>
-                  <th>Status</th>
+                  <th>DC Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -392,13 +392,13 @@ function InwardView(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Inward No.</th>
-                  <th>Date</th>
+                  <th>Inward Date</th>
                   <th>DC No.</th>
                   <th>Vendor</th>
-                  <th>Vendor Challan</th>
+                  <th>Vendor Challan No.</th>
                   <th className="td-ctr">Received</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                    OK
+                    Accepted
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--red)' }}>
                     Rejected
@@ -615,7 +615,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">Date</label>
+          <label className="form-label">DC Date</label>
           <input
             type="date"
             className="innovic-input"
@@ -683,7 +683,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                 {/* POL — the CUSTOMER's own purchase-order line number, before
                     the item as on every other document. */}
                 <th style={{ padding: 6, color: 'var(--purple)' }}>POL</th>
-                <th style={{ padding: 6 }}>Item</th>
+                <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ color: 'var(--purple)', padding: 6 }}>Process</th>
                 <th style={{ padding: 6 }}>PO Qty</th>
                 <th style={{ color: 'var(--amber)', padding: 6 }}>Already Sent</th>
@@ -938,7 +938,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">Date</label>
+          <label className="form-label">Inward Date</label>
           <input
             type="date"
             className="innovic-input"
@@ -1007,13 +1007,13 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             <thead>
               <tr style={{ background: 'var(--bg4)' }}>
                 <th style={{ padding: 6, color: 'var(--purple)' }}>POL</th>
-                <th style={{ padding: 6 }}>Item</th>
+                <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ padding: 6, color: 'var(--purple)' }}>Process</th>
                 <th style={{ padding: 6 }}>Sent</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>Already Returned</th>
+                <th style={{ padding: 6, color: 'var(--green)' }}>Received so far</th>
                 <th style={{ padding: 6, color: 'var(--amber)' }}>Pending</th>
                 <th style={{ padding: 6 }}>Received</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>OK</th>
+                <th style={{ padding: 6, color: 'var(--green)' }}>Accepted</th>
                 <th style={{ padding: 6, color: 'var(--red)' }}>Rejected</th>
               </tr>
             </thead>

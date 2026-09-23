@@ -35,7 +35,7 @@ function CostCenterDetailPage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading cost center…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading cost centre…
       </div>
     );
   }
@@ -67,7 +67,7 @@ function CostCenterDetailPage(): React.JSX.Element {
   return (
     <div>
       <Link to="/cost-centers" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Cost Center Master
+        <ArrowLeft size={14} /> Back to Cost Centre Master
       </Link>
       <div className="panel">
         <div className="panel-hdr">
@@ -150,7 +150,7 @@ function CostCenterDetailPage(): React.JSX.Element {
             >
               {softDelete.error instanceof Error
                 ? softDelete.error.message
-                : 'Failed to delete cost center.'}
+                : 'Failed to delete cost centre.'}
             </div>
           ) : null}
           <div className="form-grid form-grid-3">
@@ -159,11 +159,11 @@ function CostCenterDetailPage(): React.JSX.Element {
               <div style={{ fontWeight: 600 }}>{data.department ?? '—'}</div>
             </div>
             <div className="form-grp">
-              <span className="form-label">Type</span>
+              <span className="form-label">Cost Centre Type</span>
               <div style={{ fontWeight: 600 }}>{data.type ?? '—'}</div>
             </div>
             <div className="form-grp">
-              <span className="form-label">Status</span>
+              <span className="form-label">Active</span>
               <div className="fw-700">{data.isActive ? 'Active' : 'Inactive'}</div>
             </div>
             <div className="form-grp form-full">

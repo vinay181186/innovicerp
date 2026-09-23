@@ -382,15 +382,15 @@ function OrderList({
   // the cell classes (td-code, mono…) land on the <td> itself.
   const columns = useMemo<ColumnDef<PlanningSoListItem>[]>(
     () => [
-      { header: 'Order No', accessorKey: 'soCode' },
-      { header: src === 'jw' ? 'Client' : 'Customer', accessorKey: 'customerName' },
-      { header: 'Type', accessorKey: 'soType' },
-      { header: 'Due', accessorKey: 'dueDate' },
+      { header: src === 'jw' ? 'JWSO No.' : 'SO No.', accessorKey: 'soCode' },
+      { header: 'Customer', accessorKey: 'customerName' },
+      { header: src === 'jw' ? 'JWSO Type' : 'SO Type', accessorKey: 'soType' },
+      { header: 'Due Date', accessorKey: 'dueDate' },
       { header: 'Lines', accessorKey: 'totalLines' },
       { header: 'Order Qty', accessorKey: 'totalQty' },
       { header: 'Planned Qty', accessorKey: 'totalPlannedQty' },
       { header: '% Planned', accessorKey: 'planningPct' },
-      { header: 'Status', accessorKey: 'planningStatus' },
+      { header: 'Plan Status', accessorKey: 'planningStatus' },
     ],
     [src],
   );
@@ -504,7 +504,7 @@ function OrderList({
 // PHYSICAL = on the shelf · RESERVED = promised but still on the shelf ·
 // AVAILABLE = Physical − Reserved.
 const LINE_COLS: { key: string; label: string; width: number; title?: string }[] = [
-  { key: 'line', label: 'Line', width: 3 },
+  { key: 'line', label: 'Ln', width: 3 },
   { key: 'item', label: 'Item Code', width: 9 },
   { key: 'name', label: 'Item Name', width: 9 },
   { key: 'orderQty', label: 'Order Qty', width: 4 },
@@ -546,9 +546,9 @@ const LINE_COLS: { key: string; label: string; width: number; title?: string }[]
   },
   { key: 'planned', label: 'Planned', width: 4 },
   { key: 'inProd', label: 'In Prod', width: 4 },
-  { key: 'remaining', label: 'Remaining', width: 5 },
-  { key: 'due', label: 'Due', width: 5 },
-  { key: 'status', label: 'Status', width: 6 },
+  { key: 'remaining', label: 'Pending', width: 5 },
+  { key: 'due', label: 'Due Date', width: 5 },
+  { key: 'status', label: 'Plan Status', width: 6 },
   { key: 'plans', label: 'Plans', width: 15 },
   { key: 'action', label: 'Action', width: 8 },
 ];
@@ -665,7 +665,7 @@ function OrderDetail({
           marginBottom: 12,
         }}
       >
-        <HeaderField label="Order No">
+        <HeaderField label={so.source === 'jw' ? 'JWSO No.' : 'SO No.'}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             {so.source === 'jw' ? <JwChip /> : null}
             <span className="mono fw-700" style={{ color: 'var(--text)' }}>
@@ -673,16 +673,16 @@ function OrderDetail({
             </span>
           </span>
         </HeaderField>
-        <HeaderField label={so.source === 'jw' ? 'Client' : 'Customer'}>
+        <HeaderField label="Customer">
           <span className="fw-700">{so.customerName ?? '—'}</span>
         </HeaderField>
-        <HeaderField label="Type">
+        <HeaderField label={so.source === 'jw' ? 'JWSO Type' : 'SO Type'}>
           <span className="badge b-grey">{so.soType.replaceAll('_', ' ')}</span>
         </HeaderField>
-        <HeaderField label="Due">
+        <HeaderField label="Due Date">
           <span className="mono">{so.dueDate ?? '—'}</span>
         </HeaderField>
-        <HeaderField label="Client PO No">
+        <HeaderField label="Client PO No.">
           <span className="mono">{so.clientPoNo ?? '—'}</span>
         </HeaderField>
         <HeaderField label="Lines">
@@ -1254,16 +1254,16 @@ function SearchResults({
           </colgroup>
           <thead>
             <tr>
-              <th style={{ cursor: 'default' }}>Order No</th>
-              <th style={{ cursor: 'default' }}>Line</th>
+              <th style={{ cursor: 'default' }}>SO / JWSO No.</th>
+              <th style={{ cursor: 'default' }}>Ln</th>
               {/* POL is the CUSTOMER's own line number — an extra value beside
                   our "Line", never a substitute for it. */}
               <th style={{ cursor: 'default', color: 'var(--purple)' }}>POL</th>
               <th style={{ cursor: 'default' }}>Item Code</th>
               <th style={{ cursor: 'default' }}>Item Name</th>
               <th style={{ cursor: 'default' }}>Order Qty</th>
-              <th style={{ cursor: 'default' }}>Due</th>
-              <th style={{ cursor: 'default' }}>Status</th>
+              <th style={{ cursor: 'default' }}>Due Date</th>
+              <th style={{ cursor: 'default' }}>Plan Status</th>
             </tr>
           </thead>
           <tbody>

@@ -201,19 +201,19 @@ function OpLogListPage(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 {/* The item the card makes. A JC number identifies the JOB; only
                     this column says which PART the logged qty belongs to. */}
-                <th>Item</th>
-                <th>Date</th>
+                <th>Item Code</th>
+                <th>Log Date</th>
                 <th className="td-ctr">Op</th>
-                <th>Type</th>
+                <th>Log Type</th>
                 <th>Shift</th>
                 <th>Planned</th>
                 <th>Actual</th>
                 <th>Operation</th>
                 <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                  Qty
+                  Completed
                 </th>
                 <th className="td-ctr" style={{ color: 'var(--red)' }}>
-                  Reject
+                  Rejected
                 </th>
                 <th>Operator</th>
                 <th>Remarks</th>

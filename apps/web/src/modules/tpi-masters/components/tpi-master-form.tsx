@@ -169,7 +169,7 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Active
           </label>
           <select
             id="isActive"

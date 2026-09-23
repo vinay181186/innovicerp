@@ -110,11 +110,11 @@ export function JwInvoiceView({
               <thead>
                 <tr>
                   <th>Invoice No.</th>
-                  <th>Date</th>
-                  <th>JWSO</th>
-                  <th>Client</th>
-                  <th>Part</th>
-                  <th>Qty</th>
+                  <th>Invoice Date</th>
+                  <th>JWSO No.</th>
+                  <th>Customer</th>
+                  <th>Item Name</th>
+                  <th>Invoice Qty</th>
                   {priceHidden ? null : (
                     <>
                       <th>Rate</th>
@@ -331,7 +331,7 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JW Line ★">
+            <Field label="Ln ★">
               <select
                 className="innovic-input"
                 value={lineId ?? ''}
@@ -357,7 +357,7 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             </Field>
           </div>
 
-          <Field label="Date">
+          <Field label="Invoice Date">
             <input
               type="date"
               className="innovic-input"
@@ -365,7 +365,7 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
               onChange={(e) => setDate(e.target.value)}
             />
           </Field>
-          <Field label="Qty ★">
+          <Field label="Invoice Qty ★">
             <input
               type="number"
               min={1}

@@ -42,9 +42,9 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
   const respLabel = (d: number | null): string => (d === null ? '' : d <= 0 ? 'Same day' : `${d}d`);
   const aoa: (string | number)[][] = [
     [
-      'JC',
-      'OP',
-      'SO',
+      'JC No.',
+      'Op',
+      'SO No.',
       // POL — the CUSTOMER's own purchase-order line number, its own column
       // immediately before the item code, as on every other export.
       'POL',
@@ -59,8 +59,8 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       // whoever reads this sheet back needs the part named, not just coded.
       'Item Name',
       'Operation',
-      'Acc',
-      'Rej',
+      'Accepted',
+      'Rejected',
       'Call Date',
       'Attended',
       'Response',
@@ -211,20 +211,20 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>JC</th>
-                    <th>OP</th>
-                    <th>SO</th>
+                    <th>JC No.</th>
+                    <th>Op</th>
+                    <th>SO No.</th>
                     {/* POL — the CUSTOMER's own purchase-order line number,
                         immediately before the item code. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item</th>
+                    <th>Item Code</th>
                     {/* The item code says which part number was inspected but not
                         what the part IS, so the name gets its own column next to
                         it rather than being crammed into the same cell. */}
                     <th>Item Name</th>
                     <th>Operation</th>
-                    <th>Acc</th>
-                    <th>Rej</th>
+                    <th>Accepted</th>
+                    <th>Rejected</th>
                     <th>Call Date</th>
                     <th>Attended</th>
                     <th>Response</th>
@@ -535,7 +535,7 @@ function PendingTpi(props: {
           <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
             <div className="form-grp">
               <label className="form-label" style={{ fontSize: 10 }}>
-                Date
+                TPI Date
               </label>
               <input
                 type="date"
@@ -566,7 +566,7 @@ function PendingTpi(props: {
           <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
             <div className="form-grp">
               <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
-                ✅ Accept Qty (max {o.qcPending})
+                ✅ Accepted (max {o.qcPending})
               </label>
               <input
                 type="number"
@@ -589,7 +589,7 @@ function PendingTpi(props: {
             </div>
             <div className="form-grp">
               <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
-                ❌ Reject Qty
+                ❌ Rejected
               </label>
               <input
                 type="number"

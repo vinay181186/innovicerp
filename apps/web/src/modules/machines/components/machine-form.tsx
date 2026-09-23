@@ -138,7 +138,7 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Machine ID<span className="req">★</span>
+            Code<span className="req">★</span>
           </label>
           <input id="code" className="innovic-input" autoFocus autoComplete="off" placeholder="CNC-01" {...register('code')} />
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
@@ -160,7 +160,7 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="machineType">
-            Type
+            Machine Type
           </label>
           <input id="machineType" className="innovic-input" autoComplete="off" placeholder="CNC Lathe, VMC, Grinding…" {...register('machineType')} />
         </div>
@@ -202,7 +202,7 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="status">
-            Status
+            Machine Status
           </label>
           <select id="status" className="innovic-select" {...register('status')}>
             {MACHINE_STATUSES.map((s) => (
@@ -268,7 +268,7 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Machine ID<span className="req">★</span>
+            Code<span className="req">★</span>
           </label>
           <input
             id="code"
@@ -295,7 +295,7 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="machineType">
-            Type
+            Machine Type
           </label>
           <input id="machineType" className="innovic-input" autoComplete="off" placeholder="CNC Lathe, VMC, Grinding…" {...register('machineType')} />
         </div>
@@ -337,7 +337,7 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="status">
-            Status
+            Machine Status
           </label>
           <select id="status" className="innovic-select" {...register('status')}>
             {MACHINE_STATUSES.map((s) => (

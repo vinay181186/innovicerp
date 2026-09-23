@@ -21,10 +21,10 @@ export const designIssueAgingReport: RegisteredReport = {
       },
     ],
     columns: [
-      { key: 'title', label: 'Issue', type: 'text' },
-      { key: 'project', label: 'Project', type: 'text' },
+      { key: 'title', label: 'Issue Title', type: 'text' },
+      { key: 'project', label: 'Project Name', type: 'text' },
       { key: 'severity', label: 'Severity', type: 'text' },
-      { key: 'status', label: 'Status', type: 'text' },
+      { key: 'status', label: 'Issue Status', type: 'text' },
       { key: 'assigned_to', label: 'Assigned To', type: 'text' },
       { key: 'age_days', label: 'Age (days)', type: 'number' },
     ],

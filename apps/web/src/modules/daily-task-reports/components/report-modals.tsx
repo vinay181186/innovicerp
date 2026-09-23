@@ -105,7 +105,7 @@ function ReportEditor({
     <div>
       <div className="form-grid" style={{ marginBottom: 12 }}>
         <div className="form-grp">
-          <label className="form-label">Date</label>
+          <label className="form-label">Report Date</label>
           <input type="date" className="innovic-input" value={reportDate} onChange={(e) => setReportDate(e.target.value)} />
         </div>
         <div className="form-grp">
@@ -133,11 +133,11 @@ function ReportEditor({
           <table className="innovic-table" style={{ minWidth: 640 }}>
             <thead>
               <tr>
-                <th style={{ width: 28 }}>#</th>
+                <th style={{ width: 28 }}>Sr No</th>
                 <th>Task Description</th>
-                <th style={{ width: 90 }}>SO/JC Ref</th>
+                <th style={{ width: 90 }}>SO No.</th>
                 <th style={{ width: 64 }}>Hours</th>
-                <th style={{ width: 140 }}>Status</th>
+                <th style={{ width: 140 }}>Task Status</th>
                 <th>Remarks</th>
                 <th style={{ width: 30 }} />
               </tr>
@@ -262,7 +262,7 @@ export function ViewReportModal({ id, onClose }: { id: string; onClose: () => vo
               <b>{r.userName ?? '—'}</b>
             </div>
             <div>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>DATE</span>
+              <span style={{ fontSize: 10, color: 'var(--text3)' }}>REPORT DATE</span>
               <br />
               <b>{r.reportDate}</b>
             </div>
@@ -280,11 +280,11 @@ export function ViewReportModal({ id, onClose }: { id: string; onClose: () => vo
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Task</th>
-                <th>Ref</th>
+                <th>Sr No</th>
+                <th>Task Description</th>
+                <th>SO No.</th>
                 <th>Hours</th>
-                <th>Status</th>
+                <th>Task Status</th>
                 <th>Remarks</th>
               </tr>
             </thead>

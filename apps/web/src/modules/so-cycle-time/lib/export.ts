@@ -24,10 +24,10 @@ function stamp(): string {
 
 export function exportSoCycleTime(rows: SoCycleTimeRow[]): void {
   const out = rows.map((r) => ({
-    'SO No': r.soNo,
+    'SO No.': r.soNo,
     Customer: r.customer ?? '',
-    Type: r.type ?? '',
-    Status: r.status,
+    'SO Type': r.type ?? '',
+    'SO Status': r.status,
     'Order Qty': r.orderQty,
     'SO Created': r.phases.soCreated ?? '',
     'Design Assigned': r.phases.designAssigned ?? '',

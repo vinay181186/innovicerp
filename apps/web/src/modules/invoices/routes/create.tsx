@@ -266,11 +266,11 @@ function InvoiceNewPage(): React.JSX.Element {
                     textTransform: 'uppercase',
                   }}
                 >
-                  <span>#</span>
+                  <span>Ln</span>
                   <span style={{ textAlign: 'center', color: 'var(--purple)' }}>POL</span>
                   <span>Item Code ★</span>
                   <span>Item Name</span>
-                  <span style={{ textAlign: 'center' }}>Order</span>
+                  <span style={{ textAlign: 'center' }}>Order Qty</span>
                   <span style={{ textAlign: 'center', color: 'var(--green)' }}>Dispatched</span>
                   <span style={{ textAlign: 'center' }}>Invoiced</span>
                   <span style={{ textAlign: 'center', color: 'var(--amber)' }}>Available</span>

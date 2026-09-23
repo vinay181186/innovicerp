@@ -11,10 +11,10 @@ export const al007GrnToday: RegisteredAlert = {
     name: "Today's GRN",
     description: 'Goods receipt notes recorded today.',
     columns: [
-      { key: 'grn_code', label: 'GRN no.', type: 'text' },
-      { key: 'grn_date', label: 'Date', type: 'date' },
+      { key: 'grn_code', label: 'GRN No.', type: 'text' },
+      { key: 'grn_date', label: 'GRN Date', type: 'date' },
       { key: 'vendor', label: 'Vendor', type: 'text' },
-      { key: 'po_code', label: 'PO no.', type: 'text' },
+      { key: 'po_code', label: 'PO No.', type: 'text' },
     ],
     defaultActive: true,
   },

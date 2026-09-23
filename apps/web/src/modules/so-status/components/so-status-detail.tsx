@@ -390,10 +390,10 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>#</th><th>Item Code</th><th>Item Name</th><th>Qty/Set</th>
-              <th style={{ color: 'var(--cyan)', fontWeight: 800 }}>Total Need</th><th>Type</th>
+              <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty/Set</th>
+              <th style={{ color: 'var(--cyan)', fontWeight: 800 }}>Total Need</th><th>BOM Type</th>
               <th style={{ color: 'var(--green)' }}>Stock</th>
-              <th style={{ color: 'var(--red)' }}>Shortfall</th><th>Plan Status</th>
+              <th style={{ color: 'var(--red)' }}>Pending</th><th>Plan Status</th>
             </tr>
           </thead>
           <tbody>
@@ -503,7 +503,7 @@ function LinePanel({
           <Chip label="PO Raised" icon="🛒" tint={CHIP_TINT.purple} qty={line.chips.poRaised.qty} total={line.chips.poRaised.total} />
           <Chip label="GRN Recd" icon="📦" tint={CHIP_TINT.blue} qty={line.chips.grnReceived.qty} total={line.chips.grnReceived.total} />
           <Chip label="QC Accepted" icon="✅" tint={CHIP_TINT.green} qty={line.chips.qcAccepted.qty} total={line.chips.qcAccepted.total} />
-          <Chip label="Produced" icon="⚙" tint={CHIP_TINT.green2} qty={line.chips.produced.qty} total={line.chips.produced.total} />
+          <Chip label="Completed" icon="⚙" tint={CHIP_TINT.green2} qty={line.chips.produced.qty} total={line.chips.produced.total} />
           <Chip label="Dispatched" icon="🚚" tint={CHIP_TINT.amber} qty={line.chips.dispatched.qty} total={line.chips.dispatched.total} />
         </div>
         <OutsourceAlertRows alert={line.outsourceAlert} />
@@ -521,8 +521,8 @@ function LinePanel({
                   unused. */}
               {/* POL — the CUSTOMER's own purchase-order line number off the SO
                   line behind this card, immediately before the item code. */}
-              <th>JC No.</th><th style={{ color: 'var(--purple)' }}>POL</th><th>Item Code</th><th>Item Name</th><th>JC Qty</th><th>Completed</th>
-              <th style={{ color: 'var(--red)' }}>Remaining</th><th>Priority</th><th>Due Date</th>
+              <th>JC No.</th><th style={{ color: 'var(--purple)' }}>POL</th><th>Item Code</th><th>Item Name</th><th>Order Qty</th><th>Completed</th>
+              <th style={{ color: 'var(--red)' }}>Pending</th><th>Priority</th><th>Due Date</th>
               <th>JC Status</th><th>Operations</th><th></th>
             </tr>
           </thead>

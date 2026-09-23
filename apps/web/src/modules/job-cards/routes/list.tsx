@@ -521,13 +521,13 @@ function JobCardsListPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Sr No</th>
-                  <th>Job Card No.</th>
+                  <th>JC No.</th>
                   <ItemThumbnailHeader />
-                  <th style={{ textAlign: 'left' }}>Part / Description</th>
+                  <th style={{ textAlign: 'left' }}>Item Code</th>
                   <th>SO No.</th>
-                  <th>Qty (Plan)</th>
+                  <th>Order Qty</th>
                   <th>Progress</th>
-                  <th>Status</th>
+                  <th>JC Status</th>
                   <th>Start Date</th>
                   <th>Due Date</th>
                   <th>Days Left</th>

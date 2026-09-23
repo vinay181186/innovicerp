@@ -8,11 +8,11 @@ import * as XLSX from 'xlsx';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 const COLUMNS = [
-  'Dispatch No',
-  'Date',
-  'SO No',
+  'Dispatch No.',
+  'Dispatch Date',
+  'SO No.',
   'Customer',
-  'JC No',
+  'JC No.',
   'POL',
   'Item Code',
   // The Item Code cell above reads CODE/REV, the way a dispatch line — which
@@ -22,13 +22,13 @@ const COLUMNS = [
   // as the Job Card export.
   'Drawing Rev',
   'Item Name',
-  'Qty',
+  'Dispatch Qty',
   'UOM',
   'Dispatched By',
   'Remarks',
   'Stock Before',
   'Stock After',
-  'Status',
+  'Dispatch Status',
 ] as const;
 
 export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFilter?: string): void {

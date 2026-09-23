@@ -20,13 +20,13 @@ export const ncSummaryByReasonReport: RegisteredReport = {
       'NCs grouped by reason category — count, rejected qty, and a per-disposition breakdown (Rework / Scrap / Use As Is / RTV / Make Fresh) with a TOTAL row. Useful for the QC review meeting.',
     group: 'Quality',
     filters: [
-      { key: 'fromDate', label: 'From date', kind: 'date' },
-      { key: 'toDate', label: 'To date', kind: 'date' },
+      { key: 'fromDate', label: 'NC Date From', kind: 'date' },
+      { key: 'toDate', label: 'NC Date To', kind: 'date' },
     ],
     columns: [
       { key: 'reason_category', label: 'Reason', type: 'text' },
-      { key: 'nc_count', label: 'Count', type: 'number' },
-      { key: 'total_rejected_qty', label: 'Qty', type: 'number' },
+      { key: 'nc_count', label: 'NC Count', type: 'number' },
+      { key: 'total_rejected_qty', label: 'Rejected', type: 'number' },
       { key: 'rework_count', label: 'Rework', type: 'number' },
       { key: 'scrap_count', label: 'Scrap', type: 'number' },
       { key: 'use_as_is_count', label: 'Use As Is', type: 'number' },

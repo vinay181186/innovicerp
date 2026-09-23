@@ -257,7 +257,7 @@ function DailyReportPage(): React.JSX.Element {
                     <th>Operation</th>
                     <th className="td-ctr">Shift</th>
                     <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                      Qty Produced
+                      Completed
                     </th>
                     <th>Operator</th>
                     <th>Remarks</th>

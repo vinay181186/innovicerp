@@ -702,7 +702,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       <div className="form-grid-4" style={{ marginBottom: 10 }}>
         <DocNumberInput
           type="sales_order"
-          label="SO/WO No."
+          label="SO No."
           required={isCreate}
           readOnly={isEdit}
           value={watch('header.code') ?? ''}
@@ -710,7 +710,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           onValidityChange={setDocNoValid}
         />
         <div className="form-grp">
-          <label className="form-label" htmlFor="soDate">Date<span className="req">★</span></label>
+          <label className="form-label" htmlFor="soDate">SO Date<span className="req">★</span></label>
           <input id="soDate" type="date" className="innovic-input" {...register('header.soDate', { required: 'Date is required' })} />
         </div>
         <div className="form-grp">
@@ -718,14 +718,14 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           <input id="soDueDate" type="date" className="innovic-input" {...register('header.dueDate')} />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="type">Type<span className="req">★</span></label>
+          <label className="form-label" htmlFor="type">SO Type<span className="req">★</span></label>
           <select id="type" className="innovic-select" {...register('header.type')}>
             {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
           </select>
         </div>
 
         <div className="form-grp form-span-2">
-          <label className="form-label">Client<span className="req">★</span></label>
+          <label className="form-label">Customer<span className="req">★</span></label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <SearchableSelect
@@ -745,7 +745,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 }
               />
             </div>
-            <button type="button" className="btn btn-ghost btn-sm" title="Add a new client without leaving this form" style={{ whiteSpace: 'nowrap' }} onClick={() => setShowAddClient(true)}>+ New</button>
+            <button type="button" className="btn btn-ghost btn-sm" title="Add a new customer without leaving this form" style={{ whiteSpace: 'nowrap' }} onClick={() => setShowAddClient(true)}>+ New</button>
           </div>
           <input type="hidden" {...register('header.clientId', { required: 'Pick a client from the master' })} />
           {errors.header?.clientId?.message ? (
@@ -791,7 +791,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           as dashed pills inside the Client PO group. Same inputs, same handlers. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', fontSize: 11, marginBottom: 14 }}>
         <span className="text3">
-          Client must exist in master — use <b style={{ color: 'var(--blue)' }}>+ New</b> if not listed.
+          Customer must exist in master — use <b style={{ color: 'var(--blue)' }}>+ New</b> if not listed.
         </span>
         {poFileName ? (
           <span style={{ color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -1029,16 +1029,16 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     UOM is ours (legacy carries it invisibly) — kept, not dropped.
                     Drawing File + Rev are ours, inserted right after Drawing No. */}
                 <tr>
-                  <th style={{ width: '4%' }}>#</th>
+                  <th style={{ width: '4%' }}>Ln</th>
                   <th style={{ width: '16%' }}>Item Code <span className="req">★</span></th>
-                  <th style={{ width: '12%' }}>Part Name</th>
+                  <th style={{ width: '12%' }}>Item Name</th>
                   <th style={{ width: '8%' }}>Material</th>
                   <th style={{ width: '8%' }}>Drawing No.</th>
                   <th style={{ width: '11%' }}>Drawing File</th>
                   <th style={{ width: '6%' }}>Rev <span className="req">★</span></th>
                   <th style={{ width: '8%' }}>POL</th>
                   <th style={{ width: '5%' }}>UOM</th>
-                  <th style={{ width: '7%' }} className="td-ctr">Qty <span className="req">★</span></th>
+                  <th style={{ width: '7%' }} className="td-ctr">Order Qty <span className="req">★</span></th>
                   <th style={{ width: '6%', color: 'var(--green)' }}>Rate ₹</th>
                   <th style={{ width: '6%', color: 'var(--green)' }}>Amount</th>
                   <th style={{ width: '3%' }} />
@@ -1257,9 +1257,9 @@ function QuickAddClient({
         style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, width: 'min(420px, 94vw)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="section-hdr" style={{ marginBottom: 12 }}>🏢 New Client</div>
+        <div className="section-hdr" style={{ marginBottom: 12 }}>🏢 New Customer</div>
         <div className="form-grp">
-          <label className="form-label">Client Name<span className="req">★</span></label>
+          <label className="form-label">Customer<span className="req">★</span></label>
           <input className="innovic-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Company / client name" />
         </div>
         <div className="form-grp">

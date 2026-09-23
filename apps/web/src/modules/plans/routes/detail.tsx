@@ -244,11 +244,11 @@ function PlanDetailPage(): React.JSX.Element {
 
           <Grid>
             <KV label="Plan date" value={plan.planDate} />
-            <KV label="Order qty" value={plan.orderQty} />
+            <KV label="Order Qty" value={plan.orderQty} />
             <KV label="Plan qty" value={plan.planQty} />
             <KV label="Planned start" value={plan.plannedStartDate ?? '—'} />
             <KV label="Planned end" value={plan.plannedEndDate ?? '—'} />
-            <KV label="Customer Dispatch" value={plan.customerDispatchDate ?? '—'} />
+            <KV label="Customer Dispatch Date" value={plan.customerDispatchDate ?? '—'} />
             {/* Raw material — read-only here; both are optional, so a plan with
                 neither still shows the pair as dashes rather than hiding them
                 (a missing grade is a planning gap worth seeing). */}
@@ -258,7 +258,7 @@ function PlanDetailPage(): React.JSX.Element {
                 plan was raised against; a JW-sourced or ad-hoc plan has none and
                 keeps the bare code, with no trailing slash. */}
             <KV
-              label="Item code"
+              label="Item Code"
               value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
             />
             {/* POL — the line number printed on the CUSTOMER's own purchase
@@ -272,8 +272,8 @@ function PlanDetailPage(): React.JSX.Element {
                 </span>
               }
             />
-            <KV label="SO ref" value={plan.soCodeText ?? '—'} />
-            <KV label="Line #" value={plan.lineNo ?? '—'} />
+            <KV label="SO No." value={plan.soCodeText ?? '—'} />
+            <KV label="Ln" value={plan.lineNo ?? '—'} />
           </Grid>
 
           {plan.planType === 'direct_purchase' ? (
@@ -301,7 +301,7 @@ function PlanDetailPage(): React.JSX.Element {
                 {priceHidden ? null : <KV label="Rate" value={plan.foRate ?? '—'} />}
                 <KV label="Material src" value={plan.foMaterialSrc ?? '—'} />
                 <KV label="Delivery" value={plan.foDeliveryDate ?? '—'} />
-                <KV label="Cost centre" value={plan.foCostCenter ?? '—'} />
+                <KV label="Cost Centre" value={plan.foCostCenter ?? '—'} />
                 <KV label="JW PR" value={plan.foPrId ? '✓ Created' : '—'} />
                 <KV label="Mat PR" value={plan.foMatPrId ? '✓ Created' : '—'} />
                 {plan.foRemarks ? <KV label="Remarks" value={plan.foRemarks} /> : null}
@@ -365,11 +365,11 @@ function PlanDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Sr No</th>
+                  <th>Op</th>
                   <th>Operation</th>
-                  <th>Type</th>
+                  <th>Op Type</th>
                   <th>Machine</th>
-                  <th>Cycle (hrs)</th>
+                  <th>Cycle Time (h)</th>
                   <th>QC?</th>
                   <th>OSP vendor</th>
                   {priceHidden ? null : <th>OSP cost</th>}

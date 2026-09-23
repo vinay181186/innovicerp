@@ -505,18 +505,18 @@ function ComponentsPanel({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>#</th>
+              <th>Sr No</th>
               <th>Child Item</th>
-              <th>Type</th>
+              <th>BOM Type</th>
               {/* Qty/Set + Stock have no legacy counterpart — kept (live system). */}
               <th>Qty/Set</th>
               <th>Need</th>
               <th>Stock</th>
               <th>In Assembly</th>
               <th>Assembled</th>
-              <th style={{ color: 'var(--red)' }}>Short</th>
+              <th style={{ color: 'var(--red)' }}>Pending</th>
               <th>Enough For</th>
-              <th>Status</th>
+              <th>Stock Status</th>
             </tr>
           </thead>
           <tbody>
@@ -663,11 +663,11 @@ function UnitsPanel({
           <thead>
             <tr>
               <th>Batch #</th>
-              <th>Status</th>
+              <th>Batch Status</th>
               <th>Qty</th>
               <th>Serial No.</th>
-              <th>Date</th>
-              <th>By</th>
+              <th>Assembly Date</th>
+              <th>Assembled By</th>
               <th>Remarks</th>
               <th>Dispatch</th>
               <th>Actions</th>

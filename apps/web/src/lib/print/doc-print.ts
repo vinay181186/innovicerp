@@ -100,7 +100,7 @@ export interface DocLine {
   amount?: string; // PO only, pre-formatted
 }
 export interface DocAddressBlock {
-  label: string; // "Supplier (Bill from)" / "Recipient"
+  label: string; // "Vendor" / "Recipient"
   name: string;
   lines: string[]; // address / GSTIN / contact lines (plain text)
 }

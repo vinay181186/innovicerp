@@ -177,10 +177,10 @@ function SoCycleTimePage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>SO</th>
+                <th>SO No.</th>
                 <th>Customer</th>
-                <th>Type</th>
-                <th>Status</th>
+                <th>SO Type</th>
+                <th>SO Status</th>
                 <th className="td-ctr">Design</th>
                 <th className="td-ctr">Material</th>
                 <th className="td-ctr">Production</th>

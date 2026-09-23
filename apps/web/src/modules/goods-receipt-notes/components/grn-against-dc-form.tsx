@@ -314,7 +314,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="dcId">
-            Delivery Challan<span className="req">★</span>
+            DC No.<span className="req">★</span>
           </label>
           {/* Keyed on a counter bumped by a USER change of the JWPO, so the
               picker's own text resets then — otherwise the old challan's label
@@ -339,7 +339,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="receiptDate">
-            Receipt Date<span className="req">★</span>
+            GRN Date<span className="req">★</span>
           </label>
           <input
             id="receiptDate"
@@ -406,7 +406,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
         <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}>
           <thead>
             <tr>
-              <th style={{ width: '4%' }}>#</th>
+              <th style={{ width: '4%' }}>Ln</th>
               {/* POL = the CUSTOMER's own PO line number off the SO line behind
                   this challan line. Widths below still total 100. */}
               <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
@@ -414,7 +414,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
               <th style={{ width: '22%' }}>Item Name</th>
               <th style={{ width: '8%' }}>Sent Qty</th>
               <th style={{ width: '9%' }}>Received so far</th>
-              <th style={{ width: '8%' }}>Balance</th>
+              <th style={{ width: '8%' }}>Pending</th>
               <th style={{ width: '11%' }}>
                 Receive Now<span className="req">★</span>
               </th>

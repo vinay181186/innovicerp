@@ -258,7 +258,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         />
         <div className="form-grp">
           <label className="form-label" htmlFor="grnDate">
-            Date<span className="req">★</span>
+            GRN Date<span className="req">★</span>
           </label>
           <input
             id="grnDate"
@@ -275,13 +275,13 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             id="invoiceNo"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Supplier invoice"
+            placeholder="Vendor invoice"
             {...register('header.invoiceNo')}
           />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="dcNo">
-            DC / Challan No.
+            Vendor Challan No.
           </label>
           <input
             id="dcNo"
@@ -501,7 +501,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                   </div>
 
                   <div className="form-grp">
-                    <label className="form-label">DC Ref</label>
+                    <label className="form-label">DC No.</label>
                     <input
                       className="innovic-input"
                       autoComplete="off"
@@ -524,7 +524,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                     </select>
                   </div>
                   <div className="form-grp">
-                    <label className="form-label">QC Accepted</label>
+                    <label className="form-label">Accepted</label>
                     <input
                       type="number"
                       min={0}
@@ -537,7 +537,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                   </div>
 
                   <div className="form-grp">
-                    <label className="form-label">QC Rejected</label>
+                    <label className="form-label">Rejected</label>
                     <input
                       type="number"
                       min={0}

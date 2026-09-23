@@ -242,11 +242,11 @@ export function GrnAgainstPoForm({
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)}>
-      {/* Header row 1 — Date · Purchase Order (wide) · Vendor (from the PO). */}
+      {/* Header row 1 — GRN Date · Purchase Order (wide) · Vendor (from the PO). */}
       <div className="form-grid-4" style={{ marginBottom: 12 }}>
         <div className="form-grp">
           <label className="form-label" htmlFor="grnDate">
-            Date<span className="req">★</span>
+            GRN Date<span className="req">★</span>
           </label>
           <input
             id="grnDate"
@@ -289,7 +289,7 @@ export function GrnAgainstPoForm({
         </div>
       </div>
 
-      {/* Header row 2 — Invoice No. · DC / Challan No. · Remarks (wide). */}
+      {/* Header row 2 — Invoice No. · Vendor Challan No. · Remarks (wide). */}
       <div className="form-grid-4" style={{ marginBottom: 16 }}>
         <div className="form-grp">
           <label className="form-label" htmlFor="invoiceNo">
@@ -299,14 +299,14 @@ export function GrnAgainstPoForm({
             id="invoiceNo"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Supplier invoice"
+            placeholder="Vendor invoice"
             value={invoiceNo}
             onChange={(e) => setInvoiceNo(e.target.value)}
           />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="dcNo">
-            DC / Challan No.
+            Vendor Challan No.
           </label>
           <input
             id="dcNo"
@@ -344,7 +344,7 @@ export function GrnAgainstPoForm({
         <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 960 }}>
           <thead>
             <tr>
-              <th style={{ width: '4%' }}>#</th>
+              <th style={{ width: '4%' }}>Ln</th>
               {/* POL = the CUSTOMER's own PO line number off the SO line behind
                   this PO line. Widths below still total 100. */}
               <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
@@ -352,11 +352,11 @@ export function GrnAgainstPoForm({
               <th style={{ width: '17%' }}>Item Name</th>
               <th style={{ width: '7%' }}>PO Qty</th>
               <th style={{ width: '8%' }}>Received so far</th>
-              <th style={{ width: '7%' }}>Balance</th>
+              <th style={{ width: '7%' }}>Pending</th>
               <th style={{ width: '10%' }}>
                 Receive Now<span className="req">★</span>
               </th>
-              <th style={{ width: '12%' }}>DC Ref</th>
+              <th style={{ width: '12%' }}>DC No.</th>
               <th style={{ width: '12%' }}>Remarks</th>
               <th style={{ width: '4%' }} />
             </tr>

@@ -48,7 +48,7 @@ function GroupPanel({
             <tr>
               <th>{label}</th>
               <th className="td-ctr">Total</th>
-              <th className="td-ctr">Passed</th>
+              <th className="td-ctr">Accepted</th>
               <th className="td-ctr">FPY</th>
             </tr>
           </thead>

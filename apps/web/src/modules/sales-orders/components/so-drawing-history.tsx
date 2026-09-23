@@ -177,7 +177,7 @@ export function SoDrawingHistory({
                   <th style={{ width: '10%' }}>Rev</th>
                   <th style={{ width: '12%' }}>Change</th>
                   <th style={{ width: '31%' }}>File</th>
-                  <th style={{ width: '16%' }}>By</th>
+                  <th style={{ width: '16%' }}>Revised By</th>
                   <th style={{ width: '18%' }}>When</th>
                   <th style={{ width: '4%' }} />
                 </tr>

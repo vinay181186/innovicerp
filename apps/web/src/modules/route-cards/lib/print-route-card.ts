@@ -60,7 +60,7 @@ export function printRouteCard(args: {
       <div class="info-box"><div class="info-lbl">Route Card Rev</div><div class="info-val">${rc.currentRevision}</div></div>
     </div>
     <h2>Operation Sequence</h2>
-    <table><thead><tr><th>Sr No</th><th>Machine</th><th>Operation</th><th>Cycle Time (h)</th><th>Program No.</th><th>Tool No.</th><th>Tool Details / Setup Notes</th></tr></thead>
+    <table><thead><tr><th>Op</th><th>Machine</th><th>Operation</th><th>Cycle Time (h)</th><th>Program No.</th><th>Tool No.</th><th>Tool Details / Setup Notes</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#aaa">No operations</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Process Engineer</div>

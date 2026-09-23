@@ -41,7 +41,7 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
                   <th className="td-ctr">JCs</th>
                   <th className="td-ctr">Accepted</th>
                   <th className="td-ctr">Rejected</th>
-                  <th className="td-ctr">Rej. Rate</th>
+                  <th className="td-ctr">Rejection Rate</th>
                   <th className="td-ctr">Current Load</th>
                 </tr>
               </thead>

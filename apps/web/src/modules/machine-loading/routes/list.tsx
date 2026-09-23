@@ -299,7 +299,7 @@ function MachineLoadCardView({
         {card.machineType ?? '—'}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        <Num val={card.totalAvailQty} lbl="Avail" color="var(--amber)" />
+        <Num val={card.totalAvailQty} lbl="Available" color="var(--amber)" />
         <Num val={card.pendingHrs} lbl="Hrs" color="var(--red)" />
         <Num val={card.daysToClear} lbl="Days" />
       </div>
@@ -457,21 +457,21 @@ function OperationView({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>#</th>
+              <th>Sr No</th>
               <th>JC No.</th>
               {/* POL — the CUSTOMER's own PO line number, before the item. */}
               <th style={{ color: 'var(--purple)' }}>POL</th>
-              <th>Part No / Item</th>
+              <th>Item Code</th>
               <th>SO No.</th>
               <th>Op</th>
               <th>Operation</th>
               <th>Priority</th>
-              <th>Due</th>
-              <th>Order</th>
-              <th>Done</th>
-              <th style={{ color: 'var(--amber)' }}>Avail★</th>
+              <th>Due Date</th>
+              <th>Order Qty</th>
+              <th>Completed</th>
+              <th style={{ color: 'var(--amber)' }}>Available</th>
               <th style={{ color: 'var(--red)' }}>Pend Hrs</th>
-              <th>Status</th>
+              <th>Op Status</th>
             </tr>
           </thead>
           <tbody>
@@ -578,21 +578,21 @@ function JobQueueView({
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>#</th>
+                    <th>Sr No</th>
                     <th>JC No.</th>
                     {/* POL — the CUSTOMER's own PO line number, before the item. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Part No / Item</th>
+                    <th>Item Code</th>
                     <th>SO No.</th>
                     <th>Op</th>
                     <th>Operation</th>
                     <th>Priority</th>
-                    <th>Due</th>
-                    <th>Order</th>
-                    <th>Done</th>
-                    <th style={{ color: 'var(--amber)' }}>Avail★</th>
+                    <th>Due Date</th>
+                    <th>Order Qty</th>
+                    <th>Completed</th>
+                    <th style={{ color: 'var(--amber)' }}>Available</th>
                     <th style={{ color: 'var(--red)' }}>Pend Hrs</th>
-                    <th>Status</th>
+                    <th>Op Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -622,14 +622,14 @@ function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.J
             <tr>
               <th>Machine</th>
               <th>Name</th>
-              <th>Type</th>
+              <th>Machine Type</th>
               <th>Open Ops</th>
-              <th>Avail Qty</th>
+              <th>Available</th>
               <th>Pending Hrs</th>
               <th>Daily Cap</th>
               <th>Days to Clear</th>
               <th>Loading %</th>
-              <th>Status</th>
+              <th>Load Status</th>
             </tr>
           </thead>
           <tbody>

@@ -161,7 +161,7 @@ function StoreInventoryPage(): React.JSX.Element {
                     <thead>
                       <tr>
                         <th>Item Code</th>
-                        <th>Name</th>
+                        <th>Item Name</th>
                         <th>Material</th>
                         <th>UOM</th>
                         {/* ADR-180 — three numbers, three columns, always in

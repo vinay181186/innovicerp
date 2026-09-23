@@ -194,7 +194,7 @@ function DetailGrid(props: { machine: Machine }): React.JSX.Element {
   return (
     <div className="form-grid">
       <Pair
-        label="Status"
+        label="Machine Status"
         value={
           <span className={`badge ${statusBadgeClass(machine.status)}`}>{machine.status}</span>
         }

@@ -133,11 +133,11 @@ function PartyMaterialsListPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Code</th>
-                  <th>Name</th>
+                  <th>Material Name</th>
                   <th>Description</th>
                   <th>Material</th>
                   <th className="td-ctr">UOM</th>
-                  <th>Client</th>
+                  <th>Customer</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
                     In Stock
                   </th>
@@ -457,7 +457,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
     <ModalShell onClose={onClose} title="🏭 Add Party Material">
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {/* 1. Material Code (auto, read-only) + UOM */}
-        <Field label="Material Code (auto)">
+        <Field label="Code (auto)">
           <input type="text" className="innovic-input" value={code} readOnly disabled />
         </Field>
         <Field label="UOM">
@@ -476,7 +476,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 2. Client — who supplies the material */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Client ★ (who supplies this material)">
+          <Field label="Customer ★ (who supplies this material)">
             <SearchableSelect
               id="pmClient"
               value={clientId}
@@ -491,7 +491,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 3. SO / JWSO — filtered to the picked client */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="SO / JWSO No">
+          <Field label="SO / JWSO No.">
             <SearchableSelect
               id="pmOrder"
               value={orderId}
@@ -566,7 +566,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
         {/* 8. JC No — auto-fetched Job Card linked to the SO/JW line, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JC No (auto)">
+          <Field label="JC No. (auto)">
             <input
               type="text"
               className="innovic-input"
@@ -662,7 +662,7 @@ function EditPartyMaterialModal({
   return (
     <ModalShell onClose={onClose} title={`🏭 Edit Party Material — ${row.code}`}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Material Code">
+        <Field label="Code">
           <input
             type="text"
             className="innovic-input"
@@ -733,7 +733,7 @@ function EditPartyMaterialModal({
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Client">
+          <Field label="Customer">
             <input
               type="text"
               className="innovic-input"

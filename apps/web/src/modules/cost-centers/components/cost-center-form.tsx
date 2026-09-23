@@ -1,4 +1,4 @@
-// Cost Center Master shared form (create + edit). Mirrors legacy
+// Cost Centre Master shared form (create + edit). Mirrors legacy
 // _addCostCenter / _editCostCenter modals L17191 / L17213.
 
 import {
@@ -133,7 +133,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="type">
-            Type
+            Cost Centre Type
           </label>
           <select id="type" className="innovic-select" {...register('type')}>
             {COST_CENTER_TYPES.map((t) => (
@@ -152,7 +152,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             id="description"
             className="innovic-input"
             autoComplete="off"
-            {...(isEdit ? {} : { placeholder: 'Brief description of this cost center' })}
+            {...(isEdit ? {} : { placeholder: 'Brief description of this cost centre' })}
             {...register('description', {
               maxLength: { value: 1000, message: 'Max 1000 chars' },
             })}
@@ -164,7 +164,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Active
           </label>
           <select
             id="isActive"

@@ -71,17 +71,17 @@ export function NeedsPlanningTable(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>SO/JW</th>
-                <th className="td-ctr">Line</th>
+                <th>SO / JWSO No.</th>
+                <th className="td-ctr">Ln</th>
                 {/* POL — the CUSTOMER's own PO line number. Not the "Line"
                     column to its left, which is OUR SO line number. */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>Item</th>
-                <th>Part Name</th>
-                <th className="td-ctr">SO Qty</th>
+                <th>Item Code</th>
+                <th>Item Name</th>
+                <th className="td-ctr">Order Qty</th>
                 <th className="td-ctr">Planned</th>
                 <th className="td-ctr" style={{ color: 'var(--red)' }}>
-                  Remaining
+                  Pending
                 </th>
                 <th>Due Date</th>
                 <th>Customer</th>

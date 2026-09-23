@@ -168,7 +168,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'SO / JWSO',
+        header: 'SO / JWSO No.',
         accessorKey: 'soCodeText',
         meta: { tdClass: 'mono' },
         cell: ({ row }) =>
@@ -194,7 +194,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Item code',
+        header: 'Item Code',
         accessorKey: 'itemCodeText',
         meta: { tdClass: 'td-code' },
         cell: ({ row }) => (
@@ -205,24 +205,24 @@ function ProductionOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Item name',
+        header: 'Item Name',
         accessorKey: 'itemNameText',
         meta: { tdClass: 'text2' },
         cell: ({ row }) => <Clip text={row.original.itemNameText} />,
       },
       {
-        header: 'Order qty',
+        header: 'Order Qty',
         accessorKey: 'orderQty',
         meta: { tdClass: 'mono fw-700' },
       },
       {
-        header: 'Customer dispatch date',
+        header: 'Customer Dispatch Date',
         accessorKey: 'targetDate',
         meta: { tdClass: 'mono' },
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.targetDate}</span>,
       },
       {
-        header: 'JC No',
+        header: 'JC No.',
         accessorKey: 'jcCodeText',
         meta: { tdClass: 'td-code' },
         cell: ({ row }) => (
@@ -238,7 +238,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Finished qty',
+        header: 'Completed',
         accessorKey: 'jcFinishedQty',
         meta: { tdClass: 'mono fw-700' },
         cell: ({ row }) => (
@@ -257,7 +257,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Status',
+        header: 'Production Order Status',
         accessorKey: 'status',
         cell: ({ row }) => <PoStatusBadge status={row.original.status} />,
       },

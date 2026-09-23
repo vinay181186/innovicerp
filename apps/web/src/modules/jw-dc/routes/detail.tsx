@@ -133,7 +133,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>#</th>
+                <th>Ln</th>
                 {/* POL — the CUSTOMER's own purchase-order line number off the
                     SO line behind this challan line; an em dash on a purely
                     job-work line, which has no sales order behind it. */}
@@ -143,7 +143,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                 <th>Process</th>
                 <th>PO Qty</th>
                 <th>Sent</th>
-                <th>Returned</th>
+                <th>Received</th>
                 <th>Pending</th>
               </tr>
             </thead>
@@ -209,9 +209,9 @@ function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
   return (
     <div className="form-grid form-grid-3">
       <Pair label="DC No." value={dc.code} />
-      <Pair label="Date" value={dc.dcDate} />
+      <Pair label="DC Date" value={dc.dcDate} />
       <Pair label="JWPO" value={dc.jwpoCodeText ?? '—'} />
-      <Pair label="SO" value={dc.soCode ?? '—'} />
+      <Pair label="SO No." value={dc.soCode ?? '—'} />
       <Pair label="Vendor" value={dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />
       <Pair label="Total Sent" value={`${dc.totalSentQty} pcs`} />
       <Pair label="Vehicle" value={dc.vehicleNo ?? '—'} />

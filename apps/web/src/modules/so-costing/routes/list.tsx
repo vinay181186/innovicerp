@@ -79,14 +79,14 @@ function SoCostingListPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>SO No</th>
+                <th>SO No.</th>
                 <th>Customer</th>
                 <th className="td-ctr">Lines</th>
                 <th className="td-ctr">Total Qty</th>
                 {priceHidden ? null : (
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>SO Value</th>
                 )}
-                <th>Cost Center</th>
+                <th>Cost Centre</th>
                 {priceHidden ? null : (
                   <>
                     <th className="td-ctr" style={{ color: 'var(--blue)' }}>Material</th>

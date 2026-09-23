@@ -266,7 +266,7 @@ function OpEntryPage() {
           >
             <div className="form-grp" style={{ marginBottom: 0, minWidth: 300 }}>
               <label className="form-label" htmlFor="jc-input">
-                Job Card No.
+                JC No.
               </label>
               <SearchableSelect
                 id="jc-input"

@@ -313,13 +313,13 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           <table className="innovic-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th>PO No / NC No</th>
-                <th>Date</th>
+                <th>PO No. / NC No.</th>
+                <th>Raised Date</th>
                 <th>Vendor</th>
-                <th>Type</th>
-                <th>Status</th>
+                <th>PO Type</th>
+                <th>PO Status</th>
                 <th>Lines</th>
-                <th className="td-ctr">Sent / Ordered</th>
+                <th className="td-ctr">Sent / Order Qty</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
@@ -639,12 +639,12 @@ function PoDcFormBody({
         <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={{ width: '5%' }}>#</th>
+              <th style={{ width: '5%' }}>Ln</th>
               {/* POL = the CUSTOMER's own PO line number off the SO line behind
                   this PO line. Widths below still total 100. */}
               <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
               <th style={{ width: '14%' }}>Item Code</th>
-              <th style={{ width: '20%' }}>Name</th>
+              <th style={{ width: '20%' }}>Item Name</th>
               <th style={{ width: '8%' }}>PO Qty</th>
               <th style={{ width: '12%', color: 'var(--green)' }}>Send Now ★</th>
               <th style={{ width: '16%' }}>Material</th>
@@ -935,7 +935,7 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
                 {/* POL = the CUSTOMER's own PO line number off the SO line
                     behind the job card this NC was raised on. */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>Item</th>
+                <th>Item Code · Name</th>
                 <th>Qty to return</th>
                 <th style={{ width: 110 }} />
               </tr>

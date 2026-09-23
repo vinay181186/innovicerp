@@ -11,10 +11,10 @@
 //     line, part, route card on the left (no client — user 2026-09-16, it is a
 //     shop-floor sheet); date, due, qty, item, drawing
 //     on the right. The last row of each column has no rule — the box closes it.
-//   • The operation table: OP · Operation · Plan Machine · Actual Machine ·
-//     Operator · Start · Finish · OK Qty · Rej/Rework · QC/Report · Entry Done
-//     By. Plan is jc_ops.machine_id; Actual is who made the pieces (ADR-164).
-//     "Entry Done By" is the SYSTEM user who booked the entries — the person
+//   • The operation table: Op · Operation · Plan Machine · Actual Machine ·
+//     Operator · Start · Finish · Accepted · Rejected · QC/Report · Logged By.
+//     Plan is jc_ops.machine_id; Actual is who made the pieces (ADR-164).
+//     "Logged By" is the SYSTEM user who booked the entries — the person
 //     accountable for the record — not the shop-floor operator, who has his
 //     own column. Blank rows follow for hand entries.
 //   • Material / traceability and NCR / rework lines for hand entry.
@@ -164,16 +164,16 @@ export function printJobCard(args: {
   const left = [
     fact('JC No.', jc.code, { strong: true }),
     fact('SO No.', soNo, { strong: true }),
-    fact('SO Line', soLine),
+    fact('Ln', soLine),
     fact('POL', pol),
-    fact('Part Name', jc.itemName),
+    fact('Item Name', jc.itemName),
     fact('Route Card / Rev', routeCard, { last: true }),
   ].join('');
   const right = [
     fact('JC Date', fmt(jc.jcDate)),
     fact('Due Date', fmt(jc.dueDate)),
     fact('Order Qty', `${jc.orderQty} pcs`, { strong: true }),
-    fact('Part / Item No.', itemCodeWithRev(jc.itemCode, jc.itemRevision), { strong: true }),
+    fact('Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision), { strong: true }),
     fact('Drawing No. / Rev', drawing, { last: true }),
   ].join('');
 
@@ -183,17 +183,17 @@ export function printJobCard(args: {
 
   const opsTable = `<table class="ops">
     <thead><tr>
-      <th style="width:8mm">OP</th>
+      <th style="width:8mm">Op</th>
       <th>Operation</th>
       <th style="width:17mm">Plan<br>Machine</th>
       <th style="width:17mm">Actual<br>Machine</th>
       <th style="width:20mm">Operator</th>
       <th style="width:16mm">Start</th>
       <th style="width:16mm">Finish</th>
-      <th style="width:11mm">OK<br>Qty</th>
-      <th style="width:13mm">Rej /<br>Rework</th>
+      <th style="width:11mm">Accepted</th>
+      <th style="width:13mm">Rejected</th>
       <th style="width:20mm">QC / Report</th>
-      <th style="width:22mm">Entry<br>Done By</th>
+      <th style="width:22mm">Logged By</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;

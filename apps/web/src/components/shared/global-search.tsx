@@ -2,8 +2,9 @@
 //
 // Type two or more characters and the results open in a full-window popup
 // over the current page, below the top bar (modules/search/components/
-// search-popup.tsx): Date | Type | Doc No. | Party | Particulars | Qty |
-// Status across every document kind the caller may view, with a count strip
+// search-popup.tsx): Document Date | Document Type | Document No. |
+// Customer / Vendor | Particulars | Qty | Document Status across every document
+// kind the caller may view, with a count strip
 // to filter by type. Enter opens at once, typing opens after a short pause.
 // Escape (in the box or anywhere in the popup) closes the popup and clears
 // the box; ✕ / backdrop close it but keep the text so it can be edited;

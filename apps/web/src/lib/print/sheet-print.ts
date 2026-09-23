@@ -598,24 +598,24 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   const polHead = showPol ? '<td class="colh ctr" style="width:13mm">POL</td>' : '';
 
   const columnHeads = po
-    ? '<td class="colh ctr" style="width:11mm">Sr</td>' +
+    ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +
       polHead +
-      '<td class="colh">Item detail</td>' +
+      '<td class="colh">Item Code</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
       '<td class="colh ctr" style="width:26mm">Rate</td>' +
       '<td class="colh ctr" style="width:30mm">Amount</td>'
     : grn
-      ? '<td class="colh ctr" style="width:11mm">Sr</td>' +
+      ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +
         polHead +
-        '<td class="colh">Item detail</td>' +
+        '<td class="colh">Item Code</td>' +
         '<td class="colh ctr" style="width:24mm">Received</td>' +
         '<td class="colh ctr" style="width:22mm">Accepted</td>' +
         '<td class="colh ctr" style="width:22mm">Rejected</td>' +
         '<td class="colh ctr" style="width:24mm">QC status</td>'
-      : '<td class="colh ctr" style="width:11mm">Sr</td>' +
+      : '<td class="colh ctr" style="width:11mm">Sr No</td>' +
       polHead +
-      '<td class="colh">Item detail</td>' +
+      '<td class="colh">Item Code</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
       '<td class="colh ctr" style="width:19mm">HSN</td>' +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
