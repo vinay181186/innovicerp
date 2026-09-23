@@ -200,7 +200,7 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
           <tr style={{ background: 'var(--bg4)' }}>
             <th style={{ width: 36 }}>#</th>
             <th>JC No.</th>
-            <th style={{ color: 'var(--purple)' }}>CPO Ln</th>
+            <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
             <th className="td-ctr" style={{ color: 'var(--red)' }}>Qty</th>

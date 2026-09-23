@@ -779,7 +779,7 @@ function OrderDetail({
                         </span>
                         {line.clientPoLineNo ? (
                           <div className="mono" style={{ fontSize: 9, color: 'var(--purple)' }}>
-                            CPO {line.clientPoLineNo}
+                            POL {line.clientPoLineNo}
                           </div>
                         ) : null}
                         {/* ADR-171: Item Master "Source" — why the Action cell

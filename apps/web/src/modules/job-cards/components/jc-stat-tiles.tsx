@@ -180,7 +180,7 @@ export function JcStatTiles({
           </div>
           {jc.clientPoLineNo ? (
             <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
-              CPO Ln: {jc.clientPoLineNo}
+              POL: {jc.clientPoLineNo}
             </div>
           ) : null}
           {/* ADR-170 — the Production Order that built this card. Only such a

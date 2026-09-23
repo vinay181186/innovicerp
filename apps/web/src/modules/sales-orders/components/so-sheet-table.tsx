@@ -67,7 +67,7 @@ export function SoSheetTable({
       {/* The sheet look (tbl-grid): bold blue column names, gridlines, cream /
           white rows, fixed widths that add up to 100% so nothing scrolls
           sideways. Every column is centred by the standard; only Customer is
-          left-aligned (a name reads from its left edge, and the CPO line under
+          left-aligned (a name reads from its left edge, and the POL under
           it must start at the same x). */}
       <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
         <table className="innovic-table tbl-grid">

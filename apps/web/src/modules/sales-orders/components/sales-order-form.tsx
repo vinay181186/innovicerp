@@ -1036,7 +1036,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   <th style={{ width: '8%' }}>Drawing No.</th>
                   <th style={{ width: '11%' }}>Drawing File</th>
                   <th style={{ width: '6%' }}>Rev <span className="req">★</span></th>
-                  <th style={{ width: '8%' }}>Client PO Ln</th>
+                  <th style={{ width: '8%' }}>POL</th>
                   <th style={{ width: '5%' }}>UOM</th>
                   <th style={{ width: '7%' }} className="td-ctr">Qty <span className="req">★</span></th>
                   <th style={{ width: '6%', color: 'var(--green)' }}>Rate ₹</th>
@@ -1096,7 +1096,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             after a bad scan. Compulsory — onValid refuses the save when it is
                             blank, and the API rejects a blank one too. */}
                         <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} style={{ textTransform: 'uppercase' }} pattern={REV_INPUT_PATTERN} title={REV_INPUT_TITLE} {...upperCaseRevField(register(`lines.${idx}.revision` as const))} /></td>
-                        <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
+                        <td><input className="innovic-input" autoComplete="off" placeholder="POL" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
                         <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>

@@ -972,7 +972,7 @@ function JobCardsListPage(): React.JSX.Element {
                         <>
                           <span>·</span>
                           <span>
-                            CPO{' '}
+                            POL{' '}
                             <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                               {jc.clientPoLineNo}
                             </span>

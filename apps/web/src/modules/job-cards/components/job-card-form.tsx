@@ -703,7 +703,7 @@ export function JobCardForm({
                   {selectedSource.clientPoLineNo ? (
                     <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                       {' '}
-                      [CPO:{selectedSource.clientPoLineNo}]
+                      [POL:{selectedSource.clientPoLineNo}]
                     </span>
                   ) : null}{' '}
                   — {selectedSource.code}

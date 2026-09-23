@@ -753,7 +753,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
           <tr style={{ background: 'var(--bg4)' }}>
             {/* Item = thumbnail · CODE/REV · part name in one badge cell (user
                 decision 2026-09-21); the old Item Code + Part Name pair folded in. */}
-            <th>Ln</th><th style={{ color: 'var(--purple)' }}>CPO Ln</th><ItemThumbnailHeader /><th style={{ textAlign: 'left' }}>Item</th>
+            <th>Ln</th><th style={{ color: 'var(--purple)' }}>POL</th><ItemThumbnailHeader /><th style={{ textAlign: 'left' }}>Item</th>
             <th className="td-ctr">Qty</th><th className="td-ctr">JC Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
             <th className="td-ctr" style={{ color: 'var(--red)' }}>Balance</th>

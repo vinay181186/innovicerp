@@ -471,7 +471,7 @@ function LinePanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="text3 mono" style={{ fontSize: 11, fontWeight: 700 }}>LINE {line.lineNo}</span>
           {line.clientPoLineNo ? (
-            <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>[CPO:{line.clientPoLineNo}]</span>
+            <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>[POL:{line.clientPoLineNo}]</span>
           ) : null}
           <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--purple)' }}>{itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision, '')}</span>
           <span style={{ fontSize: 13 }}>{line.partName ?? ''}</span>

@@ -110,7 +110,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   );
   // Search covers every column the register puts on screen — the card band
   // (dispatch no, status, date, SO, customer, dispatched by, remarks) AND the
-  // expanded line columns (JC no, CPO line, item code, item name, UOM). Not the
+  // expanded line columns (JC no, POL, item code, item name, UOM). Not the
   // qty / stock numbers: a bare "5" would match nearly every row.
   const rows = useMemo(() => {
     const q = normalizeSearchTerm(search);

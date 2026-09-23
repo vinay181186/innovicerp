@@ -431,7 +431,7 @@ export function JcViewSummary({
               card is credited to stock at PO close (never at last-op QC or an
               OSP GRN), so the link is the operator's cue for where "finished"
               actually lands. Old cards carry null and show a dash. The
-              customer's PO line (CPO Ln) sits beside it, as before. */}
+              customer's PO line (POL) sits beside it, as before. */}
           <Kv label="Prod. Order">
             {jc.productionOrderId && jc.productionOrderCode ? (
               <Link
@@ -447,7 +447,7 @@ export function JcViewSummary({
             )}
             {jc.clientPoLineNo ? (
               <span className="mono fw-700" style={{ color: 'var(--purple)', fontSize: 12 }}>
-                {' · '}CPO Ln {jc.clientPoLineNo}
+                {' · '}POL {jc.clientPoLineNo}
               </span>
             ) : null}
           </Kv>

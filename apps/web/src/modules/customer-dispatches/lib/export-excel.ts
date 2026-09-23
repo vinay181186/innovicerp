@@ -12,7 +12,7 @@ const COLUMNS = [
   'SO No',
   'Customer',
   'JC No',
-  'CPO Ln',
+  'POL',
   'Item Code',
   // The customer's drawing revision gets its OWN column rather than being
   // pasted onto the item code. People filter this sheet and VLOOKUP the code

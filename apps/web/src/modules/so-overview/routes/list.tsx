@@ -796,7 +796,7 @@ function DrillItemsTable({
         <thead>
           <tr>
             {!isEquipment ? <th>Ln</th> : null}
-            {!isEquipment ? <th style={{ color: 'var(--purple)' }}>CPO Ln</th> : null}
+            {!isEquipment ? <th style={{ color: 'var(--purple)' }}>POL</th> : null}
             <th>Item Code</th>
             <th>Item Name</th>
             <th>Stage</th>

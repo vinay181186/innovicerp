@@ -557,7 +557,7 @@ function PendingCall(props: {
       }
       contextLine2={
         o.clientPoLineNo ? (
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>CPO:{o.clientPoLineNo}</span>
+          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>POL:{o.clientPoLineNo}</span>
         ) : undefined
       }
       qty={o.qcPending}

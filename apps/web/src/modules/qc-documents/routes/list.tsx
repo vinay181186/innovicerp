@@ -351,7 +351,7 @@ function MatrixView(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Ln</th>
-                <th style={{ color: 'var(--purple)' }}>CPO</th>
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Qty</th>
@@ -604,7 +604,7 @@ async function openStoragePath(path: string, refCode?: string | null): Promise<v
 function exportMatrixExcel(matrix: QcMatrixResponse): void {
   const header = [
     'Ln',
-    'CPO Ln',
+    'POL',
     'Item Code',
     // The drawing revision rides its own column instead of being glued into Item
     // Code. People filter and VLOOKUP this sheet against Item Master, where

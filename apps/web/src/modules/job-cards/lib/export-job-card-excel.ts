@@ -74,7 +74,7 @@ export function exportJobCardExcel(args: {
     ['Item Name', jc.itemName || ''],
     ['SO / WO', jc.sourceLink?.code ?? ''],
     ['SO / WO Line', jc.sourceLink?.lineNo ?? ''],
-    ['Client PO Line', jc.clientPoLineNo ?? ''],
+    ['POL', jc.clientPoLineNo ?? ''],
     ['Order Qty', jc.orderQty],
     ['Completed Qty', completed],
     ['Pending Qty', pending],

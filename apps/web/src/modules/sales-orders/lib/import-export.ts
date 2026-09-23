@@ -103,7 +103,7 @@ export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<voi
 // sheet that omits the column leaves every imported line on the '0' default and
 // the person then has to type each one by hand — which is the whole reason the
 // column is here.
-const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'Rev', 'CPO Line', 'Qty', 'Rate', 'Due Date'] as const;
+const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'Rev', 'POL', 'Qty', 'Rate', 'Due Date'] as const;
 
 export interface SoLineImportRow {
   itemCodeText: string;
@@ -153,7 +153,9 @@ export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportR
       drawingNo: String(r['Drawing No'] ?? '').trim() || undefined,
       // ADR-177: capital letters always — 'b' in the sheet lands as 'B'.
       revision: normalizeRevision(String(r['Rev'] ?? '')) || undefined,
-      clientPoLineNo: String(r['CPO Line'] ?? '').trim() || undefined,
+      // 'POL' is the current header; 'CPO Line' is what sheets downloaded
+      // before the rename still carry, so both are read.
+      clientPoLineNo: String(r['POL'] ?? r['CPO Line'] ?? '').trim() || undefined,
       orderQty,
       rate: Number(r['Rate']) || 0,
       dueDate: toDate(r['Due Date']),
