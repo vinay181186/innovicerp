@@ -69,11 +69,19 @@ export function OpenTabsBar(): React.JSX.Element | null {
   };
 
   return (
-    <div id="pagetabs">
+    /* id AND class: the stylesheet matches either (#pagetabs, .pagetabs).
+       The class is the name the design system uses; the id is kept because
+       other code may still key off it. */
+    <div id="pagetabs" className="pagetabs">
       {tabs.map((t) => {
         const active = t.base === current.base;
         return (
-          <Link key={t.base} to={t.path} className={`pgtab${active ? ' active' : ''}`} title={t.label}>
+          <Link
+            key={t.base}
+            to={t.path}
+            className={`pgtab${active ? ' active' : ''}`}
+            title={t.label}
+          >
             <span className="pgtab-icon" aria-hidden>
               {t.icon}
             </span>

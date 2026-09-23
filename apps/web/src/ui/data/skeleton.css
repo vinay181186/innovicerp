@@ -1,0 +1,39 @@
+/* Skeleton — loading placeholder bars.
+   No `.skeleton` class existed in innovic-theme.css, and Phase 2 must not edit
+   that file from this group, so the rule lives here and is pulled in by
+   Skeleton.tsx. The class names are plain house vocabulary (`.skeleton`,
+   `.skeleton-lines`) — no `ui-` prefix, which appears nowhere else in the
+   theme. Colours and radii are tokens only; the pulse respects
+   prefers-reduced-motion (design-ref README, "Animation: minimal").
+   MIGRATION NOTE: fold these three rules into innovic-theme.css when that file
+   is unlocked, and drop the import — the app has exactly one stylesheet entry
+   point (main.tsx), and this is the one component that adds a second. */
+
+.skeleton {
+  display: block;
+  background: var(--bg5);
+  border-radius: var(--radius-sm);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}

@@ -249,8 +249,8 @@ Already healthy: 91% of buttons use `.btn`, 82% of inputs use `.innovic-input`, 
 | Phase | Scope | Gate |
 |---|---|---|
 | 0 ✅ | Branch, tag, worktree, baseline, design-ref committed | done |
-| 1 ✅ | This audit | **CHECKPOINT 1 — you are here** |
-| 2 | Tokens + primitives + `/__ui-kit` route | CHECKPOINT 2 |
+| 1 ✅ | This audit | done |
+| 2 ✅ | Tokens + primitives + `/__ui-kit` route | **CHECKPOINT 2 — you are here** |
 | 3 | Shell (top bar, tabs, breadcrumbs, page header) | CHECKPOINT 3 |
 | 4 | Screens, one representative first, then group by group | CHECKPOINT 4, then per-group |
 | 5 | Preview deploy on TEST API/Supabase | CHECKPOINT 5 |
@@ -295,7 +295,7 @@ that needs data the API does not already provide.
 
 - [x] Phase 0 — branch, tag, worktree, baseline green, design-ref in branch
 - [x] Phase 1 — audit + this plan
-- [ ] Phase 2 — tokens + primitives + `/__ui-kit`
+- [x] Phase 2 — tokens + primitives + `/__ui-kit` (awaiting your review)
 - [ ] Phase 3 — shell
 - [ ] Phase 4 — screens (0 / 128 in scope)
 - [ ] Phase 5 — preview deploy
