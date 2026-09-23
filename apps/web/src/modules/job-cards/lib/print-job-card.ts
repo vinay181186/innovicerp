@@ -148,7 +148,11 @@ export function printJobCard(args: {
 
   const so = jc.sourceLink?.type === 'so' ? jc.sourceLink : null;
   const soNo = jc.sourceLink?.code ?? '';
-  const soLine = so ? String(so.lineNo) : (jc.clientPoLineNo ?? '');
+  // Two different line numbers, never one. `SO Line` is OUR line on the sales
+  // order; `POL` is the line number on the CUSTOMER'S purchase order, which
+  // does not have to match (our line 11 can be their line 20).
+  const soLine = so ? String(so.lineNo) : '';
+  const pol = jc.clientPoLineNo ?? '';
   const routeCard = jc.routeCardCode
     ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / Rev ${jc.routeCardRevision}` : ''}`
     : '';
@@ -161,6 +165,7 @@ export function printJobCard(args: {
     fact('JC No.', jc.code, { strong: true }),
     fact('SO No.', soNo, { strong: true }),
     fact('SO Line', soLine),
+    fact('POL', pol),
     fact('Part Name', jc.itemName),
     fact('Route Card / Rev', routeCard, { last: true }),
   ].join('');

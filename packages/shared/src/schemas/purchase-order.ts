@@ -10,7 +10,8 @@
 //     `taxType` text snapshot, `prCodeText` audit reference, approval fields.
 //   - Lines: `rate` numeric, `receivedQty` (mutated by GRN cascade in T-036c),
 //     `sourceSoLineId` + `sourceJcOpId` for cost-rollup / outsource workflows,
-//     no `clientPoLineNo` / `partName` (use `itemName` snapshot only).
+//     no `partName` (use `itemName` snapshot only). `clientPoLineNo` IS carried,
+//     read-only, joined from the source SO line — see the field's own note.
 //
 // Same write contracts as SO/JW:
 //   - Create + update accept `{header, lines}`; service runs both in one tx
@@ -61,6 +62,13 @@ export const purchaseOrderLineSchema = z.object({
    *  write-backs return the line without the join, exactly as `itemCode` and
    *  `sourcePrCode` do, and the detail page refetches. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a stock-replenishment purchase, a vendor
+   *  return, a line whose SO line was deleted). Read-only: the Sales Order is
+   *  the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string(),
   qty: z.number().int().positive(),
   // numeric stored as string; NULL when the viewer's access hides prices

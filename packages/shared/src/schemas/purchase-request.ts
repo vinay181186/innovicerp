@@ -117,6 +117,13 @@ export const purchaseRequestDetailSchema = purchaseRequestSchema.extend({
    *  and never `items.revision`, which is a different column about the item
    *  itself and would put a plausible-looking wrong revision on the document. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a stock-replenishment purchase, a vendor
+   *  return, a line whose SO line was deleted). Read-only: the Sales Order is
+   *  the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   // Source/linked document codes resolved from the FK ids, so the detail page
   // shows real values instead of a '— linked —' placeholder.
   poCode: z.string().nullable(), // resolved from purchase_orders when poId set
@@ -141,6 +148,13 @@ export const purchaseRequestListItemSchema = purchaseRequestSchema.extend({
    *  Null whenever the PR has no live SO line behind it, which is the majority
    *  of a stores-driven PR list. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a stock-replenishment purchase, a vendor
+   *  return, a line whose SO line was deleted). Read-only: the Sales Order is
+   *  the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   sourceJcCode: z.string().nullable(),
   sourceJcOpSeq: z.number().int().positive().nullable(),
   poCode: z.string().nullable(), // resolved from purchase_orders when poId set

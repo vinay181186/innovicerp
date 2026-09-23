@@ -682,7 +682,12 @@ async function getGoodsReceiptNoteInternal(
         -- the SO-line value wins wherever one exists and the JW-line value is
         -- the fallback. Null when nothing traces. ::text for the same pre-0119
         -- reason as delivery-challans (the column was integer before then).
-        COALESCE(rev_sol.revision::text, rev_jwl.revision::text) AS "itemRevision"
+        COALESCE(rev_sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- The customer's own PO line number, off the SAME rev_sol join the
+        -- revision above already resolves. Only the SO side: a job-work line
+        -- belongs to a job-work order, not to a customer PO, so there is no
+        -- client PO line number on that fallback and the field stays null.
+        rev_sol.client_po_line_no AS "clientPoLineNo"
       FROM public.goods_receipt_note_lines gnl
       JOIN public.goods_receipt_notes grn ON grn.id = gnl.goods_receipt_note_id
       LEFT JOIN public.items i ON i.id = gnl.item_id AND i.deleted_at IS NULL
@@ -778,6 +783,7 @@ async function getGoodsReceiptNoteInternal(
       deletedAt: maybeTsLike(r['deletedAt']),
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
+      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     })),
   };
 }

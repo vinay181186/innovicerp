@@ -167,6 +167,7 @@ interface NcJoins {
   itemCode?: string | null;
   itemName?: string | null;
   itemRevision?: string | null;
+  clientPoLineNo?: string | null;
   childJobCardCode?: string | null;
   deliveryChallanCode?: string | null;
   // G8: the NC this row continues (Incoming-QC reject on a GRN that came back
@@ -186,6 +187,7 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
   const itemCode = joins.itemCode ?? null;
   const itemName = joins.itemName ?? null;
   const itemRevision = joins.itemRevision ?? null;
+  const clientPoLineNo = joins.clientPoLineNo ?? null;
   const childJobCardCode = joins.childJobCardCode ?? null;
   const deliveryChallanCode = joins.deliveryChallanCode ?? null;
   return {
@@ -210,6 +212,11 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     // snapshot of what the reporter typed. The write paths below pass nothing and
     // so return null, exactly as they already do for itemCode and itemName.
     itemRevision,
+    // The customer's PO line number for that same SO line -- one more
+    // display-only join off the row the revision above came from. A JW-sourced
+    // or standalone card has no customer PO line, so it stays null, and the
+    // write paths that pass nothing return null exactly as they do for itemCode.
+    clientPoLineNo,
     soCodeText: row.soCodeText,
     machineCodeText: row.machineCodeText,
     operatorText: row.operatorText,
@@ -429,6 +436,11 @@ export async function listNcRegister(
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- The customer's own PO line number, off the SAME sol join as the
+        -- revision above. Only the SO side: a job-work line belongs to a
+        -- job-work order, not to a customer PO, so it has no client PO line
+        -- number and the field correctly stays null there.
+        sol.client_po_line_no AS "clientPoLineNo",
         i.name AS "itemName",
         cap.code AS "linkedCapaCode",
         -- Material source (Tier A, WI3): the vendor/PO/GRN the rejected pieces
@@ -641,6 +653,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     jcOpOperation: (r['jcOpOperation'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
     itemRevision: (r['itemRevision'] as string | null) ?? null,
+    clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
   };
 }
@@ -662,6 +675,11 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
       itemRevision: sql<
         string | null
       >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+      // The customer's own PO line number, off the SAME SO line join as the
+      // revision above, and only that side: a job-work line belongs to a
+      // job-work order, not to a customer PO, so it has no client PO line
+      // number to offer.
+      clientPoLineNo: salesOrderLines.clientPoLineNo,
       // The child card and the challan live in tables joined by their own FK
       // on the NC row, so both are plain scalar subqueries — no alias juggling
       // on job_cards, which is already joined once for the SO line.
@@ -716,6 +734,7 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     itemCode: found.itemCode,
     itemName: found.itemName,
     itemRevision: found.itemRevision,
+    clientPoLineNo: found.clientPoLineNo,
     childJobCardCode: found.childJobCardCode,
     deliveryChallanCode: found.deliveryChallanCode,
     parentNcCode: found.parentNcCode,

@@ -197,7 +197,7 @@ export function SoSheetTable({
                       }}
                     >
                       <span>
-                        CPO:{' '}
+                        Client PO:{' '}
                         <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                           {so.clientPoNo ?? '—'}
                         </span>
