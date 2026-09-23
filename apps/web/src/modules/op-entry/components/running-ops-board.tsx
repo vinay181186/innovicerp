@@ -49,6 +49,12 @@ function JcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
 function ItemCells({ r }: { r: RunningOp }): React.JSX.Element {
   return (
     <>
+      {/* POL — the line number printed on the CUSTOMER's own purchase order,
+          immediately before the item code. '—' when there is no sales order
+          behind the job card. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {r.clientPoLineNo ?? '—'}
+      </td>
       <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
@@ -105,6 +111,8 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             <thead>
               <tr>
                 <th>JC</th>
+                {/* POL — the CUSTOMER's own PO line number, before the item. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Op</th>
@@ -119,9 +127,9 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             <tbody>
               {running.length === 0 ? (
                 <tr>
-                  {/* Ten columns since Item Code and Item Name were added — the
-                      empty row must span the whole table or it draws short. */}
-                  <td colSpan={10} className="empty-state">
+                  {/* Eleven columns since POL joined Item Code and Item Name —
+                      the empty row must span the whole table or it draws short. */}
+                  <td colSpan={11} className="empty-state">
                     No ops currently running.
                   </td>
                 </tr>
@@ -190,6 +198,8 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
               <thead>
                 <tr>
                   <th>JC</th>
+                  {/* POL — the CUSTOMER's own PO line number, before the item. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th>Op</th>
@@ -260,6 +270,8 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             itemCode: stopRow.itemCode,
             itemRevision: stopRow.itemRevision,
             itemName: stopRow.itemName,
+            // POL — the CUSTOMER's own PO line number, shown beside the item.
+            clientPoLineNo: stopRow.clientPoLineNo,
           }}
           pending={stop.isPending}
           errorText={stopError}

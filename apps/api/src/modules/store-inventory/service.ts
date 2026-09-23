@@ -393,6 +393,10 @@ export async function listReservations(
         // same pre-0119 reason every other itemRevision read gives. Null for a
         // job-work line, which has no sales-order line behind it.
         itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        // POL — the line number on the CUSTOMER's own purchase order, off the
+        // SAME SO line as the revision above. Not `lineNo`, which is the
+        // snapshot of OUR line number already on the reservation row.
+        clientPoLineNo: salesOrderLines.clientPoLineNo,
         clientName: clients.name,
         soCustomerName: salesOrders.customerName,
         productionOrderCode: productionOrders.code,
@@ -430,6 +434,7 @@ export async function listReservations(
         // fallback for an order raised before a client row existed.
         customerName: row.clientName ?? row.soCustomerName ?? null,
         itemRevision: row.itemRevision ?? null,
+        clientPoLineNo: row.clientPoLineNo ?? null,
         qty: r.qty,
         consumedQty: r.consumedQty,
         releasedQty: r.releasedQty,

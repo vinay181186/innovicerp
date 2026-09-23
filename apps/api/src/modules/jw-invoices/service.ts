@@ -13,7 +13,7 @@ import type {
   ListJwInvoicesQuery,
   ListJwInvoicesResponse,
 } from '@innovic/shared';
-import { clients, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
+import { clients, items, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
@@ -244,11 +244,23 @@ export async function listJwInvoices(
         .select({
           inv: jwInvoices,
           clientName: clients.name,
+          // WHAT IS BEING BILLED. The printed invoice line carried a part name
+          // and nothing else; a part name is not an identity. The code comes off
+          // the JWSO line this invoice bills — the live items-master code where
+          // the line names an item, else the snapshot the line was typed with.
+          itemCode: sql<string | null>`COALESCE(${items.code}, ${jobWorkOrderLines.itemCodeText})`,
+          // The customer's drawing revision on that SAME JWSO line. Never
+          // items.revision, which is about the item master, not the drawing.
+          // Cast to text: the contract types it as a string.
+          itemRevision: sql<string | null>`${jobWorkOrderLines.revision}::text`,
           partName: jobWorkOrderLines.partName,
         })
         .from(jwInvoices)
         .leftJoin(clients, eq(clients.id, jwInvoices.clientId))
         .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jwInvoices.jobWorkOrderLineId))
+        // LEFT: a JWSO line may name no item (part name only), and an invoice
+        // must never drop out of its own register over a missing master row.
+        .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
         .where(where)
         .orderBy(desc(jwInvoices.invoiceDate), desc(jwInvoices.code))
         .limit(input.limit)
@@ -266,6 +278,14 @@ export async function listJwInvoices(
         const item = {
           ...rowToInvoice(r.inv),
           clientName: r.clientName ?? null,
+          itemCode: r.itemCode ?? null,
+          itemRevision: r.itemRevision ?? null,
+          // POL is a CUSTOMER PURCHASE ORDER line number, and a job-work order
+          // has no sales order behind it: job_work_order_lines carries no
+          // source_so_line_id and job_work_orders carries no sales_order_id.
+          // There is no SO line to read, so null is the only truthful answer —
+          // never the JWSO line number, which is a different number entirely.
+          clientPoLineNo: null,
           partName: r.partName ?? null,
         };
         return showMoney ? item : hideJwInvoiceMoney(item);

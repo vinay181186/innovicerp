@@ -63,6 +63,11 @@ export const soCostingLineSchema = z.object({
    *  Null only on a database that has not had 0119. It is never `items.revision`,
    *  which describes the item master rather than this order's drawing. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to, shown beside the item code on every downstream document (user rule,
+   *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
+   *  Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string(),
   orderQty: z.number().int().nonnegative(),
   materialCost: z.number().nonnegative().nullable(),

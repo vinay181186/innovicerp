@@ -132,6 +132,11 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           // revision. LEFT JOIN so a card whose line has gone still comes back,
           // with a null revision. Cast to text for the same reason as above.
           itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+          // POL — the line number on the CUSTOMER's own purchase order, off the
+          // SAME SO line as the revision above, so a job card prints the same
+          // POL as the order line it serves. Null on a JW-sourced or standalone
+          // card, which has no customer PO line behind it.
+          clientPoLineNo: salesOrderLines.clientPoLineNo,
           // Full JC row needed for calc-engine
           companyId: jobCards.companyId,
           jcDate: jobCards.jcDate,
@@ -394,6 +399,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           code: jc.code,
           itemCode: jc.itemCode ?? null,
           itemRevision: jc.itemRevision ?? null,
+          clientPoLineNo: jc.clientPoLineNo ?? null,
           itemName: jc.itemName ?? null,
           orderQty: jc.orderQty,
           doneQty: rollup.doneQty,

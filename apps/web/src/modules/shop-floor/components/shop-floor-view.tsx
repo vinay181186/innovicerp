@@ -191,6 +191,9 @@ export function ShopFloorView(): React.JSX.Element {
                       <th>JC No.</th>
                       <th className="td-ctr">Op</th>
                       <th>Operation</th>
+                      {/* POL — the line number printed on the CUSTOMER's own
+                          purchase order; sits immediately before the item. */}
+                      <th style={{ color: 'var(--purple)' }}>POL</th>
                       <th>Item Code</th>
                       <th>Item Name</th>
                       <th>SO/WO</th>
@@ -247,6 +250,10 @@ export function ShopFloorView(): React.JSX.Element {
                               planned <span className="mono">{r.plannedMachineCode}</span>
                             </div>
                           ) : null}
+                        </td>
+                        {/* POL — '—' when no sales order sits behind the card. */}
+                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                          {r.clientPoLineNo ?? '—'}
                         </td>
                         <td className="td-code" style={{ color: 'var(--purple)' }}>
                           {itemCodeWithRev(r.itemCode, r.itemRevision)}
@@ -311,6 +318,8 @@ export function ShopFloorView(): React.JSX.Element {
             itemCode: stopRow.row.itemCode,
             itemRevision: stopRow.row.itemRevision,
             itemName: stopRow.row.itemName,
+            // POL — the CUSTOMER's own PO line number, shown beside the item.
+            clientPoLineNo: stopRow.row.clientPoLineNo,
             opSeq: stopRow.row.opSeq,
             operation: stopRow.row.operation,
             machineLabel: stopRow.machineCode,

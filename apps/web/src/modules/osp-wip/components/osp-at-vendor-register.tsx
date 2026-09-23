@@ -88,6 +88,9 @@ export function OspAtVendorRegister(): React.JSX.Element {
                 <thead>
                   <tr>
                     <th>Job Card</th>
+                    {/* POL — the line number printed on the CUSTOMER's own
+                        purchase order, immediately before the item code. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Name</th>
                     <th>SO No.</th>
@@ -119,7 +122,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
                 <tbody>
                   {data.rows.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="empty-state">
+                      <td colSpan={15} className="empty-state">
                         No outsourced operations match this filter
                       </td>
                     </tr>
@@ -152,6 +155,10 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
     <tr>
       <td className="td-code" style={{ color: 'var(--cyan)' }}>
         {row.jcCode}
+      </td>
+      {/* POL — '—' when no sales order sits behind the job card. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {row.clientPoLineNo ?? '—'}
       </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
         {itemCodeWithRev(row.itemCode, row.itemRevision)}

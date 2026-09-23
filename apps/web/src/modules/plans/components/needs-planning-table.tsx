@@ -21,7 +21,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
       // Searched on the code AS DISPLAYED, so typing "IN-IT-0007/B" finds the
       // row the planner is looking at. Empty fallback keeps the em dash out of
       // the haystack.
-      `${r.soCode} ${itemCodeWithRev(r.itemCode, r.itemRevision, '')} ${r.partName ?? ''} ${r.customerName ?? ''}`
+      `${r.soCode} ${r.clientPoLineNo ?? ''} ${itemCodeWithRev(r.itemCode, r.itemRevision, '')} ${r.partName ?? ''} ${r.customerName ?? ''}`
         .toLowerCase()
         .includes(q),
     );
@@ -73,6 +73,9 @@ export function NeedsPlanningTable(): React.JSX.Element {
               <tr>
                 <th>SO/JW</th>
                 <th className="td-ctr">Line</th>
+                {/* POL — the CUSTOMER's own PO line number. Not the "Line"
+                    column to its left, which is OUR SO line number. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item</th>
                 <th>Part Name</th>
                 <th className="td-ctr">SO Qty</th>
@@ -99,6 +102,9 @@ export function NeedsPlanningTable(): React.JSX.Element {
                     </Link>
                   </td>
                   <td className="td-ctr">{r.lineNo}</td>
+                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    {r.clientPoLineNo ?? '—'}
+                  </td>
                   <td>
                     {/* `CODE/REV` — the customer's drawing revision typed on this
                         very SO line. nowrap because a short code must never break

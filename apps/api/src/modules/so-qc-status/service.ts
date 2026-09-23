@@ -157,6 +157,9 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         -- not had 0119 still holds the old integer here and would hand the UI a
         -- number. Never items.revision, which describes the item master instead.
         sol.revision::text AS "itemRevision",
+        -- POL — the line number printed on the CUSTOMER's own purchase order
+        -- for this SO line. Never sol.line_no, which is OUR line number.
+        sol.client_po_line_no AS "clientPoLineNo",
         sol.order_qty AS "orderQty",
         COUNT(DISTINCT jc.id)::int AS "jcCount",
         COUNT(vos.jc_op_id) FILTER (WHERE vos.qc_required OR vos.op_type = 'qc')::int AS "qcOpsTotal",
@@ -293,6 +296,9 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         -- row is attributed to) carries the drawing revision — read live, never
         -- items.revision. ::text for the pre-0119 reason given on the line query.
         sol3.revision::text AS "itemRevision",
+        -- POL off that same SO line, so a GRN row prints the customer's PO line
+        -- number alongside the code like every other screen.
+        sol3.client_po_line_no AS "clientPoLineNo",
         COALESCE(v.name, grn.vendor_code_text) AS "vendorName",
         gl.received_qty AS "receivedQty",
         gl.qc_accepted_qty AS "accepted",
@@ -335,6 +341,7 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         grnNo: (r['grnNo'] as string) ?? '',
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         vendorName: (r['vendorName'] as string | null) ?? null,
         receivedQty: num(r['receivedQty']),
         accepted: num(r['accepted']),
@@ -434,6 +441,7 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         lineNo: num(r['lineNo']),
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         partName: (r['partName'] as string | null) ?? null,
         orderQty: num(r['orderQty']),
         jcCount: num(r['jcCount']),

@@ -426,6 +426,9 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
       }}
     >
       <div className="form-grid form-grid-4" style={{ gap: 8 }}>
+        {/* POL — the line number printed on the CUSTOMER's own purchase order.
+            NOT the "/ line n" in SO / JWSO below, which is OUR line number. */}
+        <Fact label="POL" value={plan.clientPoLineNo ?? '—'} mono />
         {/* CODE/REV (ADR-177); bare code when the plan's line has no revision. */}
         <Fact
           label="Item"

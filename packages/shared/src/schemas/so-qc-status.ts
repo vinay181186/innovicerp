@@ -68,6 +68,11 @@ export const soQcGrnDetailSchema = z.object({
   itemCode: z.string().nullable(),
   /** ADR-178: the SO line's drawing revision for this GRN row (CODE/REV). */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to, shown beside the item code on every downstream document (user rule,
+   *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
+   *  Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   vendorName: z.string().nullable(),
   receivedQty: z.number().int(),
   accepted: z.number().int(),
@@ -114,6 +119,11 @@ export const soQcLineSchema = z.object({
    *  where 0119 has not been applied; never `items.revision`, a different column
    *  about the item master that would put a wrong revision on every QC row. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to, shown beside the item code on every downstream document (user rule,
+   *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
+   *  Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   partName: z.string().nullable(),
   orderQty: z.number().int(),
   jcCount: z.number().int().nonnegative(),

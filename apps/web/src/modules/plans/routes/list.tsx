@@ -321,20 +321,26 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
             IS and Action holds the one button that moves it on. */}
         <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
           <table className="innovic-table tbl-grid">
+            {/* Widths total exactly 100. POL took 5% — one each off Plan No.,
+                SO and Action, two off Item — when it was added (2026-09-23). */}
             <colgroup>
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '19%' }} />
               <col style={{ width: '11%' }} />
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '10%' }} />
               <col style={{ width: '6%' }} />
               <col style={{ width: '6%' }} />
               <col style={{ width: '11%' }} />
               <col style={{ width: '11%' }} />
               <col style={{ width: '10%' }} />
-              <col style={{ width: '14%' }} />
+              <col style={{ width: '13%' }} />
             </colgroup>
             <thead>
               <tr>
                 <th>PLAN NO.</th>
+                {/* POL — the CUSTOMER's own PO line number, not our SO line
+                    number (that stays in the SO column as "L#"). */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>ITEM</th>
                 <th>SO</th>
                 <th className="td-ctr">ORDER QTY</th>
@@ -379,6 +385,9 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                           Dispatch {row.customerDispatchDate}
                         </div>
                       ) : null}
+                    </td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {row.clientPoLineNo ?? '—'}
                     </td>
                     <td>
                       {/* `CODE/REV` — the customer's drawing revision from the

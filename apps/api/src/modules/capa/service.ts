@@ -1,7 +1,7 @@
 // CAPA service (QC Wave 3). Mirrors legacy renderCAPA L22779 + _capaNew /
 // _capaEdit (5-step). CRUD over capa_records (migration 0034).
 
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CapaCounters,
   CapaRecord,
@@ -34,7 +34,67 @@ function tsLike(v: unknown): string {
 
 type Row = typeof capaRecords.$inferSelect;
 
-function toRecord(r: Row): CapaRecord {
+/** The drawing revision and the customer's own PO line number for a CAPA. */
+interface LineFacts {
+  itemRevision: string | null;
+  clientPoLineNo: string | null;
+}
+
+const NO_LINE_FACTS: LineFacts = { itemRevision: null, clientPoLineNo: null };
+
+type Tx = Parameters<Parameters<typeof withUserContext>[1]>[0];
+
+/**
+ * Resolve the drawing revision + customer PO line number for a set of CAPAs.
+ *
+ * A CAPA hangs off the NC → job card chain, so the facts come from the same
+ * place nc-register reads them (service.ts ~L431): the SO line the card was
+ * raised against, falling back to the JW line for the revision only. POL is
+ * SO-side only — a job-work line belongs to a job-work order, not to a
+ * customer PO, so it correctly stays null there.
+ *
+ * capa_records stores `jc_no` as free TEXT with no foreign key, so the hop is
+ * by code inside the company; job_cards_company_code_uniq makes that one row.
+ * One extra round trip per request, never one per record.
+ */
+async function lineFactsByJcNo(
+  tx: Tx,
+  companyId: string,
+  jcNos: string[],
+): Promise<Map<string, LineFacts>> {
+  const out = new Map<string, LineFacts>();
+  if (jcNos.length === 0) return out;
+  const result = await tx.execute(sql`
+    SELECT
+      jc.code AS "jcNo",
+      -- Cast to text: the contract types this as a string, and the column is
+      -- only text on a database that has had migration 0119.
+      COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+      sol.client_po_line_no AS "clientPoLineNo"
+    FROM public.job_cards jc
+    LEFT JOIN public.sales_order_lines sol
+      ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+    LEFT JOIN public.job_work_order_lines rev_jwl
+      ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+    WHERE jc.company_id = ${companyId}
+      AND jc.deleted_at IS NULL
+      AND jc.code IN (${sql.join(
+        jcNos.map((c) => sql`${c}`),
+        sql`, `,
+      )})
+  `);
+  for (const r of result as unknown as Array<Record<string, unknown>>) {
+    const key = r['jcNo'] == null ? null : String(r['jcNo']);
+    if (key === null) continue;
+    out.set(key, {
+      itemRevision: r['itemRevision'] == null ? null : String(r['itemRevision']),
+      clientPoLineNo: r['clientPoLineNo'] == null ? null : String(r['clientPoLineNo']),
+    });
+  }
+  return out;
+}
+
+function toRecord(r: Row, facts: LineFacts = NO_LINE_FACTS): CapaRecord {
   const today = todayIso();
   const targetDate = dateLike(r.targetDate);
   const overdue =
@@ -49,6 +109,8 @@ function toRecord(r: Row): CapaRecord {
     jcNo: r.jcNo ?? null,
     soNo: r.soNo ?? null,
     itemCode: r.itemCode ?? null,
+    itemRevision: facts.itemRevision,
+    clientPoLineNo: facts.clientPoLineNo,
     operation: r.operation ?? null,
     problem: r.problem,
     rootCauseMethod: r.rootCauseMethod ?? null,
@@ -78,7 +140,10 @@ export async function listCapa(user: AuthContext): Promise<ListCapaResponse> {
       .from(capaRecords)
       .where(and(eq(capaRecords.companyId, companyId), isNull(capaRecords.deletedAt)))
       .orderBy(desc(capaRecords.capaDate), desc(capaRecords.code));
-    const items = rows.map(toRecord);
+    const facts = await lineFactsByJcNo(tx, companyId, [
+      ...new Set(rows.map((r) => r.jcNo).filter((c): c is string => !!c)),
+    ]);
+    const items = rows.map((r) => toRecord(r, (r.jcNo && facts.get(r.jcNo)) || NO_LINE_FACTS));
     const closed = items.filter((c) => c.status === 'Closed');
     const closedEffective = closed.filter((c) => c.effectiveness === 'Effective');
     const counters: CapaCounters = {
@@ -146,7 +211,9 @@ export async function createCapa(input: CreateCapaInput, user: AuthContext): Pro
         updatedBy: user.id,
       })
       .returning();
-    return toRecord(inserted[0] as Row);
+    const created = inserted[0] as Row;
+    const facts = await lineFactsByJcNo(tx, companyId, created.jcNo ? [created.jcNo] : []);
+    return toRecord(created, (created.jcNo && facts.get(created.jcNo)) || NO_LINE_FACTS);
   });
 }
 
@@ -204,6 +271,8 @@ export async function updateCapa(
       .set(patch)
       .where(eq(capaRecords.id, id))
       .returning();
-    return toRecord(updated[0] as Row);
+    const row = updated[0] as Row;
+    const facts = await lineFactsByJcNo(tx, companyId, row.jcNo ? [row.jcNo] : []);
+    return toRecord(row, (row.jcNo && facts.get(row.jcNo)) || NO_LINE_FACTS);
   });
 }

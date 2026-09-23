@@ -171,6 +171,15 @@ function RequestCard({
               the card traces back to an SO line; the bare code otherwise. Null
               renders nothing at all, not a dash, so the row of chips stays
               clean when the item cannot be resolved. */}
+          {/* POL — the line number printed on the CUSTOMER's own purchase
+              order, immediately before the item code. Dropped when the card has
+              no sales order behind it, like the item chips around it. */}
+          {req.clientPoLineNo ? (
+            <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+              POL{' '}
+              <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{req.clientPoLineNo}</span>
+            </span>
+          ) : null}
           {req.itemCode ? (
             <span className="mono" style={{ whiteSpace: 'nowrap' }}>
               {itemCodeWithRev(req.itemCode, req.itemRevision, '')}

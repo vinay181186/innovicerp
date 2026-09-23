@@ -34,6 +34,14 @@ export type JwInvoice = z.infer<typeof jwInvoiceSchema>;
 
 export const jwInvoiceListItemSchema = jwInvoiceSchema.extend({
   clientName: z.string().nullable(),
+  /** The item code off the JWSO line, printed as CODE/REV with the revision
+   *  below. The printed invoice used to show the part name alone. */
+  itemCode: z.string().nullable().default(null),
+  /** The customer's drawing revision on that JWSO line. */
+  itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line behind the JWSO
+   *  line, when there is one. */
+  clientPoLineNo: z.string().nullable().default(null),
   partName: z.string().nullable(),
 });
 export type JwInvoiceListItem = z.infer<typeof jwInvoiceListItemSchema>;

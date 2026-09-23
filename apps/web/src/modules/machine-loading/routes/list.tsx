@@ -383,6 +383,11 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
           {op.jobCardCode}
         </Link>
       </td>
+      {/* POL — the line number on the CUSTOMER's own purchase order; '—' when
+          no sales order sits behind this job card. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {op.clientPoLineNo ?? '—'}
+      </td>
       <td style={{ fontSize: 11 }}>
         {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
         {op.itemName ? ` — ${op.itemName}` : ''}
@@ -454,6 +459,8 @@ function OperationView({
             <tr>
               <th>#</th>
               <th>JC No.</th>
+              {/* POL — the CUSTOMER's own PO line number, before the item. */}
+              <th style={{ color: 'var(--purple)' }}>POL</th>
               <th>Part No / Item</th>
               <th>SO No.</th>
               <th>Op</th>
@@ -470,7 +477,7 @@ function OperationView({
           <tbody>
             {ops.length === 0 ? (
               <tr>
-                <td colSpan={13} className="empty-state">
+                <td colSpan={14} className="empty-state">
                   No pending operations
                 </td>
               </tr>
@@ -573,6 +580,8 @@ function JobQueueView({
                   <tr>
                     <th>#</th>
                     <th>JC No.</th>
+                    {/* POL — the CUSTOMER's own PO line number, before the item. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Part No / Item</th>
                     <th>SO No.</th>
                     <th>Op</th>

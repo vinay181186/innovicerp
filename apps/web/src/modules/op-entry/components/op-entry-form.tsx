@@ -1357,8 +1357,23 @@ export function OpEntryForm({
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
-                  title={op.itemName ? `${itemCodeLabel} — ${op.itemName}` : itemCodeLabel}
+                  title={
+                    (op.clientPoLineNo ? `POL ${op.clientPoLineNo} · ` : '') +
+                    (op.itemName ? `${itemCodeLabel} — ${op.itemName}` : itemCodeLabel)
+                  }
                 >
+                  {/* POL — the line number printed on the CUSTOMER's own
+                      purchase order, ahead of the item code. Dropped when no
+                      sales order sits behind the card. */}
+                  {op.clientPoLineNo ? (
+                    <>
+                      POL{' '}
+                      <b className="mono" style={{ color: 'var(--purple)' }}>
+                        {op.clientPoLineNo}
+                      </b>{' '}
+                      ·{' '}
+                    </>
+                  ) : null}
                   Item:{' '}
                   <b className="mono" style={{ color: 'var(--purple)' }}>
                     {itemCodeLabel}

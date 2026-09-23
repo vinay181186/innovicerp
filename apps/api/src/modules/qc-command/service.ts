@@ -62,6 +62,7 @@ interface PendingDbRow {
   operation: string | null;
   itemCode: string | null;
   itemRevision: string | null;
+  clientPoLineNo: string | null;
   itemName: string | null;
   soCode: string | null;
   customer: string | null;
@@ -78,6 +79,7 @@ interface QcLogDbRow {
   operation: string | null;
   itemCode: string | null;
   itemRevision: string | null;
+  clientPoLineNo: string | null;
   itemName: string | null;
   soCode: string | null;
   qty: number;
@@ -93,6 +95,7 @@ interface OpGroup {
   operation: string;
   itemCode: string | null;
   itemRevision: string | null;
+  clientPoLineNo: string | null;
   itemName: string | null;
   soCode: string | null;
   entries: QcLogDbRow[];
@@ -124,6 +127,11 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           -- that has not it is still the old integer and would arrive here as a
           -- number wearing a string type. The cast is a no-op once 0119 is in.
           COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+          -- POL = the line number printed on the CUSTOMER's own purchase
+          -- order, off the SAME sol join as the revision above. SO side only:
+          -- a job-work line has no customer PO, so it correctly stays null
+          -- there. Never sol.line_no, which is OUR line number.
+          sol.client_po_line_no AS "clientPoLineNo",
           -- WHAT is being made. A job-card number says which job, not which
           -- part, so the item name rides along beside the code off the items
           -- LEFT JOIN that is already here for i.code. The QC-log query below
@@ -163,6 +171,11 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           -- SO behind them, and never items.revision. It reaches the Rework tab
           -- through the per-op group built from these rows.
           COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+          -- POL = the line number printed on the CUSTOMER's own purchase
+          -- order, off the SAME sol join as the revision above. SO side only:
+          -- a job-work line has no customer PO, so it correctly stays null
+          -- there. Never sol.line_no, which is OUR line number.
+          sol.client_po_line_no AS "clientPoLineNo",
           i.name AS "itemName", so.code AS "soCode",
           l.qty AS "qty", l.reject_qty AS "rejectQty", l.log_date AS "logDate",
           COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector"
@@ -221,6 +234,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           operation: r.operation ?? `Op ${opSrNo(Number(r.opSeq))}`,
           itemCode: r.itemCode ?? null,
           itemRevision: r.itemRevision ?? null,
+          clientPoLineNo: r.clientPoLineNo ?? null,
           itemName: r.itemName ?? null,
           soCode: r.soCode ?? null,
           entries: [],
@@ -243,6 +257,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         operation: r.operation ?? '',
         itemCode: r.itemCode ?? null,
         itemRevision: r.itemRevision ?? null,
+        clientPoLineNo: r.clientPoLineNo ?? null,
         itemName: r.itemName ?? null,
         soCode: r.soCode ?? null,
         customer: r.customer ?? null,
@@ -317,6 +332,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
           operation: g.operation,
           itemCode: g.itemCode,
           itemRevision: g.itemRevision,
+          clientPoLineNo: g.clientPoLineNo,
           // The per-op group has carried the item name since it was added for
           // the FPY by-item table; the Rework tab simply never passed it on.
           itemName: g.itemName,

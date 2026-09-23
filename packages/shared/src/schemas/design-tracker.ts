@@ -35,6 +35,14 @@ export const designTrackerSchema = z.object({
   soCodeText: z.string().nullable(),
   itemId: z.string().uuid().nullable(),
   itemCodeText: z.string().nullable(),
+  /** The customer's drawing revision off the SO / JWSO line behind this row, so
+   *  the code reads CODE/REV like every other screen (ADR-178). Null when no
+   *  order line sits behind it; never `items.revision`, a different column. */
+  itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for that same SO line. Null when the
+   *  row is job-work sourced or has no sales order behind it. Read-only — the
+   *  Sales Order is the only place it is typed (user rule, 2026-09-23). */
+  clientPoLineNo: z.string().nullable().default(null),
   itemNameText: z.string().nullable(),
   designer: z.string(),
   estimatedHours: z.number(),

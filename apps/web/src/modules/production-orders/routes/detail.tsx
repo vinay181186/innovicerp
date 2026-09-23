@@ -157,6 +157,15 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               {data.targetDate}
             </Fact>
 
+            {/* POL — the line number printed on the CUSTOMER's own purchase
+                order. NOT our SO line number ("/ line n" above); on live data
+                our line 11 is the customer's line 20. Sits before the item
+                code, as on every other document. */}
+            <Fact label="POL" mono>
+              <span className="fw-700" style={{ color: 'var(--purple)' }}>
+                {data.clientPoLineNo ?? '—'}
+              </span>
+            </Fact>
             <Fact label="Item code" mono>
               {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
               {itemCodeWithRev(data.itemCodeText, data.itemRevision)}

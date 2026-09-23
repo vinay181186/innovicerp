@@ -71,6 +71,11 @@ export const soStatusJcSchema = z.object({
    *  trailing slash and never `items.revision`, which is a different column about
    *  the item master and would be a plausible-looking lie on every row. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to, shown beside the item code on every downstream document (user rule,
+   *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
+   *  Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   orderQty: z.number().int().positive(),
   doneQty: z.number().int().nonnegative(),

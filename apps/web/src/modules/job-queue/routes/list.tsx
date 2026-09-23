@@ -232,6 +232,9 @@ function JobQueuePage(): React.JSX.Element {
                       <th style={{ width: 44 }}>Order</th>
                       <th style={{ width: 30 }}>#</th>
                       <th>JC No.</th>
+                      {/* POL — the line number printed on the CUSTOMER's own
+                          purchase order, before the part / item code. */}
+                      <th style={{ color: 'var(--purple)' }}>POL</th>
                       <th>Part / SO</th>
                       <th>Op</th>
                       <th>Operation</th>
@@ -314,6 +317,11 @@ function JobQueuePage(): React.JSX.Element {
                             >
                               {r.jcCode}
                             </Link>
+                          </td>
+                          {/* POL — the CUSTOMER's own PO line number; '—' when
+                              no sales order sits behind this job card. */}
+                          <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                            {r.clientPoLineNo ?? '—'}
                           </td>
                           <td>
                             <div

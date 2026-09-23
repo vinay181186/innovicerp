@@ -182,6 +182,18 @@ function ProductionOrdersListPage(): React.JSX.Element {
           ),
       },
       {
+        // POL — the line number printed on the CUSTOMER's own purchase order,
+        // off the SO line behind this Production Order. NOT our SO line number
+        // (that is the "/n" in the SO / JWSO column to the left).
+        header: () => <span style={{ color: 'var(--purple)' }}>POL</span>,
+        id: 'clientPoLineNo',
+        accessorKey: 'clientPoLineNo',
+        meta: { tdClass: 'mono fw-700' },
+        cell: ({ row }) => (
+          <span style={{ color: 'var(--purple)' }}>{row.original.clientPoLineNo ?? '—'}</span>
+        ),
+      },
+      {
         header: 'Item code',
         accessorKey: 'itemCodeText',
         meta: { tdClass: 'td-code' },

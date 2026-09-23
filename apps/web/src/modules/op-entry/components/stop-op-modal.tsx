@@ -67,6 +67,11 @@ export interface StopOpTarget {
    *  it — and those show the bare code, never a trailing slash. */
   itemRevision?: string | null;
   itemName?: string | null;
+  /** POL — the line number printed on the CUSTOMER's own purchase order, shown
+   *  beside the item code. NOT our SO line number. Optional for the same reason
+   *  as the item fields above: a caller whose row does not carry it omits it
+   *  rather than inventing a value, and the box then says nothing about it. */
+  clientPoLineNo?: string | null;
   opSeq: number;
   operation: string;
   /** The ACTUAL machine — the one this session is running on and the one the
@@ -273,8 +278,19 @@ export function StopOpModal({
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}
-                title={target.itemName ? `${itemCode} — ${target.itemName}` : itemCode}
+                title={`${target.clientPoLineNo ? `POL ${target.clientPoLineNo} · ` : ''}${target.itemName ? `${itemCode} — ${target.itemName}` : itemCode}`}
               >
+                {/* POL first — the customer's own PO line number, the value the
+                    customer quotes when they ring about this part. */}
+                {target.clientPoLineNo ? (
+                  <>
+                    POL{' '}
+                    <b className="mono" style={{ color: 'var(--purple)' }}>
+                      {target.clientPoLineNo}
+                    </b>{' '}
+                    ·{' '}
+                  </>
+                ) : null}
                 Item{' '}
                 <b className="mono" style={{ color: 'var(--purple)' }}>
                   {itemCode}

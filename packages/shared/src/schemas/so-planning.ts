@@ -291,6 +291,11 @@ export const reservationDetailSchema = z.object({
   lineNo: z.number().int(),
   customerName: z.string().nullable(),
   itemRevision: z.string().nullable(),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to, shown beside the item code on every downstream document (user rule,
+   *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
+   *  Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   qty: z.number().int().nonnegative(),
   consumedQty: z.number().int().nonnegative(),
   releasedQty: z.number().int().nonnegative(),

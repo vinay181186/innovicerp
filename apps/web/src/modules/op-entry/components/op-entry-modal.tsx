@@ -225,6 +225,18 @@ export function OpEntryModal({
               <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
                 ITEM
               </div>
+              {/* POL — the line number printed on the CUSTOMER's own purchase
+                  order, immediately before the item code. Dropped when no sales
+                  order sits behind the card, so a job-work job reads exactly as
+                  this strip always has. */}
+              {op.clientPoLineNo ? (
+                <div className="mono text3" style={{ fontSize: 10 }}>
+                  POL{' '}
+                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                    {op.clientPoLineNo}
+                  </span>
+                </div>
+              ) : null}
               <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--purple)' }}>
                 {itemCode}
               </div>

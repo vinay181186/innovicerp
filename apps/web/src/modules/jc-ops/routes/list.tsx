@@ -124,6 +124,9 @@ function JcOpsPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>JC No.</th>
+                  {/* POL — the line number printed on the CUSTOMER's own
+                      purchase order, not any line number of ours. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item</th>
                   <th className="td-ctr">Op</th>
                   <th>Machine (Planned / Actual)</th>
@@ -225,6 +228,11 @@ function Row({
         ) : (
           o.jcCode
         )}
+      </td>
+      {/* POL — the customer's own PO line number, immediately before the item
+          code. '—' when no sales order sits behind this job card. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {o.clientPoLineNo ?? '—'}
       </td>
       {/* A job-card number says WHICH JOB, not WHICH PART, so the board names the
           item next to the code. `jcItemName` has always been on this row
@@ -782,7 +790,19 @@ function CreatePrModal({
             <b className="mono">{row.machineCode ?? '—'}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            Vendor: {row.outsourceVendorName ?? row.outsourceVendorCode ?? '—'} · Item:{' '}
+            Vendor: {row.outsourceVendorName ?? row.outsourceVendorCode ?? '—'} ·{' '}
+            {/* POL — the CUSTOMER's own PO line number, ahead of the item code.
+                Omitted when there is no sales order behind this job card. */}
+            {row.clientPoLineNo ? (
+              <>
+                POL{' '}
+                <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                  {row.clientPoLineNo}
+                </span>{' '}
+                ·{' '}
+              </>
+            ) : null}
+            Item:{' '}
             {/* The code carries weight even on a muted context line -- it is the
                 value someone checks before acting in this modal. */}
             <span className="mono fw-700" style={{ color: 'var(--text)' }}>
@@ -995,6 +1015,16 @@ function OutsourceBalanceModal({
             <b className="mono">{row.machineCode ?? '—'}</b>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+            {/* POL — the CUSTOMER's own PO line number, ahead of the item code. */}
+            {row.clientPoLineNo ? (
+              <>
+                POL{' '}
+                <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                  {row.clientPoLineNo}
+                </span>{' '}
+                ·{' '}
+              </>
+            ) : null}
             Item:{' '}
             <span className="mono fw-700" style={{ color: 'var(--text)' }}>
               {itemCodeWithRev(row.jcItemCode, row.itemRevision)}

@@ -248,6 +248,9 @@ function DailyReportPage(): React.JSX.Element {
                 <thead>
                   <tr>
                     <th>JC No.</th>
+                    {/* POL — the line number printed on the CUSTOMER's own
+                        purchase order, immediately before the item code. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th className="td-ctr">Op</th>
@@ -265,6 +268,10 @@ function DailyReportPage(): React.JSX.Element {
                     <tr key={r.logId}>
                       <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                         {r.jcCode}
+                      </td>
+                      {/* POL — '—' when no sales order sits behind the card. */}
+                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        {r.clientPoLineNo ?? '—'}
                       </td>
                       <td className="mono" style={{ color: 'var(--purple)' }}>
                         {itemCodeWithRev(r.itemCode, r.itemRevision)}

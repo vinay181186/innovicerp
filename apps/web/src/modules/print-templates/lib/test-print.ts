@@ -453,6 +453,12 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     jwCodeText: 'IN-JW-99999',
     clientId: JWINV_SAMPLE_ID,
     clientName: client.name,
+    // The JWSO line's item code, its customer drawing revision and the
+    // customer's own PO line number (POL) — all three now on the list shape, so
+    // the sample sheet shows the same identity band the real invoice prints.
+    itemCode: 'IN-IT-0099',
+    itemRevision: 'B',
+    clientPoLineNo: '20',
     partName: 'Single Fire Check Lever',
     qty: 10,
     rate: 500,

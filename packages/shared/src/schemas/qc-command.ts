@@ -28,6 +28,9 @@ export interface QcCommandQueueRow {
    *  as the bare item code. Never items.revision, a different column about the
    *  item master that would hand an inspector the wrong drawing. */
   itemRevision: string | null;
+  /** The customer's PO line number (`POL`) for the SO line behind this row.
+   *  Null when there is none. Read-only — typed only on the Sales Order. */
+  clientPoLineNo: string | null;
   /** The part being made. A job-card number says WHICH JOB, not which part, so
    *  every screen that prints a JC number names the item beside it. Joined from
    *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
@@ -77,6 +80,9 @@ export interface QcReworkRow {
    *  with soCode when no SO line stands behind the card; null shows the bare
    *  item code. Never items.revision. */
   itemRevision: string | null;
+  /** The customer's PO line number (`POL`) for the SO line behind this row.
+   *  Null when there is none. Read-only — typed only on the Sales Order. */
+  clientPoLineNo: string | null;
   /** The part being made. A job-card number says WHICH JOB, not which part, so
    *  every screen that prints a JC number names the item beside it. Joined from
    *  the card's item (job_cards.item_id -> items), which is NOT NULL. */

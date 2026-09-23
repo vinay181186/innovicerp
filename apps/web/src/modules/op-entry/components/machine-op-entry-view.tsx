@@ -225,6 +225,18 @@ export function MachineOpEntryView(): React.JSX.Element {
                   <div className="text3" style={{ fontSize: 9 }}>
                     ITEM
                   </div>
+                  {/* POL — the line number printed on the CUSTOMER's own
+                      purchase order, immediately before the item code. Dropped
+                      when no sales order sits behind the card, so a job-work
+                      job reads exactly as this tile always has. */}
+                  {selectedRunning.clientPoLineNo ? (
+                    <div className="mono text3" style={{ fontSize: 10 }}>
+                      POL{' '}
+                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                        {selectedRunning.clientPoLineNo}
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="mono fw-700" style={{ color: 'var(--purple)' }}>
                     {runningItemCode}
                   </div>
@@ -375,13 +387,23 @@ function ItemCells({
   code,
   revision,
   name,
+  pol,
 }: {
   code: string | null;
   revision: string | null;
   name: string | null;
+  /** POL — the line number printed on the CUSTOMER's own purchase order.
+   *  Null when no sales order sits behind the job card, and then a dash: on
+   *  this pair a blank would read as a value the operator could rely on. */
+  pol: string | null;
 }): React.JSX.Element {
   return (
     <>
+      {/* POL sits immediately before the item code, as it does on every other
+          document in the app. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {pol ?? '—'}
+      </td>
       {/* Purple mono is how `CODE/REV` is written wherever an item code sits
           beside a document number (Job Cards list, Daily Report), so the eye
           finds the same colour on every screen. Blank rather than a dash when
@@ -476,6 +498,8 @@ function PendingOpsSection({
               <thead>
                 <tr>
                   <th>JC No.</th>
+                  {/* POL — the CUSTOMER's own PO line number, before the item. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th>Op</th>
@@ -507,7 +531,12 @@ function PendingOpsSection({
                         {op.jobCardCode}
                       </Link>
                     </td>
-                    <ItemCells code={op.itemCode} revision={op.itemRevision} name={op.itemName} />
+                    <ItemCells
+                      code={op.itemCode}
+                      revision={op.itemRevision}
+                      name={op.itemName}
+                      pol={op.clientPoLineNo}
+                    />
                     <td className="mono fw-700">Op {opSrNo(op.opSeq)}</td>
                     <td className="fw-700">{op.operation}</td>
                     <td className="mono fw-700 amber">{op.available}</td>
@@ -558,6 +587,8 @@ function PendingOpsSection({
               <thead>
                 <tr>
                   <th>JC No.</th>
+                  {/* POL — the CUSTOMER's own PO line number, before the item. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th>Op</th>
@@ -585,6 +616,7 @@ function PendingOpsSection({
                       code={row.op.itemCode}
                       revision={row.op.itemRevision}
                       name={row.op.itemName}
+                      pol={row.op.clientPoLineNo}
                     />
                     <td className="mono">Op{opSrNo(row.op.opSeq)}</td>
                     <td>{row.op.operation}</td>

@@ -20,6 +20,14 @@ export const jwDcOutwardLineSchema = z.object({
   // has no item_id or the item was deleted. Prefer these over the *_text
   // snapshots, which can drift from the master.
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision off the SO / JWSO line behind this row, so
+   *  the code reads CODE/REV like every other screen (ADR-178). Null when no
+   *  order line sits behind it; never `items.revision`, a different column. */
+  itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for that same SO line. Null when the
+   *  row is job-work sourced or has no sales order behind it. Read-only — the
+   *  Sales Order is the only place it is typed (user rule, 2026-09-23). */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
@@ -109,6 +117,14 @@ export const jwDcInwardLineSchema = z.object({
   // detail (New Inward modal) and the inward list aggregate. Present here so a
   // future inward detail read can expose them without another schema change.
   itemCode: z.string().nullable().optional(),
+  /** The customer's drawing revision off the SO / JWSO line behind this row, so
+   *  the code reads CODE/REV like every other screen (ADR-178). Null when no
+   *  order line sits behind it; never `items.revision`, a different column. */
+  itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for that same SO line. Null when the
+   *  row is job-work sourced or has no sales order behind it. Read-only — the
+   *  Sales Order is the only place it is typed (user rule, 2026-09-23). */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().optional(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
@@ -216,6 +232,14 @@ export const jwDcPoLineSchema = z.object({
   purchaseOrderLineId: z.string().uuid(),
   itemId: z.string().uuid().nullable(),
   itemCode: z.string(),
+  /** The customer's drawing revision off the SO / JWSO line behind this row, so
+   *  the code reads CODE/REV like every other screen (ADR-178). Null when no
+   *  order line sits behind it; never `items.revision`, a different column. */
+  itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for that same SO line. Null when the
+   *  row is job-work sourced or has no sales order behind it. Read-only — the
+   *  Sales Order is the only place it is typed (user rule, 2026-09-23). */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string(),
   processText: z.string().nullable(),
   poQty: z.number().int().nonnegative(),

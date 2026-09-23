@@ -261,6 +261,17 @@ function PlanDetailPage(): React.JSX.Element {
               label="Item code"
               value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
             />
+            {/* POL — the line number printed on the CUSTOMER's own purchase
+                order. It is NOT our SO line number ("Line #" below); on live
+                data our line 11 is the customer's line 20. Both are shown. */}
+            <KV
+              label="POL"
+              value={
+                <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                  {plan.clientPoLineNo ?? '—'}
+                </span>
+              }
+            />
             <KV label="SO ref" value={plan.soCodeText ?? '—'} />
             <KV label="Line #" value={plan.lineNo ?? '—'} />
           </Grid>
