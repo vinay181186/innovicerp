@@ -49,7 +49,9 @@ export async function listOspWip(
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
     const searchFrag = term
-      ? sql`AND (w.jc_code ILIKE ${term} OR w.item_code ILIKE ${term} OR w.item_name ILIKE ${term} OR w.so_code ILIKE ${term} OR w.vendor_name ILIKE ${term})`
+      ? // POL (sol.client_po_line_no) is now a column on this register, so the
+        // box must find it. sol is the SO-line join the SELECT below makes.
+        sql`AND (w.jc_code ILIKE ${term} OR w.item_code ILIKE ${term} OR w.item_name ILIKE ${term} OR w.so_code ILIKE ${term} OR w.vendor_name ILIKE ${term} OR sol.client_po_line_no ILIKE ${term})`
       : sql``;
 
     const result = (await tx.execute(sql`

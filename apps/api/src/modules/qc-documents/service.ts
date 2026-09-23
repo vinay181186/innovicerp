@@ -143,6 +143,11 @@ export async function listQcDocuments(
           -- match on these two terms — they are not excluded from the list.
           OR ${items.code} ILIKE ${term} ESCAPE '\\'
           OR ${items.name} ILIKE ${term} ESCAPE '\\'
+          -- POL, the customer's own PO line number, now on the register. Off
+          -- the same LEFT-joined SO line as the revision below, so a document
+          -- with no card behind it simply does not match rather than dropping
+          -- out of the list.
+          OR ${salesOrderLines.clientPoLineNo} ILIKE ${term} ESCAPE '\\'
           OR ${qcDocuments.uploadedByText} ILIKE ${term} ESCAPE '\\'
           -- The Date cell prints createdAt.slice(0,10) — the calendar day, not
           -- the timestamp — so match the date, not "…T09:14:22.981Z".

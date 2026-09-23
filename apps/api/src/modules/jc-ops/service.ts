@@ -42,6 +42,9 @@ export async function listJcOpsBoard(
           jc.code ILIKE ${term}
           OR op.operation ILIKE ${term}
           OR i.code ILIKE ${term}
+          -- POL, the customer's own PO line number, now a column on this board.
+          -- sol is the SO-line join the SELECT below already makes.
+          OR sol.client_po_line_no ILIKE ${term}
         )`
       : sql``;
 

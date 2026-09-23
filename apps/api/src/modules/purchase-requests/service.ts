@@ -524,6 +524,10 @@ export async function listPurchaseRequests(
           OR pr.balance_closed_at::text ILIKE ${term} ESCAPE '\\'
           -- Source ref + the PO link on the card, both already joined below.
           OR so.code ILIKE ${term} ESCAPE '\\'
+          -- POL, the customer's own PO line number, now printed on the card.
+          -- Off the same sol join the SO code above already uses, and sol is
+          -- joined by BOTH the page query and the count query below.
+          OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
           OR jc.code ILIKE ${term} ESCAPE '\\'
           OR po.code ILIKE ${term} ESCAPE '\\'
         )`

@@ -155,6 +155,9 @@ export async function listDesignTracker(
           OR dt.so_code_text ILIKE ${term}
           OR dt.item_code_text ILIKE ${term}
           OR dt.designer ILIKE ${term}
+          -- POL, the customer's own PO line number, now a column on this list.
+          -- soline is the LATERAL the SELECT below joins for exactly this fact.
+          OR soline."clientPoLineNo" ILIKE ${term}
         )`
       : sql``;
 

@@ -203,7 +203,8 @@ export async function listPlans(
       conditions.push(
         sql`(${plans.code} ILIKE ${term} OR ${plans.itemCodeText} ILIKE ${term} OR ${plans.itemNameText} ILIKE ${term} OR ${plans.soCodeText} ILIKE ${term}
           OR ${productionOrders.code} ILIKE ${term}
-          OR EXISTS (SELECT 1 FROM ${jobCards} jc WHERE jc.id = ${plans.jcId} AND jc.code ILIKE ${term}))`,
+          OR EXISTS (SELECT 1 FROM ${jobCards} jc WHERE jc.id = ${plans.jcId} AND jc.code ILIKE ${term})
+          OR EXISTS (SELECT 1 FROM ${salesOrderLines} sol WHERE sol.id = ${plans.soLineId} AND sol.deleted_at IS NULL AND sol.client_po_line_no ILIKE ${term}))`,
       );
     }
 

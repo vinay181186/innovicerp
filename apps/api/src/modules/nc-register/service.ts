@@ -352,6 +352,18 @@ export async function listNcRegister(
           OR nc.reason_category::text ILIKE ${term} ESCAPE '\\'
           OR nc.disposition::text ILIKE ${term} ESCAPE '\\'
           OR nc.status::text ILIKE ${term} ESCAPE '\\'
+          -- POL, the customer's own PO line number, now printed on this list.
+          -- Written as EXISTS on the job card's source SO line rather than
+          -- sol.client_po_line_no, because this same fragment is handed to the
+          -- COUNT query below, which deliberately does not repeat the
+          -- sales_order_lines join.
+          OR EXISTS (
+            SELECT 1
+            FROM public.sales_order_lines ssol
+            WHERE ssol.id = jc.source_so_line_id
+              AND ssol.deleted_at IS NULL
+              AND ssol.client_po_line_no ILIKE ${term} ESCAPE '\\'
+          )
           -- Linked CAPA code, printed in the Actions cell (cap is the LATERAL
           -- join below).
           OR cap.code ILIKE ${term} ESCAPE '\\'

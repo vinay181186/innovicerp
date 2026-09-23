@@ -591,6 +591,19 @@ export async function listProductionOrders(
         sql`${productionOrders.itemNameText} ILIKE ${term}`,
         sql`${productionOrders.jcCodeText} ILIKE ${term}`,
         sql`${productionOrders.soCodeText} ILIKE ${term}`,
+        // POL — the customer's own PO line number, now a column on this list.
+        // Written as its own correlated subquery off production_orders.plan_id
+        // rather than reusing CLIENT_PO_LINE_NO_SQL, because that fragment
+        // reads the `plans` alias which only baseQuery joins; this predicate is
+        // also handed to the count() query below, which selects from
+        // production_orders alone. Same shape as PARTY_NAME_SQL for that
+        // reason. SO side only: a JWSO-sourced order has no customer PO line.
+        sql`(
+          SELECT sol.client_po_line_no
+            FROM public.plans p
+            JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
+           WHERE p.id = ${productionOrders.planId} LIMIT 1
+        ) ILIKE ${term}`,
       );
       if (s) conditions.push(s);
     }
