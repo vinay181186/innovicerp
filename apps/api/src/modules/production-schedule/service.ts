@@ -122,6 +122,16 @@ export async function getProductionSchedule(
         op.operation,
         op.machine_id AS "machineId",
         i.code AS "itemCode",
+        -- The CUSTOMER's drawing revision and PO line number, resolved the same
+        -- way jc-ops does it: job card -> its SO line (or, for Rev only, its JW
+        -- line). Both joins are LEFT, so a JW-sourced or standalone card keeps
+        -- its bar on the Gantt with nulls here. ::text on the revision because
+        -- the contract types it as a string and a database without migration
+        -- 0119 still holds an integer. POL has no JW branch on purpose: a
+        -- job-work line has no customer PO. Never items.revision, never
+        -- sol.line_no (that is OUR line number, a different fact).
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        sol.client_po_line_no AS "clientPoLineNo",
         -- The part's NAME as well as its code. A JC number says WHICH JOB, not
         -- which part, and the bar is far too small to carry the name, so it is
         -- fetched for the bar's hover tooltip -- see the note at the Bar
@@ -138,6 +148,10 @@ export async function getProductionSchedule(
       FROM public.jc_ops op
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
       WHERE op.company_id = ${companyId}::uuid
         AND op.deleted_at IS NULL
@@ -185,6 +199,8 @@ export async function getProductionSchedule(
         opSeq: Number(r['opSeq'] ?? 0),
         operation: String(r['operation'] ?? ''),
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         plannedStart,
         plannedEnd,

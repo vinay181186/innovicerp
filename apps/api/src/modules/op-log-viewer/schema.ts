@@ -35,6 +35,13 @@ export const opLogListItemSchema = z.object({
    *  with the code as `CODE/REV`. Null on a card with no SO line behind it —
    *  which then shows the bare code. NOT `items.revision`. */
   itemRevision: z.string().nullable(),
+  /** POL — the line number printed on the CUSTOMER'S own purchase order, off
+   *  the SO line behind the card (`sales_order_lines.client_po_line_no`).
+   *  Shown beside the item code on every downstream document (user rule,
+   *  2026-09-23). Null on a card with no SO line behind it — a job-work line
+   *  has no customer PO. NOT `sales_order_lines.line_no`, which is OUR line
+   *  number and a different fact. Read-only: only the Sales Order types it. */
+  clientPoLineNo: z.string().nullable().default(null),
   opSeq: z.number().int(),
   operation: z.string().nullable(),
   machineCode: z.string().nullable(),

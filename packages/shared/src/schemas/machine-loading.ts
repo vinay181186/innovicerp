@@ -47,6 +47,12 @@ export const machineLoadOpSchema = z.object({
    *  renders as the bare item code. Never `items.revision`, which describes the
    *  item master and would read to a machinist as a drawing revision it is not. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a job-work line, a hand-raised card).
+   *  Read-only: the Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
   priority: z.enum(JC_PRIORITIES),

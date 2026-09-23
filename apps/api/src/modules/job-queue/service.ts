@@ -72,6 +72,10 @@ export async function getJobQueue(
         -- has not had migration 0119 still stores an integer and would send the
         -- queue a number. Harmless once 0119 is in.
         COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the same SO line as the revision above. SO side only: a job-work
+        -- line has no customer PO, so JW-sourced cards are correctly null.
+        sol.client_po_line_no AS "clientPoLineNo",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         COALESCE(cl_so.name, cl_jw.name, so.customer_name, jw.customer_name) AS "soCustomer",
@@ -146,6 +150,7 @@ export async function getJobQueue(
         jcCode: String(r['jcCode'] ?? ''),
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         soCode: (r['soCode'] as string | null) ?? null,
         soCustomer: (r['soCustomer'] as string | null) ?? null,

@@ -143,6 +143,13 @@ const SO_LINE_REVISION = sql<
   string | null
 >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`;
 
+/** POL — the line number printed on the CUSTOMER's own purchase order, read off
+ *  the same already-joined SO line as SO_LINE_REVISION above. No job-work
+ *  branch on purpose: a JWSO line has no customer PO, so a JW-sourced or ad-hoc
+ *  plan is correctly null. Never sales_order_lines.line_no, which is OUR line
+ *  number and a different fact entirely. */
+const SO_LINE_CLIENT_PO_LINE_NO = sql<string | null>`${salesOrderLines.clientPoLineNo}`;
+
 // ─── Reads ────────────────────────────────────────────────────────────────
 
 // ADR-170 — the three live facts a route-card plan's derived status hangs on,
@@ -210,6 +217,7 @@ export async function listPlans(
         itemCode: items.code,
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
+        clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
         productionOrderId: productionOrders.id,
         productionOrderCode: productionOrders.code,
         productionOrderStatus: productionOrders.status,
@@ -269,6 +277,7 @@ export async function listPlans(
           // Null passed through, not coerced to a blank string: the UI has to be
           // able to tell "this plan has no SO line" from "the revision is empty".
           itemRevision: r.itemRevision ?? null,
+          clientPoLineNo: r.clientPoLineNo ?? null,
           itemName: r.itemName ?? null,
           opsCount: opsCounts.get(r.plan.id) ?? 0,
           derivedStatus: derivePlanStatus({
@@ -315,6 +324,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         itemCode: items.code,
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
+        clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -345,6 +355,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       // Null passed through, not coerced to a blank string: the UI has to be
       // able to tell "this plan has no SO line" from "the revision is empty".
       itemRevision: row.itemRevision ?? null,
+      clientPoLineNo: row.clientPoLineNo ?? null,
       itemName: row.itemName ?? null,
       ops: opRows.map(toPlanOp),
       priceVisible: showMoney,
@@ -1661,6 +1672,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           itemCode: items.code,
           itemName: items.name,
           itemRevision: SO_LINE_REVISION,
+          clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
         })
         .from(plans)
         .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -1731,6 +1743,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         // Null passed through, not coerced to a blank string: the UI has to be
         // able to tell "this plan has no SO line" from "the revision is empty".
         itemRevision: r.itemRevision ?? null,
+        clientPoLineNo: r.clientPoLineNo ?? null,
         itemName: r.itemName ?? null,
         opsCount: opsCounts.get(r.plan.id) ?? 0,
       })),
@@ -1768,6 +1781,10 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
         -- because the contract types it as a string and a database that has not
         -- had migration 0119 still holds the old integer here.
         sol.revision::text AS item_revision,
+        -- POL — the line number printed on the CUSTOMER's own purchase order,
+        -- typed on this very SO line. Never sol.line_no, which is OUR line
+        -- number: on live data our line 11 is the customer's line 20.
+        sol.client_po_line_no AS client_po_line_no,
         sol.part_name     AS part_name,
         so.customer_name  AS customer_name,
         sol.due_date::text AS due_date,
@@ -1793,6 +1810,7 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
       line_no: number;
       item_code: string | null;
       item_revision: string | null;
+      client_po_line_no: string | null;
       part_name: string | null;
       customer_name: string | null;
       due_date: string | null;
@@ -1814,6 +1832,7 @@ export async function getUnplannedOrders(user: AuthContext): Promise<UnplannedOr
         // migration 0119 the line may genuinely have no revision, and the table
         // must then show the bare code instead of a trailing slash.
         itemRevision: r.item_revision,
+        clientPoLineNo: r.client_po_line_no,
         partName: r.part_name,
         customerName: r.customer_name,
         dueDate: r.due_date,
@@ -1878,6 +1897,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       itemCode: items.code,
       itemName: items.name,
       itemRevision: SO_LINE_REVISION,
+      clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
     })
     .from(plans)
     .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -1906,6 +1926,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     // Null passed through, not coerced to a blank string: the UI has to be able
     // to tell "this plan has no SO line" from "the revision is empty".
     itemRevision: row.itemRevision ?? null,
+    clientPoLineNo: row.clientPoLineNo ?? null,
     itemName: row.itemName ?? null,
     ops: opRows.map(toPlanOp),
     // Write-back shape: the caller re-applies the money gate before returning

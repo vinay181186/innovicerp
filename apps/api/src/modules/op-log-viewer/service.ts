@@ -89,6 +89,11 @@ export async function listOpLog(
           itemRevision: sql<
             string | null
           >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+          // POL — the line number printed on the CUSTOMER'S own purchase order,
+          // off the same already-joined SO line as the revision above. No JW
+          // branch on purpose: a job-work line has no customer PO, so a
+          // JW-sourced or standalone card is correctly null.
+          clientPoLineNo: salesOrderLines.clientPoLineNo,
           opSeq: jcOps.opSeq,
           operation: jcOps.operation,
           machineCode: machines.code,
@@ -141,6 +146,7 @@ export async function listOpLog(
       itemCode: r.itemCode ?? null,
       itemName: r.itemName ?? null,
       itemRevision: r.itemRevision ?? null,
+      clientPoLineNo: r.clientPoLineNo ?? null,
       opSeq: r.opSeq,
       operation: r.operation,
       // Live master code first, then the LOG's snapshot, then the OP's snapshot.

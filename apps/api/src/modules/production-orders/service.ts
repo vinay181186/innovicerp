@@ -303,6 +303,17 @@ const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
    WHERE p.id = ${productionOrders.planId} LIMIT 1)
 )`;
 
+/** POL — the line number printed on the CUSTOMER's own purchase order, read
+ *  live off the SO line this order's plan was raised from. Unlike the revision
+ *  above there is no job-work branch: a JWSO line has no customer PO, so a
+ *  JWSO-sourced order is correctly null. Reads the plan row already LEFT
+ *  JOINed by baseQuery, so this costs one primary-key lookup and no new join. */
+const CLIENT_PO_LINE_NO_SQL = sql<string | null>`(
+  SELECT sol.client_po_line_no
+    FROM public.sales_order_lines sol
+   WHERE sol.id = ${plans.soLineId} LIMIT 1
+)`;
+
 const createdByUser = alias(users, 'po_created_by');
 const closedByUser = alias(users, 'po_closed_by');
 
@@ -351,6 +362,7 @@ const poColumns = {
   rawMaterialGradeText: plans.rawMaterialGradeText,
   rawMaterialSizeText: plans.rawMaterialSizeText,
   itemRevision: ITEM_REVISION_SQL,
+  clientPoLineNo: CLIENT_PO_LINE_NO_SQL,
   createdByName: createdByUser.fullName,
   closedByName: closedByUser.fullName,
 };
@@ -372,6 +384,7 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     itemCodeText: r.itemCodeText,
     itemNameText: r.itemNameText,
     itemRevision: r.itemRevision ?? null,
+    clientPoLineNo: r.clientPoLineNo ?? null,
     routeCardId: r.routeCardId,
     routeCardCodeText: r.routeCardCodeText,
     routeCardRevision: r.routeCardRevision,

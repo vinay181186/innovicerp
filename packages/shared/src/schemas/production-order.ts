@@ -45,6 +45,12 @@ export const productionOrderSchema = z.object({
    *  plan's line (never snapshotted — the customer may reissue the drawing).
    *  Rendered as CODE/REV. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a job-work line, a hand-raised card).
+   *  Read-only: the Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
 
   routeCardId: z.string().uuid(),
   routeCardCodeText: z.string(),

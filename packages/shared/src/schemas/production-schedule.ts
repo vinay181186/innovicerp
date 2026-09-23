@@ -15,6 +15,13 @@ export const productionScheduleBarSchema = z.object({
   opSeq: z.number().int().positive(),
   operation: z.string(),
   itemCode: z.string().nullable(),
+  /** The customer's drawing revision off the SO / JWSO line behind this job
+   *  card, so the hover reads CODE/REV like every other screen. Null on a bar
+   *  with no order line behind it. */
+  itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for that same SO line. Null when
+   *  the card is job-work sourced or hand-raised. */
+  clientPoLineNo: z.string().nullable().default(null),
   /** The part's name, for the hover tooltip. The Gantt bar itself is too small
    *  to carry it -- see the layout note where it is rendered. */
   itemName: z.string().nullable().default(null),
