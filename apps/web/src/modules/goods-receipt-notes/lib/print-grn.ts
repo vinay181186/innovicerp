@@ -66,6 +66,9 @@ function qcLabel(status: GrnQcStatus): string {
 // code path the real print uses.
 export interface GrnPrintLine {
   itemCode: string | null;
+  /** The CUSTOMER's PO line number for this line. Optional, so the Print
+   *  Templates sample lines need not carry one. */
+  clientPoLineNo?: string | null;
   /** ADR-177: the SO / JWSO line's drawing revision, printed as CODE/REV.
    *  Optional so the Print Templates sample lines need not carry one. */
   itemRevision?: string | null;
@@ -151,6 +154,7 @@ export function printGrnDoc(args: {
     lines: model.lines.map((l) => ({
       // CODE/REV (ADR-177); a line with no revision prints the bare code.
       itemCode: itemCodeWithRev(l.itemCode, l.itemRevision, ''),
+      pol: l.clientPoLineNo ?? null,
       itemName: l.itemName,
       uom: null,
       qty: String(l.receivedQty),
@@ -201,6 +205,7 @@ export function printGrn(args: {
       // same order the detail screen resolves it in.
       itemCode: l.itemCode ?? l.itemCodeText,
       itemRevision: l.itemRevision,
+      clientPoLineNo: l.clientPoLineNo,
       itemName: l.itemName,
       receivedQty: l.receivedQty,
       qcAcceptedQty: l.qcAcceptedQty,

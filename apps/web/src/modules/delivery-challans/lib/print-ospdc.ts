@@ -124,6 +124,9 @@ export function printOspDc(args: {
       // bought-in line the revision is null and the code prints bare, because
       // a drawing revision beside a bar of steel would say something untrue.
       itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
+      // The customer's own PO line number, on the same lines that could prove
+      // a drawing revision — raw material leaves it null.
+      pol: l.clientPoLineNo,
       itemName: l.itemName ?? l.itemNameText,
       uom: l.uom,
       // HSN lives on the item master and the challan line does not carry it,

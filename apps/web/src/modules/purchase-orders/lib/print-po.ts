@@ -225,6 +225,9 @@ export function printPurchaseOrder(args: {
       // about which drawing revision was ordered. Empty fallback, not an em
       // dash: a blank cell is what this template expects for "nothing to say".
       itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
+      // The customer's own PO line number. Null on a stock purchase, and then
+      // the whole column drops off the sheet.
+      pol: l.clientPoLineNo,
       itemName: l.itemName,
       uom: PO_UOM,
       qty: String(l.qty),
