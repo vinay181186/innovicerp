@@ -1,0 +1,29 @@
+/* ui/core — the one stylesheet this group owns.
+ *
+ * innovic-theme.css carries every class Button/Badge/Tag/StatusBadge/SyncDot
+ * compose, with ONE gap: it has no spin keyframe (only toastSlideIn and
+ * qcBlink), and Phase 2 must not add one to the theme from this group. The
+ * Button's loading glyph therefore gets its rule here rather than borrowing
+ * Tailwind's `animate-spin` — ui/ must not depend on Tailwind surviving.
+ *
+ * Nothing here declares a colour, a font-size or a space; a duration is not a
+ * design token (design-ref/README.md "Animation" quotes 0.15s / 0.2s / 0.4s
+ * literals) and reduced motion is respected, as that same section requires.
+ */
+
+@keyframes innovic-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: innovic-spin 0.8s linear infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}

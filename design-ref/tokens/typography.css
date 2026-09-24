@@ -1,0 +1,23 @@
+/* Innovic ERP typography tokens — ONE 5-step scale. No other font sizes are allowed anywhere. */
+:root {
+  --hfont: 'Barlow Condensed', sans-serif; /* @kind font */ /* headings, big numbers, panel titles */
+  --bfont: 'Barlow', sans-serif; /* @kind font */ /* body, labels, buttons */
+  --mono: 'Source Code Pro', monospace; /* @kind font */ /* codes, IDs, table headers, qty cells */
+  /* The scale */
+  --fs-xs: 11px; /* labels, table headers, badges, captions, help, meta, breadcrumbs, tabs */
+  --fs-sm: 13px; /* body, controls, table cells, buttons, nav, menus */
+  --fs-md: 16px; /* panel / modal / card titles, emphasised figures */
+  --fs-lg: 22px; /* page title (.section-hdr), sign-in title */
+  --fs-xl: 28px; /* KPI / stat values, empty-state glyph */
+  /* Role aliases — always resolve to a scale step */
+  --fs-body: var(--fs-sm);
+  --fs-control: var(--fs-sm);
+  --fs-label: var(--fs-xs);
+  --fs-mono: var(--fs-xs);
+  --fs-heading: var(--fs-md);
+  --fs-section: var(--fs-lg);
+  --fs-stat: var(--fs-xl);
+  --font-display: var(--hfont);
+  --font-body: var(--bfont);
+  --font-code: var(--mono);
+}

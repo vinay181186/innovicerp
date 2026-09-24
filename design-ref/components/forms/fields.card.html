@@ -1,0 +1,33 @@
+<!-- @dsCard group="Components" viewport="700x470" name="Field types" subtitle="Every input type on the 12-col grid, sized by content (xs/sm/md/lg/full)" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:16px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.lbl{font:600 11px var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em;width:78px;flex-shrink:0}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115 || {};
+
+const { FormGrid, FormField, Input, Select, Textarea, CheckField, FileField } = NS;
+function App(){return <div className="panel" style={{padding:12,margin:0}}><FormGrid>
+<FormField label="Text" size="lg"><Input placeholder="Part name"/></FormField>
+<FormField label="Number (qty)" size="sm"><Input type="number" defaultValue="60" style={{textAlign:'right'}} className="mono"/></FormField>
+<FormField label="Date" size="sm"><Input type="date" defaultValue="2026-09-23"/></FormField>
+<FormField label="Time" size="sm"><Input type="time" defaultValue="08:30"/></FormField>
+<FormField label="Date-time" size="md"><Input type="datetime-local" defaultValue="2026-09-23T08:30"/></FormField>
+<FormField label="Email" size="lg"><Input type="email" placeholder="you@company.com"/></FormField>
+<FormField label="Password" size="md"><Input type="password" defaultValue="secret12"/></FormField>
+<FormField label="Select" size="md"><Select options={['All Status','To Do','In Progress']}/></FormField>
+<FormField label="Read-only" size="sm"><Input readOnly defaultValue="IN-SO-26-0142"/></FormField>
+<FormField label="Disabled" size="sm"><Input disabled defaultValue="Locked"/></FormField>
+<FormField label="Derived (auto)" size="md"><Input className="is-derived" readOnly defaultValue="Pinion Shaft"/></FormField>
+<FormField label="Valid" size="sm"><Input className="is-ok" defaultValue="IN-SO-26-0143"/></FormField>
+<FormField label="Checkboxes" size="lg"><div style={{display:'flex',gap:12,paddingTop:4}}><CheckField label="View" defaultChecked/><CheckField label="Entry" defaultChecked/><CheckField label="Edit"/><CheckField label="Approve" disabled/></div></FormField>
+<FormField label="Radio" size="lg"><div style={{display:'flex',gap:12,paddingTop:4}}><CheckField type="radio" name="d" label="Rework" defaultChecked/><CheckField type="radio" name="d" label="Repair"/><CheckField type="radio" name="d" label="Scrap"/></div></FormField>
+<FormField label="Attach" size="lg"><FileField variant="attach"/></FormField>
+<FormField label="Attached" size="lg"><FileField variant="attach" fileName="QC-Report-JC0917.pdf"/></FormField>
+<div className="f-lg"><FileField variant="drawing" fileName="BF-SH-2210_RevB.pdf"/></div>
+<FormField label="Textarea" size="full"><Textarea rows={2} defaultValue="Urgent — line 2 first"/></FormField>
+</FormGrid></div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>

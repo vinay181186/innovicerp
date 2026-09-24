@@ -2,16 +2,20 @@ import type { Config } from 'tailwindcss';
 import animate from 'tailwindcss-animate';
 
 /**
- * Tailwind extended with the Innovic palette + typography + spacing.
+ * Tailwind config — the shadcn HSL slots ONLY.
  *
- * Two layers of colours:
- *  1. The shadcn-style HSL slots (background / primary / muted / etc.)
- *     stay in place — index.css remaps their HSL values to Innovic
- *     colours, so unchanged shadcn primitives pick up the right look.
- *  2. The `innovic.*` namespace exposes hard-coded literals so a page
- *     can `bg-innovic-cyan` / `text-innovic-text2` when the shadcn
- *     vocabulary doesn't have the right slot (e.g. mono text colour,
- *     department tints, signal badges).
+ * index.css remaps those slots to Innovic colours, so an unchanged shadcn
+ * primitive picks up the right look.
+ *
+ * There is deliberately NO `innovic.*` / `dept.*` / `sig.*` colour namespace
+ * and no `fontSize.innovic-*` scale here any more (deleted 2026-09-23). They
+ * were hand-copied hex/px literals — a third source of truth beside
+ * styles/tokens.css and the index.css HSL block — and they had already gone
+ * stale: `innovic.cyan` was #0088bb against the real --cyan #155eef, and
+ * `innovic-stat` was 32px against the real --fs-stat 28px. Two files in the
+ * whole app consumed them. Colour, type and spacing come from
+ * styles/tokens.css, consumed by the class vocabulary in
+ * styles/innovic-theme.css — that is the app's real styling system.
  */
 export default {
   darkMode: ['class'],
@@ -54,73 +58,12 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        // ─── Innovic namespace — literal hex from legacy ───────────
-        innovic: {
-          bg: '#f0f4f8',
-          bg2: '#ffffff',
-          bg3: '#f5f7fa',
-          bg4: '#e8edf4',
-          bg5: '#dce3ed',
-          border: '#d1d9e6',
-          border2: '#c5cfe0',
-          border3: '#b0bed4',
-          text: '#1a2235',
-          text2: '#4a5a72',
-          text3: '#7a8fa8',
-          cyan: '#0088bb',
-          cyan2: '#006694',
-          cyan3: '#dff0f7',
-          amber: '#c47a00',
-          amber2: '#a06200',
-          amber3: '#fff4d6',
-          green: '#16a34a',
-          green2: '#15803d',
-          green3: '#dcfce7',
-          red: '#dc2626',
-          red2: '#b91c1c',
-          red3: '#fee2e2',
-          blue: '#2563eb',
-          blue2: '#1d4ed8',
-          blue3: '#dbeafe',
-          orange: '#ea6c00',
-          orange2: '#c25a00',
-          purple: '#7c3aed',
-        },
-        dept: {
-          planning: '#6d4ab8',
-          sales: '#128a3e',
-          store: '#a96300',
-          design: '#6d4ab8',
-          production: '#006f8f',
-          qc: '#b83030',
-          purchase: '#1e4db3',
-          finance: '#0b776e',
-          tasks: '#6d4ab8',
-          system: '#4b5563',
-        },
-        sig: {
-          critical: '#dc2626',
-          warn: '#c47a00',
-          ok: '#16a34a',
-          info: '#2563eb',
-          neutral: '#64748b',
-        },
       },
       fontFamily: {
         // Match legacy CSS variables. font-sans defaults to Barlow.
         sans: ['Barlow', 'sans-serif'],
         heading: ['"Barlow Condensed"', 'sans-serif'],
         mono: ['"Source Code Pro"', 'monospace'],
-      },
-      fontSize: {
-        // Innovic-specific density — denser than Tailwind defaults.
-        'innovic-mono': ['10px', '14px'],
-        'innovic-label': ['11px', '15px'],
-        'innovic-control': ['13px', '18px'],
-        'innovic-body': ['14px', '20px'],
-        'innovic-heading': ['17px', '22px'],
-        'innovic-section': ['22px', '28px'],
-        'innovic-stat': ['32px', '34px'],
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -129,9 +72,10 @@ export default {
         'innovic-card': '12px',
       },
       spacing: {
-        // Sidebar + topbar fixed sizes from legacy.
-        sidebar: '220px',
-        topbar: '54px',
+        // Read the tokens rather than re-stating the numbers: these were
+        // hand-copied and 'topbar' had already drifted (54px vs the real 48px).
+        sidebar: 'var(--sidebar-width)',
+        topbar: 'var(--topbar-height)',
       },
       boxShadow: {
         'innovic-card': '0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)',

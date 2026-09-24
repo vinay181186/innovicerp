@@ -150,11 +150,17 @@ import { indexRoute } from './routes/index';
 import { loginRoute } from './routes/login';
 import { resetPasswordRoute } from './routes/reset-password';
 import { rootRoute } from './routes/__root';
+// Dev-only primitive gallery (/__ui-kit). Registered behind import.meta.env.DEV
+// below, so it does not exist in a production build.
+import { uiKitRoute } from './modules/ui-kit/routes/page';
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
   resetPasswordRoute,
+  // Dev only — `import.meta.env.DEV` is a literal `false` in a production
+  // build, so this is an empty spread there and the route never exists.
+  ...(import.meta.env.DEV ? [uiKitRoute] : []),
   authenticatedRoute.addChildren([
     indexRoute,
     changePasswordRoute,

@@ -1,0 +1,63 @@
+/* Innovic ERP colour tokens — ported verbatim from apps/web/src/styles/tokens.css (2026-09 "Professional Industrial ERP / MES" theme). */
+:root {
+  /* Surfaces */
+  --bg: #f5f7fa;
+  --bg2: #ffffff;
+  --bg3: #f8fafc;
+  --bg4: #f2f4f7;
+  --bg5: #eaecf0;
+  /* Borders */
+  --border: #d8e1ec;
+  --border2: #c8d3e0;
+  --border3: #b3c1d1;
+  /* Text */
+  --text: #172b4d;
+  --text2: #667085;
+  --text3: #7b8aa0;
+  /* Accents — solid (fills) / 2 = dark (text, solid buttons) / 3 = pale wash */
+  --cyan: #155eef; --cyan2: #123b73; --cyan3: #eff6ff;
+  --blue: #155eef; --blue2: #123b73; --blue3: #eff6ff;
+  --amber: #f79009; --amber2: #b54708; --amber3: #fffaeb;
+  --green: #12b76a; --green2: #027a48; --green3: #ecfdf3;
+  --red: #f04438; --red2: #b42318; --red3: #fef3f2;
+  --green2-hover: #05603a;
+  --red2-hover: #912018;
+  --orange: #e04f16; --orange2: #b93815; --orange3: #fff6ed;
+  --purple: #7a5af8; --purple2: #5925dc; --purple3: #f4f3ff;
+  --teal: #0e9384; --teal2: #107569; --teal3: #f0fdf9;
+  /* Department identity tints */
+  --dept-planning: #7a5af8; --dept-planning-bg: #f4f3ff;
+  --dept-sales: #027a48; --dept-sales-bg: #ecfdf3;
+  --dept-store: #b54708; --dept-store-bg: #fffaeb;
+  --dept-design: #7a5af8; --dept-design-bg: #f4f3ff;
+  --dept-production: #0e7490; --dept-production-bg: #e0f2fe;
+  --dept-qc: #b42318; --dept-qc-bg: #fef3f2;
+  --dept-purchase: #123b73; --dept-purchase-bg: #eff6ff;
+  --dept-finance: #0b776e; --dept-finance-bg: #e6f6f4;
+  --dept-tasks: #7a5af8; --dept-tasks-bg: #f4f3ff;
+  --dept-system: #667085; --dept-system-bg: #f2f4f7;
+  /* Signal colours — reserved for actionable meaning */
+  --sig-critical: #f04438; --sig-critical-bg: #fef3f2; --sig-critical-bd: #fecdca;
+  --sig-warn: #f79009; --sig-warn-bg: #fffaeb; --sig-warn-bd: #fedf89;
+  --sig-ok: #12b76a; --sig-ok-bg: #ecfdf3; --sig-ok-bd: #a6f4c5;
+  --sig-info: #2e90fa; --sig-info-bg: #eff8ff; --sig-info-bd: #b2ddff;
+  --sig-neutral: #667085; --sig-neutral-bg: #f2f4f7; --sig-neutral-bd: #eaecf0;
+  /* Sheet (tbl-grid) cream row */
+  --sheet-cream: #fffbf2;
+
+  /* Semantic aliases */
+  --surface-page: var(--bg);
+  --surface-card: var(--bg2);
+  --surface-sunken: var(--bg3);
+  --surface-hover: var(--bg4);
+  --surface-pressed: var(--bg5);
+  --text-body: var(--text);
+  --text-secondary: var(--text2);
+  --text-muted: var(--text3);
+  --text-link: var(--blue);
+  --accent: var(--blue);
+  --accent-hover: var(--blue2);
+  --accent-wash: var(--blue3);
+  --border-default: var(--border);
+  --border-strong: var(--border2);
+}

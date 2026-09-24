@@ -58,20 +58,31 @@ export function Breadcrumbs(): React.JSX.Element {
   const crumbs = buildCrumbs(pathname);
 
   return (
-    /* Layout lives in CSS (#breadcrumbs) rather than inline: sitting outside
-       #content it must carry #content's own horizontal padding, and that padding
-       changes at the 768px breakpoint — which an inline style cannot express. */
-    <nav id="breadcrumbs" aria-label="Breadcrumb">
+    /* Layout lives in CSS (#breadcrumbs, .breadcrumbs) rather than inline:
+       sitting outside #content it must carry #content's own horizontal padding
+       (var(--content-pad)), which an inline style cannot follow. Both the id
+       and the class are carried on purpose — the stylesheet's selectors are
+       dual, the class is the one the design system names, and other code may
+       still key off the id. */
+    <nav id="breadcrumbs" className="breadcrumbs" aria-label="Breadcrumb">
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         return (
-          <span key={`${c.label}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span
+            key={`${c.label}-${i}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
             {c.to && !last ? (
               <Link to={c.to} style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
                 {c.label}
               </Link>
             ) : (
-              <span style={{ color: last ? 'var(--text)' : 'var(--text3)', fontWeight: last ? 700 : 400 }}>
+              <span
+                style={{
+                  color: last ? 'var(--text)' : 'var(--text3)',
+                  fontWeight: last ? 700 : 400,
+                }}
+              >
                 {c.label}
               </span>
             )}

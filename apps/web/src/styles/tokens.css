@@ -144,6 +144,39 @@
   --sig-neutral-bg: #f2f4f7;
   --sig-neutral-bd: #eaecf0;
 
+  /* ─── Sheet (tbl-grid) cream row ──────────────────────────────
+   * The alternating row colour of the ruled sheet table. Was a bare
+   * #fffbf2 literal inside innovic-theme.css; it is a palette value
+   * like any other, so it lives here.
+   */
+  --sheet-cream: #fffbf2;
+
+  /* ─── Semantic aliases ─────────────────────────────────────────
+   * Role names for the raw palette above. New work names the ROLE
+   * (--surface-card, --text-muted, --text-link) so a palette swap is a
+   * one-line change here; the raw --bg2 / --text3 / --blue names stay
+   * valid and are what the existing class vocabulary uses.
+   */
+  --surface-page: var(--bg);
+  --surface-card: var(--bg2);
+  --surface-sunken: var(--bg3);
+  --surface-hover: var(--bg4);
+  --surface-pressed: var(--bg5);
+  --text-body: var(--text);
+  --text-secondary: var(--text2);
+  --text-muted: var(--text3);
+  --text-link: var(--blue);
+  /* NOTE: the design reference also lists a plain `--accent`. It is
+     deliberately NOT defined here — `--accent` is a shadcn slot name
+     (index.css sets it to an HSL triplet and wins the cascade, see the
+     warning at the top of this file), so a `var(--accent)` written
+     against it would resolve to an invalid colour. Use --text-link,
+     --accent-hover / --accent-wash, or the raw --blue. */
+  --accent-hover: var(--blue2);
+  --accent-wash: var(--blue3);
+  --border-default: var(--border);
+  --border-strong: var(--border2);
+
   /* ─── Effects — the only shadows / washes the app uses ─────────
    * Restrained by design: panels carry no shadow at all.
    */
@@ -152,6 +185,12 @@
   --shadow-modal: 0 8px 24px rgba(23, 43, 77, 0.12);
   --shadow-toast: 0 4px 12px rgba(23, 43, 77, 0.15);
   --shadow-drawer: 4px 0 20px rgba(23, 43, 77, 0.15);
+
+  /* ─── Motion ───────────────────────────────────────────────────
+   * One duration for every hover / focus / colour transition. Was a
+   * bare 0.15s literal repeated across innovic-theme.css.
+   */
+  --ease-fast: 0.15s;
 
   /* ─── Typography ──────────────────────────────────────────────
    * hfont = Barlow Condensed (headings, big numbers, panel titles)
@@ -162,6 +201,11 @@
   --hfont: 'Barlow Condensed', sans-serif;
   --bfont: 'Barlow', sans-serif;
   --mono: 'Source Code Pro', monospace;
+  /* Role aliases for the three families, same shape as the colour
+     aliases above. --hfont / --bfont / --mono stay the primary names. */
+  --font-display: var(--hfont);
+  --font-body: var(--bfont);
+  --font-code: var(--mono);
 
   /* ─── Radii ────────────────────────────────────────────────────
    * 4px   for small controls / badges / chips
@@ -171,20 +215,72 @@
   --radius-sm: 4px;
   --radius: 6px;
   --radius2: 8px;
+  /* 10px for the dropdown menu card (.tn-menu) — the one surface that
+     sits above the page rather than in it. */
+  --radius-menu: 10px;
 
-  /* ─── Layout — sidebar + topbar dimensions (legacy fixed) ──── */
-  --sidebar-width: 220px;
-  --topbar-height: 54px;
-
-  /* ─── Content density ──────────────────────────────────────────
-   * Information-dense: 14px body, 13px controls, 11px uppercase mono
-   * for labels + table headers (11px is the floor for any text).
+  /* ─── Spacing scale (4px base) ──────────────────────────────────
+   * Every padding / margin / gap in the system is one of these seven
+   * values. 2px (--sp-0) is a hairline, allowed only on badges / tags
+   * and on compact + editable table cells.
    */
-  --fs-body: 14px;
-  --fs-control: 13px;
-  --fs-label: 11px;
-  --fs-mono: 11px;
-  --fs-heading: 17px;
-  --fs-section: 22px;
-  --fs-stat: 28px;
+  --sp-0: 2px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* ─── Control heights ──────────────────────────────────────────
+   * Buttons, inputs, selects and the search box share ONE height so a
+   * filter row lines up on a single baseline. Sizing used to come from
+   * padding alone, which let each control drift to its own height.
+   */
+  --control-h: 28px;
+  --control-h-sm: 24px;
+
+  /* ─── Field widths ─────────────────────────────────────────────
+   * For inputs OUTSIDE a form grid (editable table cells, toolbars).
+   * Inside a form, width comes from the 12-column grid, never from a
+   * pixel width. Consumed via .fw-xs / .fw-sm / .fw-md / .fw-lg.
+   */
+  --field-xs: 64px; /* %, rev, ln, days, UOM */
+  --field-sm: 104px; /* qty, rate, amount */
+  --field-md: 144px; /* date, code, filter select */
+  --field-lg: 224px; /* names, search */
+
+  /* ─── Layout ───────────────────────────────────────────────────
+   * sidebar-width is kept for reference only — the left sidebar was
+   * removed from the shell on 2026-09-21.
+   * content-pad is the page gutter: #content's own padding, and the
+   * horizontal padding of the breadcrumb + tab bands above it, which
+   * must stay equal to it or the chrome stops lining up with the page.
+   * A page that bleeds to the edge does it with -var(--content-pad),
+   * never a hard-coded number.
+   */
+  --sidebar-width: 220px;
+  --topbar-height: 48px;
+  --content-pad: var(--sp-4);
+  --panel-gap: var(--sp-2);
+
+  /* ─── Typography — ONE 5-step scale ────────────────────────────
+   * These five values are the only font sizes the system has. Every
+   * role below resolves to one of them; nothing may introduce a sixth.
+   * 11px is the floor for any text.
+   */
+  --fs-xs: 11px; /* labels, table headers, badges, captions, meta, tabs */
+  --fs-sm: 13px; /* body, controls, table cells, buttons, nav, menus */
+  --fs-md: 16px; /* panel / modal / card titles */
+  --fs-lg: 22px; /* page title (.section-hdr) */
+  --fs-xl: 28px; /* KPI / stat values, empty-state glyph */
+
+  /* Role aliases — always a scale step, never a literal. */
+  --fs-body: var(--fs-sm);
+  --fs-control: var(--fs-sm);
+  --fs-label: var(--fs-xs);
+  --fs-mono: var(--fs-xs);
+  --fs-heading: var(--fs-md);
+  --fs-section: var(--fs-lg);
+  --fs-stat: var(--fs-xl);
 }

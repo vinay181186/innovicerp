@@ -16,13 +16,9 @@
  * New rules go in a separate "Innovic extensions" file.
  */
 
-/* ═══ BODY / SCROLLBARS ═══ */
-.innovic-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--bfont);
-  font-size: var(--fs-body);
-}
+/* ═══ SCROLLBARS ═══ */
+/* `.innovic-body` was deleted 2026-09-23: zero markup carried it — `body`
+   itself is styled in index.css @layer base. */
 
 ::-webkit-scrollbar {
   width: 5px;
@@ -42,16 +38,8 @@
   height: 100vh;
   overflow: hidden;
 }
-#sidebar {
-  width: var(--sidebar-width);
-  min-width: var(--sidebar-width);
-  background: var(--bg2);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  z-index: 10;
-  overflow-y: auto;
-}
+/* No #sidebar rule: the left sidebar was removed from the shell on
+   2026-09-21 and every `.sb-*` rule went with it on 2026-09-23. */
 #main {
   flex: 1;
   display: flex;
@@ -77,36 +65,39 @@
    sales-orders/routes/list.tsx) starts 20px below the chrome and then jumps
    flush the moment you scroll. Held here it is painted in the header colour,
    never scrolls, and a pinned toolbar sits flush under the chrome from the
-   start. The gutter is the same 20px as before and sits BELOW the hairline, so
-   every page keeps exactly the breathing room it has today — only the colour of
-   that strip changes, from page grey to header white. Keep it equal to
-   #content's horizontal padding at BOTH breakpoints (see the max-width:768px
-   block at the bottom of this file). */
+   start. The gutter sits BELOW the hairline, so every page keeps its breathing
+   room — only the colour of that strip changes, from page grey to header
+   white. Keep it equal to #content's horizontal padding at BOTH breakpoints
+   (see the max-width:768px block at the bottom of this file). */
 #app-header {
   flex-shrink: 0;
   background: var(--bg2);
-  /* 6px, not the 20px the sidebar-era chrome held (user, 2026-09-21: "upper
-     space, lower space — optimise"). The header band, the tab strip and the
-     breadcrumb now stack tight; the page starts 6px under the trail. */
+  /* 6px, not the full gutter the sidebar-era chrome held (user, 2026-09-21:
+     "upper space, lower space — optimise"). The header band, the tab strip and
+     the breadcrumb now stack tight; the page starts 6px under the trail. */
   padding-bottom: 6px;
 }
 
 /* ── Header navigation (components/shared/top-nav.tsx) ──────────────────────
-   One 54px band: logo, Dashboard, the modules as dropdown buttons, then the
+   One --topbar-height band: logo, Dashboard, the modules as dropdowns, then the
    right cluster (search, sync dot, password, sign out, avatar). Module
    buttons are label-only — twelve of them plus the search box is what fits a
    1366px screen — and turn blue when their menu is open OR the current page
    lives in them. The menu is a white card under its button: one column per
    group (Entry / Master / …) with an uppercase heading, pages with their
    icons, the current page highlighted. */
-#topnav {
+#topnav,
+.topnav {
   min-height: var(--topbar-height);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0;
-  padding: 0 12px;
+  padding: 0 var(--sp-3);
   border-bottom: 1px solid var(--border);
+  /* No background of its own: #app-header paints all three bands as ONE
+     surface (see the comment above it). The reference gives .topnav a
+     --bg2 fill because it has no such wrapper. */
   position: relative;
   z-index: 60;
 }
@@ -126,7 +117,7 @@
 .tn-logo {
   display: flex;
   align-items: center;
-  margin-right: 10px;
+  margin-right: var(--sp-2);
   flex-shrink: 0;
 }
 .tn-logo img {
@@ -141,14 +132,14 @@
 .tn-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 36px;
-  padding: 0 8px;
+  gap: var(--sp-1);
+  height: 32px;
+  padding: 0 var(--sp-2);
   border: 0;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-family: var(--bfont);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   color: var(--text2);
   cursor: pointer;
@@ -165,21 +156,21 @@
   font-weight: 600;
 }
 .tn-caret {
-  font-size: 9px;
+  font-size: var(--fs-xs);
   opacity: 0.7;
 }
 .tn-menu {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-1);
   position: absolute;
   top: 42px;
   left: 0;
   min-width: 220px;
-  padding: 10px 6px;
+  padding: var(--sp-2) var(--sp-1);
   background: var(--bg2);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-drawer, 0 10px 30px rgba(20, 28, 40, 0.16));
+  border-radius: var(--radius-menu);
+  box-shadow: var(--shadow-drawer);
   z-index: 70;
 }
 /* A menu whose button sits in the right half of the screen opens leftwards
@@ -192,32 +183,34 @@
 }
 .tn-col {
   min-width: 200px;
-  padding: 4px 8px;
+  padding: var(--sp-1) var(--sp-2);
 }
 .tn-col + .tn-col {
   border-left: 1px solid var(--border);
 }
 .tn-col-label {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text3);
   font-weight: 700;
-  padding: 4px 10px 6px;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1);
 }
 .tn-link {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: 7px;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  min-height: var(--control-h);
+  border-radius: var(--radius);
   color: var(--text);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 .tn-link:hover {
   background: var(--bg3);
+  color: var(--text);
 }
 .tn-link.on {
   background: var(--blue3);
@@ -233,7 +226,7 @@
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex-shrink: 0;
 }
 #topnav .innovic-input.gs-input {
@@ -245,7 +238,7 @@
   padding: 0 2px;
 }
 .tn-iconbtn {
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   height: 32px;
 }
 .tn-avatar {
@@ -258,29 +251,32 @@
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   cursor: default;
-}
-#topbar {
-  height: var(--topbar-height);
-  min-height: var(--topbar-height);
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  gap: 12px;
 }
 /* Fixed chrome between the topbar and the scrolling content — see
    _authenticated.tsx for why it lives outside #content. Mirrors #content's
    horizontal padding at both breakpoints so the trail lines up with the page
    body underneath it. */
-#breadcrumbs {
+/* Selector is dual on purpose. The reference styles `.breadcrumbs` as a
+   CLASS; the component has always rendered `id="breadcrumbs"` and other
+   code may key off the id, so the element now carries BOTH and every rule
+   here matches either. Same pattern as `#topnav, .topnav`. */
+#breadcrumbs,
+.breadcrumbs {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  font-size: 11px;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
   color: var(--text3);
-  padding: 5px 20px 0;
+  padding: var(--sp-1) var(--content-pad) 0;
+}
+/* Crumbs never wrap mid-label and never squeeze. */
+#breadcrumbs > *,
+.breadcrumbs > * {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 /* Open-pages tab bar (components/shared/open-tabs-bar.tsx) — browser-style tabs
    for visited routes, sits between the breadcrumb and #content as fixed chrome.
@@ -289,11 +285,12 @@
    MAX_TABS cap. Mirrors #breadcrumbs' padding so tabs line up with the page body.
    Background comes from #app-header (one surface); the border-bottom stays — it
    closes off the tabs AND is the chrome's single hairline. */
-#pagetabs {
+#pagetabs,
+.pagetabs {
   display: flex;
   align-items: stretch;
-  gap: 4px;
-  padding: 3px 20px 0;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--content-pad) 0;
   border-bottom: 1px solid var(--border);
   overflow: hidden;
   flex-shrink: 0;
@@ -301,11 +298,11 @@
 .pgtab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-1);
   flex: 0 1 auto;
   min-width: 0;
-  padding: 3px 6px 3px 10px;
-  font-size: 12px;
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-2);
+  font-size: var(--fs-xs);
   font-family: var(--bfont);
   color: var(--text2);
   background: var(--bg4);
@@ -329,7 +326,7 @@
   color: var(--blue);
   font-weight: 700;
   border-top: 2px solid var(--blue);
-  padding-top: 2px;
+  padding-top: var(--sp-0);
 }
 .pgtab-label {
   flex: 1 1 auto;
@@ -347,10 +344,10 @@
   border: none;
   background: transparent;
   color: var(--text3);
-  font-size: 14px;
+  font-size: var(--fs-sm);
   line-height: 1;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .pgtab-close:hover {
   background: var(--red3);
@@ -362,12 +359,14 @@
 }
 /* The top gutter moved to #app-header (see above), so the scrollport starts
    immediately under the chrome. Written as `#main > #content` on purpose:
-   index.css keeps a duplicate `#content { padding: 20px }` as a PostCSS
+   index.css keeps a duplicate `#content { padding: var(--content-pad) }` as a PostCSS
    safety net and it is loaded AFTER this file, so a plain `#content` rule here
-   would lose the cascade to it. Sides + bottom are unchanged, so pages that
-   bleed out sideways with `margin: 0 -20px -20px` still line up. */
+   would lose the cascade to it. The gutter is var(--content-pad) (16px);
+   a page that bleeds out sideways derives its negative margin from the
+   SAME token (`margin: 0 calc(-1 * var(--content-pad))…`) so it stays
+   aligned if the token ever moves again. */
 #main > #content {
-  padding: 0 20px 20px;
+  padding: 0 var(--content-pad) var(--content-pad);
 }
 /* Nothing may pull itself ABOVE the scrollport. A scroll container clips its
    block-start overflow and cannot scroll back to it, so a page root with a
@@ -378,209 +377,9 @@
   margin-top: 0 !important;
 }
 
-/* ═══ SIDEBAR ═══ */
-.sb-logo {
-  padding: 16px 16px 8px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
-}
-.sb-company {
-  font-family: var(--hfont);
-  font-size: var(--fs-heading);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--text);
-}
-.sb-sub {
-  font-size: 11px;
-  color: var(--cyan);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-family: var(--mono);
-  margin-top: 2px;
-}
-.sb-section {
-  font-size: var(--fs-label);
-  color: var(--text2);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 8px 12px;
-  font-family: var(--bfont);
-  font-weight: 800;
-  margin: 4px 8px 2px;
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--border2);
-  background: var(--bg3);
-  transition: all 0.15s;
-  cursor: pointer;
-  user-select: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.sb-section:hover {
-  background: var(--bg4);
-}
-.sb-mod-planning {
-  border-left-color: var(--dept-planning) !important;
-  color: var(--dept-planning) !important;
-}
-.sb-mod-sales {
-  border-left-color: var(--dept-sales) !important;
-  color: var(--dept-sales) !important;
-}
-.sb-mod-store {
-  border-left-color: var(--dept-store) !important;
-  color: var(--dept-store) !important;
-}
-.sb-mod-production {
-  border-left-color: var(--dept-production) !important;
-  color: var(--dept-production) !important;
-}
-.sb-mod-qc {
-  border-left-color: var(--dept-qc) !important;
-  color: var(--dept-qc) !important;
-}
-.sb-mod-design {
-  border-left-color: var(--dept-design) !important;
-  color: var(--dept-design) !important;
-}
-.sb-mod-purchase {
-  border-left-color: var(--dept-purchase) !important;
-  color: var(--dept-purchase) !important;
-}
-.sb-mod-finance {
-  border-left-color: var(--dept-finance) !important;
-  color: var(--dept-finance) !important;
-}
-.sb-mod-tasks {
-  border-left-color: var(--dept-tasks) !important;
-  color: var(--dept-tasks) !important;
-}
-.sb-mod-system {
-  border-left-color: var(--dept-system) !important;
-  color: var(--dept-system) !important;
-}
-.sb-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 16px;
-  cursor: pointer;
-  color: var(--text2);
-  font-family: var(--bfont);
-  font-weight: 500;
-  font-size: var(--fs-control);
-  transition: all 0.15s;
-  border-left: 3px solid transparent;
-  text-decoration: none;
-}
-.sb-item:hover {
-  background: var(--bg3);
-  color: var(--text);
-}
-.sb-item.active {
-  /* Flat Innovic-blue wash + blue text + blue left bar (theme 2026-09: no
-     gradients; one blue emphasis). */
-  background: var(--blue3);
-  color: var(--blue);
-  border-left-color: var(--blue);
-}
-.sb-grp {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text2);
-  padding: 8px 18px 2px;
-  pointer-events: none;
-  user-select: none;
-}
-.sb-icon {
-  width: 20px;
-  text-align: center;
-  font-size: 14px;
-}
-.sb-bottom {
-  margin-top: auto;
-  padding: 12px;
-  border-top: 1px solid var(--border);
-}
-.sb-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--bg3);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-.sb-avatar {
-  width: 28px;
-  height: 28px;
-  background: var(--blue);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
-  font-family: var(--mono);
-}
-.sb-uname {
-  font-size: 12px;
-  font-weight: 600;
-}
-.sb-urole {
-  font-size: 11px;
-  color: var(--text3);
-}
-
-/* ═══ TOPBAR ═══ */
-/* Left half (logo + title); mirrors .tb-right so the search box is centred.
-   overflow: hidden — on a phone-width bar with no room left, the logo clips
-   inside its half rather than painting underneath the search box. */
-.tb-left {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.tb-title {
-  font-family: var(--hfont);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  flex: 1 1 0;
-  /* Yields space to the search box on narrow bars; truncates rather than
-     spilling over it or wrapping to a second line inside the fixed-height bar. */
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* Right-hand cluster (SYNCED · Password · Sign out). Same flex basis as
-   .tb-left so the global search box between them is centred in the bar;
-   never shrinks below its buttons, so it cannot paint over the box. */
-.tb-right {
-  flex: 1 1 0;
-  min-width: max-content;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-}
-.tb-sync {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--fs-label);
-  color: var(--text3);
-  font-family: var(--mono);
-}
+/* ═══ SYNC DOT ═══ */
+/* The `#topbar` band and its `.tb-*` children were deleted 2026-09-23:
+   superseded by `#topnav` / `.tn-*` on 2026-09-21, zero markup left. */
 .sync-dot {
   width: 7px;
   height: 7px;
@@ -602,21 +401,22 @@
   border-radius: var(--radius2);
   overflow: hidden;
   /* Density pass: pages stack 5.4 panels on average (20 on Assembly detail),
-     so each panel's chrome is paid several times per screen. 16 -> 10. */
-  margin-bottom: 10px;
+     so each panel's chrome is paid several times per screen. 16 -> 10 -> the
+     reference's --panel-gap (8). */
+  margin-bottom: var(--panel-gap);
 }
 .panel-hdr {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* 12px 16px -> 8px 14px: the header holds one line of text. */
-  padding: 8px 14px;
+  /* 12px 16px -> 8px 14px -> the reference's 8x12: one line of text. */
+  padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
   background: var(--bg3);
 }
 .panel-title {
   font-family: var(--hfont);
-  font-size: 16px;
+  font-size: var(--fs-heading);
   font-weight: 700;
   letter-spacing: 0.03em;
   /* Zero so the class can be worn by an <h2> as well as a <span>. Panel titles
@@ -626,7 +426,7 @@
 }
 .panel-body {
   /* 16 -> 12. Biggest single contributor: 32px of vertical padding per panel. */
-  padding: 12px;
+  padding: var(--sp-3);
 }
 
 /* ═══ CLICKABLE SURFACES (dashboard cards + rows) ═══
@@ -657,15 +457,15 @@
 }
 .dash-surface {
   transition:
-    background 0.15s,
-    border-color 0.15s;
+    background var(--ease-fast),
+    border-color var(--ease-fast);
 }
 /* A .dash-link with no bordered child — the StatStrip navigation cell — takes
    the hover fill on itself. Kept as a separate class so the card case above is
    untouched (there, filling the <a> would sit invisibly behind the card). */
 .dash-link.dash-cell {
   border-radius: 0;
-  transition: background 0.15s;
+  transition: background var(--ease-fast);
 }
 .dash-link.dash-cell:hover {
   background: var(--bg4);
@@ -681,14 +481,14 @@
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
 }
 .stat-card {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: var(--radius2);
-  padding: 12px 14px;
+  padding: var(--sp-2) var(--sp-3);
   position: relative;
   overflow: hidden;
 }
@@ -722,7 +522,7 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-family: var(--mono);
-  margin-bottom: 6px;
+  margin-bottom: var(--sp-1);
 }
 .stat-val {
   font-family: var(--hfont);
@@ -733,7 +533,7 @@
 .stat-sub {
   font-size: var(--fs-label);
   color: var(--text3);
-  margin-top: 4px;
+  margin-top: var(--sp-1);
 }
 
 /* ═══ TABLES ═══ */
@@ -753,8 +553,9 @@
   font-size: var(--fs-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  /* 9px 12px -> 6px 10px. Compounds over a 20-row list: ~120px recovered. */
-  padding: 6px 10px;
+  /* 9px 12px -> 6px 10px -> the reference's 4x8. Compounds over a 20-row
+     list: ~180px recovered. */
+  padding: var(--sp-1) var(--sp-2);
   /* Table-alignment standard: the column name centres with its values so the
      column reads as one line. See the block under `.td-ctr`. */
   text-align: center;
@@ -772,7 +573,7 @@
   color: var(--cyan);
 }
 .innovic-table td {
-  padding: 6px 10px;
+  padding: var(--sp-1) var(--sp-2);
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-control);
   vertical-align: middle;
@@ -800,21 +601,27 @@
   color: var(--blue2);
   font-family: var(--hfont);
   font-weight: 800;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.06em;
-  padding: 8px 8px;
+  padding: var(--sp-1) var(--sp-2);
   border-right: 1px solid var(--border2);
   border-bottom: 1px solid var(--blue2);
   box-shadow: none;
   /* Table-alignment standard: names and values share one centre line. */
   text-align: center;
+  /* A long column name WRAPS on the sheet rather than forcing the column
+     wider -- the whole point of the fixed layout. `.tbl-auto` (side-scrolling
+     wide registers) opts back out below. */
+  white-space: normal;
+  line-height: 1.25;
 }
 .innovic-table.tbl-grid th:last-child {
   border-right: none;
 }
 .innovic-table.tbl-grid td {
-  font-size: 13px;
-  padding: 8px 8px;
+  font-size: var(--fs-sm);
+  padding: var(--sp-1) var(--sp-2);
+  line-height: 1.35;
   /* --border2, not --border: the shadcn token block in index.css redefines
      `--border` as an HSL triplet ("218 27% 86%"), so `1px solid var(--border)`
      is invalid at computed time and the browser drops the whole declaration —
@@ -844,19 +651,19 @@
   background: var(--bg2);
 }
 .innovic-table.tbl-grid tbody tr:nth-child(odd) td {
-  background: #fffbf2;
+  background: var(--sheet-cream);
 }
 .innovic-table.tbl-grid tbody tr:hover td {
   background: var(--bg4);
 }
 .innovic-table.tbl-grid .td-code {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--blue);
 }
+/* Height / padding / size come from the base `.btn-sm`; the sheet only adds
+   the outline that makes a button read as a control inside a ruled cell. */
 .innovic-table.tbl-grid .btn-sm {
-  padding: 3px 9px;
-  font-size: 11px;
   font-weight: 700;
   border: 1px solid var(--border3);
   background: var(--bg2);
@@ -880,7 +687,7 @@
 .td-code {
   font-family: var(--mono);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .td-right {
   text-align: right;
@@ -944,6 +751,78 @@ table.tbl-ctr td .innovic-select {
 .tbl-frozen tbody tr:hover td:first-child {
   background: var(--bg4);
 }
+/* ── UNIFIED TABLE (canonical) ───────────────────────────────────────────────
+   ONE table design for the whole system: the ruled sheet
+   (`.innovic-table.tbl-grid`). Behaviour and density are MODIFIERS on it,
+   never a different look:
+     .tbl-frozen   (on .tbl-wrap)  pin the first column
+     .tbl-compact                  nested line tables inside an expanded row
+     .tbl-edit                     editable rows (inputs / selects in cells)
+     .tbl-auto                     auto column widths + side-scroll (wide registers)
+   The plain `.innovic-table` list look above is LEGACY — kept only so
+   un-migrated markup still renders. */
+/* The four rules above pin the column but paint it flat white; on a sheet
+   that leaves the frozen column out of step with the cream alternation. These
+   re-state the sheet's own backgrounds for the pinned cell. */
+.tbl-frozen .innovic-table.tbl-grid tbody tr td:first-child {
+  background: var(--bg2);
+}
+.tbl-frozen .innovic-table.tbl-grid tbody tr:nth-child(odd) td:first-child {
+  background: var(--sheet-cream);
+}
+.tbl-frozen .innovic-table.tbl-grid tbody tr:hover td:first-child {
+  background: var(--bg4);
+}
+.tbl-frozen .innovic-table.tbl-grid thead th:first-child {
+  background: var(--bg4);
+}
+/* Wide registers: columns size to their content and the sheet scrolls
+   sideways, so headers and cells stop wrapping. */
+.innovic-table.tbl-grid.tbl-auto {
+  table-layout: auto;
+}
+.innovic-table.tbl-grid.tbl-auto th {
+  white-space: nowrap;
+}
+.innovic-table.tbl-grid.tbl-auto td {
+  white-space: nowrap;
+}
+/* A line table nested inside an expanded row: hairline cells, thin rules. */
+.innovic-table.tbl-grid.tbl-compact {
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+}
+.innovic-table.tbl-grid.tbl-compact th,
+.innovic-table.tbl-grid.tbl-compact td {
+  padding: var(--sp-0) var(--sp-2);
+}
+/* Editable rows: the cell gives its padding to the control inside it. */
+.innovic-table.tbl-grid.tbl-edit td {
+  padding: var(--sp-0) var(--sp-1);
+}
+.innovic-table.tbl-grid.tbl-edit td .innovic-input,
+.innovic-table.tbl-grid.tbl-edit td .innovic-select {
+  height: var(--control-h-sm);
+}
+/* Selected row. An inset shadow, not a background, so it survives the
+   cream / white alternation underneath it. */
+.innovic-table.tbl-grid tbody tr.row-selected td {
+  box-shadow: inset 0 0 0 9999px var(--cyan3);
+}
+/* The blink animation paints the row itself; the cell must not cover it. */
+.innovic-table.tbl-grid tbody tr.qc-alert-blink td {
+  background: transparent;
+}
+/* The sheet centres every column. These are the only sanctioned escapes:
+   left for long prose, right for numbers. */
+.innovic-table.tbl-grid th.th-left,
+.innovic-table.tbl-grid td.td-left {
+  text-align: left;
+}
+.innovic-table.tbl-grid th.th-right,
+.innovic-table.tbl-grid td.td-num {
+  text-align: right;
+}
 
 /* Ported verbatim from legacy L187-188 (main stylesheet). Task Board only.
    `--sig-*` already exist in tokens.css and are byte-identical to legacy's
@@ -957,20 +836,20 @@ table.tbl-ctr td .innovic-select {
   height: 7px;
   border-radius: 50%;
   background: var(--sig-critical);
-  margin-right: 6px;
+  margin-right: var(--sp-1);
   vertical-align: middle;
   box-shadow: 0 0 0 2px var(--sig-critical-bg);
 }
 .task-linked-ref {
   display: inline-block;
   font-family: var(--mono);
-  font-size: 11px;
-  padding: 1px 6px;
+  font-size: var(--fs-xs);
+  padding: var(--sp-0) var(--sp-1);
   border-radius: var(--radius-sm);
   background: var(--blue3);
   color: var(--blue);
   font-weight: 700;
-  margin-left: 4px;
+  margin-left: var(--sp-1);
 }
 
 /* Ported verbatim from legacy L272. Used for small inline chips (e.g. the Item
@@ -978,9 +857,9 @@ table.tbl-ctr td .innovic-select {
    `.badge`, which is pill-shaped — `.tag` is square-ish and mono. */
 .tag {
   display: inline-block;
-  padding: 1px 6px;
+  padding: var(--sp-0) var(--sp-2);
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -996,7 +875,7 @@ table.tbl-ctr td .innovic-select {
   border-collapse: collapse;
 }
 .ops-routing th {
-  padding: 8px 12px;
+  padding: var(--sp-1) var(--sp-2);
   text-align: center;
   font-family: var(--mono);
   font-size: var(--fs-mono);
@@ -1007,7 +886,7 @@ table.tbl-ctr td .innovic-select {
   white-space: nowrap;
 }
 .ops-routing td {
-  padding: 8px 12px;
+  padding: var(--sp-1) var(--sp-2);
   vertical-align: middle;
   border-top: 1px solid var(--border);
   text-align: center;
@@ -1021,9 +900,8 @@ table.tbl-ctr td .innovic-select {
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  /* Rounded-rect, filled, no visible outline (theme 2026-09) — the 1px
-     transparent border keeps every badge the same height as before. */
+  padding: var(--sp-0) var(--sp-2);
+  /* Rounded-rect, filled, no visible outline (theme 2026-09). */
   border-radius: var(--radius-sm);
   font-size: var(--fs-mono);
   font-weight: 700;
@@ -1031,73 +909,77 @@ table.tbl-ctr td .innovic-select {
   font-family: var(--mono);
   white-space: nowrap;
   text-transform: uppercase;
+  /* Base look, stated ONCE here instead of repeated on every variant: the
+     transparent border keeps a filled and an unfilled badge the same height,
+     and a badge with no `.b-*` variant reads as the neutral grey chip rather
+     than as bare text. */
+  border: 1px solid transparent;
+  background: var(--bg4);
+  color: var(--text2);
 }
 .b-green {
   color: var(--green2);
   background: var(--green3);
-  border: 1px solid transparent;
 }
 .b-amber {
   color: var(--amber2);
   background: var(--amber3);
-  border: 1px solid transparent;
 }
 .b-blue {
   color: var(--blue);
   background: var(--blue3);
-  border: 1px solid transparent;
 }
 .b-red {
   color: var(--red2);
   background: var(--red3);
-  border: 1px solid transparent;
 }
 .b-grey {
   color: var(--text2);
   background: var(--bg4);
-  border: 1px solid transparent;
 }
 .b-cyan {
   color: var(--cyan);
   background: var(--cyan3);
-  border: 1px solid transparent;
 }
 .b-orange {
   color: var(--orange2);
   background: var(--orange3);
-  border: 1px solid transparent;
 }
 .b-teal {
   /* Legacy renderAssemblyTracker uses #14b8a6 for the "Done" assembly state
      to distinguish completed equipment-assembly from the green "Ready" state. */
   color: var(--teal2);
   background: var(--teal3);
-  border: 1px solid transparent;
 }
 .b-purple {
   /* OSP / vendor / QC op-type chip. Dark purple text on the pale wash —
      the solid --purple is only 4.1:1 on --purple3. */
   color: var(--purple2);
   background: var(--purple3);
-  border: 1px solid transparent;
 }
 
 /* ═══ BUTTONS ═══ */
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  /* 7px 14px / no border -> 7px 12px + 1px transparent border: ~32px tall,
-     the same height as .innovic-input so a filter row lines up. */
-  padding: 7px 12px;
+  justify-content: center;
+  gap: var(--sp-1);
+  /* Height is DECLARED, not left to padding: buttons, inputs and selects all
+     sit on --control-h so a filter row lines up on one baseline. Sizing by
+     padding alone let each control drift to its own height. */
+  height: var(--control-h);
+  padding: 0 var(--sp-3);
+  box-sizing: border-box;
+  line-height: 1.3;
   border-radius: var(--radius);
   border: 1px solid transparent;
   cursor: pointer;
   font-family: var(--bfont);
   font-size: var(--fs-control);
   font-weight: 600;
-  transition: all 0.15s;
+  transition: all var(--ease-fast);
   white-space: nowrap;
+  text-decoration: none;
 }
 .btn-primary {
   background: var(--blue);
@@ -1105,6 +987,7 @@ table.tbl-ctr td .innovic-select {
 }
 .btn-primary:hover {
   background: var(--blue2);
+  color: #fff;
 }
 .btn-success {
   background: var(--green2);
@@ -1112,6 +995,7 @@ table.tbl-ctr td .innovic-select {
 }
 .btn-success:hover {
   background: var(--green2-hover);
+  color: #fff;
 }
 .btn-danger {
   background: var(--red2);
@@ -1119,6 +1003,7 @@ table.tbl-ctr td .innovic-select {
 }
 .btn-danger:hover {
   background: var(--red2-hover);
+  color: #fff;
 }
 .btn-ghost {
   background: var(--bg2);
@@ -1131,11 +1016,12 @@ table.tbl-ctr td .innovic-select {
   border-color: var(--border2);
 }
 .btn-sm {
-  padding: 4px 10px;
+  height: var(--control-h-sm);
+  padding: 0 var(--sp-2);
   font-size: var(--fs-label);
 }
 .btn-icon {
-  padding: 6px 8px;
+  padding: 0 var(--sp-2);
 }
 .btn:disabled {
   opacity: 0.5;
@@ -1143,15 +1029,61 @@ table.tbl-ctr td .innovic-select {
 }
 
 /* ═══ FORMS ═══ */
+/* ── CANONICAL: the 12-column form grid ─────────────────────────────────────
+   Fields span by CONTENT TYPE, never by position on the row:
+     xs   2/12  %, rev, line no., days, UOM, short code
+     sm   3/12  qty, rate, amount, date, doc no.
+     md   4/12  select / type, ref no., phone
+     lg   6/12  party (client / vendor), item name, email
+     full 12/12 remarks, address, any textarea
+   A field with no span class takes md. Every row must sum to 12. The
+   equal-column grids below are LEGACY, kept for un-migrated markup. */
+.form-grid-12 {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--sp-2) var(--sp-3);
+  /* Container query, not a media query: the grid folds on ITS own width, so
+     it behaves the same inside a narrow panel as inside a full-width page. */
+  container-type: inline-size;
+}
+.form-grid-12 > * {
+  grid-column: span 4;
+}
+.f-xs {
+  grid-column: span 2;
+}
+.f-sm {
+  grid-column: span 3;
+}
+.f-md {
+  grid-column: span 4;
+}
+.f-lg {
+  grid-column: span 6;
+}
+.f-full {
+  grid-column: 1 / -1;
+}
+@container (max-width: 640px) {
+  .f-xs,
+  .f-sm {
+    grid-column: span 6;
+  }
+  .f-md,
+  .f-lg {
+    grid-column: 1 / -1;
+  }
+}
+/* LEGACY equal-column grids — read-only ReadGrid and un-migrated markup. */
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: var(--sp-2) var(--sp-3);
 }
 .form-grid-3 {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
+  gap: var(--sp-2) var(--sp-3);
 }
 /* 4-up header grid — document forms fit their whole header (doc no · date · due
    date · type / client · client PO · GST) above the fold instead of running to
@@ -1159,7 +1091,7 @@ table.tbl-ctr td .innovic-select {
 .form-grid-4 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: var(--sp-2) var(--sp-3);
 }
 .form-span-2 {
   grid-column: span 2;
@@ -1177,7 +1109,7 @@ table.tbl-ctr td .innovic-select {
 .form-grp {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 .form-label {
   font-size: var(--fs-label);
@@ -1198,12 +1130,50 @@ table.tbl-ctr td .innovic-select {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 7px 10px;
+  /* One height for every control — see .btn. */
+  padding: 0 var(--sp-2);
+  height: var(--control-h);
+  box-sizing: border-box;
   font-family: var(--bfont);
   font-size: var(--fs-control);
   width: 100%;
   outline: none;
-  transition: border 0.15s;
+  transition: border var(--ease-fast);
+}
+/* A textarea is the one control that is NOT one line tall: it opts out of
+   the shared height, starts at two lines and grows only vertically.
+   `textarea.innovic-input` is in the selector because ~24 screens write
+   class="innovic-input" on a <textarea>; without it the shared --control-h
+   would crush them to a single 28px line. */
+.innovic-textarea,
+textarea.innovic-input {
+  height: auto;
+  min-height: calc(var(--control-h) * 2);
+  padding: var(--sp-1) var(--sp-2);
+  line-height: 1.4;
+  resize: vertical;
+  max-height: 240px;
+  display: block;
+}
+/* A file input has its own intrinsic button, so it cannot be held to the
+   single-line height either. */
+.innovic-input[type='file'] {
+  height: auto;
+  padding: var(--sp-1) var(--sp-2);
+}
+/* Off-grid field widths — editable table cells and toolbars, where there is
+   no form grid to size the field. Never an inline pixel width. */
+.fw-xs {
+  width: var(--field-xs) !important;
+}
+.fw-sm {
+  width: var(--field-sm) !important;
+}
+.fw-md {
+  width: var(--field-md) !important;
+}
+.fw-lg {
+  width: var(--field-lg) !important;
 }
 .innovic-input:focus,
 .innovic-select:focus,
@@ -1214,6 +1184,85 @@ table.tbl-ctr td .innovic-select {
 .innovic-input[readonly] {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.innovic-input:disabled,
+.innovic-select:disabled,
+.innovic-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg3);
+}
+/* Validation / provenance states on a field. `.is-derived` = the value was
+   filled in from another document and is not the user's own entry. */
+.innovic-input.is-ok {
+  border-color: var(--green);
+}
+.innovic-input.is-bad {
+  border-color: var(--red);
+}
+.innovic-input.is-derived {
+  background: var(--bg4);
+  color: var(--text3);
+}
+/* Native checkbox / radio, tinted to the one Innovic accent. */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--blue);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+/* Field-group tint — paints every control inside the block with the pale
+   Innovic-blue wash, so a related group of fields (e.g. the Plan modal's Raw
+   Material block) reads as one block. The tint IS the grouping; there is no
+   box around it. Replaces a Tailwind `[&_input]:bg-innovic-blue3` arbitrary
+   variant whose `innovic.*` palette was a stale pre-2026-09 copy of the
+   tokens (#dbeafe, not --blue3). */
+.field-tint input,
+.field-tint .innovic-input,
+.field-tint .innovic-select {
+  background: var(--blue3);
+}
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-control);
+  color: var(--text);
+  cursor: pointer;
+}
+/* Type-to-search option list (the searchable picker's dropdown). */
+.ss-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + var(--sp-1));
+  z-index: 1000;
+  max-height: 256px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--sp-1) 0;
+  list-style: none;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-toast);
+}
+.ss-opt {
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.ss-opt.hl {
+  background: var(--blue);
+  color: #fff;
+}
+.ss-muted {
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text3);
 }
 .form-error {
   font-size: var(--fs-label);
@@ -1268,46 +1317,38 @@ table.tbl-ctr td .innovic-select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: var(--sp-2) var(--sp-4);
   border-bottom: 1px solid var(--border);
   background: var(--bg3);
 }
 .modal-title {
   font-family: var(--hfont);
-  font-size: 17px;
+  font-size: var(--fs-heading);
   font-weight: 700;
 }
 .modal-body {
-  padding: 16px;
+  padding: var(--sp-4);
 }
 .modal-footer {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-2);
   justify-content: flex-end;
-  padding: 12px 16px;
+  padding: var(--sp-2) var(--sp-4);
   border-top: 1px solid var(--border);
   background: var(--bg3);
 }
 
 /* ═══ TOAST ═══ */
-#toast {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
-}
+/* No `#toast` wrapper rule: the fixed stack is rendered by the toast
+   component, and no markup carried the id. Deleted 2026-09-23. */
 .toast-item {
-  padding: 10px 16px;
+  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
   font-size: var(--fs-control);
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   animation: toastSlideIn 0.2s ease;
   max-width: 320px;
   box-shadow: var(--shadow-toast);
@@ -1354,23 +1395,24 @@ table.tbl-ctr td .innovic-select {
 /* ═══ EMPTY / DIVIDER / SECTION HEADER ═══ */
 .empty-state {
   text-align: center;
-  padding: 40px;
+  padding: var(--sp-6);
   color: var(--text3);
 }
 .empty-icon {
-  font-size: 36px;
-  margin-bottom: 8px;
+  font-size: var(--fs-xl);
+  margin-bottom: var(--sp-2);
 }
 .divider {
   height: 1px;
   background: var(--border);
-  margin: 16px 0;
+  margin: var(--sp-3) 0;
 }
 .section-hdr {
   font-family: var(--hfont);
   font-size: var(--fs-section);
   font-weight: 700;
-  margin-bottom: 16px;
+  margin-bottom: var(--sp-3);
+  line-height: 1.2;
   letter-spacing: 0.01em;
 }
 
@@ -1404,34 +1446,18 @@ table.tbl-ctr td .innovic-select {
 
 /* ═══ MOBILE / TABLET FALLBACK (legacy media query) ═══ */
 @media (max-width: 768px) {
-  #sidebar {
-    position: fixed;
-    left: -260px;
-    top: 0;
-    bottom: 0;
-    width: 250px;
-    z-index: 200;
-    transition: left 0.25s ease;
-    box-shadow: var(--shadow-drawer);
-  }
-  #sidebar.sb-open {
-    left: 0;
-  }
   /* Every band of the chrome and the page body share ONE horizontal edge at
-     this breakpoint too. That edge is 20px, not the 12px this block used to ask
-     for: the duplicate `#content` rule in index.css loads later and has been
-     overriding it, so the page body has ALWAYS rendered at 20px here. Making
-     the 12px real would move the body 8px in while two pages bleed sideways
-     with a hard-coded `margin: 0 -20px -20px` (so-status/routes/index.tsx and
-     purchase-orders/components/po-form-css.ts) -- they would hang past the edge
-     and give the app a horizontal scrollbar on a phone. Matching the 20px that
-     actually ships keeps every band aligned and changes nothing below 768px
-     except the header's colour. */
-  #breadcrumbs {
-    padding: 5px 20px 0;
+     this breakpoint too, and it is the SAME var(--content-pad) as on desktop.
+     It used to be a hard-coded 20px here (and a dead 12px before that); both
+     full-bleed pages now derive their negative margin from the token as well,
+     so there is nothing left to keep in sync by hand. */
+  #breadcrumbs,
+  .breadcrumbs {
+    padding: var(--sp-1) var(--content-pad) 0;
   }
-  #pagetabs {
-    padding: 3px 20px 0;
+  #pagetabs,
+  .pagetabs {
+    padding: var(--sp-1) var(--content-pad) 0;
   }
   #app-header {
     padding-bottom: 6px;
@@ -1439,20 +1465,15 @@ table.tbl-ctr td .innovic-select {
   /* On a phone the module buttons wrap onto as many lines as they need (no
      overflow on the band: an overflow clip would cut every dropdown off at
      the band's edge). The search box gives up most of its width. */
-  #topnav {
-    padding: 0 8px;
+  #topnav,
+  .topnav {
+    padding: 0 var(--sp-2);
   }
   #topnav .innovic-input.gs-input {
     width: 120px;
   }
   #main > #content {
-    padding: 0 20px 20px;
-  }
-  #topbar {
-    padding: 0 20px;
-    gap: 8px;
-    min-height: 48px;
-    height: 48px;
+    padding: 0 var(--content-pad) var(--content-pad);
   }
   .form-grid,
   .form-grid-3,
@@ -1498,25 +1519,24 @@ table.tbl-ctr td .innovic-select {
 /* ── Global search (header) ── */
 /* components/shared/global-search.tsx — the search box in #topbar. It opens
    the results in a full-window popup below the bar (.gs-overlay, below);
-   no dropdown. Input matches the lists' "Search this list…" box
-   (.innovic-input, 12px) sized to sit inside the 54px bar. */
+   no dropdown. Input matches the lists' "Search this list…" box — same
+   .innovic-input height and size as every other control, widened to
+   --field-lg. #topnav narrows it further at its own breakpoints. */
 .gs-wrap {
   position: relative;
   flex-shrink: 0;
 }
 .gs-icon {
   position: absolute;
-  left: 9px;
+  left: var(--sp-2);
   top: 50%;
   transform: translateY(-50%);
   color: var(--text3);
   pointer-events: none;
 }
 .innovic-input.gs-input {
-  width: 260px;
-  height: 32px;
-  padding: 6px 10px 6px 28px;
-  font-size: 12px;
+  width: var(--field-lg);
+  padding: 0 var(--sp-2) 0 28px;
 }
 /* Search popup (modules/search/components/search-popup.tsx). The usual
    .overlay/.modal, but starting BELOW the top bar so the search box stays
@@ -1525,7 +1545,7 @@ table.tbl-ctr td .innovic-select {
 .overlay.gs-overlay {
   top: var(--topbar-height);
   align-items: stretch;
-  padding: 8px 12px 12px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
 }
 .gs-overlay .modal {
   max-width: none;
@@ -1602,10 +1622,6 @@ table.tbl-ctr td .innovic-select {
 @media (max-width: 768px) {
   .innovic-input.gs-input {
     width: 150px;
-  }
-  /* #topbar is 48px at this width (see the block above), not the token. */
-  .overlay.gs-overlay {
-    top: 48px;
   }
   /* The mobile `.modal { height: 100vh !important }` above would make the
      popup 48px taller than its overlay and hide the bottom of the results. */

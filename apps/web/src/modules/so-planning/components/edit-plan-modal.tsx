@@ -776,10 +776,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             </div>
           </div>
         </div>
-        {/* The tint IS the grouping: the arbitrary variant paints every control
-            inside this block with the pale blue token wash (bg-innovic-blue3 =
-            --blue3), including the Grade / Size pickers' own <input>. */}
-        <div className="[&_input]:bg-innovic-blue3" style={{ flex: '1.6 1 420px', minWidth: 0 }}>
+        {/* The tint IS the grouping: .field-tint paints every control inside
+            this block with the pale blue token wash (--blue3), including the
+            Grade / Size pickers' own <input>. */}
+        <div className="field-tint" style={{ flex: '1.6 1 420px', minWidth: 0 }}>
           <div
             className="mono fw-700"
             style={{

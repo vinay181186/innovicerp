@@ -1,0 +1,1 @@
+@deprecated alias — renders a one-cell StatStrip. The legacy 2px-top-stripe KPI card is retired; group KPIs in one StatStrip.

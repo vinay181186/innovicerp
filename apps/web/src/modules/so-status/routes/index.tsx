@@ -58,7 +58,10 @@ function SoStatusIndexPage(): React.JSX.Element {
     );
   }, [data, search]);
 
-  const selected = selectedId && filtered.some((r) => r.id === selectedId) ? selectedId : (filtered[0]?.id ?? null);
+  const selected =
+    selectedId && filtered.some((r) => r.id === selectedId)
+      ? selectedId
+      : (filtered[0]?.id ?? null);
 
   if (isLoading) {
     return (
@@ -77,20 +80,43 @@ function SoStatusIndexPage(): React.JSX.Element {
 
   return (
     <div
-      // Break out of #content's 20px padding on sides + bottom only (NOT top —
-      // a negative top margin would pull the pane up over the breadcrumb and
-      // hide it). Height nets the topbar + content top padding + breadcrumb row.
+      // Break out of #content's gutter on sides + bottom only (NOT top — a
+      // negative top margin would pull the pane up over the breadcrumb and
+      // hide it). Derived from --content-pad, never a hard-coded number: the
+      // bleed has to equal the gutter exactly or the pane hangs past the edge
+      // and gives the whole app a horizontal scrollbar.
+      // Height nets the top nav band plus the breadcrumb + tab chrome under it.
       style={{
         display: 'flex',
-        height: 'calc(100vh - 104px)',
-        margin: '0 -20px -20px',
+        height: 'calc(100vh - var(--topbar-height) - 50px)',
+        margin: '0 calc(-1 * var(--content-pad)) calc(-1 * var(--content-pad))',
         overflow: 'hidden',
       }}
     >
       {/* Left selector pane */}
-      <div style={{ width: 260, minWidth: 260, borderRight: '1px solid var(--border)', overflowY: 'auto', background: 'var(--bg2)' }}>
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', position: 'sticky', top: 0, zIndex: 1 }}>
-          <div className="text3" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', marginBottom: 6 }}>
+      <div
+        style={{
+          width: 260,
+          minWidth: 260,
+          borderRight: '1px solid var(--border)',
+          overflowY: 'auto',
+          background: 'var(--bg2)',
+        }}
+      >
+        <div
+          style={{
+            padding: '10px 14px',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--bg3)',
+            position: 'sticky',
+            top: 0,
+            zIndex: 1,
+          }}
+        >
+          <div
+            className="text3"
+            style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', marginBottom: 6 }}
+          >
             SELECT SO / WO
           </div>
           <input
@@ -103,7 +129,9 @@ function SoStatusIndexPage(): React.JSX.Element {
         </div>
         {filtered.length === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 12 }}>
-            {data.rows.length === 0 ? 'No SOs found. Add SOs in SO Master.' : 'No SOs match your search.'}
+            {data.rows.length === 0
+              ? 'No SOs found. Add SOs in SO Master.'
+              : 'No SOs match your search.'}
           </div>
         ) : (
           filtered.map((r) => {
@@ -123,25 +151,83 @@ function SoStatusIndexPage(): React.JSX.Element {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor(r.overallStatus, hasWork), flexShrink: 0 }} />
-                  <span style={{ fontWeight: 700, fontSize: 13, color: active ? 'var(--cyan)' : 'var(--text)' }}>{r.code}</span>
-                  <span className="text3" style={{ fontSize: 10, background: 'var(--bg4)', padding: '1px 5px', borderRadius: 3 }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: dotColor(r.overallStatus, hasWork),
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      fontSize: 13,
+                      color: active ? 'var(--cyan)' : 'var(--text)',
+                    }}
+                  >
+                    {r.code}
+                  </span>
+                  <span
+                    className="text3"
+                    style={{
+                      fontSize: 10,
+                      background: 'var(--bg4)',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                    }}
+                  >
                     {r.lineCount} line{r.lineCount === 1 ? '' : 's'}
                   </span>
                 </div>
-                <div className="text3" style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div
+                  className="text3"
+                  style={{
+                    fontSize: 11,
+                    marginTop: 2,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
                   {r.customerName ?? ''}
                 </div>
                 {bomPending ? (
-                  <div style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700, marginTop: 2 }}>⚠ BOM Pending</div>
+                  <div
+                    style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700, marginTop: 2 }}
+                  >
+                    ⚠ BOM Pending
+                  </div>
                 ) : null}
                 <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
-                  <span className="text3" style={{ fontSize: 10 }}>Qty: <b>{r.totalRequiredQty}</b></span>
-                  <span className="text3" style={{ fontSize: 10 }}>Done: <b style={{ color: 'var(--green)' }}>{r.totalDoneQty}</b></span>
-                  <div style={{ flex: 1, height: 4, background: 'var(--bg5, var(--bg4))', borderRadius: 2, minWidth: 40 }}>
-                    <div style={{ width: `${r.overallPct}%`, height: 4, background: dotColor(r.overallStatus, hasWork), borderRadius: 2 }} />
+                  <span className="text3" style={{ fontSize: 10 }}>
+                    Qty: <b>{r.totalRequiredQty}</b>
+                  </span>
+                  <span className="text3" style={{ fontSize: 10 }}>
+                    Done: <b style={{ color: 'var(--green)' }}>{r.totalDoneQty}</b>
+                  </span>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 4,
+                      background: 'var(--bg5, var(--bg4))',
+                      borderRadius: 2,
+                      minWidth: 40,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${r.overallPct}%`,
+                        height: 4,
+                        background: dotColor(r.overallStatus, hasWork),
+                        borderRadius: 2,
+                      }}
+                    />
                   </div>
-                  <span className="text3" style={{ fontSize: 10 }}>{r.overallPct}%</span>
+                  <span className="text3" style={{ fontSize: 10 }}>
+                    {r.overallPct}%
+                  </span>
                 </div>
               </div>
             );
