@@ -42,6 +42,10 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import {
+  assertProductionOrderNotShortClosed,
+  assertProductionOrderNotShortClosedForOp,
+} from '../../lib/production-order-stop';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
@@ -992,6 +996,9 @@ async function writeProductionLog(
   // quantity carried by a stop -- because both write through here.
   assertNotFutureDate(input.logDate, 'Log date');
   const op = await loadJcOp(tx, input.jcOpId, companyId);
+  // ADR-182 — nothing may be booked against a short-closed Production Order's
+  // Job Card (or a rework child of one). Checked before any write.
+  await assertProductionOrderNotShortClosed(tx, op.jobCardId);
   if (op.opType === 'outsource') {
     throw new ValidationError(
       'This is an outsource operation; use the procurement flow, not Op Entry',
@@ -1245,6 +1252,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       .limit(1);
     const op = opRows[0];
     if (!op) throw new NotFoundError(`Op ${input.jcOpId} not found`);
+    // ADR-182 — no inspection may be recorded on a short-closed order's card.
+    await assertProductionOrderNotShortClosed(tx, op.jobCardId);
 
     const isQcBearing = op.opType === 'qc' || op.qcRequired;
     if (!isQcBearing) {
@@ -2030,6 +2039,8 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
 
   return withUserContext(user, async (tx) => {
     const op = await loadJcOp(tx, input.jcOpId, companyId);
+    // ADR-182 — a short-closed order's Job Card cannot be started either.
+    await assertProductionOrderNotShortClosed(tx, op.jobCardId);
     if (op.opType === 'outsource') {
       throw new ValidationError('Cannot start outsource operation on shop floor');
     }
@@ -2255,7 +2266,14 @@ export async function generateOspPr(
 ): Promise<GenerateOspPrResult> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
-  return withUserContext(user, (tx) => generateOspPrForOp(tx, input.jcOpId, companyId, user));
+  return withUserContext(user, async (tx) => {
+    // ADR-182 — this route commits MONEY to an outside vendor (a jw_osp
+    // purchase request and, with autoPo, a live purchase order) and stamps the
+    // op. None of it may happen on a short-closed order. First statement in the
+    // transaction, before the cascade reads anything.
+    await assertProductionOrderNotShortClosedForOp(tx, input.jcOpId);
+    return generateOspPrForOp(tx, input.jcOpId, companyId, user);
+  });
 }
 
 // Stop a running session — and, when the operator typed a quantity, record the

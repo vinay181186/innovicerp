@@ -16,6 +16,7 @@
 // for the print); every figure the old layout showed is still on the page.
 // EDIT mode is untouched — it lives in jc-status-content.tsx.
 import type { OpLog } from '@innovic/shared';
+import { isProductionOrderStopped } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Download, Loader2, Pencil, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -24,6 +25,7 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { drawingViewUrl } from '@/lib/drawing-url';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
+import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { useJobCard, useJobCardEditModel, useJobCardStatusExtras } from '../api';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
@@ -31,6 +33,7 @@ import { printJobCard } from '../lib/print-job-card';
 import { JcOpCard } from './jc-op-card';
 import { RecoveryBanner } from './jc-recovery-banner';
 import { JcStatusBadge } from './jc-status-badge';
+import { JcStoppedBanner } from './jc-stopped-banner';
 import {
   JcRouteFlowPanel,
   JcViewSummary,
@@ -66,6 +69,16 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // merged completion feed (op_log ∪ NC ∪ OSP) with a real total (ISSUE-174).
   const { data: extras } = useJobCardStatusExtras(id);
   const { data: company } = useMyCompany();
+  // ADR-182 — the Production Order that built this card. Two things come off
+  // it: whether it was SHORT CLOSED (which freezes the card, so every work
+  // button here goes away — the server refuses them anyway) and the `Actual
+  // Size` the store really cut, which the Job Card wire shape does not carry.
+  // A rework / repair child carries no production_order_id of its own, so the
+  // hook walks up the parent chain the same way the server-side stop guard
+  // does — a child of a short-closed order is frozen too, and must say so.
+  // Null only on a hand-raised card or a pre-ADR-170 card.
+  const { order: productionOrder } = useProductionOrderForJobCard(id);
+  const stopped = productionOrder ? isProductionOrderStopped(productionOrder.status) : false;
   // Edit button uses the SAME key as the page it opens (/job-cards/$id/edit →
   // jc_create edit). Hidden until the access matrix has loaded.
   const { data: eff } = useMyAccess();
@@ -259,7 +272,10 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           className="btn btn-ghost btn-sm"
           disabled={opsLoading}
           onClick={() => {
-            if (!printJobCard({ jc, ops, company })) window.alert('Allow popups to print.');
+            if (
+              !printJobCard({ jc, ops, company, actualSize: productionOrder?.actualSize ?? null })
+            )
+              window.alert('Allow popups to print.');
           }}
         >
           <Printer size={13} /> Print Job Card
@@ -272,10 +288,14 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         >
           <Download size={13} /> Excel
         </button>
-        <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
-          ▶ Production Entry
-        </button>
-        {canWrite ? (
+        {/* ADR-182 — a stopped order's card takes no more work and no more
+            edits, so neither button is offered. The server refuses both. */}
+        {!stopped ? (
+          <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
+            ▶ Production Entry
+          </button>
+        ) : null}
+        {canWrite && !stopped ? (
           <Link
             to="/job-cards/$id/edit"
             params={{ id }}
@@ -287,7 +307,9 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         ) : null}
       </div>
 
-      {/* ── B. Rework / repair child banner (null on an ordinary card) ── */}
+      {/* ── B. Banners — the short-closed Production Order stop (ADR-182) and
+             the rework / repair child note. Both null on an ordinary card. ── */}
+      <JcStoppedBanner order={productionOrder} />
       <RecoveryBanner jc={jc} />
 
       {/* ── C. Header tile ── */}
@@ -297,6 +319,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         opsLoaded={opsLoaded}
         sortedOps={sortedOps}
         rmAvailable={extras?.rmAvailable ?? null}
+        actualSize={productionOrder?.actualSize ?? null}
         drawing={drawingRef}
         onOpenDrawing={openDrawing}
       />
@@ -382,6 +405,8 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                   index={i + 1}
                   expanded={isOpen(o.id)}
                   onToggle={() => toggleOp(o.id)}
+                  // ADR-182 — no next-action strip on a stopped order's ops.
+                  stopped={stopped}
                   machineName={opExtraById.get(o.id)?.machineName ?? null}
                   toolDetails={opExtraById.get(o.id)?.toolDetails ?? null}
                   // ADR-103: the client-material tile belongs to the FIRST op —

@@ -14,7 +14,9 @@
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 
-const STATUS_OPTIONS = ['open', 'closed'] as const;
+// ADR-182 added 'short_closed' — an order stopped at any stage. Blank picks
+// every status, so the filter is only about narrowing to one of these.
+const STATUS_OPTIONS = ['open', 'closed', 'short_closed'] as const;
 
 export const productionOrdersReport: RegisteredReport = {
   definition: {

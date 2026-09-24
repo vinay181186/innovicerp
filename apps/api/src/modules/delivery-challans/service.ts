@@ -29,6 +29,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { assertProductionOrderNotShortClosedForPoLine } from '../../lib/production-order-stop';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
@@ -1084,6 +1085,12 @@ export async function createDeliveryChallan(
     const poLineIds = input.lines
       .map((l) => l.purchaseOrderLineId)
       .filter((id): id is string => Boolean(id));
+    // ADR-182 — an outward challan may not be raised for an outsource op whose
+    // Production Order has been short closed. Checked before any write; a
+    // challan line that is not for a JC op resolves to nothing and is allowed.
+    for (const poLineId of poLineIds) {
+      await assertProductionOrderNotShortClosedForPoLine(tx, poLineId);
+    }
     const poLines = await loadPoLineMap(tx, poLineIds, companyId);
     const alreadySent = await sumSentQtyByPoLine(tx, poLineIds, companyId);
 
@@ -1414,6 +1421,23 @@ export async function receiveAgainstDeliveryChallan(
           `DC line ${id} does not belong to delivery challan ${dcHeader.code}`,
         );
       }
+    }
+
+    // ADR-182 — booking material back from the vendor is WORK: it auto-creates
+    // a GRN (insertGrnForOspReceipt, a second GRN path that never goes through
+    // createGoodsReceiptNote and so never meets its guard), moves the jc_op's
+    // received / accepted qty on, and writes a store txn. None of that may
+    // happen on a short-closed Production Order. Checked here, before the
+    // receipt header is inserted, so nothing is half-written.
+    const receivePoLineIds = [
+      ...new Set(
+        inputLineIds
+          .map((id) => dcLineById.get(id)?.purchaseOrderLineId)
+          .filter((v): v is string => Boolean(v)),
+      ),
+    ];
+    for (const poLineId of receivePoLineIds) {
+      await assertProductionOrderNotShortClosedForPoLine(tx, poLineId);
     }
 
     // Per-line over-receive check: cumulative received across all prior

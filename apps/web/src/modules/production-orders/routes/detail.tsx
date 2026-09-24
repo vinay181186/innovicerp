@@ -1,13 +1,22 @@
-// Production Order detail (ADR-170): the header facts, the live Job Card
-// progress, and — for an open order whose JC is complete — the Close button.
+// Production Order detail (ADR-170, ADR-182): the header facts, the live Job
+// Card progress, and — for an open order whose JC is complete — the Close
+// button.
 //
 // Close is BLOCKED until the JC is complete; the server says so through
 // `canClose` / `closeBlockedReason`, and the page only repeats that answer.
 // On close stock is credited ONCE with the JC's actually finished qty (48 of
 // 50 → 48), which is why the confirm names that number before asking.
+//
+// ADR-182 adds SHORT CLOSE — stop the order at ANY stage. It is a different
+// thing from "close short": nothing is credited or written off, the order and
+// its Job Card are frozen, and the un-produced qty goes back to the plan. Once
+// an order is short closed the Close form and the ledger's Reverse buttons go
+// away, and a red panel says who stopped it, when and why.
 
+import { isProductionOrderStopped } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
@@ -15,6 +24,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionOrder } from '../api';
 import { PoCloseForm } from '../components/po-close-form';
 import { PoCloseLedger } from '../components/po-close-ledger';
+import { PoShortCloseModal } from '../components/po-short-close-modal';
 import { PoStatusBadge } from '../components/po-status-badge';
 
 export const productionOrderDetailRoute = createRoute({
@@ -45,6 +55,7 @@ function Fact({
 function ProductionOrderDetailPage(): React.JSX.Element {
   const { id } = productionOrderDetailRoute.useParams();
   const { data, isLoading, isError, error } = useProductionOrder(id);
+  const [shortCloseOpen, setShortCloseOpen] = useState(false);
 
   // Tier-driven (Production). Close is an EDIT on the order, not an entry.
   const { data: eff } = useMyAccess();
@@ -82,10 +93,18 @@ function ProductionOrderDetailPage(): React.JSX.Element {
     );
   }
 
+  // ADR-182 — a short-closed order is dead: no close, no reversal, and no work
+  // on its Job Card. Everything this page offers hangs off that one answer,
+  // read from the shared enum helper so the screen and the server agree on
+  // what "stopped" means.
+  const stopped = isProductionOrderStopped(data.status);
   // ADR-179: close is progressive. It stays available while the order is not
   // fully closed and the server still allows it (`canClose`).
   const notClosed = data.status !== 'closed';
-  const showCloseForm = notClosed && perms.edit && data.canClose;
+  const showCloseForm = !stopped && notClosed && perms.edit && data.canClose;
+  // Short Close is offered at ANY stage except an order already stopped — the
+  // ask is "at any stage". Same `edit` right as Close.
+  const showShortCloseButton = !stopped && perms.edit;
   const pct =
     data.orderQty > 0 ? Math.min(100, Math.round((data.jcFinishedQty / data.orderQty) * 100)) : 0;
 
@@ -112,10 +131,20 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <PoStatusBadge status={data.status} />
             </div>
           </div>
+          {showShortCloseButton ? (
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={() => setShortCloseOpen(true)}
+              title="Stop this Production Order — its Job Card is frozen and the un-produced qty goes back to the plan"
+            >
+              ⛔ Short Close
+            </button>
+          ) : null}
         </div>
 
         <div className="panel-body">
-          {notClosed && !data.canClose && data.closeBlockedReason ? (
+          {!stopped && notClosed && !data.canClose && data.closeBlockedReason ? (
             <div
               className="text3"
               style={{
@@ -183,6 +212,18 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 labels as Plan detail). */}
             <Fact label="RM grade">{data.rawMaterialGradeText ?? '—'}</Fact>
             <Fact label="RM size">{data.rawMaterialSizeText ?? '—'}</Fact>
+            {/* ADR-182 — the shop floor's confirmation at Create, and the size
+                the store really cut (RM size above is the planned one). */}
+            <Fact label="Raw material available">
+              {data.rawMaterialAvailable ? (
+                <span style={{ color: 'var(--green)' }}>✓ Yes</span>
+              ) : (
+                <span style={{ color: 'var(--red)' }}>✗ No</span>
+              )}
+            </Fact>
+            <Fact label="Actual Size" mono>
+              {data.actualSize ?? '—'}
+            </Fact>
 
             <Fact label="Route card">
               <Link
@@ -219,6 +260,29 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      {/* ADR-182 — the order was stopped. Red and high on the page, because it
+          changes what every panel under it means. */}
+      {stopped ? (
+        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--red)' }}>
+          <div className="panel-hdr">
+            <div className="panel-title" style={{ color: 'var(--red)' }}>
+              ⛔ Short closed on {data.shortClosedAt ? data.shortClosedAt.slice(0, 10) : '—'} by{' '}
+              {data.shortClosedByName ?? '—'} — {data.shortCloseReason ?? '—'}
+            </div>
+          </div>
+          <div className="panel-body">
+            <div className="text2" style={{ fontSize: 12, lineHeight: 1.6 }}>
+              No further work is allowed on this order or on Job Card{' '}
+              <span className="mono fw-700">{data.jcCodeText}</span> — production entry, QC, NC,
+              outsourcing, dispatch and edits are all refused. The {data.creditedQty ?? 0} piece
+              {(data.creditedQty ?? 0) === 1 ? '' : 's'} already credited to stock stay credited;
+              the remaining {Math.max(0, data.orderQty - (data.creditedQty ?? 0))} went back to plan{' '}
+              <span className="mono fw-700">{data.planCodeText}</span>, which can be ordered again.
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* JC progress — read live off the Job Card on every load, never stored. */}
       <div className="panel" style={{ marginTop: 12 }}>
@@ -288,7 +352,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div className="panel-body">
-            <PoCloseLedger po={data} canReverse={perms.edit} />
+            {/* ADR-182 — nothing may be reversed on a stopped order either. */}
+            <PoCloseLedger po={data} canReverse={perms.edit && !stopped} />
           </div>
         </div>
       ) : null}
@@ -312,6 +377,17 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {shortCloseOpen ? (
+        <PoShortCloseModal
+          id={data.id}
+          code={data.code}
+          jcCode={data.jcCodeText}
+          orderQty={data.orderQty}
+          creditedQty={data.creditedQty ?? 0}
+          onClose={() => setShortCloseOpen(false)}
+        />
       ) : null}
     </div>
   );

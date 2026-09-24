@@ -8,6 +8,7 @@ import {
   createProductionOrderInputSchema,
   listProductionOrdersQuerySchema,
   reverseProductionOrderCloseInputSchema,
+  shortCloseProductionOrderInputSchema,
 } from './schema';
 import * as service from './service';
 
@@ -45,6 +46,15 @@ export async function productionOrdersRoutes(app: FastifyInstance): Promise<void
     const { id } = idParamSchema.parse(req.params);
     const body = closeProductionOrderInputSchema.parse(req.body ?? {});
     return service.closeProductionOrder(id, body, req.user);
+  });
+
+  // ADR-182 — stop the order at ANY stage. Same `edit` right as Close; the
+  // reason is mandatory and the server refuses only an order already stopped.
+  app.post('/production-orders/:id/short-close', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = shortCloseProductionOrderInputSchema.parse(req.body ?? {});
+    return service.shortCloseProductionOrder(id, body, req.user);
   });
 
   app.post('/production-orders/:id/reverse-close', async (req) => {

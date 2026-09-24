@@ -410,7 +410,29 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                       </span>
                     </td>
                     <td className="td-ctr mono fw-700">{row.orderQty}</td>
-                    <td className="td-ctr mono fw-700">{row.planQty}</td>
+                    {/* ADR-182 — Plan Qty, and under it how much of it the
+                        plan's Production Orders already cover. `Pending` is
+                        what a new order may still be raised for (NAMING.md —
+                        never "Remaining" or "Balance"). Only route-card plans
+                        carry orders, so only they show the two lines. */}
+                    <td className="td-ctr mono fw-700">
+                      {row.planQty}
+                      {row.derivedStatus ? (
+                        <div className="text3" style={{ fontSize: 10, fontWeight: 400 }}>
+                          Covered {row.coveredQty}
+                          <br />
+                          Pending{' '}
+                          <span
+                            className="fw-700"
+                            style={{
+                              color: row.pendingQty > 0 ? 'var(--amber)' : 'var(--green)',
+                            }}
+                          >
+                            {row.pendingQty}
+                          </span>
+                        </div>
+                      ) : null}
+                    </td>
                     <td>
                       {row.productionOrderId && row.productionOrderCode ? (
                         <Link
@@ -477,6 +499,19 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                         </Link>
                       ) : row.derivedStatus === 'in_production' ? (
                         <>
+                          {/* ADR-182 — a plan part-covered by earlier orders
+                              still needs one for its Pending qty, so the
+                              action stays offered alongside Op Entry. */}
+                          {canProductionOrder && row.pendingQty > 0 ? (
+                            <Link
+                              to="/production-orders/new"
+                              search={{ planId: row.id, planCode: row.code }}
+                              className="btn btn-sm btn-primary"
+                              title={`Raise a Production Order for the ${row.pendingQty} still Pending on this plan`}
+                            >
+                              + Create Production Order
+                            </Link>
+                          ) : null}
                           {row.jcId ? (
                             <Link
                               to="/job-cards/$id"

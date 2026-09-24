@@ -20,6 +20,7 @@ import { SHIFTS, opSrNo } from '@innovic/shared';
 import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { emitActivityLog } from '../activity-log/service';
 import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
@@ -178,6 +179,9 @@ export async function createRecoveryJobCard(
     .limit(1);
   const parent = parentRows[0];
   if (!parent) throw new ValidationError(`Origin JC ${nc.jobCardId} not found`);
+  // ADR-182 — a stopped order spawns no rework / repair child: the pieces it
+  // would recover belong to work that has been abandoned.
+  await assertProductionOrderNotShortClosed(tx, parent.id);
 
   const code = await nextRecoveryJcCode(tx, nc.companyId, parent.id, parent.code, kind);
   const label = kind === 'rework' ? 'Rework' : 'Repair';

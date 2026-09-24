@@ -211,6 +211,7 @@ export function JcOpCard({
   toolDetails,
   rmAvailable,
   logs,
+  stopped = false,
   onStart,
   onLog,
   onQc,
@@ -236,6 +237,12 @@ export function JcOpCard({
    *  (as the table always did); Operator / Last Entry / Inspector / QC Date
    *  read the latest entry, the Start / End stamps the earliest and latest. */
   logs: OpLog[];
+  /** ADR-182 — this card's Production Order was short closed, so the operation
+   *  takes no more work: the footer offers none of its next actions (the
+   *  server refuses them all). Everything the card SHOWS stays exactly as it
+   *  was — the figures are the record of what happened before the order was
+   *  stopped. */
+  stopped?: boolean;
   onStart: (opId: string) => void;
   onLog: (opId: string) => void;
   onQc: () => void;
@@ -723,7 +730,7 @@ export function JcOpCard({
         {/* ── ACTIONS: the operation's NEXT ACTION. Lives in jc-op-actions.tsx
             with the OSP ladder, because every button in it is permission-
             gated on the screen it opens and that gating belongs in one place. ── */}
-        <JcOpFooter jc={jc} op={op} onStart={onStart} onLog={onLog} onQc={onQc} />
+        <JcOpFooter jc={jc} op={op} stopped={stopped} onStart={onStart} onLog={onLog} onQc={onQc} />
 
         {/* ── RECENT LOGS — the same latest-3 the table showed ── */}
         <div
