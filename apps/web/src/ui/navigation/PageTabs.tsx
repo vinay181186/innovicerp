@@ -4,12 +4,13 @@
 // to close it.
 //
 // Purely presentational: the caller owns the tab list, the active key and both
-// handlers. Phase 3 wires the shell's `useOpenTabs` store into it — this file
-// deliberately knows nothing about the store, the router or the nav config so
+// handlers. Since Phase 3 the shell's components/shared/open-tabs-bar.tsx is a
+// thin adapter that feeds the `useOpenTabs` store into this component — this
+// file still knows nothing about the store, the router or the nav config, so
 // the /__ui-kit page can render every state without a data fetch.
 //
-// Behaviour carried over from the live components/shared/open-tabs-bar.tsx
-// (audit/02 §D.9), which stays untouched until Phase 3 swaps the shell:
+// Behaviour carried over from components/shared/open-tabs-bar.tsx
+// (audit/02 §D.9), which now composes this component:
 //   • Renders `null` — not empty chrome — when there are zero tabs.
 //   • NO overflow / scroll / max-tab logic here. The cap lives in the store
 //     (MAX_TABS = 8, stores/open-tabs.ts); the strip's `overflow:hidden` and
@@ -31,13 +32,14 @@
 // on the two linked paths it rides alongside the navigation rather than
 // replacing it.
 //
-// KNOWN DEVIATION (not fixed here): `.pgtab-close` is a <button> inside the
+// KNOWN DEVIATION (still not fixed): `.pgtab-close` is a <button> inside the
 // tab, and on both linked paths the tab is an <a>, so a button nests inside a
 // link — invalid HTML. design-ref dodges it only because its tab is a <div>;
-// the live open-tabs-bar.tsx has the same nesting. Fixing it means moving the
-// × out of the link and hanging `.pgtab`'s padding / hover / active rules off
-// a new wrapper — a re-cut of the markup contract with innovic-theme.css
-// (:298-353), i.e. a redesign, not an adherence fix. Left for Phase 3.
+// the pre-Phase-3 open-tabs-bar.tsx had the identical nesting, so this is not a
+// regression. Fixing it means moving the × out of the link and hanging
+// `.pgtab`'s padding / hover / active rules off a new wrapper — a re-cut of the
+// markup contract with innovic-theme.css (:298-353), i.e. a redesign, not an
+// adherence fix. Deliberately left alone in Phase 3.
 
 import type { RenderLinkArgs } from '../layout/link-slot';
 import { isPlainLeftClick } from '../is-plain-left-click';
@@ -71,6 +73,12 @@ export type PageTabRenderLink = (args: PageTabRenderLinkArgs) => React.ReactNode
 export interface PageTabsProps {
   tabs: PageTab[];
   activeKey?: string;
+  /** DOM id for the rendered <nav>. Omitted by default — the stylesheet's
+   *  selector is dual (`#pagetabs, .pagetabs`) and /__ui-kit renders this
+   *  component more than once on one page, so an id may never be hard-coded
+   *  here. The app shell passes `id="pagetabs"` because other code may still
+   *  key off that id. */
+  id?: string;
   /** Fired when a tab is chosen — on every path, linked or not. */
   onSelect?: (key: string) => void;
   onClose?: (key: string) => void;
@@ -85,17 +93,18 @@ export function PageTabs({
   onSelect,
   onClose,
   renderLink,
+  id,
 }: PageTabsProps): React.JSX.Element | null {
   // Zero tabs renders nothing at all, so the shell shows no empty band.
   if (tabs.length === 0) return null;
 
   return (
-    /* Class only, no id: the stylesheet matches either (#pagetabs, .pagetabs)
-       and nothing in the app keys off the id (grepped), while a hard-coded id
-       cannot be rendered twice on one page — which /__ui-kit must do — and
-       collides with the still-live components/shared/open-tabs-bar.tsx until
-       Phase 3 swaps the shell. */
-    <nav className="pagetabs" aria-label="Open pages">
+    /* The class is always on; the id is opt-in. The stylesheet matches either
+       (#pagetabs, .pagetabs), and a hard-coded id cannot be rendered twice on
+       one page — which /__ui-kit must do. The shell
+       (components/shared/open-tabs-bar.tsx) opts in so the long-standing
+       #pagetabs id survives Phase 3. */
+    <nav id={id} className="pagetabs" aria-label="Open pages">
       {tabs.map((t) => {
         const active = t.key === activeKey;
         const current = active ? ('page' as const) : undefined;

@@ -6,8 +6,10 @@
 // Purely presentational: the caller builds the trail. The live
 // components/shared/breadcrumbs.tsx derives it from nav-sections.ts by
 // longest-base match — that derivation stays there (and must stay in sync with
-// PageTabs' own longest-match resolution, audit/02 §D.9); Phase 3 moves it onto
-// this component. Nothing here touches the router, so /__ui-kit can render it.
+// PageTabs' own longest-match resolution, audit/02 §D.9); since Phase 3 that
+// file is a thin adapter that renders THIS component with
+// `renderLink={(p) => <Link {...p} />}`. Nothing here touches the router, so
+// /__ui-kit can render it.
 //
 // Layout (flex, gap, font-size, and the page gutter it must share with
 // #content) lives in CSS on `.breadcrumbs`, not inline — sitting outside
@@ -30,6 +32,12 @@ export interface Crumb {
 
 export interface BreadcrumbsProps {
   crumbs: Crumb[];
+  /** DOM id for the rendered <nav>. Omitted by default — the stylesheet's
+   *  selector is dual (`#breadcrumbs, .breadcrumbs`) and /__ui-kit renders
+   *  this component more than once on one page, so an id may never be
+   *  hard-coded here. The app shell passes `id="breadcrumbs"` because other
+   *  code may still key off that id. */
+  id?: string;
   /** Fired when a crumb link is clicked in the router-free <a> fallback.
    *  Supplying it means the handler OWNS the click: the <a>'s own navigation
    *  is suppressed, so the SPA is not reloaded. */
@@ -53,16 +61,17 @@ export function Breadcrumbs({
   crumbs,
   onNavigate,
   renderLink,
+  id,
 }: BreadcrumbsProps): React.JSX.Element | null {
   if (crumbs.length === 0) return null;
 
   return (
-    /* Class only, no id: the stylesheet matches either (#breadcrumbs,
-       .breadcrumbs) and nothing in the app keys off the id (grepped), while a
-       hard-coded id cannot be rendered twice on one page — which /__ui-kit
-       must do to show "Breadcrumbs (any depth)" — and collides with the still
-       -live components/shared/breadcrumbs.tsx until Phase 3 retires it. */
-    <nav className="breadcrumbs" aria-label="Breadcrumb">
+    /* The class is always on; the id is opt-in. The stylesheet matches either
+       (#breadcrumbs, .breadcrumbs), and a hard-coded id cannot be rendered
+       twice on one page — which /__ui-kit must do to show "Breadcrumbs (any
+       depth)". The shell (components/shared/breadcrumbs.tsx) opts in so the
+       long-standing #breadcrumbs id survives Phase 3. */
+    <nav id={id} className="breadcrumbs" aria-label="Breadcrumb">
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         const linked = Boolean(c.to) && !last;
