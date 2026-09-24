@@ -216,6 +216,12 @@ export const listPlansResponseSchema = z.object({
       /** True when the item has an active route card — the Create Production
        *  Order picker uses it to explain "Route card pending". */
       hasRouteCard: z.boolean().default(false),
+      /** ADR-182: pieces of this plan already covered by live, non-short-closed
+       *  Production Orders (SUM of their orderQty). */
+      coveredQty: z.number().int().nonnegative().default(0),
+      /** ADR-182: `Pending` (NAMING.md) — planQty − coveredQty, floored at 0.
+       *  What a new Production Order may still be raised for. */
+      pendingQty: z.number().int().nonnegative().default(0),
     }),
   ),
   total: z.number().int().nonnegative(),
@@ -245,124 +251,149 @@ const planOpInputSchema = z.object({
 });
 export type PlanOpInput = z.infer<typeof planOpInputSchema>;
 
-export const createPlanInputSchema = z.object({
-  // Optional — server auto-numbers the next PLN-NNNN when blank/omitted.
-  code: z.string().trim().max(40).optional(),
-  planDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  planType: planTypeSchema,
+export const createPlanInputSchema = z
+  .object({
+    // Optional — server auto-numbers the next PLN-NNNN when blank/omitted.
+    code: z.string().trim().max(40).optional(),
+    planDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    planType: planTypeSchema,
 
-  soLineId: z.string().uuid().nullable().optional(),
-  jwLineId: z.string().uuid().nullable().optional(),
-  soCodeText: z.string().trim().max(40).nullable().optional(),
-  lineNo: z.number().int().positive().nullable().optional(),
+    soLineId: z.string().uuid().nullable().optional(),
+    jwLineId: z.string().uuid().nullable().optional(),
+    soCodeText: z.string().trim().max(40).nullable().optional(),
+    lineNo: z.number().int().positive().nullable().optional(),
 
-  itemId: z.string().uuid().nullable().optional(),
-  itemCodeText: z.string().trim().max(80).nullable().optional(),
-  itemNameText: z.string().trim().max(200).nullable().optional(),
+    itemId: z.string().uuid().nullable().optional(),
+    itemCodeText: z.string().trim().max(80).nullable().optional(),
+    itemNameText: z.string().trim().max(200).nullable().optional(),
 
-  orderQty: z.number().int().positive(),
-  planQty: z.number().int().positive(),
+    orderQty: z.number().int().positive(),
+    planQty: z.number().int().positive(),
 
-  plannedStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  plannedEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  customerDispatchDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullable()
-    .optional(),
+    plannedStartDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+    plannedEndDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+    customerDispatchDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
 
-  // Raw material (optional on every plan type) — see planSchema.
-  rawMaterialGradeId: z.string().uuid().nullable().optional(),
-  rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
-  rawMaterialSizeId: z.string().uuid().nullable().optional(),
-  rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+    // Raw material (optional on every plan type) — see planSchema.
+    rawMaterialGradeId: z.string().uuid().nullable().optional(),
+    rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
+    rawMaterialSizeId: z.string().uuid().nullable().optional(),
+    rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
 
-  bomMasterId: z.string().uuid().nullable().optional(),
-  bomParentCode: z.string().trim().max(80).nullable().optional(),
-  bomChildCode: z.string().trim().max(80).nullable().optional(),
+    bomMasterId: z.string().uuid().nullable().optional(),
+    bomParentCode: z.string().trim().max(80).nullable().optional(),
+    bomChildCode: z.string().trim().max(80).nullable().optional(),
 
-  // Type-specific fields (validated by refine below)
-  dpVendorId: z.string().uuid().nullable().optional(),
-  dpVendorCodeText: z.string().trim().max(80).nullable().optional(),
-  dpCost: z.number().nonnegative().nullable().optional(),
-  dpRemarks: z.string().trim().max(500).nullable().optional(),
+    // Type-specific fields (validated by refine below)
+    dpVendorId: z.string().uuid().nullable().optional(),
+    dpVendorCodeText: z.string().trim().max(80).nullable().optional(),
+    dpCost: z.number().nonnegative().nullable().optional(),
+    dpRemarks: z.string().trim().max(500).nullable().optional(),
 
-  foVendorId: z.string().uuid().nullable().optional(),
-  foVendorCodeText: z.string().trim().max(80).nullable().optional(),
-  foProcess: z.string().trim().max(200).nullable().optional(),
-  foRate: z.number().nonnegative().nullable().optional(),
-  foMaterialSrc: z.string().trim().max(200).nullable().optional(),
-  foDeliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  foCostCenter: z.string().trim().max(80).nullable().optional(),
-  foRemarks: z.string().trim().max(500).nullable().optional(),
+    foVendorId: z.string().uuid().nullable().optional(),
+    foVendorCodeText: z.string().trim().max(80).nullable().optional(),
+    foProcess: z.string().trim().max(200).nullable().optional(),
+    foRate: z.number().nonnegative().nullable().optional(),
+    foMaterialSrc: z.string().trim().max(200).nullable().optional(),
+    foDeliveryDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+    foCostCenter: z.string().trim().max(80).nullable().optional(),
+    foRemarks: z.string().trim().max(500).nullable().optional(),
 
-  remarks: z.string().trim().max(500).nullable().optional(),
+    remarks: z.string().trim().max(500).nullable().optional(),
 
-  requiredDocs: z.array(planRequiredDocSchema).optional(),
+    requiredDocs: z.array(planRequiredDocSchema).optional(),
 
-  ops: z.array(planOpInputSchema).optional(),
+    ops: z.array(planOpInputSchema).optional(),
 
-  /** Defaults to 'plan' (old flow). The Planning screen's Create Plan box sends
-   *  'route_card': the server then stores the plan as `planned` straight away
-   *  (no ops, no finalize step) — operations arrive later from the Route Card
-   *  when a Production Order is created. The client's planType is a placeholder;
-   *  the server stores the route card's. */
-  opsSource: planOpsSourceSchema.optional(),
-}).superRefine((val, ctx) => {
-  // opsSource 'route_card': planType is a placeholder — the server stores the
-  // item's route-card plan type (ADR-170) and re-stamps it when the Production
-  // Order is created, so no planType restriction here.
-  if (val.opsSource === 'route_card' && val.ops && val.ops.length > 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['ops'],
-      message: 'A route-card-driven plan carries no operations of its own',
-    });
-  }
-  // Item identification — at least one of itemId / itemCodeText must be set.
-  if (!val.itemId && !val.itemCodeText) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['itemId'],
-      message: 'Either itemId or itemCodeText must be set',
-    });
-  }
-  // Type-specific minimums for direct_purchase + full_outsource
-  if (val.planType === 'direct_purchase') {
-    if (!val.dpVendorId && !val.dpVendorCodeText) {
+    /** Defaults to 'plan' (old flow). The Planning screen's Create Plan box sends
+     *  'route_card': the server then stores the plan as `planned` straight away
+     *  (no ops, no finalize step) — operations arrive later from the Route Card
+     *  when a Production Order is created. The client's planType is a placeholder;
+     *  the server stores the route card's. */
+    opsSource: planOpsSourceSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    // opsSource 'route_card': planType is a placeholder — the server stores the
+    // item's route-card plan type (ADR-170) and re-stamps it when the Production
+    // Order is created, so no planType restriction here.
+    if (val.opsSource === 'route_card' && val.ops && val.ops.length > 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['dpVendorId'],
-        message: 'direct_purchase plan requires a vendor',
+        path: ['ops'],
+        message: 'A route-card-driven plan carries no operations of its own',
       });
     }
-  }
-  if (val.planType === 'full_outsource') {
-    if (!val.foVendorId && !val.foVendorCodeText) {
+    // Item identification — at least one of itemId / itemCodeText must be set.
+    if (!val.itemId && !val.itemCodeText) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['foVendorId'],
-        message: 'full_outsource plan requires a vendor',
+        path: ['itemId'],
+        message: 'Either itemId or itemCodeText must be set',
       });
     }
-    if (!val.foProcess) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['foProcess'],
-        message: 'full_outsource plan requires a process description',
-      });
+    // Type-specific minimums for direct_purchase + full_outsource
+    if (val.planType === 'direct_purchase') {
+      if (!val.dpVendorId && !val.dpVendorCodeText) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dpVendorId'],
+          message: 'direct_purchase plan requires a vendor',
+        });
+      }
     }
-  }
-});
+    if (val.planType === 'full_outsource') {
+      if (!val.foVendorId && !val.foVendorCodeText) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['foVendorId'],
+          message: 'full_outsource plan requires a vendor',
+        });
+      }
+      if (!val.foProcess) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['foProcess'],
+          message: 'full_outsource plan requires a process description',
+        });
+      }
+    }
+  });
 export type CreatePlanInput = z.infer<typeof createPlanInputSchema>;
 
 export const updatePlanInputSchema = z.object({
-  planDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  planDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   planType: planTypeSchema.optional(),
   orderQty: z.number().int().positive().optional(),
   planQty: z.number().int().positive().optional(),
-  plannedStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  plannedEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  plannedStartDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+  plannedEndDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   customerDispatchDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -385,7 +416,11 @@ export const updatePlanInputSchema = z.object({
   foProcess: z.string().trim().max(200).nullable().optional(),
   foRate: z.number().nonnegative().nullable().optional(),
   foMaterialSrc: z.string().trim().max(200).nullable().optional(),
-  foDeliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  foDeliveryDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   foCostCenter: z.string().trim().max(80).nullable().optional(),
   foRemarks: z.string().trim().max(500).nullable().optional(),
 

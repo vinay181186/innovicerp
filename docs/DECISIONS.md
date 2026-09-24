@@ -9727,3 +9727,41 @@ canonical ruled sheet; 0 of 138 screens share a search input; 26 hand-rolled mod
   a bubble listener reads `aria-expanded="false"` because React has already flushed the picker's
   close, and the Escape meant for a dropdown then discards the whole form. The two live inspect
   modals document this; the first build of the shared Modal got it wrong and it was caught in review.
+
+## ADR-182: A plan may be covered by several Production Orders (qty-capped), raw material is confirmed on Create, and an order can be Short Closed at any stage
+
+**Date:** 2026-09-24 · **Status:** Accepted · **Migration:** 0143
+
+### Context
+ADR-170 gave a plan exactly one Production Order, which silently took the whole plan qty
+(`order_qty = plans.plan_qty`, unique index `production_orders_plan_uniq`). Three gaps
+(user, 2026-09-24): the shop floor raises an order without confirming the material is on
+hand or recording the size actually cut; a plan of 50 cannot be covered by 20 + 20 with 10
+left; and an order that must be abandoned mid-way has no stop — ADR-179's "close short"
+finishes a COMPLETE job card and writes off its losses, it is not a stop.
+
+### Decision
+1. **Raw material on Create.** `raw_material_available` (mandatory tick; Create is refused
+   without it, message "No raw material — you cannot create the production order.") and
+   `actual_size` (free text, the size really available / cut). Both snapshot on the order;
+   `actual_size` is copied onto the Job Card it builds, so the traveller prints what was cut.
+   The plan's master-picked Grade / Size stay the intent and are unchanged.
+2. **Order Qty, capped per plan.** `createProductionOrder` takes `orderQty`. Inside the
+   plan's existing `SELECT … FOR UPDATE`, `SUM(order_qty)` of that plan's live,
+   non-short-closed orders + the new qty must be ≤ `plans.plan_qty`, else
+   "Plan PLN-0009 has only 10 left of 50 — reduce the qty." The lock makes concurrent
+   creates safe. The unique index is dropped; the plan list carries `coveredQty` and
+   `pendingQty` (NAMING.md `Pending`).
+3. **Short Close, at any stage.** Status `short_closed` with `short_closed_at/_by` and a
+   mandatory `short_close_reason` (DB CHECK, same shape as 0117's PR short close). A
+   short-closed order releases its qty back to the plan's pending and is DEAD: every
+   server-side write that touches its Job Card refuses — op start/log, QC log, Incoming QC,
+   GRN, DC, dispatch, NC, rework/recovery child, JC edit/delete, and the order's own
+   close / reverse-close. The guard walks `parent_job_card_id` so rework children are
+   covered; the UI hides the buttons as well, but the server is the rule.
+
+### Consequences
+- Positive: material is confirmed before work is raised; a plan can be released in batches;
+  an abandoned order stops dead and gives its qty back.
+- Negative: one more status for every reader (badges, report filter, list tiles, derived
+  plan status); the per-plan cap adds a SUM inside the create lock.

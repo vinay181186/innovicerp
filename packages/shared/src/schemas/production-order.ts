@@ -60,9 +60,26 @@ export const productionOrderSchema = z.object({
   jobCardId: z.string().uuid(),
   jcCodeText: z.string(),
 
-  /** = plans.plan_qty at creation = job_cards.order_qty. */
+  /** Pieces THIS order is for (NAMING.md `Order Qty` / `orderQty`). Since
+   *  ADR-182 a plan may be covered by several orders; the server caps
+   *  SUM(orderQty) of an plan's live, non-short-closed orders at
+   *  `plans.plan_qty`. Equals `job_cards.order_qty` of the card it built. */
   orderQty: z.number().int().positive(),
   targetDate: isoDate,
+
+  /** ADR-182: the shop floor confirmed the material is on hand before the
+   *  order was raised. Create refuses a false value; older rows read true. */
+  rawMaterialAvailable: z.boolean().default(true),
+  /** ADR-182: the size actually available / cut, typed on Create. Free text —
+   *  the plan's Raw Material Size is the master-picked intent, this is what
+   *  the store really had. Copied onto the Job Card so the traveller prints it. */
+  actualSize: z.string().nullable().default(null),
+
+  /** ADR-182 short close — who stopped the order, when, and why. Null unless
+   *  `status === 'short_closed'`; the DB CHECK makes all three mandatory then. */
+  shortClosedAt: z.string().nullable().default(null),
+  shortClosedBy: z.string().uuid().nullable().default(null),
+  shortCloseReason: z.string().nullable().default(null),
 
   closedAt: z.string().nullable(),
   closedBy: z.string().uuid().nullable(),
@@ -124,6 +141,7 @@ export const productionOrderListItemSchema = productionOrderSchema.extend({
   rawMaterialSizeText: z.string().nullable().default(null),
   createdByName: z.string().nullable(),
   closedByName: z.string().nullable(),
+  shortClosedByName: z.string().nullable().default(null),
 });
 export type ProductionOrderListItem = z.infer<typeof productionOrderListItemSchema>;
 
@@ -167,11 +185,19 @@ export type ListProductionOrdersResponse = z.infer<typeof listProductionOrdersRe
 // ─── Write inputs ────────────────────────────────────────────────────────
 
 export const createProductionOrderInputSchema = z.object({
-  /** Must be a `plans.ops_source = 'route_card'` plan with no live Production Order. */
+  /** Must be a `plans.ops_source = 'route_card'` plan in status `planned`.
+   *  ADR-182: several orders may cover one plan, up to its Plan Qty. */
   planId: z.string().uuid(),
   /** Must be the active route card of the plan's item. */
   routeCardId: z.string().uuid(),
   targetDate: isoDate,
+  /** Pieces this order is for. Server caps SUM(orderQty) of the plan's live,
+   *  non-short-closed orders at `plans.plan_qty` under the plan's row lock. */
+  orderQty: z.number().int().positive(),
+  /** ADR-182: must be true — Create is refused without it. */
+  rawMaterialAvailable: z.boolean(),
+  /** ADR-182: the size actually available / cut. Optional. */
+  actualSize: z.string().trim().max(120).nullable().optional(),
   remarks: z.string().trim().max(500).nullable().optional(),
 });
 export type CreateProductionOrderInput = z.infer<typeof createProductionOrderInputSchema>;
@@ -190,6 +216,16 @@ export const closeProductionOrderInputSchema = z.object({
   remarks: z.string().trim().max(500).nullable().optional(),
 });
 export type CloseProductionOrderInput = z.infer<typeof closeProductionOrderInputSchema>;
+
+/** ADR-182 — stop a Production Order at ANY stage. Records who / when / why,
+ *  blocks every further action on the order and its Job Card, and returns the
+ *  un-produced balance to the plan's pending qty. Not the same as ADR-179's
+ *  "close short", which finishes a COMPLETE job card and writes off the losses. */
+export const shortCloseProductionOrderInputSchema = z.object({
+  /** Mandatory — the DB CHECK refuses a short close without it. */
+  reason: z.string().trim().min(1, 'Say why the order is being short closed').max(500),
+});
+export type ShortCloseProductionOrderInput = z.infer<typeof shortCloseProductionOrderInputSchema>;
 
 /** Undo one close-ledger row: writes a compensating stock-out + reversal row and
  *  lowers credited_qty. Refused if the pieces have already been dispatched. */
