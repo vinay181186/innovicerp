@@ -350,7 +350,7 @@ function VendorsListPage(): React.JSX.Element {
                 <th>GST No.</th>
                 <th>Address</th>
                 <th>Rating</th>
-                <th>Status</th>
+                <th>Active</th>
                 <th>Action</th>
               </tr>
             </thead>

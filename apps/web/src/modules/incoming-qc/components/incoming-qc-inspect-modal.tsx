@@ -130,9 +130,19 @@ export function IncomingQcInspectModal({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
-            title={`${o.grnNo}${itemCode ? ` · ${itemCode}` : ''}${o.itemName ? ` · ${o.itemName}` : ''}`}
+            title={`${o.grnNo}${o.clientPoLineNo ? ` · POL ${o.clientPoLineNo}` : ''}${itemCode ? ` · ${itemCode}` : ''}${o.itemName ? ` · ${o.itemName}` : ''}`}
           >
             🔬 Incoming QC — <span className="mono">{o.grnNo}</span>
+            {/* POL — the customer's own PO line number, before the item code. */}
+            {o.clientPoLineNo ? (
+              <>
+                {' '}
+                · POL{' '}
+                <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                  {o.clientPoLineNo}
+                </span>
+              </>
+            ) : null}
             {itemCode ? (
               <>
                 {' '}

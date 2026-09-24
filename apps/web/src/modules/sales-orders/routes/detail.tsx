@@ -252,26 +252,30 @@ function SalesOrderDetailPage(): React.JSX.Element {
           <table className="innovic-table tbl-ctr">
             <thead>
               <tr>
-                <th>#</th>
+                <th>Ln</th>
+                {/* The customer's PO line number. It is typed on this line and
+                    every downstream document repeats it, so it belongs next to
+                    the line number here, where it is authored. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 {/* Image · CODE/REV · Part Name in one badge cell (user decision
                     2026-09-21) — the former separate Part Name column folded in. */}
                 <th>Item</th>
                 <th>Material</th>
                 <th>Drawing</th>
-                <th>Qty</th>
+                <th>Order Qty</th>
                 <th style={{ color: 'var(--green)' }}>Dispatched</th>
                 <th style={{ color: 'var(--green)' }}>Billed</th>
                 <th style={{ color: 'var(--red)' }}>Pending</th>
                 <th>UOM</th>
                 {priceHidden ? null : <th>Rate</th>}
-                <th>Due date</th>
-                <th>Status</th>
+                <th>Due Date</th>
+                <th>SO Status</th>
               </tr>
             </thead>
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={priceHidden ? 11 : 12} className="empty-state">
+                  <td colSpan={priceHidden ? 12 : 13} className="empty-state">
                     No lines on this SO yet.
                   </td>
                 </tr>
@@ -503,6 +507,9 @@ function LineRow(props: {
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {l.clientPoLineNo ?? '—'}
+      </td>
       {/* Thumbnail · CODE/REV · part name. The Rev is the customer's drawing
           revision, typed on this line, and it travels with the item code
           wherever an SO line is shown (the badge formats it via itemCodeWithRev). */}
@@ -588,10 +595,10 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
   };
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
-      <StripItem label="Type" value={detail.type.replaceAll('_', ' ')} />
-      <StripItem label="Date" value={<span className="mono">{detail.soDate}</span>} />
+      <StripItem label="SO Type" value={detail.type.replaceAll('_', ' ')} />
+      <StripItem label="SO Date" value={<span className="mono">{detail.soDate}</span>} />
       <StripItem
-        label="Client PO"
+        label="Client PO No."
         value={
           detail.clientPoNo ? (
             <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
@@ -610,7 +617,7 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
           }
         />
       )}
-      <StripItem label="Cost center" value={detail.costCenter ?? '—'} />
+      <StripItem label="Cost Centre" value={detail.costCenter ?? '—'} />
       {detail.type !== 'component_manufacturing' ? (
         <StripItem
           label="BOM master"

@@ -559,12 +559,12 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             </div>
             {mode === 'edit' && routeCard ? (
               <div className="form-grp">
-                <span className="form-label">Revision</span>
+                <span className="form-label">Route Card Rev</span>
                 <div
                   className="mono fw-700"
                   style={{ color: 'var(--amber)', paddingTop: 7, fontSize: 14 }}
                 >
-                  Rev {routeCard.currentRevision} →{' '}
+                  Route Card Rev {routeCard.currentRevision} →{' '}
                   <span style={{ color: 'var(--green)' }}>Rev {routeCard.currentRevision + 1}</span>
                 </div>
               </div>
@@ -610,7 +610,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 36 }}>Sr No</th>
+                <th style={{ width: 36 }}>Op</th>
                 {/* Group replaces the old Type dropdown. The KIND of a row is
                     decided by which Add button raised it (Op / OSP / QC) and is
                     shown by the row's tint and by the QC / OSP badge in this
@@ -621,7 +621,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 <th style={{ width: 150 }}>Machine / Vendor ★</th>
                 <th>Operation ★</th>
                 <th className="text3" style={{ width: 90 }}>
-                  Cycle(h)
+                  Cycle Time (h)
                 </th>
                 <th style={{ width: 90 }}>Program / Lead</th>
                 <th className="cyan" style={{ width: 90 }}>

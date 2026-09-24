@@ -260,7 +260,13 @@ function LinePanel({
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="panel-hdr" style={{ background: 'rgba(34,197,94,0.06)' }}>
         <span className="panel-title" style={{ color: 'var(--green)' }}>
-          📦 Line {line.lineNo}: {itemCodeWithRev(line.itemCode, line.itemRevision, '')} — {line.itemName ?? ''}
+          {/* POL is the line number on the CUSTOMER'S OWN purchase order — an
+              extra value beside our line number, never a substitute for it. */}
+          📦 Ln {line.lineNo} ·{' '}
+          <span className="mono" style={{ color: 'var(--purple)' }}>
+            POL {line.clientPoLineNo ?? '—'}
+          </span>
+          : {itemCodeWithRev(line.itemCode, line.itemRevision, '')} — {line.itemName ?? ''}
           {line.orderQty ? ` (Qty: ${line.orderQty})` : ''}
         </span>
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -477,7 +483,7 @@ function UploadDialog({
         </div>
         <div className="panel-body" style={{ display: 'grid', gap: 12 }}>
           <div>
-            <label className="form-label">SO Line</label>
+            <label className="form-label">Ln</label>
             <select
               className="innovic-select"
               value={lineKey}
@@ -487,7 +493,8 @@ function UploadDialog({
               <option value="">SO Level (no specific line)</option>
               {lines.map((l) => (
                 <option key={l.soLineId} value={l.soLineId}>
-                  Line {l.lineNo}: {itemCodeWithRev(l.itemCode, l.itemRevision, '')} — {l.itemName ?? ''}
+                  Line {l.lineNo} · POL {l.clientPoLineNo ?? '—'}:{' '}
+                  {itemCodeWithRev(l.itemCode, l.itemRevision, '')} — {l.itemName ?? ''}
                 </option>
               ))}
             </select>

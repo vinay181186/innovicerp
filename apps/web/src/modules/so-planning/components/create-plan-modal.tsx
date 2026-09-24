@@ -18,17 +18,13 @@ import { useEffect, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
-import {
-  useCreatePlan,
-  useDefaultRouteOps,
-  useReleaseReservations,
-  useReserveStock,
-} from '@/modules/plans/api';
+import { useCreatePlan, useDefaultRouteOps, useReserveStock } from '@/modules/plans/api';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { Modal } from './modal';
+import { ReleaseStockModal, lineFacts } from './reservation-modals';
 
 // −/+ stepper buttons: same .btn .btn-ghost shape as the ▲▼ movers elsewhere,
 // just squared off so they sit flush against the qty box.
@@ -119,7 +115,9 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const [err, setErr] = useState<string | null>(null);
   const createPlan = useCreatePlan();
   const reserve = useReserveStock();
-  const release = useReleaseReservations();
+  // ADR-180: releasing a booking now needs a reason, so the old one-click
+  // "release" link is a box of its own (shared with the Planning sheet).
+  const [releaseOpen, setReleaseOpen] = useState(false);
 
   const doReserve = async () => {
     if (!line.itemId) {
@@ -145,15 +143,6 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       });
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to reserve');
-    }
-  };
-
-  const doRelease = async () => {
-    setErr(null);
-    try {
-      await release.mutateAsync({ soLineId: line.soLineId });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to release');
     }
   };
 
@@ -255,6 +244,24 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     ? itemCodeWithRev(line.itemCode, line.itemRevision)
     : (line.itemName ?? `Line ${line.lineNo}`);
 
+  // ADR-180 — releasing needs a qty and a reason, so it has its own box, shared
+  // with the Planning sheet. It SWAPS for this one rather than sitting inside
+  // it: two Modal instances each register a window ESC listener and each
+  // set/clear document.body.style.overflow, so ESC raised two "are you sure you
+  // want to exit?" prompts at once and closing the inner box gave the page its
+  // scrollbar back while the outer one was still open. This component stays
+  // mounted either way, so a half-filled plan form is still there when the
+  // release box closes.
+  if (releaseOpen) {
+    return (
+      <ReleaseStockModal
+        facts={lineFacts(so.soCode, line)}
+        onClose={() => setReleaseOpen(false)}
+        onDone={() => setReleaseOpen(false)}
+      />
+    );
+  }
+
   return (
     <Modal title={`Create Plan — ${lineLabel}`} size="lg" onClose={onClose} footer={footer}>
       {/* ── What is being planned ── */}
@@ -334,12 +341,32 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--border)',
             }}
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>IN STOCK</div>
+            {/* ADR-180 — this is AVAILABLE (physical − reserved), not what is
+                on the shelf. PHYSICAL sits in its own tile beside it. */}
+            <div style={{ fontSize: 10, color: 'var(--text3)' }}>AVAILABLE</div>
             <div
               className="mono fw-700"
               style={{ fontSize: 20, color: stock > 0 ? 'var(--amber)' : 'var(--text3)' }}
             >
               {stock}
+            </div>
+          </div>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '8px 16px',
+              background: 'var(--bg)',
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+            }}
+            title="On the shelf for this item — reserving never changes it"
+          >
+            <div style={{ fontSize: 10, color: 'var(--text3)' }}>PHYSICAL</div>
+            <div
+              className="mono fw-700"
+              style={{ fontSize: 20, color: line.physicalQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}
+            >
+              {line.physicalQty}
             </div>
           </div>
           <div
@@ -361,8 +388,8 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             {reserved > 0 ? (
               <button
                 type="button"
-                onClick={() => void doRelease()}
-                disabled={release.isPending}
+                onClick={() => setReleaseOpen(true)}
+                title="Give this booking back to free stock — a reason is required"
                 style={{
                   background: 'none',
                   border: 'none',
@@ -373,7 +400,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
                   cursor: 'pointer',
                 }}
               >
-                {release.isPending ? '…' : 'release'}
+                release
               </button>
             ) : null}
           </div>
@@ -593,9 +620,9 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
             {reservable > 0
-              ? `Max: ${reservable} pcs (In Stock: ${stock}, still uncovered: ${uncovered})`
+              ? `Max: ${reservable} pcs (Available: ${stock}, still uncovered: ${uncovered})`
               : stock <= 0
-                ? 'Nothing in stock to reserve.'
+                ? 'No free stock to reserve — Available is 0.'
                 : 'This line is already fully covered — nothing left to reserve.'}
             {reserved > 0
               ? ` · Already reserved: ${reserved} — use “release” above to give it back.`

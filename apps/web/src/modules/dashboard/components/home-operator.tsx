@@ -141,13 +141,13 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
               {/* Item Name sits beside the code it belongs to: the code names the
                   drawing, the name is what the operator recognises on the rack. */}
               <tr>
-                <th>JC</th>
+                <th>JC No.</th>
                 <th>Op</th>
                 <th>Machine</th>
-                <th>Item</th>
+                <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="td-ctr">Available</th>
-                <th>Due</th>
+                <th>Due Date</th>
                 <th />
               </tr>
             </thead>

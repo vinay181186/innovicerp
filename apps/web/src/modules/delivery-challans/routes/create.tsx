@@ -157,6 +157,9 @@ interface LineDraft {
    *  is submitted and must stay the bare code. Null on a PO line bought without
    *  an SO behind it (raw material, bought-in hardware), which is common here. */
   itemRevision: string | null;
+  /** The CUSTOMER's PO line number off the SO line behind this PO line.
+   *  Display only — the challan stores no copy of it. */
+  clientPoLineNo: string | null;
   itemNameText: string | null;
   uom: Uom;
   poLineQty: number;
@@ -310,13 +313,13 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           <table className="innovic-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th>PO No / NC No</th>
-                <th>Date</th>
+                <th>PO No. / NC No.</th>
+                <th>Raised Date</th>
                 <th>Vendor</th>
-                <th>Type</th>
-                <th>Status</th>
+                <th>PO Type</th>
+                <th>PO Status</th>
                 <th>Lines</th>
-                <th className="td-ctr">Sent / Ordered</th>
+                <th className="td-ctr">Sent / Order Qty</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
@@ -405,6 +408,7 @@ function PoDcFormBody({
         // send an empty itemCodeText (the schema requires min length 1).
         itemCodeText: l.itemCodeText ?? l.itemCode ?? l.itemName ?? '',
         itemRevision: l.itemRevision,
+        clientPoLineNo: l.clientPoLineNo,
         itemNameText: l.itemName ?? null,
         uom: 'NOS',
         poLineQty: Number(l.qty ?? 0),
@@ -635,13 +639,16 @@ function PoDcFormBody({
         <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={{ width: '5%' }}>#</th>
-              <th style={{ width: '15%' }}>Item Code</th>
-              <th style={{ width: '22%' }}>Name</th>
+              <th style={{ width: '5%' }}>Ln</th>
+              {/* POL = the CUSTOMER's own PO line number off the SO line behind
+                  this PO line. Widths below still total 100. */}
+              <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
+              <th style={{ width: '14%' }}>Item Code</th>
+              <th style={{ width: '20%' }}>Item Name</th>
               <th style={{ width: '8%' }}>PO Qty</th>
               <th style={{ width: '12%', color: 'var(--green)' }}>Send Now ★</th>
-              <th style={{ width: '17%' }}>Material</th>
-              <th style={{ width: '21%' }}>Remarks</th>
+              <th style={{ width: '16%' }}>Material</th>
+              <th style={{ width: '20%' }}>Remarks</th>
             </tr>
           </thead>
           <tbody>
@@ -661,6 +668,11 @@ function PoDcFormBody({
                   <tr>
                     <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
                       {idx + 1}
+                    </td>
+                    {/* POL — the customer's PO line number; '—' on a line with
+                        no sales order behind it (raw material, bought-in). */}
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {l.clientPoLineNo ?? '—'}
                     </td>
                     {/* CODE/REV while raising the challan, so this screen agrees
                         with the saved challan and its printout instead of showing
@@ -760,7 +772,7 @@ function PoDcFormBody({
                   user staring at a zero with no explanation. */}
                   {issue || blocked ? (
                     <tr>
-                      <td colSpan={7} style={{ padding: '0 8px 8px' }}>
+                      <td colSpan={8} style={{ padding: '0 8px 8px' }}>
                         <div
                           style={{
                             color: issue ? 'var(--red)' : done ? 'var(--text2)' : 'var(--amber)',
@@ -920,7 +932,10 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
             <thead>
               <tr>
                 <th>NC No</th>
-                <th>Item</th>
+                {/* POL = the CUSTOMER's own PO line number off the SO line
+                    behind the job card this NC was raised on. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
+                <th>Item Code · Name</th>
                 <th>Qty to return</th>
                 <th style={{ width: 110 }} />
               </tr>
@@ -930,6 +945,9 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
                 <tr key={n.id}>
                   <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
                     {n.code}
+                  </td>
+                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    {n.clientPoLineNo ?? '—'}
                   </td>
                   <td>
                     <b className="mono fw-700" style={{ color: 'var(--text)' }}>
@@ -1097,6 +1115,15 @@ function NcDcFormBody({
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {nc.code}
+            </b>
+          </div>
+          {/* POL — the customer's own PO line number off the SO line behind
+              this NC's job card. */}
+          <div>
+            <span style={{ fontSize: 9, color: 'var(--text3)' }}>POL</span>
+            <br />
+            <b className="mono fw-700" style={{ color: 'var(--purple)' }}>
+              {nc.clientPoLineNo ?? '—'}
             </b>
           </div>
           <div>

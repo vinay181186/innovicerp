@@ -46,6 +46,10 @@ export async function getDailyReport(
         -- null revision. Cast to text: the contract types this as a string, and
         -- a database that has not had migration 0119 still holds an integer.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the same SO line as the revision above. SO side only: a job-work
+        -- line has no customer PO, so JW-sourced cards are correctly null.
+        sol.client_po_line_no AS "clientPoLineNo",
         i.name AS "itemName",
         op.op_seq AS "opSeq",
         op.operation,
@@ -90,6 +94,7 @@ export async function getDailyReport(
         jcCode: String(r['jcCode'] ?? ''),
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         opSeq: Number(r['opSeq'] ?? 0),
         operation: String(r['operation'] ?? ''),

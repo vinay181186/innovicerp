@@ -34,7 +34,7 @@ function CostCenterEditPage(): React.JSX.Element {
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have edit access to Cost Center Master. Ask an admin for L2 Data Entry or
+        ⛔ You do not have edit access to Cost Centre Master. Ask an admin for L2 Data Entry or
         above in Finance.
       </div>
     );
@@ -43,7 +43,7 @@ function CostCenterEditPage(): React.JSX.Element {
   if (isLoading) {
     return (
       <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading cost center…
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading cost centre…
       </div>
     );
   }
@@ -82,7 +82,7 @@ function CostCenterEditPage(): React.JSX.Element {
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
-              ✏ Edit Cost Center
+              ✏ Edit Cost Centre
             </div>
           </div>
         </div>

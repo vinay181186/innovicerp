@@ -266,11 +266,11 @@ function OperatorsListPage(): React.JSX.Element {
           <thead>
             <tr>
               <th>Sr No</th>
-              <th>Operator ID</th>
+              <th>Code</th>
               <th style={{ textAlign: 'left' }}>Name</th>
               <th>Department</th>
               <th>Skills / Machines</th>
-              <th>Status</th>
+              <th>Active</th>
               <th>Action</th>
             </tr>
           </thead>

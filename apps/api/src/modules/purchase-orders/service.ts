@@ -679,6 +679,11 @@ export async function getPurchaseOrder(
         itemRevision: sql<
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        // The customer's own PO line number, off the SAME SO line the revision
+        // came from. No COALESCE with the job-work fallback: a JW line belongs
+        // to a job-work order, not to a customer PO, so it has no client PO
+        // line number to offer -- an OSP line sourced that way stays null.
+        clientPoLineNo: salesOrderLines.clientPoLineNo,
         sourcePrCode: purchaseRequests.code,
       })
       .from(purchaseOrderLines)
@@ -732,7 +737,7 @@ export async function getPurchaseOrder(
 
     const header = toPurchaseOrder(headerRow.row);
     const lines = lineRows.map((r) =>
-      toPurchaseOrderLine(r.row, r.itemCode, r.sourcePrCode, r.itemRevision),
+      toPurchaseOrderLine(r.row, r.itemCode, r.sourcePrCode, r.itemRevision, r.clientPoLineNo),
     );
     return {
       ...(showMoney ? header : hidePoHeaderMoney(header)),
@@ -795,6 +800,12 @@ function toPurchaseOrderLine(
    *  has no SO line behind it, and on the write-back paths that return a
    *  freshly inserted row without the join. */
   itemRevision: string | null = null,
+  /** The customer's PO line number, joined from sales_order_lines.client_po_line_no
+   *  on source_so_line_id -- the same join that supplies `itemRevision`. Null
+   *  when the line has no SO line behind it (a hand-typed line, or an OSP line
+   *  sourced from a job-work order), and on the write-back paths that return a
+   *  freshly inserted row without the join. */
+  clientPoLineNo: string | null = null,
 ): PurchaseOrderLine {
   return {
     id: row.id,
@@ -805,6 +816,7 @@ function toPurchaseOrderLine(
     itemCodeText: row.itemCodeText,
     itemCode,
     itemRevision,
+    clientPoLineNo,
     itemName: row.itemName,
     qty: row.qty,
     rate: row.rate,

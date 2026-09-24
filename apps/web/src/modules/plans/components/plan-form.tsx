@@ -476,7 +476,7 @@ export function PlanForm({
             gap: 10,
           }}
         >
-          <Field label="Item code *">
+          <Field label="Item Code *">
             <input
               className="innovic-input"
               list="dlPlanItems"
@@ -493,7 +493,7 @@ export function PlanForm({
               ))}
             </datalist>
           </Field>
-          <Field label="Item name">
+          <Field label="Item Name">
             {/* Rule: item code is the unique key — on-master name is derived +
                 read-only; off-master code keeps it editable. */}
             <input
@@ -517,7 +517,7 @@ export function PlanForm({
               onChange={(e) => update('itemId', e.target.value || null)}
             />
           </Field>
-          <Field label="Order qty *">
+          <Field label="Order Qty *">
             <input
               type="number"
               min={1}
@@ -545,14 +545,14 @@ export function PlanForm({
               onChange={(e) => update('soLineId', e.target.value || null)}
             />
           </Field>
-          <Field label="SO code text">
+          <Field label="SO No.">
             <input
               className="innovic-input"
               value={values.soCodeText}
               onChange={(e) => update('soCodeText', e.target.value)}
             />
           </Field>
-          <Field label="Line #">
+          <Field label="Ln">
             <input
               type="number"
               className="innovic-input"
@@ -717,7 +717,7 @@ export function PlanForm({
                 onChange={(e) => update('foDeliveryDate', e.target.value)}
               />
             </Field>
-            <Field label="Cost centre">
+            <Field label="Cost Centre">
               <input
                 className="innovic-input"
                 value={values.foCostCenter}
@@ -793,11 +793,11 @@ export function PlanForm({
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Sr No</th>
+                  <th>Op</th>
                   <th>Operation</th>
-                  <th>Type</th>
+                  <th>Op Type</th>
                   <th>Machine</th>
-                  <th>Cycle (hrs)</th>
+                  <th>Cycle Time (h)</th>
                   <th>QC?</th>
                   <th>OSP vendor</th>
                   <th>OSP cost</th>

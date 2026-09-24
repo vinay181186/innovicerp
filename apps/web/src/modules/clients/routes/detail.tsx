@@ -166,7 +166,7 @@ function DetailGrid(props: { client: Client }): React.JSX.Element {
   return (
     <div className="form-grid">
       <Pair
-        label="Status"
+        label="Active"
         value={
           <span className={`badge ${client.isActive ? 'b-green' : 'b-grey'}`}>
             {client.isActive ? 'active' : 'inactive'}

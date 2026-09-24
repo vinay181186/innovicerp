@@ -228,12 +228,12 @@ function ActivityLogListPage() {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Time</th>
+                <th>Log Date</th>
+                <th>Log Time</th>
                 <th>Action</th>
-                <th>Entity</th>
+                <th>Document Type</th>
                 <th>Detail</th>
-                <th>Ref</th>
+                <th>Document No.</th>
                 <th>User</th>
               </tr>
             </thead>

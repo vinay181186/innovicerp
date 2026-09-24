@@ -178,7 +178,7 @@ function TpiMasterDetailPage(): React.JSX.Element {
               <div style={{ whiteSpace: 'pre-wrap' }}>{data.remarks ?? '—'}</div>
             </div>
             <div className="form-grp">
-              <span className="form-label">Status</span>
+              <span className="form-label">Active</span>
               <div className="fw-700">{data.isActive ? 'Active' : 'Inactive'}</div>
             </div>
           </div>

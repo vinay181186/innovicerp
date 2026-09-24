@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
@@ -138,13 +139,17 @@ function DesignTrackerListPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Design No.</th>
-                  <th>SO</th>
-                  <th>Item</th>
-                  <th>Designer</th>
-                  <th>Start</th>
-                  <th>Target</th>
-                  <th>Status</th>
-                  <th className="td-ctr">Rev</th>
+                  <th>SO No.</th>
+                  {/* POL — the CUSTOMER's own purchase-order line number off the
+                      SO line behind this design. Nothing to do with the "Rev"
+                      column further right, which counts OUR design revisions. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
+                  <th>Item Code</th>
+                  <th>Design Engineer</th>
+                  <th>Start Date</th>
+                  <th>Target Date</th>
+                  <th>Design Status</th>
+                  <th className="td-ctr">Design Rev</th>
                   <th className="td-ctr">Hours</th>
                   <th>Actions</th>
                 </tr>
@@ -152,7 +157,7 @@ function DesignTrackerListPage(): React.JSX.Element {
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-state">
+                    <td colSpan={11} className="empty-state">
                       No designs assigned yet
                     </td>
                   </tr>
@@ -357,8 +362,13 @@ function Row({
           {row.soCodeText ?? '—'}
         </span>
       </td>
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {row.clientPoLineNo ?? '—'}
+      </td>
       <td style={{ fontSize: 11 }}>
-        <span style={{ color: 'var(--purple)', fontWeight: 600 }}>{row.itemCodeText ?? ''}</span>
+        <span style={{ color: 'var(--purple)', fontWeight: 600 }}>
+          {itemCodeWithRev(row.itemCodeText, row.itemRevision, '')}
+        </span>
         <br />
         {row.itemNameText ?? ''}
       </td>
@@ -565,13 +575,13 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             />
           ) : null}
         </Field>
-        <Field label="Designer" req>
+        <Field label="Design Engineer" req>
           <input
             type="text"
             className="innovic-input"
             value={designer}
             onChange={(e) => setDesigner(e.target.value)}
-            placeholder="Engineer name"
+            placeholder="Design engineer name"
           />
         </Field>
         <Field label="Estimated Hours">
@@ -656,7 +666,7 @@ function EditDesignModal({
   return (
     <ModalShell onClose={onClose} title={`✏ Edit Design — ${row.code}`}>
       <div className="form-grid">
-        <Field label="SO">
+        <Field label="SO No.">
           <input
             type="text"
             className="innovic-input"
@@ -665,16 +675,26 @@ function EditDesignModal({
             style={{ color: 'var(--cyan)', fontWeight: 700 }}
           />
         </Field>
-        <Field label="Item">
+        {/* POL — read-only here; it is typed only on the Sales Order. */}
+        <Field label="POL">
           <input
             type="text"
             className="innovic-input"
-            value={row.itemCodeText ?? ''}
+            value={row.clientPoLineNo ?? '—'}
+            readOnly
+            style={{ color: 'var(--purple)', fontWeight: 700 }}
+          />
+        </Field>
+        <Field label="Item Code">
+          <input
+            type="text"
+            className="innovic-input"
+            value={itemCodeWithRev(row.itemCodeText, row.itemRevision, '')}
             readOnly
             style={{ color: 'var(--purple)' }}
           />
         </Field>
-        <Field label="Designer">
+        <Field label="Design Engineer">
           <input
             type="text"
             className="innovic-input"
@@ -682,7 +702,7 @@ function EditDesignModal({
             onChange={(e) => setDesigner(e.target.value)}
           />
         </Field>
-        <Field label="Status">
+        <Field label="Design Status">
           <select
             className="innovic-select"
             value={status}
@@ -789,11 +809,15 @@ function LogTimeModal({
           fontSize: 12,
         }}
       >
-        <b style={{ color: 'var(--cyan)' }}>{row.soCodeText ?? '—'}</b> | {row.itemCodeText ?? ''} |
-        Designer: <b>{row.designer}</b>
+        <b style={{ color: 'var(--cyan)' }}>{row.soCodeText ?? '—'}</b> | POL{' '}
+        <b className="mono" style={{ color: 'var(--purple)' }}>
+          {row.clientPoLineNo ?? '—'}
+        </b>{' '}
+        | {itemCodeWithRev(row.itemCodeText, row.itemRevision, '')} | Design Engineer:{' '}
+        <b>{row.designer}</b>
       </div>
       <div className="form-grid">
-        <Field label="Date">
+        <Field label="Log Date">
           <input
             type="date"
             className="innovic-input"
@@ -812,7 +836,7 @@ function LogTimeModal({
             placeholder="e.g. 4"
           />
         </Field>
-        <Field label="Worker">
+        <Field label="Design Engineer">
           <input
             type="text"
             className="innovic-input"
@@ -842,9 +866,9 @@ function LogTimeModal({
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Log Date</th>
                   <th>Hours</th>
-                  <th>Worker</th>
+                  <th>Design Engineer</th>
                   <th>Description</th>
                 </tr>
               </thead>

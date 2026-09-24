@@ -32,6 +32,8 @@ interface LineDraft {
    *  line the API could not prove is the customer's part — raw material and
    *  bought-in lines — and those show the bare code. */
   itemRevision: string | null;
+  /** The CUSTOMER's PO line number off the SO line behind this challan line. */
+  clientPoLineNo: string | null;
   itemNameText: string | null;
   sentQty: number;
   alreadyReceived: number;
@@ -75,6 +77,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           lineNo: l.lineNo,
           itemCodeText: l.itemCodeText,
           itemRevision: l.itemRevision,
+          clientPoLineNo: l.clientPoLineNo,
           itemNameText: l.itemNameText,
           sentQty: sent,
           alreadyReceived: already,
@@ -260,18 +263,24 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>#</th>
-                    <th>Item</th>
+                    <th>Ln</th>
+                    {/* POL = the CUSTOMER's own PO line number off the SO line
+                        behind this challan line. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
+                    <th>Item Code · Name</th>
                     <th>Sent</th>
-                    <th>Already recv</th>
-                    <th>Remaining</th>
-                    <th>Receive now</th>
+                    <th>Received so far</th>
+                    <th>Pending</th>
+                    <th>Receive Now</th>
                   </tr>
                 </thead>
                 <tbody>
                   {lineDrafts.map((d, idx) => (
                     <tr key={d.dcLineId}>
                       <td className="mono">{d.lineNo}</td>
+                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        {d.clientPoLineNo ?? '—'}
+                      </td>
                       <td>
                         <span className="mono">
                           {itemCodeWithRev(d.itemCodeText, d.itemRevision)}

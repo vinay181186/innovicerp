@@ -390,10 +390,10 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>#</th><th>Item Code</th><th>Item Name</th><th>Qty/Set</th>
-              <th style={{ color: 'var(--cyan)', fontWeight: 800 }}>Total Need</th><th>Type</th>
+              <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty/Set</th>
+              <th style={{ color: 'var(--cyan)', fontWeight: 800 }}>Total Need</th><th>BOM Type</th>
               <th style={{ color: 'var(--green)' }}>Stock</th>
-              <th style={{ color: 'var(--red)' }}>Shortfall</th><th>Plan Status</th>
+              <th style={{ color: 'var(--red)' }}>Pending</th><th>Plan Status</th>
             </tr>
           </thead>
           <tbody>
@@ -471,7 +471,7 @@ function LinePanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="text3 mono" style={{ fontSize: 11, fontWeight: 700 }}>LINE {line.lineNo}</span>
           {line.clientPoLineNo ? (
-            <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>[CPO:{line.clientPoLineNo}]</span>
+            <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>[POL:{line.clientPoLineNo}]</span>
           ) : null}
           <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--purple)' }}>{itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision, '')}</span>
           <span style={{ fontSize: 13 }}>{line.partName ?? ''}</span>
@@ -503,7 +503,7 @@ function LinePanel({
           <Chip label="PO Raised" icon="🛒" tint={CHIP_TINT.purple} qty={line.chips.poRaised.qty} total={line.chips.poRaised.total} />
           <Chip label="GRN Recd" icon="📦" tint={CHIP_TINT.blue} qty={line.chips.grnReceived.qty} total={line.chips.grnReceived.total} />
           <Chip label="QC Accepted" icon="✅" tint={CHIP_TINT.green} qty={line.chips.qcAccepted.qty} total={line.chips.qcAccepted.total} />
-          <Chip label="Produced" icon="⚙" tint={CHIP_TINT.green2} qty={line.chips.produced.qty} total={line.chips.produced.total} />
+          <Chip label="Completed" icon="⚙" tint={CHIP_TINT.green2} qty={line.chips.produced.qty} total={line.chips.produced.total} />
           <Chip label="Dispatched" icon="🚚" tint={CHIP_TINT.amber} qty={line.chips.dispatched.qty} total={line.chips.dispatched.total} />
         </div>
         <OutsourceAlertRows alert={line.outsourceAlert} />
@@ -519,15 +519,17 @@ function LinePanel({
                   SO with several similar parts the code alone is not enough to
                   tell two cards apart. `itemName` was already on SoStatusJc and
                   unused. */}
-              <th>JC No.</th><th>Item Code</th><th>Item Name</th><th>JC Qty</th><th>Completed</th>
-              <th style={{ color: 'var(--red)' }}>Remaining</th><th>Priority</th><th>Due Date</th>
+              {/* POL — the CUSTOMER's own purchase-order line number off the SO
+                  line behind this card, immediately before the item code. */}
+              <th>JC No.</th><th style={{ color: 'var(--purple)' }}>POL</th><th>Item Code</th><th>Item Name</th><th>Order Qty</th><th>Completed</th>
+              <th style={{ color: 'var(--red)' }}>Pending</th><th>Priority</th><th>Due Date</th>
               <th>JC Status</th><th>Operations</th><th></th>
             </tr>
           </thead>
           <tbody>
             {line.jobCards.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text3" style={{ padding: '10px 14px', fontSize: 12, fontStyle: 'italic' }}>
+                <td colSpan={12} className="text3" style={{ padding: '10px 14px', fontSize: 12, fontStyle: 'italic' }}>
                   No Job Cards linked to this SO line.
                 </td>
               </tr>
@@ -622,6 +624,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
         <Link to="/job-cards/$id" params={{ id: jc.id }} style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', textDecoration: 'underline dotted' }}>{jc.code}</Link>
         {runCount > 0 ? <span style={{ fontSize: 10, color: 'var(--amber)', marginLeft: 4 }}>▶{runCount} running</span> : null}
       </td>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>{jc.clientPoLineNo ?? '—'}</td>
       <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{itemCodeWithRev(jc.itemCode, jc.itemRevision)}</td>
       {/* Null name renders nothing rather than a dash — the code beside it already
           says the item is known. A long part name clips with the full text on

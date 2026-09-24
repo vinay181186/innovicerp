@@ -203,7 +203,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th>Completed</th>
                       <th style={{ color: 'var(--amber)' }}>Available</th>
                       <th>Pending Hrs</th>
-                      <th>Status</th>
+                      <th>Op Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -366,9 +366,9 @@ function MachineCard({
               <th>JC No.</th>
               <th>Item</th>
               <th>Operation</th>
-              <th>Status</th>
+              <th>Op Status</th>
               <th style={{ color: 'var(--amber)' }}>Pending</th>
-              <th>Due</th>
+              <th>Due Date</th>
             </tr>
           </thead>
           <tbody>

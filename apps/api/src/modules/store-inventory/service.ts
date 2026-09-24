@@ -3,24 +3,44 @@
 // GET /store-inventory — per-item rollup of current stock + open PO pending
 // + open JC pending. Mirrors legacy renderStore (HTML L24803). Plus two
 // write actions: adjust stock (manual + / − with reason) and set min qty.
+//
+// ADR-180 also parks two read-only stock-booking endpoints here rather than in
+// a module of their own: they answer questions about the Store screen's own
+// numbers (how much of this item is free, and who is holding the rest), so they
+// belong to the form that already governs it — same permission, same module.
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type {
   AdjustStockInput,
+  ListReservationsQuery,
+  ListReservationsResponse,
   ListStoreInventoryQuery,
   ListStoreInventoryResponse,
+  ReservationDetail,
   SetMinStockInput,
+  StockAvailability,
   StoreInventoryRow,
 } from '@innovic/shared';
-import { items, storeTransactions } from '../../db/schema';
+import {
+  clients,
+  items,
+  jobCards,
+  productionOrders,
+  salesOrderLines,
+  salesOrders,
+  soStockReservations,
+  storeTransactions,
+  users,
+} from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { readStockPosition, readStockPositions } from '../../lib/stock-reservation';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -158,9 +178,20 @@ export async function listStoreInventory(
     };
     const typed = result as unknown as R[];
 
+    // RESERVED / AVAILABLE for every row in ONE read, through the shared
+    // reservation library (ADR-180). `inStock` is untouched — it has always been
+    // the physical shelf count and still is; what is new is that the screen can
+    // now say how much of it is already promised to an order.
+    const positions = await readStockPositions(
+      tx,
+      companyId,
+      typed.map((r) => r.item_id),
+    );
+
     const rows: StoreInventoryRow[] = typed.map((r) => {
       const inStock = Number(r.in_stock);
       const minQty = Number(r.min_qty);
+      const reservedQty = Math.max(0, positions.get(r.item_id)?.reservedQty ?? 0);
       return {
         itemId: r.item_id,
         itemCode: r.item_code,
@@ -168,6 +199,8 @@ export async function listStoreInventory(
         material: r.material,
         uom: r.uom,
         inStock,
+        reservedQty,
+        availableQty: inStock - reservedQty,
         minQty,
         onPoQty: Number(r.on_po_qty),
         atVendorQty: Number(r.at_vendor_qty),
@@ -185,9 +218,15 @@ export async function listStoreInventory(
 
     // Summary always reflects ALL items (legacy stat tiles show whole-master
     // counts regardless of active filter — clicking a tile sets the filter).
+    const totalStockPieces = rows.reduce((s, r) => s + r.inStock, 0);
+    const totalReservedPieces = rows.reduce((s, r) => s + r.reservedQty, 0);
     const summary = {
       totalItems: rows.length,
-      totalStockPieces: rows.reduce((s, r) => s + r.inStock, 0),
+      totalStockPieces,
+      totalReservedPieces,
+      // Clamped at 0: a negative free-stock total would only ever be a data
+      // fault, and showing it as a tile figure helps nobody.
+      totalAvailablePieces: Math.max(0, totalStockPieces - totalReservedPieces),
       itemsInStockCount: rows.filter((r) => r.inStock > 0).length,
       lowStockCount: rows.filter((r) => r.lowStock).length,
       zeroStockCount: rows.filter((r) => r.inStock === 0).length,
@@ -278,6 +317,147 @@ export async function setMinStock(
       .returning({ minStockQty: items.minStockQty });
     if (result.length === 0) throw new NotFoundError(`Item ${input.itemId} not found`);
     return { ok: true as const, minQty: result[0]!.minStockQty };
+  });
+}
+
+// ─── Stock booking reads (ADR-180) ────────────────────────────────────────
+
+/**
+ * The three numbers for ONE item — PHYSICAL, RESERVED, AVAILABLE.
+ *
+ * Every screen that wants to say "you may still promise N" reads this and
+ * nothing else, so no two screens can compute it differently. Read-only, gated
+ * by the same form key as the Store screen it sits on.
+ */
+export async function getStockAvailability(
+  itemId: string,
+  user: AuthContext,
+): Promise<StockAvailability> {
+  // Readable by whoever may open Store/Inventory OR SO Planning: the Allocate
+  // box needs the live figure and a planner is not required to hold Item
+  // Master rights. Without this they got a silent 403 and the box quietly fell
+  // back to the sheet's numbers, which can be a minute stale — the cap it
+  // enforces would then be wrong with nothing on screen to say so.
+  await requireAnyFormAccess(user, [
+    ['item_create', 'view'],
+    ['plan_create', 'view'],
+  ]);
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const itemRows = await tx
+      .select({ id: items.id, code: items.code })
+      .from(items)
+      .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
+      .limit(1);
+    const itm = itemRows[0];
+    if (!itm) throw new NotFoundError(`Item ${itemId} not found`);
+
+    const position = await readStockPosition(tx, companyId, itm.id);
+    return { itemId: itm.id, itemCode: itm.code, ...position };
+  });
+}
+
+/**
+ * "Where is my stock reserved?" — the drill-down behind the Reserved figure.
+ *
+ * Default is the rows that still hold stock; `includeClosed` adds the settled
+ * history (dispatched, released, cancelled) for anyone auditing what happened
+ * to a booking. `totalReserved` counts only what is still held, so it matches
+ * the Reserved column on the Store screen whichever view is showing.
+ */
+export async function listReservations(
+  query: ListReservationsQuery,
+  user: AuthContext,
+): Promise<ListReservationsResponse> {
+  await requireFormAccess(user, 'item_create', 'view');
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const filters = [
+      eq(soStockReservations.companyId, companyId),
+      isNull(soStockReservations.deletedAt),
+    ];
+    if (!query.includeClosed) {
+      filters.push(sql`${soStockReservations.status} IN ('active', 'partially_consumed')`);
+    }
+    if (query.itemId) filters.push(eq(soStockReservations.itemId, query.itemId));
+    if (query.soLineId) filters.push(eq(soStockReservations.soLineId, query.soLineId));
+    if (query.salesOrderId) filters.push(eq(salesOrderLines.salesOrderId, query.salesOrderId));
+
+    const rows = await tx
+      .select({
+        r: soStockReservations,
+        itemCode: items.code,
+        salesOrderId: salesOrderLines.salesOrderId,
+        // The customer's drawing revision typed on the SO line, cast for the
+        // same pre-0119 reason every other itemRevision read gives. Null for a
+        // job-work line, which has no sales-order line behind it.
+        itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        // POL — the line number on the CUSTOMER's own purchase order, off the
+        // SAME SO line as the revision above. Not `lineNo`, which is the
+        // snapshot of OUR line number already on the reservation row.
+        clientPoLineNo: salesOrderLines.clientPoLineNo,
+        clientName: clients.name,
+        soCustomerName: salesOrders.customerName,
+        productionOrderCode: productionOrders.code,
+        jobCardCode: jobCards.code,
+        reservedByName: users.fullName,
+      })
+      .from(soStockReservations)
+      .leftJoin(items, eq(items.id, soStockReservations.itemId))
+      .leftJoin(
+        salesOrderLines,
+        and(
+          eq(salesOrderLines.id, soStockReservations.soLineId),
+          isNull(salesOrderLines.deletedAt),
+        ),
+      )
+      .leftJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+      .leftJoin(clients, eq(clients.id, salesOrders.clientId))
+      .leftJoin(productionOrders, eq(productionOrders.id, soStockReservations.productionOrderId))
+      .leftJoin(jobCards, eq(jobCards.id, soStockReservations.jobCardId))
+      .leftJoin(users, eq(users.id, soStockReservations.createdBy))
+      .where(and(...filters))
+      .orderBy(desc(soStockReservations.createdAt));
+
+    const detail: ReservationDetail[] = rows.map((row) => {
+      const r = row.r;
+      const remainingQty = Math.max(0, r.qty - r.consumedQty - r.releasedQty);
+      return {
+        id: r.id,
+        itemId: r.itemId,
+        itemCode: row.itemCode ?? r.itemCodeText,
+        soLineId: r.soLineId,
+        soCodeText: r.soCodeText,
+        lineNo: r.lineNo,
+        // The client master is the live name; the SO's own snapshot is the
+        // fallback for an order raised before a client row existed.
+        customerName: row.clientName ?? row.soCustomerName ?? null,
+        itemRevision: row.itemRevision ?? null,
+        clientPoLineNo: row.clientPoLineNo ?? null,
+        qty: r.qty,
+        consumedQty: r.consumedQty,
+        releasedQty: r.releasedQty,
+        remainingQty,
+        source: r.reservationSource === 'auto_production' ? 'auto_production' : 'manual',
+        status: r.status as ReservationDetail['status'],
+        productionOrderId: r.productionOrderId,
+        productionOrderCode: row.productionOrderCode ?? null,
+        jobCardId: r.jobCardId,
+        jobCardCode: row.jobCardCode ?? null,
+        salesOrderId: row.salesOrderId ?? null,
+        reservedAt: r.createdAt.toISOString(),
+        reservedByName: row.reservedByName ?? null,
+        remarks: r.remarks,
+      };
+    });
+
+    const totalReserved = detail.reduce(
+      (s, d) =>
+        d.status === 'active' || d.status === 'partially_consumed' ? s + d.remainingQty : s,
+      0,
+    );
+    return { rows: detail, totalReserved };
   });
 }
 

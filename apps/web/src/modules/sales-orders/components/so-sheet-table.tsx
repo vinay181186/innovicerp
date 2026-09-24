@@ -67,7 +67,7 @@ export function SoSheetTable({
       {/* The sheet look (tbl-grid): bold blue column names, gridlines, cream /
           white rows, fixed widths that add up to 100% so nothing scrolls
           sideways. Every column is centred by the standard; only Customer is
-          left-aligned (a name reads from its left edge, and the CPO line under
+          left-aligned (a name reads from its left edge, and the POL under
           it must start at the same x). */}
       <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
         <table className="innovic-table tbl-grid">
@@ -89,15 +89,15 @@ export function SoSheetTable({
             <tr>
               <th>Sr No</th>
               <th>SO No.</th>
-              <th>Type</th>
+              <th>SO Type</th>
               <th style={{ textAlign: 'left' }}>Customer</th>
               <th>Lines</th>
               <th>Order Qty</th>
               <th>JC Qty</th>
               <th>Dispatched</th>
-              <th>Balance</th>
+              <th>Pending</th>
               <th>Due Date</th>
-              <th>Status</th>
+              <th>SO Status</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -197,7 +197,7 @@ export function SoSheetTable({
                       }}
                     >
                       <span>
-                        CPO:{' '}
+                        Client PO:{' '}
                         <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                           {so.clientPoNo ?? '—'}
                         </span>

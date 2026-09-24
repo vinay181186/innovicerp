@@ -171,16 +171,16 @@ export function JcStatTiles({
 
         {/* SO / WO */}
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-          <div style={lblStyle}>SO / WO</div>
+          <div style={lblStyle}>SO / JWSO No.</div>
           <div className="fw-700 mono" style={{ fontSize: 16 }}>
             {jc.sourceLink?.code ?? '—'}
           </div>
           <div style={{ ...noteStyle, marginTop: 2 }}>
-            Line <b>{jc.sourceLink?.lineNo ?? '1'}</b> · Due {jc.dueDate ?? '—'}
+            Ln <b>{jc.sourceLink?.lineNo ?? '1'}</b> · Due {jc.dueDate ?? '—'}
           </div>
           {jc.clientPoLineNo ? (
             <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
-              CPO Ln: {jc.clientPoLineNo}
+              POL: {jc.clientPoLineNo}
             </div>
           ) : null}
           {/* ADR-170 — the Production Order that built this card. Only such a
@@ -214,7 +214,7 @@ export function JcStatTiles({
               overflow: 'hidden',
             }}
           >
-            <QtySeg label="Ordered" value={jc.orderQty} color="var(--text)" />
+            <QtySeg label="Order Qty" value={jc.orderQty} color="var(--text)" />
             <QtySeg
               label="Completed"
               value={completed}

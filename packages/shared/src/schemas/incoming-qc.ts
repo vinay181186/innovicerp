@@ -34,6 +34,13 @@ export const incomingQcPendingRowSchema = z.object({
    *  correctly null here — a blank on half the rows is the truth, not a gap.
    *  Never items.revision, which is a different column about the item master. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a stock-replenishment purchase, a vendor
+   *  return, a line whose SO line was deleted). Read-only: the Sales Order is
+   *  the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   receivedQty: z.number().int(),
   pendingQty: z.number().int(),
@@ -59,6 +66,13 @@ export const incomingQcCompletedRowSchema = z.object({
    *  SO line behind them, and null shows the bare item code. Never
    *  items.revision. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a stock-replenishment purchase, a vendor
+   *  return, a line whose SO line was deleted). Read-only: the Sales Order is
+   *  the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   receivedQty: z.number().int(),
   acceptedQty: z.number().int(),

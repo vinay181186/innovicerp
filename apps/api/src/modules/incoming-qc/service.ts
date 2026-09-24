@@ -325,6 +325,12 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- The customer's own PO line number, off the SAME sol join as the
+        -- revision above. Only the SO side: a job-work line belongs to a
+        -- job-work order, not to a customer PO, so it has no client PO line
+        -- number and the field stays null on that trace, as it does on a
+        -- raw-material receipt with no SO behind it at all.
+        sol.client_po_line_no AS "clientPoLineNo",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) AS "pendingQty",
@@ -366,6 +372,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       opName: (r['opName'] as string | null) ?? null,
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
+      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       receivedQty: Number(r['receivedQty'] ?? 0),
       pendingQty: Number(r['pendingQty'] ?? 0),
@@ -385,6 +392,12 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         -- raw-material receipt, which has no SO behind it. Cast to text so a
         -- pre-0119 database cannot hand the UI a number. Never items.revision.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- The customer's own PO line number, off the SAME sol join as the
+        -- revision above. Only the SO side: a job-work line belongs to a
+        -- job-work order, not to a customer PO, so it has no client PO line
+        -- number and the field stays null on that trace, as it does on a
+        -- raw-material receipt with no SO behind it at all.
+        sol.client_po_line_no AS "clientPoLineNo",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
@@ -429,6 +442,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         vendorName: (r['vendorName'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         receivedQty: Number(r['receivedQty'] ?? 0),
         acceptedQty,

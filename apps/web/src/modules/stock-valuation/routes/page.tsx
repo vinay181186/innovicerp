@@ -194,7 +194,7 @@ function StockValuationPage(): React.JSX.Element {
                     <th>Stock Value</th>
                   </>
                 )}
-                <th>Last GRN</th>
+                <th>Last GRN Date</th>
               </tr>
             </thead>
             <tbody>

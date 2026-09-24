@@ -15,8 +15,8 @@ export const jcStatusSummaryReport: RegisteredReport = {
     group: 'Operations',
     filters: [],
     columns: [
-      { key: 'computed_status', label: 'Status', type: 'text' },
-      { key: 'item_code', label: 'Item code', type: 'text' },
+      { key: 'computed_status', label: 'JC Status', type: 'text' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
       // Customer drawing revision of the SO line the job cards were raised
       // from. It is part of the grouping key, not just a display column: two
       // batches of the same item cut to revision A and revision B are two
@@ -24,11 +24,11 @@ export const jcStatusSummaryReport: RegisteredReport = {
       // separate from item_code so the sheet still VLOOKUPs against Item
       // Master. Blank for JW-sourced or standalone JCs.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'item_name', label: 'Item name', type: 'text' },
-      { key: 'jc_count', label: 'JC count', type: 'number' },
-      { key: 'total_order_qty', label: 'Order qty (total)', type: 'number' },
-      { key: 'done_ops_total', label: 'Done ops', type: 'number' },
-      { key: 'qc_pending_ops_total', label: 'QC pending ops', type: 'number' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'jc_count', label: 'JC Count', type: 'number' },
+      { key: 'total_order_qty', label: 'Order Qty (Total)', type: 'number' },
+      { key: 'done_ops_total', label: 'Done Ops', type: 'number' },
+      { key: 'qc_pending_ops_total', label: 'QC Pending Ops', type: 'number' },
     ],
   },
   async run({ tx, companyId }) {

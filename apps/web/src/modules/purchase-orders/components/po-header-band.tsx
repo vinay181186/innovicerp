@@ -118,8 +118,8 @@ export function PoHeaderBand({
           background: 'var(--border3)',
         }}
       >
-        {/* ── Supplier ── */}
-        <Col caption="Supplier">
+        {/* ── Vendor ── */}
+        <Col caption="Vendor">
           {detail.vendorCodeText ? (
             <div
               className="mono fw-700"
@@ -161,7 +161,7 @@ export function PoHeaderBand({
             }
           />
           <Row label="PO Type" value={detail.poType.replaceAll('_', ' ')} />
-          <Row label="Date" value={<span className="mono">{detail.poDate}</span>} />
+          <Row label="PO Date" value={<span className="mono">{detail.poDate}</span>} />
           <Row
             label="PR"
             value={
@@ -178,7 +178,7 @@ export function PoHeaderBand({
               PO lines' source SO line. Planning stamps it on every line of a PO
               raised off a Job Card; a hand-raised PO has no order behind it. */}
           <Row
-            label="SO"
+            label="SO No."
             value={
               detail.soCode ? (
                 <span className="mono" style={{ color: 'var(--purple)' }}>
@@ -246,7 +246,7 @@ export function PoHeaderBand({
         {/* ── Tax & approval ── */}
         <Col caption="Tax & Approval">
           <Row label="Tax type" value={detail.taxType ?? '—'} />
-          <Row label="Due date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
+          <Row label="Due Date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
           {detail.totalAmount == null ? null : (
             <div style={{ fontSize: 11, marginBottom: 6 }}>
               <div className="text3" style={{ marginBottom: 2 }}>

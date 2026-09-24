@@ -16,12 +16,12 @@ export const itemsOnHandReport: RegisteredReport = {
     group: 'Inventory',
     filters: [],
     columns: [
-      { key: 'code', label: 'Item code', type: 'text' },
-      { key: 'name', label: 'Item name', type: 'text' },
-      { key: 'item_type', label: 'Type', type: 'text' },
+      { key: 'code', label: 'Item Code', type: 'text' },
+      { key: 'name', label: 'Item Name', type: 'text' },
+      { key: 'item_type', label: 'Item Type', type: 'text' },
       { key: 'uom', label: 'UOM', type: 'text' },
       { key: 'material', label: 'Material', type: 'text' },
-      { key: 'on_hand_qty', label: 'On hand', type: 'number' },
+      { key: 'on_hand_qty', label: 'On Hand', type: 'number' },
     ],
   },
   async run({ tx, companyId }) {

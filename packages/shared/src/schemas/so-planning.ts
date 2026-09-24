@@ -2,6 +2,7 @@
 // Per docs/PARITY/so-planning.md.
 
 import { z } from 'zod';
+import { RESERVATION_SOURCES, RESERVATION_STATUSES } from '../enums/reservation';
 import {
   planDerivedStatusSchema,
   planOpsSourceSchema,
@@ -130,14 +131,26 @@ export const planningLineSchema = z.object({
   directJcCodes: z.array(z.string()),
   /** max(0, orderQty - totalPlanned - directJcQty). */
   remaining: z.number().int().nonnegative(),
-  /** Current FREE on-hand finished-goods stock for this line item (0 if none /
-   *  free-text). Free = physical on-hand minus anything already reserved (a
-   *  reservation hard-moves stock out of general on-hand). Lets the planner see
-   *  how much is available to plan only the shortfall against. */
+  /** AVAILABLE stock for this line's item = physical − total active reserved
+   *  (ADR-180). Kept under its old name because its MEANING is unchanged — it
+   *  has always answered "how much may I still use" — only the arithmetic
+   *  behind it moved, now that a reservation no longer removes stock from the
+   *  shelf. 0 for a free-text line. Also published as `availableQty` below. */
   stockQty: z.number().int().nonnegative(),
-  /** Qty currently RESERVED (booked) to THIS SO line from stock — held out of
-   *  general stock until it is dispatched or released. */
+  /** Qty currently RESERVED (booked) to THIS SO line. */
   reservedQty: z.number().int().nonnegative(),
+  /** What is actually on the shelf for this item, reserved or not (ADR-180). */
+  physicalQty: z.number().int().nonnegative(),
+  /** Reserved to EVERY SO line, not just this one — the committed total. */
+  totalReservedQty: z.number().int().nonnegative(),
+  /** Already shipped against this SO line (sales_order_lines.dispatched_qty). */
+  dispatchedQty: z.number().int().nonnegative(),
+  /** physical − totalReserved. Same number as `stockQty`, named plainly. */
+  availableQty: z.number().int().nonnegative(),
+  /** What still has to be made or bought:
+   *  max(0, orderQty − dispatchedQty − reservedQty). Stock reserved to this
+   *  line already covers part of the order, so it is not planned again. */
+  balanceToPlan: z.number().int().nonnegative(),
   /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs. */
   lineStatus: z.enum(['fully_planned', 'partial', 'unplanned']),
   /** Equipment SO with a linked BOM master → show §8 Equipment BOM Planning button. */
@@ -191,6 +204,12 @@ export const planningBomResponseSchema = z.object({
   bomNo: z.string(),
   bomRev: z.number().int().nonnegative(),
   parentItemCode: z.string().nullable(),
+  /** The customer's drawing revision on the parent SO line, so the modal's
+   *  title and chips read CODE/REV like the screen behind them. */
+  parentItemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for that parent SO line. The BOM
+   *  CHILDREN keep neither — a child is not itself an order line. */
+  parentClientPoLineNo: z.string().nullable().default(null),
   parentItemName: z.string().nullable(),
   orderQty: z.number().int().positive(),
   /** §9 'Final Assembly Job Card' applies only to assembly items, not Equipment SOs. */
@@ -210,12 +229,21 @@ export const reserveStockInputSchema = z.object({
   qty: z.number().int().positive(),
   soCodeText: z.string(),
   lineNo: z.number().int().positive(),
+  /** Where the booking came from. The API forces 'manual' on the public
+   *  route — only the Production Order close may write 'auto_production'. */
+  source: z.enum(RESERVATION_SOURCES).optional(),
+  remarks: z.string().max(500).optional(),
 });
 export type ReserveStockInput = z.infer<typeof reserveStockInputSchema>;
 
 export const releaseReservationInputSchema = z.object({
-  /** Releases ALL active reservations on this line back to general stock. */
+  /** The SO line whose booking is being given back. */
   soLineId: z.string().uuid(),
+  /** How many pieces to release. Omitted = release everything still held on
+   *  this line. Never more than the line's remaining reserved qty. */
+  qty: z.number().int().positive().optional(),
+  /** Why. Required: giving stock back is a decision someone must own. */
+  reason: z.string().trim().min(1, 'A reason is required to release stock').max(500),
 });
 export type ReleaseReservationInput = z.infer<typeof releaseReservationInputSchema>;
 
@@ -224,17 +252,93 @@ export const soStockReservationSchema = z.object({
   soLineId: z.string().uuid(),
   itemId: z.string().uuid(),
   itemCode: z.string().nullable(),
+  /** Pieces originally booked. */
   qty: z.number().int().nonnegative(),
-  status: z.enum(['active', 'released', 'dispatched']),
+  /** Of those, how many have shipped. */
+  consumedQty: z.number().int().nonnegative(),
+  /** Of those, how many were given back. */
+  releasedQty: z.number().int().nonnegative(),
+  /** qty − consumed − released: what this row still holds. */
+  remainingQty: z.number().int().nonnegative(),
+  source: z.enum(RESERVATION_SOURCES),
+  status: z.enum(RESERVATION_STATUSES),
 });
 export type SoStockReservation = z.infer<typeof soStockReservationSchema>;
 
-/** Result of a reserve/release action: the affected reservations + qty moved. */
+/** Result of a reserve/release action: the affected reservations + qty moved,
+ *  plus the three stock numbers AFTER the action so the screen can show the
+ *  new position without a second round trip. */
 export const reservationActionResultSchema = z.object({
   reservations: z.array(soStockReservationSchema),
   qtyMoved: z.number().int().nonnegative(),
+  physicalQty: z.number().int().nonnegative(),
+  reservedQty: z.number().int().nonnegative(),
+  availableQty: z.number().int().nonnegative(),
 });
 export type ReservationActionResult = z.infer<typeof reservationActionResultSchema>;
+
+/** The three numbers for one item — the ONE shape every screen reads. */
+export const stockAvailabilitySchema = z.object({
+  itemId: z.string().uuid(),
+  itemCode: z.string().nullable(),
+  physicalQty: z.number().int(),
+  reservedQty: z.number().int().nonnegative(),
+  availableQty: z.number().int(),
+});
+export type StockAvailability = z.infer<typeof stockAvailabilitySchema>;
+
+/** One row of the "where is my stock reserved?" drill-down (ADR-180 §H). */
+export const reservationDetailSchema = z.object({
+  id: z.string().uuid(),
+  itemId: z.string().uuid(),
+  itemCode: z.string().nullable(),
+  soLineId: z.string().uuid(),
+  soCodeText: z.string(),
+  lineNo: z.number().int(),
+  customerName: z.string().nullable(),
+  itemRevision: z.string().nullable(),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to, shown beside the item code on every downstream document (user rule,
+   *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
+   *  Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
+  qty: z.number().int().nonnegative(),
+  consumedQty: z.number().int().nonnegative(),
+  releasedQty: z.number().int().nonnegative(),
+  remainingQty: z.number().int().nonnegative(),
+  source: z.enum(RESERVATION_SOURCES),
+  status: z.enum(RESERVATION_STATUSES),
+  productionOrderId: z.string().uuid().nullable(),
+  productionOrderCode: z.string().nullable(),
+  jobCardId: z.string().uuid().nullable(),
+  jobCardCode: z.string().nullable(),
+  salesOrderId: z.string().uuid().nullable(),
+  reservedAt: z.string(),
+  reservedByName: z.string().nullable(),
+  remarks: z.string().nullable(),
+});
+export type ReservationDetail = z.infer<typeof reservationDetailSchema>;
+
+export const listReservationsQuerySchema = z.object({
+  itemId: z.string().uuid().optional(),
+  soLineId: z.string().uuid().optional(),
+  salesOrderId: z.string().uuid().optional(),
+  /** Omitted = only the rows still holding stock (active + partially_consumed).
+   *  Parsed from the literal string: `z.coerce.boolean()` would turn the
+   *  string "false" into TRUE, so an explicit `?includeClosed=false` asked for
+   *  the exact opposite of what it said. */
+  includeClosed: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+});
+export type ListReservationsQuery = z.infer<typeof listReservationsQuerySchema>;
+
+export const listReservationsResponseSchema = z.object({
+  rows: z.array(reservationDetailSchema),
+  totalReserved: z.number().int().nonnegative(),
+});
+export type ListReservationsResponse = z.infer<typeof listReservationsResponseSchema>;
 
 // ─── Buy lines: raise a purchase request straight from the SO line (ADR-171) ──
 

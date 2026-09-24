@@ -122,7 +122,7 @@ function StuckDashboardPage(): React.JSX.Element {
                     <table className="innovic-table">
                       <thead>
                         <tr>
-                          <th>SO</th>
+                          <th>SO No.</th>
                           <th>Customer</th>
                           <th className="td-ctr">Stuck For</th>
                           <th className="td-ctr">Threshold</th>

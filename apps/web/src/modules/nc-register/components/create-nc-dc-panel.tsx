@@ -66,7 +66,7 @@ export function CreateNcDcPanel(props: {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" htmlFor="ncDcDate">
-                DC date<span className="req">★</span>
+                DC Date<span className="req">★</span>
               </label>
               <input
                 id="ncDcDate"
@@ -115,7 +115,7 @@ export function CreateNcDcPanel(props: {
             </div>
             <div className="form-grp">
               <label className="form-label" htmlFor="ncDcVehicle">
-                Vehicle No
+                Vehicle No.
               </label>
               <input
                 id="ncDcVehicle"

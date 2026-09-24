@@ -16,6 +16,7 @@ function machineSection(group: DailyReportResponse['groups'][number]): string {
     .map(
       (r) => `<tr>
       <td style="font-family:monospace">${esc(r.jcCode)}</td>
+      <td style="color:#7c3aed;font-weight:700">${esc(r.clientPoLineNo ?? '—')}</td>
       <td style="color:#7c3aed">${esc(itemCodeWithRev(r.itemCode, r.itemRevision))}</td>
       <td>${esc(r.itemName ?? '—')}</td>
       <td style="text-align:center">${opSrNo(r.opSeq)}</td>
@@ -29,8 +30,8 @@ function machineSection(group: DailyReportResponse['groups'][number]): string {
     .join('');
   return `<h2>${esc(group.machineCode)} — ${esc(group.machineName ?? group.machineCode)} &nbsp; <span style="color:#16a34a">${group.totalQty} pcs produced</span></h2>
     <table><thead><tr>
-      <th>JC No.</th><th>Item Code</th><th>Item Name</th><th>Op</th><th>Operation</th>
-      <th>Shift</th><th>Qty</th><th>Operator</th><th>Remarks</th>
+      <th>JC No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>Op</th><th>Operation</th>
+      <th>Shift</th><th>Completed</th><th>Operator</th><th>Remarks</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
 

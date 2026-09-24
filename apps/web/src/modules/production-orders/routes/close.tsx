@@ -101,7 +101,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
     setPoId(next);
     setPoLabel(
       row
-        ? `${row.code} — ${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.planCodeText}`
+        ? `${row.code} — ${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.planCodeText}`
         : '',
     );
     // A PO picked directly implies its plan; drop a plan that no longer matches.
@@ -172,15 +172,17 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 options={poOptions.map((p) => ({
                   id: p.id,
                   code: p.code,
-                  name: `${itemCodeWithRev(p.itemCodeText, p.itemRevision)} · ${p.planCodeText} · qty ${p.orderQty}`,
-                  searchText: [p.jcCodeText, p.soCodeText, p.itemNameText]
+                  // POL (the CUSTOMER's own PO line number) leads the label,
+                  // ahead of the item code, and is searchable with it.
+                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, p.itemRevision)} · ${p.planCodeText} · qty ${p.orderQty}`,
+                  searchText: [p.jcCodeText, p.soCodeText, p.itemNameText, p.clientPoLineNo]
                     .filter(Boolean)
                     .join(' '),
                 }))}
                 placeholder="🔍 Type production order no, item or plan…"
                 valueLabel={
                   po
-                    ? `${po.code} — ${itemCodeWithRev(po.itemCodeText, po.itemRevision)} · ${po.planCodeText}`
+                    ? `${po.code} — ${po.clientPoLineNo ? `POL ${po.clientPoLineNo} · ` : ''}${itemCodeWithRev(po.itemCodeText, po.itemRevision)} · ${po.planCodeText}`
                     : poLabel || undefined
                 }
                 emptyText="No open Production Order matches"
@@ -189,7 +191,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
 
             <div className="form-grp">
               <label className="form-label" htmlFor="close-jc">
-                JC No
+                JC No.
               </label>
               <input
                 id="close-jc"
@@ -262,6 +264,16 @@ function ProductionOrderClosePage(): React.JSX.Element {
                   {po.orderQty}
                 </b>
               </span>
+              {/* POL — the CUSTOMER's own PO line number, before the item
+                  code. Absent when there is no sales order behind the PO. */}
+              {po.clientPoLineNo ? (
+                <span className="mono text3" style={{ fontSize: 11 }}>
+                  · POL{' '}
+                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                    {po.clientPoLineNo}
+                  </span>
+                </span>
+              ) : null}
               <span className="mono text3" style={{ fontSize: 11 }}>
                 · {itemCodeWithRev(po.itemCodeText, po.itemRevision)}
               </span>

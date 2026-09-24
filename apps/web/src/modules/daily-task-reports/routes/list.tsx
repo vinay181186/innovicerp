@@ -80,7 +80,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Date</th>
+                <th>Report Date</th>
                 <th>User</th>
                 <th>Shift</th>
                 <th className="td-ctr">Tasks</th>

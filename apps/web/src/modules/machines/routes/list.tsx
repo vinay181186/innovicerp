@@ -307,9 +307,9 @@ function MachinesTab(): React.JSX.Element {
           <thead>
             <tr>
               <th>Sr No</th>
-              <th>Machine ID</th>
+              <th>Code</th>
               <th style={{ textAlign: 'left' }}>Name</th>
-              <th>Type</th>
+              <th>Machine Type</th>
               <th>Group</th>
               <th>Cap/Shift</th>
               {/* Legacy: <th style="color:var(--green)">₹/hr</th> (L13107). */}
@@ -318,7 +318,7 @@ function MachinesTab(): React.JSX.Element {
                   <span style={{ color: 'var(--green)' }}>₹/hr</span>
                 </th>
               )}
-              <th>Status</th>
+              <th>Machine Status</th>
               <th>Action</th>
             </tr>
           </thead>

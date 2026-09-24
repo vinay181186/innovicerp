@@ -14,24 +14,24 @@ export const dailyOpLogReport: RegisteredReport = {
       'Time-stamped completion records by JC + op + operator over a date range. Mirrors the legacy op-log audit view.',
     group: 'Operations',
     filters: [
-      { key: 'fromDate', label: 'From date', kind: 'date' },
-      { key: 'toDate', label: 'To date', kind: 'date' },
+      { key: 'fromDate', label: 'Log Date From', kind: 'date' },
+      { key: 'toDate', label: 'Log Date To', kind: 'date' },
     ],
     columns: [
-      { key: 'log_date', label: 'Date', type: 'date' },
-      { key: 'log_no', label: 'Log no.', type: 'text' },
-      { key: 'log_type', label: 'Type', type: 'text' },
-      { key: 'jc_code', label: 'JC', type: 'text' },
+      { key: 'log_date', label: 'Log Date', type: 'date' },
+      { key: 'log_no', label: 'Log No.', type: 'text' },
+      { key: 'log_type', label: 'Log Type', type: 'text' },
+      { key: 'jc_code', label: 'JC No.', type: 'text' },
       // This report has no item-code column, so the revision sits immediately
       // after the JC — the column that identifies what was worked on. It is
       // the customer drawing revision of the SO line behind that JC, and is
       // blank for a JW-sourced or standalone JC.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'op_seq', label: 'Op Sr No', type: 'number' },
+      { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'operator_name', label: 'Operator', type: 'text' },
-      { key: 'qty', label: 'Qty', type: 'number' },
-      { key: 'reject_qty', label: 'Reject qty', type: 'number' },
+      { key: 'qty', label: 'Completed', type: 'number' },
+      { key: 'reject_qty', label: 'Rejected', type: 'number' },
       { key: 'shift', label: 'Shift', type: 'text' },
     ],
   },

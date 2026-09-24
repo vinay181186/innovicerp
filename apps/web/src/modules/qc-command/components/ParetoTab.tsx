@@ -39,10 +39,10 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Sr No</th>
                   <th>Reason</th>
                   <th className="td-ctr">NC Count</th>
-                  <th className="td-ctr">Rejected Qty</th>
+                  <th className="td-ctr">Rejected</th>
                   <th className="td-ctr">% of Total</th>
                   <th>Top Items</th>
                   <th style={{ width: 200 }}>Distribution</th>

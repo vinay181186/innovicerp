@@ -84,6 +84,12 @@ export const jcOpEnrichedSchema = z.object({
    *  drawing an operator is about to cut. Null on a JW-sourced or standalone
    *  card — common on these screens — and those rows show the bare code. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a job-work line, a hand-raised card).
+   *  Read-only: the Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
   soCode: z.string().nullable().optional(), // source SO/JW order code (T27)
   opSeq: z.number().int().positive(),
@@ -279,6 +285,12 @@ export const opLogTimeChangeRequestSchema = z.object({
    *  drawing being worked to. Null on a JW-sourced or standalone card, which
    *  then shows the bare code. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a job-work line, a hand-raised card).
+   *  Read-only: the Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
   machineCode: z.string().nullable(),
   /** The entry's qty, shown so the approver can see it is NOT part of the ask. */
@@ -387,6 +399,12 @@ export const runningOpSchema = z.object({
    *  Null is ordinary: a JW-sourced or standalone card has no SO line, and those
    *  rows show the bare code. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a job-work line, a hand-raised card).
+   *  Read-only: the Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
   opSeq: z.number().int().positive(), // joined
   operation: z.string(), // joined

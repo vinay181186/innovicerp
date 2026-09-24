@@ -524,6 +524,10 @@ export async function listPurchaseRequests(
           OR pr.balance_closed_at::text ILIKE ${term} ESCAPE '\\'
           -- Source ref + the PO link on the card, both already joined below.
           OR so.code ILIKE ${term} ESCAPE '\\'
+          -- POL, the customer's own PO line number, now printed on the card.
+          -- Off the same sol join the SO code above already uses, and sol is
+          -- joined by BOTH the page query and the count query below.
+          OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
           OR jc.code ILIKE ${term} ESCAPE '\\'
           OR po.code ILIKE ${term} ESCAPE '\\'
         )`
@@ -597,6 +601,11 @@ export async function listPurchaseRequests(
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- The customer's own PO line number, off the SAME sol join as the
+        -- revision above. No job-work fallback: a JW line belongs to a
+        -- job-work order, not to a customer PO, so there is no client PO line
+        -- number on that side and the field correctly stays null.
+        sol.client_po_line_no AS "clientPoLineNo",
         jc.code AS "sourceJcCode",
         jo.op_seq AS "sourceJcOpSeq",
         po.code AS "poCode",
@@ -741,6 +750,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     vendorName: (r['vendorName'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
     itemRevision: (r['itemRevision'] as string | null) ?? null,
+    clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     sourceJcCode: (r['sourceJcCode'] as string | null) ?? null,
     sourceJcOpSeq: r['sourceJcOpSeq'] != null ? Number(r['sourceJcOpSeq']) : null,
     poCode: (r['poCode'] as string | null) ?? null,
@@ -800,6 +810,11 @@ export async function getPurchaseRequest(
         itemRevision: sql<
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        // The customer's own PO line number, off the SAME SO line join as the
+        // revision above. No job-work fallback: a JW line belongs to a job-work
+        // order, not to a customer PO, so it has no client PO line number and
+        // the field correctly stays null there.
+        clientPoLineNo: salesOrderLines.clientPoLineNo,
         // Resolve the source/linked document codes so the detail page shows real
         // values instead of a '— linked —' placeholder.
         poCode: purchaseOrders.code,
@@ -868,6 +883,7 @@ export async function getPurchaseRequest(
       vendorAddress: found.vendorAddress,
       itemCode: found.itemCode,
       itemRevision: found.itemRevision,
+      clientPoLineNo: found.clientPoLineNo,
       poCode: found.poCode,
       sourceJcCode: found.sourceJcCode,
       sourceJcOpSeq: found.sourceJcOpSeq,

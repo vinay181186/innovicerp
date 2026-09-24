@@ -653,7 +653,7 @@ export function JobCardForm({
             </div>
             <div className="form-grp">
               <label className="form-label">
-                Date <span className="text3">(auto: today)</span>
+                JC Date <span className="text3">(auto: today)</span>
               </label>
               <input
                 type="date"
@@ -665,7 +665,7 @@ export function JobCardForm({
             <div className="form-grp form-full">
               <label className="form-label">
                 {isEdit
-                  ? 'SO / WO / JWSO No. (type to search)'
+                  ? 'SO / JWSO No. (type to search)'
                   : 'Job Work Sales Order (JWSO) No. (type to search)'}
                 {!isEdit ? <span className="req">★</span> : null}
               </label>
@@ -698,12 +698,12 @@ export function JobCardForm({
               {selectedSource ? (
                 <div style={{ fontSize: 11, marginTop: 4 }}>
                   <span className="cyan fw-700">
-                    {selectedSource.type === 'jw' ? '[JW] ' : ''}Line {selectedSource.lineNo || 1}
+                    {selectedSource.type === 'jw' ? '[JW] ' : ''}Ln {selectedSource.lineNo || 1}
                   </span>
                   {selectedSource.clientPoLineNo ? (
                     <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                       {' '}
-                      [CPO:{selectedSource.clientPoLineNo}]
+                      [POL:{selectedSource.clientPoLineNo}]
                     </span>
                   ) : null}{' '}
                   — {selectedSource.code}
@@ -729,7 +729,7 @@ export function JobCardForm({
                     color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--text2)',
                   }}
                 >
-                  <b style={{ color: 'var(--cyan)' }}>{selectedSource.code}:</b> Ordered{' '}
+                  <b style={{ color: 'var(--cyan)' }}>{selectedSource.code}:</b> Order Qty{' '}
                   <b>{selectedSource.orderQty}</b> | Already in JCs <b>{selectedSource.inJc}</b> |{' '}
                   <b
                     style={{ color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--green)' }}

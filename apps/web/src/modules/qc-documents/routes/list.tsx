@@ -351,11 +351,11 @@ function MatrixView(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Ln</th>
-                <th style={{ color: 'var(--purple)' }}>CPO</th>
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th>Qty</th>
-                <th>JC No</th>
+                <th>Order Qty</th>
+                <th>JC No.</th>
                 {cols.map((c) => (
                   <th key={c} style={{ color: 'var(--green)', minWidth: 90 }}>
                     {c}
@@ -604,15 +604,16 @@ async function openStoragePath(path: string, refCode?: string | null): Promise<v
 function exportMatrixExcel(matrix: QcMatrixResponse): void {
   const header = [
     'Ln',
-    'CPO Ln',
+    'POL',
     'Item Code',
-    // The drawing revision rides its own column instead of being glued into Item
-    // Code. People filter and VLOOKUP this sheet against Item Master, where
-    // "IN-IT-0007/B" matches nothing. Same call as the Job Card export.
+    // Item Code above is written CODE/REV, the way it reads everywhere else on
+    // an SO-traceable row (user rule 2026-09-23). The drawing revision ALSO
+    // keeps its own column, so it stays sortable and filterable on its own.
+    // Same call as the Job Card export.
     'Drawing Rev',
     'Item Name',
-    'Qty',
-    'JC No',
+    'Order Qty',
+    'JC No.',
     ...matrix.qcColumns,
     'Overall',
   ];
@@ -630,7 +631,7 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
     aoa.push([
       r.lineNo,
       r.clientPoLineNo ?? '',
-      r.itemCode ?? '',
+      itemCodeWithRev(r.itemCode, r.itemRevision, ''),
       r.itemRevision ?? '',
       r.itemName ?? '',
       r.orderQty,
@@ -778,7 +779,16 @@ function LineDetailBody({
         }}
       >
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
+          {/* POL — the customer's own PO line number, read-only here; it is
+              typed only on the Sales Order. */}
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>POL</span>
+          <br />
+          <b className="mono" style={{ color: 'var(--purple)' }}>
+            {data.clientPoLineNo ?? '—'}
+          </b>
+        </div>
+        <div>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM CODE</span>
           <br />
           <b style={{ color: 'var(--purple)' }}>
             {itemCodeWithRev(data.itemCode, data.itemRevision, '')}
@@ -786,7 +796,7 @@ function LineDetailBody({
           {data.itemName ?? ''}
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC NO.</span>
           <br />
           <b style={{ color: 'var(--cyan)' }}>{data.jcCode}</b>
         </div>
@@ -847,11 +857,11 @@ function LineDetailBody({
                 Op{opSrNo(b.opSeq)}: <b>{b.operation}</b>
               </span>
               <span style={{ color: 'var(--green)' }}>
-                Acc: <b>{b.accepted}</b>
+                Accepted: <b>{b.accepted}</b>
               </span>
               {b.rejected > 0 ? (
                 <span style={{ color: 'var(--red)' }}>
-                  Rej: <b>{b.rejected}</b>
+                  Rejected: <b>{b.rejected}</b>
                 </span>
               ) : null}
               <span className="mono fw-700" style={{ color: 'var(--cyan)', marginLeft: 'auto' }}>
@@ -1270,34 +1280,37 @@ function RegisterView(): React.JSX.Element {
                 <th>Doc Type</th>
                 <th>File Name</th>
                 <th>Category</th>
-                <th>JC</th>
+                <th>JC No.</th>
                 {/* A job-card number says WHICH JOB, not which part, so the
                     register names the item right beside the JC it belongs to —
-                    same pairing the matrix tab and the line-detail modal use. */}
+                    same pairing the matrix tab and the line-detail modal use.
+                    POL is the CUSTOMER's own purchase-order line number, which
+                    sits immediately before the item code everywhere. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th>SO</th>
+                <th>SO No.</th>
                 <th>Uploaded By</th>
-                <th>Date</th>
+                <th>Upload Date</th>
                 <th />
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={10} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={11} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error ? error.message : 'Failed to load QC documents'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     No QC documents. Click 📎 Upload Document to attach MIR / MCR / inspection
                     reports.
                   </td>
@@ -1314,6 +1327,9 @@ function RegisterView(): React.JSX.Element {
                     </td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                       {d.jcCodeText ?? '—'}
+                    </td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {d.clientPoLineNo ?? '—'}
                     </td>
                     {/* `CODE/REV` via the one helper, so the separator and the
                         empty cases cannot drift from the other QC screens. The

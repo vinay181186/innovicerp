@@ -182,7 +182,7 @@ function TrashListPage(): React.JSX.Element {
             }
             style={{ width: 160 }}
           >
-            <option value="">All Types ({grandTotal})</option>
+            <option value="">All Document Types ({grandTotal})</option>
             {TYPE_OPTIONS.map((t) => {
               const n = data?.byType[t] ?? 0;
               return (
@@ -243,8 +243,8 @@ function TrashListPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Deleted At</th>
-                  <th>Type</th>
-                  <th>Item</th>
+                  <th>Document Type</th>
+                  <th>Document</th>
                   <th>Deleted By</th>
                   <th>Actions</th>
                 </tr>

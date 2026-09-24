@@ -501,6 +501,20 @@ function NcRegisterListPage(): React.JSX.Element {
                         color: 'var(--text3)',
                       }}
                     >
+                      {/* POL — the CUSTOMER's own PO line number off the SO line
+                          behind this NC's job card. Same purple mono chip the Job
+                          Card list uses; absent when there is no SO behind it. */}
+                      {nc.clientPoLineNo ? (
+                        <>
+                          <span className="mono">
+                            POL{' '}
+                            <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                              {nc.clientPoLineNo}
+                            </span>
+                          </span>
+                          <span>·</span>
+                        </>
+                      ) : null}
                       <span className="td-code" style={{ color: 'var(--text)' }}>
                         {itemCode || '—'}
                       </span>
@@ -519,7 +533,7 @@ function NcRegisterListPage(): React.JSX.Element {
                       </span>
                       <span>·</span>
                       <span>
-                        JC{' '}
+                        JC No.{' '}
                         <span className="mono" style={{ color: 'var(--cyan)' }}>
                           {nc.jcCode ?? '—'}
                         </span>
@@ -532,7 +546,7 @@ function NcRegisterListPage(): React.JSX.Element {
                       ) : null}
                       <span>·</span>
                       <span>
-                        Qty{' '}
+                        Rejected{' '}
                         <span className="mono fw-700" style={{ color: 'var(--red)' }}>
                           {Number(nc.rejectedQty).toFixed(0)}
                         </span>

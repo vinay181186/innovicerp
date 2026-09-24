@@ -111,6 +111,10 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
         -- without migration 0119 still holds an integer here and would hand the
         -- board a number. The cast is a no-op once 0119 is applied.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the same SO line as the revision above. SO side only: a job-work
+        -- line has no customer PO, so JW-sourced cards are correctly null.
+        sol.client_po_line_no AS "clientPoLineNo",
         so.code AS "soCode",
         jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
         vos.completed_qty AS "completedQty", vos.available,
@@ -160,6 +164,7 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
       ),
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
+      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       soCode: (r['soCode'] as string | null) ?? null,
       priority: r['priority'] as MachineLoadOp['priority'],

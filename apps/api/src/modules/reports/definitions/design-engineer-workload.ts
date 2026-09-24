@@ -20,13 +20,13 @@ export const designEngineerWorkloadReport: RegisteredReport = {
     group: 'Design',
     filters: [],
     columns: [
-      { key: 'engineer', label: 'Engineer', type: 'text' },
+      { key: 'engineer', label: 'Design Engineer', type: 'text' },
       { key: 'total_tasks', label: 'Total Tasks', type: 'number' },
-      { key: 'active', label: 'Active', type: 'number' },
-      { key: 'completed', label: 'Completed', type: 'number' },
-      { key: 'overdue', label: 'Overdue', type: 'number' },
+      { key: 'active', label: 'Active Tasks', type: 'number' },
+      { key: 'completed', label: 'Completed Tasks', type: 'number' },
+      { key: 'overdue', label: 'Overdue Tasks', type: 'number' },
       { key: 'open_issues', label: 'Open Issues', type: 'number' },
-      { key: 'hours', label: 'Hours', type: 'number' },
+      { key: 'hours', label: 'Hours Logged', type: 'number' },
     ],
   },
   async run({ tx, companyId }) {

@@ -178,7 +178,14 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              {detail.itemName ?? detail.itemCodeText ?? 'Untitled item'}
+              {/* Falls back to CODE/REV, never the bare snapshot code — the
+                  revision travels with the code everywhere else on this page. */}
+              {detail.itemName ??
+                itemCodeWithRev(
+                  detail.itemCode ?? detail.itemCodeText,
+                  detail.itemRevision,
+                  'Untitled item',
+                )}
               <PrStatusBadge status={detail.status} />
             </div>
           </div>
@@ -297,9 +304,20 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                 : 'Failed to delete purchase request.'}
             </div>
           ) : null}
-          {/* The six facts a buyer scans for, in the SO detail strip idiom. */}
+          {/* The facts a buyer scans for, in the SO detail strip idiom. */}
           <div style={STRIP}>
             <Fact label="SO No." title={soNo} value={<span className="mono">{soNo}</span>} />
+            {/* POL = the CUSTOMER's own PO line number off the SO line behind
+                this PR. Not our SO line number — the two rarely match. */}
+            <Fact
+              label="POL"
+              title={detail.clientPoLineNo ?? '—'}
+              value={
+                <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                  {detail.clientPoLineNo ?? '—'}
+                </span>
+              }
+            />
             <Fact
               label="Item Code"
               title={itemCode}
@@ -324,7 +342,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                 </>
               }
             />
-            <Fact label="Source JC" title={jcNo} value={<span className="mono">{jcNo}</span>} />
+            <Fact label="JC No." title={jcNo} value={<span className="mono">{jcNo}</span>} />
             <Fact
               label="PR Date"
               title={detail.prDate}
@@ -434,14 +452,14 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
         </div>
       ) : null}
       <div style={STRIP}>
-        <Fact label="Qty" value={<span className="mono">{String(detail.qty)}</span>} />
+        <Fact label="PR Qty" value={<span className="mono">{String(detail.qty)}</span>} />
         <Fact
-          label="Ordered"
+          label="Order Qty"
           title="On live purchase orders (cancelled POs not counted)"
           value={<span className="mono">{String(bal.ordered)}</span>}
         />
         <Fact
-          label="Balance"
+          label="Pending"
           title={
             bal.closed
               ? prBalanceClosedText(bal)
@@ -478,8 +496,8 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
         />
         <Fact label="Operation" value={detail.operation ?? '—'} />
         <Fact label="PR Type" value={detail.prType ?? '—'} />
-        <Fact label="Linked PO" value={<span className="mono">{detail.poCode ?? '—'}</span>} />
-        <Fact label="Status" value={detail.status} />
+        <Fact label="PO No." value={<span className="mono">{detail.poCode ?? '—'}</span>} />
+        <Fact label="PR Status" value={detail.status} />
         <Fact
           label="Approved At"
           value={<span className="mono">{detail.approvedAt ?? '—'}</span>}

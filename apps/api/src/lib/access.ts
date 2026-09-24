@@ -93,10 +93,32 @@ export async function requireFormAccess(
  *
  * Non-throwing — callers branch on the boolean, they do not fail the request.
  */
-export async function canSeeFormPrice(
+/**
+ * Pass if ANY one of several (form, action) pairs is allowed.
+ *
+ * For a read that two different screens legitimately need: the stock
+ * availability figure is shown on Store/Inventory (`item_create`) and inside
+ * the Allocate box on SO Planning (`plan_create`). Gating it on the Store key
+ * alone would give a planner a silent 403 and a stale number; gating it on
+ * neither would publish stock figures to anyone with a login.
+ *
+ * The refusal names the FIRST pair, which is the screen the endpoint belongs
+ * to, so the message stays actionable.
+ */
+export async function requireAnyFormAccess(
   user: AuthContext,
-  formKey: AccessFormKey,
-): Promise<boolean> {
+  pairs: ReadonlyArray<readonly [AccessFormKey, AccessAction]>,
+): Promise<void> {
+  if (user.role === 'admin') return;
+  const eff = await getMyAccess(user);
+  for (const [formKey, action] of pairs) {
+    if (effectiveFormPerms(eff, formKey)[action]) return;
+  }
+  const [formKey, action] = pairs[0]!;
+  await requireFormAccess(user, formKey, action);
+}
+
+export async function canSeeFormPrice(user: AuthContext, formKey: AccessFormKey): Promise<boolean> {
   if (user.role === 'admin') return true;
   const eff = await getMyAccess(user);
   return effectiveFormPerms(eff, formKey).price;

@@ -72,7 +72,13 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}
-              title={running.itemName ? `${itemCode} — ${running.itemName}` : itemCode}
+              // POL — the CUSTOMER's own PO line number, after the item code.
+              // It rides in the tooltip rather than on the tile: these tiles sit
+              // on a 140px track and a fourth visible line would ellipsis away.
+              title={
+                (running.itemName ? `${itemCode} — ${running.itemName}` : itemCode) +
+                (running.clientPoLineNo ? ` · POL ${running.clientPoLineNo}` : '')
+              }
             >
               {itemCode}
             </div>

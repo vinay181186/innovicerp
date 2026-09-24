@@ -10,6 +10,7 @@
 import type { JobWorkOrderLine, PartyMaterialListItem } from '@innovic/shared';
 import { Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 
 export interface UiLine {
   partyMaterialId: string | null;
@@ -81,9 +82,13 @@ export function LineRow({
           }}
         >
           <option value="">{jwLines.length ? 'Select…' : 'Pick a JWSO first'}</option>
+          {/* The item reads CODE/REV — the client's drawing revision typed on
+              this JWSO line travels with the code on every order-traceable row
+              (user rule 2026-09-23), the same way the JWSO detail shows it. */}
           {jwLines.map((j) => (
             <option key={j.id} value={String(j.lineNo)}>
-              L{j.lineNo} · {j.itemCodeText ?? ''} · {j.partName}
+              L{j.lineNo} · {j.itemCodeText ? itemCodeWithRev(j.itemCodeText, j.revision, '') : ''}{' '}
+              · {j.partName}
             </option>
           ))}
         </select>

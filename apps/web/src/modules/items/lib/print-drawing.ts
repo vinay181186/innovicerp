@@ -42,7 +42,12 @@ export async function printItemDrawing(args: {
   });
   const isPdf = isPdfPath(item.drawingFilePath);
 
-  const titleLine = `${item.drawingNo ?? item.code} — ${item.name} (Rev ${item.revision})`;
+  // No revision on this line. It used to print `(Rev ${item.revision})`, which
+  // is the ITEM MASTER'S own revision column — a different fact from the
+  // customer's drawing revision (ADR-178), and on a printed drawing a reader
+  // takes any "Rev" for the customer's. Item Master deliberately shows no
+  // revision anywhere else on screen, so it shows none here either.
+  const titleLine = `${item.drawingNo ?? item.code} — ${item.name}`;
 
   // `esc` makes the URL safe inside the src attribute. The drawing is centred
   // and constrained to the page; @media print rules in PRINT_STYLE strip the

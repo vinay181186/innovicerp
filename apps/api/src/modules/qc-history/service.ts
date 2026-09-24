@@ -112,6 +112,11 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         -- them, and is cast to text so a pre-0119 database cannot hand the UI a
         -- number. Never items.revision.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the SAME sol join as the revision above. SO side only: a job-work
+        -- line has no customer PO, so it correctly stays null there. Never
+        -- sol.line_no, which is OUR line number.
+        sol.client_po_line_no AS "clientPoLineNo",
         -- The part that was inspected, named beside its code so the completed
         -- feed can be read back without opening each job card in turn.
         i.name AS "itemName",
@@ -147,6 +152,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         soCode: (r['soCode'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         isLastOp: Boolean(r['isLastOp']),
         operation: (r['operation'] as string | null) ?? '',

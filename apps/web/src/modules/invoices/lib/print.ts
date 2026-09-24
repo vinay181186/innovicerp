@@ -95,6 +95,10 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
     .map(
       (l, i) =>
         `<tr><td style="${TD};text-align:center">${i + 1}</td>` +
+        // POL — the CUSTOMER's own purchase-order line number, printed beside
+        // (never instead of) the item code, so the customer can tie every line
+        // of this tax invoice back to their own purchase order.
+        `<td style="${TD};text-align:center">${esc(l.clientPoLineNo ?? '') || '&mdash;'}</td>` +
         // Code and name are two CELLS now, not a code with the name stacked
         // beneath it in small grey type. A long name used to wrap inside the
         // one cell and push the row height around, and there was no column to
@@ -116,9 +120,9 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
     .join('');
 
   const taxRows = isIGST
-    ? `<tr><td colspan="6" style="${TD};text-align:right">IGST @ ${gstPct}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount ?? 0)}</td></tr>`
-    : `<tr><td colspan="6" style="${TD};text-align:right">SGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>` +
-      `<tr><td colspan="6" style="${TD};text-align:right">CGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>`;
+    ? `<tr><td colspan="7" style="${TD};text-align:right">IGST @ ${gstPct}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount ?? 0)}</td></tr>`
+    : `<tr><td colspan="7" style="${TD};text-align:right">SGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>` +
+      `<tr><td colspan="7" style="${TD};text-align:right">CGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>`;
 
   return `<div style="background:#fff;color:#1e293b;font-family:Arial,sans-serif;font-size:11px;line-height:1.35;padding:18px">
     <div style="border:2px solid #333">
@@ -141,14 +145,14 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
         </div>
       </div>
       <table style="width:100%;border-collapse:collapse">
-        <thead><tr><th style="${TH}">Sr No.</th><th style="${TH};text-align:left">Item Code</th><th style="${TH};text-align:left">Item Name</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
+        <thead><tr><th style="${TH}">Sr No.</th><th style="${TH}">POL</th><th style="${TH};text-align:left">Item Code</th><th style="${TH};text-align:left">Item Name</th><th style="${TH}">Invoice Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
         <tbody>${lineRows}
           ${
             priceHidden
               ? ''
-              : `<tr style="font-weight:700;background:#f5f5f5"><td colspan="6" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inrFormat(inv.subtotal ?? 0)}</td></tr>` +
+              : `<tr style="font-weight:700;background:#f5f5f5"><td colspan="7" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inrFormat(inv.subtotal ?? 0)}</td></tr>` +
                 taxRows +
-                `<tr><td colspan="6" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inrFormat(inv.grandTotal ?? 0)}</td></tr>`
+                `<tr><td colspan="7" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inrFormat(inv.grandTotal ?? 0)}</td></tr>`
           }
         </tbody>
       </table>

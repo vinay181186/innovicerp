@@ -180,7 +180,8 @@ function InvoiceDetailPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-        SO: <b>{inv.soCode ?? ''}</b> | Client: <b>{inv.clientName ?? ''}</b> | Due: <b>{inv.dueDate ?? '—'}</b>
+        SO No.: <b>{inv.soCode ?? ''}</b> | Customer: <b>{inv.clientName ?? ''}</b> | Due Date:{' '}
+        <b>{inv.dueDate ?? '—'}</b>
       </div>
 
       {payOpen ? (
@@ -268,7 +269,7 @@ function InvoiceDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Payment Date</th>
                   <th>Amount</th>
                   <th>Mode</th>
                   <th>Ref No.</th>

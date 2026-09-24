@@ -86,7 +86,7 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Master',
-        items: [{ to: '/clients', label: 'Client Master', icon: '🏢', formKey: 'client_create' }],
+        items: [{ to: '/clients', label: 'Customer Master', icon: '🏢', formKey: 'client_create' }],
       },
       // Pending SO Value (a price-gated revenue report) is filed under the
       // Reports section, not a Sales menu item — see the Reports block below.
@@ -263,7 +263,7 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Master',
-        items: [{ to: '/cost-centers', label: 'Cost Center Master', icon: '🏢', formKey: 'cc_create' }],
+        items: [{ to: '/cost-centers', label: 'Cost Centre Master', icon: '🏢', formKey: 'cc_create' }],
       },
       {
         label: 'Report',

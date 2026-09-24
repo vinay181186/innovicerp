@@ -39,6 +39,9 @@ export function IncomingPendingRow(props: {
           {o.grnNo}
         </Link>
       }
+      // POL now has a column of its own on the sheet, so it is no longer
+      // squeezed into the context line below.
+      clientPoLineNo={o.clientPoLineNo}
       partName={o.itemName}
       // An OSP return traces to an SO line and shows CODE/REV; a vendor's
       // raw-material receipt has no SO behind it and correctly shows the bare

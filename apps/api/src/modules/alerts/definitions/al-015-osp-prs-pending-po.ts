@@ -19,13 +19,13 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
     description:
       'Outsourcing-process purchase requests (linked to a JC op) that are open/approved with no PO yet.',
     columns: [
-      { key: 'pr_code', label: 'PR no.', type: 'text' },
-      { key: 'pr_date', label: 'PR date', type: 'date' },
-      { key: 'jc_code', label: 'JC', type: 'text' },
+      { key: 'pr_code', label: 'PR No.', type: 'text' },
+      { key: 'pr_date', label: 'PR Date', type: 'date' },
+      { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'vendor', label: 'Vendor', type: 'text' },
-      { key: 'item', label: 'Item', type: 'text' },
-      { key: 'status', label: 'Status', type: 'text' },
+      { key: 'item', label: 'Item Code', type: 'text' },
+      { key: 'status', label: 'PR Status', type: 'text' },
     ],
     defaultActive: true,
   },

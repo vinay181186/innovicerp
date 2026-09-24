@@ -281,6 +281,16 @@ export async function getJwDcOutwardDetail(
         jdol.purchase_order_line_id AS "purchaseOrderLineId",
         jdol.item_id AS "itemId",
         i.code AS "itemCode",
+        -- The customer's drawing revision + PO line number, off the SO line
+        -- behind this outward line: jw_dc_outward_lines -> purchase_order_lines
+        -- -> source_so_line_id -> sales_order_lines. Both LEFT: a JWPO line
+        -- raised from a JWSO (or a DC line with no PO line) genuinely has no
+        -- customer order behind it and correctly comes back null. Revision is
+        -- cast to text because the contract types it as a string and the column
+        -- is only text on a database that has had migration 0119. POL is the
+        -- number on the CUSTOMER's own PO, never our sol.line_no.
+        sol.revision::text AS "itemRevision",
+        sol.client_po_line_no AS "clientPoLineNo",
         i.name AS "itemName",
         jdol.item_code_text AS "itemCodeText",
         jdol.item_name_text AS "itemNameText",
@@ -294,6 +304,11 @@ export async function getJwDcOutwardDetail(
         COALESCE(ret.returned, 0)::int AS "alreadyReturned"
       FROM public.jw_dc_outward_lines jdol
       LEFT JOIN public.items i ON i.id = jdol.item_id AND i.deleted_at IS NULL
+      -- Two single-row FK hops, so neither can multiply the line count.
+      LEFT JOIN public.purchase_order_lines pol
+        ON pol.id = jdol.purchase_order_line_id AND pol.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT SUM(received_qty)::int AS returned
         FROM public.jw_dc_inward_lines jdil
@@ -317,6 +332,8 @@ export async function getJwDcOutwardDetail(
         purchaseOrderLineId: (r['purchaseOrderLineId'] as string | null) ?? null,
         itemId: (r['itemId'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         itemCodeText: String(r['itemCodeText'] ?? ''),
         itemNameText: (r['itemNameText'] as string | null) ?? null,
@@ -639,12 +656,19 @@ export async function getJwDcPoLines(
         pol.id AS "purchaseOrderLineId",
         pol.item_id AS "itemId",
         COALESCE(i.code, pol.item_code_text, '') AS "itemCode",
+        -- Same SO-line hop as the outward detail above, one level shorter: the
+        -- PO line already carries source_so_line_id. Null on a JWSO-sourced PO
+        -- line, which has no customer order behind it.
+        sol.revision::text AS "itemRevision",
+        sol.client_po_line_no AS "clientPoLineNo",
         pol.item_name AS "itemName",
         pol.line_remarks AS "processText",
         pol.qty AS "poQty",
         COALESCE(sent.total_sent, 0)::int AS "alreadySent"
       FROM public.purchase_order_lines pol
       LEFT JOIN public.items i ON i.id = pol.item_id AND i.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT SUM(jdol.sent_qty)::int AS total_sent
         FROM public.jw_dc_outward_lines jdol
@@ -664,6 +688,8 @@ export async function getJwDcPoLines(
         purchaseOrderLineId: r['purchaseOrderLineId'] as string,
         itemId: (r['itemId'] as string | null) ?? null,
         itemCode: String(r['itemCode'] ?? ''),
+        itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: String(r['itemName'] ?? ''),
         processText: (r['processText'] as string | null) ?? null,
         poQty,

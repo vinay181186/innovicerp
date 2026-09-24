@@ -42,6 +42,9 @@ export async function listJcOpsBoard(
           jc.code ILIKE ${term}
           OR op.operation ILIKE ${term}
           OR i.code ILIKE ${term}
+          -- POL, the customer's own PO line number, now a column on this board.
+          -- sol is the SO-line join the SELECT below already makes.
+          OR sol.client_po_line_no ILIKE ${term}
         )`
       : sql``;
 
@@ -62,6 +65,10 @@ export async function listJcOpsBoard(
         -- migration 0119 still holds an integer in that column; the cast is a
         -- no-op once 0119 is applied.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the same SO line as the revision above. SO side only: a job-work
+        -- line has no customer PO, so JW-sourced ops are correctly null.
+        sol.client_po_line_no AS "clientPoLineNo",
         i.name AS "jcItemName",
         jc.order_qty AS "jcOrderQty",
         op.op_seq AS "opSeq",
@@ -151,6 +158,7 @@ export async function listJcOpsBoard(
         jcCode: String(r['jcCode'] ?? ''),
         jcItemCode: (r['jcItemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         jcItemName: (r['jcItemName'] as string | null) ?? null,
         jcOrderQty: num(r['jcOrderQty']),
         opSeq: num(r['opSeq']),

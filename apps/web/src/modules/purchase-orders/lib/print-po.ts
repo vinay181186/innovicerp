@@ -150,7 +150,7 @@ export function printPurchaseOrder(args: {
   // and same labels the challan's recipient box uses, so a vendor holding both
   // documents reads them the same way.
   const recipientFields: SheetField[] = [
-    { label: 'Vendor code', value: vendor?.code ?? po.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Code', value: vendor?.code ?? po.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: vendorName, variant: 'name' },
     {
       label: 'Address',
@@ -177,12 +177,12 @@ export function printPurchaseOrder(args: {
     // The type decides what happens to the material afterwards -- job work and
     // service send OUR parts out and expect them back; standard buys goods. A
     // vendor holding the paper should not have to infer which one this is.
-    { label: 'PO type', value: PO_TYPE_LABEL[po.poType] ?? po.poType },
+    { label: 'PO Type', value: PO_TYPE_LABEL[po.poType] ?? po.poType },
     // The sales order behind it, resolved by the detail read from the first line
     // that carries one. Blank on a hand-raised PO, which genuinely has no SO.
     { label: 'SO No.', value: po.soCode ?? '', variant: 'mono' },
-    { label: isSpo ? 'SPO date' : 'PO date', value: challanDate(po.poDate), variant: 'mono' },
-    { label: 'Due date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
+    { label: isSpo ? 'SPO Date' : 'PO Date', value: challanDate(po.poDate), variant: 'mono' },
+    { label: 'Due Date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
     { label: 'PR Ref.', value: po.prCodeText ?? '', variant: 'mono' },
     { label: 'Contact person', value: po.createdByName ?? dash },
   ];
@@ -197,9 +197,9 @@ export function printPurchaseOrder(args: {
     // companies row, which splits the same address differently and cannot
     // hold the country. Everything else about the company is the row's.
     company: { ...buildDocCompany(company), addressLines: [...COMPANY_CARD_ADDRESS_LINES] },
-    recipient: { label: 'Vendor / Supplier', fields: recipientFields },
+    recipient: { label: 'Vendor', fields: recipientFields },
     // SHIP TO — where the goods are actually to be delivered. It sits INSIDE
-    // the Vendor / Supplier box, under a half-width rule below that box's GSTIN
+    // the Vendor box, under a half-width rule below that box's GSTIN
     // row, so the right-hand Order box keeps its fields and its alignment
     // untouched (user's instruction, 2026-09-10).
     //
@@ -225,6 +225,9 @@ export function printPurchaseOrder(args: {
       // about which drawing revision was ordered. Empty fallback, not an em
       // dash: a blank cell is what this template expects for "nothing to say".
       itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
+      // The customer's own PO line number. Null on a stock purchase, and then
+      // the whole column drops off the sheet.
+      pol: l.clientPoLineNo,
       itemName: l.itemName,
       uom: PO_UOM,
       qty: String(l.qty),

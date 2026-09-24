@@ -137,13 +137,13 @@ export function ToolIssueRegisterView({
               <thead>
                 <tr>
                   <th>Issue No.</th>
-                  <th>Date</th>
-                  <th>Item</th>
-                  <th className="td-ctr">Qty</th>
+                  <th>Issue Date</th>
+                  <th>Item Code · Name</th>
+                  <th className="td-ctr">Issue Qty</th>
                   <th>Issued To</th>
                   <th>Ref</th>
                   <th>Exp Return</th>
-                  <th>Status</th>
+                  <th>Issue Status</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
                     Good
                   </th>
@@ -495,7 +495,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             readOnly
           />
         </Field>
-        <Field label="Date">
+        <Field label="Issue Date">
           <input
             type="date"
             className="innovic-input"

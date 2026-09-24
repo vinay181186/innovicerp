@@ -12,10 +12,10 @@ export const al002PrsPendingStale: RegisteredAlert = {
     description:
       'Purchase requests still in "open" status more than 2 days after they were raised.',
     columns: [
-      { key: 'pr_code', label: 'PR no.', type: 'text' },
-      { key: 'pr_date', label: 'PR date', type: 'date' },
+      { key: 'pr_code', label: 'PR No.', type: 'text' },
+      { key: 'pr_date', label: 'PR Date', type: 'date' },
       { key: 'vendor', label: 'Vendor', type: 'text' },
-      { key: 'item', label: 'Item', type: 'text' },
+      { key: 'item', label: 'Item Code', type: 'text' },
       { key: 'qty', label: 'Qty', type: 'number' },
     ],
     defaultActive: true,

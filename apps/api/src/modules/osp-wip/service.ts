@@ -25,6 +25,7 @@ interface WipRawRow {
   item_id: string | null;
   item_code: string | null;
   item_revision: string | null;
+  client_po_line_no: string | null;
   item_name: string | null;
   so_code: string | null;
   vendor_name: string | null;
@@ -48,7 +49,9 @@ export async function listOspWip(
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
     const searchFrag = term
-      ? sql`AND (w.jc_code ILIKE ${term} OR w.item_code ILIKE ${term} OR w.item_name ILIKE ${term} OR w.so_code ILIKE ${term} OR w.vendor_name ILIKE ${term})`
+      ? // POL (sol.client_po_line_no) is now a column on this register, so the
+        // box must find it. sol is the SO-line join the SELECT below makes.
+        sql`AND (w.jc_code ILIKE ${term} OR w.item_code ILIKE ${term} OR w.item_name ILIKE ${term} OR w.so_code ILIKE ${term} OR w.vendor_name ILIKE ${term} OR sol.client_po_line_no ILIKE ${term})`
       : sql``;
 
     const result = (await tx.execute(sql`
@@ -70,7 +73,12 @@ export async function listOspWip(
         -- column is only text on a database that has had migration 0119. On one
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision
+        COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision,
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the same SO line the revision above is read from. SO side only:
+        -- a job-work line has no customer PO, so JW-sourced ops are correctly
+        -- null. Never sol.line_no, which is OUR line number.
+        sol.client_po_line_no AS client_po_line_no
       FROM public.v_osp_wip w
       LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
@@ -92,6 +100,7 @@ export async function listOspWip(
       itemId: r.item_id,
       itemCode: r.item_code,
       itemRevision: r.item_revision,
+      clientPoLineNo: r.client_po_line_no,
       itemName: r.item_name,
       soCode: r.so_code,
       vendorName: r.vendor_name,

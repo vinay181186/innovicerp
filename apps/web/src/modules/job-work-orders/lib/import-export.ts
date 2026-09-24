@@ -1,5 +1,5 @@
 // JW line-items Excel template + import (in-form). Mirror of the SO form's
-// in-form line import, with JW columns (Rate instead of SO's CPO Line). Adds
+// in-form line import, with JW columns (Rate instead of SO's POL). Adds
 // parsed rows as line items to the JW being created/edited. Uses SheetJS.
 //
 // No Part Name column — same as the SO template. Item Code is the key: the

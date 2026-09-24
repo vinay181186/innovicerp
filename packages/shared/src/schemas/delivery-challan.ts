@@ -84,6 +84,13 @@ export const deliveryChallanLineSchema = z.object({
    *  the bare code, with no slash and no placeholder; the challan HEADER still
    *  carries `soLineRevision` for the SO the whole document was raised under. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a stock-replenishment purchase, a vendor
+   *  return, a line whose SO line was deleted). Read-only: the Sales Order is
+   *  the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),

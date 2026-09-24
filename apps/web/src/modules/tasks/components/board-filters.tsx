@@ -149,7 +149,7 @@ export function TaskFilters({
     >
       <input
         className="innovic-input"
-        placeholder="Search Task#, title, related document…"
+        placeholder="Search Task No., title, related document…"
         value={values.searchInput}
         onChange={(e) => onSearch(e.target.value)}
         style={{ fontSize: 12 }}

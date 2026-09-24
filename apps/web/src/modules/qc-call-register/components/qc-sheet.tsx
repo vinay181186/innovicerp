@@ -161,21 +161,27 @@ function fmtDayMonth(iso: string): string {
 // [label, width %, header style]. Widths are fixed (table-layout: fixed) so a
 // long vendor name or log number truncates inside its own column instead of
 // pushing Verdict / Inspect off the right edge of the sheet.
+// POL is the CUSTOMER's own purchase-order line number and sits immediately
+// before the item column, as it does on every other document. It used to be
+// buried in the context line; it is a column of its own now. The width comes
+// out of the context column so the set still totals exactly 100.
 const PENDING_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['GRN / JC No.', 13],
-  ['Part / Item Code', 17],
-  ['Vendor · GRN / SO · Op', 26],
-  ['Qty', 6],
+  ['POL', 5, { color: 'var(--purple)' }],
+  ['Item Code', 17],
+  ['Vendor · GRN / SO · Op', 21],
+  ['Pending QC', 6],
   ['Called', 14],
   ['Stage', 14],
   ['Action', 10],
 ];
 const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['GRN / JC No.', 13],
-  ['Part / Item Code', 15],
-  ['Vendor · GRN / SO · Op', 20],
-  ['OK', 5],
-  ['Rej', 5],
+  ['POL', 5, { color: 'var(--purple)' }],
+  ['Item Code', 15],
+  ['Vendor · GRN / SO · Op', 15],
+  ['Accepted', 5],
+  ['Rejected', 5],
   ['Called → Attended', 14],
   ['Inspector · Log Ref', 18],
   ['Verdict', 10],
@@ -221,6 +227,16 @@ function PartCell({ name, code }: { name: string | null; code: string }): React.
         {name ?? '—'}
       </div>
       <div style={{ ...MONO_STRONG, fontSize: 12 }}>{code}</div>
+    </td>
+  );
+}
+
+/** POL — the customer's own PO line number. Purple mono, an em dash when the
+ *  row has no sales order behind it (a raw-material receipt). */
+function PolCell({ value }: { value: string | null }): React.JSX.Element {
+  return (
+    <td style={{ ...TD, ...NOWRAP }}>
+      <span style={{ ...MONO_STRONG, fontSize: 12, color: 'var(--purple)' }}>{value ?? '—'}</span>
     </td>
   );
 }
@@ -354,6 +370,7 @@ export function CompletedProcessSheetRow({ l }: { l: QcHistoryLogRow }): React.J
       }
     >
       <CodeCell>{l.jcCode}</CodeCell>
+      <PolCell value={l.clientPoLineNo} />
       <PartCell name={l.itemName} code={itemCodeWithRev(l.itemCode, l.itemRevision)} />
       <ContextCell
         line1={
@@ -387,6 +404,7 @@ export function CompletedIncomingSheetRow({ l }: { l: IncomingQcCompletedRow }):
       onClick={() => void navigate({ to: '/goods-receipt-notes/$id', params: { id: l.grnId } })}
     >
       <CodeCell>{l.grnNo}</CodeCell>
+      <PolCell value={l.clientPoLineNo} />
       <PartCell name={l.itemName} code={itemCodeWithRev(l.itemCode, l.itemRevision)} />
       <ContextCell
         line1={
@@ -408,6 +426,8 @@ export function CompletedIncomingSheetRow({ l }: { l: IncomingQcCompletedRow }):
 export function PendingSheetRow(props: {
   /** The document number cell — a Link is fine; clicks inside it don't open. */
   code: ReactNode;
+  /** The customer's PO line number for this call, or null. */
+  clientPoLineNo: string | null;
   partName: string | null;
   itemCode: string;
   context: ReactNode;
@@ -442,6 +462,7 @@ export function PendingSheetRow(props: {
       <td style={{ ...TD, ...NOWRAP }} onClick={(e) => e.stopPropagation()}>
         <span style={{ ...MONO_STRONG, fontSize: 12 }}>{props.code}</span>
       </td>
+      <PolCell value={props.clientPoLineNo} />
       <PartCell name={props.partName} code={props.itemCode} />
       <ContextCell line1={props.context} line2={props.contextLine2} />
       <NumCell value={props.qty} />

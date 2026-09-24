@@ -227,7 +227,7 @@ function TpiMastersListPage(): React.JSX.Element {
               <th>Organization</th>
               <th>Contact No.</th>
               <th>Email</th>
-              <th>Status</th>
+              <th>Active</th>
               <th>Action</th>
             </tr>
           </thead>

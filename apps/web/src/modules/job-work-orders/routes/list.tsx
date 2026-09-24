@@ -256,7 +256,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                       bordered
                     />
                     <QtyBox
-                      label="Balance"
+                      label="Pending"
                       value={Math.max(0, jw.totalQty - jw.dispatchedQty)}
                       color={jw.totalQty - jw.dispatchedQty > 0 ? 'var(--red)' : 'var(--green)'}
                       bordered
@@ -344,10 +344,10 @@ function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolea
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
             <th style={{ width: 36 }}>Ln</th><ItemThumbnailHeader /><th>Item</th><th>Material</th><th>Drawing No</th>
-            <th className="td-ctr">Qty</th>
+            <th className="td-ctr">Order Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
-            <th className="td-ctr">Balance</th>
-            <th>UOM</th>{priceHidden ? null : <th className="td-ctr">Rate</th>}<th>Due Date</th><th>Status</th>
+            <th className="td-ctr">Pending</th>
+            <th>UOM</th>{priceHidden ? null : <th className="td-ctr">Rate</th>}<th>Due Date</th><th>JWSO Status</th>
             {canEdit ? <th /> : null}
           </tr>
         </thead>

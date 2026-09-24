@@ -61,6 +61,11 @@ export interface SheetField {
 
 export interface SheetLine {
   itemCode: string;
+  /** The line number on the CUSTOMER'S own purchase order (`clientPoLineNo`),
+   *  not our sales-order line number — the two do not have to match. A
+   *  document whose lines all leave this empty prints without the POL column
+   *  at all, exactly as it did before. */
+  pol?: string | null;
   itemName?: string | null;
   uom?: string | null;
   /** From the item master. Blank on almost every line today — the column stays,
@@ -503,8 +508,10 @@ function boxHtml(
 // enough one that nobody would catch it.
 const PAGE_OF_ROW = '<dt>Page</dt><dd class="mono" data-pgof>1</dd>';
 
-function sectionRow(html: string): string {
-  return `<tr><td class="block" colspan="${COLS}">${html}</td></tr>`;
+// `cols` is COLS on every document, and one more on the three that carry a
+// POL column — see `showPol` in buildSheetHtml.
+function sectionRow(html: string, cols: number = COLS): string {
+  return `<tr><td class="block" colspan="${cols}">${html}</td></tr>`;
 }
 
 // The item cell is identical on both column sets: the code as the quiet grey
@@ -583,22 +590,32 @@ export function buildSheetHtml(model: SheetPrintModel): string {
     lines: [addressHtml, contactHtml, `<p class="co-ids">${idsHtml}</p>`],
   });
 
+  // The customer's own PO line number. It earns a column only on a document
+  // whose lines actually have one — a stock purchase order, a job-work invoice
+  // and the job card print are unchanged, six columns as before.
+  const showPol = lines.some((l) => (l.pol ?? '').trim() !== '');
+  const cols = showPol ? COLS + 1 : COLS;
+  const polHead = showPol ? '<td class="colh ctr" style="width:13mm">POL</td>' : '';
+
   const columnHeads = po
-    ? '<td class="colh ctr" style="width:11mm">Sr</td>' +
-      '<td class="colh">Item detail</td>' +
+    ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +
+      polHead +
+      '<td class="colh">Item Code</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
       '<td class="colh ctr" style="width:26mm">Rate</td>' +
       '<td class="colh ctr" style="width:30mm">Amount</td>'
     : grn
-      ? '<td class="colh ctr" style="width:11mm">Sr</td>' +
-        '<td class="colh">Item detail</td>' +
+      ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +
+        polHead +
+        '<td class="colh">Item Code</td>' +
         '<td class="colh ctr" style="width:24mm">Received</td>' +
         '<td class="colh ctr" style="width:22mm">Accepted</td>' +
         '<td class="colh ctr" style="width:22mm">Rejected</td>' +
         '<td class="colh ctr" style="width:24mm">QC status</td>'
-      : '<td class="colh ctr" style="width:11mm">Sr</td>' +
-      '<td class="colh">Item detail</td>' +
+      : '<td class="colh ctr" style="width:11mm">Sr No</td>' +
+      polHead +
+      '<td class="colh">Item Code</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
       '<td class="colh ctr" style="width:19mm">HSN</td>' +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
@@ -608,6 +625,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
     .map((l, i) => {
       const lead =
         `<tr><td class="num">${i + 1}</td>` +
+        (showPol ? `<td class="ctr">${esc(l.pol ?? '—')}</td>` : '') +
         `<td>${itemCellHtml(l)}</td>` +
         // The GRN has no UOM column -- its lines do not carry one.
         (grn ? '' : `<td class="ctr">${esc(l.uom ?? '')}</td>`);
@@ -640,30 +658,33 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   // order it is the line the user asked for above the money: how many pieces
   // were ordered, before what they cost.
   const qtyLabel = `Total quantity &mdash; ${lines.length} line${lines.length === 1 ? '' : 's'}`;
+  // Every label colspan below counts the leading columns, so each grows by one
+  // when the POL column is there.
+  const lbl = (n: number): number => (showPol ? n + 1 : n);
   const qtyTotalRow = po
-    ? `<tr class="total"><td colspan="3" class="sumlbl">${qtyLabel}</td>` +
+    ? `<tr class="total"><td colspan="${lbl(3)}" class="sumlbl">${qtyLabel}</td>` +
       `<td class="qty">${esc(model.totalQty)}</td><td class="ctr">${esc(model.totalUom)}</td><td></td></tr>`
     : grn
       ? // Received / accepted / rejected each get their own total, because the
         // three are the whole point of the document.
-        `<tr class="total"><td colspan="2" class="sumlbl">${qtyLabel}</td>` +
+        `<tr class="total"><td colspan="${lbl(2)}" class="sumlbl">${qtyLabel}</td>` +
         `<td class="qty">${esc(model.totalQty)}</td>` +
         `<td class="qty">${esc(model.totalAccepted ?? '')}</td>` +
         `<td class="qty">${esc(model.totalRejected ?? '')}</td>` +
         `<td></td></tr>`
-      : `<tr class="total"><td colspan="4" class="sumlbl">${qtyLabel}</td>` +
+      : `<tr class="total"><td colspan="${lbl(4)}" class="sumlbl">${qtyLabel}</td>` +
       `<td class="qty">${esc(model.totalQty)}</td><td>${esc(model.totalUom)}</td></tr>`;
 
   const money = model.money;
   const moneyRows = money
-    ? `<tr><td colspan="5" class="sumlbl">Subtotal</td><td class="money">${esc(money.subtotal)}</td></tr>` +
+    ? `<tr><td colspan="${lbl(5)}" class="sumlbl">Subtotal</td><td class="money">${esc(money.subtotal)}</td></tr>` +
       money.taxRows
         .map(
           (t) =>
-            `<tr><td colspan="5" class="sumlbl">${esc(t.label)}</td><td class="money">${esc(t.value)}</td></tr>`,
+            `<tr><td colspan="${lbl(5)}" class="sumlbl">${esc(t.label)}</td><td class="money">${esc(t.value)}</td></tr>`,
         )
         .join('') +
-      `<tr class="total"><td colspan="5" class="sumlbl">Total</td><td class="money">&#8377; ${esc(money.grand)}</td></tr>`
+      `<tr class="total"><td colspan="${lbl(5)}" class="sumlbl">Total</td><td class="money">&#8377; ${esc(money.grand)}</td></tr>`
     : '';
 
   const wordsRow = money?.amountInWords
@@ -688,8 +709,8 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   </div>
   <article class="sheet">
     <table class="doc">
-      <thead><tr><th class="lh" colspan="${COLS}">${letterhead}</th></tr></thead>
-      <tfoot><tr><td class="pgfoot" colspan="${COLS}"><div></div></td></tr></tfoot>
+      <thead><tr><th class="lh" colspan="${cols}">${letterhead}</th></tr></thead>
+      <tfoot><tr><td class="pgfoot" colspan="${cols}"><div></div></td></tr></tfoot>
       <tbody>
         ${sectionRow(
           `<div class="split"><div>${boxHtml(model.recipient, '', model.shipTo)}</div>` +

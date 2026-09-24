@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
 
@@ -435,10 +436,21 @@ function Bar({
   // at any width the grid allows. The hover tooltip is the only surface here
   // that can grow, so the item code and name go there instead.
   //
-  // The code is written bare, not as CODE/REV: this payload carries no SO-line
-  // revision, and items.revision is a different column about the item master
-  // that must never stand in for the customer's drawing revision.
-  const itemLabel = [bar.itemCode ?? '', bar.itemName ?? ''].filter((t) => t !== '').join(' · ');
+  // The code now reads CODE/REV: the payload carries `itemRevision`, the
+  // CUSTOMER's drawing revision off the SO line behind the card (never
+  // items.revision, which describes the item master). A bar with no order line
+  // behind it has none and keeps the bare code, with no trailing slash.
+  //
+  // POL — the line number printed on the CUSTOMER's own purchase order — leads
+  // the line, as it does everywhere else. It is dropped when the card is
+  // job-work sourced or hand-raised.
+  const itemLabel = [
+    bar.clientPoLineNo ? `POL ${bar.clientPoLineNo}` : '',
+    itemCodeWithRev(bar.itemCode, bar.itemRevision, ''),
+    bar.itemName ?? '',
+  ]
+    .filter((t) => t !== '')
+    .join(' · ');
   return (
     <div
       draggable={canWrite}

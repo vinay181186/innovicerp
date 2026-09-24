@@ -212,13 +212,13 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>#</th>
+                <th>Ln</th>
                 {/* Image · CODE/REV · Part name in one badge cell (user decision
                     2026-09-21) — the former separate Part name column folded in. */}
                 <th>Item</th>
                 <th>Material</th>
                 <th>Drawing</th>
-                <th>Qty</th>
+                <th>Order Qty</th>
                 <th>UOM</th>
                 {priceHidden ? null : (
                   <>
@@ -226,8 +226,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                     <th style={{ color: 'var(--green)' }}>Amount</th>
                   </>
                 )}
-                <th>Due</th>
-                <th>Status</th>
+                <th>Due Date</th>
+                <th>JWSO Status</th>
               </tr>
             </thead>
             <tbody>
@@ -307,9 +307,9 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
           <thead>
             <tr>
               <th>File</th>
-              <th>Type</th>
+              <th>Document Type</th>
               <th>Category</th>
-              <th>Uploaded by</th>
+              <th>Uploaded By</th>
               <th>Size</th>
               <th />
             </tr>
@@ -483,9 +483,9 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
   };
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
-      <StripItem label="Date" value={<span className="mono">{detail.jwDate}</span>} />
+      <StripItem label="JWSO Date" value={<span className="mono">{detail.jwDate}</span>} />
       <StripItem
-        label="Client PO"
+        label="Client PO No."
         value={
           detail.clientPoNo ? (
             <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
@@ -496,8 +496,8 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
           )
         }
       />
-      <StripItem label="Status" value={<SoStatusBadge status={detail.status} />} />
-      <StripItem label="🟢 Client Material" value={detail.clientMaterial ?? '—'} />
+      <StripItem label="JWSO Status" value={<SoStatusBadge status={detail.status} />} />
+      <StripItem label="🟢 Customer Material" value={detail.clientMaterial ?? '—'} />
       <StripItem label="Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>
         <span className="form-label">Remarks</span>

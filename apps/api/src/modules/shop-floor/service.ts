@@ -67,6 +67,10 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         -- revision. Cast to text because the contract types this as a string and
         -- a database without migration 0119 still holds the old integer here.
         COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the same SO line as the revision above. SO side only: a job-work
+        -- line has no customer PO, so JW-sourced cards are correctly null.
+        sol.client_po_line_no AS "clientPoLineNo",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         jc.order_qty AS "orderQty",
@@ -114,6 +118,7 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         operation: String(r['operation'] ?? ''),
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
         soCode: (r['soCode'] as string | null) ?? null,
         orderQty: num(r['orderQty']),

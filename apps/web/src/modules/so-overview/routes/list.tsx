@@ -282,14 +282,14 @@ function OverviewTable({
               <tr>
                 <th>SO No.</th>
                 <th>Customer</th>
-                <th>Type</th>
+                <th>SO Type</th>
                 <th>Equipment</th>
                 <th>Lines</th>
-                <th>Status</th>
+                <th>SO Status</th>
                 <th>Progress</th>
                 <th>Required</th>
-                <th style={{ color: 'var(--green)' }}>Done</th>
-                <th style={{ color: 'var(--red)' }}>Balance</th>
+                <th style={{ color: 'var(--green)' }}>Completed</th>
+                <th style={{ color: 'var(--red)' }}>Pending</th>
                 <th>Due Date</th>
                 <th>Alerts</th>
                 <th>SO Date</th>
@@ -796,18 +796,18 @@ function DrillItemsTable({
         <thead>
           <tr>
             {!isEquipment ? <th>Ln</th> : null}
-            {!isEquipment ? <th style={{ color: 'var(--purple)' }}>CPO Ln</th> : null}
+            {!isEquipment ? <th style={{ color: 'var(--purple)' }}>POL</th> : null}
             <th>Item Code</th>
             <th>Item Name</th>
             <th>Stage</th>
-            <th>Status</th>
+            <th>SO Status</th>
             <th>Required</th>
             <th style={{ color: 'var(--amber)' }}>Issued</th>
             <th style={{ color: 'var(--cyan)' }}>In Prod</th>
             <th style={{ color: 'var(--amber)' }}>QC Pend</th>
             <th style={{ color: 'var(--purple)' }}>At Vendor</th>
-            <th style={{ color: 'var(--green)' }}>Done</th>
-            <th style={{ color: 'var(--red)' }}>Balance</th>
+            <th style={{ color: 'var(--green)' }}>Completed</th>
+            <th style={{ color: 'var(--red)' }}>Pending</th>
             <th>Current Op</th>
             <th>Machine / Vendor</th>
           </tr>

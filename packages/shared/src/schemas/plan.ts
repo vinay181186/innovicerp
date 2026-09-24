@@ -156,6 +156,12 @@ export const planDetailSchema = planSchema.extend({
    *  Read live rather than snapshotted onto the plan: if the customer reissues
    *  the drawing at Rev C, every plan against that line is planning Rev C. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a job-work line, a hand-raised card).
+   *  Read-only: the Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
 });
 export type PlanDetail = z.infer<typeof planDetailSchema>;
@@ -186,6 +192,12 @@ export const listPlansResponseSchema = z.object({
        *  live off the plan's SO line, null on a JW-sourced or ad-hoc plan. See
        *  that field for the full rules; they apply unchanged in the list. */
       itemRevision: z.string().nullable().default(null),
+      /** The customer's PO line number (`POL`) for the SO line this row traces back
+       *  to — the same fact the Sales Order line carries, shown beside the item
+       *  code on every downstream document (user rule, 2026-09-23). Null when the
+       *  row has no SO line behind it (a job-work line, a hand-raised card).
+       *  Read-only: the Sales Order is the only place it is typed. */
+      clientPoLineNo: z.string().nullable().default(null),
       itemName: z.string().nullable(),
       opsCount: z.number().int().nonnegative(),
       /** Computed for `opsSource='route_card'` plans, null for old plans (they
@@ -410,6 +422,12 @@ export const planningDashboardResponseSchema = z.object({
        *  live off the plan's SO line, null on a JW-sourced or ad-hoc plan. See
        *  that field for the full rules; they apply unchanged on the dashboard. */
       itemRevision: z.string().nullable().default(null),
+      /** The customer's PO line number (`POL`) for the SO line this row traces back
+       *  to — the same fact the Sales Order line carries, shown beside the item
+       *  code on every downstream document (user rule, 2026-09-23). Null when the
+       *  row has no SO line behind it (a job-work line, a hand-raised card).
+       *  Read-only: the Sales Order is the only place it is typed. */
+      clientPoLineNo: z.string().nullable().default(null),
       itemName: z.string().nullable(),
       opsCount: z.number().int().nonnegative(),
     }),
@@ -435,6 +453,12 @@ export const unplannedOrderRowSchema = z.object({
    *  nullable because the column only became compulsory text with migration
    *  0119; a null renders as the bare item code, never a trailing slash. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to — the same fact the Sales Order line carries, shown beside the item
+   *  code on every downstream document (user rule, 2026-09-23). Null when the
+   *  row has no SO line behind it (a job-work line, a hand-raised card).
+   *  Read-only: the Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   partName: z.string().nullable(),
   customerName: z.string().nullable(),
   dueDate: z.string().nullable(),

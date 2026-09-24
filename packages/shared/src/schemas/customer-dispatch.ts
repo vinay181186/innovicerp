@@ -16,6 +16,10 @@ export const dispatchableLineSchema = z.object({
    *  column and substituting it would put a plausible-looking wrong revision on
    *  the dispatch. Null is correct and renders as the bare code. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) typed on this same SO line — shown
+   *  beside the item code on the dispatch form, as on every other document
+   *  (user rule, 2026-09-23). Null when the customer's PO gave no line. */
+  clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string(),
   orderQty: z.number().int().nonnegative(),
   readyQty: z.number().int().nonnegative(), // produced + QC-accepted (final op)
@@ -24,6 +28,13 @@ export const dispatchableLineSchema = z.object({
   reservedQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),
   availableQty: z.number().int().nonnegative(), // min(ready + reserved, order) − dispatched
+  /** Still owed to the customer on this line: orderQty − dispatchedQty. */
+  pendingQty: z.number().int().nonnegative(),
+  /** PHYSICAL stock of this line's item — on the shelf, reserved or not. */
+  physicalQty: z.number().int().nonnegative(),
+  /** Free stock of this item: physical − reserved to ANY line. A dispatch may
+   *  ship this line's own reservation first, then dip into free stock. */
+  itemAvailableQty: z.number().int().nonnegative(),
   /** Earliest Customer Dispatch Date among the plans on this SO line — the date
    *  the dispatch team works to. Null when no plan carries one. */
   customerDispatchDate: z.string().nullable().default(null),

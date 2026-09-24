@@ -271,7 +271,7 @@ export function IncomingQcInspectFormView(props: {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 10 }}>
-            QC date
+            QC Date
           </label>
           <input
             type="date"
@@ -301,7 +301,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
-            ✅ Accept Qty (max {o.pendingQty})
+            ✅ Accepted (max {o.pendingQty})
           </label>
           <input
             type="number"
@@ -322,7 +322,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
-            ❌ Reject Qty
+            ❌ Rejected
           </label>
           <input
             type="number"

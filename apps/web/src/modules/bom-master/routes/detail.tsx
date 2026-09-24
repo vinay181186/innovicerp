@@ -126,7 +126,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                 className="mono"
                 style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}
               >
-                Rev {detail.revision}
+                BOM Rev {detail.revision}
               </span>
             </div>
           </div>
@@ -222,11 +222,11 @@ function BomMasterDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 36 }}>#</th>
+                <th style={{ width: 36 }}>Sr No</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="td-ctr">Qty / Set</th>
-                <th>Type</th>
+                <th>BOM Type</th>
                 {/* Raw material is per LINE: each child is a different part cut
                     from its own stock, and this is what the BOM cascade stamps
                     on that child's Job Card. Blank is normal on a Buy/Outsource
@@ -287,9 +287,9 @@ function BomMasterDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Rev</th>
-                  <th>Date</th>
-                  <th>Changed By</th>
+                  <th>BOM Rev</th>
+                  <th>Revision Date</th>
+                  <th>Revised By</th>
                   <th>Notes</th>
                   <th>Items</th>
                 </tr>
@@ -343,7 +343,7 @@ function BomMasterDetailPage(): React.JSX.Element {
           <div className="modal modal-lg">
             <div className="modal-hdr">
               <span className="modal-title">
-                📋 {detail.bomNo} — Rev {openSnapshot.revision} Snapshot (
+                📋 {detail.bomNo} — BOM Rev {openSnapshot.revision} Snapshot (
                 {openSnapshot.itemsSnapshot.length} items)
               </span>
               <button
@@ -356,16 +356,16 @@ function BomMasterDetailPage(): React.JSX.Element {
             </div>
             <div className="modal-body">
               <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
-                Archived items from Rev {openSnapshot.revision}
+                Archived items from BOM Rev {openSnapshot.revision}
               </div>
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>#</th>
+                    <th>Sr No</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
                     <th>Qty / Set</th>
-                    <th>Type</th>
+                    <th>BOM Type</th>
                   </tr>
                 </thead>
                 <tbody>

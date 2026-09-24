@@ -13,6 +13,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../../purchase-orders/api';
@@ -174,21 +175,21 @@ function OutwardView(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>DC No.</th>
-                  <th>Date</th>
+                  <th>DC Date</th>
                   <th>JWPO</th>
-                  <th>SO</th>
+                  <th>SO No.</th>
                   <th>Vendor</th>
                   <th className="td-ctr">Items</th>
                   <th className="td-ctr" style={{ color: 'var(--purple)' }}>
                     Sent
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                    Returned
+                    Received
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--red)' }}>
                     Pending
                   </th>
-                  <th>Status</th>
+                  <th>DC Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -391,13 +392,13 @@ function InwardView(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Inward No.</th>
-                  <th>Date</th>
+                  <th>Inward Date</th>
                   <th>DC No.</th>
                   <th>Vendor</th>
-                  <th>Vendor Challan</th>
+                  <th>Vendor Challan No.</th>
                   <th className="td-ctr">Received</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                    OK
+                    Accepted
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--red)' }}>
                     Rejected
@@ -492,6 +493,10 @@ function InwardView(): React.JSX.Element {
 interface OutwardLineUi {
   purchaseOrderLineId: string;
   itemCode: string;
+  /** Customer's drawing revision off the order line behind this PO line. */
+  itemRevision: string | null;
+  /** The CUSTOMER's own purchase-order line number (POL), read-only. */
+  clientPoLineNo: string | null;
   itemName: string;
   processText: string | null;
   poQty: number;
@@ -542,6 +547,8 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
         poLines.lines.map((l) => ({
           purchaseOrderLineId: l.purchaseOrderLineId,
           itemCode: l.itemCode,
+          itemRevision: l.itemRevision,
+          clientPoLineNo: l.clientPoLineNo,
           itemName: l.itemName,
           processText: l.processText,
           poQty: l.poQty,
@@ -608,7 +615,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">Date</label>
+          <label className="form-label">DC Date</label>
           <input
             type="date"
             className="innovic-input"
@@ -673,7 +680,10 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
             <thead>
               <tr style={{ background: 'var(--bg4)' }}>
                 <th style={{ width: 30, padding: 6 }}>☑</th>
-                <th style={{ padding: 6 }}>Item</th>
+                {/* POL — the CUSTOMER's own purchase-order line number, before
+                    the item as on every other document. */}
+                <th style={{ padding: 6, color: 'var(--purple)' }}>POL</th>
+                <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ color: 'var(--purple)', padding: 6 }}>Process</th>
                 <th style={{ padding: 6 }}>PO Qty</th>
                 <th style={{ color: 'var(--amber)', padding: 6 }}>Already Sent</th>
@@ -701,8 +711,11 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                         style={{ width: 16, height: 16 }}
                       />
                     </td>
+                    <td className="td-ctr mono fw-700" style={{ padding: 6, color: 'var(--purple)' }}>
+                      {l.clientPoLineNo ?? '—'}
+                    </td>
                     <td style={{ padding: 6, fontSize: 12 }}>
-                      <b>{l.itemCode}</b>{' '}
+                      <b>{itemCodeWithRev(l.itemCode, l.itemRevision)}</b>{' '}
                       <span style={{ color: 'var(--text3)' }}>{l.itemName}</span>
                     </td>
                     <td
@@ -792,6 +805,10 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
 interface InwardLineUi {
   outwardLineId: string;
   itemCode: string;
+  /** Customer's drawing revision off the order line behind this DC line. */
+  itemRevision: string | null;
+  /** The CUSTOMER's own purchase-order line number (POL), read-only. */
+  clientPoLineNo: string | null;
   itemName: string;
   processText: string | null;
   sentQty: number;
@@ -827,6 +844,8 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
         detail.lines.map((l) => ({
           outwardLineId: l.id,
           itemCode: l.itemCode ?? l.itemCodeText,
+          itemRevision: l.itemRevision,
+          clientPoLineNo: l.clientPoLineNo,
           itemName: l.itemName ?? l.itemNameText ?? '',
           processText: l.processText,
           sentQty: l.sentQty,
@@ -919,7 +938,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">Date</label>
+          <label className="form-label">Inward Date</label>
           <input
             type="date"
             className="innovic-input"
@@ -987,13 +1006,14 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
           <table style={{ width: '100%' }}>
             <thead>
               <tr style={{ background: 'var(--bg4)' }}>
-                <th style={{ padding: 6 }}>Item</th>
+                <th style={{ padding: 6, color: 'var(--purple)' }}>POL</th>
+                <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ padding: 6, color: 'var(--purple)' }}>Process</th>
                 <th style={{ padding: 6 }}>Sent</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>Already Returned</th>
+                <th style={{ padding: 6, color: 'var(--green)' }}>Received so far</th>
                 <th style={{ padding: 6, color: 'var(--amber)' }}>Pending</th>
                 <th style={{ padding: 6 }}>Received</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>OK</th>
+                <th style={{ padding: 6, color: 'var(--green)' }}>Accepted</th>
                 <th style={{ padding: 6, color: 'var(--red)' }}>Rejected</th>
               </tr>
             </thead>
@@ -1008,8 +1028,11 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                       opacity: hasPending ? 1 : 0.4,
                     }}
                   >
+                    <td className="td-ctr mono fw-700" style={{ padding: 6, color: 'var(--purple)' }}>
+                      {l.clientPoLineNo ?? '—'}
+                    </td>
                     <td style={{ padding: 6, fontSize: 12 }}>
-                      <b>{l.itemCode}</b>{' '}
+                      <b>{itemCodeWithRev(l.itemCode, l.itemRevision)}</b>{' '}
                       <span style={{ color: 'var(--text3)' }}>{l.itemName}</span>
                     </td>
                     <td

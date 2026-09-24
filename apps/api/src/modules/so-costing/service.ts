@@ -181,6 +181,7 @@ type DetailLineRow = {
   line_no: number;
   item_code: string | null;
   item_revision: string | null;
+  client_po_line_no: string | null;
   item_name: string;
   order_qty: number;
   material_cost: string | number;
@@ -238,6 +239,9 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
           -- without 0119 still holds the old integer here; the cast is a no-op once
           -- 0119 is in. Never items.revision, a different column about the item.
           sol.revision::text AS item_revision,
+          -- POL — the line number on the CUSTOMER's own purchase order for this
+          -- SO line. Never sol.line_no, which is OUR line number.
+          sol.client_po_line_no AS client_po_line_no,
           COALESCE((
             SELECT SUM(pol.qty * pol.rate) FROM purchase_order_lines pol
             JOIN purchase_orders po ON po.id = pol.purchase_order_id
@@ -340,6 +344,7 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
         lineNo: Number(r.line_no) || 0,
         itemCode: r.item_code,
         itemRevision: r.item_revision ?? null,
+        clientPoLineNo: r.client_po_line_no ?? null,
         itemName: r.item_name,
         orderQty: Number(r.order_qty) || 0,
         materialCost,

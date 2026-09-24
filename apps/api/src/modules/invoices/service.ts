@@ -195,6 +195,10 @@ async function getInvoiceInternal(
       // the UI a number wearing a string type. The cast is a no-op once 0119 is
       // in.
       itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+      // POL — the line number printed on the CUSTOMER's own purchase order,
+      // off the SAME SO line as the revision above. Not our SO line number.
+      // Null when this invoice line has no SO line behind it.
+      clientPoLineNo: salesOrderLines.clientPoLineNo,
     })
     .from(invoiceLines)
     // LEFT, never inner: invoice_lines.sales_order_line_id is nullable, and a
@@ -207,6 +211,7 @@ async function getInvoiceInternal(
     lineNo: l.lineNo,
     itemCode: l.itemCodeText,
     itemRevision: l.itemRevision ?? null,
+    clientPoLineNo: l.clientPoLineNo ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemNameText,
     qty: l.qty,
@@ -359,6 +364,7 @@ type InvLineRow = {
   line_no: number;
   item_code: string | null;
   item_revision: string | null;
+  client_po_line_no: string | null;
   item_name: string;
   order_qty: string | number;
   dispatched_qty: string | number;
@@ -383,6 +389,9 @@ async function loadInvoiceableLines(
           -- cast a pre-0119 database hands the UI a number. Never i.revision:
           -- that is a different column, about the item rather than the order.
           sol.revision::text AS item_revision,
+          -- POL — the line number on the CUSTOMER's own purchase order for this
+          -- SO line. Never sol.line_no, which is OUR line number.
+          sol.client_po_line_no AS client_po_line_no,
           sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
           COALESCE((
             SELECT SUM(il.qty) FROM invoice_lines il
@@ -403,6 +412,7 @@ async function loadInvoiceableLines(
       lineNo: Number(r.line_no) || 0,
       itemCode: r.item_code,
       itemRevision: r.item_revision ?? null,
+      clientPoLineNo: r.client_po_line_no ?? null,
       itemName: r.item_name,
       orderQty: Math.round(n(r.order_qty)),
       dispatchedQty: dispatched,

@@ -34,7 +34,7 @@ export function NcLinksBlock(props: {
         </InlinePair>
       ) : null}
       {dcId ? (
-        <InlinePair label="Return DC:">
+        <InlinePair label="DC No.:">
           <Link
             to="/delivery-challans/$id"
             params={{ id: dcId }}

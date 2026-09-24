@@ -65,6 +65,7 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
       (o, i) => `<tr>
       <td style="text-align:center;font-weight:700">${i + 1}</td>
       <td style="font-family:monospace;font-weight:700">${esc(o.jobCardCode)}</td>
+      <td style="color:#7c3aed;font-weight:700">${esc(o.clientPoLineNo ?? '—')}</td>
       <td style="color:#7c3aed">${esc(itemCodeWithRev(o.itemCode, o.itemRevision))}</td>
       <td>${esc(o.itemName ?? '—')}</td>
       <td>${esc(o.soCode ?? '—')}</td>
@@ -81,9 +82,9 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
     )
     .join('');
   return `${head}<table><thead><tr>
-      <th>#</th><th>JC No.</th><th>Item Code</th><th>Item Name</th><th>SO/WO</th>
+      <th>Sr No</th><th>JC No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>SO No.</th>
       <th>Op</th><th>Operation</th><th>Priority</th><th>Due Date</th>
-      <th>Order</th><th>Done</th><th>Avail</th><th>Pend Hrs</th><th>Status</th>
+      <th>Order Qty</th><th>Completed</th><th>Available</th><th>Pend Hrs</th><th>Op Status</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
 

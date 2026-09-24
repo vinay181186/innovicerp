@@ -1,7 +1,7 @@
 // Customer Dispatch Register print — mirror of legacy `printDispatchRegister`
 // (`legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L10789): info-grid
 // (Total Dispatched / Dispatch Entries / Items Dispatched) + per-line table
-// (Date / SO No. / CPO Ln / Item Code / Item Name / Qty / UOM / Customer /
+// (Date / SO No. / POL / Item Code / Item Name / Qty / UOM / Customer /
 // Dispatched By / Remarks) + 3-cell signature row. Unlike the header-grain
 // OSP/JW DC register print, this one IS line-grain — same as legacy.
 
@@ -45,7 +45,7 @@ export function printCustomerDispatchRegister(args: {
       <div class="info-box"><div class="info-lbl">Dispatch Entries</div><div class="info-val">${rows.length}</div></div>
       <div class="info-box"><div class="info-lbl">Items Dispatched</div><div class="info-val">${itemCount}</div></div>
     </div>
-    <table><thead><tr><th>Date</th><th>SO No.</th><th>CPO Ln</th><th>Item Code</th><th>Item Name</th><th>Qty</th><th>UOM</th><th>Customer</th><th>Dispatched By</th><th>Remarks</th></tr></thead>
+    <table><thead><tr><th>Dispatch Date</th><th>SO No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>Dispatch Qty</th><th>UOM</th><th>Customer</th><th>Dispatched By</th><th>Remarks</th></tr></thead>
     <tbody>${tableRows || '<tr><td colspan="10" style="text-align:center;color:#aaa">No dispatch records</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Store In-Charge</div>

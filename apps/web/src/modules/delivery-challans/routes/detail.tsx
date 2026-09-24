@@ -311,19 +311,22 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Ln</th>
+                  {/* POL = the CUSTOMER's own PO line number off the SO line
+                      behind this challan line. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th>Ship qty</th>
                   <th>Received</th>
                   <th>Rejected</th>
-                  <th>Remaining</th>
+                  <th>Pending</th>
                 </tr>
               </thead>
               <tbody>
                 {dc.lines.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="empty-state">
+                    <td colSpan={8} className="empty-state">
                       No lines
                     </td>
                   </tr>
@@ -337,6 +340,11 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                     return (
                       <tr key={line.id}>
                         <td className="mono">{line.lineNo}</td>
+                        {/* POL — the customer's PO line number off the SO line
+                            behind this row; '—' on a raw-material line. */}
+                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                          {line.clientPoLineNo ?? '—'}
+                        </td>
                         {/* SO document format: the code is its own strong-mono
                             column (td-code, var(--text)) and the name a second
                             column beside it. The drawing revision joins the code
@@ -364,7 +372,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               {dc.lines.length > 0 ? (
                 <tfoot>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <td colSpan={3} style={{ fontWeight: 700 }}>
+                    <td colSpan={4} style={{ fontWeight: 700 }}>
                       Total
                     </td>
                     <td className="mono fw-700">{totals.ship.toFixed(2)}</td>
@@ -413,13 +421,13 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
   // sixth cell carries "Issued on" instead of a blank — no orphan cells.
   return (
     <div className="form-grid-3">
-      <Pair label="DC date" value={dc.dcDate} />
+      <Pair label="DC Date" value={dc.dcDate} />
       <Pair label="Vendor" value={dc.vendorName ?? dc.vendorCodeText} />
       {/* An NC challan has no PO: po_code_text carries the NC code (the column
           is NOT NULL), so the same cell is labelled NC and linked to the NC,
           instead of showing that code as an amber "snapshot PO". */}
       <Pair
-        label={dc.ncId ? 'NC' : 'PO'}
+        label={dc.ncId ? 'NC' : 'PO No.'}
         value={
           dc.ncId ? (
             <Link
@@ -443,7 +451,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
       />
       {/* Resolved through the PO's lines when the DC has no SO line of its own,
           which is the normal shape for an OSP/vendor challan. */}
-      <Pair label="SO" value={dc.soCode ?? dc.soRefText ?? '—'} />
+      <Pair label="SO No." value={dc.soCode ?? dc.soRefText ?? '—'} />
       {/* Its own labelled field, NOT "IN-SO-0012/B" — a slash after an SO
           number reads as a revision OF THE SALES ORDER, which is not a thing.
           This is the customer's DRAWING revision, so it is said in words. It is

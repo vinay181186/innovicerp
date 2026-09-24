@@ -14,8 +14,8 @@ export const soOpenBacklogReport: RegisteredReport = {
       'Open SO lines with pending qty (order_qty - completed JC qty) and line value. Filter by SO type or due-date window; sorted by due date ascending.',
     group: 'Sales',
     filters: [
-      { key: 'fromDueDate', label: 'Due from', kind: 'date' },
-      { key: 'toDueDate', label: 'Due to', kind: 'date' },
+      { key: 'fromDueDate', label: 'Due Date From', kind: 'date' },
+      { key: 'toDueDate', label: 'Due Date To', kind: 'date' },
       {
         key: 'soType',
         label: 'SO Type',
@@ -24,23 +24,23 @@ export const soOpenBacklogReport: RegisteredReport = {
       },
     ],
     columns: [
-      { key: 'so_code', label: 'SO no.', type: 'text' },
-      { key: 'so_date', label: 'SO date', type: 'date' },
-      { key: 'client_name', label: 'Client', type: 'text' },
-      { key: 'so_type', label: 'Type', type: 'text' },
-      { key: 'line_no', label: 'Line', type: 'number' },
-      { key: 'item_code', label: 'Item code', type: 'text' },
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_date', label: 'SO Date', type: 'date' },
+      { key: 'client_name', label: 'Customer', type: 'text' },
+      { key: 'so_type', label: 'SO Type', type: 'text' },
+      { key: 'line_no', label: 'Ln', type: 'number' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
       // The customer's drawing revision, straight off the SO line. Its own
       // column rather than an "/REV" suffix on item_code: this report is read
       // in Excel, where item_code is filtered and VLOOKUP'd against Item
       // Master, and a suffix would split one item into one per revision.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'item_name', label: 'Item name', type: 'text' },
-      { key: 'order_qty', label: 'Order qty', type: 'number' },
-      { key: 'completed_qty', label: 'Completed qty', type: 'number' },
-      { key: 'pending_qty', label: 'Pending qty', type: 'number' },
-      { key: 'line_value', label: 'Line value', type: 'number' },
-      { key: 'due_date', label: 'Due date', type: 'date' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'order_qty', label: 'Order Qty', type: 'number' },
+      { key: 'completed_qty', label: 'Completed', type: 'number' },
+      { key: 'pending_qty', label: 'Pending', type: 'number' },
+      { key: 'line_value', label: 'Line Value', type: 'number' },
+      { key: 'due_date', label: 'Due Date', type: 'date' },
     ],
   },
   async run({ tx, companyId, filters }) {

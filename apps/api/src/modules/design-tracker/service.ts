@@ -43,6 +43,59 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
+/** The customer's drawing revision + PO line number behind a design row. */
+interface SoLineFacts {
+  itemRevision: string | null;
+  clientPoLineNo: string | null;
+}
+
+const NO_SO_LINE_FACTS: SoLineFacts = { itemRevision: null, clientPoLineNo: null };
+
+/**
+ * The SO line behind a design row.
+ *
+ * design_tracker records the sales order and the item but NOT the SO line
+ * (there is no so_line_id column), so the only hop available is
+ * (sales_order_id, item_id). The same item can legitimately appear on more
+ * than one line of one order, so this takes the LOWEST line_no and does it
+ * deterministically (ORDER BY line_no, then id) rather than letting the
+ * planner pick. A design is drawn per item, not per line, so the first line
+ * carrying that item is the honest answer; if the two lines disagree on
+ * revision or POL, the earlier line wins.
+ *
+ * NOTE: this is NOT designTracker.revision — that column is the DESIGN
+ * revision counter this module owns and increments. This is the customer's
+ * drawing revision, a different fact, read live off the order line.
+ */
+const SO_LINE_FACTS_SQL = sql`
+  SELECT
+    sol.revision::text AS "itemRevision",
+    sol.client_po_line_no AS "clientPoLineNo"
+  FROM public.sales_order_lines sol
+  WHERE sol.deleted_at IS NULL
+`;
+
+async function soLineFactsFor(
+  tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
+  salesOrderId: string | null,
+  itemId: string | null,
+): Promise<SoLineFacts> {
+  if (!salesOrderId || !itemId) return NO_SO_LINE_FACTS;
+  const rows = (await tx.execute(sql`
+    ${SO_LINE_FACTS_SQL}
+      AND sol.sales_order_id = ${salesOrderId}::uuid
+      AND sol.item_id = ${itemId}::uuid
+    ORDER BY sol.line_no, sol.id
+    LIMIT 1
+  `)) as unknown as Array<Record<string, unknown>>;
+  const r = rows[0];
+  if (!r) return NO_SO_LINE_FACTS;
+  return {
+    itemRevision: r['itemRevision'] == null ? null : String(r['itemRevision']),
+    clientPoLineNo: r['clientPoLineNo'] == null ? null : String(r['clientPoLineNo']),
+  };
+}
+
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v);
@@ -102,6 +155,9 @@ export async function listDesignTracker(
           OR dt.so_code_text ILIKE ${term}
           OR dt.item_code_text ILIKE ${term}
           OR dt.designer ILIKE ${term}
+          -- POL, the customer's own PO line number, now a column on this list.
+          -- soline is the LATERAL the SELECT below joins for exactly this fact.
+          OR soline."clientPoLineNo" ILIKE ${term}
         )`
       : sql``;
 
@@ -136,8 +192,20 @@ export async function listDesignTracker(
         dt.created_at AS "createdAt", dt.created_by AS "createdBy",
         dt.updated_at AS "updatedAt", dt.updated_by AS "updatedBy",
         dt.deleted_at AS "deletedAt",
+        -- The customer's drawing revision + PO line number off the SO line
+        -- behind this design. See soLineFactsFor() above for the join rule:
+        -- (sales_order_id, item_id), lowest line_no wins.
+        soline."itemRevision",
+        soline."clientPoLineNo",
         COALESCE(tl.total_hours, 0)::float AS "totalHours"
       FROM public.design_tracker dt
+      LEFT JOIN LATERAL (
+        ${SO_LINE_FACTS_SQL}
+          AND sol.sales_order_id = dt.sales_order_id
+          AND sol.item_id = dt.item_id
+        ORDER BY sol.line_no, sol.id
+        LIMIT 1
+      ) soline ON true
       LEFT JOIN LATERAL (
         SELECT SUM(hours)::numeric AS total_hours
         FROM public.design_time_log
@@ -206,6 +274,8 @@ function toListItem(r: Record<string, unknown>): DesignTrackerListItem {
     soCodeText: (r['soCodeText'] as string | null) ?? null,
     itemId: (r['itemId'] as string | null) ?? null,
     itemCodeText: (r['itemCodeText'] as string | null) ?? null,
+    itemRevision: (r['itemRevision'] as string | null) ?? null,
+    clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     itemNameText: (r['itemNameText'] as string | null) ?? null,
     designer: String(r['designer'] ?? ''),
     estimatedHours: num(r['estimatedHours']),
@@ -266,14 +336,17 @@ export async function getDesignTrackerDetail(
     const totalHours = timeLog.reduce((s, t) => s + t.hours, 0);
 
     return {
-      tracker: rowToTracker(row),
+      tracker: rowToTracker(row, await soLineFactsFor(tx, row.salesOrderId, row.itemId)),
       timeLog,
       totalHours,
     };
   });
 }
 
-function rowToTracker(row: typeof designTracker.$inferSelect): DesignTracker {
+function rowToTracker(
+  row: typeof designTracker.$inferSelect,
+  facts: SoLineFacts = NO_SO_LINE_FACTS,
+): DesignTracker {
   const rh = row.revisionHistory as unknown;
   const revisionHistory = Array.isArray(rh)
     ? (rh as Array<{ rev: number; date: string; reason: string; by: string }>)
@@ -286,6 +359,8 @@ function rowToTracker(row: typeof designTracker.$inferSelect): DesignTracker {
     soCodeText: row.soCodeText,
     itemId: row.itemId,
     itemCodeText: row.itemCodeText,
+    itemRevision: facts.itemRevision,
+    clientPoLineNo: facts.clientPoLineNo,
     itemNameText: row.itemNameText,
     designer: row.designer,
     estimatedHours: num(row.estimatedHours),
@@ -392,7 +467,7 @@ export async function createDesignTracker(
       .returning();
     const row = inserted[0];
     if (!row) throw new ValidationError('Failed to insert design');
-    return rowToTracker(row);
+    return rowToTracker(row, await soLineFactsFor(tx, row.salesOrderId, row.itemId));
   });
 }
 
@@ -436,7 +511,7 @@ export async function updateDesignTracker(
       .returning();
     const row = updated[0];
     if (!row) throw new ValidationError('Failed to update design');
-    return rowToTracker(row);
+    return rowToTracker(row, await soLineFactsFor(tx, row.salesOrderId, row.itemId));
   });
 }
 
@@ -525,7 +600,8 @@ export async function submitDesignForReview(
       })
       .where(eq(designTracker.id, existing.id))
       .returning();
-    return rowToTracker(updated[0]!);
+    const out = updated[0]!;
+    return rowToTracker(out, await soLineFactsFor(tx, out.salesOrderId, out.itemId));
   });
 }
 
@@ -566,7 +642,8 @@ export async function approveDesign(id: string, user: AuthContext): Promise<Desi
       })
       .where(eq(designTracker.id, existing.id))
       .returning();
-    return rowToTracker(updated[0]!);
+    const out = updated[0]!;
+    return rowToTracker(out, await soLineFactsFor(tx, out.salesOrderId, out.itemId));
   });
 }
 
@@ -629,7 +706,8 @@ export async function reviseDesign(
       })
       .where(eq(designTracker.id, existing.id))
       .returning();
-    return rowToTracker(updated[0]!);
+    const out = updated[0]!;
+    return rowToTracker(out, await soLineFactsFor(tx, out.salesOrderId, out.itemId));
   });
 }
 

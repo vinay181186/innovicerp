@@ -172,7 +172,7 @@ function DetailGrid(props: { operator: Operator }): React.JSX.Element {
   return (
     <div className="form-grid">
       <Pair
-        label="Status"
+        label="Active"
         value={
           <span className={`badge ${operator.isActive ? 'b-green' : 'b-grey'}`}>
             {operator.isActive ? 'active' : 'inactive'}

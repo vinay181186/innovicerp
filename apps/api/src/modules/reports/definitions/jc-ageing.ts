@@ -15,27 +15,27 @@ export const jcAgeingReport: RegisteredReport = {
     filters: [
       {
         key: 'computedStatus',
-        label: 'Status',
+        label: 'JC Status',
         kind: 'enum',
         options: ['open', 'qc_pending', 'no_ops'],
       },
     ],
     columns: [
-      { key: 'jc_code', label: 'JC no.', type: 'text' },
-      { key: 'jc_date', label: 'JC date', type: 'date' },
-      { key: 'days_open', label: 'Days open', type: 'number' },
-      { key: 'item_code', label: 'Item code', type: 'text' },
+      { key: 'jc_code', label: 'JC No.', type: 'text' },
+      { key: 'jc_date', label: 'JC Date', type: 'date' },
+      { key: 'days_open', label: 'Days Open', type: 'number' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
       // Customer drawing revision of the SO line this JC came from. Kept out
       // of item_code because the sheet is filtered and VLOOKUP'd on that
       // column. Blank for a JW-sourced or standalone JC — no SO line, no
       // customer revision.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'item_name', label: 'Item name', type: 'text' },
-      { key: 'qty', label: 'Order qty', type: 'number' },
-      { key: 'computed_status', label: 'Status', type: 'text' },
-      { key: 'total_ops', label: 'Total ops', type: 'number' },
-      { key: 'done_ops', label: 'Done ops', type: 'number' },
-      { key: 'due_date', label: 'Due date', type: 'date' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'qty', label: 'Order Qty', type: 'number' },
+      { key: 'computed_status', label: 'JC Status', type: 'text' },
+      { key: 'total_ops', label: 'Total Ops', type: 'number' },
+      { key: 'done_ops', label: 'Done Ops', type: 'number' },
+      { key: 'due_date', label: 'Due Date', type: 'date' },
     ],
   },
   async run({ tx, companyId, filters }) {

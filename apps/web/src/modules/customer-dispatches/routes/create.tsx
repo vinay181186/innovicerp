@@ -1,12 +1,15 @@
 // New Customer Dispatch — pick an SO, then add dispatch lines. The user types an
-// item code; the item name and the order/ready/dispatched/available metrics
-// auto-fetch from the SO's dispatchable lines. Dispatch is capped at each line's
-// available qty.
+// item code; the item name and the ordered / ready / dispatched / pending /
+// reserved / available metrics auto-fetch from the SO's dispatchable lines.
+// Dispatch is capped at each line's PENDING qty (ADR-180): a reservation no
+// longer removes stock from the shelf, so the dispatch draws on this line's
+// reservation first and then on free stock.
 //
 // Styled to SO Master (sales-orders/components/sales-order-form.tsx): top action
 // bar carrying Back + title + crumb + Cancel/Save, a 4-up header grid, and the
 // shared line-item table. Errors stay at the bottom, next to the fields that
-// caused them. No validation, payload or mutation behaviour changed.
+// caused them. The payload and the mutation are unchanged; the qty cap moved
+// from "available" to "pending" with ADR-180 (see the validation block below).
 
 import type { DispatchableLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -17,7 +20,12 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayLocal } from '@/lib/date';
-import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions, useNextDispatchCode } from '../api';
+import {
+  useCreateDispatch,
+  useDispatchableSo,
+  useFinanceSoOptions,
+  useNextDispatchCode,
+} from '../api';
 import { DispatchLineTable, type LineCard } from '../components/dispatch-line-table';
 
 // Optional ?so=<salesOrderId> preselects the SO (e.g. arriving from the
@@ -83,9 +91,14 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     setCards((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
-  // Live per-line validation (no silent clamp): a qty over the available amount
-  // is a hard block — the line shows a friendly message and Save is disabled
-  // until every line is within its available qty.
+  // Live per-line validation (no silent clamp): a qty over what the customer is
+  // still owed is a hard block — the line shows a friendly message and Save is
+  // disabled until every line is within its pending qty.
+  //
+  // ADR-180: the cap is PENDING (order − dispatched), not the old "ready +
+  // reserved" figure. A reservation no longer removes stock from the shelf, so
+  // a dispatch draws on this line's reservation first and then on free stock;
+  // the API is the one that checks there are enough pieces to draw on.
   const lineErrors = new Map<number, string>();
   let anyPositiveQty = false;
   for (const c of cards) {
@@ -96,17 +109,28 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       lineErrors.set(c.id, 'Enter a valid quantity.');
       continue;
     }
-    if (raw > line.availableQty) {
+    // Cap at the SAME number the server enforces (`availableQty`, itself
+    // already capped at pending). Capping only at "pending" let the user type
+    // a qty the stock cannot cover, kept Save enabled, and met the refusal at
+    // submit instead of while typing.
+    const cap = Math.min(line.availableQty, line.pendingQty);
+    if (raw > cap) {
       lineErrors.set(
         c.id,
-        `Only ${line.availableQty} available to dispatch — reduce the qty to ${line.availableQty} or less.`,
+        cap === line.pendingQty
+          ? `Only ${cap} still pending on this line — reduce the qty to ${cap} or less.`
+          : `Only ${cap} can be dispatched now (this line's reserved stock plus free stock) — reduce the qty to ${cap} or less.`,
       );
       continue;
     }
     if (raw > 0) anyPositiveQty = true;
   }
   const canSave =
-    Boolean(soId) && cards.length > 0 && lineErrors.size === 0 && anyPositiveQty && !create.isPending;
+    Boolean(soId) &&
+    cards.length > 0 &&
+    lineErrors.size === 0 &&
+    anyPositiveQty &&
+    !create.isPending;
 
   async function submit(): Promise<void> {
     setErr(null);
@@ -123,9 +147,10 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       if (Number.isNaN(raw) || raw < 0) {
         return setErr(`${line.itemName}: enter a valid dispatch quantity.`);
       }
-      if (raw > line.availableQty) {
+      const lineCap = Math.min(line.availableQty, line.pendingQty);
+      if (raw > lineCap) {
         return setErr(
-          `${line.itemName}: only ${line.availableQty} available to dispatch (you entered ${raw}). Reduce the qty to ${line.availableQty} or less.`,
+          `${line.itemName}: only ${lineCap} can be dispatched (you entered ${raw}). Reduce the qty to ${lineCap} or less.`,
         );
       }
       if (raw <= 0) continue;
@@ -182,8 +207,12 @@ function CustomerDispatchNewPage(): React.JSX.Element {
             <Link to="/customer-dispatches" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
-            <div className="panel-title" style={{ fontSize: 16 }}>🚚 New Customer Dispatch</div>
-            <div className="text3" style={{ fontSize: 11 }}>Sales &amp; CRM › Customer Dispatch › New</div>
+            <div className="panel-title" style={{ fontSize: 16 }}>
+              🚚 New Customer Dispatch
+            </div>
+            <div className="text3" style={{ fontSize: 11 }}>
+              Sales &amp; CRM › Customer Dispatch › New
+            </div>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
               <button
                 type="button"
@@ -198,7 +227,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                 disabled={!canSave}
                 title={
                   lineErrors.size > 0
-                    ? 'Fix the highlighted lines — dispatch qty cannot exceed the available qty.'
+                    ? 'Fix the highlighted lines — dispatch qty cannot exceed the pending qty.'
                     : undefined
                 }
                 onClick={() => void submit()}
@@ -228,7 +257,9 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               </select>
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="dispatchNo">Dispatch No.</label>
+              <label className="form-label" htmlFor="dispatchNo">
+                Dispatch No.
+              </label>
               <input
                 id="dispatchNo"
                 className="innovic-input"
@@ -237,7 +268,9 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="dispatchDate">Dispatch Date</label>
+              <label className="form-label" htmlFor="dispatchDate">
+                Dispatch Date
+              </label>
               <input
                 id="dispatchDate"
                 type="date"
@@ -247,7 +280,9 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="transport">Transport</label>
+              <label className="form-label" htmlFor="transport">
+                Transport
+              </label>
               <input
                 id="transport"
                 className="innovic-input"
@@ -257,7 +292,9 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="vehicleNo">Vehicle No.</label>
+              <label className="form-label" htmlFor="vehicleNo">
+                Vehicle No.
+              </label>
               <input
                 id="vehicleNo"
                 className="innovic-input"
@@ -267,7 +304,9 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               />
             </div>
             <div className="form-grp form-full">
-              <label className="form-label" htmlFor="remarks">Remarks</label>
+              <label className="form-label" htmlFor="remarks">
+                Remarks
+              </label>
               <input
                 id="remarks"
                 className="innovic-input"

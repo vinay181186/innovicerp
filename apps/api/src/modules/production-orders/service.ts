@@ -44,6 +44,8 @@ import {
   productionOrders,
   routeCardOps,
   routeCards,
+  salesOrderLines,
+  salesOrders,
   storeTransactions,
   users,
 } from '../../db/schema';
@@ -57,6 +59,14 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
+import {
+  createReservation,
+  readLineItemId,
+  itemCodeFor,
+  readStockPosition,
+  readUnreservedRequirement,
+  releaseReservationForClose,
+} from '../../lib/stock-reservation';
 import { closeBlockedReason } from '../../lib/production-order-close-guard';
 import { emitActivityLog } from '../activity-log/service';
 import { buildJobCardFromOps, type JcBuildOp } from '../plans/service';
@@ -293,6 +303,17 @@ const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
    WHERE p.id = ${productionOrders.planId} LIMIT 1)
 )`;
 
+/** POL — the line number printed on the CUSTOMER's own purchase order, read
+ *  live off the SO line this order's plan was raised from. Unlike the revision
+ *  above there is no job-work branch: a JWSO line has no customer PO, so a
+ *  JWSO-sourced order is correctly null. Reads the plan row already LEFT
+ *  JOINed by baseQuery, so this costs one primary-key lookup and no new join. */
+const CLIENT_PO_LINE_NO_SQL = sql<string | null>`(
+  SELECT sol.client_po_line_no
+    FROM public.sales_order_lines sol
+   WHERE sol.id = ${plans.soLineId} LIMIT 1
+)`;
+
 const createdByUser = alias(users, 'po_created_by');
 const closedByUser = alias(users, 'po_closed_by');
 
@@ -341,6 +362,7 @@ const poColumns = {
   rawMaterialGradeText: plans.rawMaterialGradeText,
   rawMaterialSizeText: plans.rawMaterialSizeText,
   itemRevision: ITEM_REVISION_SQL,
+  clientPoLineNo: CLIENT_PO_LINE_NO_SQL,
   createdByName: createdByUser.fullName,
   closedByName: closedByUser.fullName,
 };
@@ -362,6 +384,7 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     itemCodeText: r.itemCodeText,
     itemNameText: r.itemNameText,
     itemRevision: r.itemRevision ?? null,
+    clientPoLineNo: r.clientPoLineNo ?? null,
     routeCardId: r.routeCardId,
     routeCardCodeText: r.routeCardCodeText,
     routeCardRevision: r.routeCardRevision,
@@ -568,6 +591,19 @@ export async function listProductionOrders(
         sql`${productionOrders.itemNameText} ILIKE ${term}`,
         sql`${productionOrders.jcCodeText} ILIKE ${term}`,
         sql`${productionOrders.soCodeText} ILIKE ${term}`,
+        // POL — the customer's own PO line number, now a column on this list.
+        // Written as its own correlated subquery off production_orders.plan_id
+        // rather than reusing CLIENT_PO_LINE_NO_SQL, because that fragment
+        // reads the `plans` alias which only baseQuery joins; this predicate is
+        // also handed to the count() query below, which selects from
+        // production_orders alone. Same shape as PARTY_NAME_SQL for that
+        // reason. SO side only: a JWSO-sourced order has no customer PO line.
+        sql`(
+          SELECT sol.client_po_line_no
+            FROM public.plans p
+            JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
+           WHERE p.id = ${productionOrders.planId} LIMIT 1
+        ) ILIKE ${term}`,
       );
       if (s) conditions.push(s);
     }
@@ -889,6 +925,99 @@ async function writeCloseStockTxn(
   return ins[0]!.id;
 }
 
+/**
+ * ADR-180 §D — book the pieces a close just credited to the order that asked
+ * for them, automatically.
+ *
+ * Without this the finished goods land in free stock and the next dispatch for
+ * ANY customer can take them: the order that paid for the production run loses
+ * its own output. The booking moves nothing — the pieces stay on the shelf —
+ * it only marks them as spoken for.
+ *
+ * Three things make it safe to run on every close:
+ *   - the close row's id goes on the booking, and that column is UNIQUE while
+ *     live, so a replayed close cannot book the same pieces twice;
+ *   - the qty is capped by what the order line still needs, so a line already
+ *     covered by stock or dispatches books nothing;
+ *   - a plan with no sales-order line behind it (job work, make-to-stock)
+ *     simply books nothing and says so by returning 0.
+ *
+ * It runs in the close's own transaction: if the booking cannot be written the
+ * whole close is rolled back rather than leaving stock credited but unbooked.
+ */
+async function autoReserveClosedStock(
+  tx: DbTransaction,
+  args: {
+    companyId: string;
+    planId: string;
+    itemId: string;
+    productionOrderId: string;
+    jobCardId: string;
+    productionOrderCloseId: string;
+    qty: number;
+  },
+  user: AuthContext,
+): Promise<{ qty: number; soCodeText: string; lineNo: number } | null> {
+  if (args.qty <= 0) return null;
+
+  const lines = await tx
+    .select({
+      soLineId: salesOrderLines.id,
+      lineNo: salesOrderLines.lineNo,
+      soCode: salesOrders.code,
+    })
+    .from(plans)
+    .innerJoin(
+      salesOrderLines,
+      and(eq(salesOrderLines.id, plans.soLineId), isNull(salesOrderLines.deletedAt)),
+    )
+    .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+    .where(and(eq(plans.id, args.planId), isNull(plans.deletedAt)))
+    .limit(1);
+  const line = lines[0];
+  if (!line) return null;
+
+  // The plan's SO line must actually be for the item this order made. A
+  // BOM-CHILD plan carries the PARENT's so_line_id with a CHILD item, so
+  // booking here would park child stock on the parent line. Skip quietly
+  // rather than throw: a close must never fail because there was nobody to
+  // promise the goods to — the stock is credited either way and a planner can
+  // still allocate it by hand.
+  const lineItemId = await readLineItemId(tx, line.soLineId);
+  if (lineItemId !== null && lineItemId !== args.itemId) return null;
+
+  const need = (await readUnreservedRequirement(tx, args.companyId, line.soLineId)) ?? 0;
+  // Also capped by what is genuinely free. The credit above makes this a
+  // formality, but if the item's books are already over-committed (a manual
+  // adjustment took stock the bookings were holding) a close must not be the
+  // thing that fails — it books what it can and no more.
+  const free = (await readStockPosition(tx, args.companyId, args.itemId)).availableQty;
+  const qty = Math.min(args.qty, need, free);
+  if (qty <= 0) return null;
+
+  const created = await createReservation(
+    tx,
+    {
+      companyId: args.companyId,
+      soLineId: line.soLineId,
+      soCodeText: line.soCode,
+      lineNo: line.lineNo,
+      itemId: args.itemId,
+      itemCodeText: await itemCodeFor(tx, args.itemId),
+      qty,
+      source: 'auto_production',
+      productionOrderId: args.productionOrderId,
+      jobCardId: args.jobCardId,
+      productionOrderCloseId: args.productionOrderCloseId,
+      // The requirement cap was applied above, against the same figures.
+      skipRequirementCap: true,
+    },
+    user,
+  );
+  if (!created) return null;
+  return { qty: created.qty, soCodeText: line.soCode, lineNo: line.lineNo };
+}
+
 export async function closeProductionOrder(
   id: string,
   input: CloseProductionOrderInput,
@@ -969,6 +1098,9 @@ export async function closeProductionOrder(
       );
     }
 
+    // Filled in by the automatic booking below, when there was one to make.
+    let autoReserved: { qty: number; soCodeText: string; lineNo: number } | null = null;
+
     const newCredited = alreadyCredited + creditNow;
     const finalStatus: 'partially_closed' | 'closed' =
       input.finish || newCredited >= current.orderQty ? 'closed' : 'partially_closed';
@@ -996,17 +1128,38 @@ export async function closeProductionOrder(
         remarks: `Production Order ${current.code} close #${seq} — JC ${current.jcCodeText} credited ${creditNow} (${newCredited} of ${current.orderQty})`,
         userId: user.id,
       });
-      await tx.insert(productionOrderCloses).values({
-        companyId,
-        productionOrderId: id,
-        qty: creditNow,
-        isReversal: false,
-        lostQty: input.finish ? lostQty : null,
-        storeTxnId,
-        remarks: input.remarks ?? null,
-        createdBy: user.id,
-        updatedBy: user.id,
-      });
+      const closeRows = await tx
+        .insert(productionOrderCloses)
+        .values({
+          companyId,
+          productionOrderId: id,
+          qty: creditNow,
+          isReversal: false,
+          lostQty: input.finish ? lostQty : null,
+          storeTxnId,
+          remarks: input.remarks ?? null,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning({ id: productionOrderCloses.id });
+
+      // ADR-180 §D — book the pieces just credited to the order that ordered
+      // them. Same transaction as the close and the stock credit: the three
+      // either all happen or none do. A close-short that credits nothing never
+      // reaches here, and a reversal has its own path.
+      autoReserved = await autoReserveClosedStock(
+        tx,
+        {
+          companyId,
+          planId: current.planId,
+          itemId: current.itemId,
+          productionOrderId: id,
+          jobCardId: current.jobCardId,
+          productionOrderCloseId: closeRows[0]!.id,
+          qty: creditNow,
+        },
+        user,
+      );
     }
 
     const now = new Date();
@@ -1045,6 +1198,22 @@ export async function closeProductionOrder(
       companyId,
       user,
     );
+
+    if (autoReserved) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'UPDATE',
+          entity: 'Reservation',
+          detail:
+            `${autoReserved.soCodeText} L${autoReserved.lineNo} — ${autoReserved.qty} reserved ` +
+            `automatically from ${current.code} close #${seq} (stock stays on the shelf)`,
+          refId: autoReserved.soCodeText,
+        },
+        companyId,
+        user,
+      );
+    }
 
     return readDetailInTx(tx, id, companyId);
   });
@@ -1120,6 +1289,20 @@ export async function reverseProductionOrderClose(
       )
       .limit(1);
     if (priorReversal[0]) throw new ValidationError('This close has already been reversed.');
+
+    // ADR-180 §D — the automatic booking this close created goes back first.
+    // Its pieces are about to leave stock again, so the order must stop holding
+    // them; if any have already shipped this refuses and names the dispatch
+    // rather than quietly un-booking goods that are on a lorry.
+    const unbooked = await releaseReservationForClose(
+      tx,
+      {
+        companyId,
+        productionOrderCloseId: close.id,
+        reason: 'production close reversed',
+      },
+      user,
+    );
 
     // Guard: the pieces must still be on hand — a reversal that would drive
     // stock negative means they were already dispatched.
@@ -1199,7 +1382,9 @@ export async function reverseProductionOrderClose(
       {
         action: 'REVERSE',
         entity: 'Production Order',
-        detail: `${po.code} — reversed close of ${close.qty} (now ${newCredited} of ${po.orderQty} credited)`,
+        detail:
+          `${po.code} — reversed close of ${close.qty} (now ${newCredited} of ${po.orderQty} credited)` +
+          (unbooked > 0 ? `, ${unbooked} reservation released` : ''),
         refId: po.code,
       },
       companyId,

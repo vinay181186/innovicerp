@@ -446,6 +446,11 @@ async function loadDeliveryChallanWithLines(
       itemRevision: sql<
         string | null
       >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+      // The customer's own PO line number, off the SAME SO line join as the
+      // revision above, and only that side: a job-work line belongs to a
+      // job-work order, not to a customer PO, so it has no client PO line
+      // number to offer and the field stays null there.
+      clientPoLineNo: salesOrderLines.clientPoLineNo,
     })
     .from(deliveryChallanLines)
     .leftJoin(items, and(eq(items.id, deliveryChallanLines.itemId), isNull(items.deletedAt)))
@@ -592,7 +597,7 @@ async function loadDeliveryChallanWithLines(
     poCode: (headerRow['poCode'] as string | null) ?? null,
     soCode: (headerRow['soCode'] as string | null) ?? null,
     soLineRevision: (headerRow['soLineRevision'] as string | null) ?? null,
-    lines: lineRows.map(({ line: l, itemCode, itemName, itemRevision }) => ({
+    lines: lineRows.map(({ line: l, itemCode, itemName, itemRevision, clientPoLineNo }) => ({
       id: l.id,
       companyId: l.companyId,
       deliveryChallanId: l.deliveryChallanId,
@@ -600,6 +605,7 @@ async function loadDeliveryChallanWithLines(
       itemId: l.itemId,
       itemCode: itemCode ?? null,
       itemRevision: itemRevision ?? null,
+      clientPoLineNo: clientPoLineNo ?? null,
       itemName: itemName ?? null,
       itemCodeText: l.itemCodeText,
       itemNameText: l.itemNameText,

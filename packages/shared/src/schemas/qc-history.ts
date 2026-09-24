@@ -66,6 +66,11 @@ export const qcHistoryLogRowSchema = z.object({
    *  describes the item master and would put the wrong drawing revision in
    *  front of whoever reads the QC log back. */
   itemRevision: z.string().nullable().default(null),
+  /** The customer's PO line number (`POL`) for the SO line this row traces back
+   *  to, shown beside the item code on every downstream document (user rule,
+   *  2026-09-23). Null when no SO line sits behind the row. Read-only — the
+   *  Sales Order is the only place it is typed. */
+  clientPoLineNo: z.string().nullable().default(null),
   /** The part being made. A job-card number says WHICH JOB, not which part, so
    *  every screen that prints a JC number names the item beside it. Joined from
    *  the card's item (job_cards.item_id -> items), which is NOT NULL. */

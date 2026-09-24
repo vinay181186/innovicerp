@@ -280,7 +280,7 @@ function QcProcessesListPage(): React.JSX.Element {
                   <th style={{ textAlign: 'left' }}>QC Process Name</th>
                   <th>Description</th>
                   <th>Std Time (min)</th>
-                  <th>Status</th>
+                  <th>Active</th>
                   <th>Action</th>
                 </tr>
               </thead>

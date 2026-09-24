@@ -11,10 +11,10 @@ export const al001PosTodayApproved: RegisteredAlert = {
     name: "Today's approved POs",
     description: 'Purchase orders with po_date = today and status = open.',
     columns: [
-      { key: 'po_code', label: 'PO no.', type: 'text' },
-      { key: 'po_date', label: 'PO date', type: 'date' },
+      { key: 'po_code', label: 'PO No.', type: 'text' },
+      { key: 'po_date', label: 'PO Date', type: 'date' },
       { key: 'vendor', label: 'Vendor', type: 'text' },
-      { key: 'status', label: 'Status', type: 'text' },
+      { key: 'status', label: 'PO Status', type: 'text' },
     ],
     defaultActive: true,
   },

@@ -272,21 +272,24 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Item</th>
+                <th>Ln</th>
+                {/* POL = the CUSTOMER's own PO line number, carried down from
+                    the Sales Order line behind this receipt. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
+                <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Received</th>
-                <th>DC ref</th>
+                <th>DC No.</th>
                 <th>QC</th>
                 <th>Accepted</th>
                 <th>Rejected</th>
-                <th>QC date</th>
+                <th>QC Date</th>
               </tr>
             </thead>
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td colSpan={10} className="empty-state">
                     No lines on this GRN yet.
                   </td>
                 </tr>
@@ -308,6 +311,10 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
   return (
     <tr>
       <td className="mono">{l.lineNo}</td>
+      {/* POL — the CUSTOMER's PO line number off the SO line behind this row. */}
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {l.clientPoLineNo ?? '—'}
+      </td>
       {/* Item code is THE main thing — strong; CODE/REV (ADR-177). */}
       <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
@@ -337,7 +344,7 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
   const { detail } = props;
   return (
     <div className="form-grid form-grid-3">
-      <Pair label="Date" value={detail.grnDate} />
+      <Pair label="GRN Date" value={detail.grnDate} />
       {/* The linked OSP challan's own code when the GRN came from a DC receive;
           otherwise whatever the storekeeper typed on Against PO. */}
       <Pair label="DC No." value={detail.dcCode ?? detail.dcNo ?? '—'} />
@@ -347,7 +354,7 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
       {detail.ncCode ? (
         <Pair label="NC" value={detail.ncCode} />
       ) : (
-        <Pair label="PO" value={detail.poCode ?? detail.poCodeText ?? '—'} />
+        <Pair label="PO No." value={detail.poCode ?? detail.poCodeText ?? '—'} />
       )}
       <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText ?? '—'} />
       <div className="form-grp form-full">

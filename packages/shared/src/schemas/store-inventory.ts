@@ -12,7 +12,13 @@ export const storeInventoryRowSchema = z.object({
   itemName: z.string(),
   material: z.string().nullable(),
   uom: z.string(),
+  /** PHYSICAL stock — what is on the shelf, reserved or not (ADR-180).
+   *  Unchanged meaning: it has always been item_stock_balances.on_hand_qty. */
   inStock: z.number().int(),
+  /** Σ of what every active reservation still holds for this item. */
+  reservedQty: z.number().int().nonnegative(),
+  /** inStock − reservedQty. What a new order may still be promised. */
+  availableQty: z.number().int(),
   minQty: z.number().int().nonnegative(),
   /** Σ pending qty on open POs (qty − received). */
   onPoQty: z.number().int().nonnegative(),
@@ -34,6 +40,10 @@ export type StoreInventoryRow = z.infer<typeof storeInventoryRowSchema>;
 export const storeInventorySummarySchema = z.object({
   totalItems: z.number().int().nonnegative(),
   totalStockPieces: z.number().int().nonnegative(),
+  /** Pieces held by active reservations across every item. */
+  totalReservedPieces: z.number().int().nonnegative(),
+  /** totalStockPieces − totalReservedPieces. */
+  totalAvailablePieces: z.number().int().nonnegative(),
   itemsInStockCount: z.number().int().nonnegative(),
   lowStockCount: z.number().int().nonnegative(),
   zeroStockCount: z.number().int().nonnegative(),

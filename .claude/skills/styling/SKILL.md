@@ -214,6 +214,28 @@ the Prev/Next footer and the `page` search param, switch the count line to the
 two-branch form above. Do it when you next touch one of those pages; don't treat
 their current paging as the pattern to copy.
 
+## Rule 5 — Form layout: one 12-column grid, every field a spanned wrapper
+
+- Every form / dialog body is ONE 12-column CSS grid with the standard gap.
+- Every field is a wrapper `div` with an explicit `grid-column: span N`. Helper / hint text
+  lives inside the wrapper.
+- No flex rows, no pixel widths, no `flex-grow`, no auto widths for field layout.
+- Standard spans: number / date / short select = **3**; searchable picker = **3** (**6** if
+  long codes); textarea / remark = **9** or **12**.
+- Section labels span the full row.
+- Mobile < 768px: every field spans 12.
+- Adding a field = add a wrapper in an empty slot or a new row. Nothing else may move.
+- Every new or edited form: before finishing, add a dummy field, confirm nothing shifts,
+  remove it.
+
+## Checklist before finishing a form
+
+- [ ] Body is one 12-column grid; no `display: flex` row lays out fields.
+- [ ] Every field is a wrapper `div` with an explicit `grid-column` span; hint text inside it.
+- [ ] Spans follow the standard (3 / 3–6 / 9–12); section labels span 12; mobile → 12.
+- [ ] No pixel widths, `flexGrow` or auto widths on fields.
+- [ ] Dummy-field test done: added, nothing shifted, removed.
+
 ## Checklist before finishing a table
 
 - [ ] Table uses `<div className="tbl-wrap"><table className="innovic-table">` (gives no-wrap + side-scroll for free).

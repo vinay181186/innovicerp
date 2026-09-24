@@ -30,17 +30,29 @@ export interface RegisteredSource {
 const salesOrdersSource: RegisteredSource = {
   descriptor: {
     sourceKey: 'sales-orders',
-    label: 'Sales orders',
+    label: 'Sales Orders',
     description: 'Customer orders with line-level item, qty, rate, due date.',
     group: 'Sales',
     fields: [
       { key: 'so_code', label: 'SO No.', type: 'text', filterable: true, groupable: true },
       { key: 'so_date', label: 'SO Date', type: 'date', filterable: true, groupable: true },
-      { key: 'client_code', label: 'Client', type: 'text', filterable: true, groupable: true },
-      { key: 'client_name', label: 'Client name', type: 'text', filterable: true, groupable: true },
+      {
+        key: 'client_code',
+        label: 'Customer Code',
+        type: 'text',
+        filterable: true,
+        groupable: true,
+      },
+      {
+        key: 'client_name',
+        label: 'Customer Name',
+        type: 'text',
+        filterable: true,
+        groupable: true,
+      },
       { key: 'so_status', label: 'SO Status', type: 'text', filterable: true, groupable: true },
       { key: 'so_type', label: 'SO Type', type: 'text', filterable: true, groupable: true },
-      { key: 'line_no', label: 'Line No.', type: 'number', filterable: true, groupable: false },
+      { key: 'line_no', label: 'Ln', type: 'number', filterable: true, groupable: false },
       { key: 'item_code', label: 'Item Code', type: 'text', filterable: true, groupable: true },
       // The customer's drawing revision typed on the SO line. It gets its own
       // column rather than being glued onto item_code, because this source is
@@ -49,13 +61,13 @@ const salesOrdersSource: RegisteredSource = {
       // `so_revision` (not `revision`) so it can never be confused with the
       // items-stock source's `revision`, which is the item's own revision.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text', filterable: true, groupable: true },
-      { key: 'item_name', label: 'Item name', type: 'text', filterable: true, groupable: true },
-      { key: 'qty', label: 'Order qty', type: 'number', filterable: true, groupable: false },
+      { key: 'item_name', label: 'Item Name', type: 'text', filterable: true, groupable: true },
+      { key: 'qty', label: 'Order Qty', type: 'number', filterable: true, groupable: false },
       { key: 'uom', label: 'UOM', type: 'text', filterable: true, groupable: true },
       { key: 'rate', label: 'Rate', type: 'number', filterable: true, groupable: false },
       { key: 'amount', label: 'Amount', type: 'number', filterable: true, groupable: false },
-      { key: 'due_date', label: 'Due date', type: 'date', filterable: true, groupable: true },
-      { key: 'line_status', label: 'Line status', type: 'text', filterable: true, groupable: true },
+      { key: 'due_date', label: 'Due Date', type: 'date', filterable: true, groupable: true },
+      { key: 'line_status', label: 'Line Status', type: 'text', filterable: true, groupable: true },
     ],
   },
   baseSelect: ({ companyId }) => sql`
@@ -93,17 +105,17 @@ const salesOrdersSource: RegisteredSource = {
 const purchaseOrdersSource: RegisteredSource = {
   descriptor: {
     sourceKey: 'purchase-orders',
-    label: 'Purchase orders',
+    label: 'Purchase Orders',
     description: 'Procurement POs with line-level vendor, item, qty + received qty.',
     group: 'Procurement',
     fields: [
       { key: 'po_code', label: 'PO No.', type: 'text', filterable: true, groupable: true },
       { key: 'po_date', label: 'PO Date', type: 'date', filterable: true, groupable: true },
-      { key: 'po_status', label: 'Status', type: 'text', filterable: true, groupable: true },
+      { key: 'po_status', label: 'PO Status', type: 'text', filterable: true, groupable: true },
       { key: 'po_type', label: 'PO Type', type: 'text', filterable: true, groupable: true },
-      { key: 'vendor_code', label: 'Vendor', type: 'text', filterable: true, groupable: true },
-      { key: 'vendor_name', label: 'Vendor name', type: 'text', filterable: true, groupable: true },
-      { key: 'line_no', label: 'Line No.', type: 'number', filterable: true, groupable: false },
+      { key: 'vendor_code', label: 'Vendor Code', type: 'text', filterable: true, groupable: true },
+      { key: 'vendor_name', label: 'Vendor Name', type: 'text', filterable: true, groupable: true },
+      { key: 'line_no', label: 'Ln', type: 'number', filterable: true, groupable: false },
       {
         key: 'item_code',
         label: 'Item Code',
@@ -124,28 +136,28 @@ const purchaseOrdersSource: RegisteredSource = {
       },
       {
         key: 'item_name',
-        label: 'Item name',
+        label: 'Item Name',
         type: 'text',
         filterable: true,
         groupable: true,
       },
-      { key: 'qty', label: 'PO qty', type: 'number', filterable: true, groupable: false },
+      { key: 'qty', label: 'Order Qty', type: 'number', filterable: true, groupable: false },
       { key: 'rate', label: 'Rate', type: 'number', filterable: true, groupable: false },
       {
         key: 'received_qty',
-        label: 'Received qty',
+        label: 'Received',
         type: 'number',
         filterable: true,
         groupable: false,
       },
       {
         key: 'pending_qty',
-        label: 'Pending qty',
+        label: 'Pending',
         type: 'number',
         filterable: true,
         groupable: false,
       },
-      { key: 'due_date', label: 'Due date', type: 'date', filterable: true, groupable: true },
+      { key: 'due_date', label: 'Due Date', type: 'date', filterable: true, groupable: true },
     ],
   },
   baseSelect: ({ companyId }) => sql`
@@ -186,7 +198,7 @@ const purchaseOrdersSource: RegisteredSource = {
 const jobCardsSource: RegisteredSource = {
   descriptor: {
     sourceKey: 'job-cards',
-    label: 'Job cards',
+    label: 'Job Cards',
     description: 'Production job cards with item, qty, computed status, source SO link.',
     group: 'Production',
     fields: [
@@ -197,22 +209,22 @@ const jobCardsSource: RegisteredSource = {
       // raised from a JW line or standalone — those rows still belong in the
       // report, they simply have no customer drawing revision behind them.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text', filterable: true, groupable: true },
-      { key: 'item_name', label: 'Item name', type: 'text', filterable: true, groupable: true },
-      { key: 'qty', label: 'Order qty', type: 'number', filterable: true, groupable: false },
+      { key: 'item_name', label: 'Item Name', type: 'text', filterable: true, groupable: true },
+      { key: 'qty', label: 'Order Qty', type: 'number', filterable: true, groupable: false },
       { key: 'priority', label: 'Priority', type: 'text', filterable: true, groupable: true },
       {
         key: 'computed_status',
-        label: 'Status',
+        label: 'JC Status',
         type: 'text',
         filterable: true,
         groupable: true,
       },
-      { key: 'total_ops', label: 'Total ops', type: 'number', filterable: true, groupable: false },
-      { key: 'done_ops', label: 'Done ops', type: 'number', filterable: true, groupable: false },
-      { key: 'due_date', label: 'Due date', type: 'date', filterable: true, groupable: true },
+      { key: 'total_ops', label: 'Total Ops', type: 'number', filterable: true, groupable: false },
+      { key: 'done_ops', label: 'Done Ops', type: 'number', filterable: true, groupable: false },
+      { key: 'due_date', label: 'Due Date', type: 'date', filterable: true, groupable: true },
       {
         key: 'source_so_code',
-        label: 'Source SO',
+        label: 'SO No.',
         type: 'text',
         filterable: true,
         groupable: true,
@@ -251,19 +263,19 @@ const jobCardsSource: RegisteredSource = {
 const itemsStockSource: RegisteredSource = {
   descriptor: {
     sourceKey: 'items-stock',
-    label: 'Items + on-hand stock',
+    label: 'Items + On-Hand Stock',
     description: 'Item master joined with current on-hand qty (zero-stock items included).',
     group: 'Inventory',
     fields: [
       { key: 'code', label: 'Item Code', type: 'text', filterable: true, groupable: true },
-      { key: 'name', label: 'Item name', type: 'text', filterable: true, groupable: true },
-      { key: 'item_type', label: 'Type', type: 'text', filterable: true, groupable: true },
+      { key: 'name', label: 'Item Name', type: 'text', filterable: true, groupable: true },
+      { key: 'item_type', label: 'Item Type', type: 'text', filterable: true, groupable: true },
       { key: 'material', label: 'Material', type: 'text', filterable: true, groupable: true },
       { key: 'uom', label: 'UOM', type: 'text', filterable: true, groupable: true },
-      { key: 'on_hand', label: 'On hand', type: 'number', filterable: true, groupable: false },
+      { key: 'on_hand', label: 'On Hand', type: 'number', filterable: true, groupable: false },
       { key: 'drawing_no', label: 'Drawing No.', type: 'text', filterable: true, groupable: true },
-      { key: 'revision', label: 'Revision', type: 'text', filterable: true, groupable: true },
-      { key: 'hsn_code', label: 'HSN code', type: 'text', filterable: true, groupable: true },
+      { key: 'revision', label: 'Item Rev', type: 'text', filterable: true, groupable: true },
+      { key: 'hsn_code', label: 'HSN Code', type: 'text', filterable: true, groupable: true },
     ],
   },
   baseSelect: ({ companyId }) => sql`
@@ -289,7 +301,7 @@ const itemsStockSource: RegisteredSource = {
 const ncRegisterSource: RegisteredSource = {
   descriptor: {
     sourceKey: 'nc-register',
-    label: 'NC register',
+    label: 'NC Register',
     description: 'Non-conformance entries with JC, item, reason category, status, disposition.',
     group: 'Quality',
     fields: [
@@ -304,19 +316,19 @@ const ncRegisterSource: RegisteredSource = {
       // JC. nc.item_code_text is free text on the NC and never carries a
       // revision, so it is not a substitute.
       { key: 'so_revision', label: 'Drawing Rev', type: 'text', filterable: true, groupable: true },
-      { key: 'item_name', label: 'Item name', type: 'text', filterable: true, groupable: true },
+      { key: 'item_name', label: 'Item Name', type: 'text', filterable: true, groupable: true },
       {
         key: 'rejected_qty',
-        label: 'Rejected qty',
+        label: 'Rejected',
         type: 'number',
         filterable: true,
         groupable: false,
       },
       { key: 'reason_category', label: 'Reason', type: 'text', filterable: true, groupable: true },
-      { key: 'status', label: 'Status', type: 'text', filterable: true, groupable: true },
+      { key: 'status', label: 'NC Status', type: 'text', filterable: true, groupable: true },
       { key: 'disposition', label: 'Disposition', type: 'text', filterable: true, groupable: true },
-      { key: 'op_seq', label: 'Op Sr No', type: 'number', filterable: true, groupable: true },
-      { key: 'reported_by', label: 'Reported by', type: 'text', filterable: true, groupable: true },
+      { key: 'op_seq', label: 'Op', type: 'number', filterable: true, groupable: true },
+      { key: 'reported_by', label: 'Reported By', type: 'text', filterable: true, groupable: true },
     ],
   },
   baseSelect: ({ companyId }) => sql`

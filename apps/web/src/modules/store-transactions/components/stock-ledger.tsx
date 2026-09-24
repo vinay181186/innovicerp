@@ -80,7 +80,7 @@ export function StockLedger(): React.JSX.Element {
   const columns = useMemo<ColumnDef<StoreTransactionListItem>[]>(
     () => [
       {
-        header: 'Date',
+        header: 'Txn Date',
         accessorKey: 'txnDate',
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.txnDate}</span>,
       },
@@ -95,17 +95,17 @@ export function StockLedger(): React.JSX.Element {
         ),
       },
       {
-        header: 'Name',
+        header: 'Item Name',
         accessorKey: 'itemName',
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.itemName ?? ''}</span>,
       },
       {
-        header: 'Type',
+        header: 'Txn Type',
         accessorKey: 'txnType',
         cell: ({ row }) => <TxnTypeBadge type={row.original.txnType} />,
       },
       {
-        header: 'Qty',
+        header: 'Txn Qty',
         accessorKey: 'qty',
         meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => {
@@ -216,7 +216,7 @@ export function StockLedger(): React.JSX.Element {
           />
         </div>
         <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Type</label>
+          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Txn Type</label>
           <br />
           <select
             className="innovic-select"

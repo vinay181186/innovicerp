@@ -195,21 +195,25 @@ function OpLogListPage(): React.JSX.Element {
               <tr>
                 <th>Log No.</th>
                 <th>JC No.</th>
+                {/* POL — the line number printed on the CUSTOMER's own purchase
+                    order, immediately before the item. Not any line number of
+                    ours. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 {/* The item the card makes. A JC number identifies the JOB; only
                     this column says which PART the logged qty belongs to. */}
-                <th>Item</th>
-                <th>Date</th>
+                <th>Item Code</th>
+                <th>Log Date</th>
                 <th className="td-ctr">Op</th>
-                <th>Type</th>
+                <th>Log Type</th>
                 <th>Shift</th>
                 <th>Planned</th>
                 <th>Actual</th>
                 <th>Operation</th>
                 <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                  Qty
+                  Completed
                 </th>
                 <th className="td-ctr" style={{ color: 'var(--red)' }}>
-                  Reject
+                  Rejected
                 </th>
                 <th>Operator</th>
                 <th>Remarks</th>
@@ -219,20 +223,20 @@ function OpLogListPage(): React.JSX.Element {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={15} className="empty-state">
+                  <td colSpan={16} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={15} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={16} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error ? error.message : 'Failed to load op log'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="empty-state">
+                  <td colSpan={16} className="empty-state">
                     No log entries match these filters.
                   </td>
                 </tr>
@@ -243,6 +247,10 @@ function OpLogListPage(): React.JSX.Element {
                       {r.logNo}
                     </td>
                     <td className="td-code cyan">{r.jcNo}</td>
+                    {/* POL — '—' when no sales order sits behind the card. */}
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {r.clientPoLineNo ?? '—'}
+                    </td>
                     {/* The item code is the value anyone scans this log for — it
                         is how the drawing and the batch get identified — so it
                         carries the darkest text token and the bold weight. The

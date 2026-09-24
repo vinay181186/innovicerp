@@ -118,7 +118,7 @@ function PendingSoValuePage(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr>
-                      <th>SO No</th>
+                      <th>SO No.</th>
                       <th>Customer</th>
                       <th>SO Date</th>
                       <th>Due Date</th>
@@ -134,7 +134,7 @@ function PendingSoValuePage(): React.JSX.Element {
                           <th>Outstanding</th>
                         </>
                       )}
-                      <th>Status</th>
+                      <th>SO Status</th>
                     </tr>
                   </thead>
                   <tbody>

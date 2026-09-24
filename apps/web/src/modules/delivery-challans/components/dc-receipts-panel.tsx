@@ -61,7 +61,10 @@ export function DcReceiptsPanel({
               <table className="innovic-table" style={{ fontSize: 11 }}>
                 <thead>
                   <tr>
-                    <th>Item</th>
+                    {/* POL = the CUSTOMER's own PO line number, read off the
+                        challan line this receipt row books against. */}
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
+                    <th>Item Code · Name</th>
                     <th>Received</th>
                     <th>Rejected</th>
                     <th>Reject reason</th>
@@ -72,6 +75,9 @@ export function DcReceiptsPanel({
                     const ll = lineLookup.get(rl.deliveryChallanLineId);
                     return (
                       <tr key={rl.id}>
+                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                          {ll?.clientPoLineNo ?? '—'}
+                        </td>
                         <td>
                           {/* Live master code/name first, issue-time snapshot as
                               the fallback — the Lines table already did this, so

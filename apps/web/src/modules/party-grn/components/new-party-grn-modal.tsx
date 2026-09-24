@@ -207,7 +207,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-date">Date</label>
+            <label className="form-label" htmlFor="pgrn-date">GRN Date</label>
             <input
               id="pgrn-date"
               type="date"
@@ -235,7 +235,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-client">Client</label>
+            <label className="form-label" htmlFor="pgrn-client">Customer</label>
             <input
               id="pgrn-client"
               type="text"
@@ -255,7 +255,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
             />
           </div>
           <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-dc">DC / Challan No.</label>
+            <label className="form-label" htmlFor="pgrn-dc">DC No.</label>
             <input
               id="pgrn-dc"
               type="text"
@@ -316,7 +316,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
           <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}>
             <thead>
               <tr>
-                <th style={{ width: '4%' }}>#</th>
+                <th style={{ width: '4%' }}>Ln</th>
                 <th style={{ width: '20%' }}>
                   JWSO Line<span className="req">★</span>
                 </th>
@@ -325,7 +325,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
                 </th>
                 <th style={{ width: '22%' }}>Material Name</th>
                 <th style={{ width: '10%', color: 'var(--green)' }} className="td-ctr">
-                  Qty<span className="req">★</span>
+                  Received<span className="req">★</span>
                 </th>
                 <th style={{ width: '7%' }} className="td-ctr">UOM</th>
                 <th style={{ width: '16%' }}>Remarks</th>

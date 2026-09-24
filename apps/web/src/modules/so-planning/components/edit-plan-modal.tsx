@@ -966,7 +966,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                     <th style={{ width: 190 }}>Group</th>
                     <th style={{ width: 210 }}>Machine / Vendor</th>
                     <th style={{ minWidth: 200 }}>Operation</th>
-                    <th style={{ width: 96 }}>Cycle (h)</th>
+                    <th style={{ width: 96 }}>Cycle Time (h)</th>
                     <th style={{ width: 132, color: 'var(--amber)' }}>OSP</th>
                     <th style={{ width: 48 }} />
                   </tr>
@@ -1352,7 +1352,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">🏢 Cost Center</label>
+              <label className="form-label">🏢 Cost Centre</label>
               <input
                 list="dlFOCC"
                 value={foCostCenter}
@@ -1486,7 +1486,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <table className="ops-routing">
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 44, textAlign: 'center' }}>#</th>
+                    <th style={{ width: 44, textAlign: 'center' }}>Sr No</th>
                     <th>Document Name ★</th>
                     <th style={{ width: 180 }}>Requirement</th>
                     <th style={{ width: 56 }} />

@@ -204,7 +204,7 @@ function ScDashboardPage(): React.JSX.Element {
             width={140}
           />
           <FilterInput
-            label="Item"
+            label="Item Code"
             listId="dlScItm"
             value={fltItem}
             onChange={setFltItem}
@@ -212,7 +212,7 @@ function ScDashboardPage(): React.JSX.Element {
             width={160}
           />
           <FilterInput
-            label="SO/JW"
+            label="SO / JWSO No."
             listId="dlScSO"
             value={fltSo}
             onChange={setFltSo}
@@ -221,7 +221,7 @@ function ScDashboardPage(): React.JSX.Element {
           />
           <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
             {isFiltered ? <span style={{ color: 'var(--amber)' }}>Filtered: </span> : null}
-            {filteredPending.length} line{filteredPending.length !== 1 ? 's' : ''} · Pend Qty:{' '}
+            {filteredPending.length} line{filteredPending.length !== 1 ? 's' : ''} · Pending Qty:{' '}
             <span style={{ color: 'var(--red)' }}>{fltPendQty}</span>
             {priceHidden ? null : (
               <>
@@ -236,9 +236,9 @@ function ScDashboardPage(): React.JSX.Element {
               <tr>
                 <th>PO No.</th>
                 <th>Ln</th>
-                <th>Date</th>
+                <th>PO Date</th>
                 <th>Vendor</th>
-                <th>SO/JW</th>
+                <th>SO / JWSO No.</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="td-ctr">Order Qty</th>
@@ -247,10 +247,10 @@ function ScDashboardPage(): React.JSX.Element {
                 {priceHidden ? null : (
                   <>
                     <th>Rate</th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pend Value</th>
+                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
                   </>
                 )}
-                <th>Status</th>
+                <th>PO Status</th>
               </tr>
             </thead>
             <tbody>
@@ -397,7 +397,7 @@ function ScDashboardPage(): React.JSX.Element {
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>SO / JW Reference</th>
+              <th>SO / JWSO No.</th>
               <th className="td-ctr">PO Lines</th>
               <th className="td-ctr">Vendors</th>
               <th className="td-ctr">Order Qty</th>
@@ -460,11 +460,11 @@ function ScDashboardPage(): React.JSX.Element {
           <thead>
             <tr>
               <th>PO No.</th>
-              <th>Date</th>
+              <th>PO Date</th>
               <th>Vendor</th>
-              <th>SO/JW</th>
+              <th>SO / JWSO No.</th>
               <th className="td-ctr">Lines</th>
-              <th className="td-ctr">Qty</th>
+              <th className="td-ctr">Order Qty</th>
               <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
               <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
               {priceHidden ? null : (
@@ -475,7 +475,7 @@ function ScDashboardPage(): React.JSX.Element {
                 </>
               )}
               <th className="td-ctr">GRNs</th>
-              <th>Status</th>
+              <th>PO Status</th>
             </tr>
           </thead>
           <tbody>
@@ -551,7 +551,7 @@ function ScDashboardPage(): React.JSX.Element {
           <thead>
             <tr>
               <th>GRN No.</th>
-              <th>Date</th>
+              <th>GRN Date</th>
               <th>PO No.</th>
               <th>Vendor</th>
             </tr>

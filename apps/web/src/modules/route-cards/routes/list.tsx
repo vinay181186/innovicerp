@@ -190,7 +190,7 @@ function RouteCardsListPage(): React.JSX.Element {
               <th style={{ textAlign: 'left' }}>Item Name</th>
               <th>Grade / Size</th>
               <th>Ops</th>
-              <th>Rev</th>
+              <th>Route Card Rev</th>
               <th>Last Updated</th>
               <th>Action</th>
             </tr>

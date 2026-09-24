@@ -782,7 +782,7 @@ export function OpEntryForm({
               </div>
               <div className="form-grp" style={{ width: 100 }}>
                 <label className="form-label" htmlFor="opf-rej">
-                  Reject
+                  Rejected
                 </label>
                 <input
                   id="opf-rej"
@@ -1117,7 +1117,7 @@ export function OpEntryForm({
               <>
                 <div className="form-grp" style={{ width: 100 }}>
                   <label className="form-label" htmlFor="opf-qty">
-                    Qty done<span className="req">★</span>
+                    Completed<span className="req">★</span>
                   </label>
                   {/* min is 0, not 1: a Stop that made nothing is a real and
                       required answer. The completion path still refuses 0 in
@@ -1142,7 +1142,7 @@ export function OpEntryForm({
                 </div>
                 <div className="form-grp" style={{ width: 100 }}>
                   <label className="form-label" htmlFor="opf-rej">
-                    Reject
+                    Rejected
                   </label>
                   {/* Optional — left blank it counts as none scrapped. */}
                   <input
@@ -1357,8 +1357,23 @@ export function OpEntryForm({
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
-                  title={op.itemName ? `${itemCodeLabel} — ${op.itemName}` : itemCodeLabel}
+                  title={
+                    (op.clientPoLineNo ? `POL ${op.clientPoLineNo} · ` : '') +
+                    (op.itemName ? `${itemCodeLabel} — ${op.itemName}` : itemCodeLabel)
+                  }
                 >
+                  {/* POL — the line number printed on the CUSTOMER's own
+                      purchase order, ahead of the item code. Dropped when no
+                      sales order sits behind the card. */}
+                  {op.clientPoLineNo ? (
+                    <>
+                      POL{' '}
+                      <b className="mono" style={{ color: 'var(--purple)' }}>
+                        {op.clientPoLineNo}
+                      </b>{' '}
+                      ·{' '}
+                    </>
+                  ) : null}
                   Item:{' '}
                   <b className="mono" style={{ color: 'var(--purple)' }}>
                     {itemCodeLabel}

@@ -40,10 +40,13 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
               <thead>
                 <tr>
                   <th>JC / Op</th>
-                  <th>Item</th>
-                  <th>SO</th>
+                  {/* POL — the CUSTOMER's own purchase-order line number, its
+                      own column immediately before the item. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
+                  <th>Item Code</th>
+                  <th>SO No.</th>
                   <th className="td-ctr">Attempts</th>
-                  <th className="td-ctr">Total Rejected</th>
+                  <th className="td-ctr">Rejected</th>
                   <th>First Entry</th>
                   <th>Last Entry</th>
                   <th className="td-ctr">Days Elapsed</th>
@@ -57,6 +60,9 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                       <span style={{ color: 'var(--red)', fontWeight: 700 }}>
                         Op{opSrNo(g.opSeq)}
                       </span>
+                    </td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {g.clientPoLineNo ?? '—'}
                     </td>
                     <td style={{ fontSize: 11 }}>
                       {/* Legacy L18939 hardcodes #8B5CF6, not var(--purple). */}

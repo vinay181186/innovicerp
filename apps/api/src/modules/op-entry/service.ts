@@ -176,6 +176,10 @@ export async function listJcOpsEnriched(
         -- without migration 0119 still holds an integer here and would hand the
         -- screen a number. The cast is a no-op once 0119 is applied.
         COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the same SO line as the revision above. SO side only: a job-work
+        -- line has no customer PO, so JW-sourced cards are correctly null.
+        sol.client_po_line_no AS "clientPoLineNo",
         COALESCE(so.code, jw.code) AS "soCode",
         o.op_seq               AS "opSeq",
         -- The PLANNED machine as an id + its group, so the Start popup can
@@ -346,6 +350,7 @@ export async function listJcOpsEnriched(
       // line must arrive as an explicit null, never as an absent key.
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
+      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
@@ -578,6 +583,10 @@ export async function listRunningOps(
         -- without migration 0119 still holds an integer here and would hand the
         -- board a number. The cast is a no-op once 0119 is applied.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- POL = the line number printed on the CUSTOMER's own purchase order,
+        -- off the same SO line as the revision above. SO side only: a job-work
+        -- line has no customer PO, so JW-sourced cards are correctly null.
+        sol.client_po_line_no AS "clientPoLineNo",
         o.op_seq            AS "opSeq",
         o.operation,
         r.machine_id        AS "machineId",
@@ -623,6 +632,7 @@ export async function listRunningOps(
       // must arrive as an explicit null, never as an absent key.
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
+      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       plannedMachineCode: (r['plannedMachineCode'] as string | null) ?? null,
       startDate:
@@ -1838,6 +1848,10 @@ async function selectTimeChangeRequests(
       -- shows the bare code. NEVER items.revision — that column is about the
       -- item master and would print a plausible-looking lie in its place.
       COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+      -- POL = the line number printed on the CUSTOMER's own purchase order, off
+      -- the same SO line as the revision above. SO side only: a job-work line
+      -- has no customer PO, so JW-sourced cards are correctly null.
+      sol.client_po_line_no             AS "clientPoLineNo",
       i.name                            AS "itemName",
       COALESCE(m.code, l.machine_code_text) AS "machineCode",
       l.qty                             AS "qty",
@@ -1892,6 +1906,7 @@ async function selectTimeChangeRequests(
     // typo'd alias would silently ship an item-less approval card.
     itemCode: (r['itemCode'] as string | null) ?? null,
     itemRevision: (r['itemRevision'] as string | null) ?? null,
+    clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
     qty: Number(r['qty'] ?? 0),
     rejectQty: Number(r['rejectQty'] ?? 0),
@@ -2160,6 +2175,10 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
         itemRevision: sql<
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        // POL — the line number printed on the CUSTOMER's own purchase order,
+        // off the same already-joined SO line. No JW branch: a job-work line
+        // has no customer PO, so a JW-sourced card is correctly null.
+        clientPoLineNo: salesOrderLines.clientPoLineNo,
       })
       .from(jcOps)
       .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
@@ -2202,6 +2221,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       jobCardCode: meta.code,
       itemCode: meta.itemCode,
       itemRevision: meta.itemRevision,
+      clientPoLineNo: meta.clientPoLineNo,
       itemName: meta.itemName,
       opSeq: meta.opSeq,
       operation: meta.operation,
@@ -2349,6 +2369,10 @@ export async function stopOp(
         itemRevision: sql<
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        // POL — the line number printed on the CUSTOMER's own purchase order,
+        // off the same already-joined SO line. No JW branch: a job-work line
+        // has no customer PO, so a JW-sourced card is correctly null.
+        clientPoLineNo: salesOrderLines.clientPoLineNo,
         // The PLAN beside the session's ACTUAL machine (ADR-164): the op's own.
         plannedMachineCode: plannedMachineCodeSql,
       })
@@ -2405,6 +2429,7 @@ export async function stopOp(
       jobCardCode: m.code,
       itemCode: m.itemCode,
       itemRevision: m.itemRevision,
+      clientPoLineNo: m.clientPoLineNo,
       itemName: m.itemName,
       opSeq: m.opSeq,
       operation: m.operation,

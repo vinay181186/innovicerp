@@ -56,6 +56,7 @@ type DocRow = Pick<
 interface DocItem {
   itemCode: string | null;
   itemRevision: string | null;
+  clientPoLineNo: string | null;
   itemName: string | null;
 }
 
@@ -63,7 +64,12 @@ interface DocItem {
  *  row for a document filed against an SO only, and the echo returned by the
  *  upload registration, which the browser discards in favour of refetching the
  *  list. Nulls here mean "not known on this path", never "no item". */
-const NO_DOC_ITEM: DocItem = { itemCode: null, itemRevision: null, itemName: null };
+const NO_DOC_ITEM: DocItem = {
+  itemCode: null,
+  itemRevision: null,
+  clientPoLineNo: null,
+  itemName: null,
+};
 
 /** Escape the ILIKE metacharacters in a user's search term. Without this a
  *  user typing "a_b" — or a bare "%", which listed every registered document —
@@ -85,6 +91,7 @@ function toItem(r: DocRow, item: DocItem = NO_DOC_ITEM): QcDocument {
     jcCodeText: r.jcCodeText ?? null,
     itemCode: item.itemCode ?? null,
     itemRevision: item.itemRevision ?? null,
+    clientPoLineNo: item.clientPoLineNo ?? null,
     itemName: item.itemName ?? null,
     salesOrderId: r.salesOrderId ?? null,
     soCodeText: r.soCodeText ?? null,
@@ -136,6 +143,11 @@ export async function listQcDocuments(
           -- match on these two terms — they are not excluded from the list.
           OR ${items.code} ILIKE ${term} ESCAPE '\\'
           OR ${items.name} ILIKE ${term} ESCAPE '\\'
+          -- POL, the customer's own PO line number, now on the register. Off
+          -- the same LEFT-joined SO line as the revision below, so a document
+          -- with no card behind it simply does not match rather than dropping
+          -- out of the list.
+          OR ${salesOrderLines.clientPoLineNo} ILIKE ${term} ESCAPE '\\'
           OR ${qcDocuments.uploadedByText} ILIKE ${term} ESCAPE '\\'
           -- The Date cell prints createdAt.slice(0,10) — the calendar day, not
           -- the timestamp — so match the date, not "…T09:14:22.981Z".
@@ -192,6 +204,10 @@ export async function listQcDocuments(
         itemRevision: sql<
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        // POL — the line number on the CUSTOMER's own purchase order, off the
+        // SAME sol join as the revision above. SO side only: a JWSO-sourced or
+        // standalone card has no customer PO line and correctly stays null.
+        clientPoLineNo: salesOrderLines.clientPoLineNo,
       })
       .from(qcDocuments)
       .leftJoin(jobCards, and(eq(jobCards.id, qcDocuments.jobCardId), isNull(jobCards.deletedAt)))
@@ -211,6 +227,7 @@ export async function listQcDocuments(
         toItem(r, {
           itemCode: r.itemCode,
           itemRevision: r.itemRevision,
+          clientPoLineNo: r.clientPoLineNo,
           itemName: r.itemName,
         }),
       ),
@@ -671,6 +688,9 @@ export async function getQcLineDetail(
         -- the LEFT JOINs made here; null for a standalone card. Cast to text so
         -- a pre-0119 database cannot hand the UI a number. Never items.revision.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        -- POL, off the SAME sol join. SO side only — a JWSO-sourced card has no
+        -- customer PO line, so null is the right answer there.
+        sol.client_po_line_no AS "clientPoLineNo",
         COALESCE(i.name, sol.part_name) AS "itemName"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
@@ -796,6 +816,7 @@ export async function getQcLineDetail(
       jcCode: (jcRow['jcCode'] as string) ?? '',
       itemCode: (jcRow['itemCode'] as string | null) ?? null,
       itemRevision: (jcRow['itemRevision'] as string | null) ?? null,
+      clientPoLineNo: (jcRow['clientPoLineNo'] as string | null) ?? null,
       itemName: (jcRow['itemName'] as string | null) ?? null,
       orderQty: num(jcRow['orderQty']),
       totalAccepted,

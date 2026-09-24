@@ -125,7 +125,7 @@ function ConfigTable() {
                 <th>Code</th>
                 <th>Department</th>
                 <th>Alert Name</th>
-                <th>Status</th>
+                <th>Alert Status</th>
               </tr>
             </thead>
             <tbody>

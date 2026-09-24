@@ -208,7 +208,7 @@ export async function buildSpecialist(
     panels.push({
       title: 'Pending Incoming QC',
       titleColor: null,
-      headers: ['GRN', 'Date', 'Vendor', 'Qty'],
+      headers: ['GRN No.', 'GRN Date', 'Vendor', 'Received'],
       rows: grnRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['grn_date'] ?? ''), String(r['vendor_code_text'] ?? ''), String(num(r['qty']))], navPage: '/incoming-qc' })),
       emptyText: '✅ No pending inspections.',
     });
@@ -227,7 +227,7 @@ export async function buildSpecialist(
     panels.push({
       title: 'Pending PRs',
       titleColor: null,
-      headers: ['PR', 'Date', 'Item', 'Qty'],
+      headers: ['PR No.', 'PR Date', 'Item Code', 'Qty'],
       rows: prRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['pr_date'] ?? ''), String(r['item_code_text'] ?? ''), String(num(r['qty']))], navPage: '/purchase-requests' })),
       emptyText: '✅ None',
     });
@@ -235,7 +235,7 @@ export async function buildSpecialist(
     panels.push({
       title: 'Overdue POs',
       titleColor: 'var(--sig-critical)',
-      headers: ['PO', 'Vendor', 'Req Date'],
+      headers: ['PO No.', 'Vendor', 'Due Date'],
       rows: poRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['vendor_code_text'] ?? ''), String(r['due_date'] ?? '')], navPage: '/purchase-orders' })),
       emptyText: '✅ All on time',
     });
@@ -253,7 +253,7 @@ export async function buildSpecialist(
     panels.push({
       title: 'Equipment SOs Awaiting BOM',
       titleColor: null,
-      headers: ['SO', 'Date', 'Customer', 'Due'],
+      headers: ['SO No.', 'SO Date', 'Customer', 'Due Date'],
       rows: soRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['so_date'] ?? ''), String(r['customer_name'] ?? ''), String(r['due_date'] ?? '—')], navPage: '/bom-master' })),
       emptyText: '✅ All Equipment SOs have BOMs.',
     });

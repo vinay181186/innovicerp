@@ -16,6 +16,7 @@ import {
   challanEndDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 
@@ -57,7 +58,7 @@ export function printJwDc(args: {
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
   const recipientFields: SheetField[] = [
-    { label: 'Vendor code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
       label: 'Address',
@@ -68,15 +69,15 @@ export function printJwDc(args: {
   ];
 
   const documentFields: SheetField[] = [
-    { label: 'Challan No.', value: dc.code, variant: 'mono' },
-    { label: 'Challan date', value: challanDate(dc.dcDate), variant: 'mono' },
+    { label: 'DC No.', value: dc.code, variant: 'mono' },
+    { label: 'DC Date', value: challanDate(dc.dcDate), variant: 'mono' },
     // Resolved through the JWPO's lines back to the sales order; null when the
     // source job card came from a JWSO, and then this prints as a blank rule.
     { label: 'SO No.', value: dc.soCode ?? '', variant: 'mono' },
     { label: 'PO No.', value: linkedPo, variant: 'mono' },
     // Not a stored field — challan date + 3 months, which is the return window
     // the printed conditions promise.
-    { label: 'Challan end date', value: challanEndDate(dc.dcDate), variant: 'mono', strong: true },
+    { label: 'DC End Date', value: challanEndDate(dc.dcDate), variant: 'mono', strong: true },
   ];
   if (vehicleNo) documentFields.push({ label: 'Vehicle No.', value: vehicleNo, variant: 'mono' });
 
@@ -93,7 +94,11 @@ export function printJwDc(args: {
       // shows. The snapshot `itemCodeText` falls back to the item NAME when the
       // source PO line had no code text, so printing it alone put a name under
       // the item code.
-      itemCode: l.itemCode ?? l.itemCodeText,
+      itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
+      // POL — the CUSTOMER's own purchase-order line number. The sheet drops
+      // the column entirely when every line leaves it empty, so a purely
+      // job-work challan prints exactly as it did before.
+      pol: l.clientPoLineNo,
       itemName: l.itemName ?? l.itemNameText,
       // Legacy's printed line column is "Description / Process" (L24614). This
       // layout has a Remarks column, so the process it names prints there —

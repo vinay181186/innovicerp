@@ -198,12 +198,12 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>#</th>
+            <th style={{ width: 36 }}>Ln</th>
             <th>JC No.</th>
-            <th style={{ color: 'var(--purple)' }}>CPO Ln</th>
+            <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th className="td-ctr" style={{ color: 'var(--red)' }}>Qty</th>
+            <th className="td-ctr" style={{ color: 'var(--red)' }}>Dispatch Qty</th>
             <th className="td-ctr">UOM</th>
             <th className="td-ctr">Stock B→A</th>
           </tr>

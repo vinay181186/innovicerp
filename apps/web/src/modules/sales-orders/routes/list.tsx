@@ -646,7 +646,7 @@ function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; c
           <ItemBadge size="row" code={line.itemCode ?? line.itemCodeText} name={line.partName} revision={line.revision} imagePath={line.itemImagePath} />
         </div>
         <Fact label="EQUIP QTY" value={String(line.orderQty)} big />
-        <Fact label="DUE" value={line.dueDate ?? '—'} />
+        <Fact label="DUE DATE" value={line.dueDate ?? '—'} />
         <div>
           <div style={{ fontSize: 10, color: 'var(--text3)' }}>BOM STATUS</div>
           <div style={{ fontWeight: 700, color: bomStatus === 'BOM Pending' ? 'var(--amber)' : bomStatus === 'BOM Planned' ? 'var(--green)' : 'var(--cyan)' }}>
@@ -681,9 +681,9 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
       <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>#</th><th>Item Code</th><th>Item Name</th><th className="td-ctr">Qty/Set</th>
-            <th className="td-ctr" style={{ color: 'var(--cyan)' }}>Total Need</th><th>Type</th>
-            <th className="td-ctr" style={{ color: 'var(--green)' }}>Stock</th><th className="td-ctr" style={{ color: 'var(--red)' }}>Shortfall</th>
+            <th style={{ width: 36 }}>Sr No</th><th>Item Code</th><th>Item Name</th><th className="td-ctr">Qty/Set</th>
+            <th className="td-ctr" style={{ color: 'var(--cyan)' }}>Total Need</th><th>BOM Type</th>
+            <th className="td-ctr" style={{ color: 'var(--green)' }}>Stock</th><th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
           </tr>
         </thead>
         <tbody>
@@ -753,11 +753,11 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
           <tr style={{ background: 'var(--bg4)' }}>
             {/* Item = thumbnail · CODE/REV · part name in one badge cell (user
                 decision 2026-09-21); the old Item Code + Part Name pair folded in. */}
-            <th>Ln</th><th style={{ color: 'var(--purple)' }}>CPO Ln</th><ItemThumbnailHeader /><th style={{ textAlign: 'left' }}>Item</th>
-            <th className="td-ctr">Qty</th><th className="td-ctr">JC Qty</th>
+            <th>Ln</th><th style={{ color: 'var(--purple)' }}>POL</th><ItemThumbnailHeader /><th style={{ textAlign: 'left' }}>Item</th>
+            <th className="td-ctr">Order Qty</th><th className="td-ctr">JC Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
-            <th className="td-ctr" style={{ color: 'var(--red)' }}>Balance</th>
-            <th>Due Date</th><th>Status</th>{canEdit ? <th /> : null}
+            <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+            <th>Due Date</th><th>SO Status</th>{canEdit ? <th /> : null}
           </tr>
         </thead>
         <tbody>

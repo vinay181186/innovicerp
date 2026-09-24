@@ -230,7 +230,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="ncDate">
-            Date<span className="req">★</span>
+            NC Date<span className="req">★</span>
           </label>
           <input
             id="ncDate"
@@ -269,7 +269,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             </div>
             <div className="form-grp">
               <label className="form-label" htmlFor="itemCodeText">
-                Item<span className="req">★</span>
+                Item Code<span className="req">★</span>
               </label>
               <input
                 id="itemCodeText"
@@ -379,7 +379,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
 
             <div className="form-grp">
               <label className="form-label" htmlFor="rejectedQty">
-                Rejected Qty<span className="req">★</span>
+                Rejected<span className="req">★</span>
               </label>
               <input
                 id="rejectedQty"
@@ -414,7 +414,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="reportedByText">
-            Reported by
+            Reported By
           </label>
           <input
             id="reportedByText"

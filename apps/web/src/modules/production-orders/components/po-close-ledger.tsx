@@ -8,6 +8,7 @@
 import type { ProductionOrderClose, ProductionOrderDetail } from '@innovic/shared';
 import { Loader2, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useReverseProductionOrderClose } from '../api';
 
 interface PoCloseLedgerProps {
@@ -81,13 +82,40 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
         </div>
       ) : null}
 
+      {/* Meta band — whose pieces these closes belong to. POL is the line
+          number printed on the CUSTOMER's own purchase order, shown before the
+          item code; '—' when no sales order sits behind this order. */}
+      <div
+        className="mono"
+        style={{
+          fontSize: 11,
+          color: 'var(--text3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap',
+          marginBottom: 8,
+        }}
+      >
+        <span>
+          POL{' '}
+          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+            {po.clientPoLineNo ?? '—'}
+          </span>
+        </span>
+        <span>·</span>
+        <span className="td-code" style={{ color: 'var(--text)' }}>
+          {itemCodeWithRev(po.itemCodeText, po.itemRevision)}
+        </span>
+      </div>
+
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Qty</th>
-              <th>By</th>
+              <th>Txn Date</th>
+              <th>Txn Qty</th>
+              <th>Closed By</th>
               <th>Note</th>
               <th>Reversal?</th>
               {canReverse ? <th></th> : null}

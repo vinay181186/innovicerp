@@ -266,7 +266,7 @@ function OpEntryPage() {
           >
             <div className="form-grp" style={{ marginBottom: 0, minWidth: 300 }}>
               <label className="form-label" htmlFor="jc-input">
-                Job Card No.
+                JC No.
               </label>
               <SearchableSelect
                 id="jc-input"
@@ -325,6 +325,17 @@ function OpEntryPage() {
                 as a new treatment, and each is dropped entirely when its value
                 is null, so a card whose item did not come back reads exactly as
                 this line always has. */}
+            {/* POL — the line number printed on the CUSTOMER's own purchase
+                order, ahead of the item code. Dropped entirely when the card
+                has no sales order behind it, like the chips around it. */}
+            {jcHead?.clientPoLineNo ? (
+              <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>
+                <span className="text3">POL: </span>
+                <span className="fw-700" style={{ color: 'var(--purple)' }}>
+                  {jcHead.clientPoLineNo}
+                </span>
+              </span>
+            ) : null}
             {jcHead?.itemCode ? (
               /* `CODE/REV` through the one helper — the customer's drawing
                  revision from the SO line this card was raised against. A

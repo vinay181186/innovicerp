@@ -81,7 +81,9 @@ export function PlanPicker({
           id: p.id,
           code: p.code,
           name: planPickerLabel(p).slice(p.code.length + 3),
-          searchText: [p.productionOrderCode, p.jcCode].filter(Boolean).join(' '),
+          // POL (the CUSTOMER's own PO line number) is in the visible label, so
+          // it has to be searchable alongside the PO and JC codes.
+          searchText: [p.productionOrderCode, p.jcCode, p.clientPoLineNo].filter(Boolean).join(' '),
         }))}
         placeholder={
           mode === 'create'

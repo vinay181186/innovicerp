@@ -224,5 +224,10 @@ export function planPickerLabel(p: PlanPickerItem): string {
   const item = itemCodeWithRev(p.itemCode ?? p.itemCodeText, p.itemRevision);
   const name = p.itemName ?? p.itemNameText ?? '';
   const so = p.soCodeText ? `${p.soCodeText}${p.lineNo ? `/${p.lineNo}` : ''}` : '—';
-  return [p.code, item, name, `qty ${p.planQty}`, `SO ${so}`].filter(Boolean).join(' — ');
+  // POL — the line number printed on the CUSTOMER's own purchase order, ahead
+  // of the item code. NOT the `/n` in the SO part, which is OUR line number.
+  const pol = p.clientPoLineNo ? `POL ${p.clientPoLineNo}` : '';
+  return [p.code, pol, item, name, `qty ${p.planQty}`, `SO ${so}`]
+    .filter(Boolean)
+    .join(' — ');
 }

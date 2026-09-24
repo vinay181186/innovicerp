@@ -591,7 +591,10 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
       <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>#</th>
+            <th style={{ width: 36 }}>Ln</th>
+            {/* POL = the CUSTOMER's own PO line number off the SO line behind
+                this receipt line. Not our SO line number. */}
+            <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
             <th>Received</th>
@@ -604,7 +607,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
         <tbody>
           {data.lines.length === 0 ? (
             <tr>
-              <td colSpan={8} className="empty-state">
+              <td colSpan={9} className="empty-state">
                 No lines
               </td>
             </tr>
@@ -612,6 +615,11 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
             data.lines.map((l) => (
               <tr key={l.id} style={{ background: 'var(--bg)' }}>
                 <td className="mono fw-700">{l.lineNo}</td>
+                {/* POL — the CUSTOMER's PO line number off the SO line behind
+                    this row; '—' when there is no sales order behind it. */}
+                <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                  {l.clientPoLineNo ?? '—'}
+                </td>
                 {/* Item code is THE main thing — strong, never the faint text3.
                     CODE/REV (ADR-177); bare code when the line has no revision. */}
                 <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>

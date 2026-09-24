@@ -15,9 +15,9 @@ export const al003ItemsOutOfStock: RegisteredAlert = {
     description:
       'Items where the derived on-hand qty (from v_item_stock aggregating store_transactions) is <= 0.',
     columns: [
-      { key: 'item_code', label: 'Item code', type: 'text' },
-      { key: 'item_name', label: 'Item name', type: 'text' },
-      { key: 'on_hand_qty', label: 'On hand', type: 'number' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'on_hand_qty', label: 'On Hand', type: 'number' },
       { key: 'material', label: 'Material', type: 'text' },
     ],
     defaultActive: true,

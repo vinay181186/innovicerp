@@ -14,6 +14,10 @@ export interface OpLogListItem {
   // and pairs with the code as `CODE/REV` via itemCodeWithRev().
   itemName: string | null;
   itemRevision: string | null;
+  /** POL — the line number printed on the CUSTOMER's own purchase order, read
+   *  off the SO line behind the job card. NOT our SO line number. Null when the
+   *  card has no sales order behind it (job-work sourced, hand-raised). */
+  clientPoLineNo: string | null;
   opSeq: number;
   operation: string | null;
   /** The machine this entry's qty was STAMPED with — the ACTUAL machine. */

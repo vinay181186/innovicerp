@@ -181,7 +181,7 @@ export const PO_SAMPLE_LINES: SheetLine[] = [
 // "today" and "today + 15".
 export function poSampleRecipient(isSpo = false): SheetField[] {
   return [
-    { label: 'Vendor code', value: 'VND-999', variant: 'mono' },
+    { label: 'Code', value: 'VND-999', variant: 'mono' },
     {
       label: 'Name',
       value: isSpo ? 'Sample Services Pvt Ltd' : 'Sample Vendor Pvt Ltd',
@@ -206,12 +206,12 @@ export function poSampleOrder(isSpo = false): SheetField[] {
       strong: true,
     },
     {
-      label: isSpo ? 'SPO date' : 'PO date',
+      label: isSpo ? 'SPO Date' : 'PO Date',
       value: challanDate(format(new Date(), 'yyyy-MM-dd')),
       variant: 'mono',
     },
     {
-      label: 'Due date',
+      label: 'Due Date',
       value: challanDate(format(addDays(new Date(), 15), 'yyyy-MM-dd')),
       variant: 'mono',
     },
@@ -304,22 +304,22 @@ function openChallanTestPrint(
   templates: EffectivePrintTemplate[],
 ): boolean {
   const data = sampleDataFor(doc);
-  // A fixed sample challan date so the sample "Challan end date" (+3 months) is
+  // A fixed sample challan date so the sample "DC End Date" (+3 months) is
   // visibly three months later rather than today's date twice.
   const sampleDcDate = format(new Date(), 'yyyy-MM-dd');
   const recipient: SheetField[] = [
-    { label: 'Vendor code', value: 'VND-099', variant: 'mono' },
+    { label: 'Code', value: 'VND-099', variant: 'mono' },
     { label: 'Name', value: 'Sample Process House', variant: 'name' },
     { label: 'Address', value: 'GIDC, Vadodara', extra: ['Gujarat — 390010'] },
     { label: 'GSTIN', value: '24AAACS1234D1Z5', variant: 'mono' },
   ];
   const document: SheetField[] = [
-    { label: 'Challan No.', value: data.dcNo ?? '', variant: 'mono' },
-    { label: 'Challan date', value: challanDate(sampleDcDate), variant: 'mono' },
+    { label: 'DC No.', value: data.dcNo ?? '', variant: 'mono' },
+    { label: 'DC Date', value: challanDate(sampleDcDate), variant: 'mono' },
     { label: 'SO No.', value: '', variant: 'mono' },
     { label: 'PO No.', value: data.linkedPONo ?? '', variant: 'mono' },
     {
-      label: 'Challan end date',
+      label: 'DC End Date',
       value: challanEndDate(sampleDcDate),
       variant: 'mono',
       strong: true,
@@ -394,7 +394,7 @@ function openPoTestPrint(
       email: SAMPLE_COMPANY.email ?? '',
       phone: SAMPLE_COMPANY.phone ?? '',
     },
-    recipient: { label: isSpo ? 'Service provider' : 'Vendor / Supplier', fields: recipient },
+    recipient: { label: 'Vendor', fields: recipient },
     document: { label: 'Order', fields: order },
     lines: PO_SAMPLE_LINES,
     totalQty: '200',
@@ -453,6 +453,12 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     jwCodeText: 'IN-JW-99999',
     clientId: JWINV_SAMPLE_ID,
     clientName: client.name,
+    // The JWSO line's item code, its customer drawing revision and the
+    // customer's own PO line number (POL) — all three now on the list shape, so
+    // the sample sheet shows the same identity band the real invoice prints.
+    itemCode: 'IN-IT-0099',
+    itemRevision: 'B',
+    clientPoLineNo: '20',
     partName: 'Single Fire Check Lever',
     qty: 10,
     rate: 500,

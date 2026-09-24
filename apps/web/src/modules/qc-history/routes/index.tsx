@@ -48,7 +48,7 @@ function QcHistoryPage(): React.JSX.Element {
         // searches — an inspector hunting "plunger" should not have to know its
         // code. This filter runs over rows already in the browser, so nothing
         // can be hidden by widening it.
-        matchText(o.soCode, o.jcCode, o.itemCode, o.itemRevision, o.itemName),
+        matchText(o.soCode, o.jcCode, o.clientPoLineNo, o.itemCode, o.itemRevision, o.itemName),
       ),
     [data?.pending, t],
   );
@@ -58,7 +58,7 @@ function QcHistoryPage(): React.JSX.Element {
         (l) =>
           // Same widening as the pending list: the Item Name column is on
           // screen, so typing a part name has to find the row.
-          matchText(l.soCode, l.jcCode, l.itemCode, l.itemRevision, l.itemName) &&
+          matchText(l.soCode, l.jcCode, l.clientPoLineNo, l.itemCode, l.itemRevision, l.itemName) &&
           (dateFrom === '' || l.logDate >= dateFrom) &&
           (dateTo === '' || l.logDate <= dateTo),
       ),
@@ -243,17 +243,20 @@ function QcHistoryPage(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr>
-                      <th>JC</th>
+                      <th>JC No.</th>
                       <th>Op</th>
-                      <th>SO</th>
-                      <th>Item</th>
+                      <th>SO No.</th>
+                      {/* POL — the CUSTOMER's own purchase-order line number,
+                          immediately before the item code as everywhere else. */}
+                      <th style={{ color: 'var(--purple)' }}>POL</th>
+                      <th>Item Code</th>
                       {/* The code says which part number is waiting; it does not
                           say what the part is. The name gets its own column so
                           the code column stays a clean key. */}
                       <th>Item Name</th>
                       <th>Operation</th>
-                      <th>Order</th>
-                      <th>Done</th>
+                      <th>Order Qty</th>
+                      <th>Completed</th>
                       <th style={{ color: 'var(--green)' }}>Accepted</th>
                       <th style={{ color: 'var(--red)' }}>Rejected</th>
                       <th style={{ color: 'var(--amber)' }}>Pending</th>
@@ -264,7 +267,7 @@ function QcHistoryPage(): React.JSX.Element {
                   <tbody>
                     {pending.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="empty-state">
+                        <td colSpan={14} className="empty-state">
                           ✅ No pending QC
                         </td>
                       </tr>
@@ -288,10 +291,11 @@ function QcHistoryPage(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr>
-                      <th>JC</th>
+                      <th>JC No.</th>
                       <th>Op</th>
-                      <th>SO</th>
-                      <th>Item</th>
+                      <th>SO No.</th>
+                      <th style={{ color: 'var(--purple)' }}>POL</th>
+                      <th>Item Code</th>
                       {/* Same reason as the pending table above: reading a QC
                           entry back months later, the part number alone does not
                           tell you what was inspected. */}
@@ -299,7 +303,7 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>Operation</th>
                       <th style={{ color: 'var(--green)' }}>Accepted</th>
                       <th style={{ color: 'var(--red)' }}>Rejected</th>
-                      <th>Date</th>
+                      <th>QC Date</th>
                       <th>Shift</th>
                       <th>Inspector</th>
                       <th>Remarks</th>
@@ -309,7 +313,7 @@ function QcHistoryPage(): React.JSX.Element {
                   <tbody>
                     {logs.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="empty-state">
+                        <td colSpan={14} className="empty-state">
                           No QC entries
                         </td>
                       </tr>
@@ -334,6 +338,9 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
       <td className="td-ctr mono">Op{opSrNo(o.opSeq)}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
         {o.soCode ?? '—'}
+      </td>
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {o.clientPoLineNo ?? '—'}
       </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
         {itemCodeWithRev(o.itemCode, o.itemRevision)}
@@ -391,6 +398,9 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
       <td className="td-ctr mono">Op{opSrNo(l.opSeq)}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
         {l.soCode ?? '—'}
+      </td>
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {l.clientPoLineNo ?? '—'}
       </td>
       <td className="td-code" style={{ color: 'var(--purple)' }}>
         {itemCodeWithRev(l.itemCode, l.itemRevision)}

@@ -147,12 +147,12 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             flexWrap: 'wrap',
           }}
         >
-          <CtxField label="JC">
+          <CtxField label="JC NO.">
             <span className="mono" style={{ color: 'var(--cyan)' }}>
               {jcCode ?? '—'}
             </span>
           </CtxField>
-          <CtxField label="ITEM">
+          <CtxField label="ITEM CODE">
             {/* Whoever disposes an NC is deciding against a drawing, so this
                 context field shows the live item code with its revision — the
                 same joined pair the list and the detail header show. It falls
@@ -166,7 +166,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             {nc.opSeq != null && (nc.operationText ?? nc.qcOperationText) ? ': ' : ''}
             {nc.operationText ?? nc.qcOperationText ?? (nc.opSeq == null ? '—' : '')}
           </CtxField>
-          <CtxField label="REJECTED QTY">
+          <CtxField label="REJECTED">
             <span className="red">{Number(nc.rejectedQty)} pcs</span>
           </CtxField>
           <CtxField label="REASON">
@@ -202,7 +202,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
 
               <div className="form-grp">
                 <label className="form-label" htmlFor="dispQty">
-                  Qty<span className="req">★</span>
+                  Disposition Qty<span className="req">★</span>
                 </label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input

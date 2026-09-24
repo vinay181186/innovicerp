@@ -18,6 +18,7 @@
 //     document, and the sheet says so out loud (see MATERIAL_NOTE).
 
 import type { Client, Company, EffectivePrintTemplate, JwInvoiceListItem } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import {
@@ -139,7 +140,7 @@ export function printJwInvoice(args: {
   // the challan and the PO use for their vendor, so a reader who handles all
   // three documents reads them the same way — only the party changes.
   const recipientFields: SheetField[] = [
-    { label: 'Client code', value: client?.code ?? '', variant: 'mono' },
+    { label: 'Code', value: client?.code ?? '', variant: 'mono' },
     { label: 'Name', value: clientName, variant: 'name' },
     {
       label: 'Address',
@@ -159,7 +160,7 @@ export function printJwInvoice(args: {
   // when they query the bill.
   const documentFields: SheetField[] = [
     { label: 'Invoice No.', value: invoice.code, variant: 'mono', strong: true },
-    { label: 'Invoice date', value: challanDate(invoice.invoiceDate), variant: 'mono' },
+    { label: 'Invoice Date', value: challanDate(invoice.invoiceDate), variant: 'mono' },
     { label: 'JWSO No.', value: invoice.jwCodeText ?? '', variant: 'mono' },
     // Spelled out as a field, not left to the reader: this is a service bill
     // against material the client already owns.
@@ -175,18 +176,17 @@ export function printJwInvoice(args: {
     blocks,
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Bill to / Client', fields: recipientFields },
+    recipient: { label: 'Customer', fields: recipientFields },
     document: { label: 'Invoice', fields: documentFields },
     // ONE line, always: a JW invoice bills exactly one Job Work Order line
     // (`jobWorkOrderLineId` is a single id on the row, not a list).
     lines: [
       {
-        // There is NO item code on this document. The invoice row carries the
-        // JW line's `partName` and nothing else that identifies the part, and
-        // the job-work part is the CLIENT's part — it has no code in our item
-        // master to print. Blank, rather than a value invented to fill the
-        // column; the same choice the OSP challan makes for HSN.
-        itemCode: '',
+        // The row now carries the JWSO line's item code and the customer's
+        // drawing revision, so the invoice prints CODE/REV instead of a part
+        // name alone. A JWSO line with no coded item still prints blank rather
+        // than a value invented to fill the column.
+        itemCode: itemCodeWithRev(invoice.itemCode, invoice.itemRevision, ''),
         itemName: invoice.partName ?? '',
         uom: JW_INVOICE_UOM,
         qty: String(invoice.qty),

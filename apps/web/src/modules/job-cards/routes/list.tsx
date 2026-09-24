@@ -21,6 +21,7 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
@@ -520,13 +521,13 @@ function JobCardsListPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Sr No</th>
-                  <th>Job Card No.</th>
+                  <th>JC No.</th>
                   <ItemThumbnailHeader />
-                  <th style={{ textAlign: 'left' }}>Part / Description</th>
+                  <th style={{ textAlign: 'left' }}>Item Code</th>
                   <th>SO No.</th>
-                  <th>Qty (Plan)</th>
+                  <th>Order Qty</th>
                   <th>Progress</th>
-                  <th>Status</th>
+                  <th>JC Status</th>
                   <th>Start Date</th>
                   <th>Due Date</th>
                   <th>Days Left</th>
@@ -578,7 +579,7 @@ function JobCardsListPage(): React.JSX.Element {
                           the thumbnail column before the item code · name). */}
                       <ItemThumbnailCell
                         imagePath={jc.itemImagePath}
-                        alt={jc.itemName || jc.itemCode}
+                        alt={jc.itemName || itemCodeWithRev(jc.itemCode, jc.itemRevision)}
                       />
                       <td style={{ textAlign: 'left' }}>
                         {/* CODE/REV + name, text only — the picture is the
@@ -972,7 +973,7 @@ function JobCardsListPage(): React.JSX.Element {
                         <>
                           <span>·</span>
                           <span>
-                            CPO{' '}
+                            POL{' '}
                             <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                               {jc.clientPoLineNo}
                             </span>

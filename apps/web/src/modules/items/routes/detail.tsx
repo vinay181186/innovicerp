@@ -264,11 +264,11 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Type</th>
+              <th>Txn Date</th>
+              <th>Txn Type</th>
               <th>Source</th>
               <th>Ref No.</th>
-              <th>Qty</th>
+              <th>Txn Qty</th>
               <th>Stock before → after</th>
               <th>Remarks</th>
             </tr>

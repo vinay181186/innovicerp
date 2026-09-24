@@ -246,7 +246,7 @@ function UsersListPage(): React.JSX.Element {
               <th>Access</th>
               <th>Email</th>
               <th>Phone</th>
-              <th>Status</th>
+              <th>Active</th>
               <th>Approver</th>
               <th>Action</th>
             </tr>

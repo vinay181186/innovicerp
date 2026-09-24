@@ -71,9 +71,9 @@ export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: P
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th style={{ width: 30 }}>#</th>
-                  <th style={{ width: 150 }}>Date / Time</th>
-                  <th style={{ width: 130 }}>Edited By</th>
+                  <th style={{ width: 30 }}>Sr No</th>
+                  <th style={{ width: 150 }}>Revision Date</th>
+                  <th style={{ width: 130 }}>Revised By</th>
                   <th>Preview</th>
                   <th style={{ width: 90 }} />
                 </tr>

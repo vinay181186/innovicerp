@@ -27,15 +27,15 @@ export const ncBySoJcReport: RegisteredReport = {
       'NCs grouped by Sales Order (falling back to Job Card) — count, rejected qty, pending vs closed. Pinpoints which orders are generating quality issues.',
     group: 'Quality',
     filters: [
-      { key: 'fromDate', label: 'From date', kind: 'date' },
-      { key: 'toDate', label: 'To date', kind: 'date' },
+      { key: 'fromDate', label: 'NC Date From', kind: 'date' },
+      { key: 'toDate', label: 'NC Date To', kind: 'date' },
     ],
     columns: [
-      { key: 'so_jc', label: 'SO/JC', type: 'text' },
-      { key: 'nc_count', label: 'Count', type: 'number' },
-      { key: 'total_rejected_qty', label: 'Rejected Qty', type: 'number' },
-      { key: 'pending_count', label: 'Pending', type: 'number' },
-      { key: 'closed_count', label: 'Closed', type: 'number' },
+      { key: 'so_jc', label: 'SO No. / JC No.', type: 'text' },
+      { key: 'nc_count', label: 'NC Count', type: 'number' },
+      { key: 'total_rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'pending_count', label: 'Pending NCs', type: 'number' },
+      { key: 'closed_count', label: 'Closed NCs', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {

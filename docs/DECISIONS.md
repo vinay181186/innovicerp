@@ -9586,3 +9586,86 @@ Three related gaps surfaced while reviewing the route-card → Production Order 
 - Positive: pieces enter stock as they finish (less time invisible), the routing rules match the shop's real OSP/TPI process, and every finished op has an inspection gate — all without touching the crediting engine or risking double-credit.
 - Negative: one migration (status values + `production_order_closes` table) to run on BOTH Supabase DBs, test-first; the close service and its guard grow to handle qty, reversal, and short-close.
 - Risks: available-to-close must always be `live finished − credited` (never order_qty); close-short must record the loss (so `credited + lost = order`); a close whose pieces already shipped cannot be reversed. All three are handled in the decision above.
+
+## ADR-180: Reservation books stock instead of moving it — physical / reserved / available, auto-booking at production close, and consumption at dispatch
+
+**Date:** 2026-09-22 · **Status:** Accepted · **Migration:** 0141
+
+### Context
+Stage 1 (migration 0099) modelled an SO stock reservation as a **hard move**: `reserveStock` posted a
+`store_transactions` `'out'` row with `source_type='reservation'`, and releasing posted the matching `'in'`.
+The shelf figure therefore fell the moment a planner promised stock to an order, although nothing had left
+the building, and "physical stock" and "free stock" collapsed into one number that answered neither
+question. The store could not say how much steel was actually on the rack, and planning could not say how
+much of it was already spoken for.
+
+Three further gaps sat on top of it: a Production Order close credited finished goods and then stopped, so
+the pieces it had just made were not promised to the order that asked for them; the dispatch path wrote a
+compensating `'in'` for the reservation it consumed (correct only under the hard-move model); and an SO
+amendment left its bookings untouched, so a reduced order kept holding stock nobody could ship.
+
+Verified before changing anything (2026-09-22, both databases): `so_stock_reservations` held **0 rows** and
+`store_transactions` held **0 rows** with `source_type='reservation'`, on TEST and on PROD. The feature had
+never been used in anger, so the semantics could be corrected with no data migration and no stock figure
+moving on either stack.
+
+### Decision
+**1. Three figures, one definition, one place.**
+```
+PHYSICAL  = item_stock_balances.on_hand_qty
+RESERVED  = Σ (qty − consumed_qty − released_qty) WHERE status IN ('active','partially_consumed')
+AVAILABLE = PHYSICAL − RESERVED
+```
+`v_item_stock_availability` (0141) publishes all three per item, and
+`apps/api/src/lib/stock-reservation.ts` is the only module allowed to compute or change a booking. No
+service may re-derive reserved/available with its own SQL.
+
+**2. A reservation never writes to the stock ledger.** `store_transactions` keeps its meaning — one row per
+real physical movement. Reserving moves a quantity from AVAILABLE to RESERVED and nothing else. Only a
+dispatch, a store issue or an adjustment reduces PHYSICAL.
+
+**3. The existing table is extended, not replaced.** `so_stock_reservations` already carried
+company / SO line / item / qty / status / audit and is read by SO Planning and Customer Dispatch; a second
+reservation table would have split the truth. It gains `consumed_qty`, `released_qty`, `reservation_source`,
+`production_order_id`, `job_card_id`, `production_order_close_id`, `release_reason`, and a status ladder
+`active → partially_consumed → consumed | released | cancelled` (the Stage-1 value `dispatched` stays legal
+so no historical row becomes invalid).
+
+**4. Automatic booking at production close.** After a Production Order close credits finished goods, the
+service books `MIN(qty just credited, orderQty − dispatchedQty − already reserved)` to the SO line behind the
+plan, with `reservation_source='auto_production'` and `production_order_close_id` set. That column is UNIQUE
+while live, so replaying the close API can never book the same pieces twice. Reversing a close releases the
+booking it created, and is refused when those pieces have already shipped.
+
+**5. Dispatch consumes, it does not release.** The dispatch path keeps writing its single `'out'` row (the
+only physical movement) and now marks the booking consumed instead of writing a compensating `'in'`.
+Cancelling a dispatch reverses both: the stock comes back and the booking is restored.
+
+**6. Amendments reconcile.** Reducing, cancelling or closing an SO line releases whatever it holds above
+`max(0, newOrderQty − dispatchedQty)`, with the reason on the trail. Dispatched pieces are never reversed.
+
+**7. Concurrency is a row lock, not a screen check.** Every path that changes a booking takes
+`SELECT ... FROM items WHERE id = ? FOR UPDATE` and re-reads availability inside that lock, so two planners
+reserving the same last pieces serialize and the second sees the first. Retried HTTP calls are already
+covered by the Idempotency-Key plugin (ADR-172).
+
+**8. A numeric trail.** `stock_reservation_events` records reserve / consume / release / cancel /
+amend_release with qty and remaining-before/after. `activity_log` keeps its one-line-per-action story;
+this is what the reconciliation queries read (`docs/sql/check-stock-reservation.sql`).
+
+### Alternatives Considered
+- **A new `inventory_reservations` table** — rejected: `so_stock_reservations` already models exactly this
+  and is wired into two screens; a parallel table would have to be kept in step with it for ever.
+- **Keep the hard move and show "physical = on-hand + reserved"** — rejected: it makes every stock screen
+  do arithmetic to recover a number the database should simply hold, and the ledger would keep claiming
+  movements that never happened.
+- **A `reserved_qty` column on `items` or `item_stock_balances`** — rejected: a cached total cannot say WHO
+  holds the stock, which is the question the drill-down answers; the sum over live rows can.
+
+### Consequences
+- Positive: the store can state what is on the shelf, planning can state what is free, and the two agree by
+  construction. Freshly made pieces are promised to the order that paid for them without anyone typing it.
+- Negative: one migration to run on BOTH databases; `available`, not `physical`, is now the number planning
+  plans against, so the planning screen shows six figures where it used to show two.
+- Risks: any future stock writer that forgets the library could re-derive availability wrongly — the
+  reconciliation SQL exists to catch exactly that, and must read PASS on every row before this is called done.

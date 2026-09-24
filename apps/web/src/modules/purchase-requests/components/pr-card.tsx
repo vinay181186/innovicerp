@@ -174,6 +174,15 @@ export function PrCard({
           >
             {pr.code}
           </Link>
+          {/* POL — the CUSTOMER's own PO line number off the SO line behind this
+              request. Same purple mono chip the Job Card list uses; absent when
+              the PR has no sales order behind it (a stock buy). */}
+          {pr.clientPoLineNo ? (
+            <span className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+              POL{' '}
+              <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{pr.clientPoLineNo}</span>
+            </span>
+          ) : null}
           <span style={{ fontSize: 12 }}>
             <span className="mono" style={{ color: 'var(--purple)' }}>
               {/* CODE/REV — the customer's drawing revision off the SO line this
@@ -306,12 +315,12 @@ export function PrCard({
           }}
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <QtyBox label="Qty" value={pr.qty} />
-            <QtyBox label="Ordered" value={bal.ordered} bordered />
+            <QtyBox label="PR Qty" value={pr.qty} />
+            <QtyBox label="Order Qty" value={bal.ordered} bordered />
             {/* Negative = more ordered than requested. Red and flagged, never
                 clamped to 0 — somebody has to go and look at it. */}
             <QtyBox
-              label="Balance"
+              label="Pending"
               value={bal.balance < 0 ? `⚠ ${bal.balance}` : bal.balance}
               color={prBalanceColor(bal.state)}
               bordered

@@ -850,7 +850,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     ? 'Saving…'
     : mode === 'create'
       ? 'Save BOM'
-      : `Save as Rev ${nextRevision}`;
+      : `Save as BOM Rev ${nextRevision}`;
 
   return (
     <form className="bomx" onSubmit={(e) => void submit(e)}>
@@ -871,7 +871,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             </span>
             {mode === 'edit' ? (
               <span className="bomx-pill">
-                REV {bom?.revision ?? 1} → {nextRevision}
+                BOM REV {bom?.revision ?? 1} → {nextRevision}
               </span>
             ) : null}
           </div>
@@ -917,7 +917,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               <span className="bomx-help">Shown across production and planning screens</span>
             </div>
             <div className="bomx-f">
-              <span className="bomx-lbl">Status</span>
+              <span className="bomx-lbl">BOM Status</span>
               <select
                 value={header.status}
                 onChange={(e) =>
@@ -931,7 +931,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               <span className="bomx-help">Only Active BOMs attach to sales orders</span>
             </div>
             <div className="bomx-f">
-              <span className="bomx-lbl">Revision</span>
+              <span className="bomx-lbl">BOM Rev</span>
               <input value={String(bom?.revision ?? 1)} readOnly />
               <span className="bomx-help">Increments on each release</span>
             </div>
@@ -1334,7 +1334,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               </span>
               <span className="bomx-ttl">Revision Note</span>
               <span className="bomx-pill">
-                REV {bom?.revision ?? 1} → {nextRevision}
+                BOM REV {bom?.revision ?? 1} → {nextRevision}
               </span>
             </div>
           </div>

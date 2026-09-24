@@ -417,14 +417,14 @@ export function OutsourceJobsView(): React.JSX.Element {
                   />
                 </th>
                 <th>PR No.</th>
-                <th>JC Source</th>
-                <th>Item</th>
+                <th>JC No.</th>
+                <th>Item Code</th>
                 <th style={{ color: 'var(--purple)' }}>Process</th>
                 <th>Qty</th>
                 <th>Suggested Vendor</th>
                 <th style={{ color: 'var(--green)' }}>Est. Rate</th>
-                <th>Due</th>
-                <th>Status</th>
+                <th>Due Date</th>
+                <th>PR Status</th>
               </tr>
             </thead>
             <tbody>
@@ -574,9 +574,9 @@ export function OutsourceJobsView(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr style={{ background: 'var(--bg4)' }}>
-                      <th>PR</th>
-                      <th>JC Source</th>
-                      <th>Item</th>
+                      <th>PR No.</th>
+                      <th>JC No.</th>
+                      <th>Item Code</th>
                       <th>Process</th>
                       <th>Qty to order</th>
                       <th style={{ color: 'var(--green)' }}>Rate ₹/pc</th>

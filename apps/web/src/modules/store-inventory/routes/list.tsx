@@ -17,9 +17,12 @@ import type {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAdjustStock, useSetMinStock, useStoreInventory } from '../api';
+import { ModalShell } from '../components/modal-shell';
+import { ReservationDrilldown } from '../components/reservation-drilldown';
 import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
 
 type FilterKey = 'all' | 'low' | 'zero';
@@ -45,6 +48,8 @@ function StoreInventoryPage(): React.JSX.Element {
   const [adjustRow, setAdjustRow] = useState<StoreInventoryRow | null>(null);
   const [minRow, setMinRow] = useState<StoreInventoryRow | null>(null);
   const [showManualReceipt, setShowManualReceipt] = useState(false);
+  // ADR-180 — which item's Reserved number was clicked (the drill-down).
+  const [reservedRow, setReservedRow] = useState<StoreInventoryRow | null>(null);
 
   const { data, isLoading, isError, error } = useStoreInventory({
     filter,
@@ -94,7 +99,7 @@ function StoreInventoryPage(): React.JSX.Element {
               <input
                 type="text"
                 className="innovic-input"
-                placeholder="🔍 Search item, material…"
+                placeholder="🔍 Search item code, name, material, UOM…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 style={{ width: 240, fontSize: 12 }}
@@ -156,10 +161,29 @@ function StoreInventoryPage(): React.JSX.Element {
                     <thead>
                       <tr>
                         <th>Item Code</th>
-                        <th>Name</th>
+                        <th>Item Name</th>
                         <th>Material</th>
                         <th>UOM</th>
-                        <th style={{ color: 'var(--green)' }}>In Stock</th>
+                        {/* ADR-180 — three numbers, three columns, always in
+                            this order: Physical − Reserved = Available. */}
+                        <th
+                          style={{ color: 'var(--green)' }}
+                          title="On the shelf, reserved or not. Reserving never changes it."
+                        >
+                          Physical
+                        </th>
+                        <th
+                          style={{ color: 'var(--purple)' }}
+                          title="Promised to SO lines but still on the shelf — click a number to see where"
+                        >
+                          Reserved
+                        </th>
+                        <th
+                          style={{ color: 'var(--cyan)' }}
+                          title="Physical − Reserved: what a new order may still be promised"
+                        >
+                          Available
+                        </th>
                         <th>Min Qty</th>
                         <th style={{ color: 'var(--blue)' }}>On PO</th>
                         <th style={{ color: 'var(--orange)' }}>At Vendor</th>
@@ -170,7 +194,7 @@ function StoreInventoryPage(): React.JSX.Element {
                     <tbody>
                       {data.rows.length === 0 ? (
                         <tr>
-                          <td colSpan={canEdit ? 10 : 9} className="empty-state">
+                          <td colSpan={canEdit ? 12 : 11} className="empty-state">
                             No items in master
                           </td>
                         </tr>
@@ -217,6 +241,43 @@ function StoreInventoryPage(): React.JSX.Element {
                                   ⚠ LOW
                                 </div>
                               ) : null}
+                            </td>
+                            {/* Reserved is clickable: it opens the list of SO
+                                lines holding this item's stock. */}
+                            <td className="td-ctr">
+                              {row.reservedQty > 0 ? (
+                                <button
+                                  type="button"
+                                  className="mono fw-700"
+                                  onClick={() => setReservedRow(row)}
+                                  title="See which SO lines are holding this stock"
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: 0,
+                                    fontSize: 15,
+                                    color: 'var(--purple)',
+                                    textDecoration: 'underline',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {row.reservedQty}
+                                </button>
+                              ) : (
+                                <span className="mono text3">—</span>
+                              )}
+                            </td>
+                            <td className="td-ctr">
+                              <span
+                                className="mono fw-700"
+                                style={{
+                                  fontSize: 15,
+                                  color: row.availableQty > 0 ? 'var(--cyan)' : 'var(--text3)',
+                                }}
+                                title="Physical − Reserved"
+                              >
+                                {row.availableQty}
+                              </span>
                             </td>
                             <td className="td-ctr mono text3">{row.minQty || '—'}</td>
                             <td className="td-ctr">
@@ -284,7 +345,9 @@ function StoreInventoryPage(): React.JSX.Element {
 
               <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
                 💡 Stock is automatically updated via GRN (inward) and Dispatch (outward). Use ±
-                Adjust for manual corrections.
+                Adjust for manual corrections. Reserving stock for an order does NOT change Physical
+                — it only moves pieces from Available to Reserved. Click a Reserved number to see
+                which orders are holding it.
               </div>
             </>
           ) : null}
@@ -297,12 +360,23 @@ function StoreInventoryPage(): React.JSX.Element {
               rows={data?.rows ?? []}
             />
           ) : null}
+          {reservedRow ? (
+            <ReservationDrilldown
+              itemId={reservedRow.itemId}
+              itemCode={reservedRow.itemCode}
+              itemName={reservedRow.itemName}
+              onClose={() => setReservedRow(null)}
+            />
+          ) : null}
         </>
       )}
     </div>
   );
 }
 
+// ONE strip, one row — the shared <StatStrip>, not a grid of cards. The two
+// ADR-180 totals (Reserved, Available) join the four that were already here;
+// a 4-column card grid would have pushed them onto a second row.
 function KpiStrip({
   summary,
   filter,
@@ -312,53 +386,59 @@ function KpiStrip({
   filter: FilterKey;
   setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
-  const tiles: Array<{
-    variant: 'cyan' | 'green' | 'red' | 'amber';
-    label: string;
-    value: number | string;
-    sub?: string;
-    onClick?: () => void;
-  }> = [
+  const items: StatStripItem[] = [
     {
-      variant: 'cyan',
+      key: 'all',
       label: 'Total Items',
-      value: summary.totalItems,
-      sub: `${summary.totalStockPieces} total pieces in store`,
+      count: summary.totalItems,
+      color: 'var(--cyan)',
+      sub: `${summary.totalStockPieces} physical pieces in store`,
+      active: filter === 'all',
       onClick: () => setFilter('all'),
     },
     {
-      variant: 'green',
-      label: 'Items in Stock',
-      value: summary.itemsInStockCount,
+      key: 'reserved',
+      label: 'Reserved Pieces',
+      count: summary.totalReservedPieces,
+      color: 'var(--purple)',
+      sub: 'Promised to SO lines, still on the shelf',
+      title: 'Total pieces held by active reservations',
     },
     {
-      variant: 'red',
+      key: 'available',
+      label: 'Available Pieces',
+      count: summary.totalAvailablePieces,
+      color: 'var(--green)',
+      sub: 'Physical − Reserved',
+      title: 'What a new order may still be promised',
+    },
+    {
+      key: 'inStock',
+      label: 'Items in Stock',
+      count: summary.itemsInStockCount,
+      color: 'var(--green)',
+    },
+    {
+      key: 'low',
       label: 'Low Stock Alert',
-      value: summary.lowStockCount,
+      count: summary.lowStockCount,
+      color: 'var(--red)',
       sub: 'Below minimum level',
+      active: filter === 'low',
       onClick: () => setFilter(filter === 'low' ? 'all' : 'low'),
     },
     {
-      variant: 'amber',
+      key: 'zero',
       label: 'Zero Stock',
-      value: summary.zeroStockCount,
+      count: summary.zeroStockCount,
+      color: 'var(--amber)',
+      active: filter === 'zero',
       onClick: () => setFilter(filter === 'zero' ? 'all' : 'zero'),
     },
   ];
   return (
-    <div className="stat-grid">
-      {tiles.map((t, i) => (
-        <div
-          key={i}
-          className={`stat-card ${t.variant}`}
-          onClick={t.onClick}
-          style={t.onClick ? { cursor: 'pointer' } : undefined}
-        >
-          <div className="stat-label">{t.label}</div>
-          <div className="stat-val">{t.value}</div>
-          {t.sub ? <div className="stat-sub">{t.sub}</div> : null}
-        </div>
-      ))}
+    <div style={{ marginBottom: 16 }}>
+      <StatStrip items={items} />
     </div>
   );
 }
@@ -410,13 +490,23 @@ function AdjustModal({
         }}
       >
         <span className="text3" style={{ fontSize: 11 }}>
-          Current Stock:
+          Physical Stock:
         </span>
         <span
           className="mono fw-700"
           style={{ fontSize: 18, color: 'var(--green)', marginLeft: 8 }}
         >
           {row.inStock} {row.uom}
+        </span>
+        <span className="text3" style={{ fontSize: 11, marginLeft: 10 }}>
+          Reserved{' '}
+          <b className="mono" style={{ color: 'var(--purple)' }}>
+            {row.reservedQty}
+          </b>{' '}
+          · Available{' '}
+          <b className="mono" style={{ color: 'var(--cyan)' }}>
+            {row.availableQty}
+          </b>
         </span>
       </div>
       <div className="form-grid">
@@ -753,48 +843,5 @@ function ManualReceiveModal({
         </button>
       </div>
     </ModalShell>
-  );
-}
-
-function ModalShell({
-  onClose,
-  title,
-  children,
-}: {
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
-        </div>
-        {children}
-      </div>
-    </div>
   );
 }

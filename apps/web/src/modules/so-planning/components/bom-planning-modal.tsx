@@ -17,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useCreatePlan } from '@/modules/plans/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { usePlanningBom } from '../api';
@@ -241,7 +242,9 @@ export function BomPlanningModal({
   const title =
     mode === 'equipment'
       ? `📦 Equipment BOM Planning — ${soCode}`
-      : `📦 BOM Planning — ${data?.parentItemCode ?? ''} × ${data?.orderQty ?? ''}`;
+      : // The parent IS the SO line, so it is written CODE/REV with the
+        // customer's PO line beside it, like every other document.
+        `📦 BOM Planning — ${itemCodeWithRev(data?.parentItemCode, data?.parentItemRevision, '')} × ${data?.orderQty ?? ''}`;
 
   const footer = (
     <>
@@ -363,7 +366,9 @@ function BomBody({
                 <span style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT</span>
                 <br />
                 <b style={{ color: 'var(--purple)' }}>
-                  {data.parentItemCode} {data.parentItemName}
+                  {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
+                  {itemCodeWithRev(data.parentItemCode, data.parentItemRevision)}{' '}
+                  {data.parentItemName}
                 </b>
               </div>
               <div>
@@ -389,7 +394,10 @@ function BomBody({
               <div>
                 <span style={{ fontSize: 10, color: 'var(--text3)' }}>ASSEMBLY</span>
                 <br />
-                <b style={{ color: 'var(--purple)' }}>{data.parentItemCode}</b>{' '}
+                <b style={{ color: 'var(--purple)' }}>
+                  {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
+                  {itemCodeWithRev(data.parentItemCode, data.parentItemRevision)}
+                </b>{' '}
                 {data.parentItemName}
               </div>
               <div>
@@ -438,17 +446,17 @@ function BomBody({
         <table style={{ width: '100%' }}>
           <thead>
             <tr style={{ background: 'var(--bg4)' }}>
-              <th>#</th>
-              <th>{mode === 'equipment' ? 'Item Code' : 'Child Item'}</th>
-              <th>{mode === 'equipment' ? 'Item Name' : 'Name'}</th>
+              <th>Sr No</th>
+              <th>Item Code</th>
+              <th>Item Name</th>
               <th>{mode === 'equipment' ? 'Qty/Set' : 'Per Unit'}</th>
               <th>Total Need</th>
               <th style={{ color: 'var(--green)' }}>Stock</th>
-              <th style={{ color: 'var(--red)' }}>Shortfall</th>
-              <th>Type</th>
+              <th style={{ color: 'var(--red)' }}>Pending</th>
+              <th>BOM Type</th>
               <th>Plan Status</th>
               <th>Plan?</th>
-              <th>{mode === 'equipment' ? 'Qty' : 'Qty to Plan'}</th>
+              <th>Qty to Plan</th>
             </tr>
           </thead>
           <tbody>
@@ -673,8 +681,8 @@ function BomBody({
         {/* The two modes have different footnotes in legacy — equipment L8901,
             assembly L7185. They are not interchangeable. */}
         {mode === 'equipment'
-          ? 'ℹ Total Need = Equipment Qty × Qty per Set. Shortfall = Total Need − Current Stock.'
-          : 'ℹ Shortfall = Total Need − Current Stock. You can adjust Qty to Plan up to Total Need if you want to plan more than shortfall.'}
+          ? 'ℹ Total Need = Equipment Qty × Qty per Set. Pending = Total Need − Current Stock.'
+          : 'ℹ Pending = Total Need − Current Stock. You can adjust Qty to Plan up to Total Need if you want to plan more than the pending qty.'}
       </div>
 
       {submitErr ? (

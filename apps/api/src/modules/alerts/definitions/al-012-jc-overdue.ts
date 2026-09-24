@@ -14,11 +14,11 @@ export const al012JcOverdue: RegisteredAlert = {
     description:
       'Job cards with due_date in the past whose derived status is open or qc_pending (not complete/closed/no_ops).',
     columns: [
-      { key: 'jc_code', label: 'JC no.', type: 'text' },
-      { key: 'item', label: 'Item', type: 'text' },
-      { key: 'order_qty', label: 'Qty', type: 'number' },
-      { key: 'due_date', label: 'Due', type: 'date' },
-      { key: 'computed_status', label: 'Status', type: 'text' },
+      { key: 'jc_code', label: 'JC No.', type: 'text' },
+      { key: 'item', label: 'Item Code', type: 'text' },
+      { key: 'order_qty', label: 'Order Qty', type: 'number' },
+      { key: 'due_date', label: 'Due Date', type: 'date' },
+      { key: 'computed_status', label: 'JC Status', type: 'text' },
     ],
     defaultActive: true,
   },

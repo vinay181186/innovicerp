@@ -3,12 +3,15 @@
 // (xlsx — an existing dependency). Dates are formatted DD-MM-YYYY (IST-safe via
 // fmtDate, no timezone shift) to match the on-screen tables.
 //
-// Item Code, Drawing Rev and Item Name are three separate columns rather than
-// one glued "CODE/REV" cell the way the screen shows it. A spreadsheet is
-// filtered and VLOOKUP-ed against Item Master, and neither a slashed code nor a
-// code with a name appended matches anything there. Same call as the Job Card
-// export (export-job-card-excel.ts). The name is on the sheet at all because a
-// job-card number says WHICH JOB and never which part.
+// The Item Code cell is written `CODE/REV`, the same way it reads on screen and
+// on every print for a row that traces back to a Sales Order line (user rule
+// 2026-09-23). Drawing Rev and Item Name KEEP their own columns beside it: a
+// spreadsheet is filtered and sorted, so the bare revision has to stay usable
+// on its own, and a job-card number says WHICH JOB and never which part. Same
+// call as the Job Card export (export-job-card-excel.ts).
+// Rows with no SO line behind them — a raw-material receipt from a vendor —
+// have a null revision and correctly keep the bare code; itemCodeWithRev never
+// prints a trailing slash.
 //
 // The QC Call Register exports the same two sheets but its register also holds
 // incoming-material (GRN line) calls. Those are passed as the optional second
@@ -24,6 +27,7 @@ import {
   opSrNo,
 } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/print/doc-print';
 
 function stamp(): string {
@@ -55,16 +59,16 @@ export function exportCompletedQc(
   const rows = [
     ...logs.map((l) =>
       tagged(mixed, 'Process', '', {
-        JC: l.jcCode,
+        'JC No.': l.jcCode,
         Op: `Op${opSrNo(l.opSeq)}`,
-        SO: l.soCode ?? '',
-        'Item Code': l.itemCode ?? '',
+        'SO No.': l.soCode ?? '',
+        'Item Code': itemCodeWithRev(l.itemCode, l.itemRevision, ''),
         'Drawing Rev': l.itemRevision ?? '',
         'Item Name': l.itemName ?? '',
         Operation: l.operation,
         Accepted: l.accepted,
         Rejected: l.rejected,
-        Date: fmtDate(l.logDate),
+        'QC Date': fmtDate(l.logDate),
         Shift: l.shift ?? '',
         Inspector: l.inspector ?? '',
         Remarks: l.remarks ?? '',
@@ -73,16 +77,16 @@ export function exportCompletedQc(
     ),
     ...incoming.map((l) =>
       tagged(mixed, 'Incoming', l.grnNo, {
-        JC: '',
+        'JC No.': '',
         Op: '',
-        SO: '',
-        'Item Code': l.itemCode ?? '',
+        'SO No.': '',
+        'Item Code': itemCodeWithRev(l.itemCode, l.itemRevision, ''),
         'Drawing Rev': l.itemRevision ?? '',
         'Item Name': l.itemName ?? '',
         Operation: `Incoming · ${l.vendorName ?? ''}`,
         Accepted: l.acceptedQty,
         Rejected: l.rejectedQty,
-        Date: fmtDate(l.qcDate),
+        'QC Date': fmtDate(l.qcDate),
         Shift: '',
         Inspector: l.qcInspectedBy ?? '',
         Remarks: l.qcRemarks ?? '',
@@ -101,15 +105,15 @@ export function exportPendingQc(
   const rows = [
     ...pending.map((o) =>
       tagged(mixed, 'Process', '', {
-        JC: o.jcCode,
+        'JC No.': o.jcCode,
         Op: `Op${opSrNo(o.opSeq)}`,
-        SO: o.soCode ?? '',
-        'Item Code': o.itemCode ?? '',
+        'SO No.': o.soCode ?? '',
+        'Item Code': itemCodeWithRev(o.itemCode, o.itemRevision, ''),
         'Drawing Rev': o.itemRevision ?? '',
         'Item Name': o.itemName ?? '',
         Operation: o.operation,
-        Order: o.orderQty,
-        Done: o.completed,
+        'Order Qty': o.orderQty,
+        Completed: o.completed,
         Accepted: o.qcAccepted,
         Rejected: o.qcRejected,
         Pending: o.qcPending,
@@ -119,15 +123,15 @@ export function exportPendingQc(
     ),
     ...incoming.map((o) =>
       tagged(mixed, 'Incoming', o.grnNo, {
-        JC: o.jcCode ?? '',
+        'JC No.': o.jcCode ?? '',
         Op: o.opSeq != null ? `Op${opSrNo(o.opSeq)}` : '',
-        SO: o.soCode ?? '',
-        'Item Code': o.itemCode ?? '',
+        'SO No.': o.soCode ?? '',
+        'Item Code': itemCodeWithRev(o.itemCode, o.itemRevision, ''),
         'Drawing Rev': o.itemRevision ?? '',
         'Item Name': o.itemName ?? '',
         Operation: `Incoming · ${o.vendorName ?? ''}`,
-        Order: o.receivedQty,
-        Done: '',
+        'Order Qty': o.receivedQty,
+        Completed: '',
         Accepted: '',
         Rejected: '',
         Pending: o.pendingQty,
