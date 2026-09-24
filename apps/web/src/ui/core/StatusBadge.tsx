@@ -26,7 +26,7 @@ import type { BadgeTone } from './Badge';
 /**
  * so · jc · jcop (JC operation) · pr · po · prodorder (Production Order) ·
  * grnqc · grn · dc · nc · ncdisp (NC disposition) · txn (store txn) ·
- * task · run (running op) · active (Active/Inactive) · rating (⭐A–D) ·
+ * invoice · task · run (running op) · active (Active/Inactive) · rating (⭐A–D) ·
  * doc (the generic related-docs fallback).
  */
 export type StatusKind =
@@ -41,6 +41,7 @@ export type StatusKind =
   | 'nc'
   | 'ncdisp'
   | 'txn'
+  | 'invoice'
   | 'active'
   | 'rating'
   | 'task'
@@ -103,6 +104,14 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     make_fresh: 'blue',
   },
   txn: { in: 'green', out: 'amber', adjust: 'grey' },
+  // Invoice payment state. The set is closed — packages/shared/src/enums/
+  // invoice-status.ts declares exactly unpaid | partial | paid — and these are
+  // the app's OWN colours, carried from invoices/routes/detail.tsx:151
+  // (`paid ? b-green : partial ? b-amber : b-red`).
+  // RED FOR UNPAID IS A WARNING SIGNAL the business reads off the list; do not
+  // soften it to the generic `doc` map's amber. `doc` also paints `partial`
+  // blue, which is why invoices need their own kind rather than that fallback.
+  invoice: { unpaid: 'red', partial: 'amber', paid: 'green' },
   active: { active: 'green', inactive: 'red', true: 'green', false: 'red' },
   rating: { a: 'green', b: 'blue', c: 'amber', d: 'red' },
   task: {

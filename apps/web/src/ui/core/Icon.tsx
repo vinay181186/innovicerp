@@ -13,6 +13,7 @@
 
 import type { CSSProperties } from 'react';
 import {
+  Activity,
   ArrowLeft,
   Bell,
   Check,
@@ -42,6 +43,8 @@ import {
 /** The fixed control-icon set. Adding a name here is a design decision, not a convenience. */
 export type IconName =
   | 'search'
+  /** Status / activity review — the SO detail's "Status" action. */
+  | 'activity'
   | 'eye'
   | 'pencil'
   | 'trash-2'
@@ -67,6 +70,7 @@ export type IconName =
 
 const GLYPHS: Record<IconName, LucideIcon> = {
   search: Search,
+  activity: Activity,
   eye: Eye,
   pencil: Pencil,
   'trash-2': Trash2,

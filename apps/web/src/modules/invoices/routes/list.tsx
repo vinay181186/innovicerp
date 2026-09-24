@@ -1,13 +1,24 @@
-// Invoices list — mirror of legacy renderInvoices (L21096). Summary cards +
-// invoice table with balance/overdue/status.
+// Invoices list — Phase 4 migration onto the ui/ primitives.
+//
+// Canonical LIST composition (design-ref/README.md "Uniformity rule"):
+//   TabStrip (SO ▸ JW view switch) → ListHeader(+StatStrip) → DataTable → ListFooter
+//
+// Behaviour is carried over unchanged from the legacy plain-table version
+// (mirror of legacy renderInvoices, L21096): the same `useInvoiceList` fetch,
+// the same `invoice_create` access gate, the same ?tab / ?search deep link, the
+// same "money hidden for L1 viewers" column drop, the same row targets.
 
-import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import type { ListInvoicesResponse } from '@innovic/shared';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { z } from 'zod';
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatusBadge } from '@/ui/core';
+import { DataTable, StatStrip, type DataTableColumn, type StatStripItem } from '@/ui/data';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
 
 // Deep-link seed for Global Search: `?tab=jw&search=IN-JI-26-0001` opens the
@@ -26,6 +37,8 @@ export const invoiceListRoute = createRoute({
   component: InvoiceListPage,
 });
 
+type InvoiceListRow = ListInvoicesResponse['invoices'][number];
+
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
 // Mirror of legacy fmt() (L1484): '' → '—', else dd Mon yy (en-IN).
@@ -42,33 +55,34 @@ const fmt = (d: string | null | undefined): string => {
   }
 };
 
+const TABS = [
+  { key: 'so', label: '🧾 SO Invoices' },
+  { key: 'jw', label: '🔧 JW Invoices (Labour)' },
+];
+
 function InvoiceListPage(): React.JSX.Element {
   const routeSearch = invoiceListRoute.useSearch();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
-  const { data, isLoading, isError, error } = useInvoiceList();
+  const { data, isLoading, isFetching, isError, error } = useInvoiceList();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
 
-  if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
-  }
+  if (eff && !perms.view) return <PageState as="page" state="noaccess" />;
 
-  const tabBar = (
-    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
-      {(['so', 'jw'] as const).map((t) => (
-        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'so' ? '🧾 SO Invoices' : '🔧 JW Invoices (Labour)'}</button>
-      ))}
-    </div>
+  const tabs = (
+    <TabStrip
+      label="Invoice type"
+      tabs={TABS}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'jw' ? 'jw' : 'so')}
+    />
   );
 
   if (tab === 'jw') {
     return (
       <div>
-        {tabBar}
+        {tabs}
         {/* key: a new ?search landing while already on this page remounts the
             view so it re-seeds; nothing else changes the key. */}
         <JwInvoiceView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
@@ -76,175 +90,247 @@ function InvoiceListPage(): React.JSX.Element {
     );
   }
 
-  if (isLoading) {
-    return (
-      <div>
-        {tabBar}
-        <div className="empty-state" style={{ padding: 40 }}>
-          <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
-        </div>
-      </div>
-    );
-  }
-  if (isError || !data) {
-    return (
-      <div>
-        {tabBar}
-        <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load'}
-        </div>
-      </div>
-    );
-  }
-
-  const s = data.summary;
+  const s = data?.summary;
   // Money hidden for L1 Viewers: the API nulls the summary + row amounts, so the
-  // money tiles and the Amount/Paid/Balance columns are dropped (counts stay).
+  // money stats and the Amount/Paid/Balance columns are dropped (counts stay).
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
-  const priceHidden = !data.priceVisible;
-  // Legacy L21139-21145: money tiles 18px, count tiles 20px, OVERDUE carries an
-  // "N inv" sub-line (server-supplied count — never computed here).
-  const cards: { label: string; value: string; color: string; size: number; sub?: string }[] = [
-    ...(priceHidden
-      ? []
-      : [
-          { label: 'TOTAL INVOICED', value: inr(s.totalInvoiced ?? 0), color: 'var(--green)', size: 18 },
-          { label: 'TOTAL RECEIVED', value: inr(s.totalReceived ?? 0), color: 'var(--cyan)', size: 18 },
-          { label: 'OUTSTANDING', value: inr(s.outstanding ?? 0), color: 'var(--amber)', size: 18 },
-          {
-            label: 'OVERDUE',
-            value: inr(s.overdueAmount ?? 0),
-            color: 'var(--red)',
-            size: 18,
-            sub: `${s.overdueCount} inv`,
-          },
-        ]),
-    { label: 'UNPAID', value: String(s.unpaidCount), color: 'var(--red)', size: 20 },
-    { label: 'PARTIAL', value: String(s.partialCount), color: 'var(--amber)', size: 20 },
-    { label: 'PAID', value: String(s.paidCount), color: 'var(--green)', size: 20 },
+  const priceHidden = data ? !data.priceVisible : false;
+
+  // Legacy L21139-21145 rendered these as 7 separate .panel cards. Counts above
+  // a list are ONE StatStrip (design-ref README, "Uniformity rule"); OVERDUE
+  // keeps its "N inv" sub-line (server-supplied count — never computed here).
+  // None of them filters the list today, so every cell is a plain total: no
+  // `onClick`, so StatStrip renders a <div> and announces nothing clickable.
+  const stats: StatStripItem[] = s
+    ? [
+        ...(priceHidden
+          ? []
+          : [
+              {
+                key: 'invoiced',
+                label: 'Total Invoiced',
+                count: inr(s.totalInvoiced ?? 0),
+                color: 'var(--green)',
+              },
+              {
+                key: 'received',
+                label: 'Total Received',
+                count: inr(s.totalReceived ?? 0),
+                color: 'var(--cyan)',
+              },
+              {
+                key: 'outstanding',
+                label: 'Outstanding',
+                count: inr(s.outstanding ?? 0),
+                color: 'var(--amber)',
+              },
+              {
+                key: 'overdue',
+                label: 'Overdue',
+                count: inr(s.overdueAmount ?? 0),
+                color: 'var(--red)',
+                sub: <span style={{ color: 'var(--red)' }}>{s.overdueCount} inv</span>,
+              },
+            ]),
+        { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red)' },
+        { key: 'partial', label: 'Partial', count: s.partialCount, color: 'var(--amber)' },
+        { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green)' },
+      ]
+    : [];
+
+  const openInvoice = (id: string): void => {
+    void navigate({ to: '/invoices/$id', params: { id } });
+  };
+
+  // Widths sum to 90 — DataTable's Action column takes the remaining 10.
+  const moneyColumns: DataTableColumn<InvoiceListRow>[] = priceHidden
+    ? []
+    : [
+        {
+          header: 'Amount',
+          width: '9%',
+          align: 'right',
+          className: 'mono fw-700',
+          nowrap: true,
+          render: (inv) => (
+            <span style={{ color: 'var(--green)' }}>{inr(inv.grandTotal ?? 0)}</span>
+          ),
+        },
+        {
+          header: 'Paid',
+          width: '8%',
+          align: 'right',
+          className: 'mono fw-700',
+          nowrap: true,
+          render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
+        },
+        {
+          header: 'Balance',
+          width: '9%',
+          align: 'right',
+          className: 'mono fw-700',
+          nowrap: true,
+          render: (inv) => (
+            <span style={{ color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
+              {inr(inv.balance ?? 0)}
+            </span>
+          ),
+        },
+      ];
+
+  const columns: DataTableColumn<InvoiceListRow>[] = [
+    {
+      header: 'Sr No',
+      width: '5%',
+      className: 'text3',
+      nowrap: true,
+      render: (_inv, i) => i + 1,
+    },
+    {
+      header: 'Invoice No.',
+      width: priceHidden ? '15%' : '12%',
+      className: 'td-code',
+      nowrap: true,
+      // Kept a real <Link> (not plain text): the code is how this list is
+      // ctrl-clicked / middle-clicked open in a new tab today.
+      render: (inv) => (
+        <Link
+          to="/invoices/$id"
+          params={{ id: inv.id }}
+          style={{ color: 'inherit', textDecoration: 'none' }}
+        >
+          {inv.code}
+        </Link>
+      ),
+    },
+    {
+      header: 'Invoice Date',
+      width: priceHidden ? '11%' : '8%',
+      nowrap: true,
+      render: (inv) => fmt(inv.invoiceDate),
+    },
+    {
+      header: 'SO No.',
+      width: priceHidden ? '12%' : '9%',
+      className: 'td-code',
+      nowrap: true,
+      key: 'soCode',
+    },
+    {
+      header: 'Customer',
+      width: priceHidden ? '26%' : '12%',
+      align: 'left',
+      className: 'fw-700',
+      ellipsis: true,
+      key: 'clientName',
+    },
+    ...moneyColumns,
+    {
+      header: 'Invoice Status',
+      width: priceHidden ? '13%' : '11%',
+      nowrap: true,
+      render: (inv) => (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 'var(--sp-1)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {/* kind="invoice", not "doc": the generic map paints unpaid amber and
+              partial blue, which disagreed with the detail page's own colours
+              for the SAME invoice. One status, one colour, both screens. */}
+          <StatusBadge kind="invoice" status={inv.status} />
+          {inv.overdue ? (
+            <span className="fw-700" style={{ fontSize: 'var(--fs-xs)', color: 'var(--red)' }}>
+              ⚠ OVERDUE
+            </span>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      header: 'Due Date',
+      width: priceHidden ? '8%' : '7%',
+      nowrap: true,
+      render: (inv) => (
+        <span style={{ color: inv.overdue ? 'var(--red)' : 'var(--text3)' }}>
+          {fmt(inv.dueDate)}
+        </span>
+      ),
+    },
   ];
 
   return (
     <div>
-      {tabBar}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📄 Invoices
-        </div>
-        {perms.entry ? (
-          <Link to="/invoices/new" className="btn btn-primary">
-            + New Invoice
-          </Link>
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-          gap: 8,
-          marginBottom: 16,
-        }}
+      {tabs}
+      <ListHeader
+        icon="📄"
+        title="Invoices"
+        count={data ? data.invoices.length : undefined}
+        noun="invoice"
+        updating={!isLoading && isFetching}
+        primary={
+          perms.entry ? (
+            <Link to="/invoices/new" className="btn btn-primary">
+              + New Invoice
+            </Link>
+          ) : null
+        }
       >
-        {cards.map((c) => (
-          <div key={c.label} className="panel" style={{ padding: 10, textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 9 }}>{c.label}</div>
-            <div className="mono fw-700" style={{ fontSize: c.size, color: c.color }}>{c.value}</div>
-            {c.sub ? <div style={{ fontSize: 9, color: 'var(--red)' }}>{c.sub}</div> : null}
-          </div>
-        ))}
-      </div>
+        {stats.length > 0 ? <StatStrip items={stats} /> : null}
+      </ListHeader>
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Invoice No.</th>
-                <th>Invoice Date</th>
-                <th>SO No.</th>
-                <th>Customer</th>
-                {priceHidden ? null : (
-                  <>
-                    <th>Amount</th>
-                    <th>Paid</th>
-                    <th>Balance</th>
-                  </>
-                )}
-                <th>Invoice Status</th>
-                <th>Due Date</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.invoices.length === 0 ? (
-                <tr>
-                  <td colSpan={priceHidden ? 7 : 10} className="empty-state">No invoices yet. Click + New Invoice.</td>
-                </tr>
-              ) : (
-                data.invoices.map((inv) => (
-                  <tr key={inv.id}>
-                    <td>
+      {isError || (!isLoading && !data) ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Failed to load'}
+        />
+      ) : (
+        <>
+          <div className="panel">
+            <DataTable
+              columns={columns}
+              rows={data?.invoices ?? []}
+              loading={isLoading}
+              rowKey={(inv) => inv.id}
+              onRowClick={(inv) => openInvoice(inv.id)}
+              empty="No invoices yet. Click + New Invoice."
+              rowActions={(inv) => (
+                <RowActions
+                  // View is a ROUTE, so it stays a real link — ctrl-click /
+                  // middle-click / "open in new tab" keep working, as they did
+                  // on the legacy screen. An onView button silently lost that.
+                  viewTo={`/invoices/${inv.id}`}
+                  renderLink={(p) => <Link {...p} />}
+                  extra={
+                    perms.entry && inv.status !== 'paid' ? (
                       <Link
                         to="/invoices/$id"
                         params={{ id: inv.id }}
-                        className="td-code"
-                        style={{ color: 'var(--cyan)', fontWeight: 800, textDecoration: 'none' }}
+                        className="btn btn-ghost btn-sm"
+                        title="Add payment"
+                        style={{ color: 'var(--green)' }}
                       >
-                        {inv.code}
+                        💳 Pay
                       </Link>
-                    </td>
-                    <td style={{ fontSize: 11 }}>{fmt(inv.invoiceDate)}</td>
-                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>{inv.soCode ?? ''}</td>
-                    <td className="fw-700">{inv.clientName ?? ''}</td>
-                    {priceHidden ? null : (
-                      <>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>{inr(inv.grandTotal ?? 0)}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
-                          {inr(inv.balance ?? 0)}
-                        </td>
-                      </>
-                    )}
-                    <td>
-                      <span className={`badge ${inv.status === 'paid' ? 'b-green' : inv.status === 'partial' ? 'b-amber' : 'b-red'}`}>
-                        {inv.status}
-                      </span>
-                      {inv.overdue ? (
-                        <span style={{ fontSize: 9, color: 'var(--red)', fontWeight: 700, marginLeft: 4 }}>⚠ OVERDUE</span>
-                      ) : null}
-                    </td>
-                    <td style={{ fontSize: 11, color: inv.overdue ? 'var(--red)' : 'var(--text3)' }}>{fmt(inv.dueDate)}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 3 }}>
-                        <Link
-                          to="/invoices/$id"
-                          params={{ id: inv.id }}
-                          className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 10 }}
-                        >
-                          👁
-                        </Link>
-                        {perms.entry && inv.status !== 'paid' ? (
-                          <Link
-                            to="/invoices/$id"
-                            params={{ id: inv.id }}
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 10, color: 'var(--green)' }}
-                          >
-                            💳 Pay
-                          </Link>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                    ) : null
+                  }
+                />
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            />
+          </div>
+          {data ? (
+            <ListFooter
+              total={data.invoices.length}
+              noun="invoice"
+              hint="Click a row to open the invoice · 💳 Pay opens the same page at its payments panel."
+            />
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

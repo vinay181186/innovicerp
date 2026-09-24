@@ -12,8 +12,32 @@
 // `drawingFilePath` (the server defaults `revision`). In their place the item
 // carries a PRODUCT IMAGE (3D render) — `imagePath` — shown as the thumbnail
 // beside code · name on every list.
-// Footer chrome mirrors legacy showModal (L28015): Cancel (ghost) + Save
-// (primary) in a .modal-footer.
+//
+// PHASE 4 (UI overhaul, Group 2 representative). This file is now the whole
+// canonical CREATE/EDIT composition, so the ~20 thin `<XForm>` wrappers behind
+// a new+edit route pair can copy it verbatim:
+//
+//   <form> → PageHeader (back · title · Cancel + Save)
+//          → Banner (submit error)
+//          → Panel → FormGrid (12-col) → FormField per field
+//
+// The route keeps everything that is NOT layout: data hooks, permission
+// gating, the exit guard, navigation. It passes `title` / `backLabel` /
+// `onBack` in and renders nothing of its own around the form.
+//
+// Save/Cancel moved from the old `.modal-footer` at the bottom into the page
+// header (design-ref/README.md "Uniformity rule" — Create/Edit page =
+// section-hdr + Save/Cancel → Panel(FormGrid)). Nothing else about them
+// changed: Save is still this form's only submit button, still disabled while
+// submitting; Cancel still calls the caller's `onCancel` untouched.
+//
+// Field widths are the 12-column `size` prop, chosen by CONTENT TYPE and then
+// upsized (never downsized) so each row sums to 12, per ui/forms/FormGrid:
+//   Item Code lg · Item Name lg                         = 12
+//   Description full                                    = 12
+//   Material lg · UOM xs · Item Type md                 = 12
+//   Source lg · HSN Code lg                             = 12
+//   Product image full                                  = 12
 
 import {
   type CreateItemInput,
@@ -27,26 +51,43 @@ import {
   updateItemInputSchema,
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { Button } from '@/ui/core';
+import { Banner } from '@/ui/feedback';
+import { Panel } from '@/ui/data';
+import { FormField, FormGrid, Input, Select } from '@/ui/forms';
+import { PageHeader } from '@/ui/layout';
 import { useNextItemCode } from '../api';
 import { ItemImageField } from './item-image-field';
 
-type CreateMode = {
-  mode: 'create';
-  defaultValues?: Partial<CreateItemInput>;
-  onSubmit: (values: CreateItemInput) => Promise<void> | void;
+/** What both modes take: the page chrome the route names, plus its handlers. */
+type CommonProps = {
+  /** Page title — "Add Item" / "Edit Item". Legacy showModal's own wording. */
+  title: string;
+  /** Names the list the back button returns to, never just "Back". */
+  backLabel?: string;
+  /**
+   * Back button. Deliberately NOT wrapped in the exit guard's `leave()`: the
+   * old back `<Link>` was not either, so leaving this way still asks "are you
+   * sure you want to exit?".
+   */
+  onBack?: () => void;
   submitError?: string | null;
+  /** Cancel. The route wraps this one in `exit.leave(...)`, as it always did. */
   onCancel?: () => void;
 };
 
-type EditMode = {
+type CreateMode = CommonProps & {
+  mode: 'create';
+  defaultValues?: Partial<CreateItemInput>;
+  onSubmit: (values: CreateItemInput) => Promise<void> | void;
+};
+
+type EditMode = CommonProps & {
   mode: 'edit';
   item: Item;
   onSubmit: (values: UpdateItemInput) => Promise<void> | void;
-  submitError?: string | null;
-  onCancel?: () => void;
 };
 
 type ItemFormProps = CreateMode | EditMode;
@@ -65,6 +106,14 @@ const CREATE_DEFAULTS: Partial<CreateItemInput> = {
   imagePath: null,
 };
 
+const PROCUREMENT_OPTIONS = ITEM_PROCUREMENT_TYPES.map((t) => ({
+  value: t,
+  label: ITEM_PROCUREMENT_TYPE_LABEL[t],
+}));
+
+const SOURCE_HELP =
+  'Make = planned & produced (Plan → Production Order → Route Card). Buy = purchased finished (+ PR from the Planning line).';
+
 function itemToUpdateDefaults(item: Item): UpdateItemInput {
   return {
     name: item.name,
@@ -81,6 +130,39 @@ function itemToUpdateDefaults(item: Item): UpdateItemInput {
 export function ItemForm(props: ItemFormProps): React.JSX.Element {
   if (props.mode === 'create') return <CreateItemForm {...props} />;
   return <EditItemForm {...props} />;
+}
+
+/**
+ * The page band both modes share: back link, title, Cancel + Save. Save is a
+ * real `type="submit"` inside the `<form>`, so Enter in any field still saves.
+ */
+function ItemFormHeader(props: {
+  title: string;
+  backLabel?: string | undefined;
+  onBack?: (() => void) | undefined;
+  onCancel?: (() => void) | undefined;
+  isSubmitting: boolean;
+}): React.JSX.Element {
+  return (
+    <PageHeader
+      title={props.title}
+      backLabel={props.backLabel ?? 'Back'}
+      onBack={props.onBack}
+      actions={
+        <>
+          {props.onCancel ? (
+            <Button variant="ghost" onClick={props.onCancel}>
+              Cancel
+            </Button>
+          ) : null}
+          {/* Legacy uses the same "Save" label for Add and for Edit. */}
+          <Button type="submit" variant="primary" loading={props.isSubmitting}>
+            Save
+          </Button>
+        </>
+      }
+    />
+  );
 }
 
 function CreateItemForm(props: CreateMode): React.JSX.Element {
@@ -107,15 +189,35 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
         await props.onSubmit(values);
       })}
     >
-      <div className="panel-body">
-        <div className="form-grid">
-          <div className="form-grp">
-            <label className="form-label" htmlFor="code">
-              Item Code<span className="req">★</span>
-            </label>
-            <input
+      <ItemFormHeader
+        title={props.title}
+        backLabel={props.backLabel}
+        onBack={props.onBack}
+        onCancel={props.onCancel}
+        isSubmitting={formState.isSubmitting}
+      />
+
+      {props.submitError ? (
+        <Banner tone="error" role="alert">
+          {props.submitError}
+        </Banner>
+      ) : null}
+
+      <Panel>
+        <FormGrid>
+          <FormField
+            label="Item Code"
+            required
+            size="lg"
+            htmlFor="code"
+            error={errors.code?.message}
+          >
+            {/* The item code is the main thing on this screen: mono 700 in
+                --text, never the faint --text3. */}
+            <Input
               id="code"
-              className="innovic-input"
+              mono
+              className="fw-700"
               autoFocus
               autoComplete="off"
               placeholder="e.g. ITM-0001 (auto — editable)"
@@ -126,127 +228,83 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
                   typeof v === 'string' && v.trim() ? v.trim() : undefined,
               })}
             />
-            {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="name">
-              Item Name<span className="req">★</span>
-            </label>
-            <input
+          </FormField>
+
+          <FormField
+            label="Item Name"
+            required
+            size="lg"
+            htmlFor="name"
+            error={errors.name?.message}
+          >
+            <Input
               id="name"
-              className="innovic-input"
               autoComplete="off"
               placeholder="Full part name"
               {...register('name')}
             />
-            {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-          </div>
+          </FormField>
 
-          <div className="form-grp form-full">
-            <label className="form-label" htmlFor="description">
-              Description
-            </label>
-            <input
+          <FormField
+            label="Description"
+            size="full"
+            htmlFor="description"
+            error={errors.description?.message}
+          >
+            <Input
               id="description"
-              className="innovic-input"
               autoComplete="off"
               placeholder="Short description"
               {...register('description')}
             />
-            {errors.description?.message ? (
-              <div className="form-error">{errors.description.message}</div>
-            ) : null}
-          </div>
+          </FormField>
 
-          <div className="form-grp">
-            <label className="form-label" htmlFor="material">
-              Material
-            </label>
-            <input
+          <FormField label="Material" size="lg" htmlFor="material" error={errors.material?.message}>
+            <Input
               id="material"
-              className="innovic-input"
               autoComplete="off"
               placeholder="EN8, SS304..."
               {...register('material')}
             />
-            {errors.material?.message ? (
-              <div className="form-error">{errors.material.message}</div>
-            ) : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="uom">
-              UOM
-            </label>
-            <select id="uom" className="innovic-select" {...register('uom')}>
-              {UOMS.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
-            {errors.uom?.message ? <div className="form-error">{errors.uom.message}</div> : null}
-          </div>
+          </FormField>
 
-          <div className="form-grp">
-            <label className="form-label" htmlFor="itemType">
-              Item Type
-            </label>
-            <select id="itemType" className="innovic-select" {...register('itemType')}>
-              {ITEM_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            {errors.itemType?.message ? (
-              <div className="form-error">{errors.itemType.message}</div>
-            ) : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="procurementType">
-              Source
-            </label>
-            <select
+          <FormField label="UOM" size="xs" htmlFor="uom" error={errors.uom?.message}>
+            <Select id="uom" options={UOMS} {...register('uom')} />
+          </FormField>
+
+          <FormField
+            label="Item Type"
+            size="md"
+            htmlFor="itemType"
+            error={errors.itemType?.message}
+          >
+            <Select id="itemType" options={ITEM_TYPES} {...register('itemType')} />
+          </FormField>
+
+          <FormField
+            label="Source"
+            size="lg"
+            htmlFor="procurementType"
+            error={errors.procurementType?.message}
+          >
+            <Select
               id="procurementType"
-              className="innovic-select"
-              title="Make = planned & produced (Plan → Production Order → Route Card). Buy = purchased finished (+ PR from the Planning line)."
+              title={SOURCE_HELP}
+              options={PROCUREMENT_OPTIONS}
               {...register('procurementType')}
-            >
-              {ITEM_PROCUREMENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {ITEM_PROCUREMENT_TYPE_LABEL[t]}
-                </option>
-              ))}
-            </select>
-            {errors.procurementType?.message ? (
-              <div className="form-error">{errors.procurementType.message}</div>
-            ) : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="hsnCode">
-              HSN Code
-            </label>
-            <input
-              id="hsnCode"
-              className="innovic-input"
-              autoComplete="off"
-              {...register('hsnCode')}
             />
-            {errors.hsnCode?.message ? (
-              <div className="form-error">{errors.hsnCode.message}</div>
-            ) : null}
-          </div>
+          </FormField>
+
+          <FormField label="HSN Code" size="lg" htmlFor="hsnCode" error={errors.hsnCode?.message}>
+            <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
+          </FormField>
 
           <ItemImageField
             value={watch('imagePath')}
             onChange={(p) => setValue('imagePath', p, { shouldDirty: true })}
           />
-        </div>
-
-        {props.submitError ? <div className="form-error">{props.submitError}</div> : null}
-      </div>
-
-      <FormFooter isSubmitting={formState.isSubmitting} onCancel={props.onCancel} />
+        </FormGrid>
+      </Panel>
     </form>
   );
 }
@@ -265,160 +323,109 @@ function EditItemForm(props: EditMode): React.JSX.Element {
         await props.onSubmit(values);
       })}
     >
-      <div className="panel-body">
-        <div className="form-grid">
-          <div className="form-grp">
-            <label className="form-label" htmlFor="code">
-              Item Code<span className="req">★</span>
-            </label>
-            <input
+      <ItemFormHeader
+        title={props.title}
+        backLabel={props.backLabel}
+        onBack={props.onBack}
+        onCancel={props.onCancel}
+        isSubmitting={formState.isSubmitting}
+      />
+
+      {props.submitError ? (
+        <Banner tone="error" role="alert">
+          {props.submitError}
+        </Banner>
+      ) : null}
+
+      <Panel>
+        <FormGrid>
+          {/* Read-only: the item code is permanent once the item exists. */}
+          <FormField label="Item Code" required size="lg" htmlFor="code">
+            <Input
               id="code"
-              className="innovic-input"
+              mono
+              className="fw-700"
               value={props.item.code}
               placeholder="e.g. ITM-001"
               readOnly
             />
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="name">
-              Item Name<span className="req">★</span>
-            </label>
-            <input
+          </FormField>
+
+          <FormField
+            label="Item Name"
+            required
+            size="lg"
+            htmlFor="name"
+            error={errors.name?.message}
+          >
+            <Input
               id="name"
-              className="innovic-input"
               autoComplete="off"
               placeholder="Full part name"
               {...register('name')}
             />
-            {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-          </div>
+          </FormField>
 
-          <div className="form-grp form-full">
-            <label className="form-label" htmlFor="description">
-              Description
-            </label>
-            <input
+          <FormField
+            label="Description"
+            size="full"
+            htmlFor="description"
+            error={errors.description?.message}
+          >
+            <Input
               id="description"
-              className="innovic-input"
               autoComplete="off"
               placeholder="Short description"
               {...register('description')}
             />
-            {errors.description?.message ? (
-              <div className="form-error">{errors.description.message}</div>
-            ) : null}
-          </div>
+          </FormField>
 
-          <div className="form-grp">
-            <label className="form-label" htmlFor="material">
-              Material
-            </label>
-            <input
+          <FormField label="Material" size="lg" htmlFor="material" error={errors.material?.message}>
+            <Input
               id="material"
-              className="innovic-input"
               autoComplete="off"
               placeholder="EN8, SS304..."
               {...register('material')}
             />
-            {errors.material?.message ? (
-              <div className="form-error">{errors.material.message}</div>
-            ) : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="uom">
-              UOM
-            </label>
-            <select id="uom" className="innovic-select" {...register('uom')}>
-              {UOMS.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
-            {errors.uom?.message ? <div className="form-error">{errors.uom.message}</div> : null}
-          </div>
+          </FormField>
 
-          <div className="form-grp">
-            <label className="form-label" htmlFor="itemType">
-              Item Type
-            </label>
-            <select id="itemType" className="innovic-select" {...register('itemType')}>
-              {ITEM_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            {errors.itemType?.message ? (
-              <div className="form-error">{errors.itemType.message}</div>
-            ) : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="procurementType">
-              Source
-            </label>
-            <select
+          <FormField label="UOM" size="xs" htmlFor="uom" error={errors.uom?.message}>
+            <Select id="uom" options={UOMS} {...register('uom')} />
+          </FormField>
+
+          <FormField
+            label="Item Type"
+            size="md"
+            htmlFor="itemType"
+            error={errors.itemType?.message}
+          >
+            <Select id="itemType" options={ITEM_TYPES} {...register('itemType')} />
+          </FormField>
+
+          <FormField
+            label="Source"
+            size="lg"
+            htmlFor="procurementType"
+            error={errors.procurementType?.message}
+          >
+            <Select
               id="procurementType"
-              className="innovic-select"
-              title="Make = planned & produced (Plan → Production Order → Route Card). Buy = purchased finished (+ PR from the Planning line)."
+              title={SOURCE_HELP}
+              options={PROCUREMENT_OPTIONS}
               {...register('procurementType')}
-            >
-              {ITEM_PROCUREMENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {ITEM_PROCUREMENT_TYPE_LABEL[t]}
-                </option>
-              ))}
-            </select>
-            {errors.procurementType?.message ? (
-              <div className="form-error">{errors.procurementType.message}</div>
-            ) : null}
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="hsnCode">
-              HSN Code
-            </label>
-            <input
-              id="hsnCode"
-              className="innovic-input"
-              autoComplete="off"
-              {...register('hsnCode')}
             />
-            {errors.hsnCode?.message ? (
-              <div className="form-error">{errors.hsnCode.message}</div>
-            ) : null}
-          </div>
+          </FormField>
+
+          <FormField label="HSN Code" size="lg" htmlFor="hsnCode" error={errors.hsnCode?.message}>
+            <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
+          </FormField>
 
           <ItemImageField
             value={watch('imagePath')}
             onChange={(p) => setValue('imagePath', p, { shouldDirty: true })}
           />
-        </div>
-
-        {props.submitError ? <div className="form-error">{props.submitError}</div> : null}
-      </div>
-
-      <FormFooter isSubmitting={formState.isSubmitting} onCancel={props.onCancel} />
+        </FormGrid>
+      </Panel>
     </form>
-  );
-}
-
-// Mirrors legacy showModal's footer (L28025-28028): Cancel (ghost) then Save
-// (primary). Legacy uses the same "Save" label for both Add and Edit.
-function FormFooter(props: {
-  isSubmitting: boolean;
-  onCancel?: (() => void) | undefined;
-}): React.JSX.Element {
-  return (
-    <div className="modal-footer">
-      {props.onCancel ? (
-        <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-          Cancel
-        </button>
-      ) : null}
-      <button type="submit" className="btn btn-primary" disabled={props.isSubmitting}>
-        {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-        Save
-      </button>
-    </div>
   );
 }

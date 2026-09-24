@@ -1,16 +1,22 @@
 // Item new + edit routes (UI-003-01). Legacy addItem/editItem
 // (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L11598, L11609) open
 // these as modals via showModal('Add Item'|'Edit Item', itemForm(...)). We serve
-// them as routes instead — a pre-existing, deliberate container divergence — so
-// the modal's hdr/body/footer shape maps onto panel-hdr + panel-body +
-// modal-footer, and the ✕ close maps onto the back link. Titles match legacy.
+// them as routes instead — a pre-existing, deliberate container divergence.
+// Titles match legacy.
+//
+// PHASE 4 (UI overhaul): the page chrome moved INTO <ItemForm>, which now
+// renders the canonical create/edit composition (PageHeader with Cancel + Save
+// → Panel → FormGrid). This file keeps only what is not layout: the data
+// hooks, the access gate, the exit guard and the navigation. Its loading,
+// no-access and not-found branches are <PageState>, with the app's existing
+// wording passed through unchanged.
 
 import type { CreateItemInput, UpdateItemInput } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { PageHeader, PageState } from '@/ui/layout';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateItem, useItem, useUpdateItem } from '../api';
 import { ItemForm } from '../components/item-form';
@@ -26,6 +32,8 @@ export const itemEditRoute = createRoute({
   path: 'items/$id/edit',
   component: ItemEditPage,
 });
+
+const BACK_TO_LIST = 'Back to Item Master';
 
 function ItemNewPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -53,49 +61,36 @@ function ItemNewPage(): React.JSX.Element {
   };
 
   if (accessLoading) {
-    return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading item…
-      </div>
-    );
+    return <PageState state="loading" as="page" message="⟳ Loading item…" />;
   }
 
   if (!perms.entry) {
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/items" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to Item Master
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have create access to Item Master. Ask an admin for L2 Data Entry or above
-            in Store.
-          </div>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Add Item" backLabel={BACK_TO_LIST} onBack={goBack} />
+        <PageState
+          state="noaccess"
+          message="⛔ You do not have create access to Item Master. Ask an admin for L2 Data Entry or above in Store."
+        />
+      </>
     );
   }
 
   return (
-    <div>
+    <>
       {exit.dialog}
-      <Link to="/items" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Item Master
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title">Add Item</div>
-        </div>
-        <ItemForm
-          mode="create"
-          onSubmit={onSubmit}
-          submitError={submitError}
-          onCancel={() => exit.leave(goBack)}
-        />
-      </div>
-    </div>
+      <ItemForm
+        mode="create"
+        title="Add Item"
+        backLabel={BACK_TO_LIST}
+        // NOT exit.leave: the old back link went through the guard too, so
+        // leaving this way still asks "are you sure you want to exit?".
+        onBack={goBack}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
+    </>
   );
 }
 
@@ -114,6 +109,7 @@ function ItemEditPage(): React.JSX.Element {
     () => void navigate({ to: '/items/$id', params: { id } }),
     [navigate, id],
   );
+  const goToList = useCallback(() => void navigate({ to: '/items' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
 
   const onSubmit = async (values: UpdateItemInput): Promise<void> => {
@@ -127,71 +123,46 @@ function ItemEditPage(): React.JSX.Element {
   };
 
   if (isLoading || accessLoading) {
-    return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading item…
-      </div>
-    );
+    return <PageState state="loading" as="page" message="⟳ Loading item…" />;
   }
 
   if (!perms.edit) {
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/items/$id" params={{ id }} className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to item
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
-            ⛔ You do not have edit access to Item Master. Ask an admin for L3 Editor or above in
-            Store.
-          </div>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Edit Item" backLabel="Back to item" onBack={goBack} />
+        <PageState
+          state="noaccess"
+          message="⛔ You do not have edit access to Item Master. Ask an admin for L3 Editor or above in Store."
+        />
+      </>
     );
   }
 
   if (isError || !item) {
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/items" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Item not found'}
-          </div>
-        </div>
-      </div>
+      <>
+        <PageHeader title="Edit Item" backLabel={BACK_TO_LIST} onBack={goToList} />
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Item not found'}
+        />
+      </>
     );
   }
 
   return (
-    <div>
+    <>
       {exit.dialog}
-      <Link
-        to="/items/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to item
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title">Edit Item</div>
-        </div>
-        <ItemForm
-          mode="edit"
-          item={item}
-          onSubmit={onSubmit}
-          submitError={submitError}
-          onCancel={() => exit.leave(goBack)}
-        />
-      </div>
-    </div>
+      <ItemForm
+        mode="edit"
+        item={item}
+        title="Edit Item"
+        backLabel="Back to item"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
+    </>
   );
 }

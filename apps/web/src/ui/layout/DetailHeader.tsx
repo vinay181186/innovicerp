@@ -17,11 +17,27 @@
 
 import type { ReactNode } from 'react';
 import { Icon } from '../core/Icon';
+import { LinkSlot, type RenderLink } from './link-slot';
 
 export interface DetailHeaderProps {
   /** "Back to Vendor Master" — name the list you return to, never just "Back". */
   backLabel?: string | undefined;
   onBack?: (() => void) | undefined;
+  /**
+   * The list route this page returns to.
+   *
+   * APP EXTENSION — design-ref/components/layout/DetailHeader.jsx offers only
+   * `onBack`, a <button>. Every detail screen in this app reaches its list
+   * through a real <Link>, and the StatStrip ruling (audit/02 §D.7) is
+   * explicit that navigation is a link and never onClick + navigate(): a
+   * button cannot be middle-clicked, ctrl-clicked or opened in a new tab.
+   * Pass `backTo` with `renderLink={(p) => <Link {...p} />}` and Back stays
+   * the link it is today. `onBack` still works for a Back that is not a
+   * navigation (closing a drawer, stepping back inside a wizard).
+   */
+  backTo?: string | undefined;
+  /** `(p) => <Link {...p} />` — keeps `backTo` an SPA navigation. */
+  renderLink?: RenderLink | undefined;
   /** The document number / master code — mono, the main thing on the page. */
   code: string;
   /** Party or item name under the code. */
@@ -37,24 +53,33 @@ export interface DetailHeaderProps {
 export function DetailHeader({
   backLabel = 'Back',
   onBack,
+  backTo,
+  renderLink,
   code,
   name,
   badges,
   actions,
   children,
 }: DetailHeaderProps): React.JSX.Element {
+  // `buttonReset={false}`: `.btn`/`.btn-sm` already declare display, height,
+  // padding and font, and LinkSlot's reset would flatten every one of them.
+  const back =
+    backTo || onBack ? (
+      <LinkSlot
+        to={backTo}
+        onClick={onBack}
+        renderLink={renderLink}
+        className="btn btn-ghost btn-sm"
+        style={{ marginBottom: 'var(--sp-2)' }}
+        buttonReset={false}
+      >
+        <Icon name="arrow-left" size={14} /> {backLabel}
+      </LinkSlot>
+    ) : null;
+
   return (
     <>
-      {onBack ? (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ marginBottom: 'var(--sp-2)' }}
-          onClick={onBack}
-        >
-          <Icon name="arrow-left" size={14} /> {backLabel}
-        </button>
-      ) : null}
+      {back}
       <div className="panel">
         <div className="panel-hdr">
           <div>
