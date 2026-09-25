@@ -19,7 +19,7 @@
 
 import type { JcOpEnriched } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { PlannedActualMachine } from '@/components/shared/machine-split';
+import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import type { OpEntryModalTarget } from './op-entry-modal';
 import { JcOpStatusBadge } from './status-badge';
@@ -98,7 +98,8 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
           <tr>
             <th>Op</th>
             <th>Operation</th>
-            <th>Machine (Planned / Actual)</th>
+            <th>Planned Machine</th>
+            <th>Actual Machine</th>
             <th>Op Type</th>
             <th style={{ color: 'var(--green)' }}>Completed</th>
             <th style={{ color: 'var(--amber)' }}>Pending</th>
@@ -109,7 +110,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
         <tbody>
           {ops.length === 0 ? (
             <tr>
-              <td colSpan={8} className="empty-state">
+              <td colSpan={9} className="empty-state">
                 No ops on this job card.
               </td>
             </tr>
@@ -150,15 +151,23 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                   </td>
                   {/* ADR-164 — PLANNED (jc_ops machine, where the remaining
                       qty is routed) and ACTUAL (the open session's machine, or
-                      whoever made the completed qty) are both named, every
-                      row; the actual turns amber only when it is not the plan.
-                      A QC op carries no machine and an outsource op names its
-                      vendor route, so those keep the plain label. */}
+                      whoever made the completed qty) each get their own column;
+                      the actual turns amber only when it is not the plan. A QC
+                      op carries no machine and an outsource op names its vendor
+                      route as the plan, so those keep the plain label with a
+                      dash for the actual. */}
                   <td className="mono text3" style={{ fontSize: 11 }}>
                     {op.opType === 'qc' || op.opType === 'outsource' ? (
                       machineLabel
                     ) : (
-                      <PlannedActualMachine
+                      <PlannedMachineCell planned={machineLabel} />
+                    )}
+                  </td>
+                  <td className="mono text3" style={{ fontSize: 11 }}>
+                    {op.opType === 'qc' || op.opType === 'outsource' ? (
+                      '—'
+                    ) : (
+                      <ActualMachineCell
                         planned={machineLabel}
                         activeRunningMachineCode={op.activeRunningMachineCode}
                         machines={op.machines}

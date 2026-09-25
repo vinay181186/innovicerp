@@ -1,11 +1,17 @@
-// Production Order header status → legacy .badge .b-* class. Three states
-// (packages/shared/src/enums/production-order-status.ts, ADR-179):
+// Production Order header status → legacy .badge .b-* class. Four states
+// (packages/shared/src/enums/production-order-status.ts, ADR-179 + ADR-182):
 //   open             = nothing credited yet
 //   partially_closed = some finished pieces credited, more still to come
 //   closed           = fully credited (or closed short)
+//   short_closed     = STOPPED at some stage — nothing further may be done on
+//                      the order or its Job Card, and the un-produced qty went
+//                      back to the plan's Pending
 // JC progress has its own badge (JcStatusBadge) — this tracks close only.
+//
+// The words come from the shared label map so the badge, the filter tiles and
+// the report all read the same.
 
-import type { ProductionOrderStatus } from '@innovic/shared';
+import { PRODUCTION_ORDER_STATUS_LABEL, type ProductionOrderStatus } from '@innovic/shared';
 
 const CLASSES: Record<ProductionOrderStatus, string> = {
   open: 'b-amber',
@@ -13,12 +19,15 @@ const CLASSES: Record<ProductionOrderStatus, string> = {
   // closed (green) at a glance.
   partially_closed: 'b-blue',
   closed: 'b-green',
+  // Red: a stopped order is a dead end, not a finished one.
+  short_closed: 'b-red',
 };
 
 const LABELS: Record<ProductionOrderStatus, string> = {
   open: 'open',
   partially_closed: 'partially closed',
   closed: 'closed',
+  short_closed: PRODUCTION_ORDER_STATUS_LABEL.short_closed.toLowerCase(),
 };
 
 export function PoStatusBadge({ status }: { status: ProductionOrderStatus }): React.JSX.Element {

@@ -17,7 +17,9 @@
 //     "Logged By" is the SYSTEM user who booked the entries — the person
 //     accountable for the record — not the shop-floor operator, who has his
 //     own column. Blank rows follow for hand entries.
-//   • Material / traceability and NCR / rework lines for hand entry.
+//   • Material / traceability and NCR / rework lines for hand entry — the
+//     grade, and (ADR-182) the ACTUAL SIZE the store really cut, passed in
+//     from the Production Order that built the card.
 //   • Prepared / Checked / QC release sign-off.
 //
 // The production log is NOT printed (the ⬇ Excel export carries it).
@@ -139,6 +141,11 @@ export function printJobCard(args: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
   company: Company | null | undefined;
+  /** ADR-182 — the size really cut, off the Production Order that built this
+   *  card. The Job Card wire shape does not carry it, so the caller reads the
+   *  order and passes it. Absent / null prints an empty line, which on a
+   *  traveller is where a hand writes it. */
+  actualSize?: string | null;
 }): boolean {
   const { jc } = args;
   const company = buildDocCompany(args.company);
@@ -200,7 +207,7 @@ export function printJobCard(args: {
 
   const trace = `<div class="jsec">Material / Traceability &nbsp;·&nbsp; NCR / Rework references</div>
     <div class="jtrace">
-      <div>${fact('Material Grade', jc.rawMaterialGradeText ?? '')}${fact('Heat / Lot No.', '')}</div>
+      <div>${fact('Material Grade', jc.rawMaterialGradeText ?? '')}${fact('Actual Size', args.actualSize ?? '')}${fact('Heat / Lot No.', '')}</div>
       <div>${fact('NCR No.', jc.parentNcCode ?? '')}${fact('Rework JC', '')}</div>
     </div>`;
 

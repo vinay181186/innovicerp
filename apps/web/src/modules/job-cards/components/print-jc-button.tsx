@@ -12,6 +12,7 @@ import type { JobCardListItem } from '@innovic/shared';
 import { Loader2, Printer } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
+import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { printJobCard } from '../lib/print-job-card';
 
@@ -32,6 +33,11 @@ export function PrintJcButton({
 
   const { data: company } = useMyCompany();
   const opsQuery = useJcOpsEnriched({ jobCardId: jc.id }, { enabled: armed });
+  // ADR-182 — the traveller prints the `Actual Size` the store really cut,
+  // which lives on the Production Order, not on the Job Card row. Fetched on
+  // the same lazy `armed` switch as the ops, so an unclicked list row still
+  // costs nothing. A card no order built simply prints the line blank.
+  const { order, isLoading: orderLoading } = useProductionOrderForJobCard(jc.id, armed);
 
   useEffect(() => {
     if (!pending || printedRef.current) return;
@@ -45,11 +51,17 @@ export function PrintJcButton({
       return;
     }
     if (!opsQuery.data) return; // still loading
+    if (orderLoading) return; // the Production Order's Actual Size is still on its way
     printedRef.current = true;
     setPending(false);
-    const ok = printJobCard({ jc, ops: opsQuery.data, company });
+    const ok = printJobCard({
+      jc,
+      ops: opsQuery.data,
+      company,
+      actualSize: order?.actualSize ?? null,
+    });
     if (!ok) window.alert('Allow popups to print.');
-  }, [pending, opsQuery.data, opsQuery.isError, opsQuery.error, jc, company]);
+  }, [pending, opsQuery.data, opsQuery.isError, opsQuery.error, jc, company, order, orderLoading]);
 
   const onClick = (e: React.MouseEvent): void => {
     e.stopPropagation();

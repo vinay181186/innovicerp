@@ -31,12 +31,14 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { emitActivityLog } from '../activity-log/service';
 import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import {
   creditGrnQcStock,
   recalcPoHeaderStatus,
   recalcPoLineReceivedQty,
+  resolveGrnLineJobCardId,
 } from '../goods-receipt-notes/cascades';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onNcReplacementQc, onRecoveryJobCardQc } from '../nc-register/recovery';
@@ -545,6 +547,12 @@ export async function submitIncomingQc(
       .limit(1);
     const line = rows[0];
     if (!line) throw new NotFoundError(`GRN line ${grnLineId} not found`);
+
+    // ADR-182 — an OSP return belonging to a short-closed Production Order's
+    // Job Card cannot be inspected. A plain purchase GRN resolves to no jc_op
+    // and is never touched by this.
+    const guardJcId = await resolveGrnLineJobCardId(tx, grnLineId);
+    if (guardJcId) await assertProductionOrderNotShortClosed(tx, guardJcId);
 
     const priorAccepted = line.acceptedQty ?? 0;
     const priorRejected = line.rejectedQty ?? 0;

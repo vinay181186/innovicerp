@@ -16,6 +16,24 @@ const base: CloseGuardInput = {
 };
 
 describe('closeBlockedReason (ADR-170 + partial close ADR-179)', () => {
+  // ADR-182 — a short-closed order is dead: nothing more may be closed on it,
+  // and the sentence says when it was stopped so the screen can explain itself.
+  it('blocks Close on a short-closed order and names the date', () => {
+    expect(
+      closeBlockedReason({
+        ...base,
+        status: 'short_closed',
+        shortClosedAt: '2026-09-24T06:15:00.000Z',
+      }),
+    ).toBe('No further close — this order was short closed on 2026-09-24');
+  });
+
+  it('never prints the word "null" when a short-closed row has no date', () => {
+    const reason = closeBlockedReason({ ...base, status: 'short_closed', shortClosedAt: null });
+    expect(reason).toContain('No further close');
+    expect(reason).not.toContain('null');
+  });
+
   it('allows Close when the JC is complete', () => {
     expect(closeBlockedReason({ ...base, jcComputedStatus: 'complete' })).toBeNull();
   });

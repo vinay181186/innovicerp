@@ -82,7 +82,8 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     closed: 'green',
     cancelled: 'grey',
   },
-  prodorder: { open: 'amber', partially_closed: 'blue', closed: 'green' },
+  // ADR-182 — `short_closed` is red: the order was stopped, not finished.
+  prodorder: { open: 'amber', partially_closed: 'blue', closed: 'green', short_closed: 'red' },
   grnqc: { pending: 'amber', in_progress: 'blue', completed: 'green' },
   dc: { issued: 'amber', received: 'green', cancelled: 'grey' },
   nc: {

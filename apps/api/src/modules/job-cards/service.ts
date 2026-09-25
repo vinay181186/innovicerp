@@ -40,6 +40,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import {
   assertNoQcDirectlyAfterOutsource,
@@ -1961,6 +1962,9 @@ export async function updateJobCard(
       .limit(1);
     const head = headRows[0];
     if (!head) throw new NotFoundError(`Job card ${id} not found`);
+    // ADR-182 — a short-closed Production Order's card is frozen: it records
+    // what really happened before the order was stopped and must not be edited.
+    await assertProductionOrderNotShortClosed(tx, id);
 
     // Interlock 2 on the child (design §4): a recovery card can only ever
     // cover the pieces its NC still has open — rejected less what recovery
@@ -2365,6 +2369,8 @@ export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok
       )
       .limit(1);
     if (!rows[0]) throw new NotFoundError(`Job card ${id} not found`);
+    // ADR-182 — nor may it be deleted; the stopped order still points at it.
+    await assertProductionOrderNotShortClosed(tx, id);
 
     const now = new Date();
     await tx

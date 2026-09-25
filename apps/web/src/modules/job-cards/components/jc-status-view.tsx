@@ -16,34 +16,25 @@
 // for the print); every figure the old layout showed is still on the page.
 // EDIT mode is untouched — it lives in jc-status-content.tsx.
 import type { OpLog } from '@innovic/shared';
+import { isProductionOrderStopped } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Download, Loader2, Pencil, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { drawingViewUrl } from '@/lib/drawing-url';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
+import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { useJobCard, useJobCardEditModel, useJobCardStatusExtras } from '../api';
+import { useJcDrawing } from '../lib/jc-drawing';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
 import { JcOpCard } from './jc-op-card';
 import { RecoveryBanner } from './jc-recovery-banner';
 import { JcStatusBadge } from './jc-status-badge';
-import {
-  JcRouteFlowPanel,
-  JcViewSummary,
-  SectionBar,
-  currentOp,
-  type JcDrawingRef,
-} from './jc-view-summary';
+import { JcStoppedBanner } from './jc-stopped-banner';
+import { JcRouteFlowPanel, JcViewSummary, SectionBar, currentOp } from './jc-view-summary';
 import { JcViewTabs } from './jc-view-tabs';
-
-/** Which stored drawings have a thumbnail worth auto-loading. Anything else
- *  (PDF, DWG, a stray .zip) gets a card and an open action instead of a
- *  broken image. */
-const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 
 export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const navigate = useNavigate();
@@ -66,6 +57,16 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // merged completion feed (op_log ∪ NC ∪ OSP) with a real total (ISSUE-174).
   const { data: extras } = useJobCardStatusExtras(id);
   const { data: company } = useMyCompany();
+  // ADR-182 — the Production Order that built this card. Two things come off
+  // it: whether it was SHORT CLOSED (which freezes the card, so every work
+  // button here goes away — the server refuses them anyway) and the `Actual
+  // Size` the store really cut, which the Job Card wire shape does not carry.
+  // A rework / repair child carries no production_order_id of its own, so the
+  // hook walks up the parent chain the same way the server-side stop guard
+  // does — a child of a short-closed order is frozen too, and must say so.
+  // Null only on a hand-raised card or a pre-ADR-170 card.
+  const { order: productionOrder } = useProductionOrderForJobCard(id);
+  const stopped = productionOrder ? isProductionOrderStopped(productionOrder.status) : false;
   // Edit button uses the SAME key as the page it opens (/job-cards/$id/edit →
   // jc_create edit). Hidden until the access matrix has loaded.
   const { data: eff } = useMyAccess();
@@ -97,59 +98,13 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // There is NO item-master fallback any more (user decision 2026-09-21):
   // items no longer carry drawings — they carry a product image, which is a
   // picture, not a controlled document, and is shown by the ItemBadge instead.
+  //
+  // Resolution + the thumbnail fetch live in useJcDrawing so the EDIT screen
+  // shows exactly the same drawing (never `download`: opening a thumbnail is
+  // nobody deciding to keep a copy, and logging it as one would make the access
+  // log useless for the question it exists to answer).
   const { data: model } = useJobCardEditModel(id);
-  /** Caption suffix for the revision printed on that drawing, when there is
-   *  one. Blank rather than "Rev —": an empty revision is not a fact. */
-  const revSuffix = (rev: string | null | undefined): string => (rev ? ` · Rev ${rev}` : '');
-  const drawing = model?.soLineDrawingFilePath
-    ? {
-        path: model.soLineDrawingFilePath,
-        label: `Sales order drawing${revSuffix(model.soLineRevision)}`,
-        source: 'so_line' as const,
-      }
-    : model?.jwLineDrawingFilePath
-      ? {
-          path: model.jwLineDrawingFilePath,
-          label: `Job work order drawing${revSuffix(model.jwLineRevision)}`,
-          source: 'jw_line' as const,
-        }
-      : jc?.drawingFilePath
-        ? {
-            path: jc.drawingFilePath,
-            label: 'Attached to this Job Card',
-            source: 'job_card' as const,
-          }
-        : null;
-
-  // Auto-loaded on open, and asked for as a VIEW. Never `download`: the page
-  // opening a thumbnail is nobody deciding to keep a copy, and logging it as one
-  // would make the access log useless for the question it exists to answer.
-  // Only fetched for an image — a PDF has no thumbnail to show.
-  const wantThumb = Boolean(drawing && IMAGE_RE.test(drawing.path));
-  const { data: drawingUrl } = useQuery({
-    queryKey: ['jc-drawing', drawing?.path ?? null],
-    queryFn: () =>
-      drawingViewUrl({
-        path: drawing?.path ?? '',
-        source: drawing?.source ?? 'job_card',
-        ...(jc?.code ? { refCode: jc.code } : {}),
-      }),
-    enabled: wantThumb,
-    staleTime: 60_000,
-  });
-  // The stored path is `<upload-stamp>-<original name>`; the stamp is stripped
-  // so the page names the file the way the user uploaded it.
-  const drawingRef: JcDrawingRef | null = drawing
-    ? {
-        label: drawing.label,
-        fileName:
-          drawing.path
-            .split('/')
-            .pop()
-            ?.replace(/^\d{10,}-/, '') ?? 'drawing',
-        thumbUrl: wantThumb ? (drawingUrl ?? null) : null,
-      }
-    : null;
+  const { drawing, drawingRef } = useJcDrawing(jc, model);
 
   const sortedOps = useMemo(() => [...ops].sort((a, b) => a.opSeq - b.opSeq), [ops]);
   const logsByOp = useMemo(() => {
@@ -259,7 +214,10 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           className="btn btn-ghost btn-sm"
           disabled={opsLoading}
           onClick={() => {
-            if (!printJobCard({ jc, ops, company })) window.alert('Allow popups to print.');
+            if (
+              !printJobCard({ jc, ops, company, actualSize: productionOrder?.actualSize ?? null })
+            )
+              window.alert('Allow popups to print.');
           }}
         >
           <Printer size={13} /> Print Job Card
@@ -272,10 +230,14 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         >
           <Download size={13} /> Excel
         </button>
-        <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
-          ▶ Production Entry
-        </button>
-        {canWrite ? (
+        {/* ADR-182 — a stopped order's card takes no more work and no more
+            edits, so neither button is offered. The server refuses both. */}
+        {!stopped ? (
+          <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
+            ▶ Production Entry
+          </button>
+        ) : null}
+        {canWrite && !stopped ? (
           <Link
             to="/job-cards/$id/edit"
             params={{ id }}
@@ -287,7 +249,9 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         ) : null}
       </div>
 
-      {/* ── B. Rework / repair child banner (null on an ordinary card) ── */}
+      {/* ── B. Banners — the short-closed Production Order stop (ADR-182) and
+             the rework / repair child note. Both null on an ordinary card. ── */}
+      <JcStoppedBanner order={productionOrder} />
       <RecoveryBanner jc={jc} />
 
       {/* ── C. Header tile ── */}
@@ -297,6 +261,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         opsLoaded={opsLoaded}
         sortedOps={sortedOps}
         rmAvailable={extras?.rmAvailable ?? null}
+        actualSize={productionOrder?.actualSize ?? null}
         drawing={drawingRef}
         onOpenDrawing={openDrawing}
       />
@@ -382,6 +347,8 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                   index={i + 1}
                   expanded={isOpen(o.id)}
                   onToggle={() => toggleOp(o.id)}
+                  // ADR-182 — no next-action strip on a stopped order's ops.
+                  stopped={stopped}
                   machineName={opExtraById.get(o.id)?.machineName ?? null}
                   toolDetails={opExtraById.get(o.id)?.toolDetails ?? null}
                   // ADR-103: the client-material tile belongs to the FIRST op —
@@ -421,6 +388,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         extras={extras}
         drawing={drawingRef}
         onOpenDrawing={openDrawing}
+        stopped={stopped}
       />
     </div>
   );

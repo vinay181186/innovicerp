@@ -39,6 +39,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { type DisposeNcContext, disposeNcCascade, resolveNcSource } from './cascades';
@@ -1215,6 +1216,9 @@ export async function createNcRegister(
     }
 
     await assertJobCardExists(tx, input.jobCardId, companyId);
+    // ADR-182 — no new non-conformance may be raised on a short-closed
+    // Production Order's Job Card; the work it would describe cannot happen.
+    await assertProductionOrderNotShortClosed(tx, input.jobCardId);
     await assertItemExists(tx, input.itemId, companyId);
     if (input.jcOpId) await assertJcOpExists(tx, input.jcOpId, companyId);
 

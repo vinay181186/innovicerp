@@ -1,16 +1,18 @@
 // Production Orders master (ADR-170). SO Master List is THE style reference:
 // frozen header band (title + count + search + New), ONE StatStrip row whose
-// tiles filter (Pending = open, All, Closed), a react-table grid with
+// tiles filter (Pending = open, All, Closed, Short Closed), a react-table grid with
 // SortableHead, clickable rows, document codes in strong mono.
 //
-// Search is server-side (`?search=` matches PO code, plan code, item code /
-// name, JC code, SO code — see the API contract), so no client-side filter is
-// layered on top. Like SO Master this list SCROLLS rather than pages: one
-// fetch at the contract's cap (500); the count line flags a larger set.
+// Search is server-side (`?search=` matches PO code, plan code, POL, item code
+// / name, JC code and SO code — every text column this table shows; see the
+// API contract), so no client-side filter is layered on top. Like SO Master
+// this list SCROLLS rather than pages: one fetch at the contract's cap (500);
+// the count line flags a larger set.
 
 import {
   type ListProductionOrdersQuery,
   PRODUCTION_ORDER_STATUSES,
+  PRODUCTION_ORDER_STATUS_LABEL,
   type ProductionOrderListItem,
   type ProductionOrderStatus,
 } from '@innovic/shared';
@@ -43,6 +45,13 @@ const LIST_LIMIT = 500;
 const COUNT_ALL: ListProductionOrdersQuery = { limit: 1, offset: 0 };
 const COUNT_OPEN: ListProductionOrdersQuery = { status: 'open', limit: 1, offset: 0 };
 const COUNT_CLOSED: ListProductionOrdersQuery = { status: 'closed', limit: 1, offset: 0 };
+// ADR-182 — orders stopped at some stage. Its own tile so a stopped order is
+// never mistaken for a finished one.
+const COUNT_SHORT_CLOSED: ListProductionOrdersQuery = {
+  status: 'short_closed',
+  limit: 1,
+  offset: 0,
+};
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -115,6 +124,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
   const allCount = useProductionOrdersList(COUNT_ALL).data?.total ?? 0;
   const openCount = useProductionOrdersList(COUNT_OPEN).data?.total ?? 0;
   const closedCount = useProductionOrdersList(COUNT_CLOSED).data?.total ?? 0;
+  const shortClosedCount = useProductionOrdersList(COUNT_SHORT_CLOSED).data?.total ?? 0;
 
   const setStatusFilter = useCallback(
     (next: ProductionOrderStatus | undefined): void => {
@@ -332,8 +342,11 @@ function ProductionOrdersListPage(): React.JSX.Element {
               {search.status ? (
                 <>
                   {' '}
-                  · <span className="text2">
-                    {search.status === 'open' ? 'pending' : 'closed'}
+                  ·{' '}
+                  <span className="text2">
+                    {search.status === 'open'
+                      ? 'pending'
+                      : PRODUCTION_ORDER_STATUS_LABEL[search.status].toLowerCase()}
                   </span>{' '}
                   only
                 </>
@@ -343,7 +356,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               className="innovic-input"
-              placeholder="🔍 Search production order no, plan, item, JC, SO…"
+              placeholder="🔍 Search production order no, plan, POL, item, JC, SO…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ width: 260, fontSize: 12 }}
@@ -389,6 +402,16 @@ function ProductionOrdersListPage(): React.JSX.Element {
               active: search.status === 'closed',
               onClick: toggleStatus('closed'),
               title: 'Closed — stock credited with the finished qty',
+            },
+            {
+              key: 'short_closed',
+              label: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
+              count: shortClosedCount,
+              color: 'var(--red)',
+              active: search.status === 'short_closed',
+              onClick: toggleStatus('short_closed'),
+              title:
+                'Short Closed — stopped at some stage; no further work on the order or its Job Card, and the un-produced qty went back to the plan',
             },
           ]}
         />

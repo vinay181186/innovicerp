@@ -25,7 +25,7 @@ import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { OP_STATUS, opAccentColor } from '../lib/jc-op-labels';
-import { QtyTile, SetupField, secLabel } from './jc-op-card-parts';
+import { QtyChip, SetupField, secLabel } from './jc-op-card-parts';
 
 /** Editable op row shape. `hasStarted` locks re-sequence/removal/retype;
  *  `available` drives the ADR-081 outsource-balance action. Structurally the
@@ -154,9 +154,11 @@ export function JcOpEditCard({
     <div
       style={{
         display: 'flex',
+        // Same outer chrome as the read-only VIEW op card (jc-op-card.tsx):
+        // bg2 surface, 1px border, radius 9, and the 4px coloured status rail.
         background: 'var(--bg2)',
         border: '1px solid var(--border)',
-        borderRadius: 10,
+        borderRadius: 9,
         // NOT overflow:hidden — that clipped the Machine picker's absolute
         // dropdown to the card box, so it opened invisibly (e.g. OSP→in-house
         // edit). The accent bar rounds its own left corners to keep the look.
@@ -344,11 +346,19 @@ export function JcOpEditCard({
             marginTop: 10,
           }}
         >
-          <div>
+          <div style={{ flex: '1 1 300px', minWidth: 0 }}>
             <div style={secLabel}>Quantities</div>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              <QtyTile label="ORDER QTY" value={orderQty} color="var(--text)" />
-              <QtyTile
+            {/* Same QtyChip tiles the VIEW op card uses, in the view's auto-fit
+                chip grid, so the read-only quantities read identically. */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(70px, 1fr))',
+                gap: 6,
+              }}
+            >
+              <QtyChip label="ORDER QTY" value={orderQty} color="var(--text)" />
+              <QtyChip
                 label="COMPLETED"
                 value={!en ? '—' : doneQty}
                 color={en ? 'var(--green)' : 'var(--text3)'}
@@ -369,18 +379,18 @@ export function JcOpEditCard({
                   ) : null
                 }
               />
-              <QtyTile
+              <QtyChip
                 label="PENDING"
                 value={!en ? '—' : pendingQty}
                 color={en && pendingQty > 0 ? 'var(--amber)' : 'var(--text3)'}
                 highlight={Boolean(en) && pendingQty > 0}
               />
-              <QtyTile
+              <QtyChip
                 label="AT VENDOR"
                 value={en && isOut ? en.atVendorQty : '—'}
                 color={en && isOut && en.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)'}
               />
-              <QtyTile
+              <QtyChip
                 label="IN QC"
                 value={en && isOut ? en.inQcQty : '—'}
                 color={en && isOut && en.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)'}

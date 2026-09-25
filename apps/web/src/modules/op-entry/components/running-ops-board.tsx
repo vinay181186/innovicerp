@@ -5,7 +5,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Square } from 'lucide-react';
 import { useState } from 'react';
-import { PlannedActualMachine } from '@/components/shared/machine-split';
+import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useStopOp } from '../api';
@@ -117,7 +117,8 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                 <th>Item Name</th>
                 <th>Op</th>
                 <th>Operation</th>
-                <th>Machine (Planned / Actual)</th>
+                <th>Planned Machine</th>
+                <th>Actual Machine</th>
                 <th>Operator</th>
                 <th>Started</th>
                 <th>Op Status</th>
@@ -127,9 +128,10 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             <tbody>
               {running.length === 0 ? (
                 <tr>
-                  {/* Eleven columns since POL joined Item Code and Item Name —
-                      the empty row must span the whole table or it draws short. */}
-                  <td colSpan={11} className="empty-state">
+                  {/* Twelve columns since Planned Machine and Actual Machine
+                      each get their own column — the empty row must span the
+                      whole table or it draws short. */}
+                  <td colSpan={12} className="empty-state">
                     No ops currently running.
                   </td>
                 </tr>
@@ -143,13 +145,16 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                     <td className="mono">{opSrNo(r.opSeq)}</td>
                     <td>{r.operation}</td>
                     {/* ADR-164 — the session's machine is the ACTUAL; the op's
-                        jc_ops machine is the PLAN. Both named on every
-                        in-house row; an OSP session has no machine. */}
+                        jc_ops machine is the PLAN. Each gets its own column on
+                        every in-house row; an OSP session has no machine. */}
+                    <td className="mono text3" style={{ fontSize: 11 }}>
+                      {r.isOsp ? 'OSP' : <PlannedMachineCell planned={r.plannedMachineCode} />}
+                    </td>
                     <td className="mono text3" style={{ fontSize: 11 }}>
                       {r.isOsp ? (
-                        'OSP'
+                        '—'
                       ) : (
-                        <PlannedActualMachine
+                        <ActualMachineCell
                           planned={r.plannedMachineCode}
                           activeRunningMachineCode={r.machineCode}
                         />
@@ -204,7 +209,8 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th>Machine (Planned / Actual)</th>
+                  <th>Planned Machine</th>
+                  <th>Actual Machine</th>
                   <th>Operator</th>
                   <th>Ended</th>
                   <th>Op Status</th>
@@ -222,13 +228,16 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                     <td className="mono">{opSrNo(r.opSeq)}</td>
                     <td>{r.operation}</td>
                     {/* ADR-164 — the session's machine is the ACTUAL; the op's
-                        jc_ops machine is the PLAN. Both named on every
-                        in-house row; an OSP session has no machine. */}
+                        jc_ops machine is the PLAN. Each gets its own column on
+                        every in-house row; an OSP session has no machine. */}
+                    <td className="mono text3" style={{ fontSize: 11 }}>
+                      {r.isOsp ? 'OSP' : <PlannedMachineCell planned={r.plannedMachineCode} />}
+                    </td>
                     <td className="mono text3" style={{ fontSize: 11 }}>
                       {r.isOsp ? (
-                        'OSP'
+                        '—'
                       ) : (
-                        <PlannedActualMachine
+                        <ActualMachineCell
                           planned={r.plannedMachineCode}
                           activeRunningMachineCode={r.machineCode}
                         />

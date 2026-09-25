@@ -4,6 +4,7 @@
 
 import {
   type JcOpEnriched,
+  type OpLog,
   SHIFTS,
   SHIFT_LABELS,
   type Shift,
@@ -150,6 +151,9 @@ export function OpEntryForm({
   const [qcReportName, setQcReportName] = useState<string | null>(null);
   // OSP auto-PR result/error message (ADR-039) — only used on the outsource panel.
   const [ospMsg, setOspMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // NC(s) the last completion raised from its rejects (ADR-183), shown as the
+  // success notice. Null when the last save raised none.
+  const [ncNotice, setNcNotice] = useState<{ ncs: OpLog['ncs']; rejected: number } | null>(null);
 
   // PLANNED vs ACTUAL machine. The plan is jc_ops.machine_id, set at JC
   // creation and shown read-only here — Start never rewrites it. The session
@@ -308,6 +312,7 @@ export function OpEntryForm({
     setQcReportPath(null);
     setQcReportName(null);
     setOspMsg(null);
+    setNcNotice(null);
   }, [op.id]);
 
   // Operators master for the datalist-backed operator/inspector picker. Active
@@ -394,17 +399,31 @@ export function OpEntryForm({
     const chosenShift = requireMandatory({ qtyRequired: true, personLabel: 'Operator' });
     if (!chosenShift) return;
     const qtyNum = Number(qty);
-    if (!Number.isInteger(qtyNum) || qtyNum <= 0) {
-      setErrorMessage('Qty must be a positive whole number.');
-      return;
-    }
     // Blank reject box means none were scrapped; it is the one number here
     // that is allowed to go unanswered.
     const rejNum = Number(rejectQty || '0');
+    if (!Number.isInteger(qtyNum) || qtyNum < 0 || !Number.isInteger(rejNum) || rejNum < 0) {
+      setErrorMessage('Completed and rejected qty must be 0 or a positive whole number.');
+      return;
+    }
+    // ADR-183: "0 good, 9 rejected" is a real entry (a scrapped batch) and
+    // raises an NC on the server. Only an entry with nothing in it is refused.
+    if (qtyNum + rejNum <= 0) {
+      setErrorMessage('Enter a quantity — completed, rejected, or both.');
+      return;
+    }
+    // Rejected pieces consume the op's available qty too, so the cap is on
+    // the two together. The server re-checks under a row lock.
+    if (qtyNum + rejNum > op.available) {
+      setErrorMessage(
+        `Completed + rejected (${qtyNum + rejNum}) is more than the ${op.available} available.`,
+      );
+      return;
+    }
     const input: SubmitOpLogInput = {
       jcOpId: op.id,
       qty: qtyNum,
-      rejectQty: Number.isFinite(rejNum) && rejNum >= 0 ? rejNum : 0,
+      rejectQty: rejNum,
       logDate,
       logTime: entryTime,
       shift: chosenShift,
@@ -412,10 +431,18 @@ export function OpEntryForm({
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
     };
+    setNcNotice(null);
     try {
-      await submit.mutateAsync(input);
+      const saved = await submit.mutateAsync(input);
       setQty('');
-      onSubmitted?.();
+      // ADR-183: a reject raised an NC. Say so and hold the box open on the
+      // notice (its Close button hands off to onSubmitted) — closing at once
+      // would hide the NC number the operator needs to hear about.
+      if (saved.ncs && saved.ncs.length > 0) {
+        setNcNotice({ ncs: saved.ncs, rejected: rejNum });
+      } else {
+        onSubmitted?.();
+      }
       setRejectQty('');
       setRemarks('');
     } catch (err) {
@@ -536,6 +563,13 @@ export function OpEntryForm({
       setErrorMessage('Reject qty must be 0 or a positive whole number.');
       return;
     }
+    // Same cap as Log: rejected pieces consume available too (ADR-183).
+    if (qtyNum + rejNum > op.available) {
+      setErrorMessage(
+        `Completed + rejected (${qtyNum + rejNum}) is more than the ${op.available} available.`,
+      );
+      return;
+    }
     try {
       await stop.mutateAsync({
         id: activeRunningId,
@@ -604,6 +638,50 @@ export function OpEntryForm({
   const errorBanner = errorMessage ? (
     <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
       {errorMessage}
+    </div>
+  ) : null;
+
+  // Success notice for a completion whose rejects raised an NC (ADR-183) —
+  // same inline green as the OSP-PR result, with the NC code linked.
+  const ncBanner = ncNotice ? (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        gap: 10,
+        alignItems: 'center',
+        marginTop: 12,
+        padding: '8px 10px',
+        borderRadius: 6,
+        background: 'var(--green3)',
+        border: '1px solid var(--green2)',
+        color: 'var(--green)',
+        fontSize: 12,
+        fontWeight: 600,
+      }}
+    >
+      <div style={{ flex: 1 }}>
+        ✓ Saved —{' '}
+        {ncNotice.ncs.map((nc, i) => (
+          <span key={nc.id}>
+            {i > 0 ? ', ' : ''}
+            <Link
+              to="/nc-register/$id"
+              params={{ id: nc.id }}
+              className="mono fw-700"
+              onClick={() => onSubmitted?.()}
+            >
+              {nc.code}
+            </Link>
+          </span>
+        ))}{' '}
+        raised for <b className="mono">{ncNotice.rejected}</b> rejected pcs.
+      </div>
+      {onSubmitted ? (
+        <button type="button" className="btn btn-sm" onClick={() => onSubmitted()}>
+          Close
+        </button>
+      ) : null}
     </div>
   ) : null;
 
@@ -1120,8 +1198,8 @@ export function OpEntryForm({
                     Completed<span className="req">★</span>
                   </label>
                   {/* min is 0, not 1: a Stop that made nothing is a real and
-                      required answer. The completion path still refuses 0 in
-                      handleSubmit, where that rule belongs.
+                      required answer, and so is 0 completed with rejects
+                      (ADR-183). handleSubmit refuses only 0 + 0.
                       `required` is native only on the Complete tab, whose
                       submit button IS this form's submit. On the Start tab the
                       box is here for Stop (a plain button), and marking it
@@ -1406,6 +1484,7 @@ export function OpEntryForm({
               Checking whether <b className="mono">{actualLabel ?? 'this machine'}</b> is free…
             </div>
           ) : null}
+          {ncBanner}
           {errorBanner}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
             {canOpEntry ? (

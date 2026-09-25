@@ -1,8 +1,21 @@
-// Create Production Order (ADR-170): Plan + Route Card + Customer Dispatch Date
-// (labelled so on screen; the wire field stays `targetDate`) → Create JC.
+// Create Production Order (ADR-170, ADR-182): Plan + Route Card + Order Qty +
+// Customer Dispatch Date (labelled so on screen; the wire field stays
+// `targetDate`) → Create JC.
 //
-// The plan picker lists only route-card-driven plans that have no Production
-// Order yet. The Route Card is the ONLY source of operations — "no route card,
+// ADR-182 added three things to this screen:
+//   • Order Qty — a plan may be covered by SEVERAL orders now (50 = 20+20+10),
+//     so the screen asks how many pieces THIS order is for. It defaults to the
+//     plan's `Pending` (NAMING.md — never "Remaining"/"Balance") and is capped
+//     there; the server re-checks the cap under the plan's row lock.
+//   • Raw material available — the shop floor confirms the material is on hand
+//     BEFORE the order is raised. Unticked, Create is off and the screen says
+//     exactly what the server would: "No raw material — you cannot create the
+//     production order."
+//   • Actual Size — the size really cut, beside the plan's master-picked size.
+//     Carried onto the Job Card so the traveller prints what was actually used.
+//
+// The plan picker lists route-card-driven plans that still have Pending qty.
+// The Route Card is the ONLY source of operations — "no route card,
 // no way forward" — so with none for the item the Create JC button stays off
 // and the screen says where to make one. The PO No is a read-only preview of
 // the next number; the server assigns the real one.
@@ -64,6 +77,12 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const [routeCardId, setRouteCardId] = useState<string | null>(null);
   const [targetDate, setTargetDate] = useState('');
   const [remarks, setRemarks] = useState('');
+  // ADR-182. Held as text so the field can be cleared while typing; parsed once
+  // below. Defaults to the picked plan's Pending.
+  const [orderQtyText, setOrderQtyText] = useState('');
+  // Unticked on purpose: a confirmation that starts ticked confirms nothing.
+  const [rawMaterialAvailable, setRawMaterialAvailable] = useState(false);
+  const [actualSize, setActualSize] = useState('');
 
   // Route cards for the chosen plan's item only. One per item is the rule, so
   // the usual answer is exactly one row — preselected below.
@@ -91,6 +110,9 @@ function ProductionOrderNewPage(): React.JSX.Element {
     // Customer Dispatch Date on the plan is the PO's date; an older plan
     // without one falls back to its Planned End, as before.
     setTargetDate(p?.customerDispatchDate ?? p?.plannedEndDate ?? '');
+    // ADR-182 — the usual answer is "all that is left", so Order Qty starts at
+    // the plan's Pending and the user only types when ordering less.
+    setOrderQtyText(p ? String(p.pendingQty) : '');
     setSubmitError(null);
   };
   // The deep-linked plan lands once its row arrives; only while nothing has
@@ -105,10 +127,31 @@ function ProductionOrderNewPage(): React.JSX.Element {
   // not produced, so its card can never raise a Production Order (the API
   // refuses it too) — Create JC stays off with the reason shown.
   const directPurchase = routeCard?.planType === 'direct_purchase';
+
+  // ADR-182 — Order Qty. Pending is the ceiling the server enforces under the
+  // plan's row lock; the field simply refuses to ask for more.
+  const pendingQty = plan?.pendingQty ?? 0;
+  const orderQty = Number.parseInt(orderQtyText, 10);
+  const orderQtyValid = Number.isInteger(orderQty) && orderQty > 0 && orderQty <= pendingQty;
+  const orderQtyError = !plan
+    ? null
+    : pendingQty === 0
+      ? `Plan ${plan.code} is fully covered by its Production Orders (${plan.planQty} of ${plan.planQty}).`
+      : orderQtyText.trim() === ''
+        ? 'Type how many pieces this order is for.'
+        : !orderQtyValid
+          ? `Order Qty must be between 1 and ${pendingQty} — that is all this plan has Pending.`
+          : null;
+  // The server's exact words, said here first so the user never meets it as an
+  // error after a click (production-orders/service.ts).
+  const NO_RAW_MATERIAL = 'No raw material — you cannot create the production order.';
+
   const canSubmit =
     Boolean(plan) &&
     Boolean(routeCardId) &&
     /^\d{4}-\d{2}-\d{2}$/.test(targetDate) &&
+    orderQtyValid &&
+    rawMaterialAvailable &&
     !noRouteCard &&
     !directPurchase;
 
@@ -120,6 +163,9 @@ function ProductionOrderNewPage(): React.JSX.Element {
       planId: plan.id,
       routeCardId,
       targetDate,
+      orderQty,
+      rawMaterialAvailable,
+      actualSize: actualSize.trim() ? actualSize.trim() : null,
       remarks: remarks.trim() ? remarks.trim() : null,
     };
     try {
@@ -167,8 +213,9 @@ function ProductionOrderNewPage(): React.JSX.Element {
           <div>
             <div className="panel-title">🏭 Create Production Order</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Plan + Route Card + Customer Dispatch Date → Create JC. One Production Order per plan;
-              the Job Card is built from the item&apos;s Route Card.
+              Plan + Route Card + Order Qty + Customer Dispatch Date → Create JC. A plan can carry
+              several Production Orders, up to its Plan Qty; the Job Card is built from the
+              item&apos;s Route Card for this order&apos;s qty.
             </div>
           </div>
           <div className="td-code" style={{ fontSize: 14, color: 'var(--text)' }}>
@@ -197,7 +244,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                   mode="create"
                   value={plan?.id ?? null}
                   onChange={onPickPlan}
-                  fallbackLabel={plan ? planPickerLabel(plan) : undefined}
+                  fallbackLabel={plan ? planPickerLabel(plan, 'create') : undefined}
                 />
               </div>
 
@@ -252,6 +299,36 @@ function ProductionOrderNewPage(): React.JSX.Element {
                 ) : null}
               </div>
 
+              {/* ADR-182 — Order Qty. Defaults to the plan's Pending and is
+                  capped there; the server re-checks under the plan's row lock,
+                  so two people ordering at once cannot both fit. */}
+              <div className="form-grp">
+                <label className="form-label" htmlFor="po-order-qty">
+                  Order Qty<span className="req">★</span>
+                </label>
+                <input
+                  id="po-order-qty"
+                  type="number"
+                  className="innovic-input mono fw-700"
+                  value={orderQtyText}
+                  min={1}
+                  max={pendingQty || undefined}
+                  step={1}
+                  disabled={!plan || pendingQty === 0}
+                  onChange={(e) => setOrderQtyText(e.target.value)}
+                  placeholder={plan ? String(pendingQty) : 'Pick a plan first'}
+                />
+                {plan ? (
+                  <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                    Plan Qty {plan.planQty} · Covered {plan.coveredQty} · Pending{' '}
+                    <span className="fw-700" style={{ color: 'var(--cyan)' }}>
+                      {plan.pendingQty}
+                    </span>
+                  </div>
+                ) : null}
+                {orderQtyError ? <div className="form-error">{orderQtyError}</div> : null}
+              </div>
+
               <div className="form-grp">
                 <label className="form-label" htmlFor="po-target-date">
                   Customer Dispatch Date<span className="req">★</span>
@@ -263,6 +340,50 @@ function ProductionOrderNewPage(): React.JSX.Element {
                   value={targetDate}
                   onChange={(e) => setTargetDate(e.target.value)}
                   required
+                />
+              </div>
+
+              {/* ADR-182 — the shop floor's confirmation that the material is
+                  on hand. The server refuses a false value in these exact
+                  words, so the screen says them first. */}
+              <div className="form-grp">
+                <span className="form-label">
+                  Raw material available<span className="req">★</span>
+                </span>
+                <label
+                  htmlFor="po-rm-available"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    id="po-rm-available"
+                    type="checkbox"
+                    checked={rawMaterialAvailable}
+                    onChange={(e) => setRawMaterialAvailable(e.target.checked)}
+                  />
+                  The material for this order is in the store
+                </label>
+              </div>
+
+              {/* ADR-182 — what the store really had / really cut, beside the
+                  plan's master-picked Raw Material Size. Optional free text. */}
+              <div className="form-grp">
+                <label className="form-label" htmlFor="po-actual-size">
+                  Actual Size
+                </label>
+                <input
+                  id="po-actual-size"
+                  className="innovic-input"
+                  value={actualSize}
+                  maxLength={120}
+                  onChange={(e) => setActualSize(e.target.value)}
+                  placeholder="size actually cut"
                 />
               </div>
 
@@ -320,6 +441,24 @@ function ProductionOrderNewPage(): React.JSX.Element {
               </div>
             ) : null}
 
+            {!rawMaterialAvailable ? (
+              <div
+                role="alert"
+                style={{
+                  marginTop: 12,
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  color: 'var(--red)',
+                  background: 'var(--bg3)',
+                  border: '1px solid var(--red)',
+                  borderRadius: 6,
+                }}
+              >
+                ⛔ {NO_RAW_MATERIAL} Tick <span className="fw-700">Raw material available</span>{' '}
+                once the store has confirmed it.
+              </div>
+            ) : null}
+
             {submitError ? (
               <div
                 role="alert"
@@ -361,7 +500,11 @@ function ProductionOrderNewPage(): React.JSX.Element {
                           ? 'Direct-purchase items cannot raise a Production Order'
                           : !targetDate
                             ? 'Set the customer dispatch date'
-                            : undefined
+                            : orderQtyError
+                              ? orderQtyError
+                              : !rawMaterialAvailable
+                                ? NO_RAW_MATERIAL
+                                : undefined
                 }
               >
                 {create.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Create JC
@@ -436,7 +579,12 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
           mono
         />
         <Fact label="Item name" value={plan.itemName ?? plan.itemNameText ?? '—'} />
-        <Fact label="Plan qty" value={String(plan.planQty)} mono />
+        {/* ADR-182 — Plan Qty and how much of it earlier Production Orders
+            already cover. `Pending` is what this order may still be for
+            (NAMING.md: never "Remaining" or "Balance"). */}
+        <Fact label="Plan Qty" value={String(plan.planQty)} mono />
+        <Fact label="Covered" value={String(plan.coveredQty)} mono />
+        <Fact label="Pending" value={String(plan.pendingQty)} mono />
         <Fact label="SO / JWSO" value={so} mono />
         <Fact label="Planned start" value={plan.plannedStartDate ?? '—'} mono />
         <Fact label="Planned end" value={plan.plannedEndDate ?? '—'} mono />

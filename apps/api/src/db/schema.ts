@@ -1025,6 +1025,11 @@ export const jobCards = pgTable(
       onDelete: 'set null',
     }),
     rawMaterialSizeText: text('raw_material_size_text'),
+    // ADR-182 (migration 0143). The size the store really had / really cut,
+    // typed on the Production Order that built this card and copied down here
+    // so the traveller prints what was cut, not only what was planned. Free
+    // text beside the master-picked raw_material_size_text above.
+    actualSize: text('actual_size'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -6170,7 +6175,8 @@ export const productionOrders = pgTable(
       .notNull()
       .references(() => companies.id),
     code: text('code').notNull(),
-    status: text('status').notNull().default('open'), // 'open' | 'partially_closed' | 'closed'
+    // 'open' | 'partially_closed' | 'closed' | 'short_closed' (ADR-182)
+    status: text('status').notNull().default('open'),
 
     planId: uuid('plan_id')
       .notNull()
@@ -6199,6 +6205,21 @@ export const productionOrders = pgTable(
     orderQty: integer('order_qty').notNull(),
     targetDate: date('target_date').notNull(),
 
+    // ADR-182 (migration 0143). The shop floor confirms the material is on hand
+    // BEFORE the order is raised; Create refuses a false value. Rows raised
+    // before the tick existed were backfilled true.
+    rawMaterialAvailable: boolean('raw_material_available').notNull().default(true),
+    // ADR-182. The size actually available / cut, free text. The plan's
+    // master-picked Raw Material Size stays the intent; this is what the store
+    // really had. Copied onto the Job Card this order builds.
+    actualSize: text('actual_size'),
+
+    // ADR-182 short close — the order was stopped at some stage. All three are
+    // mandatory once status = 'short_closed' (DB CHECK, 0117's PR shape).
+    shortClosedAt: timestamp('short_closed_at', { withTimezone: true }),
+    shortClosedBy: uuid('short_closed_by').references(() => users.id),
+    shortCloseReason: text('short_close_reason'),
+
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closedBy: uuid('closed_by').references(() => users.id),
     // Running total credited to stock so far (sum of the close ledger, ADR-179).
@@ -6221,7 +6242,12 @@ export const productionOrders = pgTable(
     uniqueIndex('production_orders_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
-    uniqueIndex('production_orders_plan_uniq')
+    // ADR-182 (0143): a plan may be covered by SEVERAL orders now, so the old
+    // partial UNIQUE index on plan_id is gone. The server caps
+    // SUM(order_qty) of a plan's live, non-short-closed orders at
+    // plans.plan_qty inside the plan's row lock; this plain index is that
+    // read path.
+    index('production_orders_plan_idx')
       .on(t.planId)
       .where(sql`${t.deletedAt} is null`),
     uniqueIndex('production_orders_job_card_uniq')
@@ -6232,7 +6258,14 @@ export const productionOrders = pgTable(
       .where(sql`${t.deletedAt} is null`),
     check(
       'production_orders_status_check',
-      sql`${t.status} in ('open', 'partially_closed', 'closed')`,
+      sql`${t.status} in ('open', 'partially_closed', 'closed', 'short_closed')`,
+    ),
+    // A short-closed order must say who stopped it, when, and why (0117 shape).
+    check(
+      'production_orders_short_close_check',
+      sql`${t.status} <> 'short_closed'
+        or (${t.shortClosedAt} is not null and ${t.shortClosedBy} is not null
+            and ${t.shortCloseReason} is not null and btrim(${t.shortCloseReason}) <> '')`,
     ),
     check('production_orders_lost_qty_check', sql`${t.lostQty} is null or ${t.lostQty} >= 0`),
     pgPolicy('production_orders_company_read', {

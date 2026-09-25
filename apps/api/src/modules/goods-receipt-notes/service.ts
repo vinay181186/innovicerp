@@ -38,9 +38,15 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
-import { recalcPoHeaderStatus, recalcPoLineReceivedQty, writeStoreTxnOnQcAccept } from './cascades';
+import {
+  recalcPoHeaderStatus,
+  recalcPoLineReceivedQty,
+  resolveGrnLineJobCardId,
+  writeStoreTxnOnQcAccept,
+} from './cascades';
 import { type DocumentTraceability, poSendsMaterialOut, type RelatedDoc } from '@innovic/shared';
 import type {
   CreateGoodsReceiptNoteInput,
@@ -191,7 +197,9 @@ async function assertPoReceiptFits(
     if (!po) throw new ValidationError(`Purchase order ${headerPoId} not found in this company`);
     poCode = po.code;
     if (po.status === 'draft') {
-      throw new ConflictError(`${po.code} is not approved yet — nothing can be received against it`);
+      throw new ConflictError(
+        `${po.code} is not approved yet — nothing can be received against it`,
+      );
     }
     if (po.status === 'cancelled' || po.status === 'closed') {
       throw new ConflictError(
@@ -910,6 +918,17 @@ export async function createGoodsReceiptNote(
       };
     });
     const insertedLines = await tx.insert(goodsReceiptNoteLines).values(lineValues).returning();
+
+    // ADR-182 — a receipt against a short-closed Production Order's Job Card is
+    // refused. The line must exist before it can be traced back to its jc_op
+    // (resolveGrnLineJobCardId reads the stored row), so the check sits here,
+    // immediately after the INSERT and BEFORE any cascade: throwing rolls the
+    // whole transaction back, so nothing is left behind. A plain purchase GRN
+    // resolves to no jc_op and is never blocked.
+    for (const ln of insertedLines) {
+      const guardJcId = await resolveGrnLineJobCardId(tx, ln.id);
+      if (guardJcId) await assertProductionOrderNotShortClosed(tx, guardJcId);
+    }
 
     // Fire cascades for every newly-inserted line.
     await runCascades(tx, companyId, user.id, insertedLines, []);

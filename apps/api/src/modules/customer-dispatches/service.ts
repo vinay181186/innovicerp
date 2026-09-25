@@ -306,6 +306,16 @@ async function loadDispatchable(
             -- 12" on a 10-piece line with 2 reworked (QC-NC audit 2026-09-21,
             -- gap 4) and would let 2 phantom pieces be dispatched.
             AND jc.recovery_kind IS NULL
+            -- ADR-182 — a short-closed Production Order's Job Card is out of
+            -- the sum. Its pieces are abandoned work, so they must not look
+            -- ready to ship; the SIBLING orders' pieces on the same SO line
+            -- still count (a plan of 50 may be covered by 20 + 30, and
+            -- stopping the 20 must not strand the 30).
+            AND NOT EXISTS (
+              SELECT 1 FROM production_orders po
+              WHERE po.id = jc.production_order_id
+                AND po.status = 'short_closed'
+            )
           ORDER BY jc.id, vs.op_seq DESC
         ) x
       ) rdy ON TRUE
@@ -798,6 +808,11 @@ export async function createDispatch(
         await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
       }
     }
+    // ADR-182 — a short-closed Production Order's Job Card is excluded from the
+    // readiness sum inside loadDispatchable, so its abandoned pieces are never
+    // offered and the qty check below refuses them. The whole SO LINE is NOT
+    // blocked: its other orders' finished pieces must still ship.
+
     const dispatchable = await loadDispatchable(tx, companyId, input.salesOrderId);
     const byLine = new Map(dispatchable.map((d) => [d.salesOrderLineId, d]));
 

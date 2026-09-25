@@ -25,6 +25,7 @@ import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
+import { usePlansList } from '@/modules/plans/api';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import {
   MaterialGradePicker,
@@ -216,6 +217,57 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   );
   const existingCards = mode === 'create' && header.itemId ? (existingForItem?.items ?? []) : [];
   const showDupBanner = existingCards.length > 0 && !dupDismissed;
+
+  // Raw material prefilled from the item's latest PLAN, on create only.
+  //
+  // The Route Card is the source of truth for raw material and the chain runs
+  // Route Card → Plan. But a planner often knows the material before anyone
+  // writes the routing, types it on the plan, and only then makes the card —
+  // and then had to type grade and size a second time (user, 2026-09-24).
+  //
+  // So: while BOTH boxes are still empty, fill them from the newest plan for
+  // this item that has either, and say which plan it came from. It is a
+  // prefill, not a link — typing over it is the point, and nothing is written
+  // back to the plan. Once either box holds a value this never fires again, so
+  // it can only ever fill a blank, never overwrite a choice.
+  const [rmPrefillFrom, setRmPrefillFrom] = useState<string | null>(null);
+  const rmBlank =
+    !header.rawMaterialGradeId &&
+    !header.rawMaterialGradeText &&
+    !header.rawMaterialSizeId &&
+    !header.rawMaterialSizeText;
+  const { data: plansForItem } = usePlansList(
+    { search: header.itemCodeText, limit: 50, offset: 0 },
+    { enabled: mode === 'create' && rmBlank && Boolean(header.itemId && header.itemCodeText) },
+  );
+  useEffect(() => {
+    if (mode !== 'create' || !header.itemId || !rmBlank) return;
+    // `search` is a text match, so confirm the row really is THIS item before
+    // borrowing its material — a code that is a substring of another's would
+    // otherwise hand over the wrong grade.
+    const source = (plansForItem?.items ?? []).find(
+      (pl) =>
+        pl.itemId === header.itemId &&
+        (pl.rawMaterialGradeId ||
+          pl.rawMaterialGradeText ||
+          pl.rawMaterialSizeId ||
+          pl.rawMaterialSizeText),
+    );
+    if (!source) return;
+    setHeader((prev) => ({
+      ...prev,
+      rawMaterialGradeId: source.rawMaterialGradeId,
+      rawMaterialGradeText: source.rawMaterialGradeText,
+      rawMaterialSizeId: source.rawMaterialSizeId,
+      rawMaterialSizeText: source.rawMaterialSizeText,
+    }));
+    setRmPrefillFrom(source.code);
+  }, [plansForItem, header.itemId, rmBlank, mode]);
+
+  // A different item means the old prefill note no longer applies.
+  useEffect(() => {
+    setRmPrefillFrom(null);
+  }, [header.itemId]);
 
   const updateOp = (idx: number, patch: Partial<RouteCardFormOpDraft>): void => {
     setOps((prev) => prev.map((o, i) => (i === idx ? { ...o, ...patch } : o)));
@@ -546,6 +598,18 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                     }
                   />
                 </div>
+                {rmPrefillFrom ? (
+                  <div
+                    className="text3"
+                    style={{ gridColumn: '1 / -1', fontSize: 10.5, marginTop: 2 }}
+                  >
+                    Prefilled from plan{' '}
+                    <b className="mono" style={{ color: 'var(--text)' }}>
+                      {rmPrefillFrom}
+                    </b>{' '}
+                    — change it if the routing calls for something else.
+                  </div>
+                ) : null}
               </RawMaterialGroup>
             </div>
             <div className="form-grp form-full">

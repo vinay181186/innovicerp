@@ -36,7 +36,6 @@ import {
   jobWorkOrders,
   planOps,
   plans,
-  productionOrders,
   purchaseOrders,
   purchaseRequests,
   salesOrderLines,
@@ -47,29 +46,43 @@ import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { derivePlanStatus } from '../../lib/plan-derived-status';
+import {
+  PLAN_ACTIVE_ORDER_COUNT_SQL,
+  PLAN_LATEST_ORDER_CODE_SQL,
+  PLAN_LATEST_ORDER_ID_SQL,
+  PLAN_LATEST_ORDER_STATUS_SQL,
+  PLAN_OPEN_ORDER_COUNT_SQL,
+  PLAN_PENDING_QTY_SQL,
+} from '../../lib/plan-order-coverage';
 import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 
 // ADR-170 — a route-card plan's derived status hangs on two live facts read
-// alongside the plan: its Production Order (LEFT join, one per plan) and
-// whether its item has an active Route Card. Same rule as plans/service.ts
-// listPlans via lib/plan-derived-status.
+// alongside the plan: its Production Orders and whether its item has an active
+// Route Card. Same rule as plans/service.ts listPlans via
+// lib/plan-derived-status.
+//
+// ADR-182: production_orders is NOT joined. A plan may have several live
+// orders now, and a LEFT JOIN on plan_id would return one copy of the plan per
+// order — the same plan would appear twice in the SO Planning pane. Every order
+// fact is a correlated scalar (lib/plan-order-coverage.ts) instead.
 const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
   SELECT 1 FROM public.route_cards rc
   WHERE rc.company_id = ${plans.companyId}
     AND rc.item_id = ${plans.itemId}
     AND rc.deleted_at IS NULL
 )`;
-const PO_JOIN = and(eq(productionOrders.planId, plans.id), isNull(productionOrders.deletedAt));
-
-/** The ADR-170 fields every plan summary carries, from one joined row. */
+/** The ADR-170 fields every plan summary carries, from one row. */
 function routeCardPlanFields(r: {
   plan: typeof plans.$inferSelect;
   poId: string | null;
   poCode: string | null;
   poStatus: string | null;
   hasRouteCard: boolean | null;
+  activeOrderCount: number | null;
+  openOrderCount: number | null;
+  pendingQty: number | null;
 }): Pick<
   PlanningPlanSummary,
   | 'opsSource'
@@ -88,7 +101,9 @@ function routeCardPlanFields(r: {
       opsSource: r.plan.opsSource,
       planStatus: r.plan.planStatus,
       hasRouteCard: Boolean(r.hasRouteCard),
-      poStatus: r.poStatus ?? null,
+      activeOrderCount: Number(r.activeOrderCount ?? 0),
+      openOrderCount: Number(r.openOrderCount ?? 0),
+      pendingQty: Number(r.pendingQty ?? 0),
     }),
     productionOrderId: r.poId ?? null,
     productionOrderCode: r.poCode ?? null,
@@ -576,14 +591,16 @@ export async function getPlanningSoDetail(
               dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
               foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
               foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
-              poId: productionOrders.id,
-              poCode: productionOrders.code,
-              poStatus: productionOrders.status,
+              poId: PLAN_LATEST_ORDER_ID_SQL,
+              poCode: PLAN_LATEST_ORDER_CODE_SQL,
+              poStatus: PLAN_LATEST_ORDER_STATUS_SQL,
+              activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
+              openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
+              pendingQty: PLAN_PENDING_QTY_SQL,
               hasRouteCard: HAS_ROUTE_CARD_SQL,
             })
             .from(plans)
             .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
-            .leftJoin(productionOrders, PO_JOIN)
             .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
             .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
             .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
@@ -903,14 +920,16 @@ async function getJwPlanningDetail(
             dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
             foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
             foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
-            poId: productionOrders.id,
-            poCode: productionOrders.code,
-            poStatus: productionOrders.status,
+            poId: PLAN_LATEST_ORDER_ID_SQL,
+            poCode: PLAN_LATEST_ORDER_CODE_SQL,
+            poStatus: PLAN_LATEST_ORDER_STATUS_SQL,
+            activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
+            openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
+            pendingQty: PLAN_PENDING_QTY_SQL,
             hasRouteCard: HAS_ROUTE_CARD_SQL,
           })
           .from(plans)
           .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
-          .leftJoin(productionOrders, PO_JOIN)
           .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
           .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
           .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
@@ -1221,14 +1240,16 @@ export async function getPlanningBom(
       .select({
         plan: plans,
         jcCode: jobCards.code,
-        poId: productionOrders.id,
-        poCode: productionOrders.code,
-        poStatus: productionOrders.status,
+        poId: PLAN_LATEST_ORDER_ID_SQL,
+        poCode: PLAN_LATEST_ORDER_CODE_SQL,
+        poStatus: PLAN_LATEST_ORDER_STATUS_SQL,
+        activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
+        openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
+        pendingQty: PLAN_PENDING_QTY_SQL,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
       })
       .from(plans)
       .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
-      .leftJoin(productionOrders, PO_JOIN)
       .where(
         and(
           eq(plans.soLineId, soLineId),

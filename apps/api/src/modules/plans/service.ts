@@ -47,7 +47,6 @@ import {
   machines,
   planOps,
   plans,
-  productionOrders,
   purchaseRequests,
   routeCardOps,
   routeCards,
@@ -75,6 +74,18 @@ import {
 } from '../../lib/stock-reservation';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { derivePlanStatus } from '../../lib/plan-derived-status';
+import {
+  PLAN_ACTIVE_ORDER_COUNT_SQL,
+  PLAN_COVERED_QTY_SQL,
+  PLAN_LATEST_ORDER_CODE_SQL,
+  PLAN_LATEST_ORDER_ID_SQL,
+  PLAN_LATEST_ORDER_STATUS_SQL,
+  PLAN_OPEN_ORDER_COUNT_SQL,
+  PLAN_PENDING_QTY_SQL,
+  planDerivedStatusSql,
+  readPlanOrderCoverage,
+} from '../../lib/plan-order-coverage';
+import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
@@ -152,15 +163,15 @@ const SO_LINE_CLIENT_PO_LINE_NO = sql<string | null>`${salesOrderLines.clientPoL
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
-// ADR-170 — the three live facts a route-card plan's derived status hangs on,
-// as SQL so the list can FILTER on them (poPending / derivedStatus must cut
-// before LIMIT, not after). The row mapper then calls derivePlanStatus() with
-// the same three facts, so the value shown and the value filtered on cannot
-// disagree.
+// ADR-170 — the live facts a route-card plan's derived status hangs on, as SQL
+// so the list can FILTER on them (poPending / derivedStatus must cut before
+// LIMIT, not after). The row mapper then calls derivePlanStatus() with the same
+// facts, so the value shown and the value filtered on cannot disagree.
 //
-// Both joins are LEFT and soft-delete filtered: `production_orders.plan_id` is
-// unique among live rows (one Production Order per plan), so the join never
-// multiplies plan rows.
+// ADR-182: production_orders is no longer JOINed here. A plan may now have
+// several live orders, and a LEFT JOIN on plan_id would return one copy of the
+// plan row per order. Every order fact is read as a correlated scalar instead
+// (lib/plan-order-coverage.ts), so the list is one row per plan again.
 const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
   SELECT 1 FROM public.route_cards rc
   WHERE rc.company_id = ${plans.companyId}
@@ -168,14 +179,7 @@ const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
     AND rc.deleted_at IS NULL
 )`;
 
-const DERIVED_STATUS_SQL = sql<string | null>`CASE
-  WHEN ${plans.opsSource} <> 'route_card' THEN NULL
-  WHEN ${plans.planStatus} = 'cancelled' THEN NULL
-  WHEN ${productionOrders.status} = 'closed' THEN 'production_complete'
-  WHEN ${productionOrders.status} = 'open' THEN 'in_production'
-  WHEN NOT ${HAS_ROUTE_CARD_SQL} THEN 'route_card_pending'
-  ELSE 'gen_production_order'
-END`;
+const DERIVED_STATUS_SQL = planDerivedStatusSql(HAS_ROUTE_CARD_SQL);
 
 export async function listPlans(
   query: ListPlansQuery,
@@ -193,8 +197,10 @@ export async function listPlans(
     // joined facts the rows report, so paging stays exact.
     if (query.derivedStatus) conditions.push(sql`${DERIVED_STATUS_SQL} = ${query.derivedStatus}`);
     if (query.poPending) {
+      // ADR-182 — "still needs a Production Order" is no longer "has none at
+      // all": a plan 20-covered of 50 still needs one for the other 30.
       conditions.push(
-        sql`${plans.opsSource} = 'route_card' AND ${plans.planStatus} <> 'cancelled' AND ${productionOrders.id} IS NULL`,
+        sql`${plans.opsSource} = 'route_card' AND ${plans.planStatus} <> 'cancelled' AND ${PLAN_PENDING_QTY_SQL} > 0`,
       );
     }
 
@@ -202,15 +208,13 @@ export async function listPlans(
       const term = `%${query.search}%`;
       conditions.push(
         sql`(${plans.code} ILIKE ${term} OR ${plans.itemCodeText} ILIKE ${term} OR ${plans.itemNameText} ILIKE ${term} OR ${plans.soCodeText} ILIKE ${term}
-          OR ${productionOrders.code} ILIKE ${term}
+          OR EXISTS (SELECT 1 FROM public.production_orders po
+                       WHERE po.plan_id = ${plans.id} AND po.deleted_at IS NULL
+                         AND po.code ILIKE ${term})
           OR EXISTS (SELECT 1 FROM ${jobCards} jc WHERE jc.id = ${plans.jcId} AND jc.code ILIKE ${term})
           OR EXISTS (SELECT 1 FROM ${salesOrderLines} sol WHERE sol.id = ${plans.soLineId} AND sol.deleted_at IS NULL AND sol.client_po_line_no ILIKE ${term}))`,
       );
     }
-
-    // The live Production Order for the plan, if any (LEFT: old plans and
-    // not-yet-ordered plans have none).
-    const poJoin = and(eq(productionOrders.planId, plans.id), isNull(productionOrders.deletedAt));
 
     const rows = await tx
       .select({
@@ -219,9 +223,15 @@ export async function listPlans(
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
         clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
-        productionOrderId: productionOrders.id,
-        productionOrderCode: productionOrders.code,
-        productionOrderStatus: productionOrders.status,
+        // ADR-182 — the NEWEST live order of the plan, read as scalars so
+        // several orders cannot multiply the plan row.
+        productionOrderId: PLAN_LATEST_ORDER_ID_SQL,
+        productionOrderCode: PLAN_LATEST_ORDER_CODE_SQL,
+        productionOrderStatus: PLAN_LATEST_ORDER_STATUS_SQL,
+        coveredQty: PLAN_COVERED_QTY_SQL,
+        pendingQty: PLAN_PENDING_QTY_SQL,
+        activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
+        openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
         jcCode: jobCards.code,
         // The card's live status off v_jc_status, so the Plans list can offer
         // Close only when the card is actually finished.
@@ -240,7 +250,6 @@ export async function listPlans(
         jobWorkOrderLines,
         and(eq(jobWorkOrderLines.id, plans.jwLineId), isNull(jobWorkOrderLines.deletedAt)),
       )
-      .leftJoin(productionOrders, poJoin)
       .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
       .leftJoin(sql`public.v_jc_status jcs`, sql`jcs.job_card_id = ${jobCards.id}`)
       .where(and(...conditions))
@@ -248,12 +257,12 @@ export async function listPlans(
       .limit(query.limit)
       .offset(query.offset);
 
-    // Same joins as the page query: the derived-status / poPending conditions
-    // reference production_orders, so the count must see it too.
+    // No join needed any more: since ADR-182 every Production Order fact in
+    // the conditions above is a correlated sub-select on plans, so the count
+    // sees exactly the same rows the page query does — and one per plan.
     const totalRows = await tx
       .select({ value: count() })
       .from(plans)
-      .leftJoin(productionOrders, poJoin)
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
@@ -285,7 +294,9 @@ export async function listPlans(
             opsSource: r.plan.opsSource,
             planStatus: r.plan.planStatus,
             hasRouteCard,
-            poStatus: r.productionOrderStatus ?? null,
+            activeOrderCount: Number(r.activeOrderCount ?? 0),
+            openOrderCount: Number(r.openOrderCount ?? 0),
+            pendingQty: Number(r.pendingQty ?? 0),
           }),
           productionOrderId: r.productionOrderId ?? null,
           productionOrderCode: r.productionOrderCode ?? null,
@@ -293,6 +304,11 @@ export async function listPlans(
           jcCode: r.jcCode ?? null,
           jcStatus: r.jcStatus ?? null,
           hasRouteCard,
+          // ADR-182 — Plan Qty / Covered / Pending, so the list can show how
+          // much of the plan is still un-ordered and keep the "Gen production
+          // order" action alive while Pending > 0.
+          coveredQty: Number(r.coveredQty ?? 0),
+          pendingQty: Number(r.pendingQty ?? 0),
         };
       }),
       total,
@@ -673,11 +689,16 @@ export async function updatePlan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // FOR UPDATE: since ADR-182 a plan stays 'planned' while it is only PART
+    // covered by Production Orders, so an edit can now land at the same moment
+    // as a create. Both take this lock, so the coverage figure read below is
+    // the one the create either saw or will re-read.
     const existing = await tx
       .select()
       .from(plans)
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
-      .limit(1);
+      .limit(1)
+      .for('update');
     const row = existing[0];
     if (!row) throw new NotFoundError(`Plan ${id} not found`);
 
@@ -685,6 +706,35 @@ export async function updatePlan(
       throw new ValidationError(
         `Plan in status '${row.planStatus}' cannot be edited (only in_planning / planned)`,
       );
+    }
+
+    // ADR-182 review — 'planned' no longer means "nothing has been made from
+    // this plan". A plan of 50 with a live order for 20 is still 'planned' so
+    // the other 30 can be ordered, and that re-opened a door the old
+    // one-order-per-plan rule kept shut: the plan could be cut below what its
+    // Job Cards are already building, or have its raw material re-typed after
+    // the card had snapshotted it. Both are refused while live work exists.
+    // Short-closed orders do not count — their qty went back to the plan.
+    const { coveredQty, orderCodes } = await readPlanOrderCoverage(tx, row.id);
+    if (coveredQty > 0) {
+      const resultingPlanQty = input.planQty ?? row.planQty;
+      const belowCovered = planQtyBelowCoveredError(row.code, resultingPlanQty, coveredQty);
+      if (belowCovered) throw new ValidationError(belowCovered);
+
+      const changed = <T>(sent: T | undefined, stored: T | null | undefined): boolean =>
+        sent !== undefined && (sent ?? null) !== (stored ?? null);
+      const rawMaterialRetyped =
+        changed(input.rawMaterialGradeId, row.rawMaterialGradeId) ||
+        changed(input.rawMaterialGradeText, row.rawMaterialGradeText) ||
+        changed(input.rawMaterialSizeId, row.rawMaterialSizeId) ||
+        changed(input.rawMaterialSizeText, row.rawMaterialSizeText);
+      if (rawMaterialRetyped) {
+        throw new ValidationError(
+          `Plan ${row.code} already has Production Order(s) ${orderCodes.join(', ')} — ` +
+            `raw material cannot be changed now; their Job Cards have already copied it. ` +
+            `Short close the order(s) first.`,
+        );
+      }
     }
 
     // Direct Purchase is not valid for a job-work (JWSO) plan.
@@ -925,6 +975,29 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
       );
     }
 
+    // ADR-182 review — a part-covered plan is still 'planned', so the status
+    // check above no longer proves nothing was built from it. Deleting it would
+    // leave its Production Orders and their Job Cards pointing at a row that no
+    // plan-side read can see any more (the coverage query keys on plan_id and
+    // never joins plans), so the orders would simply vanish.
+    //
+    // EVERY live order counts here, short-closed ones included: a stopped order
+    // no longer holds plan qty (it may be re-ordered, and the edit guard above
+    // ignores it), but it is still history hanging off this plan and must not
+    // be orphaned by a delete.
+    const orderRows = (await tx.execute(sql`
+      SELECT po.code FROM public.production_orders po
+      WHERE po.plan_id = ${id}::uuid AND po.deleted_at IS NULL
+      ORDER BY po.code
+    `)) as unknown as Array<{ code: string }>;
+    const orderCodes = orderRows.map((r) => r.code);
+    if (orderCodes.length > 0) {
+      throw new ConflictError(
+        `Plan ${row.code} has Production Order(s) ${orderCodes.join(', ')} — ` +
+          `short close them first.`,
+      );
+    }
+
     const now = new Date();
     await tx
       .update(planOps)
@@ -1145,7 +1218,8 @@ export interface JcBuildResult {
  *  transaction. This is the body of the old `executeManufacture`, lifted out so
  *  a Production Order (ADR-170) builds its Job Card by exactly the same steps:
  *
- *    1. insert the job_cards row (next IN-JC code, order_qty = plan qty, the
+ *    1. insert the job_cards row (next IN-JC code, order_qty = opts.orderQty
+ *       and, when the caller passes none, the plan qty as it always was; the
  *       plan's SO / JW line, the plan's raw-material snapshot, due date,
  *       production order link);
  *    2. resolve machine ids for ops that only carry a machine code;
@@ -1171,6 +1245,16 @@ export async function buildJobCardFromOps(
     /** Set when a Production Order is building this JC — the stock cascades
      *  read it as their OFF switch. */
     productionOrderId?: string | null;
+    /** `job_cards.order_qty` — how many pieces THIS card is for. Omitted means
+     *  the whole plan qty, which is what Execute has always built, so the old
+     *  path is byte-for-byte unchanged. A Production Order passes its own Order
+     *  Qty instead: since ADR-182 a plan of 50 may be covered by 20 + 20 + 10,
+     *  and each card must be built for its own order, not for the plan. */
+    orderQty?: number;
+    /** ADR-182 — the size the store really had / really cut, snapshotted on the
+     *  Production Order and carried onto the card so the traveller prints it.
+     *  Execute passes nothing. */
+    actualSize?: string | null;
     afterOpsInserted?: (ctx: {
       jc: { id: string; code: string };
       machineIdByCode: Map<string, string>;
@@ -1180,6 +1264,12 @@ export async function buildJobCardFromOps(
   const { plan, ops, user, companyId } = opts;
   const today = new Date().toISOString().slice(0, 10);
   const jcCode = await nextJcCode(tx, companyId);
+  // How many pieces THIS card is for — the Production Order's Order Qty since
+  // ADR-182, the whole plan qty on the old Execute path. Everything built below
+  // (the card AND the OSP purchase requests raised for its outsource ops) must
+  // use this one number: a 50-piece plan covered by 20 + 20 + 10 must send the
+  // vendor three requests for 20, 20 and 10, never three for 50.
+  const jcOrderQty = opts.orderQty ?? plan.planQty;
 
   const jcRows = await tx
     .insert(jobCards)
@@ -1188,7 +1278,7 @@ export async function buildJobCardFromOps(
       code: jcCode,
       jcDate: today,
       itemId: plan.itemId,
-      orderQty: plan.planQty,
+      orderQty: jcOrderQty,
       priority: 'normal',
       dueDate: opts.dueDate,
       productionOrderId: opts.productionOrderId ?? null,
@@ -1205,6 +1295,8 @@ export async function buildJobCardFromOps(
       rawMaterialGradeText: plan.rawMaterialGradeText,
       rawMaterialSizeId: plan.rawMaterialSizeId,
       rawMaterialSizeText: plan.rawMaterialSizeText,
+      // ADR-182 — what was really cut, beside the master-picked size above.
+      actualSize: opts.actualSize ?? null,
       createdBy: user.id,
       updatedBy: user.id,
     })
@@ -1322,7 +1414,11 @@ export async function buildJobCardFromOps(
         itemId: plan.itemId,
         itemCodeText: plan.itemCodeText ?? null,
         itemName: plan.itemNameText ?? null,
-        qty: plan.planQty,
+        // The qty this CARD is for, not the plan's (ADR-182 review). The PR
+        // carries source_jc_op_id, so the whole PO → outward DC → GRN →
+        // Incoming QC chain inherits it; the plan qty here let a 20-piece op be
+        // over-received against a 50-piece request.
+        qty: jcOrderQty,
         estCost: op.outsourceCost ?? '0',
         sourceJcOpId: op.id,
         sourceSoLineId: plan.soLineId ?? null,

@@ -1,11 +1,14 @@
-// Close Production Order (ADR-170): select Plan → PO → JC → Close.
+// Close Production Order (ADR-170): pick the Plan, the Production Order OR the
+// Job Card — whichever the person happens to know — and the other two fill in.
 //
-// The user's own words for the flow, so the three pickers sit in that order.
-// Picking a plan fills the PO; the PO can also be picked directly from the open
-// orders. The JC is read-only — it is whatever the PO built. Close stays off
-// until the server says the JC is complete (`canClose`); the reason it is
-// blocked is shown in its place. On success the page goes to the PO detail,
-// which shows the credited qty.
+// The three are ONE choice wearing three names: a closeable Production Order
+// row already carries its plan and its job card (`planId` / `planCodeText` /
+// `jobCardId` / `jcCodeText`), so all three pickers read that same list and any
+// one of them can drive the other two. Clearing one clears all three, because a
+// half-filled trio would let someone close an order they never identified.
+// Close stays off until the server says the JC is complete (`canClose`); the
+// reason it is blocked is shown in its place. On success the page goes to the
+// PO detail, which shows the credited qty.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -18,7 +21,6 @@ import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   type PlanPickerItem,
-  planPickerLabel,
   usePreselectedPlan,
   useProductionOrder,
   useProductionOrdersList,
@@ -51,9 +53,15 @@ function ProductionOrderClosePage(): React.JSX.Element {
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'prodorder_create');
 
-  const [plan, setPlan] = useState<PlanPickerItem | null>(null);
+  // One selection, three names. The label beside each id is held separately so
+  // the field still reads correctly once its row scrolls out of the search page
+  // the dropdown last fetched.
+  const [planId, setPlanId] = useState<string | null>(null);
+  const [planLabel, setPlanLabel] = useState('');
   const [poId, setPoId] = useState<string | null>(null);
   const [poLabel, setPoLabel] = useState('');
+  const [jcId, setJcId] = useState<string | null>(null);
+  const [jcLabel, setJcLabel] = useState('');
 
   // PO picker — orders that still have something to close: open OR partially
   // closed (ADR-179). The list endpoint takes a single status, so we ask the
@@ -78,35 +86,105 @@ function ProductionOrderClosePage(): React.JSX.Element {
   const detail = useProductionOrder(poId ?? undefined);
   const po = detail.data;
 
+  /** How a Production Order reads once picked — used by all three pickers so
+   *  the field says the same thing whichever one the person used. */
+  const poRowLabel = (row: {
+    code: string;
+    clientPoLineNo: string | null;
+    itemCodeText: string;
+    itemRevision: string | null;
+    planCodeText: string;
+  }): string =>
+    `${row.code} — ${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.planCodeText}`;
+
+  /** Nothing identified yet. Clearing any one of the three lands here, because
+   *  the three are one choice and a half-filled trio identifies no order. */
+  const clearAll = (): void => {
+    setPlanId(null);
+    setPlanLabel('');
+    setPoId(null);
+    setPoLabel('');
+    setJcId(null);
+    setJcLabel('');
+  };
+
+  /** The one place the trio is filled. Give it a closeable Production Order row
+   *  and all three fields agree, whichever picker the row came from. */
+  const applyPoRow = (row: (typeof poOptions)[number]): void => {
+    setPoId(row.id);
+    setPoLabel(poRowLabel(row));
+    setPlanId(row.planId);
+    setPlanLabel(row.planCodeText);
+    setJcId(row.jobCardId);
+    setJcLabel(row.jcCodeText);
+  };
+
   const onPickPlan = (p: PlanPickerItem | null): void => {
-    setPlan(p);
-    if (p?.productionOrderId) {
-      setPoId(p.productionOrderId);
-      setPoLabel(p.productionOrderCode ?? '');
-    } else {
-      setPoId(null);
-      setPoLabel('');
+    if (!p) {
+      clearAll();
+      return;
     }
+    setPlanId(p.id);
+    setPlanLabel(p.code);
+    // Prefer the Production Order ROW — it carries the job card too. A plan
+    // whose order is not on the currently loaded page still fills the PO from
+    // the plan's own snapshot; the JC then arrives with the PO detail below.
+    const row = poOptions.find((x) => x.id === p.productionOrderId);
+    if (row) {
+      applyPoRow(row);
+      setPlanId(p.id);
+      setPlanLabel(p.code);
+      return;
+    }
+    setPoId(p.productionOrderId ?? null);
+    setPoLabel(p.productionOrderCode ?? '');
+    setJcId(null);
+    setJcLabel(p.jcCode ?? '');
   };
 
   // The deep-linked plan lands once its row arrives, only while nothing has
   // been picked yet.
   useEffect(() => {
-    if (preselected && !plan && !poId) onPickPlan(preselected);
+    if (preselected && !planId && !poId) onPickPlan(preselected);
     // onPickPlan is a plain setter bundle; the row is the trigger.
   }, [preselected]);
 
   const onPickPo = (next: string | null): void => {
     const row = poOptions.find((x) => x.id === next);
-    setPoId(next);
-    setPoLabel(
-      row
-        ? `${row.code} — ${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.planCodeText}`
-        : '',
-    );
-    // A PO picked directly implies its plan; drop a plan that no longer matches.
-    if (row && plan && plan.id !== row.planId) setPlan(null);
+    if (!row) {
+      clearAll();
+      return;
+    }
+    applyPoRow(row);
   };
+
+  const onPickJc = (next: string | null): void => {
+    const row = poOptions.find((x) => x.jobCardId === next);
+    if (!row) {
+      clearAll();
+      return;
+    }
+    applyPoRow(row);
+  };
+
+  // Whatever the PO detail says wins, once it arrives: it is the server's own
+  // answer, where the pickers only had a list row. This also fills the plan and
+  // the JC for a PO reached by deep link, whose row may not be on any page the
+  // dropdowns have loaded.
+  useEffect(() => {
+    if (!po) return;
+    setPlanId(po.planId);
+    setPlanLabel((prev) => (prev === po.planCodeText ? prev : po.planCodeText));
+    setJcId(po.jobCardId);
+    setJcLabel(po.jcCodeText);
+  }, [po?.id, po?.planId, po?.planCodeText, po?.jobCardId, po?.jcCodeText]);
+
+  // The Job Card dropdown lists the cards that HAVE a closeable order — one
+  // entry per card, so picking one can never dead-end on an order that cannot
+  // be closed.
+  const jcOptions = poOptions.filter(
+    (row, i) => poOptions.findIndex((x) => x.jobCardId === row.jobCardId) === i,
+  );
 
   if (accessLoading) {
     return (
@@ -154,9 +232,9 @@ function ProductionOrderClosePage(): React.JSX.Element {
             <PlanPicker
               id="close-plan"
               mode="close"
-              value={plan?.id ?? null}
+              value={planId}
               onChange={onPickPlan}
-              fallbackLabel={plan ? planPickerLabel(plan) : undefined}
+              fallbackLabel={planLabel || undefined}
             />
 
             <div className="form-grp">
@@ -180,11 +258,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                     .join(' '),
                 }))}
                 placeholder="🔍 Type production order no, item or plan…"
-                valueLabel={
-                  po
-                    ? `${po.code} — ${po.clientPoLineNo ? `POL ${po.clientPoLineNo} · ` : ''}${itemCodeWithRev(po.itemCodeText, po.itemRevision)} · ${po.planCodeText}`
-                    : poLabel || undefined
-                }
+                valueLabel={po ? poRowLabel(po) : poLabel || undefined}
                 emptyText="No open Production Order matches"
               />
             </div>
@@ -193,12 +267,26 @@ function ProductionOrderClosePage(): React.JSX.Element {
               <label className="form-label" htmlFor="close-jc">
                 JC No.
               </label>
-              <input
+              {/* A picker like the other two, not a read-only box: the person on
+                  the floor knows the job card number, and now that is enough to
+                  identify the order. Same list, keyed on the job card. */}
+              <SearchableSelect
                 id="close-jc"
-                className="innovic-input mono fw-700"
-                value={po?.jcCodeText ?? ''}
-                readOnly
-                placeholder={poId ? (detail.isLoading ? 'Loading…' : '') : 'Pick a PO first'}
+                value={jcId}
+                onChange={onPickJc}
+                onSearch={setPoSearch}
+                loading={openPos.isFetching || partialPos.isFetching}
+                options={jcOptions.map((row) => ({
+                  id: row.jobCardId,
+                  code: row.jcCodeText,
+                  name: `${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.code}`,
+                  searchText: [row.code, row.planCodeText, row.soCodeText, row.itemNameText]
+                    .filter(Boolean)
+                    .join(' '),
+                }))}
+                placeholder="🔍 Type JC no, item or production order no…"
+                valueLabel={po?.jcCodeText ?? (jcLabel || undefined)}
+                emptyText="No Job Card with a closeable Production Order matches"
               />
             </div>
           </div>

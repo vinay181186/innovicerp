@@ -200,14 +200,31 @@ interface QcAcceptCascadeArgs {
 }
 
 export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promise<void> {
-  const { tx, companyId, adminUserId, grnId, grnLineId, itemId, qcAcceptedQty, prevQcStatus, nextQcStatus } =
-    args;
+  const {
+    tx,
+    companyId,
+    adminUserId,
+    grnId,
+    grnLineId,
+    itemId,
+    qcAcceptedQty,
+    prevQcStatus,
+    nextQcStatus,
+  } = args;
   // Whole-GRN QC merge path: credit only on the non-completed → completed
   // transition, with the full accepted qty. (The Incoming QC Register credits
   // incrementally per inspect via creditGrnQcStock directly.)
   if (nextQcStatus !== 'completed') return;
   if (prevQcStatus === 'completed') return;
-  await creditGrnQcStock({ tx, companyId, adminUserId, grnId, grnLineId, itemId, qty: qcAcceptedQty });
+  await creditGrnQcStock({
+    tx,
+    companyId,
+    adminUserId,
+    grnId,
+    grnLineId,
+    itemId,
+    qty: qcAcceptedQty,
+  });
 }
 
 /**
@@ -266,10 +283,7 @@ function grnLineOpsCte(grnLineId: string) {
  *   2. GRN → PO → PO.pr_id → purchase_requests.source_jc_op_id
  * A non-OSP GRN (ordinary purchase) resolves to no op and is never blocked.
  */
-async function isMidRouteOutsourceReturn(
-  tx: DbTransaction,
-  grnLineId: string,
-): Promise<boolean> {
+async function isMidRouteOutsourceReturn(tx: DbTransaction, grnLineId: string): Promise<boolean> {
   const rows = (await tx.execute(sql`
     ${grnLineOpsCte(grnLineId)}
     SELECT EXISTS (
@@ -288,8 +302,12 @@ async function isMidRouteOutsourceReturn(
  * two ways isMidRouteOutsourceReturn resolves the op (shared CTE above).
  * Null when the line resolves to no jc_op — i.e. a plain purchase GRN — so
  * callers that key a decision on the JC leave ordinary receipts alone.
+ *
+ * Exported since ADR-182: the short-close guard on the GRN and Incoming QC
+ * write paths needs the SAME answer this cascade uses, so both ask this one
+ * function rather than each writing its own version of the two-path lookup.
  */
-async function resolveGrnLineJobCardId(
+export async function resolveGrnLineJobCardId(
   tx: DbTransaction,
   grnLineId: string,
 ): Promise<string | null> {

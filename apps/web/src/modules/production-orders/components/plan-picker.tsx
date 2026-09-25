@@ -3,7 +3,10 @@
 // owns its search state, server-searched via /plans?search=, hands the caller
 // the picked plan ROW (not just the id) so the screen can show its summary.
 //
-//   mode 'create' → plans waiting for a Production Order (`poPending=true`)
+//   mode 'create' → plans with qty still to order (`poPending=true`, which
+//                   since ADR-182 means Pending > 0 — a plan 20-covered of 50
+//                   is still offered for the other 30). Each row prints
+//                   Plan Qty · Pending.
 //   mode 'close'  → route-card-driven plans that already HAVE one
 //                   (`opsSource=route_card`, kept when productionOrderId is set)
 
@@ -71,7 +74,7 @@ export function PlanPicker({
         value={value}
         onChange={(next) => {
           const p = plans.find((x) => x.id === next) ?? null;
-          setLabel(p ? planPickerLabel(p) : '');
+          setLabel(p ? planPickerLabel(p, mode) : '');
           onChange(p);
         }}
         onSearch={setSearch}
@@ -80,7 +83,7 @@ export function PlanPicker({
         options={plans.map((p) => ({
           id: p.id,
           code: p.code,
-          name: planPickerLabel(p).slice(p.code.length + 3),
+          name: planPickerLabel(p, mode).slice(p.code.length + 3),
           // POL (the CUSTOMER's own PO line number) is in the visible label, so
           // it has to be searchable alongside the PO and JC codes.
           searchText: [p.productionOrderCode, p.jcCode, p.clientPoLineNo].filter(Boolean).join(' '),
@@ -90,10 +93,12 @@ export function PlanPicker({
             ? '🔍 Type plan no, item code or SO no…'
             : '🔍 Type plan no, production order no, item or SO no…'
         }
-        valueLabel={selected ? planPickerLabel(selected) : label || fallbackLabel || undefined}
+        valueLabel={
+          selected ? planPickerLabel(selected, mode) : label || fallbackLabel || undefined
+        }
         emptyText={
           mode === 'create'
-            ? 'No plan is waiting for a Production Order'
+            ? 'No plan has any Pending qty left to order'
             : 'No plan with a Production Order matches'
         }
       />
