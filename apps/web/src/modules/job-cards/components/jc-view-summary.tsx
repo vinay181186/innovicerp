@@ -157,6 +157,7 @@ export function JcViewSummary({
   opsLoaded,
   sortedOps,
   rmAvailable,
+  actualSize,
   drawing,
   onOpenDrawing,
 }: {
@@ -169,6 +170,11 @@ export function JcViewSummary({
   /** ADR-103 client material still workable on this JWSO Job Card. Null/absent
    *  on SO-sourced and pre-cutover Job Cards — the RM line is then not shown. */
   rmAvailable?: JobCardRmAvailable | null;
+  /** ADR-182 — the size the store really had / really cut, typed on the
+   *  Production Order that built this card. Null on a card no order built, or
+   *  when nobody typed one; the line is then not shown. The `Size` above stays
+   *  what was PLANNED. */
+  actualSize?: string | null;
   drawing: JcDrawingRef | null;
   /** Opens the shared drawing preview — from the `👁 Open drawing` button
    *  under the product picture, the drawing thumbnail (image drawings only),
@@ -282,6 +288,20 @@ export function JcViewSummary({
                   {jc.rawMaterialSizeText || '—'}
                 </span>
               </div>
+              {/* ADR-182 — what was ACTUALLY cut, beside the planned size
+                  above. Only shown when the Production Order recorded one. */}
+              {actualSize ? (
+                <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+                  <span style={{ color: 'var(--text3)', flexShrink: 0 }}>Actual Size:</span>
+                  <span
+                    className="mono fw-700"
+                    style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    title={actualSize}
+                  >
+                    {actualSize}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </ItemBadge>
           {/* Drawing controls — the open button, and the thumbnail when the

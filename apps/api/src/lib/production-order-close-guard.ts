@@ -40,6 +40,15 @@ export interface CloseGuardInput {
   jcSettledWithLosses: boolean;
   /** Running total already credited by earlier partial closes (ADR-179). */
   creditedQty: number;
+  /** ADR-182 — when the order was short closed (ISO or YYYY-MM-DD), null
+   *  unless `status === 'short_closed'`. Only used for the wording. */
+  shortClosedAt?: string | null;
+}
+
+/** YYYY-MM-DD out of whatever the row carried, so the sentence never shows a
+ *  timestamp or the word "null". */
+function shortCloseDate(v: string | null | undefined): string {
+  return v ? v.slice(0, 10) : 'an earlier date';
 }
 
 /** Null when SOME close action is possible right now; otherwise the plain-English
@@ -51,6 +60,11 @@ export interface CloseGuardInput {
  *  The service then enforces the action-specific rules (a "close short" still
  *  requires the JC to be done; a plain partial close does not). */
 export function closeBlockedReason(item: CloseGuardInput): string | null {
+  // ADR-182 — a short-closed order is dead. Pieces already credited stay
+  // credited, but nothing more may be closed (or reversed) on it.
+  if (item.status === 'short_closed') {
+    return `No further close — this order was short closed on ${shortCloseDate(item.shortClosedAt)}`;
+  }
   if (item.status === 'closed') return `Production Order is already fully closed`;
   const st = item.jcComputedStatus ?? 'no_ops';
   const jcDone = st === 'complete' || st === 'closed' || item.jcSettledWithLosses;

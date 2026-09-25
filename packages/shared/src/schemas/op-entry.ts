@@ -236,6 +236,23 @@ export const opLogSchema = z.object({
   timingEditedAt: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
+  /** The NC(s) this entry raised (ADR-183). Present on the write response so
+   *  the screen can name the number and link straight to it — raising an NC
+   *  was silent on every path before — and on reads so the op's Recent Logs
+   *  strip can show the number and status beside the reject that caused it.
+   *
+   *  A LIST, not one: a partial disposition splits an NC and the sibling
+   *  copies qc_log_id, so one entry can own several. Empty when the entry
+   *  carried no rejects. */
+  ncs: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        code: z.string(),
+        status: z.string(),
+      }),
+    )
+    .default([]),
 });
 export type OpLog = z.infer<typeof opLogSchema>;
 
@@ -434,23 +451,32 @@ export type RunningOp = z.infer<typeof runningOpSchema>;
 
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
-export const submitOpLogInputSchema = z.object({
-  jcOpId: z.string().uuid(),
-  qty: z.number().int().positive(), // submit must be > 0; 'start' uses startOp
-  rejectQty: z.number().int().nonnegative().default(0),
-  logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  /** Time of this entry (HH:MM). Optional — omitted rows keep the historical
-   *  null. Stored in op_log.start_time, which despite its name is simply "the
-   *  clock time of this log row": it was only ever populated by the 'start'
-   *  marker, so completion rows carried no time at all and the JC completion
-   *  feed (job-cards/service.ts:739, which already reads it for every log type)
-   *  could only ever show a time against a start. */
-  logTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/).optional(),
-  shift: shiftSchema,
-  operatorId: z.string().uuid().optional(),
-  operatorName: z.string().min(1).max(120).optional(),
-  remarks: z.string().max(500).optional(),
-});
+export const submitOpLogInputSchema = z
+  .object({
+    jcOpId: z.string().uuid(),
+    // A whole batch can fail: the machine ran, QC looked at the pieces, and
+    // none passed. That entry is `qty: 0, rejectQty: n` — refusing it would
+    // leave the floor with nowhere to record a scrapped batch. 'start' still
+    // uses startOp. The refine below keeps an entirely empty row out.
+    qty: z.number().int().nonnegative(),
+    rejectQty: z.number().int().nonnegative().default(0),
+    logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    /** Time of this entry (HH:MM). Optional — omitted rows keep the historical
+     *  null. Stored in op_log.start_time, which despite its name is simply "the
+     *  clock time of this log row": it was only ever populated by the 'start'
+     *  marker, so completion rows carried no time at all and the JC completion
+     *  feed (job-cards/service.ts:739, which already reads it for every log type)
+     *  could only ever show a time against a start. */
+    logTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/).optional(),
+    shift: shiftSchema,
+    operatorId: z.string().uuid().optional(),
+    operatorName: z.string().min(1).max(120).optional(),
+    remarks: z.string().max(500).optional(),
+  })
+  .refine((v) => v.qty + (v.rejectQty ?? 0) > 0, {
+    message: 'Enter a quantity — good, rejected, or both',
+    path: ['qty'],
+  });
 export type SubmitOpLogInput = z.infer<typeof submitOpLogInputSchema>;
 
 /** Body of POST /op-entry/running-ops/:id/stop.

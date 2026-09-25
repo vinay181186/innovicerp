@@ -200,9 +200,14 @@ function OutsourceNextAction({
 export function OutsourceActionRefs({
   jcCode,
   op,
+  stopped = false,
 }: {
   jcCode: string;
   op: JcOpEnriched;
+  /** ADR-182 — the card's Production Order was short closed: the reference
+   *  text (PR / PO codes, the outsource status) still shows, because it is the
+   *  record of what happened, but the ladder of next actions does not. */
+  stopped?: boolean;
 }): React.JSX.Element {
   const row = useOutsourceRow(jcCode, op.id);
   // The status still supplies the REFERENCE TEXT (unchanged); it no longer
@@ -219,7 +224,7 @@ export function OutsourceActionRefs({
   return (
     <>
       {ref}
-      <OutsourceNextAction row={row} op={op} />
+      {stopped ? null : <OutsourceNextAction row={row} op={op} />}
     </>
   );
 }
@@ -245,6 +250,7 @@ export function OutsourceActionRefs({
 export function JcOpFooter({
   jc,
   op,
+  stopped = false,
   onStart,
   onLog,
   onQc,
@@ -253,6 +259,13 @@ export function JcOpFooter({
    *  code (the latter to filter the NC register to this job card). */
   jc: JobCardListItem;
   op: JcOpEnriched;
+  /** ADR-182 — the card's Production Order was short closed. Every ACTION in
+   *  this strip is a write the server now refuses (op start / production log /
+   *  QC call / NC / the whole OSP ladder), so none of them is offered — same
+   *  rule as a missing permission: hide, never disable. The strip's plain
+   *  TEXT stays (Done / Waiting, the PR and PO codes): that is the record of
+   *  what happened before the order was stopped, not an invitation. */
+  stopped?: boolean;
   onStart: (opId: string) => void;
   onLog: (opId: string) => void;
   onQc: () => void;
@@ -276,7 +289,8 @@ export function JcOpFooter({
   // Shown ONLY on a QC operation that actually rejected something: the QC op
   // is what finds the fault and raises the NC, and with no rejects there is
   // nothing to look at.
-  const showNc = isQc && op.qcRejectedQty > 0 && effectiveFormPerms(eff, 'nc_dispose').view;
+  const showNc =
+    !stopped && isQc && op.qcRejectedQty > 0 && effectiveFormPerms(eff, 'nc_dispose').view;
 
   // A button only appears when the action behind it can actually be PERFORMED
   // right now. `available` is the op's workable qty (upstream cleared − already
@@ -321,6 +335,7 @@ export function JcOpFooter({
   // explicitly and Start was excluded implicitly (the old whitelist named only
   // `available` and `waiting`), so the exclusion is now spelled out on each.
   const showLog =
+    !stopped &&
     !isOut &&
     !isQc &&
     canOpEntry &&
@@ -328,6 +343,7 @@ export function JcOpFooter({
     op.computedStatus !== 'qc_pending' &&
     op.activeRunningOpId !== null;
   const showStart =
+    !stopped &&
     !isQc &&
     !isOut &&
     canOpEntry &&
@@ -343,11 +359,11 @@ export function JcOpFooter({
   // seven TPI ops in the live data are `waiting` with input 0 — including
   // IN-JC-26-00013 op 3, whose upstream op 2 still has all 20 pcs at the
   // vendor. Only IN-JC-26-00011 op 2 (qc_pending 4) has real TPI work.
-  const isTpi = isQc && op.qcPending > 0 && op.operation.toLowerCase().includes('tpi');
-  const showQcBtn = isQc && op.qcPending > 0 && canQc;
+  const isTpi = !stopped && isQc && op.qcPending > 0 && op.operation.toLowerCase().includes('tpi');
+  const showQcBtn = !stopped && isQc && op.qcPending > 0 && canQc;
   // The QC branch's plain text ("✓ QC Done" / "Waiting") only ever showed when
   // nothing was pending, exactly as before.
-  const showQcText = isQc && op.qcPending === 0;
+  const showQcText = isQc && (stopped || op.qcPending === 0);
 
   const hasFooter =
     isOut ||
@@ -373,7 +389,7 @@ export function JcOpFooter({
       }}
     >
       {isOut ? (
-        <OutsourceActionRefs jcCode={jc.code} op={op} />
+        <OutsourceActionRefs jcCode={jc.code} op={op} stopped={stopped} />
       ) : isQc ? (
         showQcBtn ? (
           <button

@@ -1,7 +1,20 @@
-// Production Orders service (ADR-170, migration 0133).
+// Production Orders service (ADR-170, migration 0133; ADR-182, migration 0143).
 //
-// A Production Order (IN-PRO-#####) is the ONE document that turns a
+// A Production Order (IN-PRO-#####) is the document that turns a
 // route-card-driven plan into a Job Card:
+//
+// ADR-182 changed three things here:
+//   - a plan may be covered by SEVERAL orders. Create takes its own Order Qty
+//     and caps SUM(order_qty) of the plan's live, non-short-closed orders at
+//     plans.plan_qty, inside the plan's row lock (lib/production-order-cap.ts).
+//   - Create refuses unless the shop floor ticks "Raw material available", and
+//     records the size actually cut; both snapshot on the order and the size is
+//     carried onto the Job Card.
+//   - Short Close stops an order at ANY stage. It is NOT the "close short"
+//     below (which finishes a COMPLETE card and writes off its losses): it
+//     freezes the order and its Job Card for good and gives the un-produced qty
+//     back to the plan. lib/production-order-stop.ts is the guard every other
+//     module calls.
 //
 //   Plan (qty / dates / raw material)  +  Route Card (the item's operations)
 //   +  Target Date   ──create──▶   Job Card   … the existing JC flow …
@@ -68,6 +81,9 @@ import {
   releaseReservationForClose,
 } from '../../lib/stock-reservation';
 import { closeBlockedReason } from '../../lib/production-order-close-guard';
+import { planCoverage, productionOrderCapError } from '../../lib/production-order-cap';
+import { readPlanOrderCoverage } from '../../lib/plan-order-coverage';
+import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { emitActivityLog } from '../activity-log/service';
 import { buildJobCardFromOps, type JcBuildOp } from '../plans/service';
 import type {
@@ -80,6 +96,7 @@ import type {
   ProductionOrderDetail,
   ProductionOrderListItem,
   ReverseProductionOrderCloseInput,
+  ShortCloseProductionOrderInput,
 } from './schema';
 
 const PO_PREFIX = 'IN-PRO-';
@@ -316,6 +333,7 @@ const CLIENT_PO_LINE_NO_SQL = sql<string | null>`(
 
 const createdByUser = alias(users, 'po_created_by');
 const closedByUser = alias(users, 'po_closed_by');
+const shortClosedByUser = alias(users, 'po_short_closed_by');
 
 // Named column list rather than a bare select(): house rule 6 forbids SELECT *,
 // and spelling the columns out means a column added later cannot silently
@@ -339,6 +357,13 @@ const poColumns = {
   jcCodeText: productionOrders.jcCodeText,
   orderQty: productionOrders.orderQty,
   targetDate: productionOrders.targetDate,
+  // ADR-182 — raw-material confirmation, the size really cut, and the short
+  // close stamps.
+  rawMaterialAvailable: productionOrders.rawMaterialAvailable,
+  actualSize: productionOrders.actualSize,
+  shortClosedAt: productionOrders.shortClosedAt,
+  shortClosedBy: productionOrders.shortClosedBy,
+  shortCloseReason: productionOrders.shortCloseReason,
   closedAt: productionOrders.closedAt,
   closedBy: productionOrders.closedBy,
   creditedQty: productionOrders.creditedQty,
@@ -365,6 +390,7 @@ const poColumns = {
   clientPoLineNo: CLIENT_PO_LINE_NO_SQL,
   createdByName: createdByUser.fullName,
   closedByName: closedByUser.fullName,
+  shortClosedByName: shortClosedByUser.fullName,
 };
 
 /** One row of `baseQuery` (declared below; function declarations hoist). */
@@ -392,6 +418,11 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     jcCodeText: r.jcCodeText,
     orderQty: r.orderQty,
     targetDate: dateOnly(r.targetDate),
+    rawMaterialAvailable: r.rawMaterialAvailable ?? true,
+    actualSize: r.actualSize ?? null,
+    shortClosedAt: toIso(r.shortClosedAt),
+    shortClosedBy: r.shortClosedBy ?? null,
+    shortCloseReason: r.shortCloseReason ?? null,
     closedAt: toIso(r.closedAt),
     closedBy: r.closedBy,
     creditedQty: r.creditedQty,
@@ -414,6 +445,7 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     rawMaterialSizeText: r.rawMaterialSizeText ?? null,
     createdByName: r.createdByName ?? null,
     closedByName: r.closedByName ?? null,
+    shortClosedByName: r.shortClosedByName ?? null,
   };
 }
 
@@ -494,7 +526,7 @@ async function readJcSettledWithLosses(
   tx: DbTransaction,
   item: ProductionOrderListItem,
 ): Promise<boolean> {
-  if (item.status === 'closed') return false;
+  if (item.status === 'closed' || item.status === 'short_closed') return false;
   if (item.jcComputedStatus === 'complete' || item.jcComputedStatus === 'closed') return false;
   const rows = (await tx.execute(
     sql`SELECT ${jcSettledWithLossesSql(sql`${item.jobCardId}::uuid`)} AS settled`,
@@ -536,7 +568,8 @@ function baseQuery(tx: DbTransaction) {
     .leftJoin(jobCards, eq(jobCards.id, productionOrders.jobCardId))
     .leftJoin(plans, eq(plans.id, productionOrders.planId))
     .leftJoin(createdByUser, eq(createdByUser.id, productionOrders.createdBy))
-    .leftJoin(closedByUser, eq(closedByUser.id, productionOrders.closedBy));
+    .leftJoin(closedByUser, eq(closedByUser.id, productionOrders.closedBy))
+    .leftJoin(shortClosedByUser, eq(shortClosedByUser.id, productionOrders.shortClosedBy));
 }
 
 async function readDetailInTx(
@@ -656,15 +689,23 @@ export async function createProductionOrder(
   await requireFormAccess(user, 'prodorder_create', 'entry');
   const companyId = requireCompany(user);
 
+  // ADR-182 — no material, no order. Checked before anything is read or
+  // written, and worded exactly as the screen words it.
+  if (input.rawMaterialAvailable !== true) {
+    throw new ValidationError('No raw material — you cannot create the production order.');
+  }
+  const actualSize = input.actualSize?.trim() ? input.actualSize.trim() : null;
+
   // withUniqueRetry: two users creating orders for DIFFERENT plans at the same
   // moment can both compute the same next IN-PRO-##### — the loser's whole
   // transaction (JC, ops, OSP PRs) rolls back and re-runs with the next number.
   return withUniqueRetry(() =>
     withUserContext(user, async (tx) => {
-      // Row-lock the plan: two clicks on Create must not both read "no order
-      // yet" and each build a Job Card. The second waits, re-reads, and is
-      // refused by the checks below (the partial unique index on plan_id is the
-      // last line of defence).
+      // Row-lock the plan: two clicks on Create must not both read the same
+      // "covered" figure and each build a Job Card for the whole Pending qty.
+      // The second waits, re-reads the SUM below, and is refused if its qty no
+      // longer fits (ADR-182 — the unique index on plan_id is gone, this lock
+      // IS the cap's safety).
       const planRows = await tx
         .select()
         .from(plans)
@@ -681,21 +722,36 @@ export async function createProductionOrder(
           `Plan ${plan.code} is an old-style plan with its own operations — use Execute on the plan instead`,
         );
       }
+      // ADR-182 — the qty cap, read INSIDE the plan's row lock above so two
+      // concurrent creates can never both fit. A short-closed order is left out
+      // of the sum on purpose: stopping an order gives its un-produced qty back
+      // to the plan's Pending.
+      //
+      // Checked BEFORE the plan-status guard below on purpose: a fully-covered
+      // plan is stamped 'jc_created' the moment its last order is created (see
+      // the write below), so for that exact plan the status guard would fire
+      // first and show the user an internal status name instead of the plain
+      // "fully covered" sentence this cap exists to give them. Every other
+      // refusal is unaffected — if the qty still fits, capError is null and the
+      // status guard fires next exactly as before.
+      const coveredRows = (await tx.execute(sql`
+        SELECT COALESCE(SUM(po.order_qty), 0)::int AS covered
+        FROM public.production_orders po
+        WHERE po.plan_id = ${plan.id}::uuid
+          AND po.deleted_at IS NULL
+          AND po.status <> 'short_closed'
+      `)) as unknown as Array<{ covered: number }>;
+      const covered = Number(coveredRows[0]?.covered ?? 0);
+      const capError = productionOrderCapError(plan.code, plan.planQty, covered, input.orderQty);
+      if (capError) throw new ValidationError(capError);
+      const coverage = planCoverage(plan.planQty, covered + input.orderQty);
+
       if (plan.planStatus !== 'planned') {
         throw new ValidationError(
           `Plan ${plan.code} is '${plan.planStatus}' — only a planned plan can be turned into a Production Order`,
         );
       }
-      const existingPo = await tx
-        .select({ code: productionOrders.code })
-        .from(productionOrders)
-        .where(and(eq(productionOrders.planId, plan.id), isNull(productionOrders.deletedAt)))
-        .limit(1);
-      if (existingPo[0]) {
-        throw new ConflictError(
-          `Plan ${plan.code} already has Production Order ${existingPo[0].code} — one order per plan`,
-        );
-      }
+
       if (!plan.itemId) {
         throw new ValidationError(
           `Plan ${plan.code} has no master item — pick the item from Item Master on the plan first`,
@@ -816,12 +872,25 @@ export async function createProductionOrder(
         user,
         companyId,
         dueDate: input.targetDate,
+        // ADR-182: the card is built for THIS order's qty, not for the whole
+        // plan — 20 of a 50 plan makes a 20-piece Job Card.
+        orderQty: input.orderQty,
+        actualSize,
       });
       const jc = built.jc;
 
+      // ADR-182 — the plan only leaves 'planned' once it is FULLY covered.
+      // `createProductionOrder` refuses a plan that is not 'planned', so
+      // stamping 'jc_created' on the first of several orders would lock the
+      // plan out of the very batching this ADR adds. Pending 0 means nothing
+      // more can be raised, so the old label is correct again there.
       await tx
         .update(plans)
-        .set({ planStatus: 'jc_created', jcId: jc.id, updatedBy: user.id })
+        .set({
+          ...(coverage.pendingQty === 0 ? { planStatus: 'jc_created' as const } : {}),
+          jcId: jc.id,
+          updatedBy: user.id,
+        })
         .where(eq(plans.id, plan.id));
 
       const code = await nextProductionOrderCode(tx, companyId);
@@ -843,8 +912,10 @@ export async function createProductionOrder(
           routeCardRevision: rc.currentRevision,
           jobCardId: jc.id,
           jcCodeText: jc.code,
-          orderQty: plan.planQty,
+          orderQty: input.orderQty,
           targetDate: input.targetDate,
+          rawMaterialAvailable: true,
+          actualSize,
           remarks: input.remarks ?? null,
           createdBy: user.id,
           updatedBy: user.id,
@@ -865,9 +936,10 @@ export async function createProductionOrder(
           action: 'CREATE',
           entity: 'Production Order',
           detail:
-            built.raisedPrCodes.length > 0
-              ? `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ${ops.length} ops + OSP PR ${built.raisedPrCodes.join(', ')}`
-              : `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ${ops.length} ops`,
+            `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ` +
+            `${ops.length} ops, Order Qty ${input.orderQty} ` +
+            `(plan ${plan.planQty}, covered ${coverage.coveredQty}, pending ${coverage.pendingQty})` +
+            (built.raisedPrCodes.length > 0 ? ` + OSP PR ${built.raisedPrCodes.join(', ')}` : ''),
           refId: code,
         },
         companyId,
@@ -1030,7 +1102,11 @@ export async function closeProductionOrder(
     // Lock the PO row so a double-clicked Close cannot credit stock twice: the
     // second waits, re-reads 'closed', and is refused.
     const locked = await tx
-      .select({ id: productionOrders.id, status: productionOrders.status })
+      .select({
+        id: productionOrders.id,
+        status: productionOrders.status,
+        jobCardId: productionOrders.jobCardId,
+      })
       .from(productionOrders)
       .where(
         and(
@@ -1042,6 +1118,9 @@ export async function closeProductionOrder(
       .limit(1)
       .for('update');
     if (!locked[0]) throw new NotFoundError(`Production Order ${id} not found`);
+    // ADR-182 — a short-closed order is dead. Refused before anything is read
+    // or written, in the same words every other stopped-order refusal uses.
+    await assertProductionOrderNotShortClosed(tx, locked[0].jobCardId);
     if (locked[0].status === 'closed') {
       throw new ConflictError('Production Order is already fully closed');
     }
@@ -1255,6 +1334,9 @@ export async function reverseProductionOrderClose(
       .for('update');
     const po = locked[0];
     if (!po) throw new NotFoundError(`Production Order ${id} not found`);
+    // ADR-182 — nothing may be undone on a stopped order either: its credited
+    // pieces stay credited exactly as they were when it was short closed.
+    await assertProductionOrderNotShortClosed(tx, po.jobCardId);
 
     // The close row being reversed must belong to this PO, be a real close (not
     // itself a reversal) and not already reversed.
@@ -1385,6 +1467,159 @@ export async function reverseProductionOrderClose(
         detail:
           `${po.code} — reversed close of ${close.qty} (now ${newCredited} of ${po.orderQty} credited)` +
           (unbooked > 0 ? `, ${unbooked} reservation released` : ''),
+        refId: po.code,
+      },
+      companyId,
+      user,
+    );
+
+    return readDetailInTx(tx, id, companyId);
+  });
+}
+
+// ─── Short close: stop the order at ANY stage (ADR-182) ───────────────────
+
+/**
+ * Stop a Production Order dead. NOT ADR-179's "close short", which finishes a
+ * COMPLETE Job Card and writes off its losses — this is the abandon button, and
+ * it is allowed from any stage.
+ *
+ * What it does:
+ *   - records who stopped it, when and why (the DB CHECK makes all three
+ *     mandatory for the status, so a blank reason can never be stored);
+ *   - releases the un-produced qty back to the plan: the cap in
+ *     `createProductionOrder` and the plan list's Covered / Pending both skip
+ *     short-closed orders, so a stopped order of 20 gives 20 back at once;
+ *   - and, because of that, puts the plan BACK to 'planned' whenever the stop
+ *     leaves Pending > 0. Create stamps `plan_status = 'jc_created'` the moment
+ *     a plan is fully covered and refuses any plan that is not 'planned', so
+ *     without this the freed qty would show as Pending everywhere and still be
+ *     un-orderable: the screen offers "+ Create Production Order" and the
+ *     server answers "Plan PLN-0009 is 'jc_created'". The write path has to
+ *     give the qty back too, not only the arithmetic (ADR-182 review).
+ *
+ * What it deliberately does NOT do:
+ *   - touch the close ledger or the stock it credited. Pieces that were really
+ *     made and really credited stay credited; nothing is written off.
+ *   - close the Job Card row. The card stays as it was — it is simply frozen by
+ *     `assertProductionOrderNotShortClosed`, which every write path now calls.
+ *
+ * The only status it refuses is `short_closed` itself: an order already stopped
+ * cannot be stopped again. A fully `closed` order CAN be short closed — the ask
+ * is "at any stage", and closed work that later has to be abandoned (the pieces
+ * were scrapped after credit, the customer cancelled) needs the same stop.
+ */
+export async function shortCloseProductionOrder(
+  id: string,
+  input: ShortCloseProductionOrderInput,
+  user: AuthContext,
+): Promise<ProductionOrderDetail> {
+  await requireFormAccess(user, 'prodorder_create', 'edit');
+  const companyId = requireCompany(user);
+
+  const reason = input.reason.trim();
+  if (!reason) throw new ValidationError('Say why the order is being short closed');
+
+  return withUserContext(user, async (tx) => {
+    // Lock the order so a short close and a concurrent close cannot both win.
+    const locked = await tx
+      .select({
+        id: productionOrders.id,
+        code: productionOrders.code,
+        status: productionOrders.status,
+        orderQty: productionOrders.orderQty,
+        creditedQty: productionOrders.creditedQty,
+        jobCardId: productionOrders.jobCardId,
+        jcCodeText: productionOrders.jcCodeText,
+        planId: productionOrders.planId,
+        planCodeText: productionOrders.planCodeText,
+      })
+      .from(productionOrders)
+      .where(
+        and(
+          eq(productionOrders.id, id),
+          eq(productionOrders.companyId, companyId),
+          isNull(productionOrders.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    const po = locked[0];
+    if (!po) throw new NotFoundError(`Production Order ${id} not found`);
+    if (po.status === 'short_closed') {
+      throw new ConflictError(`Production Order ${po.code} is already short closed`);
+    }
+
+    const now = new Date();
+    await tx
+      .update(productionOrders)
+      .set({
+        status: 'short_closed',
+        shortClosedAt: now,
+        shortClosedBy: user.id,
+        shortCloseReason: reason,
+        updatedAt: now,
+        updatedBy: user.id,
+      })
+      .where(eq(productionOrders.id, id));
+
+    // Give the qty back to the plan for real (ADR-182 review). Lock the plan
+    // first — the SAME lock `createProductionOrder` takes — so a create running
+    // at this moment either sees the order still live (and is capped by it) or
+    // waits and re-reads the freed Pending. Never both.
+    const planRows = await tx
+      .select({ id: plans.id, planQty: plans.planQty, planStatus: plans.planStatus })
+      .from(plans)
+      .where(and(eq(plans.id, po.planId), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
+      .limit(1)
+      .for('update');
+    const plan = planRows[0];
+    let planReopened = false;
+    if (plan) {
+      const { coveredQty } = await readPlanOrderCoverage(tx, plan.id);
+      const coverage = planCoverage(plan.planQty, coveredQty);
+      if (coverage.pendingQty > 0 && plan.planStatus === 'jc_created') {
+        // Back to 'planned' — the one status Create accepts. Nothing else about
+        // the plan changes: a plan the user cancelled stays cancelled, and a
+        // plan still fully covered by its OTHER orders keeps 'jc_created'.
+        await tx
+          .update(plans)
+          .set({ planStatus: 'planned' as const, updatedBy: user.id })
+          .where(eq(plans.id, plan.id));
+        planReopened = true;
+      }
+      // plans.jc_id points at "the plan's Job Card" and is what the plan screen
+      // links to. Re-point it at the newest LIVE order's card so it stops
+      // opening the frozen one; if the stopped order was the only one, leave it
+      // alone (the card still exists and is still the plan's history).
+      const liveJc = (await tx.execute(sql`
+        SELECT po.job_card_id AS job_card_id
+        FROM public.production_orders po
+        WHERE po.plan_id = ${plan.id}::uuid
+          AND po.deleted_at IS NULL
+          AND po.status <> 'short_closed'
+        ORDER BY po.created_at DESC, po.code DESC
+        LIMIT 1
+      `)) as unknown as Array<{ job_card_id: string | null }>;
+      const newJcId = liveJc[0]?.job_card_id ?? null;
+      if (newJcId) {
+        await tx
+          .update(plans)
+          .set({ jcId: newJcId, updatedBy: user.id })
+          .where(and(eq(plans.id, plan.id), eq(plans.jcId, po.jobCardId)));
+      }
+    }
+
+    const credited = po.creditedQty ?? 0;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'SHORT_CLOSE',
+        entity: 'Production Order',
+        detail:
+          `${po.code} short closed — JC ${po.jcCodeText} stopped at ${credited} of ${po.orderQty} ` +
+          `credited; ${Math.max(0, po.orderQty - credited)} returned to plan ${po.planCodeText}` +
+          `${planReopened ? ' (plan re-opened for a new Production Order)' : ''}. ${reason}`,
         refId: po.code,
       },
       companyId,

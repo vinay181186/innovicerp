@@ -381,12 +381,14 @@ function DocumentsTab({
   extras,
   drawing,
   onOpenDrawing,
+  stopped,
 }: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
   extras: JobCardStatusExtras | undefined;
   drawing: JcDrawingRef | null;
   onOpenDrawing: () => void;
+  stopped: boolean;
 }): React.JSX.Element {
   const { data: eff } = useMyAccess();
   // The two register links carry the same gates as the op-card buttons that
@@ -455,11 +457,13 @@ function DocumentsTab({
               : 'none open'
           }
           hint={
-            canQc
-              ? 'Open the QC Call Register on this job card'
-              : 'QC operations with pieces waiting to be inspected'
+            stopped
+              ? 'The Production Order was short closed — no QC can be called on this job card.'
+              : canQc
+                ? 'Open the QC Call Register on this job card'
+                : 'QC operations with pieces waiting to be inspected'
           }
-          link={canQc ? { to: 'qc-call-register', search: jc.code } : null}
+          link={!stopped && canQc ? { to: 'qc-call-register', search: jc.code } : null}
         />
       ) : null}
       {ncEvents.length > 0 ? (
@@ -469,11 +473,13 @@ function DocumentsTab({
           title="NC Report"
           sub={`${ncEvents.length} NC · ${ncPcs} pcs`}
           hint={
-            canNc
-              ? 'Open the NC register filtered to this job card'
-              : 'Non-conformances raised on this job card'
+            stopped
+              ? 'The Production Order was short closed — these NCs are a record only.'
+              : canNc
+                ? 'Open the NC register filtered to this job card'
+                : 'Non-conformances raised on this job card'
           }
-          link={canNc ? { to: 'nc-register', search: jc.code } : null}
+          link={!stopped && canNc ? { to: 'nc-register', search: jc.code } : null}
         />
       ) : null}
       {nothing ? (
@@ -502,12 +508,19 @@ export function JcViewTabs({
   extras,
   drawing,
   onOpenDrawing,
+  stopped = false,
 }: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
   extras: JobCardStatusExtras | undefined;
   drawing: JcDrawingRef | null;
   onOpenDrawing: () => void;
+  // ADR-182 — a short-closed Production Order freezes its Job Card. The
+  // Documents tab keeps the QC Calls / NC Report cards visible (they are the
+  // record of what happened) but drops their register links so the user is
+  // never sent to a write the server will refuse. Defaults to false so a
+  // live Job Card renders exactly as before.
+  stopped?: boolean;
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('docs');
   return (
@@ -556,6 +569,7 @@ export function JcViewTabs({
             extras={extras}
             drawing={drawing}
             onOpenDrawing={onOpenDrawing}
+            stopped={stopped}
           />
         ) : tab === 'remarks' ? (
           jc.remarks ? (

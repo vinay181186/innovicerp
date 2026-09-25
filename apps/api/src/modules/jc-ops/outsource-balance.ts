@@ -20,6 +20,7 @@ import { items, jcOps, jobCards, runningOps, vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { createPurchaseRequest } from '../purchase-requests/service';
 
@@ -64,6 +65,13 @@ export async function outsourceOpBalance(
       .limit(1);
     const op = opRows[0];
     if (!op) throw new NotFoundError(`JC operation ${jcOpId} not found`);
+
+    // ADR-182 — the dual-lane action raises a jw_osp purchase request and
+    // stamps a vendor on the op, so it is a write like any other: refused once
+    // the Job Card's Production Order has been short closed. The card id is
+    // already in hand above, so the guard is called directly (one round trip
+    // fewer than the jc_op-keyed variant, same answer).
+    await assertProductionOrderNotShortClosed(tx, op.jobCardId);
 
     // Guard: an in-house machine session actively RUNNING on this op means those
     // pieces are being produced in-house right now — outsourcing them would

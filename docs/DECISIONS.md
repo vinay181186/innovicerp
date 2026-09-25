@@ -9727,3 +9727,92 @@ canonical ruled sheet; 0 of 138 screens share a search input; 26 hand-rolled mod
   a bubble listener reads `aria-expanded="false"` because React has already flushed the picker's
   close, and the Escape meant for a dropdown then discards the whole form. The two live inspect
   modals document this; the first build of the shared Modal got it wrong and it was caught in review.
+
+## ADR-182: A plan may be covered by several Production Orders (qty-capped), raw material is confirmed on Create, and an order can be Short Closed at any stage
+
+**Date:** 2026-09-24 · **Status:** Accepted · **Migration:** 0143
+
+### Context
+ADR-170 gave a plan exactly one Production Order, which silently took the whole plan qty
+(`order_qty = plans.plan_qty`, unique index `production_orders_plan_uniq`). Three gaps
+(user, 2026-09-24): the shop floor raises an order without confirming the material is on
+hand or recording the size actually cut; a plan of 50 cannot be covered by 20 + 20 with 10
+left; and an order that must be abandoned mid-way has no stop — ADR-179's "close short"
+finishes a COMPLETE job card and writes off its losses, it is not a stop.
+
+### Decision
+1. **Raw material on Create.** `raw_material_available` (mandatory tick; Create is refused
+   without it, message "No raw material — you cannot create the production order.") and
+   `actual_size` (free text, the size really available / cut). Both snapshot on the order;
+   `actual_size` is copied onto the Job Card it builds, so the traveller prints what was cut.
+   The plan's master-picked Grade / Size stay the intent and are unchanged.
+2. **Order Qty, capped per plan.** `createProductionOrder` takes `orderQty`. Inside the
+   plan's existing `SELECT … FOR UPDATE`, `SUM(order_qty)` of that plan's live,
+   non-short-closed orders + the new qty must be ≤ `plans.plan_qty`, else
+   "Plan PLN-0009 has only 10 left of 50 — reduce the qty." The lock makes concurrent
+   creates safe. The unique index is dropped; the plan list carries `coveredQty` and
+   `pendingQty` (NAMING.md `Pending`).
+3. **Short Close, at any stage.** Status `short_closed` with `short_closed_at/_by` and a
+   mandatory `short_close_reason` (DB CHECK, same shape as 0117's PR short close). A
+   short-closed order releases its qty back to the plan's pending and is DEAD: every
+   server-side write that touches its Job Card refuses — op start/log, QC log, Incoming QC,
+   GRN, DC, dispatch, NC, rework/recovery child, JC edit/delete, and the order's own
+   close / reverse-close. The guard walks `parent_job_card_id` so rework children are
+   covered; the UI hides the buttons as well, but the server is the rule.
+
+### Consequences
+- Positive: material is confirmed before work is raised; a plan can be released in batches;
+  an abandoned order stops dead and gives its qty back.
+- Negative: one more status for every reader (badges, report filter, list tiles, derived
+  plan status); the per-plan cap adds a SUM inside the create lock.
+
+## ADR-183: A reject entered on the production form raises an NC, and the NC series is `NC-#####`
+
+**Date:** 2026-09-25
+**Status:** Accepted
+
+### Context
+
+The floor does not always have a separate QC operation: the machine runs, QC looks at
+what came off it, and the person at the terminal types "1 good, 9 rejected" on the
+production form. That 9 went into `op_log.reject_qty` on the 'complete' row and stopped
+there — no NC, no screen, no gate read it. `v_jc_op_status` subtracted only good output,
+so the op still offered the 9 as work (TEST: IN-JC-26-00018 Op10 read 9 available after
+"1 good, 9 rejected"), and a later "9 good" entry could close the op and its Job Card
+with 19 pieces counted from 10. Auto-NC codes were also unreadable
+(`NC-AUTO-IN-JC-26-00018-Op10-143052123`).
+
+### Decision
+
+1. A production entry (Log Production or Stop) with rejects raises an NC exactly as a QC
+   reject does, reason "Auto-created from production entry", `qc_log_id` = the production
+   row. "0 good, N rejected" is a valid entry.
+2. Good + rejected is capped at the op's available qty (was good only).
+3. Migration 0144: `available` / `pending_qty` also subtract production rejects not yet
+   put back; an op whose only entry is all-rejected reads `in_progress`.
+4. Use-as-is and rework/repair recovery put pieces back as a `LOG-NC-…` **'complete'**
+   row when the NC came from a production entry (`nc-register/reinject-log-type.ts`),
+   a 'qc' row otherwise (unchanged). 0144 nets those rows back out, so recovered pieces
+   count once as output and are never charged twice against input.
+5. Auto-NC codes are the per-company series `NC-00001` (max strict `NC-<digits>` + 1,
+   `lib/nc-code.ts`), picked under a per-company transaction advisory lock so two
+   entries committing at once cannot take the same number. Old codes are left as they are.
+6. The JC op card shows Rej qty and the raised NC (linked) on each log line; the ⚠ NC
+   strip links to the NC Register filtered to the Job Card.
+
+### Alternatives Considered
+
+- Subtract open NC qty instead of reject_qty — rejected: use-as-is would re-open the
+  pieces as work to be logged again instead of returning them as output.
+- Keep re-injection as 'qc' rows and count them on plain ops — rejected: on a
+  qc_required op they would cut `qc_pending` and hide pieces still waiting for QC.
+
+### Consequences
+
+- Positive: rejected pieces are accounted for once; the op, JC and PO close gates see them.
+- Negative: re-injected production pieces appear as a production row (machine blank,
+  remarks name the NC). Old 'complete' rows with rejects and no NC (entered before this)
+  now reduce `available` — correct, but visible on TEST's IN-JC-26-00018.
+- Open: api tests / e2e specs clean up NCs by the `NC-AUTO-` prefix and will no longer
+  catch the ones they create (the suite hits PROD — do not run it until the cleanup keys
+  on the test Job Cards instead).

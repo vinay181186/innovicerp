@@ -15,7 +15,7 @@ import type {
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { soPlanningKeys } from '@/modules/so-planning/api';
 
@@ -57,13 +57,17 @@ function buildPlansSearch(q: ListPlansQuery): string {
   return s.length > 0 ? `?${s}` : '';
 }
 
-export function usePlansList(query: ListPlansQuery) {
+export function usePlansList(
+  query: ListPlansQuery,
+  options?: Omit<UseQueryOptions<ListPlansResponse>, 'queryKey' | 'queryFn'>,
+) {
   return useQuery<ListPlansResponse>({
     queryKey: plansKeys.list(query),
     queryFn: () => apiFetch<ListPlansResponse>(`/plans${buildPlansSearch(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
+    ...options,
   });
 }
 

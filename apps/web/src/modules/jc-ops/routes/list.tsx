@@ -11,7 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { PlannedActualMachine } from '@/components/shared/machine-split';
+import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -129,7 +129,8 @@ function JcOpsPage(): React.JSX.Element {
                   <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th className="td-ctr">Op</th>
-                  <th>Machine (Planned / Actual)</th>
+                  <th>Planned Machine</th>
+                  <th>Actual Machine</th>
                   <th>Operation</th>
                   <th className="td-ctr">Cycle Time (h)</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
@@ -265,15 +266,23 @@ function Row({
         ) : null}
       </td>
       <td className="td-ctr mono fw-700">{opSrNo(o.opSeq)}</td>
+      {/* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs) and
+          ACTUAL (the machine(s) that made the Done qty, else the plan) each get
+          their own column. Same value when nothing changed; the actual turns
+          amber when it differs, with the per-machine breakdown for a 2+ machine
+          split. */}
       <td>
         {isOutsource ? (
           <span style={{ fontSize: 10, color: 'var(--amber)' }}>—</span>
         ) : (
-          /* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs)
-             and ACTUAL (the machine(s) that made the Done qty, else the plan).
-             Same name on both lines when nothing changed; amber when it
-             differs, with the per-machine breakdown for a 2+ machine split. */
-          <PlannedActualMachine planned={o.machineCode} machines={o.machines} />
+          <PlannedMachineCell planned={o.machineCode} />
+        )}
+      </td>
+      <td>
+        {isOutsource ? (
+          <span style={{ fontSize: 10, color: 'var(--amber)' }}>—</span>
+        ) : (
+          <ActualMachineCell planned={o.machineCode} machines={o.machines} />
         )}
       </td>
       <td>

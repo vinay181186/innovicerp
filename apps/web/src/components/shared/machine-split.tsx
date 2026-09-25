@@ -138,14 +138,42 @@ export function resolveActualMachine(input: {
     return { label, differs: !eq(label, planned), split: [] };
   }
   if (machines.length > 1) {
-    return { label: machines.map((m) => m.machineCode).join(' + '), differs: true, split: machines };
+    return {
+      label: machines.map((m) => m.machineCode).join(' + '),
+      differs: true,
+      split: machines,
+    };
   }
   return { label: planned || '—', differs: false, split: [] };
 }
 
-/** The two-line "Planned / Actual" cell used in op tables and cards. Both lines
- *  always render; the actual turns amber only when it is not the plan. */
-export function PlannedActualMachine({
+// ── Two separate table columns: Planned Machine | Actual Machine ────────────
+//
+// The PLANNED / ACTUAL machine pair (ADR-164), split so a table gives each value
+// its OWN column (one <td> each) instead of stacking both in one cell — the shop
+// floor scans planned vs actual at a glance (ADR-179). Both reuse
+// resolveActualMachine, so the amber "machine changed" cue and the multi-machine
+// breakdown are consistent. (Replaced the old stacked PlannedActualMachine cell.)
+
+/** Cell content for the PLANNED MACHINE column: just the planned code. */
+export function PlannedMachineCell({
+  planned,
+  size = 11,
+}: {
+  planned: string | null | undefined;
+  size?: number;
+}): React.JSX.Element {
+  return (
+    <span className="mono fw-700" style={{ fontSize: size, whiteSpace: 'nowrap' }}>
+      {planned?.trim() || '—'}
+    </span>
+  );
+}
+
+/** Cell content for the ACTUAL MACHINE column: the resolved actual code, amber
+ *  when it differs from the plan, with the per-machine breakdown for 2+
+ *  machines. Empty actual shows "—" (never blank). */
+export function ActualMachineCell({
   planned,
   activeRunningMachineCode,
   machines,
@@ -157,44 +185,27 @@ export function PlannedActualMachine({
   size?: number;
 }): React.JSX.Element {
   const actual = resolveActualMachine({ planned, activeRunningMachineCode, machines });
-  const labelStyle: React.CSSProperties = {
-    fontSize: 9,
-    letterSpacing: '.06em',
-    color: 'var(--text3)',
-    fontWeight: 700,
-  };
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'auto auto',
-        columnGap: 6,
-        alignItems: 'baseline',
-        lineHeight: 1.3,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <span style={labelStyle}>PLANNED</span>
-      <span className="mono fw-700" style={{ fontSize: size }}>
-        {planned?.trim() || '—'}
-      </span>
-      <span style={labelStyle}>ACTUAL</span>
+    <div style={{ lineHeight: 1.3 }}>
       <span
         className="mono fw-700"
-        style={{ fontSize: size, color: actual.differs ? 'var(--amber)' : undefined }}
+        style={{
+          fontSize: size,
+          whiteSpace: 'nowrap',
+          color: actual.differs ? 'var(--amber)' : undefined,
+        }}
         title={actual.split.length ? machineSplitTitle(actual.split) : undefined}
       >
         {actual.label}
       </span>
-      {actual.split.length ? (
-        <div style={{ gridColumn: '1 / -1' }}>
-          {actual.split.map((m) => (
-            <div key={m.machineCode} style={{ fontSize: 9, color: 'var(--text3)' }}>
-              {m.machineCode}: <b>{m.qty}</b> pcs
-            </div>
-          ))}
+      {actual.split.map((m) => (
+        <div
+          key={m.machineCode}
+          style={{ fontSize: 9, color: 'var(--text3)', whiteSpace: 'nowrap' }}
+        >
+          {m.machineCode}: <b>{m.qty}</b> pcs
         </div>
-      ) : null}
+      ))}
     </div>
   );
 }
