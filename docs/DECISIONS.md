@@ -8560,7 +8560,7 @@ This list is the valuable half of this ADR. Each of these would have stated some
 
 ### Deploy
 
-Depends on migration 0119, applied to TEST and verified. **Not applied to production** — this must not ship there until it is, or the SO screens break.
+Depends on migration 0119. Applied to TEST, then to PRODUCTION on 2026-09-11 immediately before this merge landed, and verified there: `revision` reads `text NOT NULL DEFAULT '0'`, all 45 live lines kept their values (41 at `0`, 4 at `1`), and `line_revision_text` was backfilled on all 8 drawing-history rows. The order is not optional — the code selects `line_revision_text`, which did not exist, and writes text into `revision`, which was an integer.
 
 ## ADR-161: QC–NC handling — rejected pieces are a quantity ledger with a location, not a status flag
 

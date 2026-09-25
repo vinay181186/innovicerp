@@ -28,6 +28,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -65,7 +66,9 @@ function DeliveryChallansListPage(): React.JSX.Element {
   }, [search.search]);
 
   useEffect(() => {
-    const trimmed = searchInput.trim();
+    // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+    // "  IN-DC  26 " and "IN-DC 26" are one query, one cache entry, one URL.
+    const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
