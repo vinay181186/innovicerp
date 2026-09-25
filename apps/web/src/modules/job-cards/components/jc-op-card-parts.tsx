@@ -14,43 +14,6 @@ export const secLabel: React.CSSProperties = {
   marginBottom: 5,
 };
 
-/** One QUANTITIES tile: big number over a small uppercase caption. `sub` holds
- *  the caller's extra lines (QC accepted / rejected / pending) unchanged. */
-export function QtyTile({
-  label,
-  value,
-  color,
-  highlight = false,
-  sub,
-}: {
-  label: string;
-  value: React.ReactNode;
-  color: string;
-  highlight?: boolean;
-  sub?: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        minWidth: 48,
-        padding: '5px 8px',
-        textAlign: 'center',
-        borderRadius: 6,
-        border: `1px solid ${highlight ? 'var(--amber)' : 'var(--border)'}`,
-        background: highlight ? 'var(--amber3)' : 'var(--bg3)',
-      }}
-    >
-      <div className="mono fw-700" style={{ fontSize: 14, color, lineHeight: 1.2 }}>
-        {value}
-      </div>
-      <div style={{ fontSize: 8, letterSpacing: '.06em', color: 'var(--text3)', fontWeight: 700 }}>
-        {label}
-      </div>
-      {sub ?? null}
-    </div>
-  );
-}
-
 /** Labelled wrapper for an editable SETUP field (edit card). */
 export function SetupField({
   label,
@@ -69,11 +32,11 @@ export function SetupField({
   );
 }
 
-/** One quantity CHIP on the VIEW card's expanded body (JC-Detail-Restyle-
- *  Mockup.html, 2026-09-21): mono number over a tiny uppercase caption, in a
- *  bordered box that fills its grid cell. `highlight` tints it amber (pieces
- *  waiting); `sub` holds the caller's extra lines unchanged. The EDIT card
- *  keeps QtyTile above. */
+/** One quantity CHIP (JC-Detail-Restyle-Mockup.html, 2026-09-21): mono number
+ *  over a tiny uppercase caption, in a bordered box that fills its grid cell.
+ *  `highlight` tints it amber (pieces waiting); `sub` holds the caller's extra
+ *  lines unchanged. Used by BOTH the read-only VIEW op card (jc-op-card.tsx) and
+ *  the editable op card (jc-op-edit-card.tsx) so their quantities read the same. */
 export function QtyChip({
   label,
   value,

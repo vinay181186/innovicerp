@@ -1,10 +1,11 @@
 // JC Status content — the mode dispatcher plus the EDIT body.
 //
 // VIEW mode (the read-only status page, laid out to the 2026-09-18 mockup)
-// lives in jc-status-view.tsx. EDIT mode below is unchanged: the same summary
-// card (JcStatTiles) + editable header + editable op cards, reusing the JC
-// create/edit save logic. The rework/repair banner both modes show is in
-// jc-recovery-banner.tsx.
+// lives in jc-status-view.tsx. EDIT mode below reuses the VIEW's restyled header
+// (JcViewSummary + JcRouteFlowPanel, read-only) so the two screens match, then
+// keeps the editable "Job Card Details" panel + editable op cards below,
+// reusing the JC create/edit save logic. The rework/repair banner both modes
+// show is in jc-recovery-banner.tsx.
 import type {
   JcOpEnriched,
   JobCardEditModel,
@@ -20,9 +21,11 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
+import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { opEntryKeys, useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import {
@@ -32,7 +35,8 @@ import {
   useJobCardStatusExtras,
   useUpdateJobCard,
 } from '../api';
-import { JcStatTiles } from './jc-stat-tiles';
+import { useJcDrawing } from '../lib/jc-drawing';
+import { JcRouteFlowPanel, JcViewSummary } from './jc-view-summary';
 import { JcOpEditCard, type JcOpEditValues } from './jc-op-edit-card';
 import { OutsourceBalanceModal } from './outsource-balance-modal';
 import { RecoveryBanner } from './jc-recovery-banner';
@@ -44,8 +48,8 @@ import {
 } from '../lib/build-jc-write-input';
 
 // Mode dispatcher. VIEW mode renders the read-only status body
-// (jc-status-view.tsx). EDIT mode renders the same sections (tiles +
-// operation flow + operations table) with the editable fields, reusing the JC
+// (jc-status-view.tsx). EDIT mode renders the same sections (VIEW header summary
+// + operation flow + operations) with the editable fields, reusing the JC
 // create/edit save logic. No hooks here → the branch is safe for rules-of-hooks.
 export function JcStatusContent({
   id,
@@ -78,7 +82,10 @@ type EditOp = JcOpEditValues;
 function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
   const { data: jc, isLoading, isError, error } = useJobCard(id);
   const { data: model, isLoading: modelLoading, isError: modelError } = useJobCardEditModel(id);
-  const { data: enrichedOps = [] } = useJcOpsEnriched({ jobCardId: id }, { enabled: Boolean(id) });
+  const { data: enrichedOps = [], isSuccess: opsLoaded } = useJcOpsEnriched(
+    { jobCardId: id },
+    { enabled: Boolean(id) },
+  );
   const { data: logs = [] } = useOpLog({ jobCardId: id, limit: 300 }, { enabled: Boolean(id) });
   const { data: extras } = useJobCardStatusExtras(id);
 
@@ -102,6 +109,7 @@ function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
       jc={jc}
       model={model}
       enrichedOps={enrichedOps}
+      opsLoaded={opsLoaded}
       logs={logs}
       extras={extras}
     />
@@ -113,6 +121,7 @@ function JcStatusEditForm({
   jc,
   model,
   enrichedOps,
+  opsLoaded,
   logs,
   extras,
 }: {
@@ -120,6 +129,7 @@ function JcStatusEditForm({
   jc: JobCardListItem;
   model: JobCardEditModel;
   enrichedOps: JcOpEnriched[];
+  opsLoaded: boolean;
   logs: OpLog[];
   extras: JobCardStatusExtras | undefined;
 }): React.JSX.Element {
@@ -131,6 +141,16 @@ function JcStatusEditForm({
   const exit = useExitConfirm({ onExit: goBack });
   const queryClient = useQueryClient();
   const update = useUpdateJobCard(id);
+
+  // Read-only presentational context for the shared VIEW header (JcViewSummary),
+  // so the edit screen's header matches the view exactly. ADR-182 actual size is
+  // read off the Production Order the same way the view does; the drawing ref +
+  // thumbnail come from the shared useJcDrawing (already-loaded `jc` + `model`).
+  // None of this touches the editable header/ops state or the save payload.
+  const { order: productionOrder } = useProductionOrderForJobCard(id);
+  const { drawing, drawingRef } = useJcDrawing(jc, model);
+  const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(true);
 
   const { data: itemsData } = useItemsList({ limit: 500, offset: 0 });
   // machines & vendors list-query schemas cap `limit` at 200 — asking for 500
@@ -521,14 +541,29 @@ function JcStatusEditForm({
         ))}
       </datalist>
 
-      {/* Same consolidated summary card as the view — shared JcStatTiles. */}
-      <JcStatTiles
+      {/* Same restyled header the VIEW shows — the shared JcViewSummary (image
+          tile, code · name · Material · Size, 5 KPI tiles, references, meta),
+          wired read-only from the edit form's already-loaded data. Editing
+          happens in the "Job Card Details" panel directly below. */}
+      <JcViewSummary
         jc={jc}
         ops={enrichedOps}
-        rmAvailable={extras?.rmAvailable ?? null}
+        opsLoaded={opsLoaded}
         sortedOps={sortedEnriched}
-        opExtraById={opExtraById}
+        rmAvailable={extras?.rmAvailable ?? null}
+        actualSize={productionOrder?.actualSize ?? null}
+        drawing={drawingRef}
+        onOpenDrawing={() => setDrawingPreviewOpen(true)}
       />
+      {drawingPreviewOpen && drawing ? (
+        <FilePreviewModal
+          storagePath={drawing.path}
+          kind="drawing"
+          source={drawing.source}
+          refCode={jc.code}
+          onClose={() => setDrawingPreviewOpen(false)}
+        />
+      ) : null}
 
       {/* Editable header fields */}
       <div className="panel" style={{ marginBottom: 12 }}>
@@ -598,6 +633,16 @@ function JcStatusEditForm({
           </div>
         </div>
       </div>
+
+      {/* Route / Operation Flow — the same read-only wrapping strip of fixed
+          op cards the VIEW shows, above the editable operations below. */}
+      <JcRouteFlowPanel
+        jc={jc}
+        sortedOps={sortedEnriched}
+        opExtraById={opExtraById}
+        open={flowOpen}
+        onToggle={() => setFlowOpen((v) => !v)}
+      />
 
       {/* OPERATIONS DETAIL — same table as the view, with editable cells for
           Machine/Operation/Cycle/Prog-Tool/QC/Outsource. The qty/status/logs
