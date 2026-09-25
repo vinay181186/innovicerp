@@ -722,15 +722,18 @@ export async function createProductionOrder(
           `Plan ${plan.code} is an old-style plan with its own operations — use Execute on the plan instead`,
         );
       }
-      if (plan.planStatus !== 'planned') {
-        throw new ValidationError(
-          `Plan ${plan.code} is '${plan.planStatus}' — only a planned plan can be turned into a Production Order`,
-        );
-      }
       // ADR-182 — the qty cap, read INSIDE the plan's row lock above so two
       // concurrent creates can never both fit. A short-closed order is left out
       // of the sum on purpose: stopping an order gives its un-produced qty back
       // to the plan's Pending.
+      //
+      // Checked BEFORE the plan-status guard below on purpose: a fully-covered
+      // plan is stamped 'jc_created' the moment its last order is created (see
+      // the write below), so for that exact plan the status guard would fire
+      // first and show the user an internal status name instead of the plain
+      // "fully covered" sentence this cap exists to give them. Every other
+      // refusal is unaffected — if the qty still fits, capError is null and the
+      // status guard fires next exactly as before.
       const coveredRows = (await tx.execute(sql`
         SELECT COALESCE(SUM(po.order_qty), 0)::int AS covered
         FROM public.production_orders po
@@ -742,6 +745,12 @@ export async function createProductionOrder(
       const capError = productionOrderCapError(plan.code, plan.planQty, covered, input.orderQty);
       if (capError) throw new ValidationError(capError);
       const coverage = planCoverage(plan.planQty, covered + input.orderQty);
+
+      if (plan.planStatus !== 'planned') {
+        throw new ValidationError(
+          `Plan ${plan.code} is '${plan.planStatus}' — only a planned plan can be turned into a Production Order`,
+        );
+      }
 
       if (!plan.itemId) {
         throw new ValidationError(

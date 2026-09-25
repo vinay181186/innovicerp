@@ -446,6 +446,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         extras={extras}
         drawing={drawingRef}
         onOpenDrawing={openDrawing}
+        stopped={stopped}
       />
     </div>
   );
