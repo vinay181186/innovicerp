@@ -12,14 +12,16 @@
 
 export const PO_FORM_CSS = `
 /* Bleed the page tint to the edges of #content. The negative margin MUST match
-   #content's padding exactly (20px, 12px under 768px in innovic-theme.css) —
-   a mismatch pushes the box wider than its parent and adds a horizontal
-   scrollbar to the whole app, which this screen must never do.
+   #content's padding exactly — a mismatch pushes the box wider than its parent
+   and adds a horizontal scrollbar to the whole app, which this screen must
+   never do. So it is DERIVED from the same --content-pad token the gutter is
+   set from, at every breakpoint, rather than repeating the number here.
    Sides and bottom only — a negative TOP margin would ride up over the
    breadcrumb trail that #content renders above the outlet. */
-.pof-page{ background:#eef1f6; margin:0 -20px -20px; padding:14px 26px 26px;
-  min-height:100%; box-sizing:border-box; }
-@media (max-width:768px){ .pof-page{ margin:0 -12px -12px; padding:12px; } }
+.pof-page{ background:#eef1f6;
+  margin:0 calc(-1 * var(--content-pad)) calc(-1 * var(--content-pad));
+  padding:14px 26px 26px; min-height:100%; box-sizing:border-box; }
+@media (max-width:768px){ .pof-page{ padding:12px; } }
 .pof-root{ font-family:'Public Sans',var(--bfont),sans-serif; color:#1c2333; }
 .pof-root .mono,.pof-root .pof-num{ font-family:'JetBrains Mono',var(--mono),monospace; }
 .pof-card{ background:#fff; border:1px solid #e4e7ee; border-radius:12px;

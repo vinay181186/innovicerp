@@ -11,8 +11,12 @@
 //    lost: the preview carries Sl/Description/Qty/UOM/Rate/Amount.
 //  - Action buttons stay in the page header. Legacy puts them at the end of the
 //    modal body (L21306); after a 1123px-tall A4 preview that would bury them.
-//  - Status renders as a badge (list mapping L21115) in place of legacy's
-//    "(status)" parenthetical in the modal title (L21311).
+//  - Status renders as a badge in place of legacy's "(status)" parenthetical
+//    in the modal title (L21311). It is the SHARED StatusBadge kind="invoice"
+//    (unpaid red / partial amber / paid green) — the same component and the
+//    same map the invoices list uses, so one invoice cannot read one colour
+//    here and another there. The inline `b-green : b-amber : b-red` ternary
+//    this file used to carry is what caused exactly that.
 //
 // Money: every figure here is server-owned (subtotal/gstAmount/grandTotal/
 // totalPaid/balance from service.ts rowToInvoice). `balance` is NOT re-derived
@@ -33,6 +37,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayLocal } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
+import { StatusBadge } from '@/ui/core';
 import { useAddPayment, useInvoice } from '../api';
 import { invoiceDocHtml, printInvoice } from '../lib/print';
 
@@ -56,10 +61,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   const { data: inv, isLoading, isError, error } = useInvoice(id);
   const { data: company } = useMyCompany();
   const addPayment = useAddPayment(id);
-  const docHtml = useMemo(
-    () => (inv ? invoiceDocHtml(inv, company) : ''),
-    [inv, company],
-  );
+  const docHtml = useMemo(() => (inv ? invoiceDocHtml(inv, company) : ''), [inv, company]);
 
   const [payOpen, setPayOpen] = useState(false);
   const [payDate, setPayDate] = useState(todayStr());
@@ -128,7 +130,12 @@ function InvoiceDetailPage(): React.JSX.Element {
     ? []
     : [
         { label: 'SUBTOTAL', value: inr(inv.subtotal ?? 0), size: 16 },
-        { label: `GST ${inv.gstPercent}%`, value: inr(inv.gstAmount ?? 0), size: 16, color: 'var(--amber)' },
+        {
+          label: `GST ${inv.gstPercent}%`,
+          value: inr(inv.gstAmount ?? 0),
+          size: 16,
+          color: 'var(--amber)',
+        },
         { label: 'TOTAL', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green)' },
         { label: 'PAID', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
         {
@@ -145,16 +152,24 @@ function InvoiceDetailPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to Invoices
       </Link>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 10,
+        }}
+      >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📄 Invoice — {inv.code}{' '}
-          <span className={`badge ${inv.status === 'paid' ? 'b-green' : inv.status === 'partial' ? 'b-amber' : 'b-red'}`}>
-            {inv.status}
-          </span>
+          📄 Invoice — {inv.code} <StatusBadge kind="invoice" status={inv.status} />
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {perms.entry && inv.status !== 'paid' ? (
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => setPayOpen((v) => !v)}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setPayOpen((v) => !v)}
+            >
               💳 Add Payment
             </button>
           ) : null}
@@ -172,9 +187,17 @@ function InvoiceDetailPage(): React.JSX.Element {
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         {stats.map((s) => (
-          <div key={s.label} className="panel" style={{ padding: 10, minWidth: 100, textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 9 }}>{s.label}</div>
-            <div className="mono fw-700" style={{ fontSize: s.size, color: s.color }}>{s.value}</div>
+          <div
+            key={s.label}
+            className="panel"
+            style={{ padding: 10, minWidth: 100, textAlign: 'center' }}
+          >
+            <div className="text3" style={{ fontSize: 9 }}>
+              {s.label}
+            </div>
+            <div className="mono fw-700" style={{ fontSize: s.size, color: s.color }}>
+              {s.value}
+            </div>
           </div>
         ))}
       </div>
@@ -193,7 +216,12 @@ function InvoiceDetailPage(): React.JSX.Element {
             <div className="form-grid">
               <div className="form-grp">
                 <label className="form-label">Payment Date</label>
-                <input type="date" className="innovic-input" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                <input
+                  type="date"
+                  className="innovic-input"
+                  value={payDate}
+                  onChange={(e) => setPayDate(e.target.value)}
+                />
               </div>
               <div className="form-grp">
                 <label className="form-label">Amount ★</label>
@@ -209,7 +237,11 @@ function InvoiceDetailPage(): React.JSX.Element {
               </div>
               <div className="form-grp">
                 <label className="form-label">Payment Mode</label>
-                <select className="innovic-input" value={payMode} onChange={(e) => setPayMode(e.target.value)}>
+                <select
+                  className="innovic-input"
+                  value={payMode}
+                  onChange={(e) => setPayMode(e.target.value)}
+                >
                   {['NEFT', 'RTGS', 'Cheque', 'Cash', 'UPI', 'Other'].map((m) => (
                     <option key={m}>{m}</option>
                   ))}
@@ -234,10 +266,23 @@ function InvoiceDetailPage(): React.JSX.Element {
                 />
               </div>
             </div>
-            {payErr ? <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{payErr}</div> : null}
+            {payErr ? (
+              <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{payErr}</div>
+            ) : null}
             <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPayOpen(false)}>Cancel</button>
-              <button type="button" className="btn btn-primary btn-sm" disabled={addPayment.isPending} onClick={() => void submitPayment()}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setPayOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={addPayment.isPending}
+                onClick={() => void submitPayment()}
+              >
                 {addPayment.isPending ? 'Saving…' : 'Record Payment'}
               </button>
             </div>
@@ -280,10 +325,14 @@ function InvoiceDetailPage(): React.JSX.Element {
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
                     <td style={{ fontSize: 11 }}>{p.paymentDate}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>{inr(p.amount ?? 0)}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                      {inr(p.amount ?? 0)}
+                    </td>
                     <td style={{ fontSize: 11 }}>{p.mode}</td>
                     <td style={{ fontSize: 11, color: 'var(--purple)' }}>{p.refNo ?? ''}</td>
-                    <td style={{ fontSize: 11 }} className="text3">{p.notes ?? ''}</td>
+                    <td style={{ fontSize: 11 }} className="text3">
+                      {p.notes ?? ''}
+                    </td>
                   </tr>
                 ))}
               </tbody>

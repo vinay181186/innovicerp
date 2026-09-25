@@ -1,0 +1,36 @@
+/* Innovic ERP spacing, sizing, radii, effects */
+:root {
+  /* Spacing scale (4px base). Every padding / margin / gap uses one of these. */
+  --sp-0: 2px;  /* hairline — badge/tag vertical, compact & editable table cells only */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  /* Control heights — buttons, inputs, selects share one height so rows align */
+  --control-h: 28px;
+  --control-h-sm: 24px;
+  /* Field widths — for inputs outside a FormGrid (editable table cells, toolbars) */
+  --field-xs: 64px;   /* %, rev, ln, days, UOM */
+  --field-sm: 104px;  /* qty, rate, amount */
+  --field-md: 144px;  /* date, code, filter select */
+  --field-lg: 224px;  /* names, search */
+  /* Radii */
+  --radius-sm: 4px;   /* badges, tags, chips */
+  --radius: 6px;      /* buttons, inputs, tabs */
+  --radius2: 8px;     /* panels, cards, modals */
+  --radius-menu: 10px;
+  /* Layout */
+  --sidebar-width: 220px;
+  --topbar-height: 48px;
+  --content-pad: var(--sp-4);
+  --panel-gap: var(--sp-2);
+  /* Effects — restrained; panels carry NO shadow */
+  --focus-ring: rgba(21, 94, 239, 0.15);
+  --overlay-bg: rgba(23, 43, 77, 0.45);
+  --shadow-modal: 0 8px 24px rgba(23, 43, 77, 0.12);
+  --shadow-toast: 0 4px 12px rgba(23, 43, 77, 0.15);
+  --shadow-drawer: 4px 0 20px rgba(23, 43, 77, 0.15);
+  --ease-fast: 0.15s; /* @kind other */
+}

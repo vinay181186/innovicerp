@@ -9669,3 +9669,61 @@ this is what the reconciliation queries read (`docs/sql/check-stock-reservation.
   plans against, so the planning screen shows six figures where it used to show two.
 - Risks: any future stock writer that forgets the library could re-derive availability wrongly — the
   reconciliation SQL exists to catch exactly that, and must read PASS on every row before this is called done.
+
+## ADR-181: UI overhaul — the design system is a normalisation of this app, not a new skin
+**Date:** 2026-09-23
+**Status:** Accepted (branch `ui-overhaul`, not yet merged)
+
+### Context
+The user commissioned a Claude Design export from the Job Cards table, the Job Card page and the
+Purchase Order list, then asked for a full element-level rebuild of `apps/web` against it
+("go ahead as per design reference except for print").
+
+The export (`design-ref/`, 210 files) turned out to be generated FROM this app: its
+`tokens/colors.css` is byte-identical to `apps/web/src/styles/tokens.css` and it reuses the app's own
+class vocabulary (`.panel`, `.btn`, `.innovic-input`, `.innovic-table`, `.form-grp`, `.badge`). It is
+not a foreign design — it is this design with one winner chosen wherever the app had two or three,
+and the scale tightened.
+
+The audit (`audit/01`–`04`) measured the gap: 131 files render `.innovic-table` but only 17 use the
+canonical ruled sheet; 0 of 138 screens share a search input; 26 hand-rolled modals; 64
+`window.confirm`/`alert`/`prompt` calls; 539 undifferentiated `.empty-state` usages.
+
+### Decision
+1. Adopt the reference's tightened scale app-wide: `--fs-body` 14→13px, `--fs-heading` 17→16px,
+   fixed `--control-h` 28px (sm 24px), page gutter 20→16px via `--content-pad`, `--topbar-height`
+   54→48px. Where the reference's "Visual Foundations" prose contradicts its "Type, spacing and
+   sizing rules" block, the rules block and `tokens/*.css` win.
+2. MERGE the reference's `components.css` into `innovic-theme.css` additively. Do NOT replace it.
+3. Build one canonical primitive per element under `apps/web/src/ui/`, and migrate screens onto
+   them group by group.
+4. **Print is excluded.** The reference specifies Arial/greyscale; this app's final approved standard
+   is the Innovic Sheet (`lib/print/sheet-print.ts`, Times New Roman, one table). All 10
+   report/print screens and `lib/print/**` are out of scope.
+5. `DataTable` keeps a `footer` prop the reference does not declare.
+
+### Alternatives Considered
+- **Replace `innovic-theme.css` with the reference file wholesale** — rejected, and proved unsafe:
+  the reference is a condensed document that styles `.breadcrumbs`/`.pagetabs` as CLASSES where the
+  app renders them as IDs, and omits `.tn-sync`, `.pgtab-icon`, `.jc-row-acts` and the entire
+  `.gs-*` global-search vocabulary, all of which are live. A literal swap silently unstyles the
+  header chrome and the search popup.
+- **Follow the reference on print** — rejected: it contradicts a standard the user already signed off.
+- **Follow the reference on `DataTable`** — partially rejected: it declares no totals row, but
+  `stock-valuation`, `delivery-challans/detail` and `backup` all render a `<tfoot>` today and could
+  not migrate without one.
+- **Rewrite `searchable-select.tsx` in Phase 2** — rejected: 36 screens import it, it depends on a
+  `document.body` portal and capture-phase listeners, and the test-site login is broken, so there is
+  no way to verify a rewrite. Phase 2 wraps it; restructuring waits for Phase 4.
+
+### Consequences
+- Positive: one component per element instead of N; the ruled sheet everywhere; a real `Modal`,
+  `ConfirmDialog`, `PageState` and `Toast` where the app had none. Two live inconsistencies get fixed
+  on the way — a job-card `complete` badge that is green on one screen and cyan on another, and a
+  `tailwind.config.ts` still carrying the pre-2026-09 palette (`#0088bb` for the Innovic blue).
+- Negative: every screen becomes visibly denser at once; that cannot be reviewed screen by screen
+  after the fact, so it lands alone in Phase 2 and is eyeballed at `/__ui-kit` first.
+- Risks: the shared `Modal` must keep `escapeBelongsToAnOpenPicker` on a DOCUMENT CAPTURE listener —
+  a bubble listener reads `aria-expanded="false"` because React has already flushed the picker's
+  close, and the Escape meant for a dropdown then discards the whole form. The two live inspect
+  modals document this; the first build of the shared Modal got it wrong and it was caught in review.

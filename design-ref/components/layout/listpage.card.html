@@ -1,0 +1,27 @@
+<!-- @dsCard group="Components" viewport="1100x640" name="List page anatomy" subtitle="ListHeader + StatStrip/StatusPills + DataTable + RowActions + ListFooter" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script><style>body{background:var(--bg);padding:16px}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115 || {};
+
+const { ListHeader, StatStrip, StatusPills, ViewToggle, DataTable, RowActions, ListFooter, Button, StatusBadge } = NS;
+function App(){const [q,setQ]=React.useState('');const [f,setF]=React.useState(null);const [s,setS]=React.useState('open');const [v,setV]=React.useState('list');const [pg,setPg]=React.useState(2);
+const rows=[{code:'VND-012',name:'Precision Heat Treat',phone:'98220 00000',r:'A',a:true},{code:'VND-031',name:'Shree Ganesh Plating',phone:'98230 11111',r:'B',a:true},{code:'VND-044',name:'Metro Gear Hobbing',phone:'—',r:'C',a:false}];
+const tone=(r)=>({A:'green',B:'blue',C:'amber',D:'red'})[r]||'grey';
+return <div>
+<ListHeader icon="🏭" title="Vendor Master" count={42} noun="vendor" filterNote={f} search={q} onSearch={setQ} primary={<Button>+ Add Vendor</Button>}>
+<StatStrip items={[{key:'all',label:'All Vendors',count:42,color:'var(--cyan)',active:f===null,onClick:()=>setF(null)},{key:'active',label:'Active',count:39,color:'var(--green)',active:f==='active',onClick:()=>setF('active')},{key:'inactive',label:'Inactive',count:3,color:'var(--text3)',active:f==='inactive',onClick:()=>setF('inactive')}]}/>
+</ListHeader>
+<div className="panel"><DataTable variant="sheet" onRowClick={()=>{}} columns={[{header:'Sr No',width:'6%',render:(r,i)=>i+1,className:'text3'},{header:'Code',key:'code',className:'td-code',width:'12%'},{header:'Name',key:'name',align:'left',className:'fw-700'},{header:'Phone',key:'phone',width:'14%'},{header:'Rating',width:'10%',render:r=><StatusBadge kind="rating" status={r.r}/>},{header:'Status',width:'10%',render:r=><StatusBadge kind="active" status={r.a?'active':'inactive'}/>},{header:'Action',width:'12%',render:()=> <RowActions onView={()=>{}} onEdit={()=>{}} onDelete={()=>{}}/>}]} rows={rows}/></div>
+<ListFooter total={42} noun="vendor" hint="Click a row to open the vendor. Click a count above to filter by status." actions={<><Button variant="ghost" size="sm" icon={<NS.Icon name="download" size={13}/>}>Download Excel Template</Button><Button variant="ghost" size="sm" icon={<NS.Icon name="upload" size={13}/>}>Import from Excel</Button></>}/>
+<div style={{height:18}}/>
+<ListHeader icon="📥" title="Goods Receipt Note (GRN)" count={312} noun="GRN" sticky={false} search="" onSearch={()=>{}} searchPlaceholder="Search GRN no., PO, vendor, DC, invoice…" updating primary={<Button>+ New GRN</Button>}>
+<StatusPills options={['pending','in_progress','completed']} value={s} onChange={setS} right={<ViewToggle value={v} onChange={setV} onExpandAll={()=>{}}/>}/>
+</ListHeader>
+<ListFooter total={312} noun="GRN" page={pg} onPage={setPg}/>
+</div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>

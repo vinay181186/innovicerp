@@ -150,11 +150,20 @@ import { indexRoute } from './routes/index';
 import { loginRoute } from './routes/login';
 import { resetPasswordRoute } from './routes/reset-password';
 import { rootRoute } from './routes/__root';
+// Primitive gallery (/__ui-kit). Registered below behind a flag, so it does not
+// exist in an ordinary production build.
+import { uiKitRoute } from './modules/ui-kit/routes/page';
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
   resetPasswordRoute,
+  // Local dev always; a deployed build only when VITE_ENABLE_UI_KIT is set at
+  // BUILD time, which the ui-overhaul preview does and neither deploy-web.yml
+  // (production) nor deploy-web-test.yml does. Vite inlines both as literals, so
+  // in an ordinary production build this is an empty spread, the route never
+  // exists, and the gallery module is tree-shaken out of the bundle entirely.
+  ...(import.meta.env.DEV || import.meta.env.VITE_ENABLE_UI_KIT === 'true' ? [uiKitRoute] : []),
   authenticatedRoute.addChildren([
     indexRoute,
     changePasswordRoute,

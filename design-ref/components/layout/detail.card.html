@@ -1,0 +1,18 @@
+<!-- @dsCard group="Components" viewport="900x360" name="Detail page anatomy" subtitle="DetailHeader + ReadGrid/ReadField + PageState" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script><style>body{background:var(--bg);padding:16px}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115 || {};
+
+const { DetailHeader, ReadGrid, ReadField, StatusBadge, Button, PageState } = NS;
+function App(){return <div>
+<DetailHeader backLabel="Back to Vendor Master" onBack={()=>{}} code="VND-012" name="Precision Heat Treat" badges={<StatusBadge kind="active" status="active"/>} actions={<><Button variant="ghost" size="sm" icon={<NS.Icon name="pencil" size={13}/>}>Edit</Button><Button variant="danger" size="sm" icon={<NS.Icon name="trash-2" size={13}/>}>Delete</Button></>}>
+<ReadGrid><ReadField label="Rating" size="xs" value={<StatusBadge kind="rating" status="A"/>}/><ReadField label="Contact person" size="md" value="R. Kulkarni"/><ReadField label="Email" size="lg" value="rk@pht.in"/><ReadField label="GST number" size="md" mono value="27AAPFP0000B1Z2"/><ReadField label="City" size="sm"/><ReadField label="Phone" size="md" mono value="+91 20 2745 1100"/><ReadField label="Address" value={"Gat 221, Chakan Industrial Area\nPune 410501"} size="full" pre/></ReadGrid>
+</DetailHeader>
+<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}><PageState state="loading"/><PageState state="empty" message="No vendors"/><PageState state="error" message="Failed to load vendors"/><PageState state="noaccess" message="⛔ Hidden for your access"/></div>
+</div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>

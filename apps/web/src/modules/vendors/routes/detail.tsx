@@ -1,11 +1,32 @@
-// Vendor detail page (UI-003-03). Mirrors items/routes/detail.tsx pattern.
+// Vendor detail page (UI-003-03). Group-3 reference migration: the canonical
+// DETAIL composition from design-ref/README.md —
+//
+//   ← Back to Vendor Master
+//   DetailHeader (code + status badge + Edit/Delete)  →  ReadGrid of ReadFields
+//
+// There are no line tables and no related documents on a vendor, so the
+// composition stops at the header panel. Nothing about the data, the access
+// gate or the delete call changed; only the markup did.
+//
+// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
+// FormGrid, and each ReadField carries the size that field will have in
+// vendor-form.tsx once that form is migrated (Group 2). Keep the two in step:
+//
+//   Contact person lg · Email lg                        → 6 + 6  = 12
+//   Rating md · Phone md · GST number md                → 4+4+4  = 12
+//   City lg · State md · Pincode xs                     → 6+4+2  = 12
+//   Materials supplied full · Address full              → 12 each
+//
+// Every row sums to 12, so a value sits in exactly the slot its input occupies.
 
 import type { Vendor } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Button, Icon, StatusBadge } from '@/ui/core';
+import { ConfirmDialog } from '@/ui/feedback';
+import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useSoftDeleteVendor, useVendor } from '../api';
 
 export const vendorDetailRoute = createRoute({
@@ -14,14 +35,18 @@ export const vendorDetailRoute = createRoute({
   component: VendorDetailPage,
 });
 
-function ratingBadgeClass(rating: string | null): string {
-  if (!rating) return 'b-grey';
-  const g = rating.trim().toUpperCase()[0];
-  if (g === 'A') return 'b-green';
-  if (g === 'B') return 'b-blue';
-  if (g === 'C') return 'b-amber';
-  if (g === 'D') return 'b-red';
-  return 'b-grey';
+const BACK_LABEL = 'Back to Vendor Master';
+
+/** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
+ *  state has no header to hang it on, so it renders the same control on its
+ *  own. It stays a real <Link> either way: a button + navigate() would lose
+ *  middle-click / ctrl-click / "open in new tab" on a navigation control. */
+function BackToMaster(): React.JSX.Element {
+  return (
+    <Link to="/vendors" className="btn btn-ghost btn-sm" style={{ marginBottom: 'var(--sp-2)' }}>
+      <Icon name="arrow-left" size={14} /> {BACK_LABEL}
+    </Link>
+  );
 }
 
 function VendorDetailPage(): React.JSX.Element {
@@ -33,36 +58,25 @@ function VendorDetailPage(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (isLoading) {
-    return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading vendor…
-      </div>
-    );
+    return <PageState state="loading" message="⟳ Loading vendor…" />;
   }
 
   if (isError || !vendor) {
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/vendors" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Vendor not found'}
-          </div>
-        </div>
+      <div>
+        <BackToMaster />
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Vendor not found'}
+        />
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(vendor.id, {
-      onSuccess: () => {
-        void navigate({ to: '/vendors', replace: true });
-      },
-    });
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(vendor.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/vendors', replace: true });
   };
 
   // Tier-driven, per department (vendor_create sits in Purchase). Replaces the
@@ -80,151 +94,87 @@ function VendorDetailPage(): React.JSX.Element {
   // page. `eff` is undefined only while access is still loading — don't block
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState state="noaccess" as="page" />;
   }
+
+  const deleteError = softDelete.isError
+    ? softDelete.error instanceof Error
+      ? softDelete.error.message
+      : 'Failed to delete vendor.'
+    : null;
 
   return (
     <div>
-      <Link to="/vendors" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Vendor Master
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
-            >
-              {vendor.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              {vendor.name}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+      <DetailHeader
+        backTo="/vendors"
+        backLabel={BACK_LABEL}
+        renderLink={(p) => <Link {...p} />}
+        code={vendor.code}
+        name={vendor.name}
+        badges={<StatusBadge kind="active" status={String(vendor.isActive)} />}
+        actions={
+          <>
             {canEdit ? (
               <Link
                 to="/vendors/$id/edit"
                 params={{ id: vendor.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Icon name="trash-2" size={13} />}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
+              </Button>
             ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete vendor.'}
-            </div>
-          ) : null}
-          <DetailGrid vendor={vendor} />
-        </div>
-      </div>
+          </>
+        }
+      >
+        <VendorFacts vendor={vendor} />
+      </DetailHeader>
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Delete vendor ${vendor.code}?`}
+          message={`${vendor.name} will be removed from the Vendor Master.`}
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+          errorText={deleteError}
+        />
+      ) : null}
     </div>
   );
 }
 
-function DetailGrid(props: { vendor: Vendor }): React.JSX.Element {
+function VendorFacts(props: { vendor: Vendor }): React.JSX.Element {
   const { vendor } = props;
   return (
-    <div className="form-grid">
-      <Pair
-        label="Active"
-        value={
-          <span className={`badge ${vendor.isActive ? 'b-green' : 'b-red'}`}>
-            {vendor.isActive ? 'active' : 'inactive'}
-          </span>
-        }
-      />
-      <Pair
-        label="Rating"
-        value={
-          <span className={`badge ${ratingBadgeClass(vendor.rating)}`}>
-            ⭐ {vendor.rating ?? '—'}
-          </span>
-        }
-      />
-      <Pair label="Contact person" value={vendor.contactPerson ?? '—'} />
-      <Pair label="Email" value={vendor.email ?? '—'} />
-      <Pair label="Phone" value={vendor.phone ?? '—'} />
-      <Pair label="GST number" value={vendor.gstNumber ?? '—'} />
-      <Pair label="City" value={vendor.city ?? '—'} />
-      <Pair label="State" value={vendor.state ?? '—'} />
-      <Pair label="Pincode" value={vendor.pincode ?? '—'} />
-      <div className="form-grp form-full">
-        <span className="form-label">Materials supplied</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{vendor.materialsSupplied ?? '—'}</div>
-      </div>
-      <div className="form-grp form-full">
-        <span className="form-label">Address</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{vendor.addressLine1 ?? '—'}</div>
-      </div>
-    </div>
-  );
-}
+    <ReadGrid>
+      <ReadField label="Contact person" size="lg" value={vendor.contactPerson} />
+      <ReadField label="Email" size="lg" value={vendor.email} />
 
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
+      <ReadField
+        label="Rating"
+        size="md"
+        value={vendor.rating ? <StatusBadge kind="rating" status={vendor.rating} /> : null}
+      />
+      <ReadField label="Phone" size="md" mono value={vendor.phone} />
+      <ReadField label="GST number" size="md" mono value={vendor.gstNumber} />
+
+      <ReadField label="City" size="lg" value={vendor.city} />
+      <ReadField label="State" size="md" value={vendor.state} />
+      <ReadField label="Pincode" size="xs" mono value={vendor.pincode} />
+
+      <ReadField label="Materials supplied" size="full" pre value={vendor.materialsSupplied} />
+      <ReadField label="Address" size="full" pre value={vendor.addressLine1} />
+    </ReadGrid>
   );
 }

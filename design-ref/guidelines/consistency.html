@@ -1,0 +1,38 @@
+<!-- @dsCard group="Brand" viewport="700x1000" name="Canonical elements" subtitle="One implementation per element type — divergences found in the source and how they resolve" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>body{padding:12px;background:var(--bg2)}table{width:100%;border-collapse:collapse;font-size:11px}th{font:700 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--text2);text-align:left;padding:4px 8px;background:var(--bg3);border-bottom:1px solid var(--border)}td{padding:4px 8px;border-bottom:1px solid var(--border);vertical-align:top}td:first-child{font-weight:700;white-space:nowrap}.x{color:var(--red2)}.ok{color:var(--green2);font-weight:600}</style></head><body>
+<table><thead><tr><th>Element</th><th>Divergence seen in repo</th><th>Canonical</th></tr></thead><tbody>
+<tr><td>Tables</td><td class="x">3 looks: legacy list, ruled sheet, routing; frozen only on legacy</td><td class="ok">One ruled-sheet design (DataTable) + modifiers frozen / auto / compact / edit</td></tr>
+<tr><td>Counts / KPIs</td><td class="x">4 looks: StatStrip, 2px-stripe stat-card, 3px-top Plans tiles, Tailwind dashboard tile</td><td class="ok">StatStrip only (StatCard / KpiTiles now render it). Above a list: StatStrip when statuses have counts, StatusPills when they don't — never both</td></tr>
+<tr><td>In-page tabs</td><td class="x">Blue-underline tabs (Tasks) vs purple pill tabs (Related Docs)</td><td class="ok">TabStrip look everywhere</td></tr>
+<tr><td>Timeline</td><td class="x">Rail with cards (SO) vs grey dot list (Related Docs)</td><td class="ok">One rail design, density regular / compact</td></tr>
+<tr><td>Label / value</td><td class="x">Fact (10px text3) vs Pair (form-label) vs ad-hoc</td><td class="ok">ReadField</td></tr>
+<tr><td>Square chips</td><td class="x">.tag, .task-linked-ref, .pof-chip, .pof-prcode</td><td class="ok">Tag (link / neutral / rev)</td></tr>
+<tr><td>Ad-hoc badges</td><td class="x">Rating ⭐, Active/Inactive, QC Cleared, task pills, running pill hand-mapped</td><td class="ok">StatusBadge kinds rating / active / grn / task / run + PriorityText</td></tr>
+<tr><td>Control icons</td><td class="x">Emoji on buttons (✏ 🖨 🗑 ⬇ 📄 🔄 ✕) mixed with Lucide</td><td class="ok">Icon (Lucide) on every control; emoji = module/page identity only</td></tr>
+<tr><td>Search box</td><td class="x">Header box w/ icon, list box w/o, filter-bar box, 3 widths</td><td class="ok">SearchInput (28px control height, icon)</td></tr>
+<tr><td>Page title</td><td class="x">section-hdr 22 vs dashboard h1 19 vs pof-title 16</td><td class="ok">.section-hdr on every page</td></tr>
+<tr><td>Card radius</td><td class="x">8px panels vs 10px machine/timeline cards vs 9/12px</td><td class="ok">--radius2 8px (menus keep 10px)</td></tr>
+<tr><td>Compact PO form</td><td class="x">Own palette, fonts, 36px inputs, green-only CTA</td><td class="ok">Rebuilt on standard Panel / FormGrid / DataTable; .pof-* marked legacy</td></tr>
+<tr><td>List header band</td><td class="x">Re-written inline on SO, GRN, Vendors, PR…</td><td class="ok">ListHeader</td></tr>
+<tr><td>Qty metric box</td><td class="x">Local QtyBox copies in SO + GRN</td><td class="ok">QtyStrip</td></tr>
+<tr><td>Row actions</td><td class="x">13px/2px 3px (SO) vs 14px/3px 6px (Vendors); emoji ✏✅👤✖ (Tasks)</td><td class="ok">RowActions — Lucide 13px, 24px sm button, View·Edit·extra·Delete</td></tr>
+<tr><td>Delete confirm</td><td class="x">window.confirm (lists), inline "Delete? Confirm" (detail)</td><td class="ok">ConfirmDialog</td></tr>
+<tr><td>Modal overlay</td><td class="x">rgba(0,0,0,.6) in so-planning Modal</td><td class="ok">.overlay — navy 45% + 2px blur (Modal)</td></tr>
+<tr><td>Required marker</td><td class="x">* (FormField, STYLE_GUIDE) vs ★ (DocNumber, LineItem, PO)</td><td class="ok">★ in --red2</td></tr>
+<tr><td>Error message box</td><td class="x">Hand-rolled red3 + #fca5a5 border</td><td class="ok">Banner tone="error"</td></tr>
+<tr><td>Running-op badge</td><td class="x">Tailwind green-500/15 pill</td><td class="ok">StatusBadge (.badge b-green / b-grey / b-red)</td></tr>
+<tr><td>Dashboard tile</td><td class="x">Tailwind card w/ left stripe (dashboard-tile.tsx)</td><td class="ok">StatStrip (to=) — tile is legacy</td></tr>
+<tr><td>Timeline dots</td><td class="x">#e5e7eb / #9ca3af literals</td><td class="ok">--border / --text3</td></tr>
+<tr><td>Purple</td><td class="x">#8b5cf6 (Plans KPI)</td><td class="ok">var(--purple)</td></tr>
+<tr><td>Loading / empty</td><td class="x">Plain div, panel, tr, inline — varied padding</td><td class="ok">PageState (as panel/row/inline/page)</td></tr>
+<tr><td>Detail top</td><td class="x">"Back" vs "Back to X Master"; code cyan vs blue</td><td class="ok">DetailHeader — "← Back to &lt;List&gt;", code --cyan (= Innovic blue)</td></tr>
+<tr><td>Login card</td><td class="x">shadcn rounded-lg card, text-2xl</td><td class="ok">.panel look (8px radius, Barlow Condensed h1)</td></tr>
+<tr><td>Picker fields</td><td class="x">datalist / Picklist / free text</td><td class="ok">SearchableSelect (masters) · LineItemPicker (line item codes)</td></tr>
+
+<tr><td>Font sizes</td><td class="x">17 sizes in use (9–36px, incl. 12.5); screens overriding button sizes inline</td><td class="ok">5-step scale 11/13/16/22/28 (--fs-xs…xl); no overrides</td></tr>
+<tr><td>Spacing</td><td class="x">34 distinct padding values (3/9, 5/6, 7/10, 8/14…)</td><td class="ok">4px scale --sp-0…6 (2/4/8/12/16/24/32)</td></tr>
+<tr><td>Control height</td><td class="x">Buttons ~32, inputs ~31, search 32, PO 36, table inputs ~28</td><td class="ok">--control-h 28 / --control-h-sm 24 for all</td></tr>
+<tr><td>Field width</td><td class="x">Every input 100% of an equal column — 2-digit % as wide as a client name; ad-hoc 50–160px inline widths</td><td class="ok">12-col FormGrid + FormField size xs/sm/md/lg/full; .fw-* off-grid</td></tr>
+<tr><td>Header data</td><td class="x">Detail headers on equal 4-col grid (dates as wide as names); fields in different places in view vs edit; value size inherited</td><td class="ok">ReadGrid = 12-col FormGrid; ReadField size matches edit form; 13/600, mono for codes/dates</td></tr>
+<tr><td>Textarea</td><td class="x">No rules — any rows, free resize</td><td class="ok">size full, 2 rows min, resize vertical, max 240px</td></tr>
+</tbody></table></body></html>

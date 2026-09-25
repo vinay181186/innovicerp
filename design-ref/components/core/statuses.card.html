@@ -1,0 +1,15 @@
+<!-- @dsCard group="Components" viewport="700x360" name="Status maps" subtitle="StatusBadge — every module's enum → tone" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:16px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.lbl{font:600 10px var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em;width:78px;flex-shrink:0}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const NS = window.InnovicERPDesignSystem_4a2115 || {};
+
+const { StatusBadge } = NS;
+const M = [['SO','so',['draft','open','dispatched','closed','cancelled']],['Job Card','jc',['open','qc_pending','complete','closed','no_ops']],['JC Op','jcop',['waiting','available','running','qc_pending','pr_raised','po_created','at_vendor','received','complete']],['PR','pr',['open','approved','po_created','cancelled']],['PO','po',['draft','open','partial','qc_pending','closed','cancelled']],['Prod. Order','prodorder',['open','partially_closed','closed']],['GRN QC','grnqc',['pending','in_progress','completed']],['DC','dc',['issued','received','cancelled']],['NC','nc',['pending','disposed','under_rework','sent_to_vendor','rework_done','closed']],['NC disp.','ncdisp',['rework','repair','scrap','use_as_is','return_to_vendor','make_fresh']],['Store txn','txn',['in','out','adjust']]];
+function App(){return <div>{M.map(([l,k,s])=><div className="row" key={k} style={{marginBottom:6}}><span className="lbl">{l}</span>{s.map(x=><StatusBadge key={x} kind={k} status={x}/>)}</div>)}</div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>
