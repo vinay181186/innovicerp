@@ -299,7 +299,7 @@ export function StopOpModal({
               </div>
             ) : null}
             {/* Planned · Actual (ADR-164). The actual turns amber only when
-                it is not the plan — the same rule as PlannedActualMachine. */}
+                it is not the plan — the same rule as resolveActualMachine. */}
             <div className="text3" style={{ marginTop: 4 }}>
               {target.plannedMachineLabel !== undefined ? (
                 <>

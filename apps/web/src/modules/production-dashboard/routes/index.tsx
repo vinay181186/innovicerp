@@ -23,7 +23,7 @@ import type {
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { PlannedActualMachine } from '@/components/shared/machine-split';
+import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachineLoading } from '@/modules/machine-loading/api';
@@ -198,7 +198,8 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th>Item Name</th>
                       <th>Op</th>
                       <th>Operation</th>
-                      <th>Machine (Planned / Actual)</th>
+                      <th>Planned Machine</th>
+                      <th>Actual Machine</th>
                       <th>Order Qty</th>
                       <th>Completed</th>
                       <th style={{ color: 'var(--amber)' }}>Available</th>
@@ -596,14 +597,21 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
       </td>
       <td className="td-ctr mono">{opSrNo(op.opSeq)}</td>
       <td>{op.operation}</td>
+      {/* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs) and
+          ACTUAL (the machine(s) that made the Completed qty, else the plan) each
+          get their own column. Same value when nothing changed; the actual turns
+          amber when it differs, with the per-machine breakdown for a 2+ machine
+          split. An op with no machine at all (OSP) keeps its dash. */}
       <td>
-        {/* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs) and
-            ACTUAL (the machine(s) that made the Completed qty, else the plan).
-            Same name on both lines when nothing changed; amber when it differs,
-            with the per-machine breakdown for a 2+ machine split. An op with no
-            machine at all (OSP) keeps its dash. */}
         {op.machineCode || op.machines.length ? (
-          <PlannedActualMachine planned={op.machineCode} machines={op.machines} />
+          <PlannedMachineCell planned={op.machineCode} />
+        ) : (
+          '—'
+        )}
+      </td>
+      <td>
+        {op.machineCode || op.machines.length ? (
+          <ActualMachineCell planned={op.machineCode} machines={op.machines} />
         ) : (
           '—'
         )}
