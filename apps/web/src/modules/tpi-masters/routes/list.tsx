@@ -7,27 +7,50 @@
 // `code` holds the inspector's NAME, so the column reads "Inspector Name" — see
 // packages/shared/src/schemas/tpi-master.ts.
 //
-// Laid out as the app's ruled sheet (`.innovic-table.tbl-grid`, the SO / WO
-// List view look — see sales-orders/components/so-sheet-table.tsx): Sr No
-// first, Action last, fixed `%` widths that add up to 100 so nothing scrolls
-// sideways, every column centred by the class except the name, which reads
-// from its left edge. Per-column sorting was dropped with the TanStack table
-// (the SO standard has none; it only ever re-ordered the page on screen).
+// PHASE 4 — migrated onto apps/web/src/ui/ with the Client Master list
+// (modules/clients/routes/list.tsx) as the reference. The composition is the
+// canonical one and nothing else:
+//
+//   <ListHeader>            title · count · SearchInput · Active filter · primary
+//   <Panel>                 the 💡 what-this-master-is-for note
+//   <Banner>                a refused delete, in the server's own words
+//   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
+//   <ListFooter>            count line · 💡 hint
+//   <PageState>             no-access and load-failure
+//
+// Everything this file used to draw by hand — the sticky band, the search box,
+// the Active <select>, the <table>/<colgroup>/<thead>, the loading / error /
+// empty rows, the badge, the row-action buttons, the count line, the hint,
+// `confirm()` — now comes from ui/. What is left here is the DATA and the
+// RULES: the query, the permission gates and the delete.
+//
+// What did NOT change: the route and its search params (search, isActive), the
+// 300ms debounce on the URL write, normalizeSearchTerm, the single un-paged
+// fetch capped at 200, perms -> entry/edit/canDelete, the softDelete.reset()
+// before each attempt so a second try clears the previous banner, row click ->
+// detail, the name cell -> detail.
+//
+// THE ONE BEHAVIOUR THAT DID CHANGE, deliberately: Delete no longer runs on a
+// browser `confirm()`. It raises the shared ConfirmDialog through RowActions,
+// which owns the wait — both buttons go dead, the button reads "Deleting…",
+// and a refusal from the server keeps the question open instead of closing
+// over a delete that never happened.
 
-import type { ListTpiMastersQuery } from '@innovic/shared';
+import type { ListTpiMastersQuery, TpiMaster } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Icon, StatusBadge } from '@/ui/core';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useSoftDeleteTpiMaster, useTpiMastersList } from '../api';
 
 const LIST_LIMIT = 200;
-/** Column count — the loading / error / empty rows' <td colSpan> must always
- *  match the <colgroup> below, so it is named once here. */
-const COLUMN_COUNT = 7;
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -61,6 +84,9 @@ function TpiMastersListPage(): React.JSX.Element {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  Bureau  Veritas " and "Bureau Veritas" are one query, one cache entry,
     // one URL.
+    //
+    // The debounce stays HERE, not on <SearchInput debounceMs>: what is being
+    // delayed is the URL write, and the box must show the keystroke at once.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
@@ -83,307 +109,208 @@ function TpiMastersListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useTpiMastersList(query);
   const softDelete = useSoftDeleteTpiMaster();
 
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
+
+  // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
+  // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below):
+  // 5+22+24+12+19+8 = 90, + 10 = 100, so the table never scrolls sideways.
+  // Centred by the standard; only the inspector's name is left-aligned (a name
+  // reads from its left edge), and the free text that runs long ellipsizes with
+  // the whole value on hover.
+  const columns = useMemo<DataTableColumn<TpiMaster>[]>(
+    () => [
+      { header: 'Sr No', width: '5%', className: 'text3', render: (_t, i) => i + 1 },
+      {
+        header: 'Inspector Name',
+        width: '22%',
+        align: 'left',
+        ellipsis: true,
+        title: (t) => t.code,
+        // The master code (the inspector's name) — strong (mono fw-700 in
+        // --text), never the faint --text3, and a real link so it can be
+        // ctrl/middle-clicked into a new tab. stopPropagation sits on the link
+        // (not the cell) so clicking the rest of the cell still opens the row.
+        render: (t) => (
+          <Link
+            to="/tpi-masters/$id"
+            params={{ id: t.id }}
+            className="mono fw-700"
+            style={{ color: 'var(--text)', textDecoration: 'none' }}
+            title="Open this inspector"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {t.code}
+          </Link>
+        ),
+      },
+      {
+        header: 'Organization',
+        width: '24%',
+        className: 'text2',
+        ellipsis: true,
+        render: (t) => t.organization ?? '—',
+        title: (t) => t.organization ?? '',
+      },
+      {
+        header: 'Contact No.',
+        width: '12%',
+        className: 'mono',
+        nowrap: true,
+        render: (t) => t.contactNo ?? '—',
+      },
+      {
+        header: 'Email',
+        width: '19%',
+        className: 'text2',
+        ellipsis: true,
+        render: (t) => t.email ?? '—',
+        title: (t) => t.email ?? '',
+      },
+      {
+        header: 'Active',
+        width: '8%',
+        nowrap: true,
+        // kind="masteractive": a Quality master paints Inactive AMBER, not the
+        // generic `active` kind's red — the row is retired from the TPI
+        // pickers, which is a thing to notice, not a fault. Carried verbatim,
+        // and the TPI detail page now draws the same chip, so the two cannot
+        // disagree.
+        render: (t) => <StatusBadge kind="masteractive" status={String(t.isActive)} />,
+      },
+    ],
+    [],
+  );
+
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load. Sits after every hook so the early
   // return never trips rules-of-hooks.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
-
-  const rows = data?.items ?? [];
-  const total = data?.total ?? 0;
 
   return (
     <div>
-      {/* Sticky header band — the SO list's shape: `#content` is the app's
-          scroll container, so `top:0` pins this band flush under the topbar
-          while the rows scroll underneath. Opaque `--bg` so the sheet never
-          shows through. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              🔍 TPI Master
-            </div>
-            {/* Count is the list response's `total` — the only aggregate the
-                endpoint returns. */}
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} inspector{total === 1 ? '' : 's'}
-              {search.isActive !== undefined ? (
-                <>
-                  {' '}
-                  · <span className="text2">{search.isActive ? 'Active' : 'Inactive'}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="Search this list…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
-              value={search.isActive === undefined ? '' : String(search.isActive)}
-              onChange={(e) => {
-                const v = e.target.value;
-                void navigate({
-                  search: (prev) => ({ ...prev, isActive: v === '' ? undefined : v === 'true' }),
-                  replace: true,
-                });
-              }}
-              style={{ width: 130, fontSize: 12 }}
-            >
-              <option value="">All</option>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {perms.entry ? (
-              <Link to="/tpi-masters/new" className="btn btn-primary">
-                <Plus size={14} /> Add Inspector
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      </div>
+      {/* The frozen header band: title, count, search, the Active filter and
+          the primary action stay put while the rows scroll underneath. */}
+      <ListHeader
+        title="TPI Master"
+        icon="🔍"
+        // Count is the list response's `total` — the only aggregate the
+        // endpoint returns.
+        count={total}
+        noun="inspector"
+        filterNote={
+          search.isActive === undefined ? undefined : search.isActive ? 'Active' : 'Inactive'
+        }
+        search={searchInput}
+        onSearch={setSearchInput}
+        updating={isFetching && !isLoading}
+        tools={
+          <Select
+            aria-label="Active"
+            fieldWidth="md"
+            value={search.isActive === undefined ? '' : String(search.isActive)}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'true', label: 'Active' },
+              { value: 'false', label: 'Inactive' },
+            ]}
+            onChange={(e) => {
+              const v = e.target.value;
+              void navigate({
+                search: (prev) => ({ ...prev, isActive: v === '' ? undefined : v === 'true' }),
+                replace: true,
+              });
+            }}
+          />
+        }
+        primary={
+          perms.entry ? (
+            <Link to="/tpi-masters/new" className="btn btn-primary">
+              <Icon name="plus" size={14} /> Add Inspector
+            </Link>
+          ) : null
+        }
+      />
 
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            💡 Add third-party inspectors here. The <b>Inspector Name</b> field on the TPI screen
-            picks from this list, and picking a name fills in their organization.
-          </span>
-        </div>
-      </div>
+      {/* What this master is for. It sits ABOVE the sheet, not in the
+          ListFooter hint, because it is read once before the first inspector is
+          added — not a hint about operating the list. */}
+      <Panel>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
+          💡 Add third-party inspectors here. The <b>Inspector Name</b> field on the TPI screen
+          picks from this list, and picking a name fills in their organization.
+        </span>
+      </Panel>
 
       {/* Why a banner and not a toast: the delete may be refused for a reason
           the user has to act on (retire the inspector as Inactive instead). It
           stays on screen until the next attempt. */}
       {softDelete.error ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
-          <div
-            className="panel-body"
-            style={{
-              padding: '10px 14px',
-              background: 'var(--red3)',
-              color: 'var(--red)',
-              fontSize: 12,
-            }}
-            role="alert"
-          >
-            ⚠ {softDelete.error.message}
-          </div>
-        </div>
+        <Banner tone="error" role="alert">
+          ⚠ {softDelete.error.message}
+        </Banner>
       ) : null}
 
-      {/* The sheet: fixed widths summing to 100%, so no sideways scroll. */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
-        <table className="innovic-table tbl-grid">
-          <colgroup>
-            <col style={{ width: '5%' }} />
-            <col style={{ width: '22%' }} />
-            <col style={{ width: '24%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '19%' }} />
-            <col style={{ width: '8%' }} />
-            <col style={{ width: '10%' }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Sr No</th>
-              <th style={{ textAlign: 'left' }}>Inspector Name</th>
-              <th>Organization</th>
-              <th>Contact No.</th>
-              <th>Email</th>
-              <th>Active</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state">
-                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                  Loading…
-                </td>
-              </tr>
-            ) : isError ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load TPI inspectors'}
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state">
-                  No inspectors defined. Click + Add Inspector.
-                </td>
-              </tr>
-            ) : (
-              rows.map((t, i) => (
-                <tr
-                  key={t.id}
-                  onClick={() => void navigate({ to: '/tpi-masters/$id', params: { id: t.id } })}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td className="text3">{i + 1}</td>
-                  <td
-                    style={{
-                      textAlign: 'left',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                    title={t.code}
-                  >
-                    {/* The master code (the inspector's name) — strong, never
-                        the faint --text3. */}
-                    <Link
-                      to="/tpi-masters/$id"
-                      params={{ id: t.id }}
-                      className="mono fw-700"
-                      style={{ color: 'var(--text)', textDecoration: 'none' }}
-                      title="Open this inspector"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {t.code}
-                    </Link>
-                  </td>
-                  {/* Free text that runs long — clip with an ellipsis and keep
-                      the whole value on hover. */}
-                  <td
-                    className="text2"
-                    style={{
-                      fontSize: 12,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                    title={t.organization ?? ''}
-                  >
-                    {t.organization ?? '—'}
-                  </td>
-                  <td className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                    {t.contactNo ?? '—'}
-                  </td>
-                  <td
-                    className="text2"
-                    style={{
-                      fontSize: 12,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                    title={t.email ?? ''}
-                  >
-                    {t.email ?? '—'}
-                  </td>
-                  <td>
-                    <span className={`badge ${t.isActive ? 'b-green' : 'b-amber'}`}>
-                      {t.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td>
-                    {/* View is open to anyone who can see the list; Edit needs edit; Del needs edit +
-                        approve. Icon buttons on one row, the action named on
-                        hover; the row navigates, so the wrapper stops the click. */}
-                    <div
-                      style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link
-                        to="/tpi-masters/$id"
-                        params={{ id: t.id }}
-                        className="btn btn-ghost btn-sm btn-icon"
-                        title="View"
-                        aria-label="View"
-                      >
-                        <Eye size={14} />
-                      </Link>
-                      {perms.edit ? (
-                        <Link
-                          to="/tpi-masters/$id/edit"
-                          params={{ id: t.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          title="Edit"
-                          aria-label="Edit"
-                        >
-                          <Pencil size={14} />
-                        </Link>
-                      ) : null}
-                      {canDelete ? (
-                        // The sheet paints every .btn-sm on paper (theme rule),
-                        // which would leave btn-danger's white icon invisible —
-                        // so the icon is told to be red here, tokens only.
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm btn-icon"
-                          style={{ color: 'var(--red)' }}
-                          title="Delete"
-                          aria-label="Delete"
-                          disabled={softDelete.isPending}
-                          onClick={() => {
-                            if (confirm(`Delete inspector "${t.code}"?`)) {
-                              // Reset first so a second attempt clears the previous banner.
-                              softDelete.reset();
-                              softDelete.mutate(t.id);
-                            }
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Failed to load TPI inspectors'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText="No inspectors defined. Click + Add Inspector."
+            onRowClick={(t) => void navigate({ to: '/tpi-masters/$id', params: { id: t.id } })}
+            rowActionsWidth="10%"
+            rowActions={(t) => (
+              <RowActions
+                // View and Edit are ROUTES, so they stay real links —
+                // ctrl-click / middle-click still open a new tab.
+                viewTo={`/tpi-masters/${t.id}`}
+                editTo={perms.edit ? `/tpi-masters/${t.id}/edit` : undefined}
+                renderLink={(p) => <Link {...p} />}
+                // The PROMISE is handed back, not swallowed: the confirm dialog
+                // owns the wait, and a refusal from the server keeps the
+                // question open instead of closing over a delete that never
+                // happened. reset() first so a second attempt clears the
+                // previous banner.
+                onDelete={
+                  canDelete
+                    ? (): Promise<void> => {
+                        softDelete.reset();
+                        return softDelete.mutateAsync(t.id);
+                      }
+                    : undefined
+                }
+                // And every OTHER row's Delete greys out while one is in
+                // flight, exactly as `disabled={softDelete.isPending}` did.
+                deleteDisabled={softDelete.isPending}
+                deleteConfirm={{
+                  title: `Delete inspector "${t.code}"?`,
+                  message: `${t.code} stops appearing in the TPI Master and in the TPI screen's Inspector picker.`,
+                  pendingLabel: 'Deleting…',
+                }}
+              />
             )}
-          </tbody>
-        </table>
-      </div>
+          />
+        </Panel>
+      )}
 
-      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        {total === 0
-          ? 'No inspectors'
-          : total > LIST_LIMIT
-            ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-            : `Showing all ${total} inspector${total === 1 ? '' : 's'}`}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-        💡 Click a row to open it.
-      </div>
+      {/* One fetch, no pager: `limit` makes the count line say "Showing first
+          200 of N — refine with search" once the master outgrows the cap. */}
+      <ListFooter
+        total={total}
+        noun="inspector"
+        limit={LIST_LIMIT}
+        hint="Click a row to open it."
+      />
     </div>
   );
 }

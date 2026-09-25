@@ -1,11 +1,39 @@
-// Operator detail page (UI-003-03).
+// Operator detail page (UI-003-03). Group-4 migration onto the primitives,
+// following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
+//
+//   ← Back to Operator Master
+//   DetailHeader (code + name + Active chip + Edit/Delete) → ReadGrid
+//
+// An operator is a flat master — no line table, no related-document query —
+// so the composition stops at the header panel. Markup only: the hand-rolled
+// panel-hdr, the inline "Delete? [Confirm][Cancel]" swap, the hand-styled red
+// error box and the local Pair()/DetailGrid() helpers are gone. Route, query
+// hooks, the `operator_create` permission expression and the soft-delete call
+// are untouched.
+//
+// THE ACTIVE CHIP moved from the first grid cell to the header, beside the
+// code, where the exemplar puts it. It is the app's one Active/Inactive chip
+// (`StatusBadge kind="active"`), the same one the vendor detail page and the
+// migrated client list already draw.
+//
+// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
+// FormGrid, and each ReadField carries the size that field will have in
+// operator-form.tsx once that form is migrated:
+//
+//   Department lg · Linked user lg                      → 6 + 6 = 12
+//   Skills / Machines full                              → 12
+//
+// Linked user is the auth user's id, so it is mono: it is a code, and a code
+// that wraps mid-string is unreadable in a proportional face.
 
 import type { Operator } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Button, Icon, StatusBadge } from '@/ui/core';
+import { ConfirmDialog } from '@/ui/feedback';
+import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useOperator, useSoftDeleteOperator } from '../api';
 
 export const operatorDetailRoute = createRoute({
@@ -13,6 +41,20 @@ export const operatorDetailRoute = createRoute({
   path: 'operators/$id',
   component: OperatorDetailPage,
 });
+
+const BACK_LABEL = 'Back to Operator Master';
+
+/** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
+ *  state has no header to hang it on, so it renders the same control on its
+ *  own — and it stays a real <Link>, because a button + navigate() cannot be
+ *  middle-clicked, ctrl-clicked or opened in a new tab. */
+function BackToMaster(): React.JSX.Element {
+  return (
+    <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 'var(--sp-2)' }}>
+      <Icon name="arrow-left" size={14} /> {BACK_LABEL}
+    </Link>
+  );
+}
 
 function OperatorDetailPage(): React.JSX.Element {
   const { id } = operatorDetailRoute.useParams();
@@ -23,36 +65,28 @@ function OperatorDetailPage(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (isLoading) {
-    return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading operator…
-      </div>
-    );
+    return <PageState state="loading" message="⟳ Loading operator…" />;
   }
 
   if (isError || !operator) {
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/operators" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Operator not found'}
-          </div>
-        </div>
+      <div>
+        <BackToMaster />
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Operator not found'}
+        />
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(operator.id, {
-      onSuccess: () => {
-        void navigate({ to: '/operators', replace: true });
-      },
-    });
+  // `mutateAsync`, not `mutate` + onSuccess: ConfirmDialog keeps both buttons
+  // disabled while this promise runs, so a second Confirm cannot fire a second
+  // delete, and a rejection is shown IN the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(operator.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/operators', replace: true });
   };
 
   // Tier-driven, per department (operator_create sits in Production). Edit = edit
@@ -66,134 +100,74 @@ function OperatorDetailPage(): React.JSX.Element {
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState state="noaccess" as="page" />;
   }
+
+  const deleteError = softDelete.isError
+    ? softDelete.error instanceof Error
+      ? softDelete.error.message
+      : 'Failed to delete operator.'
+    : null;
 
   return (
     <div>
-      <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Operator Master
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
-            >
-              {operator.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              {operator.name}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+      <DetailHeader
+        backTo="/operators"
+        backLabel={BACK_LABEL}
+        renderLink={(p) => <Link {...p} />}
+        code={operator.code}
+        name={operator.name}
+        badges={<StatusBadge kind="active" status={String(operator.isActive)} />}
+        actions={
+          <>
             {canEdit ? (
               <Link
                 to="/operators/$id/edit"
                 params={{ id: operator.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Icon name="trash-2" size={13} />}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
+              </Button>
             ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete operator.'}
-            </div>
-          ) : null}
-          <DetailGrid operator={operator} />
-        </div>
-      </div>
+          </>
+        }
+      >
+        <OperatorFacts operator={operator} />
+      </DetailHeader>
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Delete operator ${operator.code}?`}
+          message={`${operator.name} will be removed from the Operator Master.`}
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+          errorText={deleteError}
+        />
+      ) : null}
     </div>
   );
 }
 
-function DetailGrid(props: { operator: Operator }): React.JSX.Element {
+function OperatorFacts(props: { operator: Operator }): React.JSX.Element {
   const { operator } = props;
   return (
-    <div className="form-grid">
-      <Pair
-        label="Active"
-        value={
-          <span className={`badge ${operator.isActive ? 'b-green' : 'b-grey'}`}>
-            {operator.isActive ? 'active' : 'inactive'}
-          </span>
-        }
-      />
-      <Pair label="Department" value={operator.department ?? '—'} />
-      <Pair label="Linked user" value={operator.userId ?? '—'} />
-      <div className="form-grp form-full">
-        <span className="form-label">Skills / Machines</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{operator.skills ?? '—'}</div>
-      </div>
-    </div>
-  );
-}
+    <ReadGrid>
+      <ReadField label="Department" size="lg" value={operator.department} />
+      <ReadField label="Linked user" size="lg" mono value={operator.userId} />
 
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
+      <ReadField label="Skills / Machines" size="full" pre value={operator.skills} />
+    </ReadGrid>
   );
 }

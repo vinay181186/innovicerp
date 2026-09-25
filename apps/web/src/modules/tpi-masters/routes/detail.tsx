@@ -1,8 +1,46 @@
+// TPI Master detail page. Group-4 migration onto the primitives, following
+// the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
+//
+//   ← Back to TPI Master
+//   DetailHeader (name + "🔍 TPI Inspector" + Active chip + Edit/Delete) → ReadGrid
+//
+// An inspector is a flat master — no line table, no related-document query —
+// so the composition stops at the header panel. Markup only: the hand-rolled
+// panel-hdr, the inline "Delete? [Confirm][Cancel]" swap and the hand-styled
+// red error box are gone. Route, query hooks, the `tpimaster_create`
+// permission expression and the soft-delete call are untouched.
+//
+// `code` IS THE INSPECTOR'S NAME (schemas/tpi-master.ts: stored in `code` so
+// this master matches its QC Process Master sibling column for column, and
+// permanent once created because every TPI log snapshots it), so it is what
+// DetailHeader prints as the document code, with the screen's own
+// "🔍 TPI Inspector" line under it exactly as before.
+//
+// THE ACTIVE CHIP is `StatusBadge kind="masteractive"` — green / AMBER, the
+// colours this screen and its list have always drawn, NOT the generic
+// `active` map's green / red. Same reasoning as the QC Process Master it is
+// modelled on: a retired inspector is a row taken out of the pickers, not a
+// fault, and painting it red here would put the chip at odds with
+// tpi-masters/routes/list.tsx, which paints the same amber.
+//
+// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
+// FormGrid, and each ReadField carries the size that field will have in
+// tpi-master-form.tsx once that form is migrated:
+//
+//   Organization md · Contact No. md · Email md         → 4+4+4 = 12
+//   Remarks full                                        → 12
+//
+// The old grid also printed an "Active" cell in plain text next to the chip
+// the panel header already draws. One fact, drawn once: the chip is it.
+
+import type { TpiMaster } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Button, Icon, StatusBadge } from '@/ui/core';
+import { ConfirmDialog } from '@/ui/feedback';
+import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useSoftDeleteTpiMaster, useTpiMaster } from '../api';
 
 export const tpiMasterDetailRoute = createRoute({
@@ -10,6 +48,24 @@ export const tpiMasterDetailRoute = createRoute({
   path: 'tpi-masters/$id',
   component: TpiMasterDetailPage,
 });
+
+const BACK_LABEL = 'Back to TPI Master';
+
+/** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
+ *  state has no header to hang it on, so it renders the same control on its
+ *  own — and it stays a real <Link>, because a button + navigate() cannot be
+ *  middle-clicked, ctrl-clicked or opened in a new tab. */
+function BackToMaster(): React.JSX.Element {
+  return (
+    <Link
+      to="/tpi-masters"
+      className="btn btn-ghost btn-sm"
+      style={{ marginBottom: 'var(--sp-2)' }}
+    >
+      <Icon name="arrow-left" size={14} /> {BACK_LABEL}
+    </Link>
+  );
+}
 
 function TpiMasterDetailPage(): React.JSX.Element {
   const { id } = tpiMasterDetailRoute.useParams();
@@ -28,25 +84,17 @@ function TpiMasterDetailPage(): React.JSX.Element {
   const canDelete = perms.edit && perms.approve;
 
   if (isLoading) {
-    return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading inspector…
-      </div>
-    );
+    return <PageState state="loading" message="⟳ Loading inspector…" />;
   }
+
   if (isError || !data) {
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/tpi-masters" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Inspector not found'}
-          </div>
-        </div>
+      <div>
+        <BackToMaster />
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Inspector not found'}
+        />
       </div>
     );
   }
@@ -56,134 +104,84 @@ function TpiMasterDetailPage(): React.JSX.Element {
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState state="noaccess" as="page" />;
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(data.id, {
-      onSuccess: () => {
-        void navigate({ to: '/tpi-masters', replace: true });
-      },
-    });
+  // `mutateAsync`, not `mutate` + onSuccess: ConfirmDialog keeps both buttons
+  // disabled while this promise runs, so a second Confirm cannot fire a second
+  // delete, and a rejection is shown IN the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(data.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/tpi-masters', replace: true });
   };
+
+  const deleteError = softDelete.isError
+    ? softDelete.error instanceof Error
+      ? softDelete.error.message
+      : 'Failed to delete inspector.'
+    : null;
 
   return (
     <div>
-      <Link to="/tpi-masters" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to TPI Master
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="fw-700" style={{ color: 'var(--green)', fontSize: 16 }}>
-              {data.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}
-            >
-              🔍 TPI Inspector
-              <span className={`badge ${data.isActive ? 'b-green' : 'b-amber'}`}>
-                {data.isActive ? 'Active' : 'Inactive'}
-              </span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <DetailHeader
+        backTo="/tpi-masters"
+        backLabel={BACK_LABEL}
+        renderLink={(p) => <Link {...p} />}
+        code={data.code}
+        name="🔍 TPI Inspector"
+        badges={<StatusBadge kind="masteractive" status={String(data.isActive)} />}
+        actions={
+          <>
             {canEdit ? (
               <Link
                 to="/tpi-masters/$id/edit"
                 params={{ id: data.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Icon name="trash-2" size={13} />}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
+              </Button>
             ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete inspector.'}
-            </div>
-          ) : null}
-          <div className="form-grid form-grid-3">
-            <div className="form-grp">
-              <span className="form-label">Organization</span>
-              <div>{data.organization ?? '—'}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Contact No.</span>
-              <div className="mono">{data.contactNo ?? '—'}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Email</span>
-              <div className="text2">{data.email ?? '—'}</div>
-            </div>
-            <div className="form-grp form-full">
-              <span className="form-label">Remarks</span>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{data.remarks ?? '—'}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Active</span>
-              <div className="fw-700">{data.isActive ? 'Active' : 'Inactive'}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      >
+        <TpiMasterFacts inspector={data} />
+      </DetailHeader>
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Delete inspector ${data.code}?`}
+          message="They will be removed from the TPI Master and from the inspector pickers. TPI logs already signed off keep the name they recorded."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+          errorText={deleteError}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function TpiMasterFacts(props: { inspector: TpiMaster }): React.JSX.Element {
+  const { inspector } = props;
+  return (
+    <ReadGrid>
+      <ReadField label="Organization" size="md" value={inspector.organization} />
+      <ReadField label="Contact No." size="md" mono value={inspector.contactNo} />
+      <ReadField label="Email" size="md" value={inspector.email} />
+
+      <ReadField label="Remarks" size="full" pre value={inspector.remarks} />
+    </ReadGrid>
   );
 }

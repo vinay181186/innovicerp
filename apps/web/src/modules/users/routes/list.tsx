@@ -15,29 +15,51 @@
 // Control Configure box and on the user Edit page, the two screens where you
 // are actually deciding or investigating.
 //
-// Laid out as the app's ruled sheet (`.innovic-table.tbl-grid`, the SO / WO
-// List view look — see sales-orders/components/so-sheet-table.tsx): Sr No
-// first, Action last, fixed `%` widths that add up to 100 so nothing scrolls
-// sideways, every column centred by the class except Name, which reads from
-// its left edge. Per-column sorting was dropped with the TanStack table (the
-// SO standard has none; it only ever re-ordered the page on screen).
+// PHASE 4 — composed exactly like the reference list
+// (modules/clients/routes/list.tsx), with the one difference this screen
+// carries: it is SERVER-PAGED, so ListFooter runs in pager mode instead of
+// the scroll mode the masters use.
+//
+//   <ListHeader>   title · count · SearchInput · role + status filters · ⟳ · + Add User
+//   <Panel><DataTable>  THE ruled sheet — loading and empty are its own states
+//   <ListFooter page>   Showing 26–50 of 312 · Prev / Next · 💡 hint
+//   <PageState>         the admin-only gate and the load failure
+//
+// Gone from this file: the hand-rolled sticky band, the bare <input>/<select>
+// pair, the <table>/<colgroup>/<thead>, the three colSpan state rows, the
+// badge, the row-action cluster and the hand-written pager. What stays is the
+// DATA and the RULES: the query, the admin gate, the two lookup maps behind
+// the Department / Access / Approver columns, and the URL parameters.
+//
+// What did NOT change: the route and its search params, the 300ms debounce on
+// the URL write (which also resets to page 1), normalizeSearchTerm, the
+// admin-only `enabled` on the list query, the row and the Name cell both
+// opening Edit (a user has no detail page), and the Access shortcut carrying
+// `configure=<id>` into Access Control.
 
-import { ACCESS_DEPTS, USER_ROLES, type ListUsersQuery, type UserRole } from '@innovic/shared';
+import {
+  ACCESS_DEPTS,
+  USER_ROLES,
+  type ListUsersQuery,
+  type UserAccessListItem,
+  type UserRole,
+} from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, Lock, Pencil, Plus } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Icon, StatusBadge } from '@/ui/core';
+import { Select } from '@/ui/forms';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { useUserAccessList } from '@/modules/access-control/api';
 import { useUsersList } from '../api';
 
 const PAGE_SIZE = 25;
-/** Column count — the loading / error / empty rows' <td colSpan> must always
- *  match the <colgroup> below, so it is named once here. */
-const COLUMN_COUNT = 9;
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -53,6 +75,37 @@ export const usersListRoute = createRoute({
   component: UsersListPage,
 });
 
+/** The three shapes the Access column can be in. Each one is a different
+ *  answer to "what does this person get?", so each keeps its own colour. */
+function AccessCell({ access }: { access: UserAccessListItem | undefined }): React.JSX.Element {
+  if (!access) return <span className="text3">—</span>;
+  if (access.fullAccess)
+    return (
+      <span className="fw-700" style={{ color: 'var(--green)', fontSize: 'var(--fs-xs)' }}>
+        L6 Super Admin
+      </span>
+    );
+  if (access.auditor)
+    return (
+      <span className="fw-700" style={{ color: 'var(--amber2)', fontSize: 'var(--fs-xs)' }}>
+        L7 Auditor
+      </span>
+    );
+  if (access.tierSummary)
+    return <span style={{ fontSize: 'var(--fs-xs)' }}>{access.tierSummary}</span>;
+  // No tier at all is not "nothing to show" — it is a person who cannot open a
+  // single page, and it stays red so an admin spots it from the list.
+  return (
+    <span
+      className="fw-700"
+      style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}
+      title="No tier set — this person can see nothing until you configure them."
+    >
+      No access
+    </span>
+  );
+}
+
 function UsersListPage(): React.JSX.Element {
   const search = usersListRoute.useSearch();
   const navigate = usersListRoute.useNavigate();
@@ -67,6 +120,9 @@ function UsersListPage(): React.JSX.Element {
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  Vinay   Makwana " and "Vinay Makwana" are one query, one cache entry, one URL.
+    //
+    // The debounce stays HERE, not on <SearchInput debounceMs>: what is being
+    // delayed is the URL write, and the box must show the keystroke at once.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
@@ -102,79 +158,147 @@ function UsersListPage(): React.JSX.Element {
     [accessList],
   );
 
-  const rows = data?.items ?? [];
+  const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
 
+  // "12 users · admin · Active only". Both filters are optional and either can
+  // be on alone, so the note is built here and left UNDEFINED when neither is —
+  // ListHeader prints "· … only" for anything it is given, including an empty
+  // fragment.
+  const filterParts = [
+    search.role,
+    search.isActive === undefined ? undefined : search.isActive ? 'Active' : 'Inactive',
+  ].filter((p): p is string => p !== undefined);
+  const filterNote = filterParts.length > 0 ? filterParts.join(' · ') : undefined;
+
+  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
+  // column (rowActionsWidth below): 4+17+11+14+20+10+8+8 = 92, + 8 = 100, so
+  // the table never scrolls sideways. Centred by the standard; only Name is
+  // left-aligned so the people's names share one edge.
+  const columns = useMemo<DataTableColumn<(typeof rows)[number]>[]>(
+    () => [
+      {
+        header: 'Sr No',
+        width: '4%',
+        className: 'text3',
+        render: (_u, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
+      },
+      {
+        header: 'Name',
+        width: '17%',
+        align: 'left',
+        ellipsis: true,
+        title: (u) => u.fullName ?? '',
+        // A real link, so the name can be ctrl/middle-clicked into a new tab.
+        // stopPropagation sits on the link (not the cell) so clicking the rest
+        // of the cell still opens the row, exactly as before.
+        render: (u) => (
+          <Link
+            to="/users/$id/edit"
+            params={{ id: u.id }}
+            className="fw-700"
+            style={{ color: 'var(--text)', textDecoration: 'none' }}
+            title="Edit this user"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {u.fullName ?? '—'}
+          </Link>
+        ),
+      },
+      {
+        header: 'Department',
+        width: '11%',
+        nowrap: true,
+        render: (u) => {
+          const deptKey = accessByUser.get(u.id)?.mainDept ?? null;
+          const dept = deptKey ? ACCESS_DEPTS.find((d) => d.key === deptKey) : undefined;
+          // The department's own colour comes from ACCESS_DEPTS (@innovic/shared),
+          // so the nav, the Access Control screen and this list cannot disagree.
+          return dept ? (
+            <span className="fw-700" style={{ color: dept.color, fontSize: 'var(--fs-sm)' }}>
+              {dept.label}
+            </span>
+          ) : (
+            <span className="text3">—</span>
+          );
+        },
+      },
+      {
+        header: 'Access',
+        width: '14%',
+        ellipsis: true,
+        title: (u) => accessByUser.get(u.id)?.tierSummary ?? '',
+        render: (u) => <AccessCell access={accessByUser.get(u.id)} />,
+      },
+      {
+        header: 'Email',
+        width: '20%',
+        className: 'mono',
+        ellipsis: true,
+        key: 'email',
+      },
+      {
+        header: 'Phone',
+        width: '10%',
+        className: 'text2',
+        nowrap: true,
+        render: (u) => u.phone ?? '—',
+      },
+      {
+        header: 'Active',
+        width: '8%',
+        nowrap: true,
+        // `useractive`, not the generic `active` map: a deactivated login is
+        // amber on this screen, not red — somebody who has left is not a fault.
+        render: (u) => <StatusBadge kind="useractive" status={String(u.isActive)} />,
+      },
+      {
+        header: 'Approver',
+        width: '8%',
+        nowrap: true,
+        render: (u) =>
+          u.role === 'admin' || approverSet.has(u.id) ? (
+            <span
+              className="fw-700"
+              style={{ color: 'var(--green)', fontSize: 'var(--fs-xs)' }}
+              title={u.role === 'admin' ? 'Admin always approves' : 'PO approver'}
+            >
+              ✅ PO
+            </span>
+          ) : (
+            <span className="text3">—</span>
+          ),
+      },
+    ],
+    [accessByUser, approverSet, currentPage],
+  );
+
+  // Admin-only screen. Its own wording, not PageState's generic no-access
+  // sentence: this page is hidden by ROLE, not by an Access Control switch,
+  // so "ask an admin for access" would be the wrong instruction.
   if (!isAdmin) {
-    return (
-      <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
-          ⛔ Admin access required.
-        </div>
-      </div>
-    );
+    return <PageState as="page" state="noaccess" message="⛔ Admin access required." />;
   }
 
   return (
     <div>
-      {/* Sticky header band — the SO list's shape: `#content` is the app's
-          scroll container, so `top:0` pins this band flush under the topbar
-          while the rows scroll underneath. Opaque `--bg` so the sheet never
-          shows through. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              👥 User Management
-            </div>
-            {/* Count is the list response's `total` — the only aggregate the
-                endpoint returns. */}
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} user{total === 1 ? '' : 's'}
-              {search.role ? (
-                <>
-                  {' '}
-                  · <span className="text2">{search.role}</span> only
-                </>
-              ) : null}
-              {search.isActive !== undefined ? (
-                <>
-                  {' '}
-                  · <span className="text2">{search.isActive ? 'Active' : 'Inactive'}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="Search this list…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
+      {/* The frozen header band: title, count, search, the two filters and the
+          primary action stay put while the rows scroll underneath. */}
+      <ListHeader
+        title="User Management"
+        icon="👥"
+        count={total}
+        noun="user"
+        filterNote={filterNote}
+        search={searchInput}
+        onSearch={setSearchInput}
+        updating={isFetching && !isLoading}
+        tools={
+          <>
+            <Select
+              aria-label="Filter by role"
+              fieldWidth="md"
               value={search.role ?? ''}
               onChange={(e) => {
                 const v = e.target.value as UserRole | '';
@@ -183,17 +307,14 @@ function UsersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 140, fontSize: 12 }}
-            >
-              <option value="">All roles</option>
-              {USER_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-            <select
-              className="innovic-select"
+              options={[
+                { value: '', label: 'All roles' },
+                ...USER_ROLES.map((r) => ({ value: r, label: r })),
+              ]}
+            />
+            <Select
+              aria-label="Filter by active"
+              fieldWidth="sm"
               value={search.isActive === undefined ? '' : String(search.isActive)}
               onChange={(e) => {
                 const v = e.target.value;
@@ -206,271 +327,90 @@ function UsersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 110, fontSize: 12 }}
-            >
-              <option value="">All</option>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            <Link to="/users/new" className="btn btn-primary">
-              <Plus size={14} /> Add User
-            </Link>
-          </div>
-        </div>
-      </div>
+              options={[
+                { value: '', label: 'All' },
+                { value: 'true', label: 'Active' },
+                { value: 'false', label: 'Inactive' },
+              ]}
+            />
+          </>
+        }
+        primary={
+          <Link to="/users/new" className="btn btn-primary">
+            <Icon name="plus" size={14} /> Add User
+          </Link>
+        }
+      />
 
-      {/* The sheet: fixed widths summing to 100%, so no sideways scroll. */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
-        <table className="innovic-table tbl-grid">
-          <colgroup>
-            <col style={{ width: '4%' }} />
-            <col style={{ width: '17%' }} />
-            <col style={{ width: '11%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '20%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '8%' }} />
-            <col style={{ width: '8%' }} />
-            <col style={{ width: '8%' }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Sr No</th>
-              <th style={{ textAlign: 'left' }}>Name</th>
-              <th>Department</th>
-              <th>Access</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Active</th>
-              <th>Approver</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state">
-                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                  Loading…
-                </td>
-              </tr>
-            ) : isError ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load users'}
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state">
-                  No users match these filters.
-                </td>
-              </tr>
-            ) : (
-              rows.map((u, i) => {
-                const deptKey = accessByUser.get(u.id)?.mainDept ?? null;
-                const dept = deptKey ? ACCESS_DEPTS.find((d) => d.key === deptKey) : undefined;
-                const access = accessByUser.get(u.id);
-                const isApprover = u.role === 'admin' || approverSet.has(u.id);
-                return (
-                  // A user has no detail page — Edit is where the name link
-                  // has always gone, so the row opens the same place.
-                  <tr
-                    key={u.id}
-                    onClick={() => void navigate({ to: '/users/$id/edit', params: { id: u.id } })}
-                    style={{ cursor: 'pointer' }}
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Failed to load users'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText="No users match these filters."
+            // A user has no detail page — Edit is where the name link has
+            // always gone, so the row opens the same place.
+            onRowClick={(u) => void navigate({ to: '/users/$id/edit', params: { id: u.id } })}
+            rowActionsWidth="8%"
+            rowActions={(u) => (
+              <RowActions
+                // Edit is a ROUTE, so it stays a real link — ctrl-click /
+                // middle-click still open a new tab. There is no View (no
+                // detail page) and no Delete (Supabase Auth owns the account).
+                editTo={`/users/${u.id}/edit`}
+                renderLink={(p) => <Link {...p} />}
+                extra={
+                  // The Access shortcut is this screen's own action, not one of
+                  // the three RowActions knows about, so it comes in through
+                  // `extra` — still a real <Link>, carrying `configure=<id>` so
+                  // Access Control opens straight onto this person.
+                  <Link
+                    to="/access-control"
+                    search={{ configure: u.id }}
+                    className="btn btn-ghost btn-sm btn-icon"
+                    style={{ padding: 'var(--sp-1)' }}
+                    title="Access"
+                    aria-label="Access"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <td className="text3">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
-                    <td
-                      style={{
-                        textAlign: 'left',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                      title={u.fullName ?? ''}
-                    >
-                      <Link
-                        to="/users/$id/edit"
-                        params={{ id: u.id }}
-                        className="fw-700"
-                        style={{ color: 'var(--text)', textDecoration: 'none' }}
-                        title="Edit this user"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {u.fullName ?? '—'}
-                      </Link>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {dept ? (
-                        <span style={{ color: dept.color, fontWeight: 700, fontSize: 12 }}>
-                          {dept.label}
-                        </span>
-                      ) : (
-                        <span className="text3" style={{ fontSize: 11 }}>
-                          —
-                        </span>
-                      )}
-                    </td>
-                    <td
-                      style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                      title={access?.tierSummary ?? ''}
-                    >
-                      {!access ? (
-                        <span className="text3" style={{ fontSize: 10 }}>
-                          —
-                        </span>
-                      ) : access.fullAccess ? (
-                        <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 10 }}>
-                          L6 Super Admin
-                        </span>
-                      ) : access.auditor ? (
-                        <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 10 }}>
-                          L7 Auditor
-                        </span>
-                      ) : access.tierSummary ? (
-                        <span style={{ fontSize: 10 }}>{access.tierSummary}</span>
-                      ) : (
-                        <span
-                          style={{ color: 'var(--red)', fontSize: 10, fontWeight: 600 }}
-                          title="No tier set — this person can see nothing until you configure them."
-                        >
-                          No access
-                        </span>
-                      )}
-                    </td>
-                    <td
-                      className="mono"
-                      style={{
-                        fontSize: 11,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                      title={u.email}
-                    >
-                      {u.email}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {u.phone ?? '—'}
-                    </td>
-                    <td>
-                      <span className={`badge ${u.isActive ? 'b-green' : 'b-amber'}`}>
-                        {u.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {isApprover ? (
-                        <span
-                          style={{ fontSize: 10, color: 'var(--green)', fontWeight: 700 }}
-                          title={u.role === 'admin' ? 'Admin always approves' : 'PO approver'}
-                        >
-                          ✅ PO
-                        </span>
-                      ) : (
-                        <span className="text3" style={{ fontSize: 10 }}>
-                          —
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {/* Icon buttons on one row, the action named on hover; the
-                          row navigates, so the wrapper stops the click. */}
-                      <div
-                        style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Link
-                          to="/users/$id/edit"
-                          params={{ id: u.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          title="Edit"
-                          aria-label="Edit"
-                        >
-                          <Pencil size={14} />
-                        </Link>
-                        <Link
-                          to="/access-control"
-                          search={{ configure: u.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          title="Access"
-                          aria-label="Access"
-                        >
-                          <Lock size={14} />
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
+                    {/* The padlock is the app's access glyph (users/routes/edit.tsx,
+                        access-control, trash, backup). The Icon set carries no
+                        lock, and swapping in a different glyph on one screen
+                        would break that association. */}
+                    <Lock size={13} />
+                  </Link>
+                }
+              />
             )}
-          </tbody>
-        </table>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No users'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+          />
+        </Panel>
+      )}
 
       {/* Legacy L13469 tips this as "Edit manages everything ... all in one window" — that
           describes legacy's _unifiedUserForm. This port deliberately splits it: Edit owns the
           basic fields + approval limit + password, while department / form permissions live on
           Access Control, and email is owned by Supabase Auth. Tip reworded to match what Edit
           actually does — see ISSUE-021. */}
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Click <b>✏ Edit</b> to manage a user: name, role, phone, status, PO approval limit and
-        password. Department + form permissions are managed on <b>Access Control</b>. Click{' '}
-        <b>+ Add User</b> to create a login and app account in one step.
-      </div>
+      <ListFooter
+        total={total}
+        noun="user"
+        page={currentPage}
+        pageSize={PAGE_SIZE}
+        onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
+        hint={
+          <>
+            Click <b>✏ Edit</b> to manage a user: name, role, phone, status, PO approval limit and
+            password. Department + form permissions are managed on <b>Access Control</b>. Click{' '}
+            <b>+ Add User</b> to create a login and app account in one step.
+          </>
+        }
+      />
     </div>
   );
 }

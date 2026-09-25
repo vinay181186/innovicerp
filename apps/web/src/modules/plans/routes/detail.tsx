@@ -9,6 +9,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatusBadge } from '@/ui/core';
 import { useExecutePlan, useFinalizePlan, usePlan, useSoftDeletePlan } from '../api';
 
 export const planDetailRoute = createRoute({
@@ -17,14 +18,17 @@ export const planDetailRoute = createRoute({
   component: PlanDetailPage,
 });
 
-const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
-  in_planning: { cls: 'b-grey', label: 'In Planning' },
-  planned: { cls: 'b-blue', label: 'Planned' },
-  jc_created: { cls: 'b-cyan', label: 'JC Created' },
-  pr_created: { cls: 'b-cyan', label: 'PR Created' },
-  in_production: { cls: 'b-amber', label: 'In Production' },
-  complete: { cls: 'b-green', label: 'Complete' },
-  cancelled: { cls: 'b-grey', label: 'Cancelled' },
+// The plan-status words. The COLOURS live in ui/core/StatusBadge.tsx under
+// kind="plan" — one map, shared with the Plans list, so the two screens cannot
+// paint the same status differently.
+const STATUS_LABEL: Record<PlanStatus, string> = {
+  in_planning: 'In Planning',
+  planned: 'Planned',
+  jc_created: 'JC Created',
+  pr_created: 'PR Created',
+  in_production: 'In Production',
+  complete: 'Complete',
+  cancelled: 'Cancelled',
 };
 
 const TYPE_LABEL: Record<PlanType, string> = {
@@ -102,8 +106,6 @@ function PlanDetailPage(): React.JSX.Element {
     });
   };
 
-  const status = STATUS_BADGE[plan.planStatus];
-
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
@@ -137,7 +139,11 @@ function PlanDetailPage(): React.JSX.Element {
               {plan.itemName ??
                 plan.itemNameText ??
                 itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
-              <span className={`badge ${status.cls}`}>{status.label}</span>
+              <StatusBadge
+                kind="plan"
+                status={plan.planStatus}
+                label={STATUS_LABEL[plan.planStatus]}
+              />
               <span className="text3" style={{ fontSize: 12 }}>
                 {TYPE_LABEL[plan.planType]}
               </span>

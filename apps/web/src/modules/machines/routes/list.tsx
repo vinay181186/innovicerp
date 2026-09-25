@@ -18,36 +18,50 @@
 // legacy carries shifts on the machine FORM only — so it is dropped and its
 // slot returns to legacy's ₹/hr.
 //
-// TABS (migration 0116): this one screen now holds TWO masters — the machines
+// TABS (migration 0116): this one screen holds TWO masters — the machines
 // themselves and the Machine Group master they are picked from (VMC, CNC…) —
 // behind a Machines | Machine Groups strip, exactly as Raw Material Master
 // holds Grade | Size. The tab lives in the URL (?tab=groups) so it is
 // bookmarkable. A Group column sits beside the existing free-text Type column;
 // Type is unchanged and was NOT replaced.
 //
-// SHEET (2026-09-21): the list renders on the ruled sheet (`tbl-grid`) the SO
-// Master List view uses — Sr No first, Action last, fixed % widths that add up
-// to 100 so nothing scrolls sideways, a sticky toolbar band above it. The
-// per-column sort (TanStack + SortableHead) is gone: the SO standard has none,
-// and it only ever re-ordered the 25 rows on screen.
+// PHASE 4 — migrated onto apps/web/src/ui/ with the Client Master list
+// (modules/clients/routes/list.tsx) as the reference:
+//
+//   <TabStrip>              Machines | Machine Groups, inside the header band
+//   <ListHeader>            title · count · SearchInput · status filter · primary
+//   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
+//   <ListFooter>            the count line and the Prev / Page n / Next pager
+//   <PageState>             no-access and load-failure
+//
+// The hand-written sticky band, search box, status <select>, <table>/
+// <colgroup>/<thead>, loading / error / empty rows, status badge, row-action
+// buttons, count line and pager are all gone. The Machine GROUPS tab is a
+// separate component (components/machine-group-tab.tsx) and is untouched.
+//
+// What did NOT change: the route and its search params (tab, search, status,
+// page), the 300ms debounce on the URL write, normalizeSearchTerm, the 25-row
+// server page, the group lookup, the `priceVisible` column drop for L1
+// Viewers, perms -> canAdd/canEdit, row click -> detail, Code cell -> detail,
+// and the tab switch clearing the machine filters.
 
-import type { ListMachinesQuery } from '@innovic/shared';
+import type { ListMachinesQuery, Machine } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Eye, Loader2, Pencil, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Icon, StatusBadge } from '@/ui/core';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader, PageHeader, PageState, RowActions } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { useMachineGroupLookup, useMachinesList } from '../api';
 import { MachineGroupTab } from '../components/machine-group-tab';
 
 const PAGE_SIZE = 25;
 const STATUSES = ['Idle', 'Running', 'Down', 'Maintenance'] as const;
-// Sr No | Machine ID | Name | Type | Group | Cap/Shift | ₹/hr | Status | Action.
-// ₹/hr is dropped for L1 Viewers (the API withholds money), so the live count
-// is one less for them — see `columnCount` below.
-const COLUMN_COUNT = 9;
 
 const listSearchSchema = z.object({
   // Absent = the machines tab, so every existing /machines link still lands on
@@ -61,7 +75,7 @@ const listSearchSchema = z.object({
 const TABS = [
   { key: 'machines', label: '🏭 Machines' },
   { key: 'groups', label: '🗂 Machine Groups' },
-] as const;
+];
 
 export const machinesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -69,14 +83,6 @@ export const machinesListRoute = createRoute({
   validateSearch: listSearchSchema,
   component: MachinesListPage,
 });
-
-function statusBadgeClass(status: string): string {
-  if (status === 'Running') return 'b-blue';
-  if (status === 'Idle') return 'b-grey';
-  if (status === 'Maintenance') return 'b-amber';
-  if (status === 'Down') return 'b-red';
-  return 'b-grey';
-}
 
 function MachinesListPage(): React.JSX.Element {
   const search = machinesListRoute.useSearch();
@@ -91,62 +97,42 @@ function MachinesListPage(): React.JSX.Element {
   // user flashes this panel on cold load. Checked once here, so it covers both
   // tabs.
   if (eff && !perms.view) {
+    return <PageState as="page" state="noaccess" />;
+  }
+
+  // Machines | Machine Groups switch — one strip, rendered inside whichever
+  // header band the active tab carries, so the page keeps ONE band.
+  const tabs = (
+    <TabStrip
+      label="Machine master"
+      tabs={TABS}
+      activeKey={tab}
+      onChange={(k) =>
+        void navigate({
+          // Switching master clears the machine filters — a machine search
+          // means nothing on the group list.
+          search: () => (k === 'groups' ? { tab: 'groups' as const, page: 1 } : { page: 1 }),
+          replace: true,
+        })
+      }
+    />
+  );
+
+  if (tab === 'groups') {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      <div>
+        {/* The groups tab owns its own toolbar inside MachineGroupTab, so the
+            shell carries only the page title and the tab strip. */}
+        <PageHeader title="Machine Master">{tabs}</PageHeader>
+        <MachineGroupTab />
       </div>
     );
   }
 
-  return (
-    <div>
-      <div className="section-hdr">Machine Master</div>
-
-      {/* Machines | Machine Groups switch — the same strip as Raw Material
-          Master's Grade | Size. */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() =>
-              void navigate({
-                // Switching master clears the machine filters — a machine
-                // search means nothing on the group list.
-                search: () => (t.key === 'groups' ? { tab: 'groups', page: 1 } : { page: 1 }),
-                replace: true,
-              })
-            }
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t.key ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t.key ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'groups' ? <MachineGroupTab /> : <MachinesTab />}
-    </div>
-  );
+  return <MachinesTab tabs={tabs} />;
 }
 
-function MachinesTab(): React.JSX.Element {
+function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   const search = machinesListRoute.useSearch();
   const navigate = machinesListRoute.useNavigate();
 
@@ -158,6 +144,9 @@ function MachinesTab(): React.JSX.Element {
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  VMC  01 " and "VMC 01" are one query, one cache entry, one URL.
+    //
+    // The debounce stays HERE, not on <SearchInput debounceMs>: what is being
+    // delayed is the URL write, and the box must show the keystroke at once.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
@@ -195,283 +184,186 @@ function MachinesTab(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
-  const columnCount = priceHidden ? COLUMN_COUNT - 1 : COLUMN_COUNT;
 
   const rows = data?.machines ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
 
-  // The page title and the "Hide page" access gate now live in the tab shell
-  // above, so they cover both tabs and are not repeated here.
+  // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
+  // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below).
+  // With ₹/hr shown: 5+12+26+11+10+9+9+10 = 92, + 8 = 100. With it hidden its
+  // 9% goes to Name (35%) and the sum still lands on 100. Centred by the
+  // standard; only Name is left-aligned (a name reads from its left edge).
+  const columns = useMemo<DataTableColumn<Machine>[]>(
+    () => [
+      {
+        header: 'Sr No',
+        width: '5%',
+        className: 'text3',
+        // Server-paged list: the serial number continues across pages.
+        render: (_m, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
+      },
+      {
+        header: 'Code',
+        width: '12%',
+        nowrap: true,
+        // A real link, so the code can be ctrl/middle-clicked into a new tab.
+        // stopPropagation sits on the link (not the cell) so clicking the rest
+        // of the cell still opens the row, exactly as before.
+        render: (m) => (
+          <Link
+            to="/machines/$id"
+            params={{ id: m.id }}
+            className="td-code"
+            title="Open this machine"
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {m.code}
+          </Link>
+        ),
+      },
+      {
+        header: 'Name',
+        width: priceHidden ? '35%' : '26%',
+        align: 'left',
+        className: 'fw-700',
+        ellipsis: true,
+        key: 'name',
+      },
+      {
+        header: 'Machine Type',
+        width: '11%',
+        className: 'text2',
+        render: (m) => m.machineType ?? '—',
+      },
+      {
+        header: 'Group',
+        width: '10%',
+        className: 'text2',
+        // A machine with no group is normal — every row created before the
+        // group master existed. Show an em dash.
+        render: (m) => (m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—',
+      },
+      {
+        header: 'Cap/Shift',
+        width: '9%',
+        className: 'mono',
+        nowrap: true,
+        render: (m) => (m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'),
+      },
+      // Legacy: <th style="color:var(--green)">₹/hr</th> (L13107).
+      ...(priceHidden
+        ? []
+        : [
+            {
+              header: '₹/hr',
+              width: '9%',
+              headColor: 'var(--green)',
+              className: 'mono green',
+              nowrap: true,
+              render: (m: Machine) => (m.hourRate ? `₹${m.hourRate.toFixed(0)}` : '—'),
+            },
+          ]),
+      {
+        header: 'Machine Status',
+        width: '10%',
+        nowrap: true,
+        // kind="machine" carries this screen's own four colours — Running blue,
+        // Idle grey, Maintenance amber, Down red — the map the local
+        // statusBadgeClass() held, now shared with the machine detail page so
+        // the two cannot disagree.
+        render: (m) => <StatusBadge kind="machine" status={m.status} />,
+      },
+    ],
+    [currentPage, priceHidden, groupLookup],
+  );
+
+  // The page title, the tab strip and the "Hide page" access gate all come from
+  // the shell above; the title sits in this band so the page keeps ONE header.
   return (
     <div>
-      {/* Sticky toolbar band — the same shape as the SO Master list's: pinned
-          to #content's top so the count, search, status filter and + Add stay
-          put while the sheet scrolls underneath. Opaque `--bg` so rows do not
-          show through. The page title sits in the tab shell above (it covers
-          both tabs), so the band's left side carries the count line only. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
+      {/* The frozen header band: title, count, search, the status filter and
+          the primary action stay put while the rows scroll underneath. */}
+      <ListHeader
+        title="Machine Master"
+        // Count comes from the list response's `total` — the only aggregate
+        // GET /machines returns.
+        count={total}
+        noun="machine"
+        filterNote={search.status}
+        search={searchInput}
+        onSearch={setSearchInput}
+        // Placeholder stays generic on purpose: naming columns here is what
+        // dated the old wording, and GET /machines matches across the columns
+        // the table shows.
+        updating={isFetching && !isLoading}
+        tools={
+          <Select
+            aria-label="Machine Status"
+            fieldWidth="md"
+            value={search.status ?? ''}
+            options={[
+              { value: '', label: 'All statuses' },
+              ...STATUSES.map((s) => ({ value: s, label: s })),
+            ]}
+            onChange={(e) => {
+              const v = e.target.value as (typeof STATUSES)[number] | '';
+              void navigate({
+                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                replace: true,
+              });
+            }}
+          />
+        }
+        primary={
+          canAdd ? (
+            <Link to="/machines/new" className="btn btn-primary">
+              <Icon name="plus" size={14} /> Add Machine
+            </Link>
+          ) : null
+        }
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          {/* Count comes from the list response's `total` — the only aggregate
-              GET /machines returns. */}
-          <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-            {total} machine{total === 1 ? '' : 's'}
-            {search.status ? (
-              <>
-                {' '}
-                · <span className="text2">{search.status}</span> only
-              </>
-            ) : null}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {/* Placeholder stays generic on purpose: naming columns here is what
-                dated the old wording, and GET /machines matches across the
-                columns the table shows. */}
-            <input
-              className="innovic-input"
-              placeholder="Search this list…"
-              title="Search this list"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
-              value={search.status ?? ''}
-              onChange={(e) => {
-                const v = e.target.value as (typeof STATUSES)[number] | '';
-                void navigate({
-                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                  replace: true,
-                });
-              }}
-              style={{ width: 140, fontSize: 12 }}
-            >
-              <option value="">All statuses</option>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canAdd ? (
-              <Link to="/machines/new" className="btn btn-primary">
-                <Plus size={14} /> Add Machine
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      </div>
+        {tabs}
+      </ListHeader>
 
-      {/* The ruled sheet (tbl-grid): every column centred by the standard,
-          Name left-aligned (a name reads from its left edge). Widths live only
-          in the colgroup and sum to 100 — with ₹/hr hidden its 9% goes to
-          Name. */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
-        <table className="innovic-table tbl-grid">
-          <colgroup>
-            <col style={{ width: '5%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: priceHidden ? '35%' : '26%' }} />
-            <col style={{ width: '11%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '9%' }} />
-            {priceHidden ? null : <col style={{ width: '9%' }} />}
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '8%' }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Sr No</th>
-              <th>Code</th>
-              <th style={{ textAlign: 'left' }}>Name</th>
-              <th>Machine Type</th>
-              <th>Group</th>
-              <th>Cap/Shift</th>
-              {/* Legacy: <th style="color:var(--green)">₹/hr</th> (L13107). */}
-              {priceHidden ? null : (
-                <th>
-                  <span style={{ color: 'var(--green)' }}>₹/hr</span>
-                </th>
-              )}
-              <th>Machine Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={columnCount} className="empty-state">
-                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                  Loading…
-                </td>
-              </tr>
-            ) : isError ? (
-              <tr>
-                <td colSpan={columnCount} className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load machines'}
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={columnCount} className="empty-state">
-                  No machines
-                </td>
-              </tr>
-            ) : (
-              rows.map((m, i) => (
-                <tr
-                  key={m.id}
-                  onClick={() => void navigate({ to: '/machines/$id', params: { id: m.id } })}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td className="text3">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <Link
-                      to="/machines/$id"
-                      params={{ id: m.id }}
-                      className="td-code"
-                      title="Open this machine"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {m.code}
-                    </Link>
-                  </td>
-                  <td style={{ textAlign: 'left' }}>
-                    <div
-                      className="fw-700"
-                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={m.name}
-                    >
-                      {m.name}
-                    </div>
-                  </td>
-                  <td className="text2">{m.machineType ?? '—'}</td>
-                  {/* A machine with no group is normal — every row created
-                      before the group master existed. Show an em dash. */}
-                  <td className="text2">
-                    {(m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—'}
-                  </td>
-                  <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                    {m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'}
-                  </td>
-                  {priceHidden ? null : (
-                    <td className="mono green" style={{ whiteSpace: 'nowrap' }}>
-                      {m.hourRate ? `₹${m.hourRate.toFixed(0)}` : '—'}
-                    </td>
-                  )}
-                  <td>
-                    <span className={`badge ${statusBadgeClass(m.status)}`}>{m.status}</span>
-                  </td>
-                  <td>
-                    {/* Icon buttons only, one row, hover names the action.
-                        View is open to everyone who can see the page; Edit
-                        needs the edit right. The row itself navigates, so the
-                        block stops the click. */}
-                    <div
-                      style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link
-                        to="/machines/$id"
-                        params={{ id: m.id }}
-                        className="btn btn-ghost btn-sm btn-icon"
-                        title="View"
-                        aria-label="View"
-                      >
-                        <Eye size={14} />
-                      </Link>
-                      {canEdit ? (
-                        <Link
-                          to="/machines/$id/edit"
-                          params={{ id: m.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          title="Edit"
-                          aria-label="Edit"
-                        >
-                          <Pencil size={14} />
-                        </Link>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Failed to load machines'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText="No machines"
+            onRowClick={(m) => void navigate({ to: '/machines/$id', params: { id: m.id } })}
+            rowActionsWidth="8%"
+            rowActions={(m) => (
+              // View and Edit are ROUTES, so they stay real links — ctrl-click
+              // / middle-click still open a new tab. Delete is not offered on
+              // this list; it lives on the machine detail page.
+              <RowActions
+                viewTo={`/machines/${m.id}`}
+                editTo={canEdit ? `/machines/${m.id}/edit` : undefined}
+                renderLink={(p) => <Link {...p} />}
+              />
             )}
-          </tbody>
-        </table>
-      </div>
+          />
+        </Panel>
+      )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No machines'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      <ListFooter
+        total={total}
+        noun="machine"
+        // Server-paged register: `page` switches the footer to the Prev/Next
+        // pager, the same one this screen drew by hand.
+        page={currentPage}
+        pageSize={PAGE_SIZE}
+        onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
+      />
     </div>
   );
 }
