@@ -208,7 +208,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
           <FormField
             label="Item Code"
             required
-            size="lg"
+            size="md"
             htmlFor="code"
             error={errors.code?.message}
           >
@@ -259,7 +259,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             />
           </FormField>
 
-          <FormField label="Material" size="lg" htmlFor="material" error={errors.material?.message}>
+          <FormField label="Material" size="md" htmlFor="material" error={errors.material?.message}>
             <Input
               id="material"
               autoComplete="off"
@@ -283,7 +283,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
 
           <FormField
             label="Source"
-            size="lg"
+            size="md"
             htmlFor="procurementType"
             error={errors.procurementType?.message}
           >
@@ -295,7 +295,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             />
           </FormField>
 
-          <FormField label="HSN Code" size="lg" htmlFor="hsnCode" error={errors.hsnCode?.message}>
+          <FormField label="HSN Code" size="md" htmlFor="hsnCode" error={errors.hsnCode?.message}>
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
 
@@ -340,7 +340,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
       <Panel>
         <FormGrid>
           {/* Read-only: the item code is permanent once the item exists. */}
-          <FormField label="Item Code" required size="lg" htmlFor="code">
+          <FormField label="Item Code" required size="md" htmlFor="code">
             <Input
               id="code"
               mono
@@ -380,7 +380,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             />
           </FormField>
 
-          <FormField label="Material" size="lg" htmlFor="material" error={errors.material?.message}>
+          <FormField label="Material" size="md" htmlFor="material" error={errors.material?.message}>
             <Input
               id="material"
               autoComplete="off"
@@ -404,7 +404,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
 
           <FormField
             label="Source"
-            size="lg"
+            size="md"
             htmlFor="procurementType"
             error={errors.procurementType?.message}
           >
@@ -416,7 +416,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             />
           </FormField>
 
-          <FormField label="HSN Code" size="lg" htmlFor="hsnCode" error={errors.hsnCode?.message}>
+          <FormField label="HSN Code" size="md" htmlFor="hsnCode" error={errors.hsnCode?.message}>
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
 

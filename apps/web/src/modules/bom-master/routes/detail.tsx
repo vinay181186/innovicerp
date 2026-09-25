@@ -8,13 +8,13 @@
 // stock field (items has min_stock_qty — a threshold, not on-hand). Computing
 // it browser-side would violate CLAUDE.md rule 1. Reported, not invented.
 
-import type { BomStatus } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatusBadge } from '@/ui/core';
 import { useBomMaster, useDeleteBomMaster } from '../api';
 
 export const bomMasterDetailRoute = createRoute({
@@ -22,12 +22,6 @@ export const bomMasterDetailRoute = createRoute({
   path: 'bom-masters/$id',
   component: BomMasterDetailPage,
 });
-
-const STATUS_BADGE: Record<BomStatus, string> = {
-  active: 'b-green',
-  draft: 'b-amber',
-  obsolete: 'b-red',
-};
 
 // Legacy expand-row type icons (L8469-8470) — short forms, not the long
 // labels the BOM form's <select> uses (L8537-8539).
@@ -121,7 +115,9 @@ function BomMasterDetailPage(): React.JSX.Element {
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
               {detail.bomName}
-              <span className={`badge ${STATUS_BADGE[detail.status]}`}>{detail.status}</span>
+              {/* One kind, one colour map, shared with the BOM Master list —
+                  see ui/core/StatusBadge.tsx `bom`. */}
+              <StatusBadge kind="bom" status={detail.status} />
               <span
                 className="mono"
                 style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}

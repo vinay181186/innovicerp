@@ -4,30 +4,51 @@
 // Code | Name | Department | Type | Description | Status | Actions.
 // Actions (L17176): ✏ edit + ✖ delete, both gated on write access.
 //
-// SHEET (2026-09-21): the list renders on the ruled sheet (`tbl-grid`) the SO
-// Master List view uses — Sr No first, Action last, fixed % widths that add up
-// to 100 so nothing scrolls sideways, a sticky toolbar band above it. The
-// per-column sort (TanStack + SortableHead, itself a DELTA over legacy's plain
-// <th>) is gone: the SO standard has none, and it only ever re-ordered the 25
-// rows on screen.
+// PHASE 4 — migrated onto apps/web/src/ui/ with the Client Master list
+// (modules/clients/routes/list.tsx) as the reference. The composition is the
+// canonical one and nothing else:
+//
+//   <ListHeader>            title · count · SearchInput · filters · ⟳ Updating… · primary
+//   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
+//   <ListFooter>            the count line and the Prev / Page n / Next pager
+//   <PageState>             no-access and load-failure
+//
+// Everything this file used to draw by hand — the sticky band, the search box,
+// the three filter <select>s, the <table>/<colgroup>/<thead>, the loading /
+// error / empty rows, the badge, the row-action buttons, the count line and
+// the pager, `confirm()` — now comes from ui/. What is left here is the DATA
+// and the RULES: the query, the permission gates and the delete.
+//
+// What did NOT change: the route and its search params (search, isActive,
+// department, type, page), the 300ms debounce on the URL write,
+// normalizeSearchTerm, the 25-row server page, perms -> canAdd/canEdit/
+// canDelete, row click -> detail, Code cell -> detail, the column set and the
+// column widths.
+//
+// THE ONE BEHAVIOUR THAT DID CHANGE, deliberately: Delete no longer runs on a
+// browser `confirm()`. It raises the shared ConfirmDialog through RowActions,
+// which owns the wait — both buttons go dead, the button reads "Deleting…",
+// and it closes only once the row really is gone.
 
 import {
   COST_CENTER_DEPARTMENTS,
   COST_CENTER_TYPES,
+  type CostCenter,
   type ListCostCentersQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Icon, StatusBadge } from '@/ui/core';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useCostCentersList, useSoftDeleteCostCenter } from '../api';
 
 const PAGE_SIZE = 25;
-// Sr No | Code | Name | Department | Type | Description | Status | Action.
-const COLUMN_COUNT = 8;
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -63,6 +84,9 @@ function CostCentersListPage(): React.JSX.Element {
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  MACHINE  SHOP " and "MACHINE SHOP" are one query, one cache entry, one URL.
+    //
+    // The debounce stays HERE, not on <SearchInput debounceMs>: what is being
+    // delayed is the URL write, and the box must show the keystroke at once.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
@@ -89,73 +113,118 @@ function CostCentersListPage(): React.JSX.Element {
 
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+
+  // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
+  // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below):
+  // 5+11+22+12+10+20+10 = 90, + 10 = 100, so the table never scrolls sideways.
+  // Centred by the standard; only Name is left-aligned (a name reads from its
+  // left edge), and the long free-text columns ellipsize with the full value on
+  // hover rather than wrapping the row taller.
+  const columns = useMemo<DataTableColumn<CostCenter>[]>(
+    () => [
+      {
+        header: 'Sr No',
+        width: '5%',
+        className: 'text3',
+        // Server-paged list: the serial number continues across pages.
+        render: (_cc, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
+      },
+      {
+        header: 'Code',
+        width: '11%',
+        nowrap: true,
+        // A real link, so the code can be ctrl/middle-clicked into a new tab.
+        // stopPropagation sits on the link (not the cell) so clicking the rest
+        // of the cell still opens the row, exactly as before.
+        render: (cc) => (
+          <Link
+            to="/cost-centers/$id"
+            params={{ id: cc.id }}
+            className="td-code"
+            title="Open this cost centre"
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {cc.code}
+          </Link>
+        ),
+      },
+      {
+        header: 'Name',
+        width: '22%',
+        align: 'left',
+        className: 'fw-700',
+        ellipsis: true,
+        key: 'name',
+      },
+      {
+        header: 'Department',
+        width: '12%',
+        render: (cc) => cc.department ?? '—',
+      },
+      {
+        header: 'Cost Centre Type',
+        width: '10%',
+        render: (cc) => cc.type ?? '—',
+      },
+      {
+        header: 'Description',
+        width: '20%',
+        className: 'text3',
+        ellipsis: true,
+        render: (cc) => cc.description ?? '—',
+        title: (cc) => cc.description ?? '',
+      },
+      {
+        header: 'Active',
+        width: '10%',
+        nowrap: true,
+        // kind="active" — the same chip the cost-centre DETAIL page draws, so
+        // the two cannot disagree, and the same one the Client Master
+        // reference list uses for a master's Active flag. The hand-written
+        // chip this replaces was green / GREY here and green / amber on the
+        // detail page; they are now one map (green / red).
+        render: (cc) => <StatusBadge kind="active" status={String(cc.isActive)} />,
+      },
+    ],
+    [currentPage],
+  );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
   // only while access is still loading — don't block then.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
     <div>
-      {/* Sticky header band — the same shape as the SO Master list's: pinned
-          to #content's top so the title, count, search, the three filters and
-          + Add stay put while the sheet scrolls underneath. Opaque `--bg` so
-          rows do not show through. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              🏢 Cost Centre Master
-            </div>
-            {/* Count comes from the list response's `total` — the only
-                aggregate GET /cost-centers returns. */}
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} cost centre{total === 1 ? '' : 's'}
-              {search.isActive !== undefined ? (
-                <>
-                  {' '}
-                  · <span className="text2">{search.isActive ? 'active' : 'inactive'}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="Search this list…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
+      {/* The frozen header band: title, count, search, the three filters and
+          the primary action stay put while the rows scroll underneath. */}
+      <ListHeader
+        title="Cost Centre Master"
+        icon="🏢"
+        // Count comes from the list response's `total` — the only aggregate
+        // GET /cost-centers returns.
+        count={total}
+        noun="cost centre"
+        filterNote={
+          search.isActive === undefined ? undefined : search.isActive ? 'active' : 'inactive'
+        }
+        search={searchInput}
+        onSearch={setSearchInput}
+        updating={isFetching && !isLoading}
+        tools={
+          <>
+            <Select
+              aria-label="Department"
+              fieldWidth="md"
               value={search.department ?? ''}
+              options={[
+                { value: '', label: 'All departments' },
+                ...COST_CENTER_DEPARTMENTS.map((d) => ({ value: d, label: d })),
+              ]}
               onChange={(e) =>
                 void navigate({
                   search: (prev) => ({
@@ -166,18 +235,15 @@ function CostCentersListPage(): React.JSX.Element {
                   replace: true,
                 })
               }
-              style={{ width: 130, fontSize: 12 }}
-            >
-              <option value="">All departments</option>
-              {COST_CENTER_DEPARTMENTS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-            <select
-              className="innovic-select"
+            />
+            <Select
+              aria-label="Cost Centre Type"
+              fieldWidth="md"
               value={search.type ?? ''}
+              options={[
+                { value: '', label: 'All types' },
+                ...COST_CENTER_TYPES.map((t) => ({ value: t, label: t })),
+              ]}
               onChange={(e) =>
                 void navigate({
                   search: (prev) => ({
@@ -188,18 +254,16 @@ function CostCentersListPage(): React.JSX.Element {
                   replace: true,
                 })
               }
-              style={{ width: 140, fontSize: 12 }}
-            >
-              <option value="">All types</option>
-              {COST_CENTER_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            <select
-              className="innovic-select"
+            />
+            <Select
+              aria-label="Active"
+              fieldWidth="md"
               value={search.isActive === undefined ? '' : String(search.isActive)}
+              options={[
+                { value: '', label: 'All' },
+                { value: 'true', label: 'Active' },
+                { value: 'false', label: 'Inactive' },
+              ]}
               onChange={(e) => {
                 const v = e.target.value;
                 void navigate({
@@ -211,224 +275,69 @@ function CostCentersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 110, fontSize: 12 }}
-            >
-              <option value="">All</option>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canAdd ? (
-              <Link to="/cost-centers/new" className="btn btn-primary">
-                <Plus size={14} /> Add Cost Centre
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      </div>
+            />
+          </>
+        }
+        primary={
+          canAdd ? (
+            <Link to="/cost-centers/new" className="btn btn-primary">
+              <Icon name="plus" size={14} /> Add Cost Centre
+            </Link>
+          ) : null
+        }
+      />
 
-      {/* The ruled sheet (tbl-grid): every column centred by the standard,
-          Name left-aligned (a name reads from its left edge). Widths live only
-          in the colgroup and sum to 100. */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
-        <table className="innovic-table tbl-grid">
-          <colgroup>
-            <col style={{ width: '5%' }} />
-            <col style={{ width: '11%' }} />
-            <col style={{ width: '22%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '20%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '10%' }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Sr No</th>
-              <th>Code</th>
-              <th style={{ textAlign: 'left' }}>Name</th>
-              <th>Department</th>
-              <th>Cost Centre Type</th>
-              <th>Description</th>
-              <th>Active</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state">
-                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                  Loading…
-                </td>
-              </tr>
-            ) : isError ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load cost centres'}
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state">
-                  No cost centres. Click + Add Cost Centre.
-                </td>
-              </tr>
-            ) : (
-              rows.map((cc, i) => (
-                <tr
-                  key={cc.id}
-                  onClick={() => void navigate({ to: '/cost-centers/$id', params: { id: cc.id } })}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td className="text3">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <Link
-                      to="/cost-centers/$id"
-                      params={{ id: cc.id }}
-                      className="td-code"
-                      title="Open this cost centre"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {cc.code}
-                    </Link>
-                  </td>
-                  <td style={{ textAlign: 'left' }}>
-                    <div
-                      className="fw-700"
-                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={cc.name}
-                    >
-                      {cc.name}
-                    </div>
-                  </td>
-                  <td>{cc.department ?? '—'}</td>
-                  <td>{cc.type ?? '—'}</td>
-                  {/* Long free text: one line, clipped with an ellipsis, the
-                      full text on hover — never wrapped into a tall row. */}
-                  <td className="text3" style={{ fontSize: 11 }}>
-                    <div
-                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={cc.description ?? ''}
-                    >
-                      {cc.description ?? '—'}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`badge ${cc.isActive ? 'b-green' : 'b-grey'}`}>
-                      {cc.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td>
-                    {/* Icon buttons only, one row, hover names the action.
-                        View is open to everyone who can see the page; Edit
-                        needs the edit right; Delete the edit+approve pair.
-                        The row itself navigates, so the block stops the
-                        click. */}
-                    <div
-                      style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link
-                        to="/cost-centers/$id"
-                        params={{ id: cc.id }}
-                        className="btn btn-ghost btn-sm btn-icon"
-                        title="View"
-                        aria-label="View"
-                      >
-                        <Eye size={14} />
-                      </Link>
-                      {canEdit ? (
-                        <Link
-                          to="/cost-centers/$id/edit"
-                          params={{ id: cc.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          title="Edit"
-                          aria-label="Edit"
-                        >
-                          <Pencil size={14} />
-                        </Link>
-                      ) : null}
-                      {canDelete ? (
-                        // The sheet paints every .btn-sm on paper (theme rule),
-                        // which would leave btn-danger's white icon invisible —
-                        // so the icon is told to be red here, tokens only.
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm btn-icon"
-                          style={{ color: 'var(--red)' }}
-                          title="Delete"
-                          aria-label="Delete"
-                          disabled={softDelete.isPending}
-                          onClick={() => {
-                            if (confirm('Delete this cost centre?')) {
-                              softDelete.mutate(cc.id);
-                            }
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Failed to load cost centres'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText="No cost centres. Click + Add Cost Centre."
+            onRowClick={(cc) => void navigate({ to: '/cost-centers/$id', params: { id: cc.id } })}
+            rowActionsWidth="10%"
+            rowActions={(cc) => (
+              <RowActions
+                // View and Edit are ROUTES, so they stay real links —
+                // ctrl-click / middle-click still open a new tab.
+                viewTo={`/cost-centers/${cc.id}`}
+                editTo={canEdit ? `/cost-centers/${cc.id}/edit` : undefined}
+                renderLink={(p) => <Link {...p} />}
+                // The PROMISE is handed back, not swallowed: the confirm dialog
+                // then owns the wait and closes only once the cost centre is
+                // really gone. An `if (softDelete.isPending) return;` here
+                // would close the dialog and delete NOTHING.
+                onDelete={
+                  canDelete ? (): Promise<void> => softDelete.mutateAsync(cc.id) : undefined
+                }
+                // And every OTHER row's Delete greys out while one is in
+                // flight, exactly as `disabled={softDelete.isPending}` did.
+                deleteDisabled={softDelete.isPending}
+                deleteConfirm={{
+                  title: 'Delete this cost centre?',
+                  message: `${cc.code} — ${cc.name} stops appearing in the Cost Centre Master and in every cost centre picker.`,
+                  pendingLabel: 'Deleting…',
+                }}
+              />
             )}
-          </tbody>
-        </table>
-      </div>
+          />
+        </Panel>
+      )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No cost centres'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      <ListFooter
+        total={total}
+        noun="cost centre"
+        // Server-paged register: `page` switches the footer to the Prev/Next
+        // pager, the same one this screen drew by hand.
+        page={currentPage}
+        pageSize={PAGE_SIZE}
+        onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
+      />
     </div>
   );
 }

@@ -1,11 +1,38 @@
-// Client detail page (UI-003-03). Mirrors items/routes/detail.tsx pattern.
+// Client detail page (UI-003-03). Group-4 migration onto the primitives,
+// following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
+//
+//   ← Back to Client Master
+//   DetailHeader (code + Active chip + Edit/Delete)  →  ReadGrid of ReadFields
+//
+// A client has no line table and no related-document query, so the
+// composition stops at the header panel — same as the vendor, its sibling
+// master. What changed is markup only: the hand-rolled panel-hdr, the inline
+// "Delete? [Confirm][Cancel]" button swap, the hand-styled red error box and
+// the local Pair()/DetailGrid() helpers are gone. The route, the query hooks,
+// the `client_create` permission expression and the soft-delete call are
+// untouched.
+//
+// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
+// FormGrid, and each ReadField carries the size that field will have in
+// client-form.tsx once that form is migrated. Keep the two in step:
+//
+//   Contact person lg · Email lg                        → 6 + 6  = 12
+//   Phone lg · GST number lg                            → 6 + 6  = 12
+//   City lg · State md · Pincode xs                     → 6+4+2  = 12
+//   Address full                                        → 12
+//
+// The address row is deliberately identical to the vendor's. Phone and GST
+// number are wider here than on the vendor page for one reason: a client has
+// no Rating, so there is no third field to close that row at md · md · md.
 
 import type { Client } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Button, Icon, StatusBadge } from '@/ui/core';
+import { ConfirmDialog } from '@/ui/feedback';
+import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useClient, useSoftDeleteClient } from '../api';
 
 export const clientDetailRoute = createRoute({
@@ -13,6 +40,20 @@ export const clientDetailRoute = createRoute({
   path: 'clients/$id',
   component: ClientDetailPage,
 });
+
+const BACK_LABEL = 'Back to Client Master';
+
+/** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
+ *  state has no header to hang it on, so it renders the same control on its
+ *  own. It stays a real <Link> either way: a button + navigate() would lose
+ *  middle-click / ctrl-click / "open in new tab" on a navigation control. */
+function BackToMaster(): React.JSX.Element {
+  return (
+    <Link to="/clients" className="btn btn-ghost btn-sm" style={{ marginBottom: 'var(--sp-2)' }}>
+      <Icon name="arrow-left" size={14} /> {BACK_LABEL}
+    </Link>
+  );
+}
 
 function ClientDetailPage(): React.JSX.Element {
   const { id } = clientDetailRoute.useParams();
@@ -23,176 +64,119 @@ function ClientDetailPage(): React.JSX.Element {
   const softDelete = useSoftDeleteClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // "Hide page" (Access Control → Config): once access has loaded, a user
+  // whose VIEW was removed for this page sees the no-access panel, not the
+  // page. `eff` is undefined only while access is still loading — don't block
+  // then, or every legitimate user flashes this panel on cold load. This gate
+  // stays AHEAD of the loading/error gates, exactly where it was.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState state="noaccess" as="page" />;
   }
 
   if (isLoading) {
-    return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading client…
-      </div>
-    );
+    return <PageState state="loading" message="⟳ Loading client…" />;
   }
 
   if (isError || !client) {
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/clients" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Client not found'}
-          </div>
-        </div>
+      <div>
+        <BackToMaster />
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Client not found'}
+        />
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(client.id, {
-      onSuccess: () => {
-        void navigate({ to: '/clients', replace: true });
-      },
-    });
+  // `mutateAsync`, not `mutate` + onSuccess: ConfirmDialog keeps both of its
+  // buttons disabled for as long as this promise is running, so a second
+  // Confirm cannot fire a second delete, and a rejection is shown IN the
+  // dialog instead of closing the question along with the error.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(client.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/clients', replace: true });
   };
 
+  // Tier-driven, per department (client_create sits in Sales). Delete is not
+  // one of the four tier actions, so it is expressed as the pair only L5
+  // Department Admin and above hold: edit AND approve. Unchanged.
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
 
+  const deleteError = softDelete.isError
+    ? softDelete.error instanceof Error
+      ? softDelete.error.message
+      : 'Failed to delete client.'
+    : null;
+
   return (
     <div>
-      <Link to="/clients" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Client Master
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
-            >
-              {client.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              {client.name}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+      <DetailHeader
+        backTo="/clients"
+        backLabel={BACK_LABEL}
+        renderLink={(p) => <Link {...p} />}
+        code={client.code}
+        name={client.name}
+        badges={<StatusBadge kind="active" status={String(client.isActive)} />}
+        actions={
+          <>
             {canEdit ? (
               <Link
                 to="/clients/$id/edit"
                 params={{ id: client.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Icon name="trash-2" size={13} />}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
+              </Button>
             ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete client.'}
-            </div>
-          ) : null}
-          <DetailGrid client={client} />
-        </div>
-      </div>
+          </>
+        }
+      >
+        <ClientFacts client={client} />
+      </DetailHeader>
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Delete client ${client.code}?`}
+          message={`${client.name} will be removed from the Client Master.`}
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+          errorText={deleteError}
+        />
+      ) : null}
     </div>
   );
 }
 
-function DetailGrid(props: { client: Client }): React.JSX.Element {
+function ClientFacts(props: { client: Client }): React.JSX.Element {
   const { client } = props;
   return (
-    <div className="form-grid">
-      <Pair
-        label="Active"
-        value={
-          <span className={`badge ${client.isActive ? 'b-green' : 'b-grey'}`}>
-            {client.isActive ? 'active' : 'inactive'}
-          </span>
-        }
-      />
-      <Pair label="Contact person" value={client.contactPerson ?? '—'} />
-      <Pair label="Email" value={client.email ?? '—'} />
-      <Pair label="Phone" value={client.phone ?? '—'} />
-      <Pair label="GST number" value={client.gstNumber ?? '—'} />
-      <Pair label="Pincode" value={client.pincode ?? '—'} />
-      <Pair label="City" value={client.city ?? '—'} />
-      <Pair label="State" value={client.state ?? '—'} />
-      <div className="form-grp form-full">
-        <span className="form-label">Address</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{client.addressLine1 ?? '—'}</div>
-      </div>
-    </div>
-  );
-}
+    <ReadGrid>
+      <ReadField label="Contact person" size="lg" value={client.contactPerson} />
+      <ReadField label="Email" size="lg" value={client.email} />
 
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
+      <ReadField label="Phone" size="lg" mono value={client.phone} />
+      <ReadField label="GST number" size="lg" mono value={client.gstNumber} />
+
+      <ReadField label="City" size="lg" value={client.city} />
+      <ReadField label="State" size="md" value={client.state} />
+      <ReadField label="Pincode" size="xs" mono value={client.pincode} />
+
+      <ReadField label="Address" size="full" pre value={client.addressLine1} />
+    </ReadGrid>
   );
 }

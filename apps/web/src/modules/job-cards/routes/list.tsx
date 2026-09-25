@@ -1,4 +1,51 @@
-// Job cards list (UI-003-07) — read-only.
+// Job cards list (UI-003-07).
+//
+// PHASE 4 — migrated onto apps/web/src/ui/ following the GROUP 1 reference
+// implementation, modules/clients/routes/list.tsx:
+//
+//   <ListHeader>            title · count · ⟳ Updating… · the two create buttons
+//     <StatStrip>           the KPI strip (loaded/filtered counts, read-only)
+//     <FilterBar>           search · status · machine · operator · dates · ☰/▦
+//   </ListHeader>           — all of it inside the ONE sticky band, as before
+//   <Panel><DataTable>      LIST VIEW — the ruled sheet
+//   … or the card list      CARD VIEW — unchanged anatomy, primitives inside
+//   <ListFooter>            count line · pager · 💡 hint
+//   <PageState>             no-access, load failure, and the card view's empty
+//
+// Gone from this file: the hand-built sticky band, the <table>/<colgroup>/
+// <thead>, the loading / error / empty rows, the local QtyBox, the two
+// hand-drawn progress bars, the local status badge, the action cluster and its
+// two-step inline delete, both hand-written count lines and the pager.
+//
+// WHAT DID NOT CHANGE — this screen is the shop floor's board and every rule
+// below is how the board is read:
+//   · the route, its six search params and `page`; the 300ms debounce on the
+//     URL write; normalizeSearchTerm; every filter writing page: 1;
+//   · one fetch capped at 200, then CLIENT-SIDE paging at PAGE_SIZE — so only
+//     a page's worth of product-image thumbnails load at a time (each is one
+//     signed-URL fetch, cached). The thumbnail is the Item Master PRODUCT
+//     IMAGE (items.image_path), NOT the drawing (user decision 2026-09-21);
+//     the old drawing-based PartThumb wrote a drawing_view audit row per row
+//     shown, and the product image is not a controlled document;
+//   · the KPI buckets (open = not started · in progress = started · completed =
+//     complete or closed · overdue = past due and not done · on hold = always
+//     0, no such state exists) and their note that they count the LOADED list;
+//   · the Days Left colour rule — no date or done: muted · late: red ·
+//     5 days or less: amber · otherwise green — and the same isDone() behind
+//     both it and the KPI buckets, so the two can never disagree;
+//   · the card's left accent bar (red late · green finished · blue otherwise)
+//     and its overdue "Due <date> ⚠" in red;
+//   · the List/Card choice remembered per browser, in a try/catch so a
+//     locked-down browser still renders;
+//   · the permission expressions: create = entry, edit = edit, delete = the
+//     edit+approve pair only L5 Department Admin and above hold.
+//
+// JC STATUS COLOURS are now <StatusBadge kind="jc">, whose map
+// (open grey · qc_pending amber · complete cyan · closed green · no_ops red)
+// is the SAME map the local jc-status-badge.tsx carries, checked value by
+// value — nothing about what a colour means has changed. That file stays: the
+// Job Card detail view, the stat tiles and two Production Order screens still
+// import it, and they are other screens' migrations.
 
 import {
   JC_COMPUTED_STATUSES,
@@ -7,86 +54,40 @@ import {
   type ListJobCardsQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Eye, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import {
-  ItemBadge,
-  ItemThumbnailCell,
-  ItemThumbnailHeader,
-  THUMBNAIL_COL_WIDTH,
-} from '@/components/shared/item-badge';
+import { ItemBadge, ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { StatStrip } from '@/components/shared/stat-strip';
-import { useMachinesList } from '@/modules/machines/api';
-import { useOperatorsList } from '@/modules/operators/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useMachinesList } from '@/modules/machines/api';
+import { useOperatorsList } from '@/modules/operators/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useJobCardsList } from '../api';
+import { Badge, StatusBadge } from '@/ui/core';
+import {
+  DataTable,
+  Panel,
+  ProgressBar,
+  QtyStrip,
+  StatStrip,
+  type DataTableColumn,
+} from '@/ui/data';
+import { Input } from '@/ui/forms';
+import { ListFooter, ListHeader, PageState, RowActions, ViewToggle } from '@/ui/layout';
+import { FilterBar } from '@/ui/navigation';
+import { useDeleteJobCard, useJobCardsList } from '../api';
 import { ExcelJcButton } from '../components/excel-jc-button';
-import { JcRowWriteActions } from '../components/jc-row-write-actions';
-import { JcStatusBadge } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
-// One fetch, cap 200 (mirrors the SO/WO list). List View paginates CLIENT-SIDE
-// at PAGE_SIZE per page — so only a page's worth of product-image thumbnails
-// load at a time (each is one signed-URL fetch, cached; paging keeps that
-// bounded). The thumbnail is the shared <ItemBadge> — the Item Master's PRODUCT
-// IMAGE (items.image_path), NOT the drawing (user decision 2026-09-21). The old
-// drawing-based PartThumb wrote a drawing_view audit row per row shown; the
-// product image is not a controlled document and is not logged.
+// One fetch, cap 200 (mirrors the SO/WO list).
 const LIST_LIMIT = 200;
 // One page = the whole loaded list (user, 2026-09-21: the sheet scrolls, no
-// Prev / Next). The image badges lazy-load, so a long page costs nothing
-// until a row is scrolled into view; the pager below still exists and simply
-// never shows while everything fits one page.
+// Prev / Next). The image badges lazy-load, so a long page costs nothing until
+// a row is scrolled into view; the pager below still exists and simply never
+// shows while everything fits one page.
 const PAGE_SIZE = 200;
 const VIEW_STORAGE_KEY = 'jc-list-view';
-
-/** One cell of the card's metric strip — big mono value over a tiny uppercase
- *  label, mirroring the SO/WO list (ORDER QTY / COMPLETED / PENDING / OPS). */
-function QtyBox({
-  label,
-  value,
-  color,
-  bordered,
-}: {
-  label: string;
-  value: number | string;
-  color?: string;
-  bordered?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        padding: '4px 12px',
-        textAlign: 'center',
-        minWidth: 58,
-        borderLeft: bordered ? '1px solid var(--border)' : undefined,
-      }}
-    >
-      <div
-        className="mono fw-700"
-        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
-      >
-        {value}
-      </div>
-      <div
-        className="mono"
-        style={{
-          fontSize: 9,
-          color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-        }}
-      >
-        {label}
-      </div>
-    </div>
-  );
-}
 
 /** Left accent bar — red when late & unfinished, green when finished, blue
  *  otherwise. Same tokens the badges use (mirrors the SO/WO list). */
@@ -114,6 +115,25 @@ function daysLeftFor(jc: JobCardListItem, today: string): number | null {
   if (jc.dueDate == null || isDone(jc)) return null;
   const ms = Date.parse(jc.dueDate) - Date.parse(today);
   return Math.round(ms / 86_400_000);
+}
+
+/** The Days Left colour — late red, due within the working week amber, else
+ *  green; muted when there is nothing to count down to. */
+function daysLeftColor(days: number | null): string {
+  if (days == null) return 'var(--text3)';
+  if (days < 0) return 'var(--red)';
+  if (days <= 5) return 'var(--amber)';
+  return 'var(--green)';
+}
+
+/** Where a job card's source document lives — the SO / JWSO link in the row. */
+function sourceRoute(link: NonNullable<JobCardListItem['sourceLink']>): {
+  to: '/sales-orders/$id' | '/job-work-orders/$id';
+  id: string;
+} {
+  return link.type === 'so'
+    ? { to: '/sales-orders/$id', id: link.salesOrderId }
+    : { to: '/job-work-orders/$id', id: link.jobWorkOrderId };
 }
 
 const listSearchSchema = z.object({
@@ -148,7 +168,7 @@ function JobCardsListPage(): React.JSX.Element {
     setSearchInput(search.search ?? '');
   }, [search.search]);
 
-  // List View (new table) vs Card View (the original SO-style cards). List is the
+  // List View (the sheet) vs Card View (the SO-style cards). List is the
   // default; the choice is remembered per browser, wrapped in try/catch so a
   // locked-down browser (no localStorage) still renders.
   const [view, setView] = useState<'list' | 'card'>(() => {
@@ -170,6 +190,11 @@ function JobCardsListPage(): React.JSX.Element {
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  IN-JC  26 " and "IN-JC 26" are one query, one cache entry, one URL.
+    //
+    // The debounce stays HERE, not on <FilterBar searchDebounceMs>: what is
+    // being delayed is the URL write, and the box must show the keystroke at
+    // once. FilterBar reports every keystroke into `searchInput`; this effect
+    // is what waits 300ms before the route changes.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
@@ -208,13 +233,20 @@ function JobCardsListPage(): React.JSX.Element {
   const { data: operatorsData } = useOperatorsList({ limit: 200, offset: 0 });
   const machines = machinesData?.machines ?? [];
   const operators = operatorsData?.operators ?? [];
-  // Tier-driven, per department (jc_create sits in Production). Replaces the old
-  // admin/manager flag. Creating a Job Card is `entry` (L2 Data Entry and up).
+  // Tier-driven, per department (jc_create sits in Production). Creating a Job
+  // Card is `entry` (L2 Data Entry and up); Edit needs `edit` (L3+); Delete
+  // needs the edit+approve pair only L5 Department Admin and above hold. The
+  // last two used to be read inside JcRowWriteActions, which this file
+  // replaced with <RowActions> — the expressions are carried over unchanged.
   const { data: eff } = useMyAccess();
-  const canWrite = effectiveFormPerms(eff, 'jc_create').entry;
+  const perms = effectiveFormPerms(eff, 'jc_create');
+  const canWrite = perms.entry;
+  const canEditJc = perms.edit;
+  const canDeleteJc = perms.edit && perms.approve;
+  const del = useDeleteJobCard();
 
   const total = data?.total ?? 0;
-  const rows = data?.items ?? [];
+  const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const today = new Date().toISOString().slice(0, 10);
 
   // Client-side pagination for the List View (Card View keeps its full scroll).
@@ -262,775 +294,610 @@ function JobCardsListPage(): React.JSX.Element {
     });
   };
 
+  /** The six row actions, in the sheet's order: View · Edit · Print · Excel ·
+   *  Assign · Delete. `labelled` draws the card view's text buttons instead of
+   *  the sheet's icons. Delete now raises the shared ConfirmDialog and hands
+   *  it the mutation's promise, so the dialog owns the wait and a second click
+   *  cannot fire a no-op delete. */
+  const rowActions = (jc: JobCardListItem, labelled: boolean): React.JSX.Element => (
+    <RowActions
+      labelled={labelled}
+      // View and Edit are ROUTES, so they stay real links — ctrl-click /
+      // middle-click / "open in new tab" keep working.
+      viewTo={`/job-cards/${jc.id}`}
+      editTo={canEditJc ? `/job-cards/${jc.id}/edit` : undefined}
+      renderLink={(p) => <Link {...p} />}
+      extra={
+        <>
+          <PrintJcButton jc={jc} iconOnly={!labelled} />
+          <ExcelJcButton jc={jc} iconOnly={!labelled} />
+          <AssignTaskButton
+            linkedRef={{
+              type: 'job_card',
+              id: jc.id,
+              display: `JC ${jc.code}`,
+              navPage: '/job-cards',
+            }}
+            suggestedTitle={`Follow up on JC ${jc.code}`}
+            {...(labelled ? {} : { className: 'btn btn-ghost btn-sm btn-icon', label: '' })}
+          />
+        </>
+      }
+      onDelete={canDeleteJc ? (): Promise<void> => del.mutateAsync(jc.id) : undefined}
+      deleteDisabled={del.isPending}
+      deleteConfirm={{
+        title: `Delete job card ${jc.code}?`,
+        message: `${jc.code} — ${itemCodeWithRev(jc.itemCode, jc.itemRevision)} stops appearing in Job Cards, on the shop floor and in Op Entry.`,
+        confirmLabel: 'Delete',
+        pendingLabel: 'Deleting…',
+      }}
+    />
+  );
+
+  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
+  // column (rowActionsWidth below): 4+11+8+12+9+6+8+8+7+7+5 = 85, + 15 = 100,
+  // so the table never scrolls sideways. Centred by the standard; only the
+  // item code · name is left-aligned, so the code starts at the same x in
+  // every row.
+  const columns = useMemo<DataTableColumn<JobCardListItem>[]>(
+    () => [
+      {
+        header: 'Sr No',
+        width: '4%',
+        className: 'text3',
+        render: (_jc, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
+      },
+      {
+        header: 'JC No.',
+        width: '11%',
+        nowrap: true,
+        render: (jc) => (
+          <>
+            <Link
+              to="/job-cards/$id"
+              params={{ id: jc.id }}
+              className="td-code"
+              style={{ color: 'var(--blue)', fontWeight: 800 }}
+              title="View job card status"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {jc.code}
+            </Link>
+            {jc.itemRevision ? (
+              <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                Rev. {jc.itemRevision}
+              </div>
+            ) : null}
+          </>
+        ),
+      },
+      {
+        header: 'Thumbnail',
+        width: THUMBNAIL_COL_WIDTH,
+        // The picture fills the cell edge to edge, the gridlines being its
+        // frame (user decision 2026-09-22 — the thumbnail column sits before
+        // the item code · name on every list). The negative margins cancel the
+        // sheet's own cell padding so the box reaches the rules;
+        // `position: relative` is what `fill` pins itself to. ItemImageBox
+        // stops its own click, so opening the picture never opens the row.
+        render: (jc) => (
+          <div
+            style={{
+              position: 'relative',
+              height: 40,
+              margin: 'calc(var(--sp-1) * -1) calc(var(--sp-2) * -1)',
+            }}
+          >
+            <ItemImageBox
+              imagePath={jc.itemImagePath}
+              size="row"
+              alt={jc.itemName || itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+              fill
+            />
+          </div>
+        ),
+      },
+      {
+        header: 'Item Code',
+        width: '12%',
+        align: 'left',
+        // CODE/REV + name, text only — the picture is the column to the left.
+        // The revision is the customer's drawing revision off the SO line
+        // (null → the bare code, never a trailing slash).
+        render: (jc) => (
+          <ItemBadge
+            size="row"
+            showImage={false}
+            code={jc.itemCode}
+            name={jc.itemName}
+            revision={jc.itemRevision}
+            imagePath={jc.itemImagePath}
+            style={{ display: 'flex', width: '100%' }}
+          />
+        ),
+      },
+      {
+        header: 'SO No.',
+        width: '9%',
+        nowrap: true,
+        render: (jc) => {
+          const s = jc.sourceLink;
+          if (!s) return <span className="text3">—</span>;
+          const route = sourceRoute(s);
+          return (
+            <Link
+              to={route.to}
+              params={{ id: route.id }}
+              className="mono"
+              style={{
+                fontSize: 'var(--fs-xs)',
+                color: 'var(--blue)',
+                textDecoration: 'none',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {s.code}
+              {s.lineNo !== 1 ? <span>/{s.lineNo}</span> : null}
+            </Link>
+          );
+        },
+      },
+      {
+        header: 'Order Qty',
+        width: '6%',
+        nowrap: true,
+        render: (jc) => (
+          <>
+            <span className="mono fw-700">{jc.orderQty}</span>{' '}
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+              Nos
+            </span>
+          </>
+        ),
+      },
+      {
+        header: 'Progress',
+        width: '8%',
+        // Completed pieces at the LAST operation over the order qty — the
+        // same figure the card view's Completed box shows.
+        render: (jc) => {
+          const done = jc.lastOpCompletedQty;
+          const pct = jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
+          return (
+            <>
+              <ProgressBar
+                value={pct}
+                color="var(--green)"
+                label={`${done} of ${jc.orderQty} complete`}
+              />
+              <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                {done} / {jc.orderQty} · {pct}%
+              </div>
+            </>
+          );
+        },
+      },
+      {
+        header: 'JC Status',
+        width: '8%',
+        nowrap: true,
+        render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} />,
+      },
+      { header: 'Start Date', width: '7%', className: 'mono', nowrap: true, key: 'jcDate' },
+      {
+        header: 'Due Date',
+        width: '7%',
+        className: 'mono',
+        nowrap: true,
+        render: (jc) => (
+          <>
+            {jc.dueDate ?? '—'}
+            {/* The plan's Customer Dispatch Date under the due date — a second
+                line, not a column, so the tuned widths above still add up. */}
+            {jc.customerDispatchDate ? (
+              <div
+                className="text3"
+                style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
+                title="Customer Dispatch Date (from the plan)"
+              >
+                Disp {jc.customerDispatchDate}
+              </div>
+            ) : null}
+          </>
+        ),
+      },
+      {
+        header: 'Days Left',
+        width: '5%',
+        nowrap: true,
+        render: (jc) => {
+          const dLeft = daysLeftFor(jc, today);
+          return (
+            <span className="mono fw-700" style={{ color: daysLeftColor(dLeft) }}>
+              {dLeft == null ? '—' : dLeft}
+            </span>
+          );
+        },
+      },
+    ],
+    [currentPage, today],
+  );
+
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
-  if (eff && !effectiveFormPerms(eff, 'jc_create').view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+  if (eff && !perms.view) {
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
     <div>
-      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + create buttons, KPI strip AND the filter panel (search / status /
-          machine / operator / dates) stay pinned while the list scrolls
-          underneath, so filters stay reachable like the SO list's search.
-          Background must be opaque var(--bg) or rows show through as they pass
-          under. Not bled edge-to-edge — that would give the app a horizontal
-          scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
+      {/* The frozen header band: title, count, the create buttons, the KPI
+          strip AND the filter panel stay pinned while the list scrolls
+          underneath, so the filters stay reachable. */}
+      <ListHeader
+        title="Job Cards"
+        icon="▭"
+        count={total}
+        noun="job card"
+        filterNote={search.status ? search.status.replaceAll('_', ' ') : undefined}
+        updating={isFetching && !isLoading}
+        primary={
+          canWrite ? (
+            <>
+              <Link to="/planning" className="btn btn-primary">
+                + Plan &amp; Create Job Card
+              </Link>
+              <Link
+                to="/job-cards/new"
+                className="btn btn-ghost"
+                title="Job Work Sales Orders (JWSO) only. Sales Order items are created via Planning."
+              >
+                + New JWSO Job Card
+              </Link>
+            </>
+          ) : null
+        }
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 12,
-            gap: 8,
-          }}
+        {/* KPI strip — ONE single-row strip (styling skill Rule 3). Counts
+            reflect the loaded / filtered set, not global, so they are read-only
+            figures: no onClick, no filtering. */}
+        <StatStrip
+          items={[
+            { key: 'total', label: 'Total Job Cards', count: kpis.total, color: 'var(--cyan)' },
+            { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber)' },
+            {
+              key: 'in_progress',
+              label: 'In Progress',
+              count: kpis.inProgress,
+              color: 'var(--blue)',
+            },
+            {
+              key: 'on_hold',
+              label: 'On Hold',
+              count: kpis.onHold,
+              color: 'var(--text3)',
+              title: 'No hold state exists in job-card data — see report',
+            },
+            {
+              key: 'completed',
+              label: 'Completed',
+              count: kpis.completed,
+              color: 'var(--green)',
+            },
+            { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red)' },
+          ]}
+        />
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', margin: 'var(--sp-1) 0' }}>
+          Counts reflect the currently loaded / filtered list, not every job card in the system.
+        </div>
+
+        <FilterBar
+          search={searchInput}
+          onSearch={setSearchInput}
+          placeholder="Search JC no., item code / name, customer, SO no.…"
+          filters={[
+            {
+              key: 'status',
+              value: search.status ?? '',
+              onChange: (v) => setNav({ status: v === '' ? undefined : (v as JcComputedStatus) }),
+              options: [
+                { value: '', label: 'All statuses' },
+                ...JC_COMPUTED_STATUSES.map((s) => ({
+                  value: s,
+                  label: s.replaceAll('_', ' '),
+                })),
+              ],
+            },
+            {
+              key: 'machine',
+              value: search.machineId ?? '',
+              onChange: (v) => setNav({ machineId: v === '' ? undefined : v }),
+              options: [
+                { value: '', label: 'All machines' },
+                ...machines.map((m) => ({ value: m.id, label: `${m.code} — ${m.name}` })),
+              ],
+            },
+            {
+              key: 'operator',
+              value: search.operatorId ?? '',
+              onChange: (v) => setNav({ operatorId: v === '' ? undefined : v }),
+              options: [
+                { value: '', label: 'All operators' },
+                ...operators.map((o) => ({ value: o.id, label: `${o.code} — ${o.name}` })),
+              ],
+            },
+          ]}
         >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 2 }}>
-              Job Cards
-            </div>
-            <div className="text3" style={{ fontSize: 12 }}>
-              Plan, track and manage manufacturing jobs
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canWrite ? (
-              <>
-                <Link to="/planning" className="btn btn-primary">
-                  + Plan &amp; Create Job Card
-                </Link>
-                <Link
-                  to="/job-cards/new"
-                  className="btn btn-ghost"
-                  title="Job Work Sales Orders (JWSO) only. Sales Order items are created via Planning."
-                >
-                  + New JWSO Job Card
-                </Link>
-              </>
-            ) : null}
-          </div>
-        </div>
-
-        {/* KPI strip — ONE single-row strip (styling skill Rule 3), reused
-          <StatStrip>. Counts reflect the loaded/filtered set, not global. */}
-        <div style={{ marginBottom: 10 }}>
-          <StatStrip
-            items={[
-              { key: 'total', label: 'Total Job Cards', count: kpis.total, color: 'var(--cyan)' },
-              { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber)' },
-              {
-                key: 'in_progress',
-                label: 'In Progress',
-                count: kpis.inProgress,
-                color: 'var(--blue)',
-              },
-              {
-                key: 'on_hold',
-                label: 'On Hold',
-                count: kpis.onHold,
-                color: 'var(--text3)',
-                title: 'No hold state exists in job-card data — see report',
-              },
-              {
-                key: 'completed',
-                label: 'Completed',
-                count: kpis.completed,
-                color: 'var(--green)',
-              },
-              { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red)' },
-            ]}
+          {/* Dates and the view switch are not dropdowns, so they ride in
+              FilterBar's own slot for extra controls rather than becoming
+              fake selects. */}
+          <Input
+            type="date"
+            value={search.fromDate ?? ''}
+            onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
+            title="From date"
+            aria-label="From date"
           />
-          <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
-            Counts reflect the currently loaded / filtered list, not every job card in the system.
+          <Input
+            type="date"
+            value={search.toDate ?? ''}
+            onChange={(e) => setNav({ toDate: e.target.value || undefined })}
+            title="To date"
+            aria-label="To date"
+          />
+          <div style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'center' }}>
+            <ViewToggle value={view} onChange={changeView} />
           </div>
-        </div>
+        </FilterBar>
+      </ListHeader>
 
-        <div className="panel" style={{ marginBottom: 0 }}>
-          <div className="panel-body" style={{ padding: '10px 14px' }}>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Failed to load job cards'}
+        />
+      ) : view === 'list' ? (
+        // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────
+        <Panel bodyPadding="none">
+          <DataTable
+            columns={columns}
+            rows={pagedRows}
+            loading={isLoading}
+            emptyText="No job cards match these filters."
+            onRowClick={(jc) => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
+            rowActionsWidth="15%"
+            rowActions={(jc) => rowActions(jc, false)}
+          />
+        </Panel>
+      ) : isLoading ? (
+        <PageState state="loading" />
+      ) : rows.length === 0 ? (
+        <PageState state="empty" message="No job cards match these filters." />
+      ) : (
+        // ── CARD VIEW ────────────────────────────────────────────────────────
+        // Kept as its own card, NOT <DocCard>: a DocCard's band click is its
+        // expand toggle and it draws a chevron to say so, but these cards do
+        // not expand — the whole card opens the job. Everything INSIDE the
+        // card is now the kit's (QtyStrip, ProgressBar, StatusBadge, Badge,
+        // ItemBadge, RowActions).
+        rows.map((jc) => {
+          const done = jc.lastOpCompletedQty;
+          const pending = Math.max(0, jc.orderQty - done);
+          const pct = jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
+          const overdue =
+            jc.dueDate != null &&
+            jc.dueDate < today &&
+            jc.computedStatus !== 'closed' &&
+            jc.computedStatus !== 'complete';
+          const s = jc.sourceLink;
+          const route = s ? sourceRoute(s) : null;
+          const high = jc.priority === 'high';
+          const open = (): void => {
+            void navigate({ to: '/job-cards/$id', params: { id: jc.id } });
+          };
+          return (
             <div
+              key={jc.id}
+              className="panel"
               style={{
                 display: 'flex',
-                flexWrap: 'wrap',
-                gap: 8,
-                alignItems: 'center',
-                marginBottom: 8,
+                overflow: 'hidden',
+                padding: 0,
+                marginBottom: 'var(--sp-2)',
               }}
             >
-              <input
-                className="innovic-input"
-                placeholder="Search JC no., item code / name, customer, SO no.…"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                style={{ width: 320, fontSize: 12 }}
-              />
-              <select
-                className="innovic-select"
-                value={search.status ?? ''}
-                onChange={(e) => {
-                  const v = e.target.value as JcComputedStatus | '';
-                  setNav({ status: v === '' ? undefined : v });
-                }}
-                style={{ width: 180, fontSize: 12 }}
-              >
-                <option value="">All statuses</option>
-                {JC_COMPUTED_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s.replaceAll('_', ' ')}
-                  </option>
-                ))}
-              </select>
-              <span style={{ flex: 1 }} />
-              {/* List / Card view toggle */}
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => changeView('list')}
-                  aria-pressed={view === 'list'}
+              <div style={{ width: 4, flexShrink: 0, background: accentFor(jc, today) }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Band 1: identity + priority + status + actions */}
+                <div
+                  onClick={open}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--sp-2)',
+                    flexWrap: 'wrap',
+                    padding: 'var(--sp-2) var(--sp-3)',
+                    cursor: 'pointer',
+                  }}
                 >
-                  List View
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${view === 'card' ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => changeView('card')}
-                  aria-pressed={view === 'card'}
-                >
-                  Card View
-                </button>
-              </div>
-            </div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                gap: 8,
-              }}
-            >
-              <select
-                className="innovic-select"
-                value={search.machineId ?? ''}
-                onChange={(e) => setNav({ machineId: e.target.value || undefined })}
-                style={{ fontSize: 12 }}
-              >
-                <option value="">All machines</option>
-                {machines.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.code} — {m.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="innovic-select"
-                value={search.operatorId ?? ''}
-                onChange={(e) => setNav({ operatorId: e.target.value || undefined })}
-                style={{ fontSize: 12 }}
-              >
-                <option value="">All operators</option>
-                {operators.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.code} — {o.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="date"
-                className="innovic-input"
-                value={search.fromDate ?? ''}
-                onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
-                placeholder="From date"
-                style={{ fontSize: 12 }}
-              />
-              <input
-                type="date"
-                className="innovic-input"
-                value={search.toDate ?? ''}
-                onChange={(e) => setNav({ toDate: e.target.value || undefined })}
-                placeholder="To date"
-                style={{ fontSize: 12 }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20 }}>
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-            Loading job cards…
-          </div>
-        </div>
-      ) : isError ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load job cards'}
-          </div>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20 }}>
-            No job cards match these filters.
-          </div>
-        </div>
-      ) : view === 'list' ? (
-        // ── LIST VIEW (new table) ────────────────────────────────────────────
-        <>
-          {/* The sheet look (tbl-grid, the Plans list's): bold blue column
-              names, gridlines, cream / white rows, fixed widths that add up
-              to the page so nothing scrolls sideways. */}
-          <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
-            <table className="innovic-table tbl-grid">
-              <colgroup>
-                <col style={{ width: '4%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: THUMBNAIL_COL_WIDTH }} />
-                <col style={{ width: '12%' }} />
-                <col style={{ width: '9%' }} />
-                <col style={{ width: '6%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '5%' }} />
-                <col style={{ width: '15%' }} />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Sr No</th>
-                  <th>JC No.</th>
-                  <ItemThumbnailHeader />
-                  <th style={{ textAlign: 'left' }}>Item Code</th>
-                  <th>SO No.</th>
-                  <th>Order Qty</th>
-                  <th>Progress</th>
-                  <th>JC Status</th>
-                  <th>Start Date</th>
-                  <th>Due Date</th>
-                  <th>Days Left</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagedRows.map((jc, i) => {
-                  const rowNo = (currentPage - 1) * PAGE_SIZE + i + 1;
-                  const done = jc.lastOpCompletedQty;
-                  const pct =
-                    jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
-                  const dLeft = daysLeftFor(jc, today);
-                  const dColor =
-                    dLeft == null
-                      ? 'var(--text3)'
-                      : dLeft < 0
-                        ? 'var(--red)'
-                        : dLeft <= 5
-                          ? 'var(--amber)'
-                          : 'var(--green)';
-                  const s = jc.sourceLink;
-                  return (
-                    <tr
-                      key={jc.id}
-                      onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td className="text3">{rowNo}</td>
-                      <td>
-                        <Link
-                          to="/job-cards/$id"
-                          params={{ id: jc.id }}
-                          className="td-code"
-                          style={{ color: 'var(--blue)', fontWeight: 800 }}
-                          title="View job card status"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {jc.code}
-                        </Link>
-                        {jc.itemRevision ? (
-                          <div className="mono" style={{ fontSize: 9, color: 'var(--text3)' }}>
-                            Rev. {jc.itemRevision}
-                          </div>
-                        ) : null}
-                      </td>
-                      {/* Thumbnail in its OWN column, right after the JC No.
-                          (user decision 2026-09-22 — every list/document puts
-                          the thumbnail column before the item code · name). */}
-                      <ItemThumbnailCell
-                        imagePath={jc.itemImagePath}
-                        alt={jc.itemName || itemCodeWithRev(jc.itemCode, jc.itemRevision)}
-                      />
-                      <td style={{ textAlign: 'left' }}>
-                        {/* CODE/REV + name, text only — the picture is the
-                            column to the left. The revision is the customer's
-                            drawing revision off the SO line (null → bare code).
-                            Left-aligned and full-width on purpose so the code
-                            starts at the same x in every row. */}
-                        <ItemBadge
-                          size="row"
-                          showImage={false}
-                          code={jc.itemCode}
-                          name={jc.itemName}
-                          revision={jc.itemRevision}
-                          imagePath={jc.itemImagePath}
-                          style={{ display: 'flex', width: '100%' }}
-                        />
-                      </td>
-                      <td>
-                        {s ? (
-                          <Link
-                            to={s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id'}
-                            params={{ id: s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId }}
-                            className="mono"
-                            style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none' }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {s.code}
-                            {s.lineNo !== 1 ? (
-                              <span style={{ fontSize: 9 }}>/{s.lineNo}</span>
-                            ) : null}
-                          </Link>
-                        ) : (
-                          <span className="text3">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <span className="mono fw-700">{jc.orderQty}</span>{' '}
-                        <span className="text3" style={{ fontSize: 10 }}>
-                          Nos
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          style={{
-                            display: 'inline-flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: 2,
-                            minWidth: 80,
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: 80,
-                              height: 4,
-                              background: 'var(--bg5)',
-                              borderRadius: 2,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: `${pct}%`,
-                                height: '100%',
-                                background: 'var(--green)',
-                                borderRadius: 2,
-                              }}
-                            />
-                          </div>
-                          <div className="mono" style={{ fontSize: 9, color: 'var(--text3)' }}>
-                            {done} / {jc.orderQty} · {pct}%
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <JcStatusBadge status={jc.computedStatus} />
-                      </td>
-                      <td className="mono" style={{ fontSize: 11 }}>
-                        {jc.jcDate}
-                      </td>
-                      <td className="mono" style={{ fontSize: 11 }}>
-                        {jc.dueDate ?? '—'}
-                        {/* The plan's Customer Dispatch Date under the due
-                            date — a second line, not a column, so the tuned
-                            widths above still add up to the page. */}
-                        {jc.customerDispatchDate ? (
-                          <div
-                            className="text3"
-                            style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                            title="Customer Dispatch Date (from the plan)"
-                          >
-                            Disp {jc.customerDispatchDate}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td>
-                        <span className="mono fw-700" style={{ color: dColor }}>
-                          {dLeft == null ? '—' : dLeft}
-                        </span>
-                      </td>
-                      {/* Icons only, one row, centred — the title / aria-label
-                          names the action on hover. Side padding trimmed on
-                          the cell so all six (View, Print, Excel, Edit, Delete,
-                          Assign) fit the column without spilling. Same gates
-                          as the card: Edit / Delete self-gate inside
-                          JcRowWriteActions, Assign inside AssignTaskButton. */}
-                      <td style={{ padding: '8px 2px' }}>
-                        <div
-                          className="jc-row-acts"
-                          style={{
-                            display: 'flex',
-                            gap: 4,
-                            justifyContent: 'center',
-                            flexWrap: 'nowrap',
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Link
-                            to="/job-cards/$id"
-                            params={{ id: jc.id }}
-                            className="btn btn-ghost btn-sm btn-icon"
-                            style={{ padding: '2px 3px' }}
-                            title="View"
-                            aria-label="View"
-                          >
-                            <Eye size={13} />
-                          </Link>
-                          <PrintJcButton jc={jc} iconOnly />
-                          <ExcelJcButton jc={jc} iconOnly />
-                          <JcRowWriteActions jc={jc} iconOnly />
-                          <AssignTaskButton
-                            linkedRef={{
-                              type: 'job_card',
-                              id: jc.id,
-                              display: `JC ${jc.code}`,
-                              navPage: '/job-cards',
-                            }}
-                            suggestedTitle={`Follow up on JC ${jc.code}`}
-                            className="btn btn-ghost btn-sm btn-icon"
-                            label=""
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-            💡 Click a row to open the job card.
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 8,
-              fontSize: 12,
-              color: 'var(--text3)',
-            }}
-          >
-            <span>
-              {total > LIST_LIMIT
-                ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, rows.length)} of ${rows.length} job card${rows.length === 1 ? '' : 's'}`}
-            </span>
-            {totalPages > 1 ? (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={currentPage <= 1}
-                  onClick={() => gotoPage(currentPage - 1)}
-                >
-                  ‹ Prev
-                </button>
-                <span className="mono">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={currentPage >= totalPages}
-                  onClick={() => gotoPage(currentPage + 1)}
-                >
-                  Next ›
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </>
-      ) : (
-        // ── CARD VIEW (original SO-style cards, unchanged) ───────────────────
-        <>
-          {rows.map((jc) => {
-            const done = jc.lastOpCompletedQty;
-            const pending = Math.max(0, jc.orderQty - done);
-            const pct = jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
-            const overdue =
-              jc.dueDate != null &&
-              jc.dueDate < today &&
-              jc.computedStatus !== 'closed' &&
-              jc.computedStatus !== 'complete';
-            const s = jc.sourceLink;
-            const high = jc.priority === 'high';
-            return (
-              <div
-                key={jc.id}
-                className="panel"
-                style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
-              >
-                <div style={{ width: 4, flexShrink: 0, background: accentFor(jc, today) }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {/* Band 1: identity + priority + status + actions */}
-                  <div
-                    onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      flexWrap: 'wrap',
-                      padding: '10px 14px',
-                      cursor: 'pointer',
-                    }}
+                  <Link
+                    to="/job-cards/$id"
+                    params={{ id: jc.id }}
+                    className="td-code"
+                    style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 'var(--fs-sm)' }}
+                    title="View job card status"
+                    onClick={(e) => e.stopPropagation()}
                   >
+                    {jc.code}
+                  </Link>
+                  {/* Product image + `CODE/REV` + name — the customer's drawing
+                      revision from the SO line this card was raised against; a
+                      JW-sourced or standalone card has none and keeps the bare
+                      code. Same shared badge as the List View and the Job Card
+                      view, so the screens cannot spell it differently. */}
+                  <ItemBadge
+                    size="card"
+                    code={jc.itemCode}
+                    name={jc.itemName}
+                    revision={jc.itemRevision}
+                    imagePath={jc.itemImagePath}
+                  />
+                  {s && route ? (
                     <Link
-                      to="/job-cards/$id"
-                      params={{ id: jc.id }}
-                      className="td-code"
-                      style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
-                      title="View job card status"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {jc.code}
-                    </Link>
-                    {/* Product image + `CODE/REV` + name — the customer's
-                        drawing revision from the SO line this card was raised
-                        against; a JW-sourced or standalone card has none and
-                        keeps the bare code, with no trailing slash. Same shared
-                        badge as the List View and the Job Card view so the
-                        screens cannot spell it differently. */}
-                    <ItemBadge
-                      size="card"
-                      code={jc.itemCode}
-                      name={jc.itemName}
-                      revision={jc.itemRevision}
-                      imagePath={jc.itemImagePath}
-                    />
-                    {s
-                      ? (() => {
-                          const to = s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id';
-                          const sid = s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId;
-                          return (
-                            <Link
-                              to={to}
-                              params={{ id: sid }}
-                              className="mono"
-                              style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none' }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {s.code}
-                              {s.lineNo !== 1 ? (
-                                <span style={{ fontSize: 9, color: 'var(--blue)', marginLeft: 2 }}>
-                                  /{s.lineNo}
-                                </span>
-                              ) : null}
-                            </Link>
-                          );
-                        })()
-                      : null}
-                    {/* ADR-170 — the Production Order that built this card, in
-                        the same quiet mono as the SO link beside it. Old cards
-                        carry null and show nothing. */}
-                    {jc.productionOrderId && jc.productionOrderCode ? (
-                      <Link
-                        to="/production-orders/$id"
-                        params={{ id: jc.productionOrderId }}
-                        className="mono"
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--blue)',
-                          textDecoration: 'none',
-                          whiteSpace: 'nowrap',
-                        }}
-                        title="Production Order"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {jc.productionOrderCode}
-                      </Link>
-                    ) : null}
-                    <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>
-                      {high ? 'High' : 'Normal'}
-                    </span>
-                    <JcStatusBadge status={jc.computedStatus} />
-                    {jc.runningCount > 0 ? (
-                      <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700 }}>
-                        ▶{jc.runningCount}
-                      </span>
-                    ) : null}
-                    <span style={{ flex: 1 }} />
-                    <div
-                      style={{ display: 'flex', gap: 4, alignItems: 'center' }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link
-                        to="/job-cards/$id"
-                        params={{ id: jc.id }}
-                        className="btn btn-ghost btn-sm"
-                        title="View job card status"
-                      >
-                        👁 View
-                      </Link>
-                      <PrintJcButton jc={jc} />
-                      <ExcelJcButton jc={jc} />
-                      <JcRowWriteActions jc={jc} />
-                      <AssignTaskButton
-                        linkedRef={{
-                          type: 'job_card',
-                          id: jc.id,
-                          display: `JC ${jc.code}`,
-                          navPage: '/job-cards',
-                        }}
-                        suggestedTitle={`Follow up on JC ${jc.code}`}
-                      />
-                    </div>
-                  </div>
-                  {/* Band 2: metric strip + progress + meta line */}
-                  <div
-                    onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      flexWrap: 'wrap',
-                      padding: '0 14px 10px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
-                      }}
-                    >
-                      <QtyBox label="Order Qty" value={jc.orderQty} />
-                      <QtyBox label="Completed" value={done} color="var(--green)" bordered />
-                      <QtyBox
-                        label="Pending"
-                        value={pending}
-                        color={pending > 0 ? 'var(--red)' : 'var(--green)'}
-                        bordered
-                      />
-                      <QtyBox label="Ops" value={`${jc.doneOps}/${jc.totalOps}`} bordered />
-                    </div>
-                    <div style={{ minWidth: 90 }}>
-                      <div
-                        style={{ width: 90, height: 4, background: 'var(--bg5)', borderRadius: 2 }}
-                      >
-                        <div
-                          style={{
-                            width: `${pct}%`,
-                            height: '100%',
-                            background: 'var(--green)',
-                            borderRadius: 2,
-                          }}
-                        />
-                      </div>
-                      <div
-                        className="mono"
-                        style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}
-                      >
-                        {pct}% complete
-                      </div>
-                    </div>
-                    <div
+                      to={route.to}
+                      params={{ id: route.id }}
                       className="mono"
                       style={{
-                        fontSize: 11,
-                        color: 'var(--text3)',
-                        display: 'flex',
-                        gap: 6,
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
+                        fontSize: 'var(--fs-xs)',
+                        color: 'var(--blue)',
+                        textDecoration: 'none',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {s.code}
+                      {s.lineNo !== 1 ? <span>/{s.lineNo}</span> : null}
+                    </Link>
+                  ) : null}
+                  {/* ADR-170 — the Production Order that built this card, in
+                      the same quiet mono as the SO link beside it. Old cards
+                      carry null and show nothing. */}
+                  {jc.productionOrderId && jc.productionOrderCode ? (
+                    <Link
+                      to="/production-orders/$id"
+                      params={{ id: jc.productionOrderId }}
+                      className="mono"
+                      style={{
+                        fontSize: 'var(--fs-xs)',
+                        color: 'var(--blue)',
+                        textDecoration: 'none',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title="Production Order"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {jc.productionOrderCode}
+                    </Link>
+                  ) : null}
+                  <Badge tone={high ? 'amber' : 'grey'}>{high ? 'High' : 'Normal'}</Badge>
+                  <StatusBadge kind="jc" status={jc.computedStatus} />
+                  {jc.runningCount > 0 ? (
+                    <span
+                      className="fw-700"
+                      style={{ fontSize: 'var(--fs-xs)', color: 'var(--amber2)' }}
+                      title="Operations running right now"
+                    >
+                      ▶{jc.runningCount}
+                    </span>
+                  ) : null}
+                  <span style={{ flex: 1 }} />
+                  {rowActions(jc, true)}
+                </div>
+                {/* Band 2: metric strip + progress + meta line */}
+                <div
+                  onClick={open}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--sp-3)',
+                    flexWrap: 'wrap',
+                    padding: '0 var(--sp-3) var(--sp-2)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <QtyStrip
+                    items={[
+                      { label: 'Order Qty', value: jc.orderQty },
+                      { label: 'Completed', value: done, color: 'var(--green)' },
+                      {
+                        label: 'Pending',
+                        value: pending,
+                        color: pending > 0 ? 'var(--red)' : 'var(--green)',
+                      },
+                      { label: 'Ops', value: `${jc.doneOps}/${jc.totalOps}` },
+                    ]}
+                  />
+                  <div style={{ minWidth: 90 }}>
+                    <ProgressBar value={pct} color="var(--green)" label="Complete" />
+                    <div
+                      className="mono text3"
+                      style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                    >
+                      {pct}% complete
+                    </div>
+                  </div>
+                  <div
+                    className="mono text3"
+                    style={{
+                      fontSize: 'var(--fs-xs)',
+                      display: 'flex',
+                      gap: 'var(--sp-1)',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span className="text2">{jc.jcDate}</span>
+                    {jc.clientPoLineNo ? (
+                      <>
+                        <span>·</span>
+                        <span>
+                          POL{' '}
+                          <span className="fw-700" style={{ color: 'var(--purple)' }}>
+                            {jc.clientPoLineNo}
+                          </span>
+                        </span>
+                      </>
+                    ) : null}
+                    <span>·</span>
+                    <span
+                      style={{
+                        color: overdue ? 'var(--red)' : undefined,
+                        fontWeight: overdue ? 700 : undefined,
                       }}
                     >
-                      <span className="text2">{jc.jcDate}</span>
-                      {jc.clientPoLineNo ? (
-                        <>
-                          <span>·</span>
-                          <span>
-                            POL{' '}
-                            <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                              {jc.clientPoLineNo}
-                            </span>
-                          </span>
-                        </>
-                      ) : null}
-                      <span>·</span>
-                      <span
-                        style={{
-                          color: overdue ? 'var(--red)' : undefined,
-                          fontWeight: overdue ? 700 : undefined,
-                        }}
-                      >
-                        {jc.dueDate ? `Due ${jc.dueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
-                      </span>
-                      {jc.remarks ? (
-                        <>
-                          <span>·</span>
-                          <span
-                            title={jc.remarks}
-                            style={{
-                              maxWidth: 220,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {jc.remarks}
-                          </span>
-                        </>
-                      ) : null}
-                    </div>
+                      {jc.dueDate ? `Due ${jc.dueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                    </span>
+                    {jc.remarks ? (
+                      <>
+                        <span>·</span>
+                        <span
+                          title={jc.remarks}
+                          style={{
+                            maxWidth: 220,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {jc.remarks}
+                        </span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          );
+        })
+      )}
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              marginTop: 8,
-              fontSize: 12,
-              color: 'var(--text3)',
-            }}
-          >
-            <span>
-              {total === 0
-                ? 'No job cards'
-                : total > LIST_LIMIT
-                  ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-                  : `Showing all ${total} job card${total === 1 ? '' : 's'}`}
-            </span>
-          </div>
-        </>
+      {isError ? null : (
+        <ListFooter
+          // Scroll mode while everything fits one page — which it always does
+          // while PAGE_SIZE equals the fetch cap — so the count line still
+          // warns when the server truncated the set. The pager only appears if
+          // the loaded list ever outgrows a page, and then the totals it
+          // divides are the LOADED rows, not the server's count.
+          total={totalPages > 1 ? rows.length : total}
+          shown={rows.length}
+          noun="job card"
+          limit={LIST_LIMIT}
+          {...(totalPages > 1 && view === 'list'
+            ? { page: currentPage, pageSize: PAGE_SIZE, onPage: gotoPage }
+            : {})}
+          hint="Click a row to open the job card."
+        />
       )}
     </div>
   );

@@ -1,27 +1,58 @@
 // QC Process Master list — Phase A item 3. Mirrors legacy renderQCProcessMaster (L23446).
 //
-// Laid out as the app's ruled sheet (`.innovic-table.tbl-grid`, the SO / WO
-// List view look — see sales-orders/components/so-sheet-table.tsx): Sr No
-// first, Action last, fixed `%` widths that add up to 100 so nothing scrolls
-// sideways, every column centred by the class except the name, which reads
-// from its left edge. Per-column sorting was dropped with the TanStack table
-// (the SO standard has none; it only ever re-ordered the page on screen).
+// PHASE 4 — migrated onto apps/web/src/ui/ with the Client Master list
+// (modules/clients/routes/list.tsx) as the reference. The composition is the
+// canonical one and nothing else:
+//
+//   <TabStrip>              QC Processes | Report Types
+//   <ListHeader>            title · count · SearchInput · Active filter · primary
+//   <Panel>                 the 💡 what-this-master-is-for note
+//   <Banner>                a refused delete, in the server's own words
+//   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
+//   <ListFooter>            count line · Prev / Page n / Next
+//   <PageState>             no-access and load-failure
+//
+// Everything this file used to draw by hand — the tab strip, the sticky band,
+// the search box, the Active <select>, the <table>/<colgroup>/<thead>, the
+// loading / error / empty rows, the badge, the row-action buttons, the count
+// line, the pager, `confirm()` — now comes from ui/. What is left here is the
+// DATA and the RULES: the query, the permission gates and the delete.
+//
+// What did NOT change: the route and its search params (search, isActive,
+// page, tab), the 300ms debounce on the URL write, normalizeSearchTerm, the
+// 25-row server page, perms -> entry/edit/canDelete, the softDelete.reset()
+// before each attempt so a second try clears the previous banner, row click ->
+// detail, the code cell -> detail, and the Report Types tab (a separate
+// component, untouched).
+//
+// THE ONE BEHAVIOUR THAT DID CHANGE, deliberately: Delete no longer runs on a
+// browser `confirm()`. It raises the shared ConfirmDialog through RowActions,
+// which owns the wait — both buttons go dead, the button reads "Deleting…",
+// and a refusal from the server keeps the question open instead of closing
+// over a delete that never happened.
 
-import type { ListQcProcessesQuery } from '@innovic/shared';
+import type { ListQcProcessesQuery, QcProcess } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { authenticatedRoute } from '@/routes/_authenticated';
-import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
 import { ReportTypesPanel } from '@/modules/report-types/components/report-types-panel';
+import { authenticatedRoute } from '@/routes/_authenticated';
+import { Icon, StatusBadge } from '@/ui/core';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
+import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
 
 const PAGE_SIZE = 25;
-/** Column count — the loading / error / empty rows' <td colSpan> must always
- *  match the <colgroup> below, so it is named once here. */
-const COLUMN_COUNT = 6;
+
+const TABS = [
+  { key: 'processes', label: '⚙ QC Processes' },
+  { key: 'reports', label: '📄 Report Types' },
+];
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -63,6 +94,9 @@ function QcProcessesListPage(): React.JSX.Element {
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  Final  Inspection " and "Final Inspection" are one query, one cache entry, one URL.
+    //
+    // The debounce stays HERE, not on <SearchInput debounceMs>: what is being
+    // delayed is the URL write, and the box must show the keystroke at once.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
@@ -85,390 +119,239 @@ function QcProcessesListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useQcProcessesList(query);
   const softDelete = useSoftDeleteQcProcess();
 
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const currentPage = search.page;
+  const tab = search.tab ?? 'processes';
+
+  // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
+  // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below):
+  // 5+24+40+11+10 = 90, + 10 = 100, so the table never scrolls sideways.
+  // Centred by the standard; only the process name is left-aligned (a name
+  // reads from its left edge).
+  const columns = useMemo<DataTableColumn<QcProcess>[]>(
+    () => [
+      {
+        header: 'Sr No',
+        width: '5%',
+        className: 'text3',
+        // Server-paged list: the serial number continues across pages.
+        render: (_p, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
+      },
+      {
+        header: 'QC Process Name',
+        width: '24%',
+        align: 'left',
+        ellipsis: true,
+        title: (p) => p.code,
+        // The master code — strong (mono fw-700 in --text), never the faint
+        // --text3, and a real link so it can be ctrl/middle-clicked into a new
+        // tab. stopPropagation sits on the link (not the cell) so clicking the
+        // rest of the cell still opens the row, exactly as before.
+        render: (p) => (
+          <Link
+            to="/qc-processes/$id"
+            params={{ id: p.id }}
+            className="mono fw-700"
+            style={{ color: 'var(--text)', textDecoration: 'none' }}
+            title="Open this QC process"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {p.code}
+          </Link>
+        ),
+      },
+      {
+        header: 'Description',
+        width: '40%',
+        className: 'text2',
+        ellipsis: true,
+        render: (p) => p.description ?? '—',
+        title: (p) => p.description ?? '',
+      },
+      {
+        header: 'Std Time (min)',
+        width: '11%',
+        className: 'mono',
+        nowrap: true,
+        render: (p) =>
+          Number(p.defaultCycleTimeMin) > 0 ? Number(p.defaultCycleTimeMin).toFixed(2) : '—',
+      },
+      {
+        header: 'Active',
+        width: '10%',
+        nowrap: true,
+        // kind="masteractive": a Quality master paints Inactive AMBER, not the
+        // generic `active` kind's red — the row is retired from the QC pickers,
+        // which is a thing to notice, not a fault. Carried verbatim, and it is
+        // the same chip the QC process DETAIL page draws, so the two cannot
+        // disagree.
+        render: (p) => <StatusBadge kind="masteractive" status={String(p.isActive)} />,
+      },
+    ],
+    [currentPage],
+  );
+
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load. Sits after every hook so the early
   // return never trips rules-of-hooks.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
-
-  const rows = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = search.page;
-  const tab = search.tab ?? 'processes';
 
   return (
     <div>
       {/* QC Processes | Report Types tabs (Report Types is the former standalone
           Report / Document Master screen). */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {(['processes', 'reports'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, tab: t === 'processes' ? undefined : 'reports' }),
-                replace: true,
-              })
-            }
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--green)' : '2px solid transparent',
-              color: tab === t ? 'var(--green)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t === 'processes' ? '⚙ QC Processes' : '📄 Report Types'}
-          </button>
-        ))}
-      </div>
+      <TabStrip
+        label="QC master"
+        tabs={TABS}
+        activeKey={tab}
+        onChange={(k) =>
+          void navigate({
+            search: (prev) => ({ ...prev, tab: k === 'processes' ? undefined : 'reports' }),
+            replace: true,
+          })
+        }
+      />
 
       {tab === 'reports' ? (
         <ReportTypesPanel />
       ) : (
         <>
-          {/* Sticky header band — the SO list's shape: `#content` is the app's
-              scroll container, so `top:0` pins this band flush under the
-              topbar while the rows scroll underneath. Opaque `--bg` so the
-              sheet never shows through. */}
-          <div
-            style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 20,
-              background: 'var(--bg)',
-              paddingBottom: 8,
-              marginBottom: 10,
-              borderBottom: '1px solid var(--border)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  ⚙ QC Process Master
-                </div>
-                {/* Count is the list response's `total` — the only aggregate the
-                    endpoint returns. */}
-                <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-                  {total} process{total === 1 ? '' : 'es'}
-                  {search.isActive !== undefined ? (
-                    <>
-                      {' '}
-                      · <span className="text2">
-                        {search.isActive ? 'Active' : 'Inactive'}
-                      </span>{' '}
-                      only
-                    </>
-                  ) : null}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <input
-                  className="innovic-input"
-                  placeholder="Search this list…"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  style={{ width: 220, fontSize: 12 }}
-                />
-                <select
-                  className="innovic-select"
-                  value={search.isActive === undefined ? '' : String(search.isActive)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    void navigate({
-                      search: (prev) => ({
-                        ...prev,
-                        isActive: v === '' ? undefined : v === 'true',
-                        page: 1,
-                      }),
-                      replace: true,
-                    });
-                  }}
-                  style={{ width: 130, fontSize: 12 }}
-                >
-                  <option value="">All</option>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </select>
-                {isFetching && !isLoading ? (
-                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                    <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-                  </span>
-                ) : null}
-                {perms.entry ? (
-                  <Link to="/qc-processes/new" className="btn btn-primary">
-                    <Plus size={14} /> Add QC Process
-                  </Link>
-                ) : null}
-              </div>
-            </div>
-          </div>
+          {/* The frozen header band: title, count, search, the Active filter
+              and the primary action stay put while the rows scroll
+              underneath. */}
+          <ListHeader
+            title="QC Process Master"
+            icon="⚙"
+            // Count is the list response's `total` — the only aggregate the
+            // endpoint returns.
+            count={total}
+            noun="process"
+            nounPlural="processes"
+            filterNote={
+              search.isActive === undefined ? undefined : search.isActive ? 'Active' : 'Inactive'
+            }
+            search={searchInput}
+            onSearch={setSearchInput}
+            updating={isFetching && !isLoading}
+            tools={
+              <Select
+                aria-label="Active"
+                fieldWidth="md"
+                value={search.isActive === undefined ? '' : String(search.isActive)}
+                options={[
+                  { value: '', label: 'All' },
+                  { value: 'true', label: 'Active' },
+                  { value: 'false', label: 'Inactive' },
+                ]}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  void navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      isActive: v === '' ? undefined : v === 'true',
+                      page: 1,
+                    }),
+                    replace: true,
+                  });
+                }}
+              />
+            }
+            primary={
+              perms.entry ? (
+                <Link to="/qc-processes/new" className="btn btn-primary">
+                  <Icon name="plus" size={14} /> Add QC Process
+                </Link>
+              ) : null
+            }
+          />
 
-          <div className="panel" style={{ marginBottom: 12 }}>
-            <div className="panel-body" style={{ padding: '10px 14px' }}>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-                💡 Define QC inspection processes here (e.g. Dimensional Check, Hardness Test, CMM
-                Inspection). These can be added as <b>QC operations</b> in Route Cards and Job
-                Cards, just like machining operations.
-              </span>
-            </div>
-          </div>
+          {/* What this master is for. It sits ABOVE the sheet, not in the
+              ListFooter hint, because it is read once before the first row is
+              created — not a hint about operating the list. */}
+          <Panel>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
+              💡 Define QC inspection processes here (e.g. Dimensional Check, Hardness Test, CMM
+              Inspection). These can be added as <b>QC operations</b> in Route Cards and Job Cards,
+              just like machining operations.
+            </span>
+          </Panel>
 
           {/* Why a banner and not a toast: the delete is refused for a reason the
           user has to act on (retire it as Inactive instead), and that sentence
           names the documents holding it. It stays on screen until the next
           attempt. */}
           {softDelete.error ? (
-            <div className="panel" style={{ marginBottom: 12 }}>
-              <div
-                className="panel-body"
-                style={{
-                  padding: '10px 14px',
-                  background: 'var(--red3)',
-                  color: 'var(--red)',
-                  fontSize: 12,
-                }}
-                role="alert"
-              >
-                ⚠ {softDelete.error.message}
-              </div>
-            </div>
+            <Banner tone="error" role="alert">
+              ⚠ {softDelete.error.message}
+            </Banner>
           ) : null}
 
-          {/* The sheet: fixed widths summing to 100%, so no sideways scroll. */}
-          <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
-            <table className="innovic-table tbl-grid">
-              <colgroup>
-                <col style={{ width: '5%' }} />
-                <col style={{ width: '24%' }} />
-                <col style={{ width: '40%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '10%' }} />
-                <col style={{ width: '10%' }} />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Sr No</th>
-                  <th style={{ textAlign: 'left' }}>QC Process Name</th>
-                  <th>Description</th>
-                  <th>Std Time (min)</th>
-                  <th>Active</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={COLUMN_COUNT} className="empty-state">
-                      <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                      Loading…
-                    </td>
-                  </tr>
-                ) : isError ? (
-                  <tr>
-                    <td
-                      colSpan={COLUMN_COUNT}
-                      className="empty-state"
-                      style={{ color: 'var(--red)' }}
-                    >
-                      {error instanceof Error ? error.message : 'Failed to load QC processes'}
-                    </td>
-                  </tr>
-                ) : rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={COLUMN_COUNT} className="empty-state">
-                      No QC processes defined. Click + Add QC Process.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((p, i) => (
-                    <tr
-                      key={p.id}
-                      onClick={() =>
-                        void navigate({ to: '/qc-processes/$id', params: { id: p.id } })
-                      }
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td className="text3">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
-                      <td
-                        style={{
-                          textAlign: 'left',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                        title={p.code}
-                      >
-                        {/* The master code — strong, never the faint --text3. */}
-                        <Link
-                          to="/qc-processes/$id"
-                          params={{ id: p.id }}
-                          className="mono fw-700"
-                          style={{ color: 'var(--text)', textDecoration: 'none' }}
-                          title="Open this QC process"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {p.code}
-                        </Link>
-                      </td>
-                      <td
-                        className="text2"
-                        style={{
-                          fontSize: 12,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                        title={p.description ?? ''}
-                      >
-                        {p.description ?? '—'}
-                      </td>
-                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                        {Number(p.defaultCycleTimeMin) > 0
-                          ? Number(p.defaultCycleTimeMin).toFixed(2)
-                          : '—'}
-                      </td>
-                      <td>
-                        <span className={`badge ${p.isActive ? 'b-green' : 'b-amber'}`}>
-                          {p.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td>
-                        {/* View is open to anyone who can see the list; Edit needs edit; Del needs edit +
-                            approve. Icon buttons on one row, the action named on
-                            hover; the row navigates, so the wrapper stops the click. */}
-                        <div
-                          style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Link
-                            to="/qc-processes/$id"
-                            params={{ id: p.id }}
-                            className="btn btn-ghost btn-sm btn-icon"
-                            title="View"
-                            aria-label="View"
-                          >
-                            <Eye size={14} />
-                          </Link>
-                          {perms.edit ? (
-                            <Link
-                              to="/qc-processes/$id/edit"
-                              params={{ id: p.id }}
-                              className="btn btn-ghost btn-sm btn-icon"
-                              title="Edit"
-                              aria-label="Edit"
-                            >
-                              <Pencil size={14} />
-                            </Link>
-                          ) : null}
-                          {canDelete ? (
-                            // The sheet paints every .btn-sm on paper (theme rule),
-                            // which would leave btn-danger's white icon invisible —
-                            // so the icon is told to be red here, tokens only.
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-sm btn-icon"
-                              style={{ color: 'var(--red)' }}
-                              title="Delete"
-                              aria-label="Delete"
-                              disabled={softDelete.isPending}
-                              onClick={() => {
-                                if (confirm(`Delete QC process "${p.code}"?`)) {
-                                  // The server refuses a process that job cards, plans or
-                                  // route cards still name (qc-processes/service.ts). Reset
-                                  // first so a second attempt clears the previous banner.
-                                  softDelete.reset();
-                                  softDelete.mutate(p.id);
-                                }
-                              }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+          {isError ? (
+            <PageState
+              state="error"
+              message={error instanceof Error ? error.message : 'Failed to load QC processes'}
+            />
+          ) : (
+            <Panel bodyPadding="none">
+              <DataTable
+                columns={columns}
+                rows={rows}
+                loading={isLoading}
+                emptyText="No QC processes defined. Click + Add QC Process."
+                onRowClick={(p) => void navigate({ to: '/qc-processes/$id', params: { id: p.id } })}
+                rowActionsWidth="10%"
+                rowActions={(p) => (
+                  <RowActions
+                    // View and Edit are ROUTES, so they stay real links —
+                    // ctrl-click / middle-click still open a new tab.
+                    viewTo={`/qc-processes/${p.id}`}
+                    editTo={perms.edit ? `/qc-processes/${p.id}/edit` : undefined}
+                    renderLink={(p2) => <Link {...p2} />}
+                    // The PROMISE is handed back, not swallowed: the confirm
+                    // dialog owns the wait, and the server's refusal (a process
+                    // job cards, plans or route cards still name —
+                    // qc-processes/service.ts) keeps the question open instead
+                    // of closing over a delete that never happened. reset()
+                    // first so a second attempt clears the previous banner.
+                    onDelete={
+                      canDelete
+                        ? (): Promise<void> => {
+                            softDelete.reset();
+                            return softDelete.mutateAsync(p.id);
+                          }
+                        : undefined
+                    }
+                    // And every OTHER row's Delete greys out while one is in
+                    // flight, exactly as `disabled={softDelete.isPending}` did.
+                    deleteDisabled={softDelete.isPending}
+                    deleteConfirm={{
+                      title: `Delete QC process "${p.code}"?`,
+                      message: `${p.code} stops appearing in the QC Process Master and in every QC operation picker.`,
+                      pendingLabel: 'Deleting…',
+                    }}
+                  />
                 )}
-              </tbody>
-            </table>
-          </div>
+              />
+            </Panel>
+          )}
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 8,
-              fontSize: 12,
-              color: 'var(--text3)',
-            }}
-          >
-            <span>
-              {total === 0
-                ? 'No QC processes'
-                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-            </span>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage <= 1}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-                Page {currentPage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage >= totalPages}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
+          <ListFooter
+            total={total}
+            noun="QC process"
+            nounPlural="QC processes"
+            // Server-paged register: `page` switches the footer to the
+            // Prev/Next pager, the same one this screen drew by hand.
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            onPage={(p) =>
+              void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })
+            }
+          />
         </>
       )}
     </div>

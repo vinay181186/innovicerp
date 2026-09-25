@@ -30,7 +30,7 @@
 // Pure presentation: every input is a prop, so the component renders in every
 // state without a data fetch.
 
-import { isValidElement } from 'react';
+import { Fragment, isValidElement } from 'react';
 import type { CSSProperties, MouseEvent, ReactElement, ReactNode } from 'react';
 
 import { PageState } from '../layout/PageState';
@@ -91,6 +91,18 @@ export interface DataTableProps<T> {
   /* ---- behaviour ---- */
   onRowClick?: ((row: T, index: number) => void) | undefined;
   rowClassName?: ((row: T, index: number) => string | undefined) | undefined;
+  /**
+   * Content revealed IN PLACE under a row — a BOM's part list, a route card's
+   * operation sequence. Return null/undefined for a row that is collapsed; the
+   * caller owns the open/closed set and the ▸ chevron that toggles it.
+   *
+   * NOT in design-ref/components/data/DataTable.d.ts — a deliberate app
+   * extension, for the same reason `footer` is one: bom-master and route-cards
+   * both draw this today as a hand-written second <tr> with a colSpan cell, and
+   * neither could move onto DataTable without it. DataTable supplies the <tr>
+   * and the full-width <td>; the caller supplies only what goes inside.
+   */
+  renderExpanded?: ((row: T, index: number) => ReactNode) | undefined;
   /** Any CSS length — `400` (px) or `calc(100vh - 220px)`. Overrides .tbl-wrap. */
   maxHeight?: number | string | undefined;
 
@@ -180,6 +192,7 @@ export function DataTable<T>({
   autoWidth = false,
   onRowClick,
   rowClassName,
+  renderExpanded,
   maxHeight,
   sortBy,
   sortDir,
@@ -289,41 +302,58 @@ export function DataTable<T>({
           ) : rows.length === 0 ? (
             <PageState as="row" state="empty" message={empty ?? emptyText} colSpan={cols.length} />
           ) : (
-            rows.map((row, ri) => (
-              <tr
-                key={keyOf(row, ri)}
-                className={cx(rowClassName?.(row, ri))}
-                onClick={onRowClick ? () => onRowClick(row, ri) : undefined}
-                style={onRowClick ? { cursor: 'pointer' } : undefined}
-              >
-                {cols.map((c, ci) => {
-                  const tdStyle: CSSProperties = {};
-                  if (c.ellipsis) {
-                    tdStyle.overflow = 'hidden';
-                    tdStyle.textOverflow = 'ellipsis';
-                    tdStyle.whiteSpace = 'nowrap';
-                  } else if (c.nowrap) {
-                    tdStyle.whiteSpace = 'nowrap';
-                  }
-                  const title = cellTitle(c, row);
-                  return (
-                    <td
-                      key={ci}
-                      className={cx(
-                        c.className,
-                        c.align === 'left' && 'td-left',
-                        c.align === 'right' && 'td-num',
-                      )}
-                      style={Object.keys(tdStyle).length > 0 ? tdStyle : undefined}
-                      title={title}
-                      onClick={c.stopRowClick ? stopRowClick : undefined}
-                    >
-                      {cellValue(c, row, ri)}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))
+            rows.map((row, ri) => {
+              const expanded = renderExpanded?.(row, ri);
+              return (
+                <Fragment key={keyOf(row, ri)}>
+                  <tr
+                    className={cx(rowClassName?.(row, ri))}
+                    onClick={onRowClick ? () => onRowClick(row, ri) : undefined}
+                    style={onRowClick ? { cursor: 'pointer' } : undefined}
+                  >
+                    {cols.map((c, ci) => {
+                      const tdStyle: CSSProperties = {};
+                      if (c.ellipsis) {
+                        tdStyle.overflow = 'hidden';
+                        tdStyle.textOverflow = 'ellipsis';
+                        tdStyle.whiteSpace = 'nowrap';
+                      } else if (c.nowrap) {
+                        tdStyle.whiteSpace = 'nowrap';
+                      }
+                      const title = cellTitle(c, row);
+                      return (
+                        <td
+                          key={ci}
+                          className={cx(
+                            c.className,
+                            c.align === 'left' && 'td-left',
+                            c.align === 'right' && 'td-num',
+                          )}
+                          style={Object.keys(tdStyle).length > 0 ? tdStyle : undefined}
+                          title={title}
+                          onClick={c.stopRowClick ? stopRowClick : undefined}
+                        >
+                          {cellValue(c, row, ri)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {/* The reveal is a second row spanning the whole sheet — it
+                      is part of the row above it, so it never takes a row
+                      click of its own. */}
+                  {expanded ? (
+                    <tr>
+                      <td
+                        colSpan={cols.length}
+                        style={{ padding: 0, background: 'var(--bg3)', textAlign: 'left' }}
+                      >
+                        {expanded}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })
           )}
         </tbody>
         {footer && hasRows ? <tfoot>{footer}</tfoot> : null}

@@ -3,26 +3,49 @@
 // L13699-13725) to Innovic chrome. Legacy columns, in order (L13721):
 // Operator ID | Name | Department | Skills / Machines | Status | Actions.
 //
-// SHEET (2026-09-21): the list renders on the ruled sheet (`tbl-grid`) the SO
-// Master List view uses — Sr No first, Action last, fixed % widths that add up
-// to 100 so nothing scrolls sideways, a sticky toolbar band above it. The
-// per-column sort (TanStack + SortableHead) is gone: the SO standard has none,
-// and it only ever re-ordered the 25 rows on screen.
+// PHASE 4 — migrated onto apps/web/src/ui/ with the Client Master list
+// (modules/clients/routes/list.tsx) as the reference. The composition is the
+// canonical one and nothing else:
+//
+//   <ListHeader>            title · count · SearchInput · status filter · primary
+//   <Banner>                import result (dismissible)
+//   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
+//   <ListFooter>            count line · Prev / Next · Excel template / import
+//   <PageState>             no-access and load-failure
+//
+// Everything this file used to draw by hand — the sticky band, the search box,
+// the status <select>, the <table>/<colgroup>/<thead>, the loading / error /
+// empty rows, the badge, the row-action buttons, the count line, the pager, the
+// import notice, `confirm()` — now comes from ui/. What is left here is the
+// DATA and the RULES: the query, the permission gates, the delete and the
+// Excel import.
+//
+// What did NOT change: the route and its search params (search, status, page),
+// the 300ms debounce on the URL write, normalizeSearchTerm, the 25-row server
+// page, the status -> isActive mapping, perms -> canAdd/canEdit/canDelete, the
+// one-request bulk import, row click -> detail, Code cell -> detail.
+//
+// THE ONE BEHAVIOUR THAT DID CHANGE, deliberately: Delete no longer runs on a
+// browser `confirm()`. It raises the shared ConfirmDialog through RowActions,
+// which owns the wait — both buttons go dead, the button reads "Moving to
+// Trash…", and it closes only once the operator really is in the Trash.
 
-import type { ListOperatorsQuery } from '@innovic/shared';
+import type { ListOperatorsQuery, Operator } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Button, Icon, StatusBadge } from '@/ui/core';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateOperators, useOperatorsList, useSoftDeleteOperator } from '../api';
 import { downloadOperatorTemplate, parseOperatorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
-// Sr No | Operator ID | Name | Department | Skills / Machines | Status | Action.
-const COLUMN_COUNT = 7;
 
 // Join a list of import warnings/failures for the status line, capping at 50 so
 // a huge sheet can't produce an unbounded banner, but still showing far more
@@ -64,6 +87,9 @@ function OperatorsListPage(): React.JSX.Element {
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  Ramesh   Patel " and "Ramesh Patel" are one query, one cache entry, one URL.
+    //
+    // The debounce stays HERE, not on <SearchInput debounceMs>: what is being
+    // delayed is the URL write, and the box must show the keystroke at once.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
@@ -138,347 +164,227 @@ function OperatorsListPage(): React.JSX.Element {
 
   const rows = data?.operators ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+
+  // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
+  // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below):
+  // 5+12+24+14+25+10 = 90, + 10 = 100, so the table never scrolls sideways.
+  // Centred by the standard; only Name is left-aligned (a name reads from its
+  // left edge), and Skills / Machines ellipsizes with the full value on hover
+  // rather than wrapping the row taller.
+  const columns = useMemo<DataTableColumn<Operator>[]>(
+    () => [
+      {
+        header: 'Sr No',
+        width: '5%',
+        className: 'text3',
+        // Server-paged list: the serial number continues across pages.
+        render: (_op, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
+      },
+      {
+        header: 'Code',
+        width: '12%',
+        nowrap: true,
+        // A real link, so the code can be ctrl/middle-clicked into a new tab.
+        // stopPropagation sits on the link (not the cell) so clicking the rest
+        // of the cell still opens the row, exactly as before.
+        render: (op) => (
+          <Link
+            to="/operators/$id"
+            params={{ id: op.id }}
+            className="td-code"
+            title="Open this operator"
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {op.code}
+          </Link>
+        ),
+      },
+      {
+        header: 'Name',
+        width: '24%',
+        align: 'left',
+        className: 'fw-700',
+        ellipsis: true,
+        key: 'name',
+      },
+      {
+        header: 'Department',
+        width: '14%',
+        className: 'text2',
+        render: (op) => op.department ?? '—',
+      },
+      {
+        header: 'Skills / Machines',
+        width: '25%',
+        className: 'text2',
+        ellipsis: true,
+        render: (op) => op.skills ?? '—',
+        title: (op) => op.skills ?? '',
+      },
+      {
+        header: 'Active',
+        width: '10%',
+        nowrap: true,
+        // kind="active" — the same chip the operator DETAIL page draws, so the
+        // two cannot disagree, and the same one the Client Master reference
+        // list uses for a master's Active flag. The hand-written chip this
+        // replaces was green / grey.
+        render: (op) => <StatusBadge kind="active" status={String(op.isActive)} />,
+      },
+    ],
+    [currentPage],
+  );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
     <div>
-      {/* Sticky header band — the same shape as the SO Master list's: pinned
-          to #content's top so the title, count, search, status filter and
-          + Add stay put while the sheet scrolls underneath. Opaque `--bg` so
-          rows do not show through. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              Operator Master
-            </div>
-            {/* Count comes from the list response's `total` — the only
-                aggregate GET /operators returns. */}
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} operator{total === 1 ? '' : 's'}
-              {search.status ? (
-                <>
-                  {' '}
-                  · <span className="text2">{search.status}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="Search this list…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
-              value={search.status ?? ''}
-              onChange={(e) => {
-                const v = e.target.value as 'active' | 'inactive' | '';
-                void navigate({
-                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                  replace: true,
-                });
-              }}
-              style={{ width: 120, fontSize: 12 }}
-            >
-              <option value="">All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canAdd ? (
-              <Link to="/operators/new" className="btn btn-primary">
-                <Plus size={14} /> Add Operator
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {importMsg ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
-          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12 }}>
-            {importMsg}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ marginLeft: 8, fontSize: 10 }}
-              onClick={() => setImportMsg(null)}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {/* The ruled sheet (tbl-grid): every column centred by the standard,
-          Name left-aligned (a name reads from its left edge). Widths live only
-          in the colgroup and sum to 100. */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
-        <table className="innovic-table tbl-grid">
-          <colgroup>
-            <col style={{ width: '5%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '24%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '25%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '10%' }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Sr No</th>
-              <th>Code</th>
-              <th style={{ textAlign: 'left' }}>Name</th>
-              <th>Department</th>
-              <th>Skills / Machines</th>
-              <th>Active</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state">
-                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                  Loading…
-                </td>
-              </tr>
-            ) : isError ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load operators'}
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={COLUMN_COUNT} className="empty-state">
-                  No operators — click <strong>+ Add Operator</strong> to begin
-                </td>
-              </tr>
-            ) : (
-              rows.map((op, i) => (
-                <tr
-                  key={op.id}
-                  onClick={() => void navigate({ to: '/operators/$id', params: { id: op.id } })}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td className="text3">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <Link
-                      to="/operators/$id"
-                      params={{ id: op.id }}
-                      className="td-code"
-                      title="Open this operator"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {op.code}
-                    </Link>
-                  </td>
-                  <td style={{ textAlign: 'left' }}>
-                    <div
-                      className="fw-700"
-                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={op.name}
-                    >
-                      {op.name}
-                    </div>
-                  </td>
-                  <td className="text2">{op.department ?? '—'}</td>
-                  {/* Long free text: one line, clipped with an ellipsis, the
-                      full text on hover — never wrapped into a tall row. */}
-                  <td className="text2" style={{ fontSize: 12 }}>
-                    <div
-                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={op.skills ?? ''}
-                    >
-                      {op.skills ?? '—'}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`badge ${op.isActive ? 'b-green' : 'b-grey'}`}>
-                      {op.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td>
-                    {/* Icon buttons only, one row, hover names the action.
-                        View is open to everyone who can see the page; Edit
-                        needs the edit right; Delete the edit+approve pair.
-                        The row itself navigates, so the block stops the
-                        click. */}
-                    <div
-                      style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Link
-                        to="/operators/$id"
-                        params={{ id: op.id }}
-                        className="btn btn-ghost btn-sm btn-icon"
-                        title="View"
-                        aria-label="View"
-                      >
-                        <Eye size={14} />
-                      </Link>
-                      {canEdit ? (
-                        <Link
-                          to="/operators/$id/edit"
-                          params={{ id: op.id }}
-                          className="btn btn-ghost btn-sm btn-icon"
-                          title="Edit"
-                          aria-label="Edit"
-                        >
-                          <Pencil size={14} />
-                        </Link>
-                      ) : null}
-                      {canDelete ? (
-                        // The sheet paints every .btn-sm on paper (theme rule),
-                        // which would leave btn-danger's white icon invisible —
-                        // so the icon is told to be red here, tokens only.
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm btn-icon"
-                          style={{ color: 'var(--red)' }}
-                          title="Delete"
-                          aria-label="Delete"
-                          disabled={softDelete.isPending}
-                          onClick={() => {
-                            if (confirm(`Move operator "${op.name}" to Trash?`)) {
-                              softDelete.mutate(op.id);
-                            }
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No operators'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
-
-      {/* Excel template + import sit below the table (mirror of Vendors).
-          Import creates operators, so it follows the create (entry) right. */}
-      {canAdd ? (
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            onClick={() => downloadOperatorTemplate()}
-          >
-            ⬇ Download Excel Template
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            disabled={importing}
-            onClick={() => fileRef.current?.click()}
-          >
-            {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import from
-            Excel
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{ display: 'none' }}
+      {/* The frozen header band: title, count, search, the status filter and
+          the primary action stay put while the rows scroll underneath. */}
+      <ListHeader
+        title="Operator Master"
+        // Count comes from the list response's `total` — the only aggregate
+        // GET /operators returns.
+        count={total}
+        noun="operator"
+        filterNote={search.status}
+        search={searchInput}
+        onSearch={setSearchInput}
+        updating={isFetching && !isLoading}
+        tools={
+          <Select
+            aria-label="Active"
+            fieldWidth="md"
+            value={search.status ?? ''}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+            ]}
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void onImportFile(f);
+              const v = e.target.value as 'active' | 'inactive' | '';
+              void navigate({
+                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                replace: true,
+              });
             }}
           />
-        </div>
+        }
+        primary={
+          canAdd ? (
+            <Link to="/operators/new" className="btn btn-primary">
+              <Icon name="plus" size={14} /> Add Operator
+            </Link>
+          ) : null
+        }
+      />
+
+      {importMsg ? (
+        <Banner tone="info" onDismiss={() => setImportMsg(null)}>
+          {importMsg}
+        </Banner>
       ) : null}
+
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Failed to load operators'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            empty={
+              <>
+                No operators — click <strong>+ Add Operator</strong> to begin
+              </>
+            }
+            onRowClick={(op) => void navigate({ to: '/operators/$id', params: { id: op.id } })}
+            rowActionsWidth="10%"
+            rowActions={(op) => (
+              <RowActions
+                // View and Edit are ROUTES, so they stay real links —
+                // ctrl-click / middle-click still open a new tab.
+                viewTo={`/operators/${op.id}`}
+                editTo={canEdit ? `/operators/${op.id}/edit` : undefined}
+                renderLink={(p) => <Link {...p} />}
+                // The PROMISE is handed back, not swallowed: the confirm dialog
+                // then owns the wait and closes only once the operator really
+                // is in the Trash. An `if (softDelete.isPending) return;` here
+                // would close the dialog and delete NOTHING.
+                onDelete={
+                  canDelete ? (): Promise<void> => softDelete.mutateAsync(op.id) : undefined
+                }
+                // And every OTHER row's Delete greys out while one is in
+                // flight, exactly as `disabled={softDelete.isPending}` did.
+                deleteDisabled={softDelete.isPending}
+                deleteConfirm={{
+                  title: `Move operator "${op.name}" to Trash?`,
+                  message: `${op.code} — ${op.name} stops appearing in the Operator Master and in every operator picker.`,
+                  confirmLabel: 'Move to Trash',
+                  pendingLabel: 'Moving to Trash…',
+                }}
+              />
+            )}
+          />
+        </Panel>
+      )}
+
+      <ListFooter
+        total={total}
+        noun="operator"
+        // Server-paged register: `page` switches the footer to the Prev/Next
+        // pager, the same one this screen drew by hand.
+        page={currentPage}
+        pageSize={PAGE_SIZE}
+        onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
+        // Excel template + import sit below the pager (mirror of Vendors).
+        // Import creates operators, so it follows the create (entry) right.
+        // The file input is hidden and only opened by the button.
+        actions={
+          canAdd ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="download" size={12} />}
+                onClick={() => downloadOperatorTemplate()}
+              >
+                Download Excel Template
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="upload" size={12} />}
+                loading={importing}
+                onClick={() => fileRef.current?.click()}
+              >
+                Import from Excel
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onImportFile(f);
+                }}
+              />
+            </>
+          ) : null
+        }
+      />
     </div>
   );
 }

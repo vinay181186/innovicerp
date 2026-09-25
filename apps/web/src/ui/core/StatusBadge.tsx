@@ -26,8 +26,13 @@ import type { BadgeTone } from './Badge';
 /**
  * so · jc · jcop (JC operation) · pr · po · prodorder (Production Order) ·
  * grnqc · grn · dc · nc · ncdisp (NC disposition) · txn (store txn) ·
- * invoice · task · run (running op) · active (Active/Inactive) · rating (⭐A–D) ·
- * doc (the generic related-docs fallback).
+ * invoice · task · run (running op) · bom (BOM Master state) ·
+ * plan (stored plan status) ·
+ * useractive (a login: Active/Inactive, amber not red) ·
+ * planderived (ADR-170 derived plan status) · machine (shop-floor machine
+ * state) · masteractive (a quality master: Active/Inactive, amber not red) ·
+ * active (Active/Inactive) ·
+ * rating (⭐A–D) · doc (the generic related-docs fallback).
  */
 export type StatusKind =
   | 'so'
@@ -42,7 +47,13 @@ export type StatusKind =
   | 'ncdisp'
   | 'txn'
   | 'invoice'
+  | 'bom'
+  | 'plan'
+  | 'planderived'
+  | 'machine'
+  | 'masteractive'
   | 'active'
+  | 'useractive'
   | 'rating'
   | 'task'
   | 'grn'
@@ -112,7 +123,63 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   // soften it to the generic `doc` map's amber. `doc` also paints `partial`
   // blue, which is why invoices need their own kind rather than that fallback.
   invoice: { unpaid: 'red', partial: 'amber', paid: 'green' },
-  active: { active: 'green', inactive: 'red', true: 'green', false: 'red' },
+  // BOM Master revision state. `draft` happens to match the generic `doc` map,
+  // but `active` and `obsolete` are not in it at all, so the whole set is
+  // stated here rather than half-inherited. Carried from
+  // bom-master/routes/list.tsx and the identical copy on its detail page.
+  bom: { draft: 'amber', active: 'green', obsolete: 'red' },
+  // Plan status, two maps because a plan has two different statuses drawn in
+  // the same column (modules/plans/routes/list.tsx): the STORED planStatus for
+  // old plans, and the DERIVED ADR-170 status for route-card-driven ones. They
+  // are not one map with two labels — `in_production` is AMBER as a stored
+  // status and CYAN as a derived one, and both are carried verbatim from the
+  // screen (plans/routes/list.tsx STATUS_BADGE / DERIVED_BADGE, and the
+  // identical copy on plans/routes/detail.tsx). The generic `doc` map paints
+  // `in_planning` amber and has none of the plan-only keys, so adopting it
+  // would silently restate what a colour means on this screen.
+  plan: {
+    in_planning: 'grey',
+    planned: 'blue',
+    jc_created: 'cyan',
+    pr_created: 'cyan',
+    in_production: 'amber',
+    complete: 'green',
+    cancelled: 'grey',
+  },
+  planderived: {
+    route_card_pending: 'amber',
+    gen_production_order: 'blue',
+    in_production: 'cyan',
+    production_complete: 'green',
+  },
+  // A shop-floor machine, not a document. Carried verbatim from the private
+  // `statusBadgeClass` helper that machines/routes/detail.tsx and
+  // machines/routes/list.tsx each declared for themselves. The generic `doc`
+  // map has none of these four words, so every machine would fall to grey and
+  // Down would stop reading as the alarm the shop floor treats it as.
+  machine: { running: 'blue', idle: 'grey', maintenance: 'amber', down: 'red' },
+  // Master records that are simply switched off — clients, cost centres,
+  // operators, vendors. Inactive is GREY, not red: red is the alarm colour and
+  // a deactivated master is not a fault, it is just not in use. This restores
+  // what every one of those screens drew before the Phase 4 migration
+  // (`badge b-green` / `badge b-grey`); the migration briefly adopted red from
+  // the generic map, which changed what the colour MEANT. User decision,
+  // 2026-09-25. Quality masters keep AMBER via `masteractive` — that one really
+  // does ask someone to look at it.
+  active: { active: 'green', inactive: 'grey', true: 'green', false: 'grey' },
+  // A quality master (QC Process Master, TPI Master), not a document. Both of
+  // those screens draw a deactivated row AMBER on the list AND on the detail
+  // page: the row is retired from the QC pickers, which is a thing to notice,
+  // not a fault. Adopting the generic `active` map's red here would change
+  // what the colour means on two screens at once, and would put the detail
+  // page's chip at odds with its own list. Same carve-out, same reason, as
+  // `useractive` above.
+  masteractive: { active: 'green', inactive: 'amber', true: 'green', false: 'amber' },
+  // A person, not a document. User Management has always drawn a deactivated
+  // login AMBER, not red (modules/users/routes/list.tsx) — somebody who has
+  // left is not a fault on the row, and the generic `active` map's red would
+  // make every ex-employee read as one. Own kind, own colour.
+  useractive: { active: 'green', inactive: 'amber', true: 'green', false: 'amber' },
   rating: { a: 'green', b: 'blue', c: 'amber', d: 'red' },
   task: {
     todo: 'amber',
@@ -161,7 +228,18 @@ const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
   ncdisp: { scrap: 'Reject / Scrap' },
   task: { todo: 'To Do', to_do: 'To Do' },
   grn: { pending: 'QC Pending', close: 'QC Cleared' },
+  // The planner's own words (user, 2026-09-19): "RC" is the route card. The
+  // shared PLAN_DERIVED_STATUS_LABEL in @innovic/shared stays as it is for the
+  // other screens that print it.
+  planderived: {
+    route_card_pending: 'RC Pending',
+    gen_production_order: 'RC Created',
+    in_production: 'In Production',
+    production_complete: 'Complete',
+  },
   active: { true: 'Active', false: 'Inactive' },
+  useractive: { true: 'Active', false: 'Inactive' },
+  masteractive: { true: 'Active', false: 'Inactive' },
 };
 
 /**

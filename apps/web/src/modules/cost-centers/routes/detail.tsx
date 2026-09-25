@@ -1,8 +1,34 @@
+// Cost Centre detail page. Group-4 migration onto the primitives, following
+// the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
+//
+//   ← Back to Cost Centre Master
+//   DetailHeader (code + name + Active chip + Edit/Delete) → ReadGrid
+//
+// A cost centre is a flat master — no line table, no related-document query —
+// so the composition stops at the header panel. Markup only: the hand-rolled
+// panel-hdr, the inline "Delete? [Confirm][Cancel]" swap and the hand-styled
+// red error box are gone. Route, query hooks, the `cc_create` permission
+// expression and the soft-delete call are untouched.
+//
+// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
+// FormGrid, and each ReadField carries the size that field will have in
+// cost-center-form.tsx once that form is migrated:
+//
+//   Department lg · Cost Centre Type lg                 → 6 + 6 = 12
+//   Description full                                    → 12
+//
+// The old grid also printed a third "Active" cell in plain text next to the
+// chip the panel header already draws. One fact, drawn once: the chip in the
+// header is it, and dropping the cell is what closes the row at 6 + 6.
+
+import type { CostCenter } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Button, Icon, StatusBadge } from '@/ui/core';
+import { ConfirmDialog } from '@/ui/feedback';
+import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useCostCenter, useSoftDeleteCostCenter } from '../api';
 
 export const costCenterDetailRoute = createRoute({
@@ -10,6 +36,24 @@ export const costCenterDetailRoute = createRoute({
   path: 'cost-centers/$id',
   component: CostCenterDetailPage,
 });
+
+const BACK_LABEL = 'Back to Cost Centre Master';
+
+/** DetailHeader draws this one itself (`backTo` + `renderLink`). The error
+ *  state has no header to hang it on, so it renders the same control on its
+ *  own — and it stays a real <Link>, because a button + navigate() cannot be
+ *  middle-clicked, ctrl-clicked or opened in a new tab. */
+function BackToMaster(): React.JSX.Element {
+  return (
+    <Link
+      to="/cost-centers"
+      className="btn btn-ghost btn-sm"
+      style={{ marginBottom: 'var(--sp-2)' }}
+    >
+      <Icon name="arrow-left" size={14} /> {BACK_LABEL}
+    </Link>
+  );
+}
 
 function CostCenterDetailPage(): React.JSX.Element {
   const { id } = costCenterDetailRoute.useParams();
@@ -24,155 +68,105 @@ function CostCenterDetailPage(): React.JSX.Element {
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
 
+  // "Hide page" (Access Control → Config): once access has loaded, a user
+  // whose VIEW was removed for this page sees the no-access panel, not the
+  // page. `eff` is undefined only while access loads — don't block then, or
+  // every legitimate user flashes this panel on cold load. Same position in
+  // the gate order as before.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState state="noaccess" as="page" />;
   }
 
   if (isLoading) {
-    return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading cost centre…
-      </div>
-    );
+    return <PageState state="loading" message="⟳ Loading cost centre…" />;
   }
+
   if (isError || !data) {
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/cost-centers" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Cost center not found'}
-          </div>
-        </div>
+      <div>
+        <BackToMaster />
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Cost center not found'}
+        />
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(data.id, {
-      onSuccess: () => {
-        void navigate({ to: '/cost-centers', replace: true });
-      },
-    });
+  // `mutateAsync`, not `mutate` + onSuccess: ConfirmDialog keeps both buttons
+  // disabled while this promise runs, so a second Confirm cannot fire a second
+  // delete, and a rejection is shown IN the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(data.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/cost-centers', replace: true });
   };
+
+  const deleteError = softDelete.isError
+    ? softDelete.error instanceof Error
+      ? softDelete.error.message
+      : 'Failed to delete cost centre.'
+    : null;
 
   return (
     <div>
-      <Link to="/cost-centers" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Cost Centre Master
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="td-code fw-700" style={{ color: 'var(--cyan)', fontSize: 16 }}>
-              {data.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {data.name}
-              <span className={`badge ${data.isActive ? 'b-green' : 'b-amber'}`}>
-                {data.isActive ? 'Active' : 'Inactive'}
-              </span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <DetailHeader
+        backTo="/cost-centers"
+        backLabel={BACK_LABEL}
+        renderLink={(p) => <Link {...p} />}
+        code={data.code}
+        name={data.name}
+        badges={<StatusBadge kind="active" status={String(data.isActive)} />}
+        actions={
+          <>
             {canEdit ? (
               <Link
                 to="/cost-centers/$id/edit"
                 params={{ id: data.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    Delete?
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Icon name="trash-2" size={13} />}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
+              </Button>
             ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete cost centre.'}
-            </div>
-          ) : null}
-          <div className="form-grid form-grid-3">
-            <div className="form-grp">
-              <span className="form-label">Department</span>
-              <div style={{ fontWeight: 600 }}>{data.department ?? '—'}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Cost Centre Type</span>
-              <div style={{ fontWeight: 600 }}>{data.type ?? '—'}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Active</span>
-              <div className="fw-700">{data.isActive ? 'Active' : 'Inactive'}</div>
-            </div>
-            <div className="form-grp form-full">
-              <span className="form-label">Description</span>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{data.description ?? '—'}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      >
+        <CostCenterFacts costCenter={data} />
+      </DetailHeader>
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Delete cost centre ${data.code}?`}
+          message={`${data.name} will be removed from the Cost Centre Master.`}
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+          errorText={deleteError}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function CostCenterFacts(props: { costCenter: CostCenter }): React.JSX.Element {
+  const { costCenter } = props;
+  return (
+    <ReadGrid>
+      <ReadField label="Department" size="lg" value={costCenter.department} />
+      <ReadField label="Cost Centre Type" size="lg" value={costCenter.type} />
+
+      <ReadField label="Description" size="full" pre value={costCenter.description} />
+    </ReadGrid>
   );
 }
