@@ -152,7 +152,10 @@ export function useSubmitOpLog() {
       const prev = qc.getQueriesData<JcOpEnriched[]>({
         queryKey: [...opEntryKeys.all, 'jc-ops'],
       });
-      // Optimistically decrement available, bump completedQty.
+      // Optimistically decrement available, bump completedQty. Rejected pieces
+      // leave `available` too (ADR-183 / 0144) but are not output, so an entry
+      // that carried rejects never reads complete here — the server decides.
+      const worked = input.qty + (input.rejectQty ?? 0);
       for (const [key, rows] of prev) {
         if (!rows) continue;
         qc.setQueryData<JcOpEnriched[]>(
@@ -162,9 +165,9 @@ export function useSubmitOpLog() {
               ? {
                   ...row,
                   completedQty: row.completedQty + input.qty,
-                  available: Math.max(0, row.available - input.qty),
+                  available: Math.max(0, row.available - worked),
                   computedStatus:
-                    row.available - input.qty <= 0
+                    row.available - worked <= 0 && !(input.rejectQty > 0)
                       ? row.qcRequired
                         ? 'qc_pending'
                         : 'complete'

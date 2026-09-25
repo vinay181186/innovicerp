@@ -409,6 +409,17 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
         timingEditedAt: opLog.timingEditedAt,
         createdAt: opLog.createdAt,
         createdBy: opLog.createdBy,
+        // ADR-183 — the NC(s) this entry raised, so the op's Recent Logs strip
+        // shows the number and its status next to the reject that caused it
+        // and can link through. nc_register.qc_log_id points at the op_log row.
+        ncs: sql<Array<{ id: string; code: string; status: string }>>`COALESCE((
+          SELECT json_agg(
+                   json_build_object('id', n.id, 'code', n.code, 'status', n.status)
+                   ORDER BY n.code
+                 )
+          FROM public.nc_register n
+          WHERE n.qc_log_id = ${opLog.id} AND n.deleted_at IS NULL
+        ), '[]'::json)`,
       })
       .from(opLog)
       .leftJoin(machines, eq(machines.id, opLog.machineId))
@@ -442,6 +453,8 @@ type OpLogRow = {
   timingEditedAt: Date | string | null;
   createdAt: Date | string;
   createdBy: string;
+  /** ADR-183 — json_agg of the NC(s) raised by this entry; [] when none. */
+  ncs?: Array<{ id: string; code: string; status: string }> | null;
 };
 
 const asIso = (v: Date | string | null): string | null =>
@@ -469,6 +482,7 @@ function toOpLog(r: OpLogRow): OpLog {
     timingEditedAt: asIso(r.timingEditedAt),
     createdAt: asIso(r.createdAt)!,
     createdBy: r.createdBy,
+    ncs: r.ncs ?? [],
   };
 }
 
@@ -991,7 +1005,12 @@ async function writeProductionLog(
   input: ProductionLogParams,
   companyId: string,
   user: AuthContext,
-): Promise<{ row: typeof opLog.$inferSelect; stamped: StampedMachine }> {
+): Promise<{
+  row: typeof opLog.$inferSelect;
+  stamped: StampedMachine;
+  /** The NC this entry raised, when it carried rejects (ADR-183). */
+  nc: { ncId: string; ncCode: string } | null;
+}> {
   // Covers BOTH ways production is booked -- POST /op-entry/op-log and the
   // quantity carried by a stop -- because both write through here.
   assertNotFutureDate(input.logDate, 'Log date');
@@ -1030,12 +1049,19 @@ async function writeProductionLog(
   const effectiveAvailable = cap
     ? Math.max(0, snapshot.available - cap.shortfall)
     : snapshot.available;
-  if (input.qty > effectiveAvailable) {
+  // ADR-183 — a rejected piece was worked on just like a good one and uses up
+  // the same input, so the cap is on good + rejected (the QC path already caps
+  // accepted + rejected against QC pending). Capping good alone let an op with
+  // 10 available take "0 good, 500 rejected" and raise an NC for 500.
+  const worked = input.qty + input.rejectQty;
+  if (worked > effectiveAvailable) {
     if (cap && effectiveAvailable < snapshot.available) {
-      throw new ValidationError(materialCapMessage(cap, effectiveAvailable, input.qty));
+      throw new ValidationError(materialCapMessage(cap, effectiveAvailable, worked));
     }
     throw new ValidationError(
-      `Qty ${input.qty} exceeds available ${snapshot.available} — cannot exceed planned qty`,
+      input.rejectQty > 0
+        ? `Qty ${input.qty} + rejected ${input.rejectQty} exceeds available ${snapshot.available} — cannot exceed planned qty`
+        : `Qty ${input.qty} exceeds available ${snapshot.available} — cannot exceed planned qty`,
     );
   }
 
@@ -1137,12 +1163,63 @@ async function writeProductionLog(
     );
   }
 
-  return { row, stamped };
+  // ADR-183 — a reject entered here is a quality decision, so it raises an NC
+  // exactly as a dedicated QC op does.
+  //
+  // The floor does not always have a separate QC operation. The machine runs,
+  // the QC engineer looks at what came off it, and the person at the terminal
+  // types "1 good, 9 rejected" on the production form. Until now that 9 went
+  // into op_log.reject_qty and stopped there: v_jc_op_status only sums
+  // reject_qty on log_type='qc' rows, nothing raised an NC, and the pieces were
+  // recorded in a column no screen and no gate ever read. The op sat short of
+  // its qty with nothing to explain it, so the Job Card could reach neither
+  // 'complete' nor 'settled with losses' and its Production Order could never
+  // be closed.
+  //
+  // This is the one place to hook it: submitOpLog and stopOp both come through
+  // here, and nothing else does. The re-injection writers (use_as_is, recovery)
+  // insert their op_log rows directly and so cannot pick up an NC by accident.
+  //
+  // Unlike the QC path there is no backward search for the producing op —
+  // THIS op made the pieces, so the machine and operator are on the row that
+  // was just written.
+  let nc: { ncId: string; ncCode: string } | null = null;
+  if (input.rejectQty > 0 && meta) {
+    nc = await autoCreateNcFromQcReject(
+      tx,
+      {
+        companyId,
+        jobCardId: op.jobCardId,
+        jcOpId: input.jcOpId,
+        jcCode: meta.code,
+        opSeq: op.opSeq,
+        operationText: meta.operation,
+        rejectedQty: input.rejectQty,
+        ncDate: input.logDate,
+        // No separate inspector field on the production form — the person who
+        // entered it is who we can honestly name.
+        reportedByText: input.operatorName ?? null,
+        remarks: input.remarks ?? null,
+        // The production row IS the inspection record on this path.
+        qcLogId: row.id,
+        machineCodeText: row.machineCodeText,
+        operatorText: row.operatorName,
+        sourceLabel: 'production entry',
+      },
+      user,
+    );
+  }
+
+  return { row, stamped, nc };
 }
 
 /** The API shape for a just-inserted op_log row. `timingEditedAt` is null by
  *  construction and `machineCode` comes from the stamp, not a re-query. */
-function toInsertedOpLog(row: typeof opLog.$inferSelect, stamped: StampedMachine): OpLog {
+function toInsertedOpLog(
+  row: typeof opLog.$inferSelect,
+  stamped: StampedMachine,
+  nc: { ncId: string; ncCode: string } | null = null,
+): OpLog {
   return {
     id: row.id,
     jcOpId: row.jcOpId,
@@ -1166,6 +1243,11 @@ function toInsertedOpLog(row: typeof opLog.$inferSelect, stamped: StampedMachine
     timingEditedAt: null, // just inserted
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
+    // ADR-183 — named on the write response so the screen can say an NC was
+    // raised and link to it, instead of the operator finding out later. A
+    // freshly raised NC is always pending and always on its own; splits only
+    // happen later, at disposition, and show up on the read.
+    ncs: nc ? [{ id: nc.ncId, code: nc.ncCode, status: 'pending' }] : [],
   } as OpLog;
 }
 
@@ -1178,7 +1260,7 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const { row, stamped } = await writeProductionLog(
+    const { row, stamped, nc } = await writeProductionLog(
       tx,
       {
         jcOpId: input.jcOpId,
@@ -1194,7 +1276,7 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       companyId,
       user,
     );
-    return toInsertedOpLog(row, stamped);
+    return toInsertedOpLog(row, stamped, nc);
   });
 }
 
@@ -2324,16 +2406,12 @@ export async function stopOp(
     if (row.status !== 'running') {
       throw new ValidationError(`Running op already in status "${row.status}"`);
     }
-    // Rejects on their own cannot be stored: op_log 'complete' rows are the
-    // only place they live and those require a qty. Refusing is better than
-    // accepting the number and silently dropping it.
-    if (qty <= 0 && rejectQty > 0) {
-      throw new ValidationError(
-        'Enter the good quantity as well — rejects cannot be recorded on their own',
-      );
-    }
-
-    if (qty > 0) {
+    // ADR-183 — a whole batch can fail. The machine ran, QC looked at what came
+    // off it, and none of it passed; that entry is qty 0 with rejects, and it
+    // now writes an op_log 'complete' row like any other so the rejects land
+    // somewhere and raise their NC. This used to be refused outright, which
+    // left a scrapped batch with nowhere to go.
+    if (qty > 0 || rejectQty > 0) {
       // Production FIRST, session-end SECOND. The machine stamp (0095) resolves
       // off the OPEN running session, so ending the session first would credit
       // a re-routed op's pieces to the wrong machine.

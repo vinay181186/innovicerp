@@ -24,6 +24,7 @@ import { assertProductionOrderNotShortClosed } from '../../lib/production-order-
 import { emitActivityLog } from '../activity-log/service';
 import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
+import { reinjectLogType } from './reinject-log-type';
 
 type NcRow = typeof ncRegister.$inferSelect;
 export type RecoveryKind = 'rework' | 'repair';
@@ -388,8 +389,9 @@ function assertWithinOpen(nc: NcRow, accepted: number, rejected: number): void {
   }
 }
 
-/** Put recovered pieces back on the parent route: one op_log 'qc' row on the
- *  origin op, accepted qty, zero rejects. This is the same mechanism use_as_is
+/** Put recovered pieces back on the parent route: one op_log row on the
+ *  origin op, accepted qty, zero rejects — 'qc', or 'complete' for an NC raised
+ *  at a production entry (see reinject-log-type.ts). This is the same mechanism use_as_is
  *  has always used, so v_jc_op_status counts the pieces as that op's accepted
  *  output and the next op can pick them up. Skipped when the NC was raised
  *  without an op — nothing was ever taken away from any op, so there is
@@ -408,7 +410,8 @@ async function reinjectIntoOriginOp(
     companyId: nc.companyId,
     jcOpId: nc.jcOpId,
     logNo: `LOG-NC-${nc.code}`,
-    logType: 'qc',
+    // 'complete' when the NC came from a production entry (ADR-183).
+    logType: await reinjectLogType(tx, nc),
     logDate,
     shift,
     qty: accepted,

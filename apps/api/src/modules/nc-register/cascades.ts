@@ -54,9 +54,11 @@ import {
 } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { nextNcCodeFrom } from '../../lib/nc-code';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
+import { reinjectLogType } from './reinject-log-type';
 import { cascadeJcCompleteUpChain } from '../op-entry/sales-cascade';
 import { climbRecoveryToAncestors, createRecoveryJobCard, ncOpenQty } from './recovery';
 import type { DisposeNcInput } from './schema';
@@ -456,7 +458,8 @@ export async function disposeNcCascade(
         companyId: ctx.companyId,
         jcOpId: nc.jcOpId,
         logNo,
-        logType: 'qc',
+        // 'complete' when the NC came from a production entry (ADR-183).
+        logType: await reinjectLogType(tx, nc),
         logDate: today,
         shift: 'day',
         qty: rejectedQtyInt,
@@ -765,13 +768,9 @@ async function nextSupplementaryJcCode(
 // Caller is op-entry/service.submitQcLog; this runs in the SAME tx so a
 // rollback unwinds both the QC log and the auto-NC together.
 //
-// Generated NC code shape: `NC-AUTO-<jcCode>-Op<srNo>-<HHMMSSmmm>` — embeds
-// the source for human readability (the op number as people see it, 10 / 20
-// / 30 — user 2026-09-16; codes minted before that day read Op1 / Op2 and
-// were deliberately left alone) + millisecond suffix for uniqueness under
-// bursty parallel submits without a counter query. Falls back to a random
-// suffix if codes still collide (createNcRegister-equivalent uniqueness check
-// is inline below).
+// Generated NC code shape: `NC-#####`, the company's series (ADR-183; see
+// nextNcCode below). Codes minted before it read
+// `NC-AUTO-<jcCode>-Op<srNo>-<HHMMSSmmm>` and are left as they are.
 
 export interface AutoCreateNcContext {
   companyId: string;
@@ -800,6 +799,10 @@ export interface AutoCreateNcContext {
   qcLogId?: string | null;
   /** The GRN line an Incoming-QC reject was raised from. Null on an op QC. */
   grnLineId?: string | null;
+  /** What the person was doing when the reject was recorded, for the NC's
+   *  reason line — 'QC inspection' (default), or 'production entry' when the
+   *  pieces were inspected at the machine and logged on the production form. */
+  sourceLabel?: string;
 }
 
 export interface AutoCreateNcResult {
@@ -807,17 +810,23 @@ export interface AutoCreateNcResult {
   ncCode: string;
 }
 
-function generateAutoNcCode(jcCode: string, opSeq: number): string {
-  const now = new Date();
-  const stamp =
-    String(now.getHours()).padStart(2, '0') +
-    String(now.getMinutes()).padStart(2, '0') +
-    String(now.getSeconds()).padStart(2, '0') +
-    String(now.getMilliseconds()).padStart(3, '0');
-  // NC code regex permits letters/digits/./_/- (per createNcRegisterInputSchema).
-  // Replace any character outside that set in jcCode to be safe.
-  const safeJcCode = jcCode.replace(/[^A-Za-z0-9._-]/g, '_');
-  return `NC-AUTO-${safeJcCode}-Op${opSrNo(opSeq)}-${stamp}`;
+/** The next code in the company's `NC-#####` series (ADR-183). The number rule
+ *  is pure and unit-tested in lib/nc-code.ts; this only feeds it the codes the
+ *  company already holds. Rows written before the series — the long
+ *  `NC-AUTO-<jc>-Op<n>-<stamp>` names and anything typed by hand — do not match
+ *  the strict shape and so cannot move it. */
+async function nextNcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  // Two inspections or production entries on DIFFERENT ops committing at once
+  // would both read the same maximum; the loser then hits
+  // nc_register_company_code_uniq and the operator's whole entry is thrown
+  // away. One transaction-scoped lock per company serialises the pick; it is
+  // released at commit, when the winner's row is visible to the next reader.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`nc_code:${companyId}`}))`);
+  const rows = await tx
+    .select({ code: ncRegister.code })
+    .from(ncRegister)
+    .where(eq(ncRegister.companyId, companyId));
+  return nextNcCodeFrom(rows.map((r) => r.code));
 }
 
 export async function autoCreateNcFromQcReject(
@@ -852,10 +861,12 @@ export async function autoCreateNcFromQcReject(
     .limit(1);
   const itemCode = itemRows[0]?.code ?? '';
 
-  // Generate code with retry on collision (vanishingly unlikely with ms
-  // resolution but cheap to be defensive).
-  let code = generateAutoNcCode(ctx.jcCode, ctx.opSeq);
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Take the next number, then step past anything already holding it. Two
+  // inspections committing at once is the only way that happens, and
+  // nc_register_company_code_uniq is the real backstop — this just avoids
+  // making the index do the shouting in the ordinary case.
+  let code = await nextNcCode(tx, ctx.companyId);
+  for (let attempt = 0; attempt < 5; attempt++) {
     const dup = await tx
       .select({ id: ncRegister.id })
       .from(ncRegister)
@@ -868,16 +879,18 @@ export async function autoCreateNcFromQcReject(
       )
       .limit(1);
     if (dup.length === 0) break;
-    // Append a random 3-digit nonce for the next attempt.
-    const nonce = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
-    code = `${generateAutoNcCode(ctx.jcCode, ctx.opSeq)}-${nonce}`;
+    code = nextNcCodeFrom([code]);
   }
 
+  // Where the reject was entered. A dedicated QC op and a production entry
+  // inspected at the machine are both quality decisions, but the register
+  // should not claim an inspection that has no QC op behind it (ADR-183).
+  const source = ctx.sourceLabel ?? 'QC inspection';
   const reason =
     ctx.remarks && ctx.remarks.length > 0
-      ? `Auto-created from QC inspection: ${ctx.remarks}`
+      ? `Auto-created from ${source}: ${ctx.remarks}`
       : // display rule — see opSrNo in @innovic/shared
-        `Auto-created from QC inspection on ${ctx.jcCode} Op #${opSrNo(ctx.opSeq)}`;
+        `Auto-created from ${source} on ${ctx.jcCode} Op #${opSrNo(ctx.opSeq)}`;
 
   // G8 (gap report 2026-09-16): an Incoming-QC reject on a GRN that itself
   // came back against an NC's return-to-vendor challan (goods_receipt_notes.nc_id)

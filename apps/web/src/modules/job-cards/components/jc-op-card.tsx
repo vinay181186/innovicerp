@@ -32,6 +32,7 @@
 // jc_ops.planned_end, which the op-entry contract does not carry yet.
 import type { JcOpEnriched, JobCardListItem, JobCardRmAvailable, OpLog } from '@innovic/shared';
 import { fmtOpSrNo, opSrNo } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { machineSplitTitle, resolveActualMachine } from '@/components/shared/machine-split';
 import { OP_STATUS } from '../lib/jc-op-labels';
@@ -63,7 +64,13 @@ const NC_BREAKUP_ROWS: ReadonlyArray<{
 
 /** One-line strip under the header. Renders nothing while the op has no NC
  *  history at all, so the ordinary card carries no empty band. */
-function NcBreakupStrip({ nc }: { nc: JcOpEnriched['ncBreakup'] }): React.JSX.Element | null {
+function NcBreakupStrip({
+  nc,
+  jcCode,
+}: {
+  nc: JcOpEnriched['ncBreakup'];
+  jcCode?: string | null;
+}): React.JSX.Element | null {
   if (!(nc.openNcCount > 0 || nc.scrapQty > 0 || nc.ncClosedQty > 0)) return null;
   const rows = NC_BREAKUP_ROWS.filter((r) => nc[r.key] > 0);
   if (rows.length === 0) return null;
@@ -88,9 +95,24 @@ function NcBreakupStrip({ nc }: { nc: JcOpEnriched['ncBreakup'] }): React.JSX.El
           : 'Every non-conformance on this operation is closed.'
       }
     >
-      <span className="fw-700" style={{ color: open ? 'var(--amber2)' : 'var(--text3)' }}>
-        ⚠ NC
-      </span>
+      {/* The band carried the numbers but went nowhere — ADR-183 makes it the
+          way into the register, filtered to this card (the NC list searches
+          jc.code). Plain text when we have no code to filter on. */}
+      {jcCode ? (
+        <Link
+          to="/nc-register"
+          search={{ search: jcCode }}
+          className="fw-700"
+          style={{ color: open ? 'var(--amber2)' : 'var(--text3)' }}
+          title={`Open the NC register for ${jcCode}`}
+        >
+          ⚠ NC
+        </Link>
+      ) : (
+        <span className="fw-700" style={{ color: open ? 'var(--amber2)' : 'var(--text3)' }}>
+          ⚠ NC
+        </span>
+      )}
       {rows.map((r, i) => (
         <span key={r.key} style={{ color: r.color, whiteSpace: 'nowrap' }}>
           {i > 0 ? <span style={{ color: 'var(--text3)', marginRight: 6 }}>·</span> : null}
@@ -501,7 +523,7 @@ export function JcOpCard({
       {/* ── BODY ── */}
       <div style={{ borderTop: '1px solid var(--border)', padding: 12, background: 'var(--bg3)' }}>
         {/* ── NC BREAKUP (§6): where this op's rejected pieces are right now ── */}
-        <NcBreakupStrip nc={op.ncBreakup} />
+        <NcBreakupStrip nc={op.ncBreakup} jcCode={jc.code} />
 
         {/* ── CHIPS: Order Qty · Completed · Pending · QC Pending · Rejected
             · At Vendor, then the op-specific extras (RM Avail on the first op;
@@ -767,8 +789,38 @@ export function JcOpCard({
                       {l.shift}
                       {' · Qty '}
                       <b style={{ color: 'var(--green)' }}>+{l.qty}</b>
+                      {/* The reject was on the wire all along and never shown —
+                          an entry that failed 9 of 10 read as "Qty +1" and
+                          looked like an ordinary good day (ADR-183). */}
+                      {l.rejectQty > 0 ? (
+                        <>
+                          {' · Rej '}
+                          <b style={{ color: 'var(--red)' }}>{l.rejectQty}</b>
+                        </>
+                      ) : null}
                       {' · Operator '}
                       <b style={{ color: 'var(--text)' }}>{l.operatorName ?? '—'}</b>
+                      {/* The NC the reject raised, with its status, straight to
+                          the record. More than one only after a partial
+                          disposition split it. */}
+                      {l.ncs.length > 0 ? (
+                        <>
+                          {' · '}
+                          <Link
+                            to="/nc-register/$id"
+                            params={{ id: l.ncs[0]!.id }}
+                            className="mono"
+                            style={{ color: 'var(--amber)', fontWeight: 700 }}
+                            title={`Open ${l.ncs[0]!.code} — ${l.ncs[0]!.status}`}
+                          >
+                            {l.ncs[0]!.code}
+                          </Link>{' '}
+                          <span style={{ color: 'var(--text3)' }}>{l.ncs[0]!.status}</span>
+                          {l.ncs.length > 1 ? (
+                            <span style={{ color: 'var(--text3)' }}> +{l.ncs.length - 1} more</span>
+                          ) : null}
+                        </>
+                      ) : null}
                     </span>
                   ))
                 : null}

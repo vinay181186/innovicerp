@@ -166,7 +166,10 @@ export function StopOpModal({
   // they have typed something into it.
   const qtyIsJunk = !qtyBlank && qtyNum === null;
   const rejIsJunk = !rejBlank && rejNum === null;
-  const overCap = qtyNum !== null && qtyNum > target.availableQty;
+  // Rejected pieces consume available too (ADR-183), so the cap is on
+  // completed + rejected together — the same sum the server checks.
+  const totalNum = (qtyNum ?? 0) + (rejNum ?? 0);
+  const overCap = qtyNum !== null && totalNum > target.availableQty;
   // The picker's `max` greys future days out, but several browsers still let a
   // date be TYPED straight into the box, which is how a future entry got
   // booked in the first place. Both sides are `YYYY-MM-DD`, which compares
@@ -457,14 +460,15 @@ export function StopOpModal({
             <b className="mono" style={{ color: 'var(--cyan)' }}>
               {target.availableQty}
             </b>{' '}
-            pcs. Enter <b className="mono">0</b> if nothing was made in this session — the machine
-            is still released. Fields marked <span style={{ color: 'var(--red)' }}>★</span> are
-            required. {/* .req is scoped to .form-label, so this one is coloured inline. */}
+            pcs, completed + rejected. Enter <b className="mono">0</b> if nothing was made in this
+            session — the machine is still released. Fields marked{' '}
+            <span style={{ color: 'var(--red)' }}>★</span> are required.{' '}
+            {/* .req is scoped to .form-label, so this one is coloured inline. */}
           </div>
 
           {overCap ? (
             <div style={{ fontSize: 11, color: 'var(--red)' }}>
-              Only {target.availableQty} pcs can be logged on this operation right now.
+              Completed + rejected ({totalNum}) is more than the {target.availableQty} available.
             </div>
           ) : null}
           {dateInFuture ? (
