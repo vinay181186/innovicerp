@@ -652,9 +652,7 @@ export function JobCardForm({
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">
-                JC Date <span className="text3">(auto: today)</span>
-              </label>
+              <label className="form-label">JC Date</label>
               <input
                 type="date"
                 className="innovic-input"
@@ -664,9 +662,7 @@ export function JobCardForm({
             </div>
             <div className="form-grp form-full">
               <label className="form-label">
-                {isEdit
-                  ? 'SO / JWSO No. (type to search)'
-                  : 'Job Work Sales Order (JWSO) No. (type to search)'}
+                {isEdit ? 'SO / JWSO No.' : 'JWSO No.'}
                 {!isEdit ? <span className="req">★</span> : null}
               </label>
               {!isEdit ? (
@@ -678,8 +674,7 @@ export function JobCardForm({
                     fontWeight: 600,
                   }}
                 >
-                  ⓘ Manual Job Cards are for Job Work Sales Orders (JWSO) only. For Sales Order
-                  items, use Planning → execute a plan.
+                  ⓘ JWSO only. Sales Order items: Planning → Production Order.
                 </div>
               ) : null}
               <input
@@ -883,12 +878,7 @@ export function JobCardForm({
       {/* ── OPERATION ROUTING (legacy jcModalBody L6007-6013 + jcModalOpsHtml L5868) ── */}
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-hdr">
-          <div className="panel-title">
-            ▸ Operations — Routing Sequence{' '}
-            <span className="text3" style={{ fontSize: 10, fontWeight: 400 }}>
-              Program / Tool Details are per-operation
-            </span>
-          </div>
+          <div className="panel-title">▸ Operations — Routing Sequence</div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span className="text3" style={{ fontSize: 11 }}>
               {opCount} op{opCount !== 1 ? 's' : ''}
@@ -933,10 +923,7 @@ export function JobCardForm({
             </div>
           ) : null}
           {ops.length === 0 ? (
-            <div className="empty-state">
-              No operations yet — click “+ Add Op” for machining steps, “+ Add QC Op” for QC
-              inspection steps, or “+ Add OSP Op” for outsourced (vendor) steps.
-            </div>
+            <div className="empty-state">No operations yet.</div>
           ) : (
             ops.map((o, i) => (
               <JcOpEditCard
@@ -977,12 +964,7 @@ export function JobCardForm({
       {/* ── QC DOCUMENTS (legacy jcModalBody L6014-6017 + jcModalDocsHtml L5809) ── */}
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-hdr">
-          <div className="panel-title">
-            ▸ QC Documents{' '}
-            <span className="text3" style={{ fontSize: 10, fontWeight: 400 }}>
-              MIR • MCR • Inspection Reports &amp; other QC files
-            </span>
-          </div>
+          <div className="panel-title">▸ QC Documents</div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span className="text3" style={{ fontSize: 11 }}>
               {docs.length} doc{docs.length !== 1 ? 's' : ''} attached

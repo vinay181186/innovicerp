@@ -648,7 +648,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'parent_as_child',
-            reason: `${item.code} (${item.name}) is the parent item of this BOM, so it cannot also be one of its own parts. Remove this row, or pick a different parent.`,
+            reason: 'is the parent item of this BOM, so it cannot be one of its parts.',
           });
           return;
         }
@@ -658,7 +658,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'duplicate',
-            reason: `duplicate item code — ${item.code} (${item.name}) is already on row ${firstRow + 2} of this file. A BOM can list a part only once; delete one row or add the two quantities together.`,
+            reason: `is already on row ${firstRow + 2}.`,
           });
           return;
         }
@@ -668,7 +668,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'duplicate',
-            reason: `duplicate item code — ${item.code} (${item.name}) is already part ${onFormAt + 1} in the list below. Remove that part first, or drop this row from the file.`,
+            reason: `is already part ${onFormAt + 1} in the list below.`,
           });
           return;
         }

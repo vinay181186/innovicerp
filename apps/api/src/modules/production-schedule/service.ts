@@ -311,9 +311,7 @@ export async function rescheduleJcOp(
         LIMIT 1
       `)) as unknown as Array<{ one: number }>;
       if (runningRows.length > 0) {
-        throw new ConflictError(
-          'Stop the running machine session before changing the machine — the pieces already made are recorded against the current machine, then switch.',
-        );
+        throw new ConflictError('Stop Operation first, then change the machine.');
       }
     }
 

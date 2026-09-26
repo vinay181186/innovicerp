@@ -10,7 +10,6 @@
 // request per row. See ISSUE-019.
 //
 //   <ListHeader>            title · count · SearchInput · ⟳ Updating… · + Add Route Card
-//   <Banner>                what a route card is for
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //     renderExpanded        the op sequence, as Tag chips
 //   <ListFooter>            count line · 💡 hint
@@ -49,7 +48,6 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
 import { PrintRouteCardButton } from '../components/print-route-card-button';
@@ -240,15 +238,6 @@ function RouteCardsListPage(): React.JSX.Element {
           ) : null
         }
       />
-
-      {/* Was a hand-tinted box carrying raw rgba() colours; it is the same
-          notice, drawn by the one Banner. */}
-      <Banner tone="info">
-        Route cards define the standard manufacturing sequence for each item. A card&apos;s
-        operations are <b>loaded into the plan</b> when you plan that item, and executing that plan
-        creates the Job Card. You can also create/edit route cards directly here. Revision history
-        is tracked on every save.
-      </Banner>
 
       {isError ? (
         <PageState

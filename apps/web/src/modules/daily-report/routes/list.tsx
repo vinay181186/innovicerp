@@ -153,10 +153,6 @@ function DailyReportPage(): React.JSX.Element {
               ))}
             </select>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            Tip: Select a machine for per-machine report. Each machine panel has its own 🖨 print
-            button.
-          </div>
         </div>
       </div>
 

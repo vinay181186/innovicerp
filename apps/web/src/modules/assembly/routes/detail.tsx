@@ -139,8 +139,7 @@ function AssemblyDetailPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div className="panel-title">Start assembly</div>
           <span className="text3" style={{ fontSize: 11 }}>
-            Put units on the bench — no stock leaves yet. Complete (Stop) each batch below to record
-            the good qty.
+            Start units, then Complete each batch.
           </span>
         </div>
         <div className="panel-body" style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>

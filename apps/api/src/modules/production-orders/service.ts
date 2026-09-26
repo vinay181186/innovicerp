@@ -730,7 +730,7 @@ export async function createProductionOrder(
 
       if (plan.opsSource !== 'route_card') {
         throw new ValidationError(
-          `Plan ${plan.code} is an old-style plan with its own operations — use Execute on the plan instead`,
+          `Plan ${plan.code} cannot make a Production Order. Use Execute on the plan.`,
         );
       }
       // ADR-182 — the qty cap, read INSIDE the plan's row lock above so two

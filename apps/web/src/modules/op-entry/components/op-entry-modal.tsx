@@ -55,7 +55,7 @@ export interface OpEntryModalTarget {
 function Fact({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
+      <div className="text3" style={{ fontSize: 10 }}>
         {label}
       </div>
       <div className="fw-700" style={{ fontSize: 12 }}>
@@ -132,12 +132,12 @@ export function OpEntryModal({
   // A QC op has its own form inside and its own vocabulary, so it keeps its own
   // title rather than being called production either way.
   const title = showBusyPanel
-    ? '⛔ Machine busy'
+    ? '⛔ Machine Busy'
     : isQc
-      ? '✔ QC inspection'
+      ? '✔ QC Inspection'
       : activeRunningId
-        ? '✚ Log production'
-        : '▶ Start operation';
+        ? '✓ Complete Operation'
+        : '▶ Start Operation';
 
   return (
     <div
@@ -201,8 +201,8 @@ export function OpEntryModal({
           }}
         >
           <div>
-            <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
-              JC NO.
+            <div className="text3" style={{ fontSize: 10 }}>
+              JC No.
             </div>
             <div className="mono fw-700 cyan" style={{ fontSize: 13 }}>
               {op.jobCardCode}
@@ -222,8 +222,8 @@ export function OpEntryModal({
               wrap by themselves on a phone. */}
           {itemCode || op.itemName ? (
             <div>
-              <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
-                ITEM CODE
+              <div className="text3" style={{ fontSize: 10 }}>
+                Item Code
               </div>
               {/* POL — the line number printed on the CUSTOMER's own purchase
                   order, immediately before the item code. Dropped when no sales
@@ -259,11 +259,11 @@ export function OpEntryModal({
               ) : null}
             </div>
           ) : null}
-          <Fact label="OPERATION" value={`Op ${fmtOpSrNo(op.opSeq)} · ${op.operation}`} />
-          <Fact label="PLANNED MACHINE" value={planned} />
+          <Fact label="Operation" value={`Op ${fmtOpSrNo(op.opSeq)} · ${op.operation}`} />
+          <Fact label="Planned Machine" value={planned} />
           <div>
-            <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
-              ACTUAL MACHINE
+            <div className="text3" style={{ fontSize: 10 }}>
+              Actual Machine
             </div>
             <div className="fw-700" style={{ fontSize: 12 }}>
               {actual}
@@ -284,8 +284,8 @@ export function OpEntryModal({
             ) : null}
           </div>
           <div>
-            <div className="text3" style={{ fontSize: 9, letterSpacing: '.06em' }}>
-              AVAILABLE
+            <div className="text3" style={{ fontSize: 10 }}>
+              Available
             </div>
             <div className="mono fw-700 amber" style={{ fontSize: 15 }}>
               {op.available} pcs

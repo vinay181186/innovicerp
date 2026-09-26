@@ -123,7 +123,7 @@ export function OutsourceBalanceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Outsource Pending Qty — {jcCode} Op{opSrNo(opSeq)}
+          Outsource Pending Qty — {jcCode} Op {opSrNo(opSeq)}
         </div>
         <div
           style={{
@@ -139,8 +139,7 @@ export function OutsourceBalanceModal({
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
             Item: {itemCodeWithRev(itemCode, itemRevision)} · Available:{' '}
-            <b style={{ color: 'var(--amber)' }}>{available}</b> pcs. Sends the pending qty to a
-            vendor as a JW OSP purchase request.
+            <b style={{ color: 'var(--amber)' }}>{available}</b> pcs. Raises an outsource PR.
           </div>
         </div>
 

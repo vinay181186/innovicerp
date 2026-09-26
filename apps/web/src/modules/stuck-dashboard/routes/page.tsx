@@ -169,13 +169,13 @@ function StuckDashboardPage(): React.JSX.Element {
               </div>
             );
           })}
-          {/* Legacy emits the tip only on the populated branch — the empty
-              branch returns early (L18128), before the tip line (L18153). */}
-          <div className="text3" style={{ fontSize: 11, marginTop: 12 }}>
-            💡 Click any SO to open it. Thresholds (days): design {data.thresholds.design} · plan{' '}
-            {data.thresholds.planToJc} · material {data.thresholds.materialProc} · production op{' '}
-            {data.thresholds.productionOp} · QC {data.thresholds.qc} · assembly{' '}
-            {data.thresholds.assembly}.
+          {/* Thresholds on demand — a "?" with the day limits in its tooltip. */}
+          <div
+            className="text3"
+            style={{ fontSize: 11, marginTop: 12, cursor: 'help', display: 'inline-block' }}
+            title={`Thresholds (days): design ${data.thresholds.design} · plan ${data.thresholds.planToJc} · material ${data.thresholds.materialProc} · production op ${data.thresholds.productionOp} · QC ${data.thresholds.qc} · assembly ${data.thresholds.assembly}`}
+          >
+            ? Thresholds
           </div>
         </>
       )}

@@ -306,18 +306,7 @@ function BomMastersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter
-        total={total}
-        noun="BOM"
-        limit={LIST_LIMIT}
-        hint={
-          <>
-            Click a row to open it · click ▸ before the <b>BOM No.</b> to show its part list. BOM
-            Master defines part lists (items + qty per set). Link a BOM to Equipment SO orders. Use{' '}
-            <strong>Revise</strong> to create a new revision with change log.
-          </>
-        }
-      />
+      <ListFooter total={total} noun="BOM" limit={LIST_LIMIT} />
     </div>
   );
 }

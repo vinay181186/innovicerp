@@ -587,8 +587,7 @@ export async function createPlan(input: CreatePlanInput, user: AuthContext): Pro
       // un-orderable plan.
       if (planType === 'direct_purchase') {
         throw new ValidationError(
-          `Route Card for ${input.itemCodeText ?? 'this item'} is marked Direct Purchase (legacy) — ` +
-            'set the item\'s Source to Buy in Item Master and use "+ PR" on the line instead',
+          `${input.itemCodeText ? `Item ${input.itemCodeText}` : 'This item'} is a Buy item — use + PR.`,
         );
       }
     }
@@ -742,9 +741,7 @@ export async function updatePlan(
       const liveOrderCodes = liveRows[0]?.codes ?? [];
       if (rawMaterialRetyped && liveOrderCodes.length > 0) {
         throw new ValidationError(
-          `Plan ${row.code} already has Production Order(s) ${liveOrderCodes.join(', ')} in progress — ` +
-            `raw material cannot be changed now; their Job Cards have already copied it. ` +
-            `Close or short close the order(s) first.`,
+          `Cannot change raw material: Production Order ${liveOrderCodes.join(', ')} exists. Short close it first.`,
         );
       }
     }

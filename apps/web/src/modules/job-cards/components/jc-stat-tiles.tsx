@@ -268,7 +268,7 @@ export function JcStatTiles({
           <div style={{ ...noteStyle, marginTop: 6 }}>
             {stuck ? (
               <>
-                Waiting at <b>Op{opSrNo(stuck.opSeq)}</b> · {stuckWhere}
+                Waiting at <b>Op {opSrNo(stuck.opSeq)}</b> · {stuckWhere}
                 {stuckRunningOn?.differs ? (
                   <>
                     {' '}
@@ -426,8 +426,7 @@ export function JcOpFlowChips({
                 }}
               >
                 <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: opColor }}>
-                  {stateIcons ? 'OP' : 'Op'}
-                  {opSrNo(o.opSeq)}
+                  Op {opSrNo(o.opSeq)}
                   {isOut ? ' 🏭' : ''}
                   {isQc ? ' 🔬' : ''}
                 </div>
@@ -663,8 +662,7 @@ export function JcOpFlowCards({
                   lineHeight: 1.2,
                 }}
               >
-                OP{opSrNo(o.opSeq)}
-                {isQc ? ' · QC' : isOut ? ' · OSP' : ''}
+                Op {opSrNo(o.opSeq)}
               </div>
               {/* line 2 — machine / QC / OUTSOURCE, one line */}
               <div
@@ -682,7 +680,7 @@ export function JcOpFlowCards({
                 {isQc ? (
                   'QC'
                 ) : isOut ? (
-                  'OUTSOURCE'
+                  'Outsource'
                 ) : (
                   <>
                     {o.machineCode ?? o.machineCodeText ?? '—'}
