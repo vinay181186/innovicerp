@@ -89,7 +89,7 @@ function SettingsPage(): React.JSX.Element {
       setSubmitOk(true);
       window.setTimeout(() => setSubmitOk(false), 3000);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save company details. Try again.');
     }
   };
 
@@ -157,7 +157,9 @@ function SettingsPage(): React.JSX.Element {
             </div>
           ) : isError || !company ? (
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load company.'}
+              {error instanceof Error
+                ? error.message
+                : 'Could not load company details. Try again.'}
             </div>
           ) : (
             <form onSubmit={handleSubmit(onValid)}>

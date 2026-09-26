@@ -130,7 +130,7 @@ function DesignTrackerListPage(): React.JSX.Element {
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load designs'}
+              {error instanceof Error ? error.message : 'Could not load designs. Try again.'}
             </div>
           </div>
         ) : data ? (

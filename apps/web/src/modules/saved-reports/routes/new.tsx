@@ -74,7 +74,7 @@ function SavedReportNewPage() {
       ) : sourcesQ.isError || !sourcesQ.data ? (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">Failed to load source catalog</div>
+            <div className="panel-title">Could not load report sources. Try again.</div>
           </div>
           <div className="panel-body">
             <div className="empty-state">

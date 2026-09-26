@@ -161,7 +161,7 @@ export function FilePreviewModal({
       a.click();
       a.remove();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Download failed');
+      setErr(e instanceof Error ? e.message : 'Could not download the file. Try again.');
     } finally {
       setSaving(false);
     }

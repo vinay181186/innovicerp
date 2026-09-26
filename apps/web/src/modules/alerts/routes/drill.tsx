@@ -66,7 +66,7 @@ function AlertDrillPage() {
             <span style={{ color: 'var(--red)' }}>
               {notFound
                 ? `No registered alert with code ${code}.`
-                : (error?.message ?? 'Failed to load alert.')}
+                : (error?.message ?? 'Could not load alert. Try again.')}
             </span>
           </div>
         </div>

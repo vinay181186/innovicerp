@@ -88,13 +88,15 @@ function DesignProjectDetailPage(): React.JSX.Element {
     return (
       <div>
         <Link to="/design-projects" className="btn btn-ghost btn-sm">
-          ← Back
+          ← Back to Design Projects
         </Link>
         <div className="panel" style={{ marginTop: 14 }}>
           <div className="panel-body">
             {isError ? (
               <div className="empty-state" style={{ color: 'var(--red)' }}>
-                {error instanceof Error ? error.message : 'Failed to load'}
+                {error instanceof Error
+                  ? error.message
+                  : 'Could not load design project. Try again.'}
               </div>
             ) : (
               <div className="text3" style={{ fontSize: 12 }}>
@@ -128,7 +130,7 @@ function DesignProjectDetailPage(): React.JSX.Element {
         }}
       >
         <Link to="/design-projects" className="btn btn-ghost btn-sm">
-          ← Back
+          ← Back to Design Projects
         </Link>
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 17, fontWeight: 700 }}>{p.projectName}</div>

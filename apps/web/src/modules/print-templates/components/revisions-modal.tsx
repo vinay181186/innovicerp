@@ -63,7 +63,7 @@ export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: P
             </div>
           ) : isError ? (
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              Failed to load revisions.
+              Could not load revisions. Try again.
             </div>
           ) : items.length === 0 ? (
             <div className="empty-state">No revision history yet.</div>

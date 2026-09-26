@@ -86,7 +86,9 @@ export function DataIntegrityPanel(): React.JSX.Element {
               fontSize: 12,
             }}
           >
-            {run.error instanceof Error ? run.error.message : 'Integrity check failed'}
+            {run.error instanceof Error
+              ? run.error.message
+              : 'Could not run the data check. Try again.'}
           </div>
         ) : null}
 

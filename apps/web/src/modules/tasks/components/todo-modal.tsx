@@ -31,7 +31,7 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
       });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create to-do');
+      setErr(e instanceof Error ? e.message : 'Could not save to-do. Try again.');
     }
   }
 

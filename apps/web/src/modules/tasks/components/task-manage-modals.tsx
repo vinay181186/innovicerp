@@ -32,7 +32,7 @@ export function ReassignModal({
       await reassign.mutateAsync({ assignedTo, note: note.trim() || undefined });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Reassign failed');
+      setErr(e instanceof Error ? e.message : 'Could not reassign task. Try again.');
     }
   }
 
@@ -105,7 +105,7 @@ export function CancelModal({
       await cancel.mutateAsync({ reason: reason.trim() || undefined });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Cancel failed');
+      setErr(e instanceof Error ? e.message : 'Could not cancel task. Try again.');
     }
   }
 
@@ -182,7 +182,7 @@ export function EditTaskModal({
       });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : 'Could not save task. Try again.');
     }
   }
 

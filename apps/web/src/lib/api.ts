@@ -16,8 +16,8 @@ class ApiError extends Error {
 type RequestInitWithJson = Omit<RequestInit, 'body'> & { json?: unknown };
 
 // Friendly, plain-language copy for the failure modes users actually hit.
-const NETWORK_MESSAGE = "Couldn't reach the server. Check your internet connection and try again.";
-const SERVER_MESSAGE = 'The server had a problem. Please try again in a moment.';
+const NETWORK_MESSAGE = "Couldn't reach Innovic ERP. Check your internet connection and try again.";
+const SERVER_MESSAGE = 'Something went wrong on our side. Please try again in a moment.';
 
 /**
  * Turn a server validation payload (Zod `flatten()`: { formErrors, fieldErrors })
@@ -99,7 +99,9 @@ export async function apiFetch<T = unknown>(
         throw new ApiError(
           res.status,
           'http_error',
-          res.status >= 500 ? SERVER_MESSAGE : `Request failed (HTTP ${res.status}).`,
+          res.status >= 500
+            ? SERVER_MESSAGE
+            : `Could not complete the request (error ${res.status}). Try again.`,
         );
       }
       return null as T;

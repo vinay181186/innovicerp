@@ -128,7 +128,7 @@ export function AssignTaskModal({
       });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to assign task');
+      setErr(e instanceof Error ? e.message : 'Could not assign task. Try again.');
     } finally {
       setBusy(false);
     }

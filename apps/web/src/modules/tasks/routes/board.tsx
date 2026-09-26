@@ -159,7 +159,7 @@ function TaskBoardPage(): React.JSX.Element {
   if (!data) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+        {error instanceof Error ? error.message : 'Could not load tasks. Try again.'}
       </div>
     );
   }
@@ -272,7 +272,7 @@ function TaskBoardPage(): React.JSX.Element {
         // A refetch failed (e.g. a non-admin landing on ?view=all): keep the
         // board and its tabs on screen so the user can move off the bad view.
         <div className="panel" style={{ padding: '8px 12px', fontSize: 12, color: 'var(--red2)' }}>
-          {error instanceof Error ? error.message : 'Failed to load'}
+          {error instanceof Error ? error.message : 'Could not load tasks. Try again.'}
         </div>
       ) : null}
 

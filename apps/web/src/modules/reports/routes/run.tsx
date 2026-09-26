@@ -291,7 +291,7 @@ function ResultsTable(props: {
                   colSpan={columns.length}
                   style={{ color: 'var(--red)', fontSize: 11 }}
                 >
-                  {errorMessage ?? 'Failed to run report.'}
+                  {errorMessage ?? 'Could not run report. Try again.'}
                 </td>
               </tr>
             ) : !data || data.rows.length === 0 ? (

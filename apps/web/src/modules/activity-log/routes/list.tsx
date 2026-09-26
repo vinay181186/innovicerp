@@ -249,7 +249,9 @@ function ActivityLogListPage() {
                 <tr>
                   <td colSpan={7} className="empty-state">
                     <span className="red">
-                      {error instanceof Error ? error.message : 'Failed to load activity log'}
+                      {error instanceof Error
+                        ? error.message
+                        : 'Could not load activity log. Try again.'}
                     </span>
                   </td>
                 </tr>

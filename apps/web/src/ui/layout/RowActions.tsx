@@ -71,7 +71,7 @@ export interface RowActionsProps {
 
 type Kind = 'view' | 'edit' | 'delete';
 
-const LABEL: Record<Kind, string> = { view: 'View', edit: 'Edit', delete: 'Del' };
+const LABEL: Record<Kind, string> = { view: 'View', edit: 'Edit', delete: 'Delete' };
 const TITLE: Record<Kind, string> = { view: 'View', edit: 'Edit', delete: 'Delete' };
 
 export function RowActions({

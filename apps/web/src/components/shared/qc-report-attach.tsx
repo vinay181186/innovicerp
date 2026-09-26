@@ -59,7 +59,7 @@ export function QcReportAttach({
       const path = await uploadFile(file, companyId, { folder: 'qc-reports' });
       onUploaded(path, file.name);
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : 'Upload failed');
+      setErr(e2 instanceof Error ? e2.message : 'Could not upload the file. Try again.');
     } finally {
       setBusy(false);
     }

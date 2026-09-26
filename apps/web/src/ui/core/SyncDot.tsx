@@ -23,7 +23,7 @@ const STATE_CLASS: Record<SyncState, string> = {
 const STATE_TEXT: Record<SyncState, string> = {
   ok: 'Synced',
   offline: 'Offline',
-  error: 'Save failed',
+  error: 'Could not save',
 };
 
 export interface SyncDotProps {

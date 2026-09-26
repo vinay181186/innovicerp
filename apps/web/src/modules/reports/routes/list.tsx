@@ -77,7 +77,7 @@ function ReportsListPage() {
         ) : isError || !data ? (
           <div className="panel">
             <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load reports'}
+              {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
             </div>
           </div>
         ) : (deptReports?.length ?? 0) === 0 ? (
@@ -124,7 +124,7 @@ function ReportsListPage() {
       ) : isError || !data ? (
         <div className="panel">
           <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load reports'}
+            {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
           </div>
         </div>
       ) : (
@@ -250,7 +250,7 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
                   colSpan={report.columns.length}
                   style={{ padding: '12px', color: 'var(--red)', fontSize: 11 }}
                 >
-                  {error instanceof Error ? error.message : 'Failed to run report.'}
+                  {error instanceof Error ? error.message : 'Could not run report. Try again.'}
                 </td>
               </tr>
             ) : !data || data.rows.length === 0 ? null : (

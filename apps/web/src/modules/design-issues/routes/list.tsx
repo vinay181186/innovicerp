@@ -123,7 +123,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+              {error instanceof Error ? error.message : 'Could not load design issues. Try again.'}
             </div>
           </div>
         ) : data ? (

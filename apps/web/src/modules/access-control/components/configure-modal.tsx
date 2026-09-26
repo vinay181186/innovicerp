@@ -494,7 +494,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       });
       onClose();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Save failed';
+      const msg = e instanceof Error ? e.message : 'Could not save access settings. Try again.';
       // The server refuses an admin demotion once, with the reason. Surface it
       // as a question rather than an error — the admin may well have meant it.
       if (msg.includes('is an admin')) setAdminWarning(msg);
@@ -631,7 +631,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           </div>
         ) : isError ? (
           <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load matrix'}
+            {error instanceof Error ? error.message : 'Could not load access settings. Try again.'}
           </div>
         ) : (
           <div style={{ padding: 14 }}>

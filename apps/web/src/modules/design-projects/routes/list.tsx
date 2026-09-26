@@ -149,7 +149,9 @@ function DesignProjectsListPage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load projects'}
+              {error instanceof Error
+                ? error.message
+                : 'Could not load design projects. Try again.'}
             </div>
           </div>
         </div>

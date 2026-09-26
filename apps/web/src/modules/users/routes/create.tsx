@@ -83,7 +83,7 @@ function UserCreatePage(): React.JSX.Element {
       // row again is how people end up with unconfigured users.
       exit.leave(() => void navigate({ to: '/access-control', search: { configure: created.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create user.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save user. Try again.');
     }
   };
 

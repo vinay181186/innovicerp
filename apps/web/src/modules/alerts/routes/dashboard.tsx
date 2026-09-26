@@ -119,7 +119,7 @@ function AlertsDashboardPage() {
         <div className="panel">
           <div className="empty-state">
             <span style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load alerts.'}
+              {error instanceof Error ? error.message : 'Could not load alerts. Try again.'}
             </span>
           </div>
         </div>

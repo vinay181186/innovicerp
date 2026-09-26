@@ -223,25 +223,58 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
 };
 
 // Where the enum key is not the words the document uses. Everything else falls
-// back to the key with underscores turned into spaces (the CSS uppercases it).
+// back to the key in Title Case, underscores turned into spaces (the CSS then
+// uppercases it on screen). Labels follow the wording rules (2026-09-26):
+// finished = Completed, part-way = Partly <verb>, QC waiting = QC Pending.
 const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
-  jcop: { at_vendor: 'Processing', received: 'Incoming QC' },
-  ncdisp: { scrap: 'Reject / Scrap' },
+  jc: { qc_pending: 'QC Pending', complete: 'Completed', no_ops: 'No Operations' },
+  jcop: {
+    qc_pending: 'QC Pending',
+    complete: 'Completed',
+    pr_raised: 'PR Raised',
+    po_created: 'PO Created',
+    at_vendor: 'At Vendor',
+    received: 'Received – QC Pending',
+    ready_for_pr: 'Ready for PR',
+  },
+  pr: { po_created: 'PO Created' },
+  po: { partial: 'Partly Received', qc_pending: 'QC Pending' },
+  prodorder: { partially_closed: 'Partly Closed', short_closed: 'Short Closed' },
+  grnqc: { pending: 'QC Pending', in_progress: 'QC In Progress', completed: 'QC Cleared' },
+  nc: { pending: 'NC Raised', received_qc_pending: 'Received – QC Pending' },
+  ncdisp: { scrap: 'Scrap', use_as_is: 'Use As Is' },
+  invoice: { partial: 'Partly Paid' },
+  plan: { jc_created: 'JC Created', pr_created: 'PR Created', complete: 'Completed' },
   task: { todo: 'To Do', to_do: 'To Do' },
-  grn: { pending: 'QC Pending', close: 'QC Cleared' },
+  grn: {
+    pending: 'QC Pending',
+    qc_pending: 'QC Pending',
+    close: 'QC Cleared',
+    qc_cleared: 'QC Cleared',
+    against_po: 'Against PO',
+    against_dc: 'Against DC',
+    against_nc: 'Against NC',
+  },
+  run: { done: 'Completed' },
+  doc: { partially_paid: 'Partly Paid' },
   // The planner's own words (user, 2026-09-19): "RC" is the route card. The
   // shared PLAN_DERIVED_STATUS_LABEL in @innovic/shared stays as it is for the
   // other screens that print it.
   planderived: {
     route_card_pending: 'RC Pending',
-    gen_production_order: 'RC Created',
+    gen_production_order: 'Ready for Production Order',
     in_production: 'In Production',
-    production_complete: 'Complete',
+    production_complete: 'Completed',
   },
   active: { true: 'Active', false: 'Inactive' },
   useractive: { true: 'Active', false: 'Inactive' },
   masteractive: { true: 'Active', false: 'Inactive' },
 };
+
+/** "in_progress" -> "In Progress". Display text only; the key is untouched. */
+function titleCase(raw: string): string {
+  return raw.replace(/_/g, ' ').replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
 
 /**
  * Read through a string key so an unknown `kind` — widened to `string` by
@@ -290,9 +323,7 @@ export function StatusBadge({ kind = 'so', status, label, title, className }: St
   // and must survive.
   const tone = m[key] ?? 'grey';
   const text =
-    label ??
-    LABELS[kind]?.[key] ??
-    (kind === 'rating' ? `⭐${raw.toUpperCase()}` : raw.replace(/_/g, ' '));
+    label ?? LABELS[kind]?.[key] ?? (kind === 'rating' ? `⭐${raw.toUpperCase()}` : titleCase(raw));
 
   const cls = ['badge', tone ? `b-${tone}` : '', className].filter(Boolean).join(' ');
   return (

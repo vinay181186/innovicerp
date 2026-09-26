@@ -123,7 +123,7 @@ function UserEditPage(): React.JSX.Element {
       await update.mutateAsync(payload);
       exit.leave(goBack);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to save changes.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save user. Try again.');
     }
   };
 
@@ -149,7 +149,10 @@ function UserEditPage(): React.JSX.Element {
         text: `Password set for ${detail.email}. Hand it over directly — no email is sent.`,
       });
     } catch (e) {
-      setPwMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Failed to set password.' });
+      setPwMsg({
+        kind: 'err',
+        text: e instanceof Error ? e.message : 'Could not set password. Try again.',
+      });
     }
   };
 
@@ -228,7 +231,7 @@ function UserEditPage(): React.JSX.Element {
             >
               {softDelete.error instanceof Error
                 ? softDelete.error.message
-                : 'Failed to delete user.'}
+                : 'Could not delete user. Try again.'}
             </div>
           ) : null}
           <form onSubmit={handleSubmit(onValid)}>

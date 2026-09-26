@@ -36,7 +36,7 @@ export function UpdateStatusModal({
       await update.mutateAsync({ status, comment: comment.trim() || undefined });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Update failed');
+      setErr(e instanceof Error ? e.message : 'Could not update task. Try again.');
     }
   }
 

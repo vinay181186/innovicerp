@@ -116,7 +116,7 @@ export function TaskBody({
         });
       }
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Upload failed');
+      setMsg(e instanceof Error ? e.message : 'Could not upload the file. Try again.');
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';

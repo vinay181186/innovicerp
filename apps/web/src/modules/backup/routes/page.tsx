@@ -172,7 +172,9 @@ function BackupPage(): React.JSX.Element {
               fontSize: 12,
             }}
           >
-            {download.error instanceof Error ? download.error.message : 'Backup download failed'}
+            {download.error instanceof Error
+              ? download.error.message
+              : 'Could not download backup. Try again.'}
           </div>
         ) : null}
       </div>
@@ -223,7 +225,9 @@ function BackupPage(): React.JSX.Element {
               ) : isError ? (
                 <tr>
                   <td colSpan={2} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load stats'}
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load backup figures. Try again.'}
                   </td>
                 </tr>
               ) : (

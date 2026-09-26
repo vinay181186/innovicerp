@@ -131,7 +131,9 @@ function AccessControlListPage(): React.JSX.Element {
               ) : isError ? (
                 <tr>
                   <td colSpan={6} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load matrix'}
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load access settings. Try again.'}
                   </td>
                 </tr>
               ) : (data?.items ?? []).length === 0 ? (

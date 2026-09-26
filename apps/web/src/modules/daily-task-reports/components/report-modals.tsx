@@ -97,7 +97,7 @@ function ReportEditor({
         })),
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : 'Could not save daily report. Try again.');
     }
   }
 

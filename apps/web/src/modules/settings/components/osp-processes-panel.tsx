@@ -118,7 +118,7 @@ export function OspProcessesPanel(): React.JSX.Element {
       else await createMut.mutateAsync(input);
       setModal(null);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Save failed');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save OSP process. Try again.');
     }
   }
 
@@ -127,7 +127,7 @@ export function OspProcessesPanel(): React.JSX.Element {
     try {
       await deleteMut.mutateAsync(p.id);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Delete failed');
+      window.alert(e instanceof Error ? e.message : 'Could not delete OSP process. Try again.');
     }
   }
 
@@ -152,7 +152,7 @@ export function OspProcessesPanel(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load OSP processes'}
+            {error instanceof Error ? error.message : 'Could not load OSP processes. Try again.'}
           </div>
         ) : items.length === 0 ? (
           <div className="text3" style={{ fontSize: 12, padding: '8px 0' }}>

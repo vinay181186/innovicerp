@@ -488,7 +488,7 @@ function PrintTemplatesPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            Failed to load print templates.
+            Could not load print templates. Try again.
           </div>
         </div>
       ) : (

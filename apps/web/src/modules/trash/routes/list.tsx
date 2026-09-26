@@ -41,6 +41,18 @@ const TYPE_OPTIONS: readonly TrashEntityType[] = [
   'QC Process',
 ];
 
+// On-screen names for the type codes above. The codes themselves are what the
+// API filters on and stay as they are; only the words the user reads change
+// (Customer, never Client; Cost Centre spelling; JWSO's full name).
+const TYPE_LABEL: Partial<Record<TrashEntityType, string>> = {
+  'Job Work Order': 'Job Work Sales Order',
+  Client: 'Customer',
+  'Cost Center': 'Cost Centre',
+};
+function typeLabel(t: TrashEntityType): string {
+  return TYPE_LABEL[t] ?? t;
+}
+
 const listSearchSchema = z.object({
   type: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
@@ -106,11 +118,11 @@ function TrashListPage(): React.JSX.Element {
 
   async function onRestore(it: { type: TrashEntityType; id: string; label: string }): Promise<void> {
     setActionError(null);
-    if (!window.confirm(`Restore ${it.type} "${it.label}"?`)) return;
+    if (!window.confirm(`Restore ${typeLabel(it.type)} "${it.label}"?`)) return;
     try {
       await restore.mutateAsync({ type: it.type, id: it.id });
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Restore failed');
+      setActionError(e instanceof Error ? e.message : 'Could not restore. Try again.');
     }
   }
 
@@ -118,14 +130,14 @@ function TrashListPage(): React.JSX.Element {
     setActionError(null);
     if (
       !window.confirm(
-        `Permanently delete ${it.type} "${it.label}"?\n\nThis CANNOT be undone.`,
+        `Permanently delete ${typeLabel(it.type)} "${it.label}"?\n\nThis CANNOT be undone.`,
       )
     )
       return;
     try {
       await permDel.mutateAsync({ type: it.type, id: it.id });
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Permanent delete failed');
+      setActionError(e instanceof Error ? e.message : 'Could not delete permanently. Try again.');
     }
   }
 
@@ -146,7 +158,7 @@ function TrashListPage(): React.JSX.Element {
     try {
       await empty.mutateAsync();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Empty trash failed');
+      setActionError(e instanceof Error ? e.message : 'Could not empty Trash. Try again.');
     }
   }
 
@@ -187,7 +199,7 @@ function TrashListPage(): React.JSX.Element {
               const n = data?.byType[t] ?? 0;
               return (
                 <option key={t} value={t} disabled={n === 0}>
-                  {t} ({n})
+                  {typeLabel(t)} ({n})
                 </option>
               );
             })}
@@ -260,7 +272,7 @@ function TrashListPage(): React.JSX.Element {
                 ) : isError ? (
                   <tr>
                     <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
-                      {error instanceof Error ? error.message : 'Failed to load trash'}
+                      {error instanceof Error ? error.message : 'Could not load Trash. Try again.'}
                     </td>
                   </tr>
                 ) : (
@@ -270,7 +282,7 @@ function TrashListPage(): React.JSX.Element {
                         {fmtTs(it.deletedAt)}
                       </td>
                       <td>
-                        <span className="badge b-grey">{it.type}</span>
+                        <span className="badge b-grey">{typeLabel(it.type)}</span>
                       </td>
                       <td className="fw-700">{it.label}</td>
                       <td className="text3" style={{ fontSize: 11 }}>

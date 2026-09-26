@@ -154,7 +154,7 @@ export function ResultTable({
                 ) : isError ? (
                   <TableEmpty colSpan={Math.max(1, data?.columns.length ?? 1)}>
                     <span className="text-destructive">
-                      {errorMessage ?? 'Failed to run report.'}
+                      {errorMessage ?? 'Could not run report. Try again.'}
                     </span>
                   </TableEmpty>
                 ) : !data || data.rows.length === 0 ? (

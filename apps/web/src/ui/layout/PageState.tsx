@@ -39,7 +39,7 @@ export type PageStatePlacement = 'panel' | 'row' | 'inline' | 'page';
 /** The product's own wording. Changing these changes 200+ screens at once. */
 const DEFAULT_MESSAGE: Record<PageStateKind, string> = {
   loading: '⟳ Loading…',
-  error: 'Failed to load',
+  error: 'Could not load this data. Try again.',
   empty: 'No records',
   noaccess: '⛔ This page is hidden for your access. Ask an admin if you need access to it.',
 };

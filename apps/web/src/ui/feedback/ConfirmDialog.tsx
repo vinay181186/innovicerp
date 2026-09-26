@@ -123,7 +123,8 @@ export function ConfirmDialog({
         await result;
       }
     } catch (e) {
-      if (alive.current) setFailure(e instanceof Error ? e.message : 'Action failed');
+      if (alive.current)
+        setFailure(e instanceof Error ? e.message : 'Could not complete this action. Try again.');
     } finally {
       if (alive.current) setPending(false);
     }

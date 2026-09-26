@@ -68,7 +68,7 @@ function CustomizeInner({
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="btn btn-ghost" onClick={() => setAllWidgets(true)}>☑ Select All</button>
           <button type="button" className="btn btn-ghost" onClick={() => setAllWidgets(false)}>☐ Deselect All</button>
-          <button type="button" className="btn btn-primary" disabled={save.isPending} onClick={() => void doSave()}>{save.isPending ? 'Saving…' : '✔ Save Layout'}</button>
+          <button type="button" className="btn btn-primary" disabled={save.isPending} onClick={() => void doSave()}>{save.isPending ? 'Saving…' : 'Save Layout'}</button>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
         </div>
       </div>

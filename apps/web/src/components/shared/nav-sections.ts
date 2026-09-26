@@ -144,10 +144,9 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Master',
         items: [
           // In the order the work flows: a plan becomes a Production Order,
-          // which becomes a Job Card. Plans also stays under Planning under its
-          // own name; here it is worded for what Production does with the
-          // list — pick the plans that are ready to run.
-          { to: '/plans', label: 'Plans Available for Production', icon: '📋', formKey: 'plan_create' },
+          // which becomes a Job Card. Plans also stays under Planning; one
+          // screen, one name (wording clean-up 2026-09-26).
+          { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
           { to: '/production-orders', label: 'Production Orders', icon: '🏭', formKey: 'prodorder_create' },
           { to: '/job-cards', label: 'Job Cards', icon: '▭', formKey: 'jc_create' },
           { to: '/machines', label: 'Machine Master', icon: '⚙', formKey: 'machine_create' },
@@ -181,7 +180,12 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/design-work-log', label: 'Daily Work Log', icon: '⏱', formKey: 'dsnworklog_create' },
           { to: '/bom-masters', label: 'BOM Master', icon: '📦', formKey: 'bom_create' },
           { to: '/design-tracker', label: 'Design Tracker', icon: '🎨', formKey: 'design_create' },
-          { to: '/route-cards', label: 'Route Cards', icon: '🗒', formKey: 'routecard_create' },
+          {
+            to: '/route-cards',
+            label: 'Route Card Master',
+            icon: '🗒',
+            formKey: 'routecard_create',
+          },
         ],
       },
     ],

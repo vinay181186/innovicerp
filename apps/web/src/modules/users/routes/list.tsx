@@ -345,7 +345,7 @@ function UsersListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load users'}
+          message={error instanceof Error ? error.message : 'Could not load users. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">

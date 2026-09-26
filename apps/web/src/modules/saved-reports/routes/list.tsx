@@ -16,7 +16,7 @@ function SavedReportsListPage() {
   const deleteMutation = useDeleteSavedReport();
 
   const onDelete = (id: string, name: string) => {
-    if (!confirm(`Delete "${name}"? This soft-deletes; admins can recover.`)) return;
+    if (!confirm(`Delete "${name}"? An admin can recover it if needed.`)) return;
     deleteMutation.mutate(id);
   };
 
@@ -54,7 +54,7 @@ function SavedReportsListPage() {
         ) : isError || !data ? (
           <Card>
             <CardHeader>
-              <CardTitle>Failed to load saved reports</CardTitle>
+              <CardTitle>Could not load saved reports. Try again.</CardTitle>
               <CardDescription>
                 {error instanceof Error ? error.message : 'Unknown error'}
               </CardDescription>
