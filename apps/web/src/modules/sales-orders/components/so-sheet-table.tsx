@@ -93,11 +93,11 @@ export function SoSheetTable({
               <th>SO No.</th>
               <th>SO Type</th>
               <th style={{ textAlign: 'left' }}>Customer</th>
-              <th>Lines</th>
-              <th>Order Qty</th>
-              <th>JC Qty</th>
-              <th>Dispatched</th>
-              <th>Pending</th>
+              <th className="th-num">Lines</th>
+              <th className="th-num">Order Qty</th>
+              <th className="th-num">JC Qty</th>
+              <th className="th-num">Dispatched</th>
+              <th className="th-num">Pending</th>
               <th>Due Date</th>
               <th>SO Status</th>
               <th>Action</th>
@@ -222,15 +222,15 @@ export function SoSheetTable({
                       ) : null}
                     </div>
                   </td>
-                  <td className="mono">{so.lineCount}</td>
-                  <td className="mono fw-700">{so.totalQty}</td>
-                  <td className="mono fw-700" style={{ color: jcColor }}>
+                  <td className="td-num mono">{so.lineCount}</td>
+                  <td className="td-num mono fw-700">{so.totalQty}</td>
+                  <td className="td-num mono fw-700" style={{ color: jcColor }}>
                     {so.jcQty}
                   </td>
-                  <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
+                  <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
                     {so.dispatchedQty}
                   </td>
-                  <td className="mono fw-700" style={{ color: 'var(--red2)' }}>
+                  <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
                     {Math.max(0, so.totalQty - so.dispatchedQty)}
                   </td>
                   <td

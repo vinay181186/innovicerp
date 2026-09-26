@@ -19,7 +19,7 @@ import type { DrawingSource, SalesOrderDetail, SalesOrderLine } from '@innovic/s
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { useSession } from '@/lib/session';
@@ -32,7 +32,7 @@ import { SoDocumentsSection } from '@/modules/so-documents/components/so-documen
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, QtyStrip, type DataTableColumn } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
-import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
@@ -76,6 +76,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'so_create');
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   // One preview slot for the whole page — the client PO bar, the email
   // references and the per-line drawings all feed the same modal.
   const [preview, setPreview] = useState<PreviewFile | null>(null);
@@ -118,6 +119,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
   const totalValue = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
+  // Still to ship = ordered − already dispatched, per line (never below zero).
+  // Drives whether "Dispatch" is offered as the next step.
+  const pendingDispatchQty = detail.lines.reduce(
+    (s, l) => s + Math.max(0, l.orderQty - l.dispatchedQty),
+    0,
+  );
 
   return (
     <div>
@@ -131,42 +138,50 @@ function SalesOrderDetailPage(): React.JSX.Element {
           <StatusBadge kind="so" status={detail.status} label={SO_STATUS_LABEL[detail.status]} />
         }
         actions={
+          /* ONE primary next step (Dispatch, while anything is left to ship),
+             Plan as a quiet link, and everything else in the Actions menu —
+             Delete last, in red. Same permission gates as before. */
           <>
-            <AssignTaskButton
-              linkedRef={{
-                type: 'sales_order',
-                id: detail.id,
-                display: `SO ${detail.code}`,
-                navPage: `/sales-orders/${detail.id}`,
-              }}
-              suggestedTitle={`Follow up on SO ${detail.code}`}
-            />
             <Link
-              to="/sales-orders/$id/status"
-              params={{ id: detail.id }}
-              className="btn btn-ghost btn-sm"
-              title="Open SO Status Review"
+              to="/planning"
+              search={{ soId: detail.id }}
+              className="btn btn-ghost"
+              title="Open this SO in Planning"
             >
-              <Icon name="activity" size={13} /> Status
+              Plan
             </Link>
-            {canEdit ? (
+            <ActionMenu
+              items={[
+                { label: 'Assign Task', onClick: () => setAssignOpen(true) },
+                {
+                  label: 'Status',
+                  title: 'Open SO Status Review',
+                  onClick: () =>
+                    void navigate({ to: '/sales-orders/$id/status', params: { id: detail.id } }),
+                },
+                {
+                  label: 'Edit',
+                  hidden: !canEdit,
+                  onClick: () =>
+                    void navigate({ to: '/sales-orders/$id/edit', params: { id: detail.id } }),
+                },
+                {
+                  label: 'Delete',
+                  danger: true,
+                  hidden: !canDelete,
+                  onClick: () => setConfirmDelete(true),
+                },
+              ]}
+            />
+            {pendingDispatchQty > 0 ? (
               <Link
-                to="/sales-orders/$id/edit"
-                params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
+                to="/customer-dispatches/new"
+                search={{ so: detail.id }}
+                className="btn btn-primary"
+                title={`${pendingDispatchQty} still to dispatch on this SO`}
               >
-                <Icon name="pencil" size={13} /> Edit
+                Dispatch
               </Link>
-            ) : null}
-            {canDelete ? (
-              <Button
-                variant="danger"
-                size="sm"
-                icon={<Icon name="trash-2" size={13} />}
-                onClick={() => setConfirmDelete(true)}
-              >
-                Delete
-              </Button>
             ) : null}
           </>
         }
@@ -235,6 +250,19 @@ function SalesOrderDetailPage(): React.JSX.Element {
       <SoDocumentsSection soId={detail.id} />
 
       {preview ? <FilePreviewModal {...preview} onClose={() => setPreview(null)} /> : null}
+
+      {assignOpen ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'sales_order',
+            id: detail.id,
+            display: `SO ${detail.code}`,
+            navPage: `/sales-orders/${detail.id}`,
+          }}
+          suggestedTitle={`Follow up on SO ${detail.code}`}
+          onClose={() => setAssignOpen(false)}
+        />
+      ) : null}
 
       {/* Delete goes through the ONE confirm dialog — never an inline
           "Delete? [Confirm][Cancel]" swap, never window.confirm. A failed
@@ -353,9 +381,17 @@ function lineColumns(opts: {
         );
       },
     },
-    { header: 'Order Qty', key: 'orderQty', width: '6%', className: 'mono', nowrap: true },
+    {
+      header: 'Order Qty',
+      key: 'orderQty',
+      width: '6%',
+      align: 'right',
+      className: 'mono',
+      nowrap: true,
+    },
     {
       header: 'Dispatched',
+      align: 'right',
       width: '7%',
       headColor: 'var(--green)',
       className: 'mono',
@@ -364,6 +400,7 @@ function lineColumns(opts: {
     },
     {
       header: 'Billed',
+      align: 'right',
       width: '6%',
       headColor: 'var(--green)',
       className: 'mono',
@@ -372,6 +409,7 @@ function lineColumns(opts: {
     },
     {
       header: 'Pending',
+      align: 'right',
       width: '7%',
       headColor: 'var(--red)',
       className: 'mono fw-700',
@@ -417,7 +455,7 @@ type Milestone = SalesOrderDetail['milestones'][number];
 
 const MILESTONE_COLUMNS: DataTableColumn<Milestone>[] = [
   { header: 'Lot No.', key: 'lotNo', width: '18%', className: 'mono fw-700', nowrap: true },
-  { header: 'Qty', key: 'qty', width: '14%', className: 'mono', nowrap: true },
+  { header: 'Qty', key: 'qty', width: '14%', align: 'right', className: 'mono', nowrap: true },
   {
     header: 'Due Date',
     width: '20%',

@@ -80,7 +80,9 @@ function SalesOrderNewPage(): React.JSX.Element {
           // Non-fatal: SO is saved; the email ref can be attached on the detail page.
         }
       }
-      exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true }));
+      exit.leave(
+        () => void navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save SO. Try again.');
     }
@@ -97,26 +99,26 @@ function SalesOrderNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      <div className="panel">
-        <div className="panel-body">
-          <SalesOrderForm
-            mode="create"
-            headerBack={
-              <Link to="/sales-orders" className="btn btn-ghost btn-sm">
-                <ArrowLeft size={14} /> Back
-              </Link>
-            }
-            /* Legacy addSO L12425 modal title. */
-            headerTitle="New SO / WO"
-            headerCrumb="Sales & CRM › SO Master › New"
-            onSubmit={onSubmit}
-            onPoFileChange={(f) => { poFileRef.current = f; }}
-            onEmailFileChange={(f) => { emailFileRef.current = f; }}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      {/* The form renders its own sticky PageHeader (Back · title · Cancel ·
+          Save) and Panels — no wrapping panel, which would clip the sticky
+          header (.panel is overflow:hidden). Back still passes the exit guard,
+          exactly as the old Back link did. */}
+      <SalesOrderForm
+        mode="create"
+        /* Legacy addSO L12425 modal title. */
+        title="New SO / WO"
+        backLabel="Back to SO Master"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        onPoFileChange={(f) => {
+          poFileRef.current = f;
+        }}
+        onEmailFileChange={(f) => {
+          emailFileRef.current = f;
+        }}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </>
   );
 }
@@ -201,26 +203,18 @@ function SalesOrderEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      <div className="panel">
-        <div className="panel-body">
-          <SalesOrderForm
-            mode="edit"
-            detail={detail}
-            headerBack={
-              <Link to="/sales-orders/$id" params={{ id }} className="btn btn-ghost btn-sm">
-                <ArrowLeft size={14} /> Back
-              </Link>
-            }
-            /* Legacy _editFullSO L12549 modal title — this route is the all-lines
-               editor, so it mirrors that title, not editSOLine's. */
-            headerTitle={`Edit SO — ${detail.code} (${detail.lines.length} lines)`}
-            headerCrumb="Sales & CRM › SO Master › Edit"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <SalesOrderForm
+        mode="edit"
+        detail={detail}
+        /* Legacy _editFullSO L12549 modal title — this route is the all-lines
+           editor, so it mirrors that title, not editSOLine's. */
+        title={`Edit SO — ${detail.code} (${detail.lines.length} lines)`}
+        backLabel="Back to SO"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </>
   );
 }
