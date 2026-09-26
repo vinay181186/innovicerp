@@ -4728,9 +4728,11 @@ export const invoices = pgTable(
       .references(() => companies.id),
     code: text('code').notNull(),
     invoiceDate: date('invoice_date').notNull(),
+    // ADR-184 (migration 0146): RESTRICT, was CASCADE — permanently deleting
+    // an SO must never take its invoices with it.
     salesOrderId: uuid('sales_order_id')
       .notNull()
-      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+      .references(() => salesOrders.id, { onDelete: 'restrict' }),
     soCodeText: text('so_code_text'),
     // Client snapshot (migration 0050) — invoice prints from these even if the
     // client master later changes. clientId for the live link.

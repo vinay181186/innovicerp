@@ -277,7 +277,9 @@ async function loadDispatchable(
       LEFT JOIN v_item_stock fg
         ON fg.company_id = sol.company_id AND fg.item_id = sol.item_id
       LEFT JOIN LATERAL (
-        SELECT COALESCE(SUM(x.eff), 0) AS ready FROM (
+        SELECT COALESCE(SUM(
+          CASE WHEN x.sc_cap IS NULL THEN x.eff ELSE LEAST(x.eff, x.sc_cap) END
+        ), 0) AS ready FROM (
           SELECT DISTINCT ON (jc.id)
             CASE
               WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
@@ -293,11 +295,19 @@ async function loadDispatchable(
                   AND grl.deleted_at IS NULL
               ), 0)
               ELSE vs.completed_qty
-            END AS eff
+            END AS eff,
+            -- ADR-184 — a short-closed order's card counts only up to what the
+            -- order CREDITED: those pieces are real stock and may ship. NULL
+            -- for every other card (no cap).
+            CASE WHEN spo.id IS NULL THEN NULL ELSE COALESCE(spo.credited_qty, 0) END AS sc_cap
           FROM job_cards jc
           JOIN v_jc_op_status vs ON vs.job_card_id = jc.id
           LEFT JOIN jc_ops jo
             ON jo.job_card_id = jc.id AND jo.op_seq = vs.op_seq AND jo.deleted_at IS NULL
+          LEFT JOIN production_orders spo
+            ON spo.id = jc.production_order_id
+           AND spo.status = 'short_closed'
+           AND spo.deleted_at IS NULL
           WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
             -- A rework/repair child inherits the parent's line link, but its
             -- accepted pieces are re-injected into the PARENT's route and
@@ -306,16 +316,11 @@ async function loadDispatchable(
             -- 12" on a 10-piece line with 2 reworked (QC-NC audit 2026-09-21,
             -- gap 4) and would let 2 phantom pieces be dispatched.
             AND jc.recovery_kind IS NULL
-            -- ADR-182 — a short-closed Production Order's Job Card is out of
-            -- the sum. Its pieces are abandoned work, so they must not look
-            -- ready to ship; the SIBLING orders' pieces on the same SO line
-            -- still count (a plan of 50 may be covered by 20 + 30, and
-            -- stopping the 20 must not strand the 30).
-            AND NOT EXISTS (
-              SELECT 1 FROM production_orders po
-              WHERE po.id = jc.production_order_id
-                AND po.status = 'short_closed'
-            )
+            -- ADR-182 / ADR-184 — a short-closed Production Order's Job Card
+            -- is capped at its credited qty (sc_cap above), not dropped: the
+            -- un-credited pieces are abandoned work and must not look ready to
+            -- ship, but the pieces it credited are real stock. The SIBLING
+            -- orders' pieces on the same SO line count as before.
           ORDER BY jc.id, vs.op_seq DESC
         ) x
       ) rdy ON TRUE

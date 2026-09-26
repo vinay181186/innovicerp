@@ -34,6 +34,9 @@
 //                        migration 0138); create supplementary JC inheriting
 //                        origin's source SO/JW link + parent_nc_id pointing
 //                        at this NC; rework_jc_code_text stored on NC.
+//                        ADR-184: refused on a Production Order's card (use
+//                        Scrap); otherwise the new JC gets a copy of the
+//                        origin card's live ops, progress zeroed.
 //
 // Partial disposition (interlock 2): `qty` below the NC's rejected qty shrinks
 // THIS row to `qty` and inserts a sibling holding the remainder, still
@@ -41,7 +44,7 @@
 // exactly one disposition — there is no child table to reconcile.
 
 import { opSrNo } from '@innovic/shared';
-import { and, desc, eq, isNull, like, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
@@ -56,6 +59,7 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { nextNcCodeFrom } from '../../lib/nc-code';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { jobCardOrderChainCte } from '../../lib/production-order-link';
 import { emitActivityLog } from '../activity-log/service';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { reinjectLogType } from './reinject-log-type';
@@ -617,6 +621,33 @@ export async function disposeNcCascade(
     throw new ValidationError(`Origin JC ${nc.jobCardId} not found`);
   }
 
+  // ADR-184 — Make Fresh is refused on a Production Order's card (or any
+  // rework / repair child of one — the walk goes up parent_job_card_id). A
+  // supplementary JC there would be a second, order-less card making pieces
+  // the order's plan already counts: the plan's Covered would never see it.
+  // The order-shaped route is Scrap: once the order is closed or short
+  // closed, the lost pieces are Pending on the plan again and a new
+  // Production Order is raised for them.
+  const orderRows = (await tx.execute(sql`
+    ${jobCardOrderChainCte(nc.jobCardId)}
+    SELECT po.code AS po_code,
+           COALESCE(p.code, po.plan_code_text) AS plan_code
+    FROM chain
+    JOIN public.production_orders po ON po.id = chain.production_order_id
+    LEFT JOIN public.plans p ON p.id = po.plan_id
+    WHERE po.deleted_at IS NULL
+    ORDER BY chain.depth
+    LIMIT 1
+  `)) as unknown as Array<{ po_code: string; plan_code: string | null }>;
+  const owningOrder = orderRows[0];
+  if (owningOrder) {
+    throw new ValidationError(
+      `${origin.code} belongs to Production Order ${owningOrder.po_code}. Use Scrap: the lost ` +
+        `pieces return to plan ${owningOrder.plan_code ?? '(unknown)'} as Pending and a new ` +
+        `Production Order is raised from it.`,
+    );
+  }
+
   const newJcCode = await nextSupplementaryJcCode(tx, ctx.companyId, origin.code);
 
   // job_cards has no itemCodeText / remarks columns — the supplementary
@@ -654,6 +685,53 @@ export async function disposeNcCascade(
   const newJc = insertedJc[0];
   if (!newJc) {
     throw new ValidationError('Failed to create supplementary JC');
+  }
+
+  // ADR-184 — the supplementary JC makes the SAME part by the SAME route, so
+  // it is seeded with a copy of the origin card's live operations. Only the
+  // columns that DEFINE an op are copied (sequence, machine, operation, type,
+  // cycle time, program, tool, QC flag, outsource vendor + cost). Every
+  // progress / document column (rework qty, OSP status / PR / PO line / DC /
+  // sent / returned, QC call dates, schedule) starts at its default — a new
+  // card has done nothing yet. Before ADR-184 the card was created with no
+  // ops at all and could not be worked.
+  // Review fix: the route is read off the TOP card of the chain (the origin's
+  // furthest ancestor via parent_job_card_id), never off a rework / repair
+  // child, whose ops are only the corrective steps, not the part's route.
+  const rootRows = (await tx.execute(sql`
+    ${jobCardOrderChainCte(origin.id)}
+    SELECT chain.id AS id FROM chain ORDER BY chain.depth DESC LIMIT 1
+  `)) as unknown as Array<{ id: string }>;
+  const routeJcId = rootRows[0]?.id ?? origin.id;
+  const originOps = await tx
+    .select({
+      opSeq: jcOps.opSeq,
+      machineId: jcOps.machineId,
+      machineCodeText: jcOps.machineCodeText,
+      operation: jcOps.operation,
+      opType: jcOps.opType,
+      cycleTimeMin: jcOps.cycleTimeMin,
+      program: jcOps.program,
+      toolNo: jcOps.toolNo,
+      toolDetails: jcOps.toolDetails,
+      qcRequired: jcOps.qcRequired,
+      outsourceVendorId: jcOps.outsourceVendorId,
+      outsourceVendorText: jcOps.outsourceVendorText,
+      outsourceCost: jcOps.outsourceCost,
+    })
+    .from(jcOps)
+    .where(and(eq(jcOps.jobCardId, routeJcId), isNull(jcOps.deletedAt)))
+    .orderBy(asc(jcOps.opSeq));
+  if (originOps.length > 0) {
+    await tx.insert(jcOps).values(
+      originOps.map((op) => ({
+        ...op,
+        companyId: ctx.companyId,
+        jobCardId: newJc.id,
+        createdBy: ctx.userId,
+        updatedBy: ctx.userId,
+      })),
+    );
   }
 
   // Ledger (QC-NC audit 2026-09-21, gap 8): the pieces are written off and

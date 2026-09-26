@@ -714,8 +714,8 @@ export async function updatePlan(
     // one-order-per-plan rule kept shut: the plan could be cut below what its
     // Job Cards are already building, or have its raw material re-typed after
     // the card had snapshotted it. Both are refused while live work exists.
-    // Short-closed orders do not count — their qty went back to the plan.
-    const { coveredQty, orderCodes } = await readPlanOrderCoverage(tx, row.id);
+    // ADR-184: a stopped order counts what it credited (lib/plan-order-coverage.ts).
+    const { coveredQty } = await readPlanOrderCoverage(tx, row.id);
     if (coveredQty > 0) {
       const resultingPlanQty = input.planQty ?? row.planQty;
       const belowCovered = planQtyBelowCoveredError(row.code, resultingPlanQty, coveredQty);
@@ -728,11 +728,23 @@ export async function updatePlan(
         changed(input.rawMaterialGradeText, row.rawMaterialGradeText) ||
         changed(input.rawMaterialSizeId, row.rawMaterialSizeId) ||
         changed(input.rawMaterialSizeText, row.rawMaterialSizeText);
-      if (rawMaterialRetyped) {
+      // ADR-184 review — only an order STILL BEING MADE has a card that copied
+      // the raw material and would disagree with the plan. A stopped order's
+      // credited pieces count toward Covered (above) but no longer lock the
+      // material: the remake order for the Pending qty may need a new one.
+      const liveRows = (await tx.execute(sql`
+        SELECT COALESCE(ARRAY_AGG(po.code ORDER BY po.code), '{}') AS codes
+        FROM public.production_orders po
+        WHERE po.plan_id = ${row.id}::uuid
+          AND po.deleted_at IS NULL
+          AND po.status IN ('open', 'partially_closed')
+      `)) as unknown as Array<{ codes: string[] | null }>;
+      const liveOrderCodes = liveRows[0]?.codes ?? [];
+      if (rawMaterialRetyped && liveOrderCodes.length > 0) {
         throw new ValidationError(
-          `Plan ${row.code} already has Production Order(s) ${orderCodes.join(', ')} — ` +
+          `Plan ${row.code} already has Production Order(s) ${liveOrderCodes.join(', ')} in progress — ` +
             `raw material cannot be changed now; their Job Cards have already copied it. ` +
-            `Short close the order(s) first.`,
+            `Close or short close the order(s) first.`,
         );
       }
     }

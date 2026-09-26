@@ -9816,3 +9816,59 @@ with 19 pieces counted from 10. Auto-NC codes were also unreadable
 - Open: api tests / e2e specs clean up NCs by the `NC-AUTO-` prefix and will no longer
   catch the ones they create (the suite hits PROD — do not run it until the cleanup keys
   on the test Job Cards instead).
+
+## ADR-184: A stopped Production Order covers only what it credited; upstream documents are guarded against orphaning downstream work
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Context
+
+The order-to-cash audit against ERPNext (IN-SO-00786 L9 on TEST) found quantities leaking at every
+stop. IN-PRO-00019 (order 20) credited 15, lost 5 to scrap and was short closed. Every coverage
+reader skipped short-closed orders, so plan PLN-0013 went back to Pending 20, and after a remake
+order of 5 it read Pending 15 for good. The log said "5 returned". lost_qty stayed NULL, and the
+order's Job Card and its rework child stayed open forever. Separately, a Sales Order line could be
+cut, cancelled, re-itemed or deleted with plans, orders, dispatches or invoices hanging off it, and
+emptying Trash hard-deleted a Sales Order's invoices and payments by cascade.
+
+### Decision
+
+1. **Covered rule (ERPNext: pending = qty − (WO qty − process loss)).** An order still being made
+   covers its Order Qty. An order that has stopped (`closed` or `short_closed`) covers only its
+   `credited_qty`. One SQL definition (`ORDER_COVERED_QTY_SQL`, lib/plan-order-coverage.ts) feeds
+   Covered, Pending, the create cap and migration 0145. Plan derived status: an order still open
+   reads in_production; otherwise Pending > 0 needs a new order; otherwise production_complete.
+2. **Short close** stores `lost_qty` (the NC loss on the order's card), closes the card and every
+   rework / repair descendant, and logs the true figures on the order and on the plan. It is refused
+   while finished pieces are still uncredited. Its reason must be at least 10 characters.
+3. **Plan status follows Pending both ways.** Every close, short close and close reversal goes
+   through one helper that re-opens (`jc_created` → `planned`) or re-covers (`planned` →
+   `jc_created`) the plan, with a Plan log line. A reversal that would cover the plan past Plan Qty
+   (its lost pieces are already on a remake order) is refused.
+4. **Make Fresh** is refused on a Production Order's card; Scrap plus a remake order from the plan
+   is the order-shaped route. On an order-less card the new card is seeded with the ops of the top
+   card of its chain.
+5. **Sales Order guards.** A line cannot be cut below planned / dispatched / invoiced, removed,
+   cancelled or re-itemed while plans, orders, dispatches or invoices use it. Header status
+   `closed` / `dispatched` is system-set; a manual move to draft or cancelled is refused while
+   documents use the order. Delete is refused likewise. SO edits log before → after (money excluded:
+   the log is readable by users whose prices are hidden).
+6. **Trash** never cascades: invoices → sales_orders is ON DELETE RESTRICT (0146); a Sales Order
+   with dependents is skipped; Empty Trash is set-based, multi-pass, and reports what it kept.
+
+### Alternatives considered
+
+- Keep skipping short-closed orders and subtract only never-made pieces: rejected, the same leak
+  under a different name. Credited is the only figure the ledger proves.
+- Re-open every historic plan whose closed order had losses (migration step (d)): rejected, those
+  orders were settled with the customer; only closes made after this change re-open a plan.
+
+### Consequences
+
+- PLN-0013 reads fully covered after 0145. Future losses come back as Pending automatically.
+- Deferred, from the same audit: invoice cancel / credit note / payment reversal, compulsory vehicle
+  on dispatch, customer DC print, SO progress columns, QC inspector on Op Entry, plan Cancel, the
+  stock ledger source link and write-lock, raw-material issue against a JC / order, and scrap
+  valuation (no item cost master exists). The shared contract for the first six is drafted but not
+  shipped.
