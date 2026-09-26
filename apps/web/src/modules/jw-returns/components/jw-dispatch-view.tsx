@@ -4,10 +4,7 @@
 // can render inside the Customer Dispatch screen as a tab. Behavior, hooks and
 // modals are identical to the original screen.
 
-import {
-  type CreateJwReturnChallanInput,
-  type ListJwReturnChallansQuery,
-} from '@innovic/shared';
+import { type CreateJwReturnChallanInput, type ListJwReturnChallansQuery } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -15,6 +12,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { statusText } from '@/lib/status-text';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCancelJwReturn, useCreateJwReturnChallan, useJwReturnsList } from '../api';
 
@@ -57,7 +55,7 @@ export function JwDispatchView({
     [term],
   );
 
-  const { data, isLoading, isError, error } = useJwReturnsList(query);
+  const { data, isLoading, isFetching, isError, error } = useJwReturnsList(query);
   const rows = data?.items ?? [];
   const cancelMut = useCancelJwReturn();
 
@@ -68,30 +66,25 @@ export function JwDispatchView({
     cancelMut.mutate(id);
   };
 
-
   return (
     <div>
-      <div className="mb-3 flex items-center justify-end gap-3">
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search return no., date, JWSO, customer, part, transport, status…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 260, fontSize: 12 }}
-          />
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowModal(true)}
-            >
+      <ListHeader
+        title="JW Return"
+        icon="📦"
+        count={data?.total ?? rows.length}
+        noun="JW return"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search return no., date, JWSO, customer, part, transport, status…"
+        updating={isFetching && !isLoading}
+        primary={
+          canWrite ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={14} /> New Return
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -108,7 +101,7 @@ export function JwDispatchView({
           </div>
         ) : (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid tbl-auto">
               <thead>
                 <tr>
                   <th>Return No.</th>
@@ -116,7 +109,7 @@ export function JwDispatchView({
                   <th>JWSO No.</th>
                   <th>Customer</th>
                   <th>Item Name</th>
-                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Return Qty
                   </th>
                   <th>Transport</th>
@@ -143,16 +136,13 @@ export function JwDispatchView({
                     <td className="text2" style={{ fontSize: 11 }}>
                       {fmtDate(r.returnDate)}
                     </td>
-                    <td
-                      className="mono fw-700"
-                      style={{ fontSize: 11, color: 'var(--purple)' }}
-                    >
+                    <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
                       {r.jwCodeText ?? '—'}
                     </td>
                     <td className="fw-700">{r.clientName ?? '—'}</td>
                     <td className="text2">{r.partName ?? '—'}</td>
                     <td
-                      className="td-ctr mono fw-700"
+                      className="td-num mono fw-700"
                       style={{ fontSize: 14, color: 'var(--green2)' }}
                     >
                       {r.qty}
@@ -172,8 +162,7 @@ export function JwDispatchView({
                           letterSpacing: '0.04em',
                           padding: '2px 6px',
                           borderRadius: 4,
-                          color:
-                            r.status === 'cancelled' ? 'var(--red)' : 'var(--green)',
+                          color: r.status === 'cancelled' ? 'var(--red2)' : 'var(--green2)',
                           background:
                             r.status === 'cancelled'
                               ? 'rgba(239,68,68,0.10)'
@@ -199,8 +188,7 @@ export function JwDispatchView({
                           >
                             {cancelMut.isPending && cancelMut.variables === r.id ? (
                               <>
-                                <Loader2 size={12} className="inline animate-spin" />{' '}
-                                Cancelling…
+                                <Loader2 size={12} className="inline animate-spin" /> Cancelling…
                               </>
                             ) : (
                               'Cancel'
@@ -216,6 +204,7 @@ export function JwDispatchView({
           </div>
         )}
       </div>
+      <ListFooter total={data?.total ?? rows.length} noun="JW return" limit={LIST_LIMIT} />
 
       {showModal ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}
     </div>

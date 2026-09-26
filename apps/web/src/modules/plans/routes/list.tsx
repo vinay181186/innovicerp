@@ -21,6 +21,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader, PageState, StatusPills } from '@/ui/layout';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { PlanningKpiStrip } from '../components/planning-kpi-strip';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
@@ -131,121 +132,112 @@ function PlansListPage(): React.JSX.Element {
     });
 
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📋 Plans</div>
-        <div className="flex items-center gap-2">
-          <input
-            className="innovic-input"
-            style={{ width: 200 }}
-            placeholder="Search plan, item, SO, Production Order, JC…"
-            value={search ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/plans',
-                search: {
-                  ...(status ? { status } : {}),
-                  ...(planType ? { planType } : {}),
-                  ...(pending ? { pending } : {}),
-                  search: e.target.value || undefined,
-                },
-              })
-            }
-          />
-          <select
-            className="innovic-select"
-            style={{ width: 140 }}
-            value={status ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/plans',
-                search: {
-                  ...(search ? { search } : {}),
-                  ...(planType ? { planType } : {}),
-                  ...(pending ? { pending } : {}),
-                  status: (e.target.value as PlanEffectiveStatus | '') || undefined,
-                },
-              })
-            }
-          >
-            <option value="">All statuses</option>
-            {(Object.keys(STATUS_BADGE) as PlanStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {STATUS_BADGE[s].label}
-              </option>
-            ))}
-            {/* ADR-185 — the two route-card states with no stored twin. */}
-            <option value="route_card_pending">{DERIVED_LABEL.route_card_pending}</option>
-            <option value="gen_production_order">{DERIVED_LABEL.gen_production_order}</option>
-          </select>
-          <select
-            className="innovic-select"
-            style={{ width: 140 }}
-            value={planType ?? ''}
-            onChange={(e) =>
-              void navigate({
-                to: '/plans',
-                search: {
-                  ...(search ? { search } : {}),
-                  ...(status ? { status } : {}),
-                  ...(pending ? { pending } : {}),
-                  planType: (e.target.value as PlanType | '') || undefined,
-                },
-              })
-            }
-          >
-            <option value="">All types</option>
-            <option value="manufacture">🏭 Manufacture</option>
-            <option value="direct_purchase">🛒 Direct Purchase</option>
-            <option value="full_outsource">📦 Full Outsource</option>
-            <option value="assembly">🔧 Assembly</option>
-          </select>
-          {perms.entry ? (
+      {/* The ONE list header (ui/layout ListHeader). Same URL params and the
+          same server search / status / type filters as before; the All |
+          Pending pills (ADR-170) and the KPI tiles sit in its sticky band. */}
+      <ListHeader
+        title="Plans"
+        icon="📋"
+        count={needsPlanning ? undefined : data?.total}
+        noun="plan"
+        filterNote={pending ? 'Pending' : undefined}
+        search={search ?? ''}
+        onSearch={(v) =>
+          void navigate({
+            to: '/plans',
+            search: {
+              ...(status ? { status } : {}),
+              ...(planType ? { planType } : {}),
+              ...(pending ? { pending } : {}),
+              search: v || undefined,
+            },
+          })
+        }
+        searchPlaceholder="Search plan no., item code / name, SO no., POL, Production Order, JC…"
+        tools={
+          <>
+            <select
+              className="innovic-select"
+              style={{ width: 140 }}
+              value={status ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  to: '/plans',
+                  search: {
+                    ...(search ? { search } : {}),
+                    ...(planType ? { planType } : {}),
+                    ...(pending ? { pending } : {}),
+                    status: (e.target.value as PlanEffectiveStatus | '') || undefined,
+                  },
+                })
+              }
+            >
+              <option value="">All statuses</option>
+              {(Object.keys(STATUS_BADGE) as PlanStatus[]).map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_BADGE[s].label}
+                </option>
+              ))}
+              {/* ADR-185 — the two route-card states with no stored twin. */}
+              <option value="route_card_pending">{DERIVED_LABEL.route_card_pending}</option>
+              <option value="gen_production_order">{DERIVED_LABEL.gen_production_order}</option>
+            </select>
+            <select
+              className="innovic-select"
+              style={{ width: 140 }}
+              value={planType ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  to: '/plans',
+                  search: {
+                    ...(search ? { search } : {}),
+                    ...(status ? { status } : {}),
+                    ...(pending ? { pending } : {}),
+                    planType: (e.target.value as PlanType | '') || undefined,
+                  },
+                })
+              }
+            >
+              <option value="">All types</option>
+              <option value="manufacture">🏭 Manufacture</option>
+              <option value="direct_purchase">🛒 Direct Purchase</option>
+              <option value="full_outsource">📦 Full Outsource</option>
+              <option value="assembly">🔧 Assembly</option>
+            </select>
+          </>
+        }
+        primary={
+          perms.entry ? (
             <Link to="/plans/new" className="btn btn-primary">
-              <Plus size={13} /> New plan
+              <Plus size={13} /> New Plan
             </Link>
-          ) : null}
+          ) : null
+        }
+      >
+        {/* ADR-170 — All | Pending. "Pending" = route-card-driven plans that
+            still need a Production Order (server filter `poPending`). Old
+            plans only ever appear under All. */}
+        <StatusPills
+          label="Plans waiting for a Production Order"
+          options={[{ value: 'pending', label: 'Pending' }]}
+          value={pending ? 'pending' : null}
+          onChange={(v) => selectPending(v === 'pending')}
+        />
+        <div style={{ marginTop: 'var(--sp-2)' }}>
+          <PlanningKpiStrip
+            kpi={dash.data?.kpi ?? {}}
+            activeStatus={status}
+            needsPlanning={!!needsPlanning}
+            onSelectStatus={selectStatus}
+            onSelectNeedsPlanning={selectNeedsPlanning}
+          />
         </div>
-      </div>
-
-      {/* ADR-170 — All | Pending. "Pending" = route-card-driven plans that
-          still need a Production Order (server filter `poPending`). Old plans
-          only ever appear under All. Pill styling copied from the SO list. */}
-      <div className="mb-3" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {(
-          [
-            { key: 'all', label: 'All', on: !pending },
-            { key: 'pending', label: 'Pending', on: !!pending },
-          ] as const
-        ).map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            className={`btn btn-sm ${p.on ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ fontSize: 11, borderRadius: 999, padding: '3px 12px' }}
-            title={p.key === 'pending' ? 'Plans waiting for a Production Order' : 'Every plan'}
-            onClick={() => selectPending(p.key === 'pending')}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      <PlanningKpiStrip
-        kpi={dash.data?.kpi ?? {}}
-        activeStatus={status}
-        needsPlanning={!!needsPlanning}
-        onSelectStatus={selectStatus}
-        onSelectNeedsPlanning={selectNeedsPlanning}
-      />
+      </ListHeader>
 
       {needsPlanning ? (
         <NeedsPlanningTable />
@@ -299,7 +291,7 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
             add up to the page so nothing scrolls sideways. Plan # carries its
             date and type underneath; Ops is gone; Status states where the plan
             IS and Action holds the one button that moves it on. */}
-        <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+        <div className="tbl-wrap">
           <table className="innovic-table tbl-grid">
             {/* Widths total exactly 100. POL took 5% — one each off Plan No.,
                 SO and Action, two off Item — when it was added (2026-09-23). */}
@@ -530,10 +522,7 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
         </div>
       </div>
 
-      <div className="text3" style={{ marginTop: 8, fontSize: 12 }}>
-        {data.items.length} of {data.total} plans
-        {data.total > data.items.length ? ' — narrow the filter to see the rest' : ''}
-      </div>
+      <ListFooter total={data.total} shown={data.items.length} noun="plan" limit={LIMIT} />
     </>
   );
 }
