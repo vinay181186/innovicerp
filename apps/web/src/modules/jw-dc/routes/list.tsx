@@ -248,11 +248,6 @@ function OutwardView(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-        💡 Material returns are tracked in 📥 Inward tab. ⚠ RETURNABLE — material comes back after
-        processing.
-      </div>
-
       {showModal ? <NewOutwardModal onClose={() => setShowModal(false)} /> : null}
     </div>
   );
@@ -602,7 +597,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   return (
     <ModalShell
       onClose={onClose}
-      title="📤 New Outward DC (Returnable Gate Pass)"
+      title="New Outward DC"
       onSave={onSave}
       saving={createMut.isPending}
       saveLabel="Save Outward DC"
@@ -1018,7 +1013,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                 <th style={{ padding: 6 }}>Sent</th>
                 <th style={{ padding: 6, color: 'var(--green)' }}>Received</th>
                 <th style={{ padding: 6, color: 'var(--amber)' }}>Pending</th>
-                <th style={{ padding: 6 }}>Received</th>
+                <th style={{ padding: 6 }}>Receive Now</th>
                 <th style={{ padding: 6, color: 'var(--green)' }}>Accepted</th>
                 <th style={{ padding: 6, color: 'var(--red)' }}>Rejected</th>
               </tr>

@@ -230,11 +230,7 @@ function PlansListPage(): React.JSX.Element {
             type="button"
             className={`btn btn-sm ${p.on ? 'btn-primary' : 'btn-ghost'}`}
             style={{ fontSize: 11, borderRadius: 999, padding: '3px 12px' }}
-            title={
-              p.key === 'pending'
-                ? 'Plans waiting for a Production Order (route card pending / gen production order)'
-                : 'Every plan'
-            }
+            title={p.key === 'pending' ? 'Plans waiting for a Production Order' : 'Every plan'}
             onClick={() => selectPending(p.key === 'pending')}
           >
             {p.label}

@@ -175,10 +175,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, marginBottom: 14, fontSize: 12, color: 'var(--text2)' }}>
-        <b style={{ color: 'var(--green)' }}>📌 Job Work:</b> Customer provides raw material → We machine/process it → Deliver finished parts back to customer. Receive customer material on Party GRN.
-      </div>
-
       {isLoading ? (
         <div className="panel"><div className="empty-state" style={{ padding: 20 }}><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</div></div>
       ) : isError ? (
@@ -311,9 +307,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
               ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
               : `Showing all ${total} JWSO${total === 1 ? '' : 's'}`}
         </span>
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-        💡 Click a row to open the JWSO. Click the chevron to expand its line items inline.
       </div>
     </div>
   );

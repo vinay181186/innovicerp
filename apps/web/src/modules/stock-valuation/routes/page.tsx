@@ -132,7 +132,7 @@ function StockValuationPage(): React.JSX.Element {
           }}
         >
           <div className="panel" style={{ padding: 10, textAlign: 'center', border: '2px solid var(--cyan)' }}>
-            <div style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>TOTAL STOCK VALUE</div>
+            <div style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>Total Stock Value</div>
             <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--cyan)' }}>
               {inr(data.grandTotal)}
             </div>
@@ -191,7 +191,7 @@ function StockValuationPage(): React.JSX.Element {
                 {priceHidden ? null : (
                   <>
                     <th>Rate</th>
-                    <th>Stock Value</th>
+                    <th title="Physical × Last GRN Rate (or PO Rate if no GRN)">Stock Value</th>
                   </>
                 )}
                 <th>Last GRN Date</th>
@@ -219,6 +219,7 @@ function StockValuationPage(): React.JSX.Element {
                     <td style={{ fontSize: 11 }}>{r.uom}</td>
                     <td
                       className="mono fw-700"
+                      title={r.lowStock ? 'Below minimum stock' : undefined}
                       style={{
                         color:
                           r.stockQty > 0
@@ -267,10 +268,6 @@ function StockValuationPage(): React.JSX.Element {
             </tfoot>
           </table>
         </div>
-      </div>
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Stock Value = Physical × Last GRN Rate (or PO Rate if no GRN). ⚠ = below minimum stock.
-        Items with no rate show “No Rate”.
       </div>
     </div>
   );

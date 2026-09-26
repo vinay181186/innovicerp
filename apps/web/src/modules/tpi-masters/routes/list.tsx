@@ -12,7 +12,6 @@
 // canonical one and nothing else:
 //
 //   <ListHeader>            title · count · SearchInput · Active filter · primary
-//   <Panel>                 the 💡 what-this-master-is-for note
 //   <Banner>                a refused delete, in the server's own words
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint
@@ -145,7 +144,7 @@ function TpiMastersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Organization',
+        header: 'Organisation',
         width: '24%',
         className: 'text2',
         ellipsis: true,
@@ -235,16 +234,6 @@ function TpiMastersListPage(): React.JSX.Element {
           ) : null
         }
       />
-
-      {/* What this master is for. It sits ABOVE the sheet, not in the
-          ListFooter hint, because it is read once before the first inspector is
-          added — not a hint about operating the list. */}
-      <Panel>
-        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
-          💡 Add third-party inspectors here. The <b>Inspector Name</b> field on the TPI screen
-          picks from this list, and picking a name fills in their organization.
-        </span>
-      </Panel>
 
       {/* Why a banner and not a toast: the delete may be refused for a reason
           the user has to act on (retire the inspector as Inactive instead). It

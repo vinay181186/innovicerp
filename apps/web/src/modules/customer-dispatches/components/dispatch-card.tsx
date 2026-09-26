@@ -107,9 +107,7 @@ export function DispatchCard(props: {
             {g.code}
           </span>
           <span className="fw-700" style={{ fontSize: 13 }}>{g.customer ?? '—'}</span>
-          <span className={`badge ${cancelled ? 'b-grey' : 'b-green'}`}>
-            {cancelled ? 'Cancelled' : 'Dispatched'}
-          </span>
+          {cancelled ? <span className="badge b-grey">Cancelled</span> : null}
           <span style={{ flex: 1 }} />
           {/* Stop the row-toggle when clicking an action button. */}
           {!cancelled ? (
@@ -150,7 +148,7 @@ export function DispatchCard(props: {
           }}
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <QtyBox label="Total Qty" value={`-${g.totalQty}`} color="var(--red)" />
+            <QtyBox label="Total Qty" value={g.totalQty} color="var(--red)" />
             <QtyBox label="Lines" value={g.lines.length} bordered />
           </div>
           <div
@@ -227,7 +225,7 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
                 {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
               </td>
               <td className="fw-700">{l.itemName}</td>
-              <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>-{l.qty}</td>
+              <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>{l.qty}</td>
               <td className="td-ctr">
                 <span className="badge b-grey">{l.uom ?? 'NOS'}</span>
               </td>

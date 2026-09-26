@@ -16,7 +16,6 @@ import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
-import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 import {
   uploadSoDocFile,
   useCreateSoDocument,
@@ -29,15 +28,6 @@ function fmtDate(iso: string | null): string {
   const d = iso.slice(0, 10);
   const [y, m, day] = d.split('-');
   return y && m && day ? `${day}-${m}-${y}` : d;
-}
-
-// Legacy renders the SO status through badge() (L19507/19535), whose map knows
-// Open→b-cyan, Closed/Completed→b-green, Cancelled→b-red, else b-grey.
-function soBadgeColor(status: string): string {
-  if (status === 'open') return 'cyan';
-  if (status === 'closed') return 'green';
-  if (status === 'cancelled') return 'red';
-  return 'grey';
 }
 
 function fmtSize(bytes: number | null): string {
@@ -107,32 +97,13 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
 
   return (
     <div>
-      {/* Stat cards (legacy L19531-19536) */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))',
-          gap: 8,
-          marginBottom: 16,
-        }}
-      >
-        <StatCard label="TOTAL FILES" value={String(data.totals.fileCount)} color="var(--green)" size={24} />
-        <StatCard
-          label="TOTAL SIZE"
-          value={`${(data.totals.totalSize / 1048576).toFixed(1)} MB`}
-          color="var(--cyan)"
-          size={18}
-        />
-        <StatCard label="QC DOCS" value={String(data.totals.qcCount)} color="var(--text2)" size={24} />
-        <StatCard label="ARCHIVED" value={String(data.totals.archivedCount)} color="var(--amber)" size={24} />
-        <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-          <div style={{ fontSize: 9, color: 'var(--text3)' }}>STATUS</div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>
-            <span className={`badge b-${soBadgeColor(data.so.status)}`}>
-              {soStatusLabel(data.so.status)}
-            </span>
-          </div>
-        </div>
+      {/* One count line in place of the old five stat tiles. */}
+      <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
+        <b className="mono" style={{ color: 'var(--text)' }}>
+          {data.totals.fileCount}
+        </b>{' '}
+        files · <b className="mono">{data.totals.qcCount}</b> QC ·{' '}
+        <b className="mono">{data.totals.archivedCount}</b> archived
       </div>
 
       {/* Action bar */}
@@ -210,27 +181,6 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
           onClose={() => setPreview(null)}
         />
       ) : null}
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  color,
-  size,
-}: {
-  label: string;
-  value: string;
-  color: string;
-  size: number;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-      <div style={{ fontSize: 9, color: 'var(--text3)' }}>{label}</div>
-      <div className="mono fw-700" style={{ fontSize: size, color }}>
-        {value}
-      </div>
     </div>
   );
 }

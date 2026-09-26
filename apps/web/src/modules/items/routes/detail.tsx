@@ -20,7 +20,7 @@
 //    would lose working behaviour.
 //  - NO Revision or Drawing no. (user decision 2026-09-21): both belong to the
 //    SO / JWSO line, not the item. An item that still carries a pre-cutover
-//    drawing file shows it under "Legacy drawing" so nothing already uploaded
+//    drawing file shows it under "Old Drawing" so nothing already uploaded
 //    goes missing; new items never get one.
 //  - The header is the shared <ItemBadge> at its 96 px size: product image
 //    (3D render), code, name. Click the picture to see it large.
@@ -386,10 +386,7 @@ function DrawingFilePair({
   }
   return (
     <div className="form-grp">
-      <span className="form-label">Legacy drawing</span>
-      <div className="form-help" style={{ marginBottom: 4 }}>
-        Legacy drawing (drawings now live on the SO line)
-      </div>
+      <span className="form-label">Old Drawing</span>
       <div style={{ fontWeight: 600, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {path ? (
           <>

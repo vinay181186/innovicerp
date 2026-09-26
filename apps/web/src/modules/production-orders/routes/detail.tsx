@@ -20,6 +20,7 @@ import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
+import { fmtJcDate } from '@/modules/job-cards/lib/fmt-jc-date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionOrder } from '../api';
 import { PoCloseForm } from '../components/po-close-form';
@@ -253,7 +254,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               {data.createdByName ?? '—'}
               <span className="text3 mono" style={{ fontSize: 11 }}>
                 {' '}
-                · {data.createdAt.slice(0, 10)}
+                · {fmtJcDate(data.createdAt)}
               </span>
             </Fact>
             <Fact label="Remarks">{data.remarks ?? '—'}</Fact>
@@ -267,18 +268,15 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--red)' }}>
           <div className="panel-hdr">
             <div className="panel-title" style={{ color: 'var(--red)' }}>
-              ⛔ Short closed on {data.shortClosedAt ? data.shortClosedAt.slice(0, 10) : '—'} by{' '}
+              ⛔ Short closed on {data.shortClosedAt ? fmtJcDate(data.shortClosedAt) : '—'} by{' '}
               {data.shortClosedByName ?? '—'} — {data.shortCloseReason ?? '—'}
             </div>
           </div>
           <div className="panel-body">
             <div className="text2" style={{ fontSize: 12, lineHeight: 1.6 }}>
-              No further work is allowed on this order or on Job Card{' '}
-              <span className="mono fw-700">{data.jcCodeText}</span> — production entry, QC, NC,
-              outsourcing, dispatch and edits are all refused. The {data.creditedQty ?? 0} piece
-              {(data.creditedQty ?? 0) === 1 ? '' : 's'} already credited to stock stay credited;
-              the pending {Math.max(0, data.orderQty - (data.creditedQty ?? 0))} went back to plan{' '}
-              <span className="mono fw-700">{data.planCodeText}</span>, which can be ordered again.
+              {data.creditedQty ?? 0} credited stay in stock;{' '}
+              {Math.max(0, data.orderQty - (data.creditedQty ?? 0))} Pending went back to Plan{' '}
+              <span className="mono fw-700">{data.planCodeText}</span>.
             </div>
           </div>
         </div>
@@ -295,8 +293,12 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <span className="badge b-grey">no job card</span>
             )}
           </div>
-          <div className="mono fw-700" style={{ fontSize: 14, color: 'var(--text)' }}>
-            {data.jcFinishedQty} <span className="text3">/ {data.orderQty}</span>
+          <div
+            className="mono fw-700"
+            style={{ fontSize: 14, color: 'var(--text)', cursor: 'help' }}
+            title="Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close credits this qty to stock."
+          >
+            {data.jcFinishedQty} <span className="text3">/ {data.orderQty} ?</span>
           </div>
         </div>
         <div className="panel-body">
@@ -317,16 +319,11 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               }}
             />
           </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-            Finished qty is the output of the Job Card&apos;s last operation (QC-accepted where the
-            last op is QC). This is the qty Close will credit to stock.
-            {data.jcClosedAt ? (
-              <>
-                {' '}
-                JC closed on <span className="mono">{data.jcClosedAt.slice(0, 10)}</span>.
-              </>
-            ) : null}
-          </div>
+          {data.jcClosedAt ? (
+            <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
+              JC closed on <span className="mono">{fmtJcDate(data.jcClosedAt)}</span>.
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -372,7 +369,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 {data.lostQty ?? '—'}
               </Fact>
               <Fact label="Close Date" mono>
-                {data.closedAt ? data.closedAt.slice(0, 10) : '—'}
+                {data.closedAt ? fmtJcDate(data.closedAt) : '—'}
               </Fact>
             </div>
           </div>

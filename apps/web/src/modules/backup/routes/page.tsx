@@ -114,18 +114,6 @@ function BackupPage(): React.JSX.Element {
         }}
       >
         <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 9 }}>COLLECTIONS</div>
-          <div className="mono fw-700" style={{ fontSize: 24, color: 'var(--cyan)' }}>
-            {collections.length}
-          </div>
-        </div>
-        <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 9 }}>TOTAL RECORDS</div>
-          <div className="mono fw-700" style={{ fontSize: 24, color: 'var(--green)' }}>
-            {total.toLocaleString('en-IN')}
-          </div>
-        </div>
-        <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
           <div className="text3" style={{ fontSize: 9 }}>BACKUP SCHEDULE</div>
           <div className="mono fw-700" style={{ fontSize: 12, color: 'var(--green)' }}>
             Daily 02:00 IST<br />→ Backblaze B2
@@ -155,10 +143,7 @@ function BackupPage(): React.JSX.Element {
           </button>
         </div>
         <div className="text3" style={{ fontSize: 11, marginTop: 10, lineHeight: 1.6 }}>
-          ℹ Download a full JSON snapshot of every collection (max 5,000 rows per table for the
-          on-demand path). For complete daily backups, the production system writes a
-          <span className="mono"> pg_dump</span> to Backblaze B2 each night at 02:00 IST per{' '}
-          <span className="mono">docs/RUNBOOK.md</span>.
+          Max 5,000 rows per table. Full backup runs every night.
         </div>
         {download.isError ? (
           <div
@@ -177,28 +162,6 @@ function BackupPage(): React.JSX.Element {
               : 'Could not download backup. Try again.'}
           </div>
         ) : null}
-      </div>
-
-      {/* Restore / Factory Reset — informational only */}
-      <div
-        className="panel"
-        style={{
-          padding: 16,
-          marginBottom: 16,
-          border: '1px solid var(--amber)',
-          background: 'rgba(245,158,11,0.03)',
-        }}
-      >
-        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--amber)', marginBottom: 8 }}>
-          📥 Restore / Factory Reset
-        </div>
-        <div className="text2" style={{ fontSize: 12, lineHeight: 1.6 }}>
-          Restores happen out-of-band via the documented runbook (
-          <span className="mono">docs/RUNBOOK.md</span> → "Restore from Backup"). They require:
-          (1) cutting traffic, (2) restoring the <span className="mono">pg_dump</span> into a new
-          Supabase project, (3) cutting DNS to the new instance. Factory Reset is not exposed in
-          the app — contact the admin if you need a go-live cleanup.
-        </div>
       </div>
 
       {/* Collection details */}
@@ -236,8 +199,7 @@ function BackupPage(): React.JSX.Element {
                     <td>
                       <span className="fw-700" style={{ color: 'var(--cyan)', fontSize: 12 }}>
                         {c.label}
-                      </span>{' '}
-                      <span className="mono text3" style={{ fontSize: 10 }}>({c.table})</span>
+                      </span>
                     </td>
                     <td className="td-ctr mono fw-700">{c.count.toLocaleString('en-IN')}</td>
                   </tr>

@@ -441,7 +441,11 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                   <span>
                     Line {idx + 1}
                     {locked ? (
-                      <span className="badge b-green" style={{ marginLeft: 8 }}>
+                      <span
+                        className="badge b-green"
+                        style={{ marginLeft: 8 }}
+                        title="QC done — fix via a reversing GRN line."
+                      >
                         QC locked
                       </span>
                     ) : null}
@@ -631,13 +635,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                     )}
                   </div>
                 </div>
-
-                {locked ? (
-                  <div className="form-help" style={{ marginTop: 4 }}>
-                    QC fields are locked once QC is marked complete. To correct a wrong accept,
-                    create a reversing GRN line on the same PO.
-                  </div>
-                ) : null}
               </div>
             );
           })}

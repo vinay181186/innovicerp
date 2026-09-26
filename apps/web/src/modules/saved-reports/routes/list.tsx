@@ -28,10 +28,7 @@ function SavedReportsListPage() {
             <Sparkles className="mt-1 h-6 w-6 text-muted-foreground" />
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Saved reports</h1>
-              <p className="text-sm text-muted-foreground">
-                Drag-and-drop builder layered on the engine — pick a source, choose columns +
-                filters, save and re-run.
-              </p>
+              <p className="text-sm text-muted-foreground">Build and save your own reports.</p>
             </div>
           </div>
           <Button asChild>

@@ -393,7 +393,6 @@ function VendorsListPage(): React.JSX.Element {
         shown={visibleRows.length}
         noun="vendor"
         limit={LIST_LIMIT}
-        hint="Click a row to open the vendor. Click a count above to filter by status."
         // Legacy L27776-27779: Excel template + import sit below the count
         // line. The file input is hidden and only opened by the button.
         actions={

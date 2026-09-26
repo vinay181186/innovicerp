@@ -615,9 +615,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           {errors.header?.clientId?.message ? (
             <div className="form-error">{errors.header.clientId.message}</div>
           ) : null}
-          <div className="form-help">
-            JWSOs must reference a customer from the master. Not listed? Use <b>+ New</b>.
-          </div>
         </div>
 
         <div className="form-grp form-span-2">
@@ -836,7 +833,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
                     <td>
-                      <select className="innovic-select" title="Leave blank unless the customer ships parts for you to assemble." {...register(`lines.${idx}.sourceBomMasterId` as const)}>
+                      <select className="innovic-select" {...register(`lines.${idx}.sourceBomMasterId` as const)}>
                         <option value="">— none (plain machining) —</option>
                         {jwUsableBoms.map((b) => (
                           <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName}</option>

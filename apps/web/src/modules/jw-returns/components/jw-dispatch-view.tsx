@@ -217,11 +217,6 @@ export function JwDispatchView({
         )}
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 JW Return sends machined goods back to the customer against a JWSO line. Return qty
-        cannot exceed what has been produced (QC-accepted) minus already returned.
-      </div>
-
       {showModal ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}
     </div>
   );

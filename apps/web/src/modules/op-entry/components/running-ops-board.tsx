@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtJcDate } from '@/modules/job-cards/lib/fmt-jc-date';
 import { useStopOp } from '../api';
 import { RunningOpStatusBadge } from './status-badge';
 import { StopOpModal } from './stop-op-modal';
@@ -122,17 +123,16 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                 <th>Actual Machine</th>
                 <th>Operator</th>
                 <th>Started</th>
-                <th>Op Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {running.length === 0 ? (
                 <tr>
-                  {/* Twelve columns since Planned Machine and Actual Machine
+                  {/* Eleven columns since Planned Machine and Actual Machine
                       each get their own column — the empty row must span the
                       whole table or it draws short. */}
-                  <td colSpan={12} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     No ops currently running.
                   </td>
                 </tr>
@@ -163,10 +163,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                     </td>
                     <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
                     <td className="mono" style={{ fontSize: 11 }}>
-                      {r.startDate} {r.startTime.slice(0, 5)}
-                    </td>
-                    <td>
-                      <RunningOpStatusBadge status={r.status} />
+                      {fmtJcDate(r.startDate)} {r.startTime.slice(0, 5)}
                     </td>
                     <td>
                       {canOpEntry ? (

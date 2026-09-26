@@ -298,9 +298,6 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">Documents ({files.length})</div>
-        <span className="text3" style={{ fontSize: 11 }}>
-          Uploaded from the JWSO form (Client PO No.)
-        </span>
       </div>
       <div className="tbl-wrap">
         <table className="innovic-table">
@@ -496,7 +493,6 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
           )
         }
       />
-      <StripItem label="JWSO Status" value={<SoStatusBadge status={detail.status} />} />
       <StripItem label="🟢 Customer Material" value={detail.clientMaterial ?? '—'} />
       <StripItem label="Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>

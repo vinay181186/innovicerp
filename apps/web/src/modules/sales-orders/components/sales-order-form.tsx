@@ -791,9 +791,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           through it: the client rule, plus the two attachment pickers that sat
           as dashed pills inside the Client PO group. Same inputs, same handlers. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', fontSize: 11, marginBottom: 14 }}>
-        <span className="text3">
-          Customer must exist in master — use <b style={{ color: 'var(--blue)' }}>+ New</b> if not listed.
-        </span>
         {poFileName ? (
           <span style={{ color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{poFileName}</span>
@@ -830,7 +827,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       {isEquip ? (
         /* ── Equipment Details (legacy L12258) ── */
         <div>
-          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', margin: '4px 0 8px' }}>EQUIPMENT DETAILS</div>
+          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', margin: '4px 0 8px' }}>Equipment</div>
           <div className="form-grid">
             <div className="form-grp">
               {/* "Parent Item" not "Part No.": this is the assembly a BOM
@@ -958,7 +955,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   )}
                 </div>
               ) : null}
-              <div className="form-help">Attached automatically from the parent item — only active BOMs are matched. Equipment value total = SO Value × Order Qty.</div>
+              <div className="form-help">Auto-filled from the parent item.</div>
             </div>
           </div>
         </div>
@@ -982,8 +979,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               heading rather than as a separate note under the table. */}
           <div style={{ margin: '4px 0 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>SO LINE ITEMS</span>
-              <span className="text3" style={{ fontSize: 11 }}>Items must exist in Item Master</span>
+              <span style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>Line Items</span>
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => downloadSoLineTemplate()}>Template</button>
@@ -1139,7 +1135,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 <span className="mono fw-700 amber">₹{inrFormat(gstAmt)}</span>
               </span>
               <span style={{ fontSize: 12 }}>
-                <span className="green" style={{ fontWeight: 800 }}>GRAND TOTAL </span>
+                <span className="green" style={{ fontWeight: 800 }}>Grand Total </span>
                 <span className="mono fw-700 green" style={{ fontSize: 16 }}>₹{inrFormat(grand)}</span>
               </span>
             </div>
@@ -1153,9 +1149,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: msFields.length === 0 ? '8px 14px' : 12, marginTop: 12, background: 'var(--bg3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: msFields.length === 0 ? 0 : 8 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)', letterSpacing: '0.04em' }}>DELIVERY SCHEDULE / MILESTONES</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)', letterSpacing: '0.04em' }}>Delivery Schedule</span>
                 {msFields.length === 0 ? (
-                  <span className="text3" style={{ fontSize: 11 }}>No lots — full qty on the due date. Add lots for staggered delivery.</span>
+                  <span className="text3" style={{ fontSize: 11 }}>Full qty on the Due Date.</span>
                 ) : null}
               </div>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => appendMs({ ...NEW_MILESTONE, lotNo: msFields.length + 1 })}><Plus size={13} /> Add Lot</button>
@@ -1272,7 +1268,7 @@ function QuickAddClient({
           <input className="innovic-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
         </div>
         <div className="form-grp">
-          <label className="form-label">GST No.</label>
+          <label className="form-label">GSTIN</label>
           <input className="innovic-input" value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} placeholder="Optional" />
         </div>
         <div className="form-help">Code auto-generates (CLI-###).</div>

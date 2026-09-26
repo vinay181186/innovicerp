@@ -114,7 +114,6 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
               setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
             })}
           />
-          <div className="form-help">Generated automatically in series (VND-…) when you save.</div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">

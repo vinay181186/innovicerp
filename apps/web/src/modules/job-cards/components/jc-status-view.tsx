@@ -7,9 +7,9 @@
 //                     (NC) / Pending tiles · due date · priority · status
 //   D  route flow     the wrapping strip of fixed-size operation cards
 //   E  operations     one card per op — expanded for the current op and the
-//                     next one, collapsed rows for the rest; Show All
-//                     Operations Expanded / Expand All at the section's right
-//   F  tabs           Documents & Quality | Remarks | Related Records | History
+//                     next one, collapsed rows for the rest; Expand All at
+//                     the section's right
+//   F  tabs           Documents & Quality | Related Records | History
 //
 // Same data hooks as before (useJobCard, useJcOpsEnriched, useOpLog,
 // useJobCardStatusExtras, useJobCardEditModel for the live drawing, useMyCompany
@@ -72,7 +72,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
 
-  const [flowOpen, setFlowOpen] = useState(true);
+  const [flowOpen, setFlowOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(true);
   const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
 
@@ -136,8 +136,8 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
 
   // ── Which op cards are open ──
   // Default: the CURRENT op (lowest-seq op not complete) and the one after it;
-  // on a finished card, the last op. `Show All Operations Expanded` overrides
-  // that for every op; `Expand All` / `Collapse All` writes the per-op set.
+  // on a finished card, the last op. `Expand All` / `Collapse All` writes the
+  // per-op set.
   const defaultOpen = useMemo(() => {
     const cur = currentOp(sortedOps) ?? sortedOps[sortedOps.length - 1];
     if (!cur) return new Set<string>();
@@ -145,22 +145,12 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
     const next = sortedOps[i + 1];
     return new Set<string>([cur.id, ...(next ? [next.id] : [])]);
   }, [sortedOps]);
-  const [showAll, setShowAll] = useState(false);
   // null = the default set (so the default follows the data until the user
   // touches a card); a Set once the user has.
   const [openIds, setOpenIds] = useState<Set<string> | null>(null);
   const effectiveOpen = openIds ?? defaultOpen;
-  const isOpen = (opId: string): boolean => showAll || effectiveOpen.has(opId);
+  const isOpen = (opId: string): boolean => effectiveOpen.has(opId);
   const toggleOp = (opId: string): void => {
-    if (showAll) {
-      // Collapsing one card while "all" is on: drop the override and keep
-      // every other card open, exactly as the user sees them.
-      setShowAll(false);
-      const next = new Set(sortedOps.map((o) => o.id));
-      next.delete(opId);
-      setOpenIds(next);
-      return;
-    }
     const next = new Set(effectiveOpen);
     if (next.has(opId)) next.delete(opId);
     else next.add(opId);
@@ -238,12 +228,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           </button>
         ) : null}
         {canWrite && !stopped ? (
-          <Link
-            to="/job-cards/$id/edit"
-            params={{ id }}
-            className="btn btn-ghost btn-sm"
-            title="Edit this Job Card — add/route ops, or outsource an operation's pending qty"
-          >
+          <Link to="/job-cards/$id/edit" params={{ id }} className="btn btn-ghost btn-sm">
             <Pencil size={14} /> Edit Job Card
           </Link>
         ) : null}
@@ -260,7 +245,6 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         ops={ops}
         opsLoaded={opsLoaded}
         sortedOps={sortedOps}
-        rmAvailable={extras?.rmAvailable ?? null}
         actualSize={productionOrder?.actualSize ?? null}
         drawing={drawingRef}
         onOpenDrawing={openDrawing}
@@ -293,35 +277,11 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           right={
             sortedOps.length > 0 ? (
               <>
-                <label
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 12,
-                    color: 'var(--text2)',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={showAll}
-                    onChange={(e) => {
-                      setShowAll(e.target.checked);
-                      // Turning it off returns to the default set, not to
-                      // whatever was open before — the plain reading of "off".
-                      if (!e.target.checked) setOpenIds(null);
-                    }}
-                  />
-                  Show All Operations Expanded
-                </label>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
                   onClick={() => {
                     if (allOpen) {
-                      setShowAll(false);
                       setOpenIds(new Set());
                     } else {
                       setOpenIds(new Set(sortedOps.map((o) => o.id)));
@@ -381,7 +341,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         ) : null}
       </div>
 
-      {/* ── F. Documents & Quality | Remarks | Related Records | History ── */}
+      {/* ── F. Documents & Quality | Related Records | History ── */}
       <JcViewTabs
         jc={jc}
         ops={ops}

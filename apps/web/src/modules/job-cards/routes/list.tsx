@@ -553,7 +553,7 @@ function JobCardsListPage(): React.JSX.Element {
               <Link
                 to="/job-cards/new"
                 className="btn btn-ghost"
-                title="Job Work Sales Orders (JWSO) only. Sales Order items are created via Planning."
+                title="JWSO only. Sales Order items: Planning → Production Order."
               >
                 + New JWSO Job Card
               </Link>
@@ -566,20 +566,12 @@ function JobCardsListPage(): React.JSX.Element {
             figures: no onClick, no filtering. */}
         <StatStrip
           items={[
-            { key: 'total', label: 'Total Job Cards', count: kpis.total, color: 'var(--cyan)' },
             { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber)' },
             {
               key: 'in_progress',
               label: 'In Progress',
               count: kpis.inProgress,
               color: 'var(--blue)',
-            },
-            {
-              key: 'on_hold',
-              label: 'On Hold',
-              count: kpis.onHold,
-              color: 'var(--text3)',
-              title: 'Job cards have no On Hold state yet, so this always shows 0',
             },
             {
               key: 'completed',
@@ -590,9 +582,6 @@ function JobCardsListPage(): React.JSX.Element {
             { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red)' },
           ]}
         />
-        <div className="text3" style={{ fontSize: 'var(--fs-xs)', margin: 'var(--sp-1) 0' }}>
-          Counts reflect the currently loaded / filtered list, not every job card in the system.
-        </div>
 
         <FilterBar
           search={searchInput}
@@ -897,7 +886,6 @@ function JobCardsListPage(): React.JSX.Element {
           {...(totalPages > 1 && view === 'list'
             ? { page: currentPage, pageSize: PAGE_SIZE, onPage: gotoPage }
             : {})}
-          hint="Click a row to open the job card."
         />
       )}
     </div>

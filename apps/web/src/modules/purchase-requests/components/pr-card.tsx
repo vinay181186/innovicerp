@@ -38,6 +38,7 @@ import {
   prOrderBalance,
 } from '../lib/pr-balance';
 import { PrStatusBadge } from './pr-status-badge';
+import { PR_TYPE_LABELS } from '../lib/pr-labels';
 
 /** Accent bar: how much of this request is actually on order (ADR-152) — amber
  *  none of it yet, blue part of it, green all of it, red over-ordered, grey
@@ -214,12 +215,12 @@ export function PrCard({
             </span>
           ) : null}
           {/* Type tag — only when it is NOT a plain buy, so a normal PR row stays
-              as clean as it was. SVC becomes a Service PO (sends the item out on
-              a DC); OSP is the system-raised outsource PR. */}
+              as clean as it was. Service becomes a Service PO (sends the item out
+              on a DC); JW OSP is the system-raised outsource PR. */}
           {pr.prType === 'service' ? (
-            <span className="badge b-teal">SVC</span>
+            <span className="badge b-teal">{PR_TYPE_LABELS[pr.prType]}</span>
           ) : pr.prType === 'jw_osp' ? (
-            <span className="badge b-amber">OSP</span>
+            <span className="badge b-amber">{PR_TYPE_LABELS[pr.prType]}</span>
           ) : null}
           <span style={{ flex: 1 }} />
           {/* Row actions do something OTHER than open the PR, so the card's
@@ -272,7 +273,7 @@ export function PrCard({
                 className="btn btn-sm btn-success"
                 style={{ fontSize: 10 }}
               >
-                📝 PO
+                Create PO
               </Link>
             ) : null}
             {pr.status === 'po_created' && pr.poId && pr.poCode ? (
@@ -360,13 +361,13 @@ export function PrCard({
             {pr.approvedAt ? (
               <>
                 <span>·</span>
-                <span style={{ color: 'var(--blue)' }}>✔ {pr.approvedAt.slice(0, 10)}</span>
+                <span style={{ color: 'var(--blue)' }}>Approved {pr.approvedAt.slice(0, 10)}</span>
               </>
             ) : null}
             {pr.poCreatedAt ? (
               <>
                 <span>·</span>
-                <span style={{ color: 'var(--green)' }}>📝 {pr.poCreatedAt.slice(0, 10)}</span>
+                <span style={{ color: 'var(--green)' }}>PO {pr.poCreatedAt.slice(0, 10)}</span>
               </>
             ) : null}
             {bal.closed ? (

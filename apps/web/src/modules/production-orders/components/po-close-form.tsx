@@ -180,8 +180,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           <b style={{ color: 'var(--amber)' }}>Finish Short</b>
           <span className="text3">
             {' '}
-            — finish this Production Order now even though {po.remainingQty} of {po.orderQty} are
-            not made. The shortfall is recorded as lost; give the reason above.
+            — finish now; {po.remainingQty} of {po.orderQty} not made are recorded as lost.
           </span>
         </span>
       </label>

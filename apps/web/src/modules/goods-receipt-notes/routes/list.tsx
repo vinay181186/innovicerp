@@ -197,18 +197,12 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         >
           <div>
             <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📥 Goods Receipt Note (GRN)
+              📥 Goods Receipt Notes
             </div>
             {/* Count comes from the list response's `total` — the whole book,
                 not just the page on screen. */}
             <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
               {total} GRN{total === 1 ? '' : 's'}
-              {search.qcStatus ? (
-                <>
-                  {' '}
-                  · <span className="text2">{GRN_QC_STATUS_LABELS[search.qcStatus]}</span> only
-                </>
-              ) : null}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -452,7 +446,8 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                       <>
                         <span>·</span>
                         <span style={{ whiteSpace: 'nowrap' }}>
-                          DC <span className="text2">{grn.dcNo}</span>
+                          {grn.deliveryChallanId ? 'DC No.' : 'Vendor Challan No.'}{' '}
+                          <span className="text2">{grn.dcNo}</span>
                         </span>
                       </>
                     ) : null}
@@ -460,12 +455,16 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                       <>
                         <span>·</span>
                         <span style={{ whiteSpace: 'nowrap' }}>
-                          Inv <span className="text2">{grn.invoiceNo}</span>
+                          Vendor Invoice No. <span className="text2">{grn.invoiceNo}</span>
                         </span>
                       </>
                     ) : null}
-                    <span>·</span>
-                    <span title={grn.remarks ?? ''}>{grn.remarks || '—'}</span>
+                    {grn.remarks ? (
+                      <>
+                        <span>·</span>
+                        <span title={grn.remarks}>{grn.remarks}</span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
@@ -483,8 +482,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
       {/* Legacy L26502-26503 — plain tip line under the register. */}
       <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        💡 GRN creates receipt record with <b>QC Pending</b> status. Go to <b>Incoming QC</b> to
-        inspect and accept/reject. Only QC-accepted qty moves to Store inventory.
+        Only QC-accepted qty goes into stock.
       </div>
 
       <div
@@ -689,7 +687,6 @@ function GrnKpiStrip({
             label: 'QC Pending',
             count: summary.qcPending,
             color: 'var(--amber)',
-            sub: '→ Go to Incoming QC',
             onClick: () => onSelectStatus('pending'),
             active: activeStatus === 'pending',
           },

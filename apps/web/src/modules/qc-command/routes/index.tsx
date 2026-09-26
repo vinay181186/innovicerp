@@ -32,9 +32,9 @@ export const qcCommandRoute = createRoute({
 
 type Tab = 'queue' | 'fpy' | 'pareto' | 'inspector' | 'rework';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'queue', label: '📝 QC Queue' },
+  { id: 'queue', label: '📝 Assign Inspector' },
   { id: 'fpy', label: '📈 First-Pass Yield' },
-  { id: 'pareto', label: '📊 Rejection Pareto' },
+  { id: 'pareto', label: '📊 Top Rejection Reasons' },
   { id: 'inspector', label: '👤 Inspector Performance' },
   { id: 'rework', label: '🔄 Rework Cycles' },
 ];
@@ -164,8 +164,7 @@ function QcCommandPage(): React.JSX.Element {
                   color: tab === t.id ? 'var(--red)' : 'var(--text3)',
                 }}
               >
-                {/* Legacy L18644 suffixes the queue tab with the pending count. */}
-                {t.id === 'queue' ? `${t.label} (${stats?.pendingOps ?? 0})` : t.label}
+                {t.label}
               </div>
             ))}
           </div>

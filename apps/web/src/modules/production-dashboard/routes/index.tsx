@@ -110,13 +110,12 @@ function ProductionDashboardPage(): React.JSX.Element {
               <div className="stat-label">Open Job Cards</div>
               <div className="stat-val cyan">{c?.openJc ?? 0}</div>
               <div className="stat-sub">
-                {c?.totalJc ?? 0} total · {c?.noOpsJc ?? 0} no-ops
+                {c?.totalJc ?? 0} total · {c?.noOpsJc ?? 0} without operations
               </div>
             </div>
             <div className="stat-card amber">
-              <div className="stat-label">Total Pending Components</div>
+              <div className="stat-label">Pending Qty (pcs)</div>
               <div className="stat-val amber">{c?.pendingQty ?? 0}</div>
-              <div className="stat-sub">pcs still to be manufactured</div>
             </div>
             <div
               className="stat-card"

@@ -613,9 +613,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             </span>
             {props.mode === 'edit' ? <span className="pof-chip">{props.detail.code}</span> : null}
           </span>
-          <span className="pof-hdr-note">
-            Fields marked <span className="pof-req">★</span> are required
-          </span>
         </div>
 
         {/* ── Header: five fields, one row (six in edit — plus read-only Status). */}
@@ -787,10 +784,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
         {/* ── Lines. */}
         <div className="pof-band">
-          <span className="pof-band-t">
-            PO Line Items
-            <span className="pof-band-sub">carried from PR — editable</span>
-          </span>
+          <span className="pof-band-t">Line Items</span>
           <span className="pof-band-r">
             {fields.length} line{fields.length === 1 ? '' : 's'} · Qty {totalQty}
           </span>
@@ -938,13 +932,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         ) : null}
 
         <div className="pof-foot">
-          {blocking ? (
-            <span className="pof-foot-msg">{blocking}</span>
-          ) : (
-            <span className="pof-foot-hint">
-              {isEdit ? 'Ready to save' : 'Ready to create this purchase order'}
-            </span>
-          )}
+          {/* Empty span when nothing blocks: keeps the buttons right-aligned. */}
+          {blocking ? <span className="pof-foot-msg">{blocking}</span> : <span />}
           <div className="pof-acts">
             <button
               type="button"

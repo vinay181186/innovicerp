@@ -393,24 +393,12 @@ function UsersListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      {/* Legacy L13469 tips this as "Edit manages everything ... all in one window" — that
-          describes legacy's _unifiedUserForm. This port deliberately splits it: Edit owns the
-          basic fields + approval limit + password, while department / form permissions live on
-          Access Control, and email is owned by Supabase Auth. Tip reworded to match what Edit
-          actually does — see ISSUE-021. */}
       <ListFooter
         total={total}
         noun="user"
         page={currentPage}
         pageSize={PAGE_SIZE}
         onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
-        hint={
-          <>
-            Click <b>✏ Edit</b> to manage a user: name, role, phone, status, PO approval limit and
-            password. Department + form permissions are managed on <b>Access Control</b>. Click{' '}
-            <b>+ Add User</b> to create a login and app account in one step.
-          </>
-        }
       />
     </div>
   );

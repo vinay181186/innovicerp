@@ -64,12 +64,9 @@ export function CancelPartyGrnModal({
           ⚠ Cancel {row.code}
         </div>
         <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          This takes <b style={{ color: 'var(--green)' }}>{row.totalReceivedQty}</b> back off party
-          material stock for <b>{row.jwCodeText ?? 'this JWSO'}</b>, and lowers how much production
-          that JWSO line is allowed to start. It cannot be undone.
-          <br />
-          If some of this material has already been issued to a Job Card, the cancel will be
-          refused — reverse the issue first.
+          Takes <b style={{ color: 'var(--green)' }}>{row.totalReceivedQty}</b> off party stock for{' '}
+          <b>{row.jwCodeText ?? 'this JWSO'}</b>. Cannot be undone. Refused if already issued to a
+          Job Card.
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="pgrn-cancel-reason">

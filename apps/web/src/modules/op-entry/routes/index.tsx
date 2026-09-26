@@ -407,9 +407,7 @@ function OpEntryPage() {
               underneath. Applies to production AND QC inspection ops. */}
               <div className="panel" style={{ marginBottom: 16 }}>
                 <div className="panel-hdr">
-                  <span className="panel-title">
-                    Operations — press ▶ Start / ✚ Log on the row you are booking against
-                  </span>
+                  <span className="panel-title">Operations</span>
                 </div>
                 {ops.isError ? (
                   <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>

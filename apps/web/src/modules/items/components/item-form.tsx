@@ -221,7 +221,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
               className="fw-700"
               autoFocus
               autoComplete="off"
-              placeholder="e.g. ITM-0001 (auto — editable)"
+              placeholder="Auto on save"
               {...register('code', {
                 // Blank → undefined so the server auto-generates the next code;
                 // a kept/typed value is validated by the schema's code rules.

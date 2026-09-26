@@ -6,10 +6,9 @@
 // Markup follows design-ref/components/navigation/TopNav.jsx one-for-one —
 // `.topnav` > `.tn-logo` / `.tn-item` / `.tn-sec` > button + `▾ .tn-caret` /
 // `.tn-menu(.flip)` > `.tn-col` > `.tn-col-label` + `.tn-link` >
-// `.tn-link-icon`, then `.tn-right` > right cluster + `.tn-avatar`. Three
+// `.tn-link-icon`, then `.tn-right` > right cluster + `.tn-avatar`. Two
 // things here have no counterpart in the reference and are deliberate app
-// additions: `.tn-sync` (the connection indicator, audit/02 §e), the
-// `tn-mod-<dept>` / `open` hooks on `.tn-sec`, and the access gating below.
+// additions: the `tn-mod-<dept>` / `open` hooks on `.tn-sec`, and the access gating below.
 //
 // Same data as before: SECTIONS / ORDERED_SECTIONS in nav-sections.ts still
 // feed the breadcrumbs and the open-page tabs, so a page named here is named
@@ -37,7 +36,7 @@ import { canViewForm, useMyAccess } from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { signOut, useSession } from '@/lib/session';
 import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
-import { Icon, SyncDot } from '@/ui/core';
+import { Icon } from '@/ui/core';
 import { initials, ORDERED_SECTIONS, shouldShowSection, type NavSection } from './nav-sections';
 
 const OPEN_KEY_STORAGE = 'innovic.topnav.open';
@@ -203,13 +202,6 @@ export function TopNav(): React.JSX.Element {
 
       <div className="tn-right">
         <GlobalSearch />
-        {/* The `.tn-sync` wrapper keeps its hover title — SyncDot draws the
-            dot itself (and names its state for assistive tech) but takes no
-            title of its own. Hard-wired to "ok" as it has always been; there
-            is no connection-state source to read yet. */}
-        <span className="tn-sync" title="Connection status: synced">
-          <SyncDot state="ok" />
-        </span>
         <Link
           to="/change-password"
           className="btn btn-ghost btn-sm tn-iconbtn"

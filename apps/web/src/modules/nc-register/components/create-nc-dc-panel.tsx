@@ -90,17 +90,6 @@ export function CreateNcDcPanel(props: {
                 setVendorCodeText(id ? (label.split(' — ')[0] ?? label) : '');
               }}
             />
-            {nc.sourceVendorId ? (
-              <div className="form-grp form-full">
-                <span className="text3" style={{ fontSize: 11 }}>
-                  Original supplier:{' '}
-                  <span className="td-code" style={{ color: 'var(--text)' }}>
-                    {nc.sourceVendorCode ?? '—'}
-                  </span>
-                  {nc.sourceVendorName ? ` — ${nc.sourceVendorName}` : ''}
-                </span>
-              </div>
-            ) : null}
             <div className="form-grp">
               <label className="form-label" htmlFor="ncDcTransport">
                 Transport

@@ -172,21 +172,7 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
               >
                 + Receive
               </Link>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10 }}
-                disabled
-                title={
-                  dc.status === 'received'
-                    ? 'Already received back in full'
-                    : 'This DC was cancelled'
-                }
-              >
-                + Receive
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
 

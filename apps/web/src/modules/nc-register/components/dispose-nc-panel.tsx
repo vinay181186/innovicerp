@@ -11,7 +11,7 @@ import {
   type DisposeNcInput,
   type DisposeNcResult,
   NC_DISPOSITION_LABELS,
-  NC_REASON_CATEGORY_LABELS,
+  NC_STATUS_LABELS,
   type NcDisposition,
   type NcRegister,
   opSrNo,
@@ -19,7 +19,6 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { ncOpenQty } from '../nc-qty';
 import { Note } from './nc-note';
 
@@ -30,9 +29,6 @@ export interface JcOpOption {
 
 interface Props {
   nc: NcRegister;
-  // Human JC code (the NC read shape only carries jobCardId) for the context
-  // block. Resolved upstream from the JC's loaded ops.
-  jcCode?: string | null;
   // Full op list of the NC's JC (legacy `_disposeNC` renders every op). Only
   // used by the legacy in-route rework picker now. Empty = fall back to a free
   // number input / the NC's own op_seq.
@@ -41,6 +37,9 @@ interface Props {
   // for an L1/L2 QC hand, who must not be asked to type a cost the API then
   // blanks on read-back via `hideNcMoney`.
   canSeePrice: boolean;
+  // Scrap needs the approve tier on NC Register (server gate) — the option is
+  // not offered to a user who lacks it.
+  canApprove: boolean;
   onSubmit: (input: DisposeNcInput) => Promise<void> | void;
   onCancel: () => void;
   pending: boolean;
@@ -63,7 +62,7 @@ const ACTION_ORDER: readonly NcDisposition[] = [
 ];
 
 export function DisposeNcPanel(props: Props): React.JSX.Element {
-  const { nc, jcCode, jcOps, canSeePrice, onSubmit, onCancel, pending, error, result } = props;
+  const { nc, jcOps, canSeePrice, canApprove, onSubmit, onCancel, pending, error, result } = props;
 
   const openQty = ncOpenQty(nc);
   const [action, setAction] = useState<NcDisposition | ''>('');
@@ -86,14 +85,18 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   //   • vendor-sourced (GRN / OSP reject) → no in-house op to rework/repair, so
   //     those two are hidden; return_to_vendor stays.
   //   • in-house        → no vendor to return to, so return_to_vendor is hidden.
-  // scrap / use_as_is / make_fresh are always valid, so they always survive.
+  // scrap needs the approve tier; use_as_is needs the NC's operation (it puts
+  // the pieces back on it); make_fresh is always valid.
   const isVendorSourced = nc.sourceVendorId != null;
+  const hasOp = nc.opSeq != null && nc.jcOpId != null;
   const availableActions = useMemo<readonly NcDisposition[]>(
     () =>
-      ACTION_ORDER.filter((a) =>
-        isVendorSourced ? a !== 'rework' && a !== 'repair' : a !== 'return_to_vendor',
-      ),
-    [isVendorSourced],
+      ACTION_ORDER.filter((a) => {
+        if (a === 'scrap' && !canApprove) return false;
+        if (a === 'use_as_is' && !hasOp) return false;
+        return isVendorSourced ? a !== 'rework' && a !== 'repair' : a !== 'return_to_vendor';
+      }),
+    [isVendorSourced, canApprove, hasOp],
   );
 
   const reworkOps = useMemo<JcOpOption[]>(() => {
@@ -128,54 +131,9 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   return (
     <div className="panel">
       <div className="panel-hdr">
-        <div className="panel-title">✏ Disposition — {nc.code}</div>
-        <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-          Open qty: <b style={{ color: 'var(--text)' }}>{openQty}</b> of {Number(nc.rejectedQty)}{' '}
-          rejected
-        </span>
+        <div className="panel-title">Disposition</div>
       </div>
       <div className="panel-body">
-        {/* Context block — legacy `_disposeNC` header (HTML L22621-22628). */}
-        <div
-          style={{
-            padding: '10px 14px',
-            background: 'var(--bg3)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            marginBottom: 14,
-            display: 'flex',
-            gap: 16,
-            flexWrap: 'wrap',
-          }}
-        >
-          <CtxField label="JC NO.">
-            <span className="mono" style={{ color: 'var(--cyan)' }}>
-              {jcCode ?? '—'}
-            </span>
-          </CtxField>
-          <CtxField label="ITEM CODE">
-            {/* Whoever disposes an NC is deciding against a drawing, so this
-                context field shows the live item code with its revision — the
-                same joined pair the list and the detail header show. It falls
-                back to itemCodeText, the reporter's typed snapshot, bare. */}
-            {nc.itemCode ? itemCodeWithRev(nc.itemCode, nc.itemRevision) : nc.itemCodeText}
-            {nc.itemNameText ? ` ${nc.itemNameText}` : ''}
-          </CtxField>
-          <CtxField label="OPERATION">
-            {/* Op numbers show in tens (display rule, see opSrNo). */}
-            {nc.opSeq != null ? `Op${opSrNo(nc.opSeq)}` : ''}
-            {nc.opSeq != null && (nc.operationText ?? nc.qcOperationText) ? ': ' : ''}
-            {nc.operationText ?? nc.qcOperationText ?? (nc.opSeq == null ? '—' : '')}
-          </CtxField>
-          <CtxField label="REJECTED">
-            <span className="red">{Number(nc.rejectedQty)} pcs</span>
-          </CtxField>
-          <CtxField label="REASON">
-            {NC_REASON_CATEGORY_LABELS[nc.reasonCategory]}
-            {nc.reason ? ` — ${nc.reason}` : ''}
-          </CtxField>
-        </div>
-
         {result ? (
           <DisposeOutcome result={result} onClose={onCancel} />
         ) : (
@@ -192,7 +150,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                   onChange={(e) => setAction(e.target.value as NcDisposition | '')}
                   required
                 >
-                  <option value="">-- Select Action --</option>
+                  <option value="">-- Select Disposition --</option>
                   {availableActions.map((a) => (
                     <option key={a} value={a}>
                       {NC_DISPOSITION_LABELS[a]}
@@ -226,9 +184,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                   <div className="form-error">Enter a whole number from 1 to {openQty}.</div>
                 ) : null}
                 {qtyValid && remainder > 0 ? (
-                  <div className="form-help">
-                    The other {remainder} pcs stay as a separate pending NC.
-                  </div>
+                  <div className="form-help">New NC for the other {remainder} pcs.</div>
                 ) : null}
               </div>
 
@@ -247,7 +203,9 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                       }
                     >
                       <option value="">
-                        {nc.opSeq != null ? `Defaults to op ${opSrNo(nc.opSeq)}` : '— pick op —'}
+                        {nc.opSeq != null
+                          ? `Defaults to Op ${opSrNo(nc.opSeq)}`
+                          : '-- Select Op --'}
                       </option>
                       {reworkOps.map((o) => (
                         <option key={o.opSeq} value={o.opSeq}>
@@ -274,32 +232,23 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 </div>
               ) : null}
 
-              {action === 'scrap' ? (
-                canSeePrice ? (
-                  <div className="form-grp form-full">
-                    <label className="form-label" htmlFor="dispScrapCost">
-                      Scrap Cost (₹)
-                    </label>
-                    <input
-                      id="dispScrapCost"
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className="innovic-input"
-                      value={scrapCost === '' ? '' : scrapCost}
-                      onChange={(e) =>
-                        setScrapCost(e.target.value === '' ? '' : Number(e.target.value))
-                      }
-                    />
-                  </div>
-                ) : (
-                  <div className="form-grp form-full">
-                    <div className="form-help">
-                      Scrap cost is hidden for your access level — this NC will be saved with no
-                      scrap cost recorded.
-                    </div>
-                  </div>
-                )
+              {action === 'scrap' && canSeePrice ? (
+                <div className="form-grp form-full">
+                  <label className="form-label" htmlFor="dispScrapCost">
+                    Scrap Cost (₹)
+                  </label>
+                  <input
+                    id="dispScrapCost"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="innovic-input"
+                    value={scrapCost === '' ? '' : scrapCost}
+                    onChange={(e) =>
+                      setScrapCost(e.target.value === '' ? '' : Number(e.target.value))
+                    }
+                  />
+                </div>
               ) : null}
 
               <div className="form-grp form-full">
@@ -320,13 +269,9 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             {/* What each choice will DO — the user reads this before Save. */}
             {isRecovery && !isLegacyRework ? (
               <Note tone="blue">
-                A child {action === 'rework' ? 'Rework' : 'Repair'} Job Card will be raised for{' '}
-                {noteQty} pcs. Define its operations on that card; it ends in QC.
+                Creates a {action === 'rework' ? 'Rework' : 'Repair'} JC for {noteQty} pcs. Add its
+                operations there.
               </Note>
-            ) : null}
-
-            {action === 'scrap' ? (
-              <Note tone="amber">Requires approve rights on NC Register.</Note>
             ) : null}
 
             {action === 'return_to_vendor' ? (
@@ -335,17 +280,8 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
               </Note>
             ) : null}
 
-            {action === 'use_as_is' && (nc.opSeq == null || nc.jcOpId == null) ? (
-              <Note tone="amber">
-                ⚠ Use As Is is not possible: this NC has no operation. Choose another disposition.
-              </Note>
-            ) : null}
-
             {action === 'make_fresh' ? (
-              <Note tone="blue">
-                A supplementary JC will be created with qty {noteQty} and the origin&apos;s source
-                SO/JW link inherited. Code: <span className="mono">&lt;origin&gt;-S&lt;n&gt;</span>.
-              </Note>
+              <Note tone="blue">Creates a new JC for {noteQty} pcs on the same SO.</Note>
             ) : null}
 
             {error ? <Note tone="red">{error}</Note> : null}
@@ -381,30 +317,28 @@ function DisposeOutcome(props: {
   return (
     <div>
       <Note tone="green">
-        Disposition saved — {nc.code} is now{' '}
-        <b>{nc.disposition ? NC_DISPOSITION_LABELS[nc.disposition] : nc.status}</b> for{' '}
-        {Number(nc.rejectedQty)} pcs.
+        Saved — {nc.code}:{' '}
+        <b>
+          {nc.disposition ? NC_DISPOSITION_LABELS[nc.disposition] : NC_STATUS_LABELS[nc.status]}
+        </b>{' '}
+        for {Number(nc.rejectedQty)} pcs.
       </Note>
       {childJobCardId && childJobCardCode ? (
         <div style={{ marginTop: 10, fontSize: 12 }}>
-          <span className="text3">Child Job Card raised:</span>{' '}
+          <span className="text3">{nc.disposition === 'repair' ? 'Repair' : 'Rework'} JC:</span>{' '}
           <Link
             to="/job-cards/$id"
             params={{ id: childJobCardId }}
             className="mono fw-700"
             style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-            title="Open the child job card to define its operations"
           >
             {childJobCardCode}
-          </Link>{' '}
-          <span className="text3">— define its operations there; it ends in QC.</span>
+          </Link>
         </div>
       ) : null}
       {remainderNc ? (
         <div style={{ marginTop: 6, fontSize: 12 }}>
-          <span className="text3">
-            Remainder NC ({Number(remainderNc.rejectedQty)} pcs, pending):
-          </span>{' '}
+          <span className="text3">New NC for the other {Number(remainderNc.rejectedQty)} pcs:</span>{' '}
           <Link
             to="/nc-register/$id"
             params={{ id: remainderNc.id }}
@@ -420,16 +354,6 @@ function DisposeOutcome(props: {
           Done
         </button>
       </div>
-    </div>
-  );
-}
-
-function CtxField(props: { label: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div>
-      <span style={{ fontSize: 10, color: 'var(--text3)' }}>{props.label}</span>
-      <br />
-      <b>{props.children}</b>
     </div>
   );
 }

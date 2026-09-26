@@ -188,7 +188,7 @@ export function QcCallInspectModal({
              shown while access is still loading, or every inspector would see
              it flash. */
           <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
-            Your access lets you view this queue but not record an inspection.
+            View only.
           </div>
         ) : null}
       </div>

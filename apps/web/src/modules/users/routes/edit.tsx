@@ -304,10 +304,6 @@ function UserEditPage(): React.JSX.Element {
                     <Lock size={13} /> Change in Access Control
                   </Link>
                 </div>
-                <div className="form-help">
-                  Department, levels and the PO approval limit are all set there. The role is
-                  worked out from them.
-                </div>
               </div>
             </div>
 
@@ -360,9 +356,7 @@ function UserEditPage(): React.JSX.Element {
         </div>
         <div className="panel-body">
           <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
-            Sets this user&rsquo;s password directly — <strong>no email is sent</strong>, so it
-            works regardless of mail delivery or rate limits. Type a new password and hand it to{' '}
-            {isSelf ? 'note it for yourself' : detail.email} directly.
+            No email is sent — give the new password to the user.
           </div>
           {pwMsg ? (
             <div

@@ -63,7 +63,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'Rejected',
       'Call Date',
       'Attended Date',
-      'Response',
+      'Days to Attend',
       'Inspector Name',
       'Organisation',
       'TPI Certificate No.',
@@ -194,8 +194,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               }}
             >
               <span style={{ fontWeight: 700, fontSize: 13 }}>
-                <span style={{ color: 'var(--green)' }}>✅</span> TPI Completed Records (
-                {completed.length})
+                <span style={{ color: 'var(--green)' }}>✅</span> Completed TPI ({completed.length})
               </span>
               <button
                 type="button"
@@ -227,7 +226,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                     <th>Rejected</th>
                     <th>Call Date</th>
                     <th>Attended</th>
-                    <th>Response</th>
+                    <th>Days to Attend</th>
                     <th>Inspector</th>
                     <th>Organisation</th>
                     <th>TPI Certificate No.</th>
@@ -464,7 +463,7 @@ function PendingTpi(props: {
           </span>
           {o.waitDays > 1 ? (
             <span style={{ fontSize: 10, color: 'var(--red)', fontWeight: 700, marginLeft: 8 }}>
-              ⚠ WAITING {o.waitDays} DAYS
+              ⚠ Waiting {o.waitDays} days
             </span>
           ) : null}
           <div className="text2" style={{ fontSize: 11 }}>
@@ -512,7 +511,7 @@ function PendingTpi(props: {
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{o.qcPending}</div>
           <div className="text3" style={{ fontSize: 9 }}>
-            PENDING
+            Pending
           </div>
         </div>
       </div>
@@ -624,7 +623,7 @@ function PendingTpi(props: {
             }}
           >
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)', marginBottom: 8 }}>
-              🔍 TPI DETAILS (Required)
+              🔍 TPI Details
             </div>
             <div className="form-grid" style={{ gap: 10 }}>
               <div className="form-grp">

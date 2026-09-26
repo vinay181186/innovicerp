@@ -266,7 +266,9 @@ function MatrixView(): React.JSX.Element {
               color: 'var(--green)',
               border: '1px solid rgba(34,197,94,0.3)',
             }}
-            disabled={!matrix}
+            disabled={
+              !matrix || !matrix.rows.some((r) => r.cells.some((c) => c.hasDoc && c.storagePath))
+            }
             onClick={() => matrix && void downloadAllReports(matrix)}
           >
             ⬇ Download All Reports
@@ -276,7 +278,7 @@ function MatrixView(): React.JSX.Element {
 
       {/* SO selector (legacy L23042-23047) */}
       <div style={{ marginBottom: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
-        <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>SELECT SO:</label>
+        <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>Select SO:</label>
         <div style={{ minWidth: 320 }}>
           <SearchableSelect
             id="qc-docs-so"
@@ -318,12 +320,12 @@ function MatrixView(): React.JSX.Element {
             <b style={{ color: 'var(--cyan)', fontSize: 16 }}>{matrix.so.code}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>CUSTOMER</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Customer</span>
             <br />
             <b>{matrix.so.customerName ?? ''}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>QC OPS</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>QC Ops</span>
             <br />
             <b style={{ color: 'var(--green)' }}>{matrix.totalDone}</b>
             <span style={{ color: 'var(--text3)' }}> / {matrix.totalTotal}</span>
@@ -492,8 +494,12 @@ function MatrixView(): React.JSX.Element {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-        💡 ✅ Completed (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Report
-        Missing = QC completed but no report attached
+        <span
+          style={{ cursor: 'help' }}
+          title="✅ Completed (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Report Missing = QC completed but no report attached"
+        >
+          ?
+        </span>
       </div>
 
       {detailJcId ? (
@@ -553,7 +559,7 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
         <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}>⏳ Pending</div>
         <div style={{ fontSize: 9, color: 'var(--amber)' }}>{cell.qcPending} pcs</div>
         {cell.accepted > 0 ? (
-          <div style={{ fontSize: 9, color: 'var(--green)' }}>{cell.accepted} acc</div>
+          <div style={{ fontSize: 9, color: 'var(--green)' }}>{cell.accepted} Accepted</div>
         ) : null}
       </td>
     );
@@ -674,10 +680,7 @@ async function downloadAllReports(matrix: QcMatrixResponse): Promise<void> {
       if (c.hasDoc && c.storagePath) paths.push(c.storagePath);
     }
   }
-  if (paths.length === 0) {
-    window.alert(`No reports uploaded for ${matrix.so.code} yet`);
-    return;
-  }
+  if (paths.length === 0) return;
   for (const p of paths) {
     try {
       await saveQcDoc(p, null, matrix.so.code);
@@ -806,7 +809,7 @@ function LineDetailBody({
           </b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM CODE</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>Item Code</span>
           <br />
           <b style={{ color: 'var(--purple)' }}>
             {itemCodeWithRev(data.itemCode, data.itemRevision, '')}
@@ -814,17 +817,17 @@ function LineDetailBody({
           {data.itemName ?? ''}
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC NO.</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC No.</span>
           <br />
           <b style={{ color: 'var(--cyan)' }}>{data.jcCode}</b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>ORDER QTY</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>Order Qty</span>
           <br />
           <b>{data.orderQty} pcs</b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>QC BATCHES</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>QC Batches</span>
           <br />
           <b>{data.batches.length}</b>
         </div>
@@ -955,7 +958,7 @@ function DocSection({
       return;
     }
     if (srTo < srFrom) {
-      setErr('Sr. To must be ≥ Sr. From');
+      setErr('To cannot be less than From.');
       return;
     }
     setErr(null);
@@ -1106,7 +1109,7 @@ function DocSection({
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Upload for:</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Pieces</span>
           <input
             type="number"
             min={1}
@@ -1331,8 +1334,7 @@ function RegisterView(): React.JSX.Element {
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="empty-state">
-                    No QC documents. Click 📎 Upload Document to attach MIR / MCR / inspection
-                    reports.
+                    No QC documents yet.
                   </td>
                 </tr>
               ) : (

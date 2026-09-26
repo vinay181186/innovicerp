@@ -221,10 +221,6 @@ function ProductionOrderClosePage(): React.JSX.Element {
         <div className="panel-hdr">
           <div>
             <div className="panel-title">🔒 Close Production Order</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Plan → PO → JC → Close. Blocked until the Job Card is complete; on close stock is
-              credited once with the Job Card&apos;s actually finished qty.
-            </div>
           </div>
         </div>
         <div className="panel-body">

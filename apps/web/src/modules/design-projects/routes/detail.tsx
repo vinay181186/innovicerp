@@ -149,14 +149,12 @@ function DesignProjectDetailPage(): React.JSX.Element {
           marginBottom: 16,
         }}
       >
-        <Tile label="Tasks" value={p.taskTotal} color="var(--blue)" />
         <Tile label="Completed" value={p.taskDone} color="var(--green)" />
         <Tile
           label="Open Issues"
           value={p.openIssuesCount}
           color={p.openIssuesCount > 0 ? 'var(--red)' : 'var(--green)'}
         />
-        <Tile label="Checklist" value={`${checkDone}/${CHECKLIST.length}`} color="var(--purple)" />
       </div>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>

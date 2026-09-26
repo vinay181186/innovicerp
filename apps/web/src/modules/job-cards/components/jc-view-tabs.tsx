@@ -1,12 +1,11 @@
 // Job Card VIEW page — the bottom tab bar (2026-09-18 mockup):
-//   Documents & Quality | Remarks | Related Records | History
+//   Documents & Quality | Related Records | History
 //
 //   Documents & Quality  cards for what this card actually has: the drawing
 //                        (opens the shared preview), each QC document (opens
 //                        the file), open QC calls (→ QC Call Register on this
 //                        card), NCs (→ NC register on this card). No card for
 //                        a thing that does not exist; no "Manage Documents".
-//   Remarks              the card's own remarks text.
 //   Related Records      the shared Related Documents panel, as before.
 //   History              the completion-log feed (op_log ∪ NC ∪ dispositions ∪
 //                        OSP), as before — server-merged, real total.
@@ -83,8 +82,10 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       e.logType === 'start'
         ? `on ${machineLabel} by ${operator}`
         : e.logType === 'qc'
-          ? `+${e.qty ?? 0} accepted${(e.rejectQty ?? 0) > 0 ? `, ${e.rejectQty} rejected` : ''} — ${operator}`
-          : `+${e.qty ?? 0} pcs — ${operator}`;
+          ? [(e.rejectQty ?? 0) > 0 ? `${e.rejectQty} rejected` : '', operator]
+              .filter(Boolean)
+              .join(' — ')
+          : operator;
     return {
       id: e.id,
       date: e.date,
@@ -92,7 +93,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       icon: e.logType === 'start' ? '▶' : e.logType === 'qc' ? '🔬' : '✔',
       color: e.logType === 'start' ? 'var(--amber)' : 'var(--green)',
       title: `Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}: ${e.operation ?? '?'} — ${label}`,
-      detail: `${detail}${e.shift ? ` • ${labelOf(SHIFT_LABELS, e.shift)}` : ''}`,
+      detail: [detail, e.shift ? labelOf(SHIFT_LABELS, e.shift) : ''].filter(Boolean).join(' • '),
       remarks: e.remarks ?? '',
       qtyKind: e.logType === 'start' ? 'none' : e.logType === 'qc' ? 'qc' : 'complete',
       qty: e.qty ?? 0,
@@ -145,7 +146,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
     icon: '📋',
     color: 'var(--blue)',
     title: `${e.ospCategory ?? ''}: ${e.detail ?? ''}`,
-    detail: 'Auto-generated for OSP process',
+    detail: '',
     remarks: '',
     qtyKind: 'none',
     qty: null,
@@ -248,15 +249,17 @@ function HistoryFeed({
                         </span>
                       ) : null}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>
-                      {e.detail}
-                      {e.remarks ? (
-                        <>
-                          {' • '}
-                          <i>{e.remarks}</i>
-                        </>
-                      ) : null}
-                    </div>
+                    {e.detail || e.remarks ? (
+                      <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>
+                        {e.detail}
+                        {e.remarks ? (
+                          <>
+                            {e.detail ? ' • ' : ''}
+                            <i>{e.remarks}</i>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   {e.qtyKind !== 'none' ? (
                     <div className="mono fw-700" style={{ fontSize: 13, flexShrink: 0 }}>
@@ -504,11 +507,10 @@ function DocumentsTab({
 
 // ─── The tab bar ─────────────────────────────────────────────────────────────
 
-type Tab = 'docs' | 'remarks' | 'related' | 'history';
+type Tab = 'docs' | 'related' | 'history';
 
 const TABS: ReadonlyArray<{ key: Tab; label: string }> = [
   { key: 'docs', label: 'Documents & Quality' },
-  { key: 'remarks', label: 'Remarks' },
   { key: 'related', label: 'Related Records' },
   { key: 'history', label: 'History' },
 ];
@@ -582,16 +584,6 @@ export function JcViewTabs({
             onOpenDrawing={onOpenDrawing}
             stopped={stopped}
           />
-        ) : tab === 'remarks' ? (
-          jc.remarks ? (
-            <div style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-              {jc.remarks}
-            </div>
-          ) : (
-            <div className="empty-state" style={{ padding: 16 }}>
-              No remarks on this job card
-            </div>
-          )
         ) : tab === 'related' ? (
           <RelatedDocsPanel module="job-cards" id={jc.id} />
         ) : (

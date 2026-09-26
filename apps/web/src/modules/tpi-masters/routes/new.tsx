@@ -62,10 +62,6 @@ function TpiMasterNewPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div>
             <div className="panel-title">🔍 Add Inspector</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Master record for third-party inspectors — the TPI screen&apos;s Inspector Name field
-              picks from this list.
-            </div>
           </div>
         </div>
         <div className="panel-body">

@@ -225,21 +225,17 @@ function RequestCard({
             marginBottom: 8,
           }}
         >
-          <Field label="LOG DATE / TIME">
+          <Field label="Log Date / Time">
             <span className="mono">{when(req.prevLogDate, req.prevStartTime)}</span>
             <span className="text3"> → </span>
             <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>
               {when(req.requestedLogDate, req.requestedStartTime)}
             </span>
           </Field>
-          <Field label="COMPLETED">
+          <Field label="Completed">
             <span className="mono">{req.qty}</span>
-            <span className="text3" style={{ fontSize: 10 }}>
-              {' '}
-              — cannot be changed
-            </span>
           </Field>
-          <Field label="ASKED BY">
+          <Field label="Asked By">
             {req.requestedByName ?? '—'}
             <span className="text3" style={{ fontSize: 10 }}>
               {' '}

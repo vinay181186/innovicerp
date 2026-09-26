@@ -313,12 +313,6 @@ export function DispatchLineTable(props: {
           </span>
         </span>
       </div>
-
-      {/* ADR-180 — where the pieces come from, in one quiet line. */}
-      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-        💡 A dispatch uses the stock reserved to that line first, then free stock. Dispatch qty is
-        capped at Pending — what the customer is still owed on the line.
-      </div>
     </>
   );
 }

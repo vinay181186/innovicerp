@@ -45,6 +45,7 @@ import { Loader2, X } from 'lucide-react';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useEffect, useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
@@ -210,7 +211,6 @@ export function OutsourceJobsView(): React.JSX.Element {
   const totalPR = allPrs.length;
   const openPR = allPrs.filter((pr) => ospBand(pr) === 'open').length;
   const poCreated = allPrs.filter((pr) => ospBand(pr) === 'po_created').length;
-  const totalQty = allPrs.reduce((s, pr) => s + pr.qty, 0);
 
   // A checkbox now means "this request still has quantity to buy", not "its
   // status is open/approved". `canEdit` gates it on top, exactly as before.
@@ -313,62 +313,38 @@ export function OutsourceJobsView(): React.JSX.Element {
         ) : null}
       </div>
 
-      {/* Summary cards */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 10 }}>
-            Total OSP
-          </div>
-          <div className="mono fw-700" style={{ fontSize: 22 }}>
-            {totalPR}
-          </div>
-        </div>
-        <div
-          className="panel"
-          style={{
-            minWidth: 100,
-            padding: 12,
-            textAlign: 'center',
-            cursor: 'pointer',
-            border: `2px solid ${statusBand === 'open' ? 'var(--amber)' : 'transparent'}`,
-          }}
-          onClick={() => setStatusBand((prev) => (prev === 'open' ? undefined : 'open'))}
-        >
-          <div className="text3" style={{ fontSize: 10 }}>
-            Open PR
-          </div>
-          <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--amber)' }}>
-            {openPR}
-          </div>
-        </div>
-        <div
-          className="panel"
-          style={{
-            minWidth: 100,
-            padding: 12,
-            textAlign: 'center',
-            cursor: 'pointer',
-            border: `2px solid ${statusBand === 'po_created' ? 'var(--green)' : 'transparent'}`,
-          }}
-          onClick={() =>
-            setStatusBand((prev) => (prev === 'po_created' ? undefined : 'po_created'))
-          }
-        >
-          <div className="text3" style={{ fontSize: 10 }}>
-            PO Created
-          </div>
-          <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--green)' }}>
-            {poCreated}
-          </div>
-        </div>
-        <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 10 }}>
-            Total Qty
-          </div>
-          <div className="mono fw-700" style={{ fontSize: 22 }}>
-            {totalQty}
-          </div>
-        </div>
+      {/* Counts — ONE strip (styling rule 3). No qty total: it would add
+          different items' quantities together. */}
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'All',
+              count: totalPR,
+              color: 'var(--cyan)',
+              active: statusBand === undefined,
+              onClick: () => setStatusBand(undefined),
+            },
+            {
+              key: 'open',
+              label: 'Open',
+              count: openPR,
+              color: 'var(--amber)',
+              active: statusBand === 'open',
+              onClick: () => setStatusBand((prev) => (prev === 'open' ? undefined : 'open')),
+            },
+            {
+              key: 'po_created',
+              label: 'PO Created',
+              count: poCreated,
+              color: 'var(--green)',
+              active: statusBand === 'po_created',
+              onClick: () =>
+                setStatusBand((prev) => (prev === 'po_created' ? undefined : 'po_created')),
+            },
+          ]}
+        />
       </div>
 
       {/* Search + JC-source filter (legacy L27103-27106) */}
@@ -466,10 +442,7 @@ export function OutsourceJobsView(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Select the PRs that still have quantity pending, then click{' '}
-        <b>🛒 Create PO from Selected</b>. A part-ordered PR can be picked again; the new PO covers
-        what is PENDING, not the original qty. You can club multiple PRs into 1 PO (same vendor).
-        Vendor and rate can be changed during PO creation.
+        Tick PRs → Create PO from Selected.
       </div>
 
       {/* Batch-create modal */}
@@ -543,7 +516,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                 </div>
                 <div className="form-grp">
                   <label className="form-label" style={{ color: 'var(--purple)' }}>
-                    Vendor <span className="req">★</span> (can change from suggested)
+                    Vendor <span className="req">★</span>
                   </label>
                   <select
                     className="innovic-select"

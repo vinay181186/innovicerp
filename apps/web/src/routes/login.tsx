@@ -66,17 +66,8 @@ function LoginPage() {
           {/* Worded so it never confirms that an account exists for the address — the API
               answers the same way either way, and so must we. */}
           <p className="text-sm text-muted-foreground">
-            If an account exists for{' '}
-            <span className="font-medium text-foreground">{sent.email}</span>, a reset link is on
-            its way. Check your inbox (and spam), then click it to choose a new password.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            The link is valid for {RESET_LINK_VALID_MINUTES} minutes and works once. Check Spam if
-            you don&rsquo;t see it.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Some mail scanners can expire one-time links before you click. Ask an admin to set your
-            password directly if it keeps failing.
+            If <span className="font-medium text-foreground">{sent.email}</span> has an account, a
+            reset link is on its way (valid {RESET_LINK_VALID_MINUTES} min). Check Spam.
           </p>
           <Button variant="ghost" size="sm" onClick={() => setSent(null)}>
             Use a different email
@@ -87,9 +78,7 @@ function LoginPage() {
   }
 
   const subtitle =
-    mode === 'reset'
-      ? "Enter your email and we'll send you a link to reset your password."
-      : 'Enter your email and password.';
+    mode === 'reset' ? "Enter your email and we'll send you a link to reset your password." : null;
 
   return (
     <main className="container max-w-md py-16">
@@ -98,7 +87,7 @@ function LoginPage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             {mode === 'reset' ? 'Reset your password' : 'Sign in to Innovic ERP'}
           </h1>
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
+          {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
         </div>
 
         {resetDone && mode === 'password' ? (

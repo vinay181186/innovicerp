@@ -84,7 +84,7 @@ function StoreInventoryPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'inventory' ? '🏬 Inventory' : '📖 Stock Ledger'}
+            {t === 'inventory' ? 'Inventory' : 'Stock Ledger'}
           </button>
         ))}
       </div>
@@ -138,23 +138,7 @@ function StoreInventoryPage(): React.JSX.Element {
 
               <div className="panel">
                 <div className="panel-hdr">
-                  <span className="panel-title">
-                    Stock Levels{' '}
-                    {filter !== 'all' ? (
-                      <span style={{ color: 'var(--amber)', fontSize: 12 }}>
-                        (Filtered: {filter})
-                      </span>
-                    ) : null}
-                  </span>
-                  {filter !== 'all' ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => setFilter('all')}
-                    >
-                      Show All
-                    </button>
-                  ) : null}
+                  <span className="panel-title">Stock Levels</span>
                 </div>
                 <div className="tbl-wrap">
                   <table className="innovic-table">
@@ -195,7 +179,7 @@ function StoreInventoryPage(): React.JSX.Element {
                       {data.rows.length === 0 ? (
                         <tr>
                           <td colSpan={canEdit ? 12 : 11} className="empty-state">
-                            No items in master
+                            {search.trim() ? 'No items match this search.' : 'No items in master'}
                           </td>
                         </tr>
                       ) : (
@@ -250,7 +234,6 @@ function StoreInventoryPage(): React.JSX.Element {
                                   type="button"
                                   className="mono fw-700"
                                   onClick={() => setReservedRow(row)}
-                                  title="See which SO lines are holding this stock"
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -274,7 +257,6 @@ function StoreInventoryPage(): React.JSX.Element {
                                   fontSize: 15,
                                   color: row.availableQty > 0 ? 'var(--cyan)' : 'var(--text3)',
                                 }}
-                                title="Physical − Reserved"
                               >
                                 {row.availableQty}
                               </span>
@@ -342,13 +324,6 @@ function StoreInventoryPage(): React.JSX.Element {
                   </table>
                 </div>
               </div>
-
-              <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-                💡 Stock is automatically updated via GRN (inward) and Dispatch (outward). Use ±
-                Adjust for manual corrections. Reserving stock for an order does NOT change Physical
-                — it only moves pieces from Available to Reserved. Click a Reserved number to see
-                which orders are holding it.
-              </div>
             </>
           ) : null}
 
@@ -374,9 +349,9 @@ function StoreInventoryPage(): React.JSX.Element {
   );
 }
 
-// ONE strip, one row — the shared <StatStrip>, not a grid of cards. The two
-// ADR-180 totals (Reserved, Available) join the four that were already here;
-// a 4-column card grid would have pushed them onto a second row.
+// ONE strip, one row — the shared <StatStrip>, not a grid of cards. Item
+// counts only: the ADR-180 piece totals (Reserved, Available) were removed
+// because they summed kg + Nos + m into one meaningless number.
 function KpiStrip({
   summary,
   filter,
@@ -392,25 +367,8 @@ function KpiStrip({
       label: 'Total Items',
       count: summary.totalItems,
       color: 'var(--cyan)',
-      sub: `${summary.totalStockPieces} physical pieces in store`,
       active: filter === 'all',
       onClick: () => setFilter('all'),
-    },
-    {
-      key: 'reserved',
-      label: 'Reserved Pieces',
-      count: summary.totalReservedPieces,
-      color: 'var(--purple)',
-      sub: 'Promised to SO lines, still on the shelf',
-      title: 'Total pieces held by active reservations',
-    },
-    {
-      key: 'available',
-      label: 'Available Pieces',
-      count: summary.totalAvailablePieces,
-      color: 'var(--green)',
-      sub: 'Physical − Reserved',
-      title: 'What a new order may still be promised',
     },
     {
       key: 'inStock',
@@ -480,7 +438,7 @@ function AdjustModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`± Stock Adjustment — ${row.itemCode} (${row.itemName})`}>
+    <ModalShell onClose={onClose} title={`Adjust Stock — ${row.itemCode}`}>
       <div
         style={{
           marginBottom: 12,
@@ -490,7 +448,7 @@ function AdjustModal({
         }}
       >
         <span className="text3" style={{ fontSize: 11 }}>
-          Physical Stock:
+          Physical:
         </span>
         <span
           className="mono fw-700"
@@ -602,14 +560,13 @@ function SetMinModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`Min Stock — ${row.itemCode} (${row.itemName})`}>
+    <ModalShell onClose={onClose} title={`Min Qty — ${row.itemCode}`}>
       <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
-        Sets the low-stock alert threshold for <b>{row.itemName}</b>. Items show a ⚠ Low Stock tag
-        when current stock ≤ this value. Use 0 to disable.
+        Low Stock shows at or below this. 0 = off.
       </div>
       <div className="form-grid">
         <div className="form-grp form-full">
-          <label className="form-label">Min Stock Qty</label>
+          <label className="form-label">Min Qty</label>
           <input
             type="number"
             min={0}

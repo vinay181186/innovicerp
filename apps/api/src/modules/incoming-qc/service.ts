@@ -567,7 +567,7 @@ export async function submitIncomingQc(
     const thisTotal = input.acceptedQty + input.rejectedQty;
     if (thisTotal > remaining) {
       throw new ValidationError(
-        `Accepted + Rejected (${thisTotal}) cannot be more than QC Pending Qty (${remaining}).`,
+        `Accepted + Rejected (${thisTotal}) cannot be more than QC Pending (${remaining}).`,
       );
     }
 

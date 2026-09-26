@@ -38,7 +38,6 @@ import { rootRoute } from './__root';
 // password is saved we tell the API (confirmation email), sign out EVERY session for the
 // account (OWASP: a reset invalidates all sessions) and send the user to the sign-in page —
 // there is no auto-login.
-const LINK_VALIDITY_NOTE = `Reset links are valid for ${RESET_LINK_VALID_MINUTES} minutes and work once.`;
 const EXPIRED_MESSAGE = `This reset link has expired or was already used. Links are valid for ${RESET_LINK_VALID_MINUTES} minutes and work once. Request a new one from the sign-in page.`;
 
 const schema = z
@@ -264,7 +263,6 @@ function ResetPasswordPage() {
           <div className="space-y-3 text-center">
             <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">Verifying your reset link&hellip;</p>
-            <p className="text-xs text-muted-foreground">{LINK_VALIDITY_NOTE}</p>
           </div>
         ) : status === 'invalid' ? (
           <div className="space-y-3 text-center">
@@ -288,7 +286,6 @@ function ResetPasswordPage() {
               <p className="text-sm text-muted-foreground">
                 Enter a new password for your account.
               </p>
-              <p className="text-xs text-muted-foreground">{LINK_VALIDITY_NOTE}</p>
             </div>
             <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
               <div className="space-y-2">

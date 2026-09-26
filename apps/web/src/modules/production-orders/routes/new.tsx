@@ -214,11 +214,6 @@ function ProductionOrderNewPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div>
             <div className="panel-title">🏭 Create Production Order</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Plan + Route Card + Order Qty + Customer Dispatch Date → Create JC. A plan can carry
-              several Production Orders, up to its Plan Qty; the Job Card is built from the
-              item&apos;s Route Card for this order&apos;s qty.
-            </div>
           </div>
           <div className="td-code" style={{ fontSize: 14, color: 'var(--text)' }}>
             {nextCode.data?.code ?? (nextCode.isLoading ? '…' : 'IN-PRO-?????')}
@@ -417,11 +412,11 @@ function ProductionOrderNewPage(): React.JSX.Element {
                   borderRadius: 6,
                 }}
               >
-                ⚠ No route card for this item — create it in{' '}
+                ⚠ No route card for this item —{' '}
                 <Link to="/route-cards/new" className="fw-700">
-                  Item Master → Route Card
+                  create it
                 </Link>{' '}
-                first. Without a route card you cannot go forward.
+                first.
               </div>
             ) : null}
 

@@ -275,9 +275,7 @@ function QcProcessesListPage(): React.JSX.Element {
               created — not a hint about operating the list. */}
           <Panel>
             <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
-              💡 Define QC inspection processes here (e.g. Dimensional Check, Hardness Test, CMM
-              Inspection). These can be added as <b>QC operations</b> in Route Cards and Job Cards,
-              just like machining operations.
+              QC checks used as operations on Route Cards and Job Cards.
             </span>
           </Panel>
 

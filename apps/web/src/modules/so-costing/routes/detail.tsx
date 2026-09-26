@@ -98,21 +98,21 @@ function SoCostingDetailPage(): React.JSX.Element {
           flexWrap: 'wrap',
         }}
       >
-        <Stat label="SO" value={data.soNo} color="var(--cyan)" fontSize={16} />
-        <Stat label="CUSTOMER" value={data.customer ?? '—'} />
+        <Stat label="SO No." value={data.soNo} color="var(--cyan)" fontSize={16} />
+        <Stat label="Customer" value={data.customer ?? '—'} />
         {data.costCenter ? (
           <Stat
-            label="COST CENTER"
+            label="Cost Centre"
             value={`${data.costCenter}${data.costCenterName ? ` — ${data.costCenterName}` : ''}`}
             color="var(--teal, #0d9488)"
           />
         ) : null}
         {priceHidden ? null : (
           <>
-            <Stat label="MATERIAL" value={m2(data.grandMaterial)} color="var(--blue)" />
-            <Stat label="OUTSOURCE" value={m2(data.grandOutsource)} color="var(--amber)" />
-            <Stat label="MACHINE TIME" value={m2(data.grandMachineTime)} color="var(--cyan)" />
-            <Stat label="TOTAL" value={m2(data.grandTotal)} color="var(--green)" fontSize={16} />
+            <Stat label="Material" value={m2(data.grandMaterial)} color="var(--blue)" />
+            <Stat label="Outsource" value={m2(data.grandOutsource)} color="var(--amber)" />
+            <Stat label="Machine Time" value={m2(data.grandMachineTime)} color="var(--cyan)" />
+            <Stat label="Total" value={m2(data.grandTotal)} color="var(--green)" fontSize={16} />
           </>
         )}
       </div>

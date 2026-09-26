@@ -115,10 +115,6 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', marginBottom: 4 }}>
           ➕ Create OSP Delivery Challan
         </div>
-        <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
-          Ship against a purchase order that sends material out (Job Work / Service), or return
-          rejected material to a vendor against a disposed NC.
-        </div>
 
         {/* ▸ DC AGAINST — a compact dropdown (Against PO / Against NC). State,
             not navigation; switching unmounts the other side below. */}
@@ -288,8 +284,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
   return (
     <>
       <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
-        The challan ships against a purchase order that sends material out (Job Work / Service).
-        Pick one and its lines load into the challan.
+        Pick a PO — its lines load below.
       </div>
 
       <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
@@ -908,8 +903,7 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
   return (
     <>
       <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
-        Return rejected material to a vendor. Only NCs disposed as “Return to Vendor” with no
-        challan yet are shown. The challan returns the NC’s full rejected quantity.
+        Shows NCs set to Return to Vendor with no challan yet.
       </div>
 
       <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
@@ -1032,8 +1026,7 @@ function NcDcFormBody({
   if (!canCreateDc) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)' }}>
-        ⛔ You do not have access to create a return-to-vendor challan (needs NC dispose edit and
-        OSP DC entry).
+        ⛔ You cannot create a return challan. Ask an admin.
       </div>
     );
   }

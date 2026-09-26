@@ -180,8 +180,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
-        ⛔ You do not have create access to Customer Dispatch. Ask an admin for L2 Data Entry or
-        above in Sales.
+        ⛔ You cannot create Dispatches. Ask an admin.
       </div>
     );
   }
@@ -339,10 +338,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                       letterSpacing: '0.06em',
                     }}
                   >
-                    READY TO DISPATCH (produced + QC-accepted)
-                  </span>
-                  <span className="text3" style={{ fontSize: 11 }}>
-                    Add a line, then type an item code — name and quantities auto-fill from this SO.
+                    Items
                   </span>
                 </div>
                 <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>

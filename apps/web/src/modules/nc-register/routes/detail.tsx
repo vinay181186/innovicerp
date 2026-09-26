@@ -246,15 +246,11 @@ function NcRegisterDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              {detail.itemName ??
-                detail.itemNameText ??
-                detail.itemCode ??
-                detail.itemCodeText ??
-                'Untitled item'}
               <NcStatusBadge status={detail.status} />
               {detail.linkedCapaCode ? (
                 <Link
                   to="/nc-register"
+                  search={{ tab: 'capa', capa: detail.linkedCapaCode }}
                   className="mono"
                   style={{
                     fontSize: 12,
@@ -299,7 +295,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   min={0}
                   step="0.01"
                   className="innovic-input"
-                  placeholder="(opt)"
+                  placeholder="Optional"
                   value={reworkDoneQty === '' ? '' : reworkDoneQty}
                   onChange={(e) =>
                     setReworkDoneQty(e.target.value === '' ? '' : Number(e.target.value))
@@ -324,11 +320,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             {showClose ? (
               <>
                 {detail.closeBlockedReason ? (
-                  <span
-                    className="text3"
-                    style={{ fontSize: 11, maxWidth: 360 }}
-                    title={detail.closeBlockedReason}
-                  >
+                  <span className="text3" style={{ fontSize: 11, maxWidth: 360 }}>
                     {detail.closeBlockedReason}
                   </span>
                 ) : null}
@@ -337,10 +329,6 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   className="btn btn-success btn-sm"
                   onClick={() => void onClose()}
                   disabled={closeNc.isPending || detail.closeBlockedReason != null}
-                  title={
-                    detail.closeBlockedReason ??
-                    'Every rejected piece is accounted for — close this NC'
-                  }
                 >
                   {closeNc.isPending ? (
                     <Loader2 size={13} className="animate-spin" />
@@ -368,22 +356,20 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 Create CAPA
               </button>
             ) : null}
-            {canEdit ? (
+            {canEdit && isPending ? (
               <Link
                 to="/nc-register/$id/edit"
                 params={{ id: detail.id }}
                 className="btn btn-ghost btn-sm"
-                style={!isPending ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
-                title={!isPending ? 'Cannot edit disposed/closed NCs' : undefined}
               >
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {canDelete ? (
+            {canDelete && isPending ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12 }}>
-                    Delete?
+                    Move NC {detail.code} to Trash? You can restore it from Trash.
                   </span>
                   <button
                     type="button"
@@ -396,7 +382,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                     ) : (
                       <Trash2 size={13} />
                     )}
-                    Confirm
+                    Move to Trash
                   </button>
                   <button
                     type="button"
@@ -412,8 +398,6 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   type="button"
                   className="btn btn-danger btn-sm"
                   onClick={() => setConfirmDelete(true)}
-                  disabled={!isPending}
-                  title={!isPending ? 'Disposed/closed NCs are permanent' : undefined}
                 >
                   <Trash2 size={13} /> Delete
                 </button>
@@ -452,28 +436,28 @@ function NcRegisterDetailPage(): React.JSX.Element {
               label: 'Rejected',
               count: Number(detail.rejectedQty),
               color: 'var(--red)',
-              sub: 'pcs this NC covers',
+              title: 'Pieces this NC covers',
             },
             {
               key: 'cleared',
               label: 'Cleared',
               count: Number(detail.clearedQty),
               color: 'var(--green)',
-              sub: 'QC-accepted after recovery',
+              title: 'Accepted at QC after recovery',
             },
             {
               key: 'failed',
               label: 'Rejected Again',
               count: Number(detail.failedQty),
               color: 'var(--amber)',
-              sub: 'QC rejected after recovery',
+              title: 'Rejected at QC after recovery',
             },
             {
               key: 'open',
               label: 'Open',
               count: ncOpenQty(detail),
               color: 'var(--blue)',
-              sub: 'rejected − cleared − rejected again',
+              title: 'Rejected − Cleared − Rejected Again',
             },
             ...(isRtv
               ? [
@@ -482,14 +466,14 @@ function NcRegisterDetailPage(): React.JSX.Element {
                     label: 'Sent',
                     count: Number(detail.rtvSentQty),
                     color: 'var(--blue)',
-                    sub: 'on the return challan',
+                    title: 'Sent on the return DC',
                   },
                   {
                     key: 'received',
                     label: 'Received',
                     count: Number(detail.rtvReceivedQty),
                     color: 'var(--cyan)',
-                    sub: 'back from the vendor',
+                    title: 'Received back from the vendor',
                   },
                 ]
               : []),
@@ -536,7 +520,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       {showDispose ? (
         <DisposeNcPanel
           nc={detail}
-          jcCode={jcCode}
+          canApprove={ncPerms.approve}
           jcOps={reworkOpOptions}
           canSeePrice={ncPerms.price}
           pending={dispose.isPending}
@@ -593,20 +577,14 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
           flexWrap: 'wrap',
         }}
       >
-        <CtxField label="NC NO.">
-          <b className="red">{detail.code}</b>
-        </CtxField>
-        <CtxField label="NC DATE">
+        <CtxField label="NC Date">
           <b>{detail.ncDate}</b>
         </CtxField>
-        <CtxField label="JC NO.">
+        <CtxField label="JC No.">
           <b className="cyan">{jcCode ?? '—'}</b>
         </CtxField>
-        <CtxField label="SO NO.">
+        <CtxField label="SO No.">
           <b>{detail.soCodeText ?? '—'}</b>
-        </CtxField>
-        <CtxField label="NC STATUS">
-          <NcStatusBadge status={detail.status} />
         </CtxField>
       </div>
       <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>
@@ -674,9 +652,6 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
             {operation ?? (detail.opSeq == null ? '—' : '')}
           </InlinePair>
         )}
-        <InlinePair label="Rejected:">
-          <span className="red">{Number(detail.rejectedQty)} pcs</span>
-        </InlinePair>
         <InlinePair label="Operator:">{detail.operatorText ?? '—'}</InlinePair>
         <InlinePair label="Reported By:">{detail.reportedByText ?? '—'}</InlinePair>
         <InlinePair label="Reason Category:">
@@ -708,9 +683,6 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         marginBottom: 10,
       }}
     >
-      <div className="fw-700" style={{ fontSize: 11, marginBottom: 6 }}>
-        DISPOSITION
-      </div>
       <div className="form-grid" style={{ fontSize: 12 }}>
         <InlinePair label="Disposition:">
           <NcDispositionBadge disposition={detail.disposition} />
@@ -726,7 +698,7 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
             (HTML L22536) and our close-rework flow captures it. Kept. */}
         {detail.disposition === 'rework' && detail.reworkDoneQty ? (
           <InlinePair label="Rework Completed:">
-            {Number(detail.reworkDoneQty)}/{Number(detail.rejectedQty)} done
+            {Number(detail.reworkDoneQty)} of {Number(detail.rejectedQty)}
           </InlinePair>
         ) : null}
         {detail.disposition === 'scrap' && Number(detail.scrapCost) > 0 ? (

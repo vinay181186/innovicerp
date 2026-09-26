@@ -20,7 +20,6 @@ import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
@@ -74,13 +73,11 @@ interface Props {
  *  thing. An hour after the date boxes were changed to open blank, a real
  *  entry was booked dated a day into the future because "11" was typed instead
  *  of "10"; work cannot have happened on a day that has not happened yet. */
-const FUTURE_DATE_MESSAGE =
-  'Log Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.';
+const FUTURE_DATE_MESSAGE = 'Log Date cannot be in the future.';
 
 export function OpEntryForm({
   op,
   activeRunningId,
-  onModeChange,
   onSubmitted,
   defaultMachineId,
   onClose,
@@ -103,12 +100,6 @@ export function OpEntryForm({
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const canQcSubmit = effectiveFormPerms(eff, 'qc_submit').entry;
-
-  // `CODE/REV` for the part this operation is on, or '' when the join brought no
-  // item back. '' rather than a dash, because a dash would assert that the card
-  // has no item; and it is tested rather than printed blind, so a missing code
-  // shows nothing at all instead of an empty "Item:" label.
-  const itemCodeLabel = itemCodeWithRev(op.itemCode, op.itemRevision, '');
 
   // EVERY field starts BLANK — no seeded date, no seeded time, no pre-selected
   // shift, no "0" already sitting in the reject box. A seeded value is a value
@@ -143,8 +134,6 @@ export function OpEntryForm({
   // logging is never blocked by an operator missing from the master.
   const [operatorId, setOperatorId] = useState<string | undefined>(undefined);
   const [remarks, setRemarks] = useState<string>('');
-  // Remarks starts compact (inline next to Operator); "show more" expands it.
-  const [remarksExpanded, setRemarksExpanded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // QC report attachment (migration 0043) — only used on the QC sub-form.
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
@@ -307,7 +296,6 @@ export function OpEntryForm({
     setQty('');
     setRejectQty('');
     setRemarks('');
-    setRemarksExpanded(false);
     setErrorMessage(null);
     setQcReportPath(null);
     setQcReportName(null);
@@ -381,7 +369,7 @@ export function OpEntryForm({
   const isQcPending = op.computedStatus === 'qc_pending';
   const noAvailable = op.available <= 0;
   const blockedReason = isOutsource
-    ? 'This is an outsource operation; use the Procurement flow.'
+    ? 'Outsource operation — manage it in Purchase Orders.'
     : isQcOp && noQcPending
       ? 'No QC pending on this operation — already inspected.'
       : !isQcOp && isQcPending
@@ -736,7 +724,7 @@ export function OpEntryForm({
             <div className="text2" style={{ fontSize: 13, lineHeight: 1.6 }}>
               An OSP purchase request already exists for this operation. Manage it from{' '}
               <Link to="/purchase-orders" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
-                Purchase → Outsource Jobs
+                Purchase Orders
               </Link>
               .
             </div>
@@ -747,8 +735,7 @@ export function OpEntryForm({
           ) : (
             <>
               <p className="text2" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
-                If this operation matches a configured OSP process, generate a JW purchase request
-                (and a draft PO when the process has a vendor with auto-PO enabled).
+                Raise a JW PR for this outsource operation.
               </p>
               <button
                 type="button"
@@ -789,17 +776,15 @@ export function OpEntryForm({
       <form onSubmit={handleSubmitQc}>
         <div className="panel">
           <div className="panel-hdr">
-            <span className="panel-title">QC inspection</span>
             <span className="text3" style={{ fontSize: 11 }}>
-              Op {opSrNo(op.opSeq)} · <span className="mono">{op.operation}</span> · QC pending:{' '}
-              <span className="mono">{op.qcPending}</span>
+              QC Pending: <span className="mono">{op.qcPending}</span>
             </span>
           </div>
           <div className="panel-body">
             {blockedBanner}
             {/* Compact single-row field strip (matches the production Log Entry
                 form): Date · Time · Shift · Accepted · Reject · Inspector on one
-                wrapping row, Remarks beside it with show more/less. */}
+                wrapping row, Remarks beside it. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
               <div className="form-grp" style={{ width: 140 }}>
                 <label className="form-label" htmlFor="opf-date">
@@ -894,7 +879,6 @@ export function OpEntryForm({
                   required
                   value={operatorName}
                   onChange={(e) => handleOperatorNameChange(e.target.value)}
-                  placeholder="QC inspector name"
                   autoComplete="off"
                 />
                 <datalist id="opf-op-list">
@@ -906,59 +890,19 @@ export function OpEntryForm({
                   ))}
                 </datalist>
               </div>
-              <div
-                className="form-grp"
-                style={
-                  remarksExpanded ? { flexBasis: '100%' } : { flex: '1 1 180px', minWidth: 160 }
-                }
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                  }}
-                >
-                  <label className="form-label" htmlFor="opf-rem">
-                    Remarks
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setRemarksExpanded((v) => !v)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      color: 'var(--cyan)',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {remarksExpanded ? 'show less' : 'show more'}
-                  </button>
-                </div>
-                {remarksExpanded ? (
-                  <textarea
-                    id="opf-rem"
-                    className="innovic-textarea"
-                    rows={3}
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="Optional notes…"
-                    style={{ resize: 'vertical' }}
-                  />
-                ) : (
-                  <input
-                    id="opf-rem"
-                    className="innovic-input"
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="Optional notes…"
-                    title={remarks || undefined}
-                  />
-                )}
+              <div className="form-grp" style={{ flex: '1 1 180px', minWidth: 160 }}>
+                <label className="form-label" htmlFor="opf-rem">
+                  Remarks
+                </label>
+                <textarea
+                  id="opf-rem"
+                  className="innovic-textarea"
+                  rows={1}
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Optional notes…"
+                  style={{ resize: 'vertical' }}
+                />
               </div>
             </div>
             <div style={{ marginTop: 10 }}>
@@ -1022,54 +966,13 @@ export function OpEntryForm({
   // the operator must have somewhere to type what the session made. Without
   // this, Start-tab Stop would demand a Qty the form never showed him.
   const showQtyFields = !isStart || Boolean(activeRunningId);
-  const modeToggle = onModeChange ? (
-    <div style={{ display: 'flex', gap: 4 }}>
-      {/* Gated exactly the way ✓ Complete below always was. That asymmetry was
-          the whole bug: Complete asked whether it was possible and Start never
-          did, so a running operation was offered a Start it could not do. */}
-      {canComplete ? null : (
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={() => onModeChange('start')}
-          style={{
-            borderColor: isStart ? 'var(--amber)' : 'var(--border2)',
-            background: isStart ? 'var(--amber3)' : 'transparent',
-            color: isStart ? 'var(--amber)' : 'var(--text2)',
-            fontWeight: 700,
-          }}
-        >
-          ▶ Start
-        </button>
-      )}
-      {canComplete ? (
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={() => onModeChange('complete')}
-          style={{
-            borderColor: !isStart ? 'var(--green)' : 'var(--border2)',
-            background: !isStart ? 'var(--green3)' : 'transparent',
-            color: !isStart ? 'var(--green)' : 'var(--text2)',
-            fontWeight: 700,
-          }}
-        >
-          ✓ Complete
-        </button>
-      ) : null}
-    </div>
-  ) : null;
-
   return (
     <form onSubmit={(e) => void handleProductionSubmit(e)}>
       <div className="panel">
         <div className="panel-hdr">
-          <span className="panel-title">{isStart ? '▶ Start Operation' : '✓ Log entry'}</span>
-          {modeToggle ?? (
-            <span className="text3" style={{ fontSize: 11 }}>
-              Op {opSrNo(op.opSeq)} · <span className="mono">{op.operation}</span>
-            </span>
-          )}
+          <span className="text3" style={{ fontSize: 11 }}>
+            Op {opSrNo(op.opSeq)} · <span className="mono">{op.operation}</span>
+          </span>
         </div>
         <div className="panel-body">
           {blockedBanner}
@@ -1274,60 +1177,20 @@ export function OpEntryForm({
                 </div>
               ) : null}
             </div>
-            {/* Remarks sits next to Operator. Collapsed it is a compact single
-                line (full text on hover); "show more" expands it to a full-width
-                textarea for long notes, "show less" collapses it back. */}
-            <div
-              className="form-grp"
-              style={remarksExpanded ? { flexBasis: '100%' } : { flex: '1 1 200px', minWidth: 180 }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                }}
-              >
-                <label className="form-label" htmlFor="opf-rem">
-                  Remarks
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setRemarksExpanded((v) => !v)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    padding: 0,
-                    color: 'var(--cyan)',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {remarksExpanded ? 'show less' : 'show more'}
-                </button>
-              </div>
-              {remarksExpanded ? (
-                <textarea
-                  id="opf-rem"
-                  className="innovic-textarea"
-                  rows={3}
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  placeholder="Optional notes…"
-                  style={{ resize: 'vertical' }}
-                />
-              ) : (
-                <input
-                  id="opf-rem"
-                  className="innovic-input"
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  placeholder="Optional notes…"
-                  title={remarks || undefined}
-                />
-              )}
+            {/* Remarks sits next to Operator; the box grows when dragged. */}
+            <div className="form-grp" style={{ flex: '1 1 200px', minWidth: 180 }}>
+              <label className="form-label" htmlFor="opf-rem">
+                Remarks
+              </label>
+              <textarea
+                id="opf-rem"
+                className="innovic-textarea"
+                rows={1}
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="Optional notes…"
+                style={{ resize: 'vertical' }}
+              />
             </div>
           </div>
 
@@ -1394,85 +1257,6 @@ export function OpEntryForm({
             </div>
           ) : null}
 
-          {isStart ? (
-            // "Mark Operation as Running" info panel — full width below the strip.
-            <div
-              style={{
-                background: 'var(--amber3)',
-                border: '1px solid var(--amber2)',
-                borderRadius: 8,
-                padding: 10,
-                marginTop: 12,
-              }}
-            >
-              <div
-                style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}
-              >
-                ▶ Mark Operation as Running
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text2)' }}>
-                This will mark{' '}
-                <b className="mono">
-                  {op.jobCardCode} Op{opSrNo(op.opSeq)}
-                </b>{' '}
-                as Running on <b>{isProcessOp ? (actualLabel ?? '—') : plannedLabel}</b>
-                {isProcessOp && actualLabel && actualLabel !== plannedLabel ? (
-                  <>
-                    {' '}
-                    <span className="amber">(planned {plannedLabel})</span>
-                  </>
-                ) : null}
-                .
-              </div>
-              {/* The part. The sentence above names the job, the operation and
-                  the machine, which is everything except WHAT is being made —
-                  and a job card number does not carry the part in it, so an
-                  operator could read that line back word for word and still be
-                  about to run the wrong component. This panel is full width
-                  inside the popup, so there is room for the name as well as the
-                  code; it is still held to one line, with the whole of it on
-                  hover, because a wrapped line here pushes the Start button
-                  down and this is a screen people press quickly. */}
-              {itemCodeLabel ? (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--text2)',
-                    marginTop: 4,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={
-                    (op.clientPoLineNo ? `POL ${op.clientPoLineNo} · ` : '') +
-                    (op.itemName ? `${itemCodeLabel} — ${op.itemName}` : itemCodeLabel)
-                  }
-                >
-                  {/* POL — the line number printed on the CUSTOMER's own
-                      purchase order, ahead of the item code. Dropped when no
-                      sales order sits behind the card. */}
-                  {op.clientPoLineNo ? (
-                    <>
-                      POL{' '}
-                      <b className="mono" style={{ color: 'var(--purple)' }}>
-                        {op.clientPoLineNo}
-                      </b>{' '}
-                      ·{' '}
-                    </>
-                  ) : null}
-                  Item:{' '}
-                  <b className="mono" style={{ color: 'var(--purple)' }}>
-                    {itemCodeLabel}
-                  </b>
-                  {op.itemName ? ` — ${op.itemName}` : ''}
-                </div>
-              ) : null}
-              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-                Available qty to process: <b style={{ color: 'var(--cyan)' }}>{op.available} pcs</b>
-              </div>
-            </div>
-          ) : null}
-
           {busyUnknown ? (
             <div
               className="text3"
@@ -1527,7 +1311,7 @@ export function OpEntryForm({
                     ) : (
                       <Play size={14} />
                     )}
-                    ▶ Start Operation
+                    Start Operation
                   </button>
                 )
               ) : (

@@ -97,19 +97,6 @@ export function ToolIssueRegisterView({
             }}
             style={{ minWidth: 160, fontSize: 12 }}
           />
-          <select
-            className="innovic-select"
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value as FilterKey);
-              setPage(1);
-            }}
-          >
-            <option value="all">All</option>
-            <option value="out">Currently Out</option>
-            <option value="overdue">Overdue</option>
-            <option value="returned">Returned</option>
-          </select>
           {canIssue ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
               + Issue Tool
@@ -287,12 +274,6 @@ export function ToolIssueRegisterView({
           </div>
         </div>
       ) : null}
-
-      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-        🔧 Tool Issue Register tracks returnable items (tools, inserts, spanners, fixtures). Return
-        button records Good/Damaged/Consumed breakdown. Good qty added back to stock.
-      </div>
-
       {showNew ? <NewToolIssueModal onClose={() => setShowNew(false)} /> : null}
       {returnTarget ? (
         <ReturnModal issue={returnTarget} onClose={() => setReturnTarget(null)} />
@@ -503,7 +484,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             onChange={(e) => setDate(e.target.value)}
           />
         </Field>
-        <Field label="Tool / Item ★ (type to search)" full>
+        <Field label="Tool ★" full>
           <input
             type="text"
             className="innovic-input"
@@ -744,10 +725,10 @@ function ReturnModal({
         }}
       >
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
-          Return breakdown (max {remaining})
+          Return Qty (max {remaining})
         </div>
         <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <Field label="Returned Good (stock +)" labelColor="var(--green)">
+          <Field label="Good" labelColor="var(--green)">
             <input
               type="number"
               min={0}

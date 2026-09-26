@@ -114,7 +114,7 @@ export function GrnAgainstPoForm({
   const poIneligible = useMemo((): string | null => {
     if (!po) return null;
     if (poSendsMaterialOut(po.poType)) {
-      return 'This PO sends material out to the vendor — receive it on the "Against JW PO / DC" tab.';
+      return 'This is a Job Work PO. Choose GRN Type "Against JW PO / DC".';
     }
     if (po.status !== 'open' && po.status !== 'partial') {
       return `This PO is ${poStatusLabel(po.status)} — only approved (Open / Partly Received) POs can be received.`;
@@ -300,7 +300,6 @@ export function GrnAgainstPoForm({
             id="invoiceNo"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Vendor invoice"
             value={invoiceNo}
             onChange={(e) => setInvoiceNo(e.target.value)}
           />
@@ -313,7 +312,6 @@ export function GrnAgainstPoForm({
             id="dcNo"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Delivery challan"
             value={dcNo}
             onChange={(e) => setDcNo(e.target.value)}
           />
@@ -326,7 +324,6 @@ export function GrnAgainstPoForm({
             id="remarks"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Notes"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
           />
@@ -337,7 +334,7 @@ export function GrnAgainstPoForm({
         className="form-label"
         style={{ fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}
       >
-        Line Items — pending on this PO
+        Line Items
       </div>
 
       {/* Same shape as the SO form's line table: fixed layout, % widths. */}

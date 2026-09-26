@@ -415,22 +415,12 @@ export function JcOpFooter({
            and Log are the two ends of one chain, so exactly one of them shows —
            an op with pending qty and no running session offers Start, never
            Log. */
-        <button
-          type="button"
-          className="btn btn-sm btn-primary"
-          onClick={() => onLog(op.id)}
-          title="Log production against the run that is open on this operation"
-        >
-          ✚ Op Entry
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => onLog(op.id)}>
+          ✓ Complete
         </button>
       ) : showStart ? (
-        <button
-          type="button"
-          className="btn btn-sm btn-primary"
-          onClick={() => onStart(op.id)}
-          title="Start this operation in Op Entry"
-        >
-          ▶ Op Entry
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => onStart(op.id)}>
+          ▶ Start Operation
         </button>
       ) : null}
       {/* Third-party inspection lives on the QC Call Register's TPI tab (the old
@@ -464,7 +454,7 @@ export function JcOpFooter({
           to="/nc-register"
           search={{ search: jc.code }}
           className="btn btn-sm btn-ghost"
-          title="Open the NC register filtered to this job card — the NC for these rejected pieces was raised automatically at QC"
+          title="Open NCs for this job card"
         >
           ⚠ NC ({op.qcRejectedQty})
         </Link>

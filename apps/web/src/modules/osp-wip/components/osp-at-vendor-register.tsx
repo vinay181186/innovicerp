@@ -98,23 +98,43 @@ export function OspAtVendorRegister(): React.JSX.Element {
                     <th>Operation</th>
                     <th className="td-ctr">Order Qty</th>
                     <th className="td-ctr">Sent</th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>
+                    <th
+                      className="td-ctr"
+                      style={{ color: 'var(--amber)' }}
+                      title="Physically out at the vendor (sent − returned)"
+                    >
                       At Vendor
                     </th>
-                    <th className="td-ctr" style={{ color: 'var(--cyan)' }}>
+                    <th
+                      className="td-ctr"
+                      style={{ color: 'var(--cyan)' }}
+                      title="Returned, incoming QC still pending"
+                    >
                       In QC
                     </th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                    <th
+                      className="td-ctr"
+                      style={{ color: 'var(--green)' }}
+                      title="Accepted at incoming QC"
+                    >
                       Accepted
                     </th>
                     <th className="td-ctr">Rejected</th>
-                    <th className="td-ctr" style={{ color: 'var(--blue)' }}>
+                    <th
+                      className="td-ctr"
+                      style={{ color: 'var(--blue)' }}
+                      title="Pending qty still to be outsourced"
+                    >
                       Not Sent
                     </th>
                     {/* Purple: the only colour in this table not already spoken for by a
                         bucket (it labels the item CODE, never a quantity), so a purple
                         number cannot be misread as at-vendor/in-QC/accepted/not-sent. */}
-                    <th className="td-ctr" style={{ color: 'var(--purple)' }}>
+                    <th
+                      className="td-ctr"
+                      style={{ color: 'var(--purple)' }}
+                      title="Cleared by the previous operation — what a challan accepts today"
+                    >
                       Ready to Send
                     </th>
                   </tr>
@@ -135,14 +155,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
           </div>
 
           <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-            💡 Every ordered piece reconciles as{' '}
-            <b>Order Qty = Accepted + In QC + At Vendor + Not Sent</b>. "Accepted" is accepted at
-            incoming QC; "In QC" is returned but QC still pending; "At Vendor" is material
-            physically out (sent − returned) — all tracked here, not in finished stock.{' '}
-            <b>Not Sent</b> is the pending qty still to be outsourced eventually;{' '}
-            <b>Ready to Send</b> is how much the previous operation has actually cleared, i.e. what
-            a challan will accept today. Figures are derived from job-card counters and the return
-            GRN's incoming QC; nothing is keyed in.
+            Order Qty = Accepted + In QC + At Vendor + Not Sent.
           </div>
         </>
       ) : null}
@@ -250,21 +263,19 @@ function KpiStrip({
       variant: 'cyan',
       label: 'Outsourced Ops',
       value: summary.totalOps,
-      sub: `${summary.sentQty} pcs sent to vendors`,
       onClick: () => setFilter('all'),
     },
     {
       variant: 'amber',
-      label: 'At Vendor (pcs)',
+      label: 'At Vendor',
       value: summary.atVendorQty,
       sub: `${summary.opsAtVendor} ops still out`,
       onClick: () => setFilter(filter === 'at_vendor' ? 'all' : 'at_vendor'),
     },
     {
       variant: 'blue',
-      label: 'Not Sent (pcs)',
+      label: 'Not Sent',
       value: summary.notSentQty,
-      sub: 'Ordered but not dispatched',
       onClick: () => setFilter(filter === 'not_sent' ? 'all' : 'not_sent'),
     },
     {
@@ -272,14 +283,13 @@ function KpiStrip({
       // theme defines no `.stat-card.purple` accent bar (see innovic-theme.css
       // L468) — the tile renders bar-less, exactly as Not Sent already does.
       variant: 'purple',
-      label: 'Ready to Send (pcs)',
+      label: 'Ready to Send',
       value: summary.readyToSendQty,
-      sub: 'Cleared upstream, can go today',
       onClick: () => setFilter(filter === 'ready_to_send' ? 'all' : 'ready_to_send'),
     },
     {
       variant: 'green',
-      label: 'Total Sent (pcs)',
+      label: 'Total Sent',
       value: summary.sentQty,
     },
   ];

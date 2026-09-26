@@ -1059,8 +1059,8 @@ async function writeProductionLog(
     }
     throw new ValidationError(
       input.rejectQty > 0
-        ? `Completed + Rejected (${input.qty + input.rejectQty}) cannot be more than Pending (${snapshot.available}). Reduce the qty.`
-        : `Completed (${input.qty}) cannot be more than Pending (${snapshot.available}). Reduce the qty.`,
+        ? `Completed + Rejected (${input.qty + input.rejectQty}) cannot be more than Available (${snapshot.available}).`
+        : `Completed (${input.qty}) cannot be more than Available (${snapshot.available}).`,
     );
   }
 

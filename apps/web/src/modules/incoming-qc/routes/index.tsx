@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -149,56 +150,73 @@ function IncomingQcPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Pipeline dashboard */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-              gap: 8,
-              marginBottom: 16,
-            }}
-          >
-            <Card label="GRNs Waiting" value={data.metrics.grnsWaiting} color="var(--amber)" />
-            <Card label="Pending Qty" value={data.metrics.pendingQty} color="var(--red)" />
-            <Card
-              label="Avg Wait (days)"
-              value={data.metrics.avgWaitDays}
-              color={
-                data.metrics.avgWaitDays > 3
-                  ? 'var(--red)'
-                  : data.metrics.avgWaitDays > 1
-                    ? 'var(--amber)'
-                    : 'var(--green)'
-              }
+          {/* Pipeline dashboard — one strip */}
+          <div style={{ marginBottom: 16 }}>
+            <StatStrip
+              items={[
+                {
+                  key: 'grnsWaiting',
+                  label: 'GRNs Waiting',
+                  count: data.metrics.grnsWaiting,
+                  color: 'var(--amber)',
+                },
+                {
+                  key: 'pendingQty',
+                  label: 'Pending Qty',
+                  count: data.metrics.pendingQty,
+                  color: 'var(--red)',
+                },
+                {
+                  key: 'avgWait',
+                  label: 'Avg Wait (days)',
+                  count: data.metrics.avgWaitDays,
+                  color:
+                    data.metrics.avgWaitDays > 3
+                      ? 'var(--red)'
+                      : data.metrics.avgWaitDays > 1
+                        ? 'var(--amber)'
+                        : 'var(--green)',
+                },
+                {
+                  key: 'oldest',
+                  label: 'Oldest GRN',
+                  count: `${data.metrics.oldestDays}d`,
+                  color: data.metrics.oldestDays > 5 ? 'var(--red)' : 'var(--amber)',
+                  sub: data.metrics.oldestGrnNo ?? undefined,
+                },
+                // Price-gated: the server sends null when prices are hidden.
+                ...(data.metrics.valueInQc == null
+                  ? []
+                  : [
+                      {
+                        key: 'valueInQc',
+                        label: 'Value in QC',
+                        count: `₹${data.metrics.valueInQc.toLocaleString('en-IN')}`,
+                        color: 'var(--amber)',
+                      },
+                    ]),
+                {
+                  key: 'todayAccepted',
+                  label: 'Today Accepted',
+                  count: data.metrics.todayAcceptedQty,
+                  color: 'var(--green)',
+                  sub: `${data.metrics.todayAcceptedGrns} GRNs`,
+                },
+                {
+                  key: 'todayRejected',
+                  label: 'Today Rejected',
+                  count: data.metrics.todayRejectedQty,
+                  color: 'var(--red)',
+                },
+              ]}
             />
-            <Card
-              label="Oldest GRN"
-              value={`${data.metrics.oldestDays}d`}
-              color={data.metrics.oldestDays > 5 ? 'var(--red)' : 'var(--amber)'}
-              {...(data.metrics.oldestGrnNo ? { sub: data.metrics.oldestGrnNo } : {})}
-            />
-            {data.metrics.valueInQc == null ? null : (
-              <Card
-                label="Value in QC"
-                value={`₹${data.metrics.valueInQc.toLocaleString('en-IN')}`}
-                color="var(--amber)"
-                valueFontSize={18}
-              />
-            )}
-            <Card
-              label="Today Accepted"
-              value={data.metrics.todayAcceptedQty}
-              color="var(--green)"
-              sub={`${data.metrics.todayAcceptedGrns} GRNs`}
-            />
-            <Card label="Today Rejected" value={data.metrics.todayRejectedQty} color="var(--red)" />
           </div>
 
           {/* Pending inspection queue */}
           <div className="panel">
             <div className="panel-hdr">
               <span className="panel-title" style={{ color: 'var(--amber)' }}>
-                ⏳ Pending Inspection ({data.pending.length})
+                ⏳ Pending Inspection ({data.pending.length} lines)
               </span>
             </div>
             {/* The sheet look (tbl-grid, as the Plans and Job Card lists):
@@ -320,12 +338,6 @@ function IncomingQcPage(): React.JSX.Element {
               </table>
             </div>
           </div>
-
-          <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-            💡 Items appear here automatically when GRN is done. Click <b>🔬 Inspect</b> to open the
-            QC form, accept/reject and optionally attach QC report. Accepted qty goes to Store
-            stock, rejected qty tracked for vendor action.
-          </div>
         </>
       )}
 
@@ -335,33 +347,6 @@ function IncomingQcPage(): React.JSX.Element {
           o={inspectRow}
           onClose={() => setInspectLineId(null)}
         />
-      ) : null}
-    </div>
-  );
-}
-
-function Card(props: {
-  label: string;
-  value: number | string;
-  color: string;
-  sub?: string;
-  valueFontSize?: number;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-        {props.label}
-      </div>
-      <div
-        className="mono fw-700"
-        style={{ fontSize: props.valueFontSize ?? 24, color: props.color }}
-      >
-        {props.value}
-      </div>
-      {props.sub ? (
-        <div className="text3" style={{ fontSize: 9 }}>
-          {props.sub}
-        </div>
       ) : null}
     </div>
   );

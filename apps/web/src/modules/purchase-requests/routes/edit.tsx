@@ -8,6 +8,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseRequest, usePurchaseRequest, useUpdatePurchaseRequest } from '../api';
+import { PrStatusBadge } from '../components/pr-status-badge';
 import { PurchaseRequestForm } from '../components/purchase-request-form';
 
 export const purchaseRequestNewRoute = createRoute({
@@ -228,8 +229,12 @@ function PurchaseRequestEditPage(): React.JSX.Element {
             >
               {detail.code}
             </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
+            <div
+              className="panel-title"
+              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
+            >
               Edit Purchase Request
+              <PrStatusBadge status={detail.status} />
             </div>
           </div>
         </div>

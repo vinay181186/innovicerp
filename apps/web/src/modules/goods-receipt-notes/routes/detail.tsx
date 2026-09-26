@@ -347,7 +347,10 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
       <Pair label="GRN Date" value={detail.grnDate} />
       {/* The linked OSP challan's own code when the GRN came from a DC receive;
           otherwise whatever the storekeeper typed on Against PO. */}
-      <Pair label="DC No." value={detail.dcCode ?? detail.dcNo ?? '—'} />
+      <Pair
+        label={detail.dcCode ? 'DC No.' : 'Vendor Challan No.'}
+        value={detail.dcCode ?? detail.dcNo ?? '—'}
+      />
       <Pair label="Vendor Invoice No." value={detail.invoiceNo ?? '—'} />
       {/* On an NC-return GRN there is no PO: the header's poCodeText holds the
           NC code, so it is shown once, under an "NC" label. */}

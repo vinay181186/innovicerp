@@ -113,9 +113,6 @@ function NcRegisterNewPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div>
             <div className="panel-title">❌ Report Non-Conformance</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Status starts as <span className="mono">pending</span> until disposition.
-            </div>
           </div>
         </div>
         <div className="panel-body">

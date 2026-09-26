@@ -1583,9 +1583,8 @@ export async function updatePurchaseOrder(
       }
       if (lockedChanges.length > 0) {
         throw new ValidationError(
-          `PO ${existingHdr.code} ${lockReason}, so ${lockedChanges.join(', ')} ` +
-            `can no longer be changed. Raise a new PO for the difference. ` +
-            `Due Date, Remarks and PR No. can still be edited.`,
+          `Cannot change ${lockedChanges.join(', ')} on PO ${existingHdr.code}: it ${lockReason}. ` +
+            `Raise a new PO for the difference. Due Date, Remarks and PR No. can still be edited.`,
         );
       }
     }

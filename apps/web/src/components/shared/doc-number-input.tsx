@@ -130,9 +130,7 @@ export function DocNumberInput({
       ) : state.error ? (
         <div className="form-error">{state.error}</div>
       ) : value.trim() === '' ? (
-        <div className="form-help">
-          Auto-filled with the next number. Edit to use your own — leave blank to auto-generate on save.
-        </div>
+        <div className="form-help">Leave blank for the next number.</div>
       ) : (
         <div className="form-help" style={{ color: 'var(--green)' }}>✓ Available</div>
       )}

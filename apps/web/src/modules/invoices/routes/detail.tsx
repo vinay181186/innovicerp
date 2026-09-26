@@ -136,17 +136,17 @@ function InvoiceDetailPage(): React.JSX.Element {
   const stats: { label: string; value: string; size: number; color?: string }[] = priceHidden
     ? []
     : [
-        { label: 'SUBTOTAL', value: inr(inv.subtotal ?? 0), size: 16 },
+        { label: 'Subtotal', value: inr(inv.subtotal ?? 0), size: 16 },
         {
           label: `GST ${inv.gstPercent}%`,
           value: inr(inv.gstAmount ?? 0),
           size: 16,
           color: 'var(--amber)',
         },
-        { label: 'TOTAL', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green)' },
-        { label: 'PAID', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
+        { label: 'Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green)' },
+        { label: 'Paid', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
         {
-          label: 'OUTSTANDING AMOUNT',
+          label: 'Outstanding',
           value: inr(inv.balance ?? 0),
           size: 18,
           color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)',
@@ -197,6 +197,11 @@ function InvoiceDetailPage(): React.JSX.Element {
         </div>
       </div>
 
+      <div style={{ fontSize: 13, marginBottom: 10 }}>
+        Customer: <b>{inv.clientName ?? '—'}</b> · SO No.: <b>{inv.soCode ?? '—'}</b> · Due Date:{' '}
+        <b>{inv.dueDate ?? '—'}</b>
+      </div>
+
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         {stats.map((s) => (
           <div
@@ -204,7 +209,7 @@ function InvoiceDetailPage(): React.JSX.Element {
             className="panel"
             style={{ padding: 10, minWidth: 100, textAlign: 'center' }}
           >
-            <div className="text3" style={{ fontSize: 9 }}>
+            <div className="text3" style={{ fontSize: 11 }}>
               {s.label}
             </div>
             <div className="mono fw-700" style={{ fontSize: s.size, color: s.color }}>
@@ -212,11 +217,6 @@ function InvoiceDetailPage(): React.JSX.Element {
             </div>
           </div>
         ))}
-      </div>
-
-      <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-        SO No.: <b>{inv.soCode ?? ''}</b> | Customer: <b>{inv.clientName ?? ''}</b> | Due Date:{' '}
-        <b>{inv.dueDate ?? '—'}</b>
       </div>
 
       {payOpen ? (

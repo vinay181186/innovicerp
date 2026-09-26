@@ -191,8 +191,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               Receive against {detail.vendorName ?? detail.vendorCodeText}
             </div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Record the qty received per line. Everything received goes to Incoming QC as pending —
-              the accept/reject decision (and any defect record) is made there.
+              Received qty goes to Incoming QC.
             </div>
           </div>
         </div>
@@ -250,13 +249,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
 
         <div className="panel">
           <div className="panel-hdr">
-            <div>
-              <div className="panel-title">Lines</div>
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                Each row shows what was sent and what's still outstanding. Enter the qty just
-                received — quality is checked later at Incoming QC.
-              </div>
-            </div>
+            <div className="panel-title">Lines</div>
           </div>
           <div className="panel-body">
             <div className="tbl-wrap">

@@ -385,7 +385,7 @@ function assertWithinOpen(nc: NcRow, accepted: number, rejected: number): void {
   const open = ncOpenQty(nc);
   if (accepted + rejected > open) {
     throw new ConflictError(
-      `QC of ${accepted + rejected} pcs exceeds the ${open} pcs still open on ${nc.code}`,
+      `Accepted + Rejected (${accepted + rejected}) cannot be more than Open (${open}) on ${nc.code}.`,
     );
   }
 }
@@ -652,8 +652,7 @@ export async function onNcChallanReceived(
   const total = already + received;
   if (total > sent) {
     throw new ConflictError(
-      `Receiving ${received} pcs would exceed the ${sent} pcs sent on ${nc.code} ` +
-        `(${already} already received)`,
+      `Received Qty (${received}) cannot be more than Pending (${sent - already}) on ${nc.code}.`,
     );
   }
   await tx

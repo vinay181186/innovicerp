@@ -170,7 +170,7 @@ export function HomeAdmin({ home }: { home: HomeResponse }): React.JSX.Element {
                   fontWeight: 700,
                 }}
               >
-                ✅ All clear — nothing needs attention.
+                ✅ Nothing pending
               </div>
             ) : (
               attn.map((it, i) => (
@@ -203,9 +203,6 @@ export function HomeAdmin({ home }: { home: HomeResponse }): React.JSX.Element {
                       }}
                     >
                       {it.label}
-                    </span>
-                    <span aria-hidden="true" style={{ color: 'var(--text3)', fontSize: 11 }}>
-                      View →
                     </span>
                   </div>
                 </Link>

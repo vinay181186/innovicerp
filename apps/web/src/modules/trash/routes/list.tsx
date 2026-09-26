@@ -144,15 +144,9 @@ function TrashListPage(): React.JSX.Element {
   async function onEmptyAll(): Promise<void> {
     setActionError(null);
     // Count is grandTotal, not `total`: Empty All deletes every soft-deleted
-    // row of every type, ignoring the active type filter. Warnings mirror
-    // legacy _confirmDestructive's warningList (L2192-2197).
+    // row of every type, ignoring the active type filter.
     const confirmText = window.prompt(
-      `You are about to permanently delete ${grandTotal} items from trash.\n\n` +
-        '• This action CANNOT be undone\n' +
-        '• Items will be lost forever — not recoverable from trash\n' +
-        '• If you need any of these items, click Cancel and recover them first\n' +
-        '• A backup before this operation is strongly recommended\n\n' +
-        'Type DELETE to confirm:',
+      `Permanently delete all ${grandTotal} items? This cannot be undone. Type DELETE to confirm.`,
     );
     if (confirmText !== 'DELETE') return;
     try {
@@ -178,9 +172,6 @@ function TrashListPage(): React.JSX.Element {
           <div className="section-hdr" style={{ marginBottom: 0 }}>
             Trash
           </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Soft-deleted records across every module. Restore to bring back, or permanently delete (cannot be undone).
-          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select
@@ -204,9 +195,6 @@ function TrashListPage(): React.JSX.Element {
               );
             })}
           </select>
-          <span className="text3" style={{ fontSize: 11 }}>
-            {total} item{total !== 1 ? 's' : ''} in trash
-          </span>
           {grandTotal > 0 ? (
             <button
               type="button"
@@ -329,7 +317,7 @@ function TrashListPage(): React.JSX.Element {
       >
         <span>
           {total === 0
-            ? 'Nothing in trash'
+            ? ''
             : `Showing ${(search.page - 1) * PAGE_SIZE + 1}–${Math.min(search.page * PAGE_SIZE, total)} of ${total}`}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -366,8 +354,7 @@ function TrashListPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        Items can be restored to their original list. Only Admins can permanently delete or empty
-        trash.
+        Only admins can delete permanently.
       </div>
     </div>
   );

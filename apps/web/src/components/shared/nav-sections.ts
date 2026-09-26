@@ -102,7 +102,7 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
-          { to: '/goods-receipt-notes', label: 'Goods Receipt Note (GRN)', icon: '📥', formKey: 'grn_create' },
+          { to: '/goods-receipt-notes', label: 'GRN', icon: '📥', formKey: 'grn_create' },
           { to: '/issue-register', label: 'Item Issue Register', icon: '📋', formKey: 'issue_create' },
           { to: '/party-grn', label: 'Party GRN', icon: '📥', formKey: 'party_create' },
         ],

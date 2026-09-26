@@ -1,9 +1,10 @@
 // Approval Configuration page — admin-only.
 //
 // Mirror of legacy renderApprovalConfig (HTML L21608):
-//   - PO Approval toggle + manager limit + approvers picker + flow diagram
-//   - PR Approval (always ON — read-only)
-//   - Invoice Approval toggle
+//   - PO manager limit + approvers picker (the PO Approval and Invoice
+//     Approval switches are hidden: no server code reads them; PR approval
+//     is always on, so it has no block)
+//   - Op Entry date/time edit approval toggle
 //   - Recent Approval Activity (last 20 APPROVE / REJECT / PAYMENT rows)
 //
 // Save is one shot (legacy auto-saved on every change; we save explicitly
@@ -183,20 +184,9 @@ function ApprovalConfigPage(): React.JSX.Element {
           <div>
             <span style={{ fontSize: 14, fontWeight: 700 }}>🛒 Purchase Order Approval</span>
             <div className="text3" style={{ fontSize: 11 }}>
-              When enabled, new POs are created as Draft and need Manager/Admin approval before printing.
+              PO approval is off. New POs open straight away.
             </div>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={draft.poApproval}
-              onChange={(e) => setDraft({ ...draft, poApproval: e.target.checked })}
-              style={{ width: 20, height: 20 }}
-            />
-            <span style={{ fontWeight: 700, color: draft.poApproval ? 'var(--green)' : 'var(--text3)' }}>
-              {draft.poApproval ? 'ENABLED' : 'DISABLED'}
-            </span>
-          </label>
         </div>
 
         <div
@@ -234,15 +224,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                 }}
               />
               <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
-                PO above this amount → only Admin can approve
-              </div>
-            </div>
-            <div>
-              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-                Admin approval limit
-              </label>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--green)', padding: 8 }}>
-                Unlimited ∞
+                Admin: no limit.
               </div>
             </div>
           </div>
@@ -262,7 +244,7 @@ function ApprovalConfigPage(): React.JSX.Element {
             👤 PO Approvers (select users who can approve)
           </div>
           <div className="text3" style={{ fontSize: 10, marginBottom: 8 }}>
-            Only selected users can approve/reject POs. Admin always has approval rights.
+            Only selected users can approve/reject POs.
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {(users?.items ?? []).map((u) => {
@@ -318,146 +300,17 @@ function ApprovalConfigPage(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Flow diagram */}
-        <div style={{ marginTop: 12, padding: 10, background: 'var(--bg3)', borderRadius: 6 }}>
-          <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
-            FLOW:
-          </div>
-          {draft.poApproval ? (
-            <div
-              style={{
-                fontSize: 12,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                flexWrap: 'wrap',
-              }}
-            >
-              <span style={{ padding: '4px 10px', background: 'var(--bg4)', borderRadius: 4, fontWeight: 700 }}>
-                PO Created
-              </span>
-              <span className="text3">→</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(148,163,184,0.15)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--text3)',
-                }}
-              >
-                Draft
-              </span>
-              <span className="text3">→</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(34,197,94,0.10)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--green)',
-                }}
-              >
-                ✅ Approve
-              </span>
-              <span className="text3">or</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(239,68,68,0.10)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--red)',
-                }}
-              >
-                ❌ Reject
-              </span>
-              <span className="text3">→</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(34,197,94,0.15)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--green)',
-                }}
-              >
-                Open (Active)
-              </span>
-            </div>
-          ) : (
-            <div style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ padding: '4px 10px', background: 'var(--bg4)', borderRadius: 4, fontWeight: 700 }}>
-                PO Created
-              </span>
-              <span className="text3">→</span>
-              <span
-                style={{
-                  padding: '4px 10px',
-                  background: 'rgba(34,197,94,0.15)',
-                  borderRadius: 4,
-                  fontWeight: 700,
-                  color: 'var(--green)',
-                }}
-              >
-                Open (Active) — No approval needed
-              </span>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* PR Approval — always on */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
-        <div
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-        >
-          <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>📋 Purchase Request Approval</span>
-            <div className="text3" style={{ fontSize: 11 }}>
-              PRs must be approved before PO can be created. This is always enabled.
-            </div>
-          </div>
-          <span style={{ fontWeight: 700, color: 'var(--green)' }}>ALWAYS ON</span>
-        </div>
-      </div>
-
-      {/* Invoice Approval */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14, opacity: 0.7 }}>
-        <div
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-        >
-          <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>📄 Invoice Approval</span>
-            <div className="text3" style={{ fontSize: 11 }}>
-              Require approval before invoice can be printed and sent to the customer.
-            </div>
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={draft.invoiceApproval}
-              onChange={(e) => setDraft({ ...draft, invoiceApproval: e.target.checked })}
-              style={{ width: 20, height: 20 }}
-            />
-            <span style={{ fontWeight: 700, color: draft.invoiceApproval ? 'var(--green)' : 'var(--text3)' }}>
-              {draft.invoiceApproval ? 'ENABLED' : 'DISABLED'}
-            </span>
-          </label>
-        </div>
-      </div>
-
-      {/* Op Entry date/time edit approval (ADR-130). Unlike the two panels
-          above, this switch is actually read by the server — it decides
-          whether an operator's correction applies on save or waits here. */}
+      {/* Op Entry date/time edit approval (ADR-130). Unlike the PO switch
+          above, this one is read by the server — it decides whether an
+          operator's correction applies on save or waits here. */}
       <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <span style={{ fontSize: 14, fontWeight: 700 }}>⏱ Op Entry date/time changes</span>
             <div className="text3" style={{ fontSize: 11 }}>
-              Require a manager to approve when an operator corrects the date or time of a log
-              entry. The entry keeps its original values until approved. Quantities can never be
-              edited either way.
+              Manager approves date/time corrections on Log Entry.
             </div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>

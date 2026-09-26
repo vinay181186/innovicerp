@@ -170,7 +170,7 @@ export function printJobCard(args: {
 
   const left = [
     fact('JC No.', jc.code, { strong: true }),
-    fact('SO No.', soNo, { strong: true }),
+    fact(jc.sourceLink?.type === 'jw' ? 'JWSO No.' : 'SO No.', soNo, { strong: true }),
     fact('Ln', soLine),
     fact('POL', pol),
     fact('Item Name', jc.itemName),
@@ -218,7 +218,7 @@ export function printJobCard(args: {
     </div>`;
 
   const foot = `<div class="jfoot">
-      <span>Job card must reference only released drawing / routing revisions. QC hold operations cannot be closed without inspector acceptance.</span>
+      <span>Use released drawing only.</span>
       <span>Page <span data-pgof>1</span></span>
     </div>`;
 

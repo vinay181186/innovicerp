@@ -141,9 +141,7 @@ export function OspProcessesPanel(): React.JSX.Element {
       </div>
       <div className="panel-body">
         <p className="text2" style={{ fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
-          Define outside processes (Coating, Painting, Heat Treatment, etc.). When an operator
-          starts a JC operation matching these names, the system <b>auto-generates a JW PR</b> and
-          optionally a <b>draft PO</b> if a vendor is configured.
+          Outside processes. Starting one on a JC raises a JW PR.
         </p>
 
         {isLoading ? (

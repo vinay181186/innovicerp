@@ -28,7 +28,7 @@ function machineSection(group: DailyReportResponse['groups'][number]): string {
     </tr>`,
     )
     .join('');
-  return `<h2>${esc(group.machineCode)} — ${esc(group.machineName ?? group.machineCode)} &nbsp; <span style="color:#16a34a">${group.totalQty} pcs Completed</span></h2>
+  return `<h2>${esc(group.machineCode)}${group.machineName && group.machineName !== group.machineCode ? ` — ${esc(group.machineName)}` : ''} &nbsp; <span style="color:#16a34a">${group.totalQty} pcs Completed</span></h2>
     <table><thead><tr>
       <th>JC No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>Op</th><th>Operation</th>
       <th>Shift</th><th>Completed</th><th>Operator</th><th>Remarks</th>

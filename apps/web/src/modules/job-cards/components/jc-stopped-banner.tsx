@@ -14,6 +14,7 @@
 import type { ProductionOrderListItem } from '@innovic/shared';
 import { isProductionOrderStopped } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { fmtJcDate } from '../lib/fmt-jc-date';
 
 export function JcStoppedBanner({
   order,
@@ -22,7 +23,7 @@ export function JcStoppedBanner({
   order: ProductionOrderListItem | null;
 }): React.JSX.Element | null {
   if (!order || !isProductionOrderStopped(order.status)) return null;
-  const on = order.shortClosedAt ? order.shortClosedAt.slice(0, 10) : null;
+  const on = order.shortClosedAt ? fmtJcDate(order.shortClosedAt) : null;
   return (
     <div
       style={{
@@ -51,11 +52,16 @@ export function JcStoppedBanner({
         </Link>
         <span>was short closed{on ? ` on ${on}` : ''} — no further work</span>
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
-        Production entry, QC, NC, outsourcing, dispatch and edits are all refused on this Job Card.
-        {order.shortClosedByName ? ` Stopped by ${order.shortClosedByName}.` : ''}
-        {order.shortCloseReason ? ` Reason: ${order.shortCloseReason}` : ''}
-      </div>
+      {order.shortClosedByName || order.shortCloseReason ? (
+        <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+          {[
+            order.shortClosedByName ? `Stopped by ${order.shortClosedByName}.` : '',
+            order.shortCloseReason ? `Reason: ${order.shortCloseReason}` : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        </div>
+      ) : null}
     </div>
   );
 }

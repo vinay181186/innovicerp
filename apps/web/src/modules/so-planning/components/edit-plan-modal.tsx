@@ -616,21 +616,21 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       >
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>PLAN</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Plan</span>
             <br />
             <b className="mono" style={{ color: 'var(--cyan)' }}>
               {plan.code}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO/JW</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO / JWSO</span>
             <br />
             <b className="mono">
               {plan.soCodeText ?? '—'} L{plan.lineNo ?? '—'}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Item</span>
             <br />
             {/* `CODE/REV` — see planItemLabel. nowrap so a short code never
                 breaks across two lines in this summary strip. */}
@@ -640,12 +640,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             {plan.itemName ?? plan.itemNameText ?? ''}
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO QTY</span>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Order Qty</span>
             <br />
             <b style={{ fontSize: 16 }}>{plan.orderQty}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 700 }}>PLAN QTY ★</span>
+            <span style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 700 }}>Plan Qty ★</span>
             <br />
             <input
               type="number"
@@ -940,11 +940,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           </div>
           {ops.length === 0 ? (
             <div className="empty-state" style={{ padding: 20, textAlign: 'center' }}>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>No operations yet.</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                Use <b>+ Add Op</b> for in-house work, <b>+ Add OSP Op</b> for vendor work, or{' '}
-                <b>+ Add QC Op</b> for an inspection step.
-              </div>
+              <div style={{ fontSize: 12 }}>No operations yet.</div>
             </div>
           ) : (
             // Seven columns is more than the 1320px modal has to spare on a small
@@ -1293,10 +1289,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           >
             📦 Full Outsource Details
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>
-            ℹ Our material will be sent to vendor. Vendor does all machining/processes and returns
-            finished parts.
-          </div>
           <datalist id="dlFOCC">
             {(costCenters.data?.items ?? []).map((c) => (
               <option key={c.id} value={c.code}>
@@ -1555,8 +1547,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             borderTop: '1px solid var(--border)',
           }}
         >
-          📌 QC person must upload these documents during inspection. Mandatory docs will block QC
-          completion.
+          ★ Mandatory docs must be uploaded before QC can complete.
         </div>
       </div>
 

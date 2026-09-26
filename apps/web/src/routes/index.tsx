@@ -76,7 +76,7 @@ function IndexPage(): React.JSX.Element {
               style={{ fontSize: 11 }}
               onClick={() => setMode('home')}
             >
-              📊 Overview
+              Overview
             </button>
           ) : (
             <button
@@ -85,7 +85,7 @@ function IndexPage(): React.JSX.Element {
               style={{ fontSize: 11 }}
               onClick={() => setMode('alerts')}
             >
-              🔔 Alerts
+              Alerts
             </button>
           )}
           <button
@@ -95,7 +95,7 @@ function IndexPage(): React.JSX.Element {
             aria-pressed={mode === 'widgets'}
             onClick={() => setMode(mode === 'widgets' ? 'home' : 'widgets')}
           >
-            📦 Widgets
+            Widgets
           </button>
           <button
             type="button"
@@ -104,7 +104,7 @@ function IndexPage(): React.JSX.Element {
             aria-pressed={mode === 'customize'}
             onClick={() => setMode(mode === 'customize' ? 'home' : 'customize')}
           >
-            ⚙ Customize
+            Customize
           </button>
           {/* Icon-only: the emoji is the whole label, so it needs a real name. */}
           <button

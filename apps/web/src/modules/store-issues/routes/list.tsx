@@ -115,14 +115,11 @@ function StoreIssuesListPage(): React.JSX.Element {
           <div
             style={{
               display: 'flex',
-              justifyContent: 'space-between',
+              justifyContent: 'flex-end',
               alignItems: 'center',
               marginBottom: 14,
             }}
           >
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📋 Item Issue Register
-            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="text"
@@ -272,27 +269,6 @@ function StoreIssuesListPage(): React.JSX.Element {
             </div>
           ) : null}
 
-          <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-            💡 Item Issue Register tracks material/consumables issued from Store. Stock is
-            auto-deducted. For returnable tools, use the{' '}
-            <button
-              type="button"
-              onClick={() => setTab('tools')}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                color: 'var(--cyan)',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                font: 'inherit',
-              }}
-            >
-              🔧 Tool Issues
-            </button>{' '}
-            tab.
-          </div>
-
           {showModal && perms.entry ? <NewIssueModal onClose={() => setShowModal(false)} /> : null}
         </>
       )}
@@ -394,7 +370,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
 
             <div className="form-grp form-full">
-              <label className="form-label">Item ★ (type to search from Item Master)</label>
+              <label className="form-label">Item ★</label>
               <input
                 type="text"
                 className="innovic-input"

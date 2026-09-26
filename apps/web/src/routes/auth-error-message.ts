@@ -37,10 +37,6 @@ type AuthErrorLike = {
   message?: string | undefined;
 };
 
-const FIRST_TIME_HINT =
-  'If this is your first time signing in, your administrator may not have set a password for ' +
-  'you yet. An admin can set one from Users → open the user → Set Password.';
-
 export function authErrorMessage(err: AuthErrorLike | null | undefined, action: AuthAction) {
   const code = typeof err?.code === 'string' ? err.code : '';
   const status = typeof err?.status === 'number' ? err.status : undefined;
@@ -51,7 +47,7 @@ export function authErrorMessage(err: AuthErrorLike | null | undefined, action: 
     // ambiguous about WHICH of the two was wrong — saying "no account with that email"
     // would turn this form into an email-address checker for anyone on the internet.
     case 'invalid_credentials':
-      return `That email and password don't match. ${FIRST_TIME_HINT}`;
+      return 'Email or password is wrong. First time? Ask your admin to set a password.';
 
     case 'email_not_confirmed':
       return (

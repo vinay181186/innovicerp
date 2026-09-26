@@ -86,7 +86,7 @@ function QcHistoryPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📊 QC History &amp; Tracking
+          📊 QC History
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {isFetching && !isLoading ? (
@@ -127,22 +127,14 @@ function QcHistoryPage(): React.JSX.Element {
               renders bare there and here. */}
           <div
             className="stat-grid"
-            style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 14 }}
+            style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginBottom: 14 }}
           >
-            <div className="stat-card amber">
-              <div className="stat-label">QC Pending Ops</div>
-              <div className="stat-val">{data.stats.pendingOps}</div>
-            </div>
             <div className="stat-card red">
               <div className="stat-label">Overdue (&gt;1 day)</div>
               <div className="stat-val">{data.stats.overdue}</div>
             </div>
-            <div className="stat-card green">
-              <div className="stat-label">QC Entries (total)</div>
-              <div className="stat-val">{data.stats.totalEntries}</div>
-            </div>
             <div className="stat-card blue">
-              <div className="stat-label">Today</div>
+              <div className="stat-label">Today&apos;s Entries</div>
               <div className="stat-val">{data.stats.today}</div>
             </div>
           </div>

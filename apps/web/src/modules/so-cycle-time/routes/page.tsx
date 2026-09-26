@@ -248,8 +248,7 @@ function SoCycleTimePage(): React.JSX.Element {
         </div>
       </div>
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Durations in days. Amber = over 10d, Red = over 20d. Green rows = dispatched. Averages
-        reflect the current filter.
+        Days · amber &gt; 10 · red &gt; 20 · green = dispatched
       </div>
     </div>
   );

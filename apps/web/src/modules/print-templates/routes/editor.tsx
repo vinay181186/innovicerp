@@ -411,11 +411,7 @@ function PrintTemplatesPage(): React.JSX.Element {
           borderRadius: 6,
         }}
       >
-        <b style={{ color: 'var(--sig-info)' }}>How this works:</b> The document below shows how your
-        printed output will look (with sample data). <b>Click any highlighted section</b> to edit it.
-        Use variables like <span className="mono">{'{poNo}'}</span> from the right panel to insert real
-        data automatically. Changes apply to next print immediately. Last 5 versions are kept for
-        rollback.
+        Click a section to edit; click a variable to insert it.
       </div>
 
       {/* Doc selector + actions */}
@@ -1247,23 +1243,6 @@ function PrintTemplatesPage(): React.JSX.Element {
                     {`{${v}}`}
                   </button>
                 ))}
-              </div>
-            </div>
-            <div className="panel text2" style={{ padding: 14, marginTop: 10, fontSize: 10, lineHeight: 1.6 }}>
-              <div className="fw-700" style={{ fontSize: 11, marginBottom: 6 }}>
-                💡 Quick Tips
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                <b>✎</b> Click a block to edit inline
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                <b>💾</b> Save commits the change
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                <b>🖨</b> Test Print uses sample data
-              </div>
-              <div>
-                <b>↺</b> Reset to default reverts to factory text
               </div>
             </div>
           </div>

@@ -410,8 +410,6 @@ function ProductionOrdersListPage(): React.JSX.Element {
               color: 'var(--red)',
               active: search.status === 'short_closed',
               onClick: toggleStatus('short_closed'),
-              title:
-                'Short Closed — stopped at some stage; no further work on the order or its Job Card, and the un-produced qty went back to the plan',
             },
           ]}
         />
@@ -446,7 +444,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
                   <td colSpan={columns.length} className="empty-state">
                     {search.search || search.status
                       ? 'No production orders match.'
-                      : 'No production orders yet — Production → Entry → New Production Order.'}
+                      : 'No Production Orders yet.'}
                   </td>
                 </tr>
               ) : (
@@ -474,16 +472,11 @@ function ProductionOrdersListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        {total === 0
-          ? 'No production orders'
-          : total > LIST_LIMIT
-            ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-            : `Showing all ${total} order${total === 1 ? '' : 's'}`}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-        💡 Click a row to open it.
-      </div>
+      {total > LIST_LIMIT ? (
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
+          Showing first {LIST_LIMIT} of {total} — refine with search
+        </div>
+      ) : null}
     </div>
   );
 }
