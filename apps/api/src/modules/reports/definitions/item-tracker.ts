@@ -11,6 +11,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { jcPendingToStockQtySql } from '../../../lib/jc-effective-qty';
 
 export const itemTrackerReport: RegisteredReport = {
   definition: {
@@ -53,7 +54,9 @@ export const itemTrackerReport: RegisteredReport = {
       WITH jc_open AS (
         SELECT
           jc.item_id,
-          SUM(jc.order_qty)::int AS qty,
+          -- ADR-185 — what each open card still owes stock (Order Qty less
+          -- what its order already credited): credited pieces are In Stock.
+          SUM(${jcPendingToStockQtySql('jc')})::int AS qty,
           -- Distinct drawing revisions of the SO lines behind these open JCs.
           -- sol.id is the primary key so the LEFT JOIN adds at most one row
           -- per job card — SUM(jc.order_qty) above is untouched by it.
@@ -69,6 +72,8 @@ export const itemTrackerReport: RegisteredReport = {
         LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
         WHERE jc.company_id = ${companyId}::uuid
           AND jc.deleted_at IS NULL
+          -- Rework / repair children re-make pieces the parent card counts.
+          AND jc.recovery_kind IS NULL
           AND (v.computed_status IS NULL OR v.computed_status NOT IN ('complete', 'closed'))
         GROUP BY jc.item_id
       ),

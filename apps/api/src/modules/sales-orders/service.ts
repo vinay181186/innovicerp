@@ -59,6 +59,7 @@ import {
   qtyReductionBlocker,
   readSoLineCommitments,
 } from './line-commitments';
+import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { buildSoEditSummary, type SoLineSnapshot } from './edit-summary';
 
 function soDetail(code: string, customerName: string | null | undefined): string {
@@ -515,7 +516,7 @@ export async function listSalesOrders(
         GROUP BY sales_order_id
       ) line_agg ON line_agg.sales_order_id = so.id
       LEFT JOIN (
-        SELECT sol.sales_order_id, SUM(jc.order_qty) AS jc_qty
+        SELECT sol.sales_order_id, SUM(${jcEffectiveQtySql('jc')}) AS jc_qty
         FROM public.job_cards jc
         JOIN public.sales_order_lines sol ON jc.source_so_line_id = sol.id
         WHERE jc.deleted_at IS NULL
@@ -686,13 +687,15 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       billedRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.billed)]),
     );
 
-    // JC qty per SO line = Σ job_cards.order_qty whose source_so_line_id = line.
+    // JC qty per SO line = Σ of each card's JC Qty (lib/jc-effective-qty.ts:
+    // a stopped order's card counts what it credited) whose source_so_line_id = line.
     // Rework/repair children excluded — they re-make pieces the parent JC
     // already covers (QC-NC audit 2026-09-21, gap 3; same rule as the list).
     const jcRows = await tx
       .select({
         lineId: jobCards.sourceSoLineId,
-        jcQty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int`,
+        // ADR-185 — the shared JC Qty rule (stopped order → credited).
+        jcQty: sql<number>`coalesce(sum(${jcEffectiveQtySql('"job_cards"')}), 0)::int`,
       })
       .from(jobCards)
       .innerJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))

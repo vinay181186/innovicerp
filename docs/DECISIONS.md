@@ -9873,7 +9873,54 @@ emptying Trash hard-deleted a Sales Order's invoices and payments by cascade.
   valuation (no item cost master exists). The shared contract for the first six is drafted but not
   shipped.
 
-## ADR-185: Cycle time is minutes per piece; "Running" means a machine is on it now
+## ADR-185: One fact, one number, on every page
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Context
+
+After ADR-184 a cross-page audit read each screen's own API for all 38 SO lines on TEST and
+compared every figure two screens both state. It found the same fact stated differently:
+
+- **JC Qty**: the SO list / detail summed a stopped order's card at its full Order Qty (IN-SO-00786
+  L9: 25 on a 20-piece line), while the plan said 20 were covered.
+- **Direct JC Qty**: SO Planning treated a Production Order's card as "direct" unless it was the
+  plan's single `jc_id`, so the same pieces were counted on the plan and again as a direct card.
+- **Plan status**: the plan detail showed the stored status ("JC Created") while the Plans list
+  showed the derived one ("Completed"). The KPI tiles counted by stored status, so the "Completed"
+  tile did not list PLN-0013.
+- **Still to plan**: three rules. The Needs Planning tile counted lines with no plan (25), its
+  table counted order − plan qty (29 rows), SO Planning counted plans + Buy PRs + direct cards.
+- **SO Planning list** totalled open lines only (19 lines / 359), the SO list all lines (20 / 379).
+- **Reports**: the SO backlog counted a closed card's full qty as completed; the Item Tracker
+  counted a partly closed order's credited pieces both In Stock and In Production.
+
+### Decision
+
+Each fact gets ONE SQL definition in `apps/api/src/lib`, and every screen that states it reads
+that definition:
+
+| Fact | Definition | Readers |
+| --- | --- | --- |
+| JC Qty | `jcEffectiveQtySql`: a stopped order's card counts what it credited | SO list, SO detail, JC source picker, JC line balance, JW list, SO backlog report |
+| Still owed to stock | `jcOutstandingQtySql`: Order Qty − credited | Item Tracker In Production |
+| Covered / to plan | `soLineCoveredRaw` / `soLineToPlanRaw`: plans + Buy PRs + direct cards | Needs Planning tile + table, SO Planning list (same lines as its detail) |
+| Direct card | no Production Order, not a plan's `jc_id` | SO Planning (all 5 queries) |
+| Plan status | `EFFECTIVE_STATUS_SQL`: derived for route-card plans, stored otherwise | Plans list filter, KPI tiles, plan detail |
+| Covered / Pending of a plan | `PLAN_COVERED_QTY_SQL` / `PLAN_PENDING_QTY_SQL` | Plans list, plan detail |
+
+The Production Orders report gains Lost Qty and the missing 'partially_closed' filter.
+
+### Consequences
+
+- The audit (`xpage-audit.ts`, run against TEST as a read-only harness) states 842 figures across
+  34 facts with no disagreement. It is the regression check for any new screen that states one of
+  these facts.
+- Reports that state a JC's own Order Qty (JC Status Summary, JC Ageing) keep the card's literal
+  qty: that is a fact about the card, not about the order line.
+
+## ADR-186: Cycle time is minutes per piece; "Running" means a machine is on it now
 
 **Date:** 2026-09-26
 **Status:** Accepted (TEST stack)
@@ -9903,7 +9950,7 @@ Values typed into the Route Card / Plan "hrs" box before this, and rows migrated
 hours read as minutes (loading and cost 60× too low for those rows). Audit PROD with a read-only
 query before any ×60 correction; no data was changed.
 
-## ADR-186: PO Tax Type "None" is NULL; JW Invoice carries a tax type; prints show the real UOM
+## ADR-187: PO Tax Type "None" is NULL; JW Invoice carries a tax type; prints show the real UOM
 
 **Date:** 2026-09-26
 **Status:** Accepted (TEST stack)

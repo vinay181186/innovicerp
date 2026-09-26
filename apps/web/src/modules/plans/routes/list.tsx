@@ -7,7 +7,13 @@
 // (Route card pending → Gen production order → In production → Production
 // complete) and the stored planStatus for old plans, exactly as before.
 
-import type { ListPlansResponse, PlanDerivedStatus, PlanStatus, PlanType } from '@innovic/shared';
+import {
+  PLAN_EFFECTIVE_STATUSES,
+  type ListPlansResponse,
+  type PlanEffectiveStatus,
+  type PlanStatus,
+  type PlanType,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
@@ -18,20 +24,13 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { PlanningKpiStrip } from '../components/planning-kpi-strip';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
+import { DERIVED_BADGE, DERIVED_LABEL } from '../lib/derived-status';
 
 const searchSchema = z.object({
   search: z.string().optional(),
-  status: z
-    .enum([
-      'in_planning',
-      'planned',
-      'jc_created',
-      'pr_created',
-      'in_production',
-      'complete',
-      'cancelled',
-    ])
-    .optional(),
+  // ADR-185 — the status the row shows (stored for old plans, derived for
+  // route-card plans); the KPI tiles count by the same word.
+  status: z.enum(PLAN_EFFECTIVE_STATUSES).optional(),
   planType: z.enum(['manufacture', 'direct_purchase', 'full_outsource', 'assembly']).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
   // Needs-Planning mode — folded in from the retired Planning Dashboard; swaps
@@ -59,30 +58,11 @@ const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
   cancelled: { cls: 'b-grey', label: 'Cancelled' },
 };
 
-// ADR-170 — derived status of a route-card-driven plan. grey = no route card
-// yet, blue = ready for a Production Order, amber = PO open, green = PO closed.
-// Status column wording (user, 2026-09-19): where the plan stands, in the
-// planner's own words — "RC" is the route card. The shared labels stay as
-// they are for the other screens that print them.
-const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
-  route_card_pending: 'RC Pending',
-  gen_production_order: 'RC Created',
-  in_production: 'In Production',
-  production_complete: 'Completed',
-};
 const TYPE_LABEL: Record<PlanType, string> = {
   manufacture: 'Manufacture',
   direct_purchase: 'Direct Purchase',
   full_outsource: 'Full Outsource',
   assembly: 'Assembly',
-};
-
-const DERIVED_BADGE: Record<PlanDerivedStatus, string> = {
-  // Wave 2 (owner): same colour per state as the other badges.
-  route_card_pending: 'b-grey',
-  gen_production_order: 'b-blue',
-  in_production: 'b-amber',
-  production_complete: 'b-green',
 };
 
 const TYPE_ICON: Record<PlanType, string> = {
@@ -116,7 +96,7 @@ function PlansListPage(): React.JSX.Element {
   // Tile → URL filter. Status tiles set `status`; the Needs Planning tile flips
   // the body to the unplanned-SO-lines table. Both clear the other so only one
   // mode is ever active.
-  const selectStatus = (s: PlanStatus | undefined): void =>
+  const selectStatus = (s: PlanEffectiveStatus | undefined): void =>
     void navigate({
       to: '/plans',
       search: {
@@ -191,7 +171,7 @@ function PlansListPage(): React.JSX.Element {
                   ...(search ? { search } : {}),
                   ...(planType ? { planType } : {}),
                   ...(pending ? { pending } : {}),
-                  status: (e.target.value as PlanStatus | '') || undefined,
+                  status: (e.target.value as PlanEffectiveStatus | '') || undefined,
                 },
               })
             }
@@ -202,6 +182,9 @@ function PlansListPage(): React.JSX.Element {
                 {STATUS_BADGE[s].label}
               </option>
             ))}
+            {/* ADR-185 — the two route-card states with no stored twin. */}
+            <option value="route_card_pending">{DERIVED_LABEL.route_card_pending}</option>
+            <option value="gen_production_order">{DERIVED_LABEL.gen_production_order}</option>
           </select>
           <select
             className="innovic-select"

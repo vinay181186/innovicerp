@@ -495,7 +495,7 @@ Live ops for the current revision of a route card. Editable. Copied to `jc_ops` 
 | `machine_code_text`    | `text`          | nullable. Preserves legacy `'QC'` sentinel and other free-text values that don't FK-resolve                                            |
 | `operation`            | `text`          | not null. Free-text op label (e.g. `'od turn'`, `'DIR'`, `'COATING'`)                                                                  |
 | `op_type`              | `op_type`       | not null, default `'process'`                                                                                                          |
-| `cycle_time_min`       | `numeric(10,2)` | not null, default `0`. **Minutes per piece** (ADR-185; supersedes the ISSUE-011 hours note). Rows migrated from legacy may hold hours.             |
+| `cycle_time_min`       | `numeric(10,2)` | not null, default `0`. **Minutes per piece** (ADR-186; supersedes the ISSUE-011 hours note). Rows migrated from legacy may hold hours.             |
 | `program`              | `text`          | nullable                                                                                                                               |
 | `tool_no`              | `text`          | nullable                                                                                                                               |
 | `tool_details`         | `text`          | nullable                                                                                                                               |
