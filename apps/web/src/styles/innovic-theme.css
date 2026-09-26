@@ -592,7 +592,14 @@
    page with no horizontal scroll. Opt-in per table: everything on
    `.innovic-table` above still holds where a rule below does not override it. */
 .innovic-table.tbl-grid {
-  table-layout: fixed;
+  /* AUTO, not fixed (2026-09-26, "overflowing text" on the Job Card list):
+     with a fixed layout the %-widths are hard, so a one-line cell (JC No. +
+     badges, a DD-MMM-YYYY date in a 7% column) wider than its share spilled
+     over the next column. Auto sizes each column to at least its one-line
+     content; long prose (names, remarks) still wraps, and a sheet wider than
+     the screen scrolls inside its .tbl-wrap. Column widths are now minimum
+     hints. `.tbl-fixed` restores the old behaviour where a sheet needs it. */
+  table-layout: auto;
   border-top: 2px solid var(--blue2);
   border-bottom: 2px solid var(--blue2);
 }
@@ -803,6 +810,9 @@ table.tbl-ctr td .innovic-select {
    sideways, so headers and cells stop wrapping. */
 .innovic-table.tbl-grid.tbl-auto {
   table-layout: auto;
+}
+.innovic-table.tbl-grid.tbl-fixed {
+  table-layout: fixed;
 }
 .innovic-table.tbl-grid.tbl-auto th {
   white-space: nowrap;
