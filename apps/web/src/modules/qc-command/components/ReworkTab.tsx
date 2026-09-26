@@ -132,14 +132,6 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
           </div>
         )}
       </div>
-      {/* Legacy L18949 places the tip outside the panel, and its empty-state
-          branch (L18925) returns before emitting it. */}
-      {rework.length > 0 ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-          💡 Rework cycles directly impact project timeline. Items with 2+ attempts or &gt;5 day
-          delays need root cause analysis.
-        </div>
-      ) : null}
     </>
   );
 }

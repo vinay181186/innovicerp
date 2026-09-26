@@ -275,12 +275,6 @@ export function QueueTab({
               </table>
             </div>
           </div>
-          {showActions ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-              💡 "Pick Up" assigns this item to you. "Assign" allocates it to any inspector. Attempt
-              goes up by 1 after each rework.
-            </div>
-          ) : null}
         </>
       )}
     </>

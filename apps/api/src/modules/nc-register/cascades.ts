@@ -269,9 +269,7 @@ export async function disposeNcCascade(
       jcOpId: loaded.jcOpId,
     });
     if (input.action === 'return_to_vendor' && !source.isVendorSourced) {
-      throw new ConflictError(
-        'This NC has no vendor source; in-house rejected material is reworked or scrapped, not returned to a vendor.',
-      );
+      throw new ConflictError(`Cannot return NC ${loaded.code} to vendor: it was made in-house.`);
     }
     if ((input.action === 'rework' || input.action === 'repair') && source.isVendorSourced) {
       throw new ConflictError(

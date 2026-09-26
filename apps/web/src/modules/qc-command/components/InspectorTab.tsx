@@ -41,8 +41,12 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
                   <th className="td-ctr">JCs</th>
                   <th className="td-ctr">Accepted</th>
                   <th className="td-ctr">Rejected</th>
-                  <th className="td-ctr">Rejection Rate</th>
-                  <th className="td-ctr">Current Load</th>
+                  <th className="td-ctr" title="Green ≤ 5%, Amber 6–15%, Red > 15%">
+                    Rejection Rate
+                  </th>
+                  <th className="td-ctr" title="Items now assigned to this inspector">
+                    Current Load
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -74,13 +78,6 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
           </div>
         )}
       </div>
-      {/* Legacy L18896 returns before emitting the tip when there are no rows. */}
-      {perf.length > 0 ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-          💡 Rejection Rate: Green ≤ 5%, Amber 6-15%, Red &gt; 15%. Current Load = items currently
-          assigned to the inspector.
-        </div>
-      ) : null}
     </div>
   );
 }

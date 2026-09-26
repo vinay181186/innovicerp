@@ -447,11 +447,7 @@ function QcCallRegisterPage(): React.JSX.Element {
         <input
           className="innovic-input"
           style={{ fontSize: 12, width: 230 }}
-          placeholder={
-            view === 'pending'
-              ? 'Search JC, GRN, SO, PO, item, part, vendor, op…'
-              : 'Search JC, GRN, SO, item, part, vendor, op…'
-          }
+          placeholder="Search JC, GRN, SO, item, vendor…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

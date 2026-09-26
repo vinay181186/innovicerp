@@ -106,18 +106,12 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
               maxLength: { value: 120, message: 'Max 120 chars' },
             })}
           />
-          {isEdit ? (
-            <div className="form-help">
-              Inspector name cannot be changed after creation — every TPI record already carries it.
-              Set Status to Inactive to retire an inspector.
-            </div>
-          ) : null}
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
 
         <div className="form-grp">
           <label className="form-label" htmlFor="organization">
-            Organization
+            Organisation
           </label>
           <input
             id="organization"

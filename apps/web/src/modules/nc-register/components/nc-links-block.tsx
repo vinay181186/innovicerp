@@ -27,7 +27,6 @@ export function NcLinksBlock(props: {
             params={{ id: childId }}
             className="mono"
             style={{ ...linkStyle, color: 'var(--cyan)' }}
-            title="Open the rework Job Card"
           >
             {detail.childJobCardCode}
           </Link>
@@ -47,7 +46,7 @@ export function NcLinksBlock(props: {
         </InlinePair>
       ) : null}
       {detail.parentNcId ? (
-        <InlinePair label="Continues NC">
+        <InlinePair label="Earlier NC:">
           <Link
             to="/nc-register/$id"
             params={{ id: detail.parentNcId }}

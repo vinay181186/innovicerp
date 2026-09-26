@@ -166,20 +166,20 @@ function fmtDayMonth(iso: string): string {
 // buried in the context line; it is a column of its own now. The width comes
 // out of the context column so the set still totals exactly 100.
 const PENDING_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
-  ['GRN / JC No.', 13],
+  ['Doc No.', 13],
   ['POL', 5, { color: 'var(--purple)' }],
   ['Item Code', 17],
-  ['Vendor · GRN / SO · Op', 21],
+  ['Details', 21],
   ['QC Pending', 6],
   ['Called', 14],
   ['Stage', 14],
   ['Action', 10],
 ];
 const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
-  ['GRN / JC No.', 13],
+  ['Doc No.', 13],
   ['POL', 5, { color: 'var(--purple)' }],
   ['Item Code', 15],
-  ['Vendor · GRN / SO · Op', 15],
+  ['Details', 15],
   ['Accepted', 5],
   ['Rejected', 5],
   ['Called → Attended', 14],

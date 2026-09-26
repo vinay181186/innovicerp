@@ -79,7 +79,7 @@ function rowAction(
   // form, so the button and the form it opens can never disagree.
   if (op.opType === 'qc' || op.qcRequired) {
     if (!canQcSubmit || op.qcPending <= 0) return null;
-    return { label: `✔ QC (${op.qcPending})`, mode: 'complete', primary: true };
+    return { label: `✔ Inspect (${op.qcPending})`, mode: 'complete', primary: true };
   }
 
   if (!canOpEntry) return null;
@@ -150,7 +150,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                           fontWeight: 700,
                           marginLeft: 3,
                         }}
-                        title="Clears when the NC is closed (NC Register → Close Rework)"
+                        title="Clears when the NC is closed."
                       >
                         ♻{op.reworkPendingQty}
                       </span>

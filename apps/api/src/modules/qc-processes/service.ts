@@ -239,7 +239,7 @@ export async function softDeleteQcProcess(id: string, user: AuthContext): Promis
         .filter((s): s is string => s !== null)
         .join(', ');
       throw new ConflictError(
-        `QC Process "${row.code}" is in use by ${where} and cannot be deleted. Set it to Inactive instead — it will stop appearing in the pickers while the existing documents keep working.`,
+        `Cannot delete QC Process ${row.code}: used in ${where}. Set it to Inactive instead.`,
       );
     }
 

@@ -160,8 +160,8 @@ function TpiMasterDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete inspector ${data.code}?`}
-          message="They will be removed from the TPI Master and from the inspector pickers. TPI logs already signed off keep the name they recorded."
+          title={`Delete Inspector ${data.code}?`}
+          message="Past TPI records keep the name."
           confirmLabel="Delete"
           pendingLabel="Deleting…"
           onConfirm={onDelete}
@@ -177,7 +177,7 @@ function TpiMasterFacts(props: { inspector: TpiMaster }): React.JSX.Element {
   const { inspector } = props;
   return (
     <ReadGrid>
-      <ReadField label="Organization" size="md" value={inspector.organization} />
+      <ReadField label="Organisation" size="md" value={inspector.organization} />
       <ReadField label="Contact No." size="md" mono value={inspector.contactNo} />
       <ReadField label="Email" size="md" value={inspector.email} />
 

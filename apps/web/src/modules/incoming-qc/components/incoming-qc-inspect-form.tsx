@@ -21,13 +21,12 @@
 // the row, so a half-typed qty survives Close ▾ / Inspect ▸ exactly as it did
 // before this split. The popup uses the composed `IncomingQcInspectForm`.
 
-import { type IncomingQcPendingRow, opSrNo, shortName } from '@innovic/shared';
+import { type IncomingQcPendingRow, shortName } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useQcUserOptions } from '@/modules/qc-users/api';
@@ -240,16 +239,6 @@ export function IncomingQcInspectFormView(props: {
 
   return (
     <div style={{ padding: '14px 16px', borderTop: '2px solid var(--green)' }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
-        ✅ Inspect — {itemCodeWithRev(o.itemCode, o.itemRevision, o.itemName ?? 'Item')} ·{' '}
-        <span className="mono">GRN {o.grnNo}</span>
-        {o.jcCode ? (
-          <span className="text2" style={{ fontWeight: 600 }}>
-            {' '}
-            · {o.jcCode} Op {o.opSeq != null ? opSrNo(o.opSeq) : ''}
-          </span>
-        ) : null}
-      </div>
       {/* Two items can share a name (PLUNGER 554117145000 vs …163000), so the
           item line alone doesn't prove you opened the right GRN. This says
           plainly when the line feeds no operation — the one signal that
@@ -266,8 +255,7 @@ export function IncomingQcInspectFormView(props: {
             marginBottom: 10,
           }}
         >
-          This line feeds <b>no job card operation</b> — accepting it credits stock only. If you
-          meant to clear a job-card operation, you are on the wrong GRN.
+          Stock only — not linked to a JC op. Wrong GRN?
         </div>
       )}
       <div className="form-grid">

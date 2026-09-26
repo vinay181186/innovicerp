@@ -91,8 +91,7 @@ function NcRegisterEditPage(): React.JSX.Element {
             <div>
               <div className="panel-title">Cannot edit a {NC_STATUS_LABELS[detail.status]} NC</div>
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                Disposed and closed NCs are permanent records. Disposition workflow lives on the
-                detail page.
+                Only NC Raised NCs can be edited.
               </div>
             </div>
           </div>
@@ -125,8 +124,7 @@ function NcRegisterEditPage(): React.JSX.Element {
               Edit NC
             </div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Editable while status is <span className="mono">pending</span> — date / reason
-              category / defect description / reporter only.
+              Only date, reason and reporter can be changed.
             </div>
           </div>
         </div>

@@ -225,7 +225,6 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             placeholder="NC-0010"
             {...register('code', { required: !isEdit ? 'NC No. is required' : false })}
           />
-          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">
@@ -347,7 +346,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                   id="operationText"
                   className="innovic-input"
                   autoComplete="off"
-                  placeholder={selectedJcId ? 'No ops on this JC — type one' : 'DIR / TURN / S1'}
+                  placeholder={selectedJcId ? 'No ops on this JC — type one' : 'Operation'}
                   {...register('operationText')}
                 />
               )}
@@ -372,7 +371,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                 id="machineCodeText"
                 className="innovic-input"
                 autoComplete="off"
-                placeholder="QC / M-001"
+                placeholder="Machine"
                 {...register('machineCodeText')}
               />
             </div>
@@ -420,7 +419,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             id="reportedByText"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Operator name"
+            placeholder="Name"
             {...register('reportedByText')}
           />
         </div>

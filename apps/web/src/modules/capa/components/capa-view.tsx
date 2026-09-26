@@ -24,6 +24,7 @@ import { useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useNcRegisterList } from '@/modules/nc-register/api';
 import { useOperatorsList } from '@/modules/operators/api';
@@ -141,23 +142,37 @@ export function CapaView(props: {
               }}
             >
               <span style={{ fontSize: 16 }}>⚠️</span>
-              <b style={{ color: 'var(--amber)' }}>{overdue.length} CAPAs past Target Date:</b>{' '}
-              {overdue.map((c) => c.code).join(', ')}
+              <b style={{ color: 'var(--amber)' }}>{overdue.length} CAPAs overdue</b>
             </div>
           ) : null}
 
           {/* Counter cards */}
           {counters ? (
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-              <Card label="Total" value={counters.total} color="var(--purple)" />
-              <Card label="Open" value={counters.open} color="var(--amber)" />
-              <Card label="In Progress" value={counters.inProgress} color="var(--blue)" />
-              <Card label="Verified" value={counters.verified} color="var(--purple)" />
-              <Card label="Closed" value={counters.closed} color="var(--green)" />
-              <Card
-                label="Effectiveness"
-                value={`${counters.effectivenessPct}%`}
-                color="var(--green)"
+            <div style={{ marginBottom: 16 }}>
+              <StatStrip
+                items={[
+                  { key: 'total', label: 'Total', count: counters.total, color: 'var(--purple)' },
+                  { key: 'open', label: 'Open', count: counters.open, color: 'var(--amber)' },
+                  {
+                    key: 'inProgress',
+                    label: 'In Progress',
+                    count: counters.inProgress,
+                    color: 'var(--blue)',
+                  },
+                  {
+                    key: 'verified',
+                    label: 'Verified',
+                    count: counters.verified,
+                    color: 'var(--purple)',
+                  },
+                  { key: 'closed', label: 'Closed', count: counters.closed, color: 'var(--green)' },
+                  {
+                    key: 'effectiveness',
+                    label: 'Effectiveness',
+                    count: `${counters.effectivenessPct}%`,
+                    color: 'var(--green)',
+                  },
+                ]}
               />
             </div>
           ) : null}
@@ -191,7 +206,7 @@ export function CapaView(props: {
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="empty-state">
-                        No CAPAs created yet. Create from NC Register or click + New CAPA.
+                        No CAPAs yet.
                       </td>
                     </tr>
                   ) : (
@@ -246,13 +261,7 @@ export function CapaView(props: {
                           }}
                           title={c.rootCause ?? ''}
                         >
-                          {c.rootCause ? (
-                            c.rootCause
-                          ) : (
-                            <span className="text3" style={{ fontStyle: 'italic' }}>
-                              Pending…
-                            </span>
-                          )}
+                          {c.rootCause ? c.rootCause : <span className="text3">—</span>}
                         </td>
                         <td style={{ fontSize: 12, fontWeight: 600 }}>{c.responsible ?? '—'}</td>
                         <td
@@ -325,19 +334,6 @@ export function CapaView(props: {
           onClose={() => setModal({ kind: 'none' })}
         />
       ) : null}
-    </div>
-  );
-}
-
-function Card(props: { label: string; value: number | string; color: string }): React.JSX.Element {
-  return (
-    <div className="panel" style={{ minWidth: 90, padding: 12, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 10 }}>
-        {props.label}
-      </div>
-      <div className="mono fw-700" style={{ fontSize: 22, color: props.color }}>
-        {props.value}
-      </div>
     </div>
   );
 }
@@ -618,10 +614,7 @@ function EditCapaModal({
   );
 
   return (
-    <Overlay
-      title={`${readOnly ? '👁' : '✏'} CAPA — ${capa.code} (5-Step Process)`}
-      onClose={onClose}
-    >
+    <Overlay title={`${readOnly ? '👁' : '✏'} CAPA ${capa.code}`} onClose={onClose}>
       <div
         style={{
           background: 'rgba(124,58,237,0.06)',
@@ -632,7 +625,6 @@ function EditCapaModal({
           fontSize: 12,
         }}
       >
-        <b style={{ color: 'var(--purple)' }}>{capa.code}</b> |{' '}
         <span
           style={{
             fontSize: 10,

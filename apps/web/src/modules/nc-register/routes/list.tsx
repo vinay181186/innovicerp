@@ -190,14 +190,11 @@ function NcRegisterListPage(): React.JSX.Element {
           <div
             style={{
               display: 'flex',
-              justifyContent: 'space-between',
+              justifyContent: 'flex-end',
               alignItems: 'center',
               marginBottom: 14,
             }}
           >
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              ❌ NC Register
-            </div>
             {canReportNc ? (
               <Link to="/nc-register/new" className="btn btn-primary">
                 ❌ Report NC
@@ -213,30 +210,30 @@ function NcRegisterListPage(): React.JSX.Element {
               items={[
                 {
                   key: 'total',
-                  label: 'Total',
+                  label: 'NCs',
                   count: summary?.total == null ? '—' : Math.round(summary.total),
                   color: 'var(--red)',
                 },
                 {
                   key: 'pending',
-                  label: 'Pending',
+                  label: 'NC Raised',
                   count: summary?.pending == null ? '—' : Math.round(summary.pending),
                   color: 'var(--amber)',
                 },
                 {
                   key: 'totalQty',
-                  label: 'Total Qty',
+                  label: 'Rejected Qty',
                   count: summary?.totalQty == null ? '—' : Math.round(summary.totalQty),
                 },
                 {
                   key: 'rework',
-                  label: 'Rework',
+                  label: 'Rework Qty',
                   count: summary?.reworkQty == null ? '—' : Math.round(summary.reworkQty),
                   color: 'var(--cyan)',
                 },
                 {
                   key: 'scrap',
-                  label: 'Scrap',
+                  label: 'Scrap Qty',
                   count: summary?.scrapQty == null ? '—' : Math.round(summary.scrapQty),
                   color: 'var(--red)',
                 },
@@ -329,8 +326,7 @@ function NcRegisterListPage(): React.JSX.Element {
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No NCs recorded. Raise one from a QC operation that rejected pieces, or with ❌ Report
-              NC above.
+              No NCs yet.
             </div>
           ) : (
             rows.map((nc) => {
@@ -412,15 +408,6 @@ function NcRegisterListPage(): React.JSX.Element {
                         style={{ display: 'flex', gap: 3, alignItems: 'center' }}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <Link
-                          to="/nc-register/$id"
-                          params={{ id: nc.id }}
-                          className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 10 }}
-                          title="View NC"
-                        >
-                          👁
-                        </Link>
                         {canDispose && nc.status === 'pending' ? (
                           <Link
                             to="/nc-register/$id"
@@ -431,8 +418,9 @@ function NcRegisterListPage(): React.JSX.Element {
                           >
                             ✏ Dispose
                           </Link>
-                        ) : null}
-                        {canDispose && nc.status === 'disposed' && nc.disposition === 'rework' ? (
+                        ) : canDispose &&
+                          nc.status === 'disposed' &&
+                          nc.disposition === 'rework' ? (
                           <Link
                             to="/nc-register/$id"
                             params={{ id: nc.id }}
@@ -452,21 +440,6 @@ function NcRegisterListPage(): React.JSX.Element {
                             title="Create a CAPA from this NC on its detail page"
                           >
                             🛡 CAPA
-                          </Link>
-                        ) : null}
-                        {nc.linkedCapaCode ? (
-                          <Link
-                            to="/nc-register"
-                            className="mono"
-                            style={{
-                              fontSize: 10,
-                              color: 'var(--purple)',
-                              fontWeight: 700,
-                              textDecoration: 'none',
-                            }}
-                            title="Open linked CAPA"
-                          >
-                            {nc.linkedCapaCode}
                           </Link>
                         ) : null}
                         {nc.status !== 'closed' ? (
@@ -558,12 +531,22 @@ function NcRegisterListPage(): React.JSX.Element {
                       {nc.linkedCapaCode ? (
                         <>
                           <span>·</span>
-                          <span
+                          <Link
+                            to="/nc-register"
+                            search={{ tab: 'capa', capa: nc.linkedCapaCode }}
                             className="mono"
-                            style={{ color: 'var(--purple)', fontWeight: 700 }}
+                            style={{
+                              color: 'var(--purple)',
+                              fontWeight: 700,
+                              textDecoration: 'none',
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTab('capa');
+                            }}
                           >
                             {nc.linkedCapaCode}
-                          </span>
+                          </Link>
                         </>
                       ) : null}
                     </div>
@@ -572,15 +555,6 @@ function NcRegisterListPage(): React.JSX.Element {
               );
             })
           )}
-
-          {/* Tip line — matches the SO Master tip shape. An NC is raised
-              automatically when a QC operation rejects pieces (or manually with
-              ❌ Report NC). */}
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-            💡 Click the NC number (or the card) to open it. An NC is raised automatically when a QC
-            operation rejects pieces (or with ❌ Report NC); then click <b>✏ Dispose</b> to decide:
-            Rework, Repair, Return to Vendor, Scrap, Use As Is, or Make Fresh.
-          </div>
 
           <div
             style={{

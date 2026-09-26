@@ -15,7 +15,7 @@ import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useSoQcStatus } from '../api';
 
-const TABLE_COLS = 10;
+const TABLE_COLS = 9;
 
 function pctColor(pct: number): string {
   if (pct >= 100) return 'var(--green)';
@@ -60,9 +60,6 @@ export function SoQcStatusView(): React.JSX.Element {
           <div className="empty-state">
             <div className="empty-icon">🔬</div>
             <div style={{ fontSize: 14, fontWeight: 700 }}>Select a Sales Order to view QC status</div>
-            <div style={{ fontSize: 12, marginTop: 6 }}>
-              This report shows all QC stages for each SO line in table format
-            </div>
           </div>
         </div>
       ) : detail.isLoading ? (
@@ -129,7 +126,6 @@ export function SoQcStatusView(): React.JSX.Element {
                     <th style={{ width: 40 }}>Order Qty</th>
                     <th style={{ minWidth: 240 }}>QC Stages (in JC)</th>
                     <th style={{ width: 80 }}>Incoming QC</th>
-                    <th style={{ width: 60 }}>TPI</th>
                     <th style={{ width: 60 }}>Docs</th>
                     <th style={{ width: 90 }}>Overall</th>
                   </tr>
@@ -152,10 +148,6 @@ export function SoQcStatusView(): React.JSX.Element {
                 </tbody>
               </table>
             </div>
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-            💡 QC stages from JC shown directly. Click any line row to expand Incoming QC, TPI &
-            Document detail tables. ⚠ = No QC stage defined.
           </div>
         </>
       )}
@@ -295,9 +287,6 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
             </td>
             <td style={{ verticalAlign: 'middle' }}>
               <StatusPill done={l.grnDone} total={l.grnTotal} />
-            </td>
-            <td style={{ verticalAlign: 'middle' }}>
-              <StatusPill done={l.tpiCount} total={l.tpiCount} />
             </td>
             <td style={{ verticalAlign: 'middle' }}>
               <StatusPill done={l.docUploaded} total={l.docCount} />
@@ -541,11 +530,6 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
         </span>
       </td>
       <td>
-        <span className="mono" style={{ color: t.tpi > 0 ? 'var(--green)' : 'var(--text3)' }}>
-          {t.tpi}/{t.tpi}
-        </span>
-      </td>
-      <td>
         <span className="mono" style={{ color: color(t.docsUp, t.docs) }}>
           {t.docsUp}/{t.docs}
         </span>
@@ -562,14 +546,12 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
     (a, l) => ({
       qcOps: a.qcOps + l.qcOpsTotal,
       qcPassed: a.qcPassed + l.qcOpsPassed,
-      pendingOps: a.pendingOps + Math.max(0, l.qcOpsTotal - l.qcOpsPassed),
       grn: a.grn + l.grnTotal,
       grnDone: a.grnDone + l.grnDone,
       docs: a.docs + l.docCount,
       docsUp: a.docsUp + l.docUploaded,
-      tpi: a.tpi + l.tpiCount,
     }),
-    { qcOps: 0, qcPassed: 0, pendingOps: 0, grn: 0, grnDone: 0, docs: 0, docsUp: 0, tpi: 0 },
+    { qcOps: 0, qcPassed: 0, grn: 0, grnDone: 0, docs: 0, docsUp: 0 },
   );
   const allDone = (done: number, total: number): string =>
     total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
@@ -582,26 +564,14 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
         marginBottom: 16,
       }}
     >
-      <Card label="QC OPS" value={`${t.qcPassed}/${t.qcOps}`} sub="accepted" color={allDone(t.qcPassed, t.qcOps)} />
+      <Card label="QC Ops" value={`${t.qcPassed}/${t.qcOps}`} sub="accepted" color={allDone(t.qcPassed, t.qcOps)} />
       <Card
-        label="INCOMING QC"
+        label="Incoming QC"
         value={`${t.grnDone}/${t.grn}`}
         sub="completed"
         color={allDone(t.grnDone, t.grn)}
       />
-      <Card
-        label="QC PENDING"
-        value={t.pendingOps}
-        sub="ops"
-        color={t.pendingOps > 0 ? 'var(--red)' : 'var(--green)'}
-      />
-      <Card label="DOCUMENTS" value={`${t.docsUp}/${t.docs}`} sub="uploaded" color={allDone(t.docsUp, t.docs)} />
-      <Card
-        label="TPI"
-        value={`${t.tpi}/${t.tpi}`}
-        sub="completed"
-        color={t.tpi > 0 ? 'var(--green)' : 'var(--text3)'}
-      />
+      <Card label="Documents" value={`${t.docsUp}/${t.docs}`} sub="uploaded" color={allDone(t.docsUp, t.docs)} />
     </div>
   );
 }

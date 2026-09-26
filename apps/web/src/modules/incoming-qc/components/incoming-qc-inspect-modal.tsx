@@ -18,7 +18,7 @@
 // listbox (1000) so the QC By dropdown still shows on top, and below the
 // ExitConfirmDialog (600) so the question sits over the form it asks about.
 
-import type { IncomingQcPendingRow } from '@innovic/shared';
+import { type IncomingQcPendingRow, opSrNo } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -158,6 +158,12 @@ export function IncomingQcInspectModal({
                 · {o.itemName}
               </span>
             ) : null}
+            {o.jcCode ? (
+              <span className="text2" style={{ fontWeight: 600 }}>
+                {' '}
+                · {o.jcCode} Op {o.opSeq != null ? opSrNo(o.opSeq) : ''}
+              </span>
+            ) : null}
           </div>
           <button
             type="button"
@@ -185,7 +191,7 @@ export function IncomingQcInspectModal({
              shown while access is still loading, or every inspector would see
              it flash. */
           <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
-            Your access lets you view this queue but not record an inspection.
+            View only.
           </div>
         ) : null}
       </div>
