@@ -33,6 +33,10 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextRouteCardCode, useRouteCardsList } from '../api';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
@@ -375,15 +379,20 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     return null;
   }, [header, ops]);
 
-  const submit = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
-    if (validationError) return;
+  const save = async (): Promise<void> => {
+    if (validationError || submitting) return;
     await onSubmit(
       header,
       ops,
       mode === 'edit' && revisionNote.trim() ? revisionNote.trim() : null,
     );
   };
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    await save();
+  };
+  // Ctrl+S runs the same Save as the header button (no-op while it is disabled).
+  useSaveShortcut(() => void save(), !submitting);
 
   // One Plan Type card. Lifted from SO Planning's typeBtn so the two screens
   // draw the same control; a <label> so the whole tile is the click target.
@@ -419,6 +428,39 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={(e) => void submit(e)}>
+      <PageHeader
+        sticky
+        title={mode === 'create' ? 'New Route Card' : `Edit Route Card — ${routeCard?.code ?? ''}`}
+        backLabel="Back to Route Cards"
+        onBack={onCancel}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={onCancel}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={Boolean(validationError) || submitting}
+              title={validationError ?? undefined}
+            >
+              {submitting ? 'Saving…' : 'Save Route Card'}
+            </button>
+          </>
+        }
+      />
+      {/* Why Save is disabled / why it failed — right under the header, where
+          the Save button is, instead of at the foot of the form. */}
+      {validationError ? (
+        <div className="form-error" style={{ marginBottom: 'var(--sp-2)' }}>
+          {validationError}
+        </div>
+      ) : null}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
       {showDupBanner ? (
         <div
           role="alert"
@@ -462,68 +504,65 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           </button>
         </div>
       ) : null}
-      {/* SO-Planning left-accent card composition: a cyan identity stripe + the
-          --bg3 banded header (panel-hdr) reused across every block of the form. */}
-      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
-        <div className="panel-hdr">
-          <div className="panel-title">
-            {mode === 'create' ? '➕ New Route Card' : `Edit Route Card — ${routeCard?.code ?? ''}`}
-          </div>
-        </div>
-        <div className="panel-body">
-          {/* 3-up header row: RC No. · Item Code · Item Name on one line, so the
-              name reads right beside the code and the header stays compact. The
-              wide blocks below (Plan Type, Raw material, Notes) still span the row. */}
-          <div className="form-grid-3">
-            <div className="form-grp">
-              <span className="form-label">RC No.</span>
-              <input
-                className="innovic-input"
-                value={header.code}
-                onChange={(e) => setHeader({ ...header, code: e.target.value })}
-                placeholder={mode === 'create' ? 'IN-RC-NNNNN (auto if blank)' : ''}
-                style={{ maxWidth: '18ch' }}
-              />
-            </div>
-            <div className="form-grp">
-              <span className="form-label">
-                Item Code<span className="req">★</span>
-              </span>
-              {/* The same master-only picker Create SO uses (SearchableSelect),
-                  not a free-text datalist: it lists "CODE — Name", shows the code
-                  in the field once picked, and only lets a real master item be
-                  chosen — so an off-master typo can no longer sit in the box
-                  looking accepted. */}
-              <SearchableSelect
-                id="rc-item"
-                value={header.itemId || null}
-                onChange={onPickItem}
-                onSearch={setItemSearch}
-                loading={itemsFetching}
-                options={(itemsList?.items ?? []).map((i) => ({
-                  id: i.id,
-                  code: i.code,
-                  name: i.name,
-                }))}
-                placeholder="🔍 Search item code or name…"
-                valueLabel={header.itemCodeText || undefined}
-                selectedLabel={(o) => o.code ?? o.name}
-              />
-            </div>
-            <div className="form-grp">
-              {/* Item Name — read-only, auto-filled from the picked item, sitting
-                  right beside Item Code (the format Create SO shows). It mirrors
-                  the master; you pick the item by code, the name follows. */}
-              <span className="form-label">Item Name</span>
-              <input
-                className="innovic-input"
-                value={header.itemName}
-                readOnly
-                placeholder="—"
-                style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
-              />
-            </div>
-            {/* Plan Type — the same choice SO Planning asks for every plan,
+      {/* Plain panels (the old inline cyan / amber left stripes were not theme
+          classes). Header fields sit on the 12-column grid, sized by content. */}
+      <Panel title="Route Card Details">
+        <FormGrid>
+          <FormField label="RC No." size="sm">
+            <input
+              className="innovic-input"
+              value={header.code}
+              onChange={(e) => setHeader({ ...header, code: e.target.value })}
+              placeholder={mode === 'create' ? 'IN-RC-NNNNN (auto if blank)' : ''}
+            />
+          </FormField>
+          <FormField label="Item Code" required size="sm">
+            {/* The same master-only picker Create SO uses (SearchableSelect),
+                not a free-text datalist: it lists "CODE — Name", shows the code
+                in the field once picked, and only lets a real master item be
+                chosen — so an off-master typo can no longer sit in the box
+                looking accepted. */}
+            <SearchableSelect
+              id="rc-item"
+              value={header.itemId || null}
+              onChange={onPickItem}
+              onSearch={setItemSearch}
+              loading={itemsFetching}
+              options={(itemsList?.items ?? []).map((i) => ({
+                id: i.id,
+                code: i.code,
+                name: i.name,
+              }))}
+              placeholder="🔍 Search item code or name…"
+              valueLabel={header.itemCodeText || undefined}
+              selectedLabel={(o) => o.code ?? o.name}
+            />
+          </FormField>
+          {/* Item Name — read-only, auto-filled from the picked item, sitting
+              right beside Item Code (the format Create SO shows). It mirrors
+              the master; you pick the item by code, the name follows. On edit
+              it gives 2/12 to the Route Card Rev indicator. */}
+          <FormField label="Item Name" size={mode === 'edit' && routeCard ? 'md' : 'lg'}>
+            <input
+              className="innovic-input"
+              value={header.itemName}
+              readOnly
+              placeholder="—"
+              style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
+            />
+          </FormField>
+          {mode === 'edit' && routeCard ? (
+            <FormField label="Route Card Rev" size="xs">
+              <div
+                className="mono fw-700"
+                style={{ color: 'var(--amber2)', paddingTop: 7, fontSize: 14 }}
+              >
+                {routeCard.currentRevision} →{' '}
+                <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
+              </div>
+            </FormField>
+          ) : null}
+          {/* Plan Type — the same choice SO Planning asks for every plan,
                 recorded once here as the item's default. Same cards, same
                 colours, so the planner recognises it. `assembly` is not offered:
                 it needs a BOM behind an order line and is decided at planning.
@@ -531,116 +570,99 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 item is flagged Source = Buy on the Item Master and the Planning
                 line raises a PR. An existing card that already holds it still
                 renders (read-only chip below) and saves unchanged. */}
-            <div className="form-full">
-              <span
-                className="form-label"
-                style={{ fontWeight: 700, display: 'block', marginBottom: 6 }}
-              >
-                Plan Type<span className="req">★</span>
-              </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {planTypeCard(
-                  'manufacture',
-                  '🏭',
-                  'Manufacture',
-                  'Job Card + Operations',
-                  'var(--cyan)',
-                  'rgba(34,211,238,0.08)',
-                )}
-                {planTypeCard(
-                  'full_outsource',
-                  '📦',
-                  'Full Outsource',
-                  'Our material, vendor does all',
-                  'var(--purple)',
-                  'rgba(124,58,237,0.08)',
-                )}
-              </div>
-              {header.planType === 'direct_purchase' ? (
-                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
-                  <span className="badge b-grey">🛒 Direct Purchase</span>{' '}
-                  <span className="text3">
-                    (legacy — set the item&apos;s Source to Buy instead)
-                  </span>
-                </div>
-              ) : null}
+          <div className="f-full">
+            <span
+              className="form-label"
+              style={{ fontWeight: 700, display: 'block', marginBottom: 6 }}
+            >
+              Plan Type<span className="req">★</span>
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {planTypeCard(
+                'manufacture',
+                '🏭',
+                'Manufacture',
+                'Job Card + Operations',
+                'var(--cyan)',
+                'rgba(34,211,238,0.08)',
+              )}
+              {planTypeCard(
+                'full_outsource',
+                '📦',
+                'Full Outsource',
+                'Our material, vendor does all',
+                'var(--purple)',
+                'rgba(124,58,237,0.08)',
+              )}
             </div>
-            {/* Raw material — Grade + Size under one bracket, both optional
-                (no ★ on either). Same two pickers Planning and the Job Card
-                form use, so the route card names the same stock they do. */}
-            <div className="form-full">
-              <RawMaterialGroup>
-                <div className="form-grp">
-                  <label className="form-label">Grade</label>
-                  <MaterialGradePicker
-                    valueId={header.rawMaterialGradeId}
-                    valueText={header.rawMaterialGradeText}
-                    onChange={(id, text) =>
-                      setHeader((prev) => ({
-                        ...prev,
-                        rawMaterialGradeId: id,
-                        rawMaterialGradeText: text,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">Size</label>
-                  <MaterialSizePicker
-                    valueId={header.rawMaterialSizeId}
-                    valueText={header.rawMaterialSizeText}
-                    onChange={(id, text) =>
-                      setHeader((prev) => ({
-                        ...prev,
-                        rawMaterialSizeId: id,
-                        rawMaterialSizeText: text,
-                      }))
-                    }
-                  />
-                </div>
-                {rmPrefillFrom ? (
-                  <div
-                    className="text3"
-                    style={{ gridColumn: '1 / -1', fontSize: 11, marginTop: 2 }}
-                  >
-                    Prefilled from plan{' '}
-                    <b className="mono" style={{ color: 'var(--text)' }}>
-                      {rmPrefillFrom}
-                    </b>{' '}
-                    — change it if the routing calls for something else.
-                  </div>
-                ) : null}
-              </RawMaterialGroup>
-            </div>
-            <div className="form-grp form-full">
-              <span className="form-label">Notes</span>
-              <input
-                className="innovic-input"
-                value={header.notes}
-                onChange={(e) => setHeader({ ...header, notes: e.target.value })}
-                placeholder="Optional manufacturing notes…"
-              />
-            </div>
-            {mode === 'edit' && routeCard ? (
-              <div className="form-grp">
-                <span className="form-label">Route Card Rev</span>
-                <div
-                  className="mono fw-700"
-                  style={{ color: 'var(--amber2)', paddingTop: 7, fontSize: 14 }}
-                >
-                  Route Card Rev {routeCard.currentRevision} →{' '}
-                  <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
-                </div>
+            {header.planType === 'direct_purchase' ? (
+              <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
+                <span className="badge b-grey">🛒 Direct Purchase</span>{' '}
+                <span className="text3">(legacy — set the item&apos;s Source to Buy instead)</span>
               </div>
             ) : null}
           </div>
-        </div>
-      </div>
+          {/* Raw material — Grade + Size under one bracket, both optional
+                (no ★ on either). Same two pickers Planning and the Job Card
+                form use, so the route card names the same stock they do. */}
+          <div className="f-full">
+            <RawMaterialGroup>
+              <div className="form-grp">
+                <label className="form-label">Grade</label>
+                <MaterialGradePicker
+                  valueId={header.rawMaterialGradeId}
+                  valueText={header.rawMaterialGradeText}
+                  onChange={(id, text) =>
+                    setHeader((prev) => ({
+                      ...prev,
+                      rawMaterialGradeId: id,
+                      rawMaterialGradeText: text,
+                    }))
+                  }
+                />
+              </div>
+              <div className="form-grp">
+                <label className="form-label">Size</label>
+                <MaterialSizePicker
+                  valueId={header.rawMaterialSizeId}
+                  valueText={header.rawMaterialSizeText}
+                  onChange={(id, text) =>
+                    setHeader((prev) => ({
+                      ...prev,
+                      rawMaterialSizeId: id,
+                      rawMaterialSizeText: text,
+                    }))
+                  }
+                />
+              </div>
+              {rmPrefillFrom ? (
+                <div className="text3" style={{ gridColumn: '1 / -1', fontSize: 11, marginTop: 2 }}>
+                  Prefilled from plan{' '}
+                  <b className="mono" style={{ color: 'var(--text)' }}>
+                    {rmPrefillFrom}
+                  </b>{' '}
+                  — change it if the routing calls for something else.
+                </div>
+              ) : null}
+            </RawMaterialGroup>
+          </div>
+          <FormField label="Notes" size="full">
+            <input
+              className="innovic-input"
+              value={header.notes}
+              onChange={(e) => setHeader({ ...header, notes: e.target.value })}
+              placeholder="Optional manufacturing notes…"
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
 
-      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
-        <div className="panel-hdr">
-          <div className="panel-title">⚙️ Route Sequence ({ops.length})</div>
-          <div style={{ display: 'flex', gap: 6 }}>
+      <Panel
+        title={`⚙️ Route Sequence (${ops.length})`}
+        bodyPadding="none"
+        bodyClassName="tbl-wrap"
+        actions={
+          <>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
               <Plus size={13} /> Add Op
             </button>
@@ -668,95 +690,73 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             >
               <Plus size={13} /> Add QC Op
             </button>
-          </div>
-        </div>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th style={{ width: 36 }}>Op</th>
-                {/* Group replaces the old Type dropdown. The KIND of a row is
+          </>
+        }
+      >
+        <table className="innovic-table">
+          <thead>
+            <tr>
+              <th style={{ width: 36 }}>Op</th>
+              {/* Group replaces the old Type dropdown. The KIND of a row is
                     decided by which Add button raised it (Op / OSP / QC) and is
                     shown by the row's tint and by the QC / OSP badge in this
                     column, exactly as SO Planning does — a second control for
                     the same fact invited rows whose Type disagreed with their
                     machine. */}
-                <th style={{ width: 140 }}>Group</th>
-                <th style={{ width: 150 }}>Machine / Vendor ★</th>
-                <th>Operation ★</th>
-                <th className="text3" style={{ width: 90 }}>
-                  Cycle Time (min)
-                </th>
-                <th style={{ width: 90 }}>Program / Lead</th>
-                <th className="cyan" style={{ width: 90 }}>
-                  Tool No.
-                </th>
-                <th>Tool Details</th>
-                <th style={{ width: 44 }}></th>
+              <th style={{ width: 140 }}>Group</th>
+              <th style={{ width: 150 }}>Machine / Vendor ★</th>
+              <th>Operation ★</th>
+              <th className="th-num text3" style={{ width: 90 }}>
+                Cycle Time (min)
+              </th>
+              <th style={{ width: 90 }}>Program / Lead</th>
+              <th className="cyan" style={{ width: 90 }}>
+                Tool No.
+              </th>
+              <th>Tool Details</th>
+              <th style={{ width: 44 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {ops.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="empty-state">
+                  No operations yet — click <strong>+ Add Op</strong> / <strong>+ Add QC Op</strong>{' '}
+                  / <strong>+ Add OSP Op</strong>.
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {ops.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="empty-state">
-                    No operations yet — click <strong>+ Add Op</strong> /{' '}
-                    <strong>+ Add QC Op</strong> / <strong>+ Add OSP Op</strong>.
-                  </td>
-                </tr>
-              ) : (
-                ops.map((op, idx) => (
-                  <RouteCardOpRow
-                    key={idx}
-                    idx={idx}
-                    op={op}
-                    machinesList={machinesList?.machines ?? []}
-                    machineGroupCodeById={machineGroupCodeById}
-                    vendorsList={vendorsList?.vendors ?? []}
-                    onChange={(patch) => updateOp(idx, patch)}
-                    onMachineChange={(code) => onOpMachineChange(idx, code)}
-                    onGroupChange={(gid) => onOpGroupChange(idx, gid)}
-                    onVendorChange={(code) => onOpVendorChange(idx, code)}
-                    onRemove={() => removeOp(idx)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            ) : (
+              ops.map((op, idx) => (
+                <RouteCardOpRow
+                  key={idx}
+                  idx={idx}
+                  op={op}
+                  machinesList={machinesList?.machines ?? []}
+                  machineGroupCodeById={machineGroupCodeById}
+                  vendorsList={vendorsList?.vendors ?? []}
+                  onChange={(patch) => updateOp(idx, patch)}
+                  onMachineChange={(code) => onOpMachineChange(idx, code)}
+                  onGroupChange={(gid) => onOpGroupChange(idx, gid)}
+                  onVendorChange={(code) => onOpVendorChange(idx, code)}
+                  onRemove={() => removeOp(idx)}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </Panel>
 
       {mode === 'edit' ? (
-        <div className="panel" style={{ borderLeft: '3px solid var(--amber)' }}>
-          <div className="panel-hdr">
-            <div className="panel-title">📋 Revision Note</div>
-          </div>
-          <div className="panel-body">
-            <textarea
-              className="innovic-textarea"
-              rows={2}
-              value={revisionNote}
-              onChange={(e) => setRevisionNote(e.target.value)}
-              placeholder="Auto-generated diff note will be used if blank. Override here for ECO numbers etc."
-            />
-          </div>
-        </div>
+        <Panel title="📋 Revision Note">
+          <textarea
+            className="innovic-textarea"
+            rows={2}
+            value={revisionNote}
+            onChange={(e) => setRevisionNote(e.target.value)}
+            placeholder="Auto-generated diff note will be used if blank. Override here for ECO numbers etc."
+          />
+        </Panel>
       ) : null}
-
-      {validationError ? <div className="form-error">{validationError}</div> : null}
-      {submitError ? <div className="form-error">{submitError}</div> : null}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <button type="button" className="btn btn-ghost" onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={Boolean(validationError) || submitting}
-        >
-          {submitting ? 'Saving…' : 'Save Route Card'}
-        </button>
-      </div>
     </form>
   );
 }
@@ -816,7 +816,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   const vendorLabel = !op.ospVendorId && op.ospVendorCodeText.trim() ? '⚠ not in master' : null;
   return (
     <tr style={{ background: rowBg }}>
-      <td className="td-ctr mono fw-700" style={{ color: accent }}>
+      <td className="mono fw-700" style={{ color: accent }}>
         {opSrNo(idx + 1)}
       </td>
       <td>
@@ -892,7 +892,6 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
               value={op.machineCodeText}
               onChange={(e) => onMachineChange(e.target.value)}
               placeholder={op.machineGroupId ? '🔍 Machine in group' : '🔍 Machine code'}
-              style={{ fontSize: 12 }}
             />
             <datalist id={`rc-machines-dl-${idx}`}>
               {rowMachines.map((m) => (
@@ -926,11 +925,10 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             placeholder={
               op.opType === 'outsource' ? 'Coating / Painting / HT…' : 'od turn, mill, drill…'
             }
-            style={{ fontSize: 12 }}
           />
         )}
       </td>
-      <td>
+      <td className="td-num">
         <input
           type="number"
           min="0"
@@ -939,10 +937,10 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           value={op.cycleTimeMin}
           onChange={(e) => onChange({ cycleTimeMin: e.target.value })}
           placeholder="min"
-          style={{ textAlign: 'right' }}
         />
       </td>
-      <td>
+      {/* Lead days (OSP rows) is a number and right-aligns; Program is text. */}
+      <td className={op.opType === 'outsource' ? 'td-num' : undefined}>
         {op.opType === 'outsource' ? (
           <input
             type="number"
@@ -952,7 +950,6 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             value={op.ospLeadDays}
             onChange={(e) => onChange({ ospLeadDays: e.target.value })}
             placeholder="days"
-            style={{ textAlign: 'right' }}
             title="Lead time in days"
           />
         ) : (
@@ -961,7 +958,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             value={op.program}
             onChange={(e) => onChange({ program: e.target.value })}
             placeholder="PRG-001"
-            style={{ fontSize: 12, color: 'var(--blue)' }}
+            style={{ color: 'var(--blue)' }}
           />
         )}
       </td>
@@ -971,7 +968,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           value={op.toolNo}
           onChange={(e) => onChange({ toolNo: e.target.value })}
           placeholder="T01"
-          style={{ fontSize: 12, color: 'var(--cyan)' }}
+          style={{ color: 'var(--cyan)' }}
         />
       </td>
       <td>
@@ -980,7 +977,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           value={op.toolDetails}
           onChange={(e) => onChange({ toolDetails: e.target.value })}
           placeholder="Setup notes…"
-          style={{ fontSize: 12, color: 'var(--text2)' }}
+          style={{ color: 'var(--text2)' }}
         />
       </td>
       <td>

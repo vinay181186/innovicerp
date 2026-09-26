@@ -13,6 +13,8 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDeleteJwDocument, useJwDocuments } from '@/modules/jwso-documents/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
 
@@ -97,105 +99,96 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/job-work-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to JWSO Master
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="td-code" style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}>
-              {detail.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {detail.customerName ?? 'Untitled customer'}
-              <SoStatusBadge status={detail.status} />
-              <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={clientMatTotal} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {canEdit ? (
-              <Link
-                to="/job-work-orders/$id/edit"
-                params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
+      {/* DetailHeader layout: Back link, code + status badges, customer name.
+          One visible action (Edit) and the rest in the Actions menu, Delete
+          last. Delete still asks before moving the JWSO to Trash. */}
+      <DetailHeader
+        backLabel="Back to JWSO Master"
+        backTo="/job-work-orders"
+        renderLink={(p) => <Link {...p} />}
+        code={detail.code}
+        name={detail.customerName ?? 'Untitled customer'}
+        badges={
+          <>
+            <SoStatusBadge status={detail.status} />
+            <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={clientMatTotal} />
+          </>
+        }
+        actions={
+          confirmDelete ? (
+            <>
+              <span className="text3" style={{ fontSize: 'var(--fs-sm)', alignSelf: 'center' }}>
+                Move JWSO {detail.code} to Trash? You can restore it from Trash.
+              </span>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={onDelete}
+                disabled={softDelete.isPending}
               >
-                <Pencil size={13} /> Edit
-              </Link>
-            ) : null}
-            {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Move JWSO {detail.code} to Trash? You can restore it from Trash.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Move to Trash
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
+                {softDelete.isPending ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Trash2 size={13} />
+                )}
+                Move to Trash
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setConfirmDelete(false)}
+                disabled={softDelete.isPending}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {canEdit ? (
+                <Link
+                  to="/job-work-orders/$id/edit"
+                  params={{ id: detail.id }}
+                  className="btn btn-ghost btn-sm"
                 >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
-            ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Could not move the JWSO to Trash. Try again.'}
-            </div>
-          ) : null}
-          <DetailGrid detail={detail} />
-        </div>
-      </div>
+                  <Pencil size={13} /> Edit
+                </Link>
+              ) : null}
+              <ActionMenu
+                items={[
+                  {
+                    label: 'Delete',
+                    danger: true,
+                    hidden: !canDelete,
+                    onClick: () => setConfirmDelete(true),
+                  },
+                ]}
+              />
+            </>
+          )
+        }
+      >
+        {softDelete.isError ? (
+          <Banner tone="error" role="alert">
+            {softDelete.error instanceof Error
+              ? softDelete.error.message
+              : 'Could not move the JWSO to Trash. Try again.'}
+          </Banner>
+        ) : null}
+        <DetailGrid detail={detail} />
+      </DetailHeader>
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>Line Items ({detail.lines.length})</div>
+          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>
+            Line Items ({detail.lines.length})
+          </div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
             {!priceHidden && lineValueTotal > 0 ? (
               <>
-                {' '}· value <b style={{ color: 'var(--green2, var(--green))' }}>₹{lineValueTotal.toFixed(2)}</b>
+                {' '}
+                · value{' '}
+                <b style={{ color: 'var(--green2, var(--green))' }}>₹{lineValueTotal.toFixed(2)}</b>
               </>
             ) : null}
             {clientMatTotal > 0 ? (
@@ -219,12 +212,16 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <th>Item</th>
                 <th>Material</th>
                 <th>Drawing</th>
-                <th>Order Qty</th>
+                <th className="th-num">Order Qty</th>
                 <th>UOM</th>
                 {priceHidden ? null : (
                   <>
-                    <th style={{ color: 'var(--green2)' }}>Rate (₹)</th>
-                    <th style={{ color: 'var(--green2)' }}>Amount</th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Rate (₹)
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Amount
+                    </th>
                   </>
                 )}
                 <th>Due Date</th>
@@ -240,7 +237,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 </tr>
               ) : (
                 detail.lines.map((l) => (
-                  <LineRow key={l.id} line={l} priceHidden={priceHidden} onPreview={setLinePreview} />
+                  <LineRow
+                    key={l.id}
+                    line={l}
+                    priceHidden={priceHidden}
+                    onPreview={setLinePreview}
+                  />
                 ))
               )}
             </tbody>
@@ -308,7 +310,7 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
               <th>Document Type</th>
               <th>Category</th>
               <th>Uploaded By</th>
-              <th>Size</th>
+              <th className="th-num">Size</th>
               <th />
             </tr>
           </thead>
@@ -327,7 +329,14 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
               </tr>
             ) : (
               files.map((f) => (
-                <DocRow key={f.id} file={f} canDelete={props.canDelete} onView={onView} onDelete={(id) => del.mutate(id)} deleting={del.isPending} />
+                <DocRow
+                  key={f.id}
+                  file={f}
+                  canDelete={props.canDelete}
+                  onView={onView}
+                  onDelete={(id) => del.mutate(id)}
+                  deleting={del.isPending}
+                />
               ))
             )}
           </tbody>
@@ -375,10 +384,18 @@ function DocRow(props: {
           📎 {f.fileName}
         </button>
       </td>
-      <td className="text3" style={{ fontSize: 11 }}>{f.docType ?? '—'}</td>
-      <td className="mono" style={{ fontSize: 11 }}>{f.category}</td>
-      <td className="text3" style={{ fontSize: 11 }}>{f.uploadedByText ?? '—'}</td>
-      <td className="mono" style={{ fontSize: 11 }}>{sizeKb}</td>
+      <td className="text3" style={{ fontSize: 11 }}>
+        {f.docType ?? '—'}
+      </td>
+      <td className="mono" style={{ fontSize: 11 }}>
+        {f.category}
+      </td>
+      <td className="text3" style={{ fontSize: 11 }}>
+        {f.uploadedByText ?? '—'}
+      </td>
+      <td className="mono td-num" style={{ fontSize: 11 }}>
+        {sizeKb}
+      </td>
       <td>
         {props.canDelete ? (
           <button
@@ -405,7 +422,9 @@ function LineRow(props: {
   const drawingFilePath = l.drawingFilePath ?? null;
   return (
     <tr>
-      <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
+      <td className="mono" style={{ color: 'var(--blue)' }}>
+        {l.lineNo}
+      </td>
       {/* Thumbnail · CODE/REV · part name, the same badge the Sales Order detail
           uses. The Rev is the client's drawing revision typed on this JWSO line,
           and it travels with the code (the badge formats it via itemCodeWithRev). */}
@@ -442,12 +461,14 @@ function LineRow(props: {
           ) : null}
         </div>
       </td>
-      <td className="mono">{l.orderQty}</td>
+      <td className="mono td-num">{l.orderQty}</td>
       <td>{l.uom}</td>
       {priceHidden ? null : (
         <>
-          <td className="mono" style={{ color: 'var(--green2)' }}>{Number(l.rate ?? 0).toFixed(2)}</td>
-          <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
+          <td className="mono td-num" style={{ color: 'var(--green2)' }}>
+            {Number(l.rate ?? 0).toFixed(2)}
+          </td>
+          <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
             {(l.orderQty * Number(l.rate ?? 0)).toFixed(2)}
           </td>
         </>
