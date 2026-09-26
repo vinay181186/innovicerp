@@ -142,6 +142,7 @@ function ItemFormHeader(props: {
   onBack?: (() => void) | undefined;
   onCancel?: (() => void) | undefined;
   isSubmitting: boolean;
+  submitLabel: string;
 }): React.JSX.Element {
   return (
     <PageHeader
@@ -155,9 +156,8 @@ function ItemFormHeader(props: {
               Cancel
             </Button>
           ) : null}
-          {/* Legacy uses the same "Save" label for Add and for Edit. */}
           <Button type="submit" variant="primary" loading={props.isSubmitting}>
-            Save
+            {props.submitLabel}
           </Button>
         </>
       }
@@ -195,6 +195,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
         onBack={props.onBack}
         onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
+        submitLabel="Save Item"
       />
 
       {props.submitError ? (
@@ -240,7 +241,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             <Input
               id="name"
               autoComplete="off"
-              placeholder="Full part name"
+              placeholder="Full item name"
               {...register('name')}
             />
           </FormField>
@@ -282,7 +283,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
           </FormField>
 
           <FormField
-            label="Source"
+            label="Make / Buy"
             size="md"
             htmlFor="procurementType"
             error={errors.procurementType?.message}
@@ -329,6 +330,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
         onBack={props.onBack}
         onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
+        submitLabel="Save Changes"
       />
 
       {props.submitError ? (
@@ -361,7 +363,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             <Input
               id="name"
               autoComplete="off"
-              placeholder="Full part name"
+              placeholder="Full item name"
               {...register('name')}
             />
           </FormField>
@@ -403,7 +405,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
           </FormField>
 
           <FormField
-            label="Source"
+            label="Make / Buy"
             size="md"
             htmlFor="procurementType"
             error={errors.procurementType?.message}

@@ -43,6 +43,7 @@ import { useDocNumber } from '@/lib/use-doc-number';
 import { useItemsList } from '@/modules/items/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
+import { PO_TYPE_LABELS, poStatusLabel } from '../lib/po-labels';
 import { PO_FORM_CSS } from './po-form-css';
 import { PoFormLine, type PoItemMasterRow } from './po-form-line';
 import {
@@ -433,14 +434,14 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   //    so the buyer is told what to do next rather than handed a list.
   const blocking = useMemo((): string | null => {
     if (!isEdit) {
-      if (code.trim() === '') return 'PO number is required';
+      if (code.trim() === '') return 'PO No. is required';
       if (docNo.duplicate) return 'That PO number is already used';
       if (docNo.formatInvalid) return docNo.error ?? 'PO number format is wrong';
     }
-    if (poDate.trim() === '') return 'PO date is required';
+    if (poDate.trim() === '') return 'PO Date is required';
     // 0 days (same-day delivery) is fine; earlier than the PO date is not.
     if (poDate && deliveryDate && deliveryDate < poDate) {
-      return 'Delivery Date is before the PO Date — check the delivery days';
+      return 'Due Date is before the PO Date — check the Delivery Days';
     }
     if (!vendorId && vendorCodeText.trim() === '') return 'Pick a vendor';
     if (wrongVendorLines.length > 0) {
@@ -649,7 +650,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             />
             {isEdit ? null : code.trim() === '' ? (
               <div className="pof-note pof-note-bad">
-                <X size={11} style={{ verticalAlign: -1 }} /> PO number is required
+                <X size={11} style={{ verticalAlign: -1 }} /> PO No. is required
               </div>
             ) : docNo.checking ? (
               <div className="pof-note">Checking…</div>
@@ -663,7 +664,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               </div>
             ) : (
               <div className="pof-note pof-note-ok">
-                <Check size={11} style={{ verticalAlign: -1 }} /> Available
+                <Check size={11} style={{ verticalAlign: -1 }} /> Number not used
               </div>
             )}
           </div>
@@ -691,7 +692,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work' || t === 'service').map(
                 (t) => (
                   <option key={t} value={t}>
-                    {t.replaceAll('_', ' ')}
+                    {PO_TYPE_LABELS[t]}
                   </option>
                 ),
               )}
@@ -742,7 +743,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
           <div className="pof-f-date">
             <label className="pof-lbl" htmlFor="pof-due">
-              Delivery Date
+              Due Date
             </label>
             <input
               id="pof-due"
@@ -765,7 +766,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 className="pof-in"
                 readOnly
                 title="Status changes via Approve / Reject / Cancel, not a plain edit"
-                value={props.detail.status.replaceAll('_', ' ')}
+                value={poStatusLabel(props.detail.status)}
               />
             </div>
           ) : null}
@@ -808,7 +809,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 </th>
                 <th>Item Name</th>
                 <th className="pof-th-r">
-                  Order Qty<span className="pof-req">★</span>
+                  Qty<span className="pof-req">★</span>
                 </th>
                 <th className="pof-th-r">Rate ₹</th>
                 <th className="pof-th-r">Amount</th>
@@ -953,8 +954,15 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               Cancel
             </button>
             <button type="submit" className="pof-btn pof-btn-go" disabled={disabled}>
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : '✓'}{' '}
-              {isEdit ? 'Save Changes' : 'Create PO'}
+              {submitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Saving…
+                </>
+              ) : isEdit ? (
+                'Save Changes'
+              ) : (
+                'Save PO'
+              )}
             </button>
           </div>
         </div>

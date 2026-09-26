@@ -22,6 +22,7 @@ import {
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useStoreTransactionsList } from '../api';
+import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { TxnTypeBadge } from './txn-type-badge';
 
 const PAGE_SIZE = 50;
@@ -80,7 +81,7 @@ export function StockLedger(): React.JSX.Element {
   const columns = useMemo<ColumnDef<StoreTransactionListItem>[]>(
     () => [
       {
-        header: 'Txn Date',
+        header: 'Movement Date',
         accessorKey: 'txnDate',
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.txnDate}</span>,
       },
@@ -100,12 +101,12 @@ export function StockLedger(): React.JSX.Element {
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.itemName ?? ''}</span>,
       },
       {
-        header: 'Txn Type',
+        header: 'Movement Type',
         accessorKey: 'txnType',
         cell: ({ row }) => <TxnTypeBadge type={row.original.txnType} />,
       },
       {
-        header: 'Txn Qty',
+        header: 'Movement Qty',
         accessorKey: 'qty',
         meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => {
@@ -128,7 +129,7 @@ export function StockLedger(): React.JSX.Element {
         accessorKey: 'sourceType',
         cell: ({ row }) => (
           <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 600 }}>
-            {row.original.sourceType.replaceAll('_', ' ').toUpperCase()}
+            {STORE_TXN_SOURCE_LABELS[row.original.sourceType]}
           </span>
         ),
       },
@@ -191,9 +192,9 @@ export function StockLedger(): React.JSX.Element {
     <div>
       {data?.summary ? (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-          <KpiTile label="Transactions" value={data.summary.txnCount} color="var(--cyan)" />
-          <KpiTile label="Total IN" value={`+${data.summary.totalIn}`} color="var(--green)" />
-          <KpiTile label="Total OUT" value={`-${data.summary.totalOut}`} color="var(--red)" />
+          <KpiTile label="Movements" value={data.summary.txnCount} color="var(--cyan)" />
+          <KpiTile label="Total In" value={`+${data.summary.totalIn}`} color="var(--green)" />
+          <KpiTile label="Total Out" value={`-${data.summary.totalOut}`} color="var(--red)" />
           <KpiTile
             label="Net"
             value={`${data.summary.net >= 0 ? '+' : ''}${data.summary.net}`}
@@ -216,7 +217,7 @@ export function StockLedger(): React.JSX.Element {
           />
         </div>
         <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Txn Type</label>
+          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Movement Type</label>
           <br />
           <select
             className="innovic-select"
@@ -231,7 +232,7 @@ export function StockLedger(): React.JSX.Element {
             <option value="">All</option>
             {STORE_TXN_TYPES.map((t) => (
               <option key={t} value={t}>
-                {t}
+                {STORE_TXN_TYPE_LABELS[t]}
               </option>
             ))}
           </select>
@@ -252,7 +253,7 @@ export function StockLedger(): React.JSX.Element {
             <option value="">All sources</option>
             {STORE_TXN_SOURCE_TYPES.map((s) => (
               <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
+                {STORE_TXN_SOURCE_LABELS[s]}
               </option>
             ))}
           </select>

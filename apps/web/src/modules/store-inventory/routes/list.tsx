@@ -187,7 +187,7 @@ function StoreInventoryPage(): React.JSX.Element {
                         <th>Min Qty</th>
                         <th style={{ color: 'var(--blue)' }}>On PO</th>
                         <th style={{ color: 'var(--orange)' }}>At Vendor</th>
-                        <th style={{ color: 'var(--amber)' }}>Mfg Pending</th>
+                        <th style={{ color: 'var(--amber)' }}>Pending to Make</th>
                         {canEdit ? <th>Actions</th> : null}
                       </tr>
                     </thead>
@@ -591,13 +591,13 @@ function SetMinModal({
     setErr(null);
     const n = Number(val);
     if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-      setErr('Enter a non-negative integer');
+      setErr('Enter 0 or a whole number');
       return;
     }
     const input: SetMinStockInput = { itemId: row.itemId, minQty: n };
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Save failed'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save Min Qty. Try again.'),
     });
   };
 

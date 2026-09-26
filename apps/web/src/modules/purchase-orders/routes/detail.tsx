@@ -300,7 +300,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
+                    Move PO {detail.code} to Trash? You can restore it from Trash.
                   </span>
                   <button
                     type="button"
@@ -313,7 +313,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                     ) : (
                       <Trash2 size={13} />
                     )}
-                    Confirm
+                    Move to Trash
                   </button>
                   <button
                     type="button"
@@ -350,7 +350,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           >
             {softDelete.error instanceof Error
               ? softDelete.error.message
-              : 'Failed to delete purchase order.'}
+              : 'Could not delete PO. Try again.'}
           </div>
         ) : null}
         <PoHeaderBand
@@ -378,7 +378,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Source</th>
-                <th>Order Qty</th>
+                <th>Qty</th>
                 {priceHidden ? null : (
                   <>
                     <th>Rate</th>

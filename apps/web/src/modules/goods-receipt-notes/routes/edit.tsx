@@ -96,7 +96,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
         () => void navigate({ to: '/goods-receipt-notes/$id', params: { id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update GRN');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save GRN. Try again.');
     }
   };
 

@@ -223,7 +223,7 @@ function VendorsListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Name',
+        header: 'Vendor Name',
         width: '15%',
         align: 'left',
         className: 'fw-700',
@@ -231,7 +231,7 @@ function VendorsListPage(): React.JSX.Element {
         key: 'name',
       },
       {
-        header: 'Contact',
+        header: 'Contact Person',
         width: '9%',
         ellipsis: true,
         render: (v) => v.contactPerson ?? '—',
@@ -265,7 +265,7 @@ function VendorsListPage(): React.JSX.Element {
         render: (v) => <StatusBadge kind="rating" status={v.rating} />,
       },
       {
-        header: 'Active',
+        header: 'Vendor Status',
         width: '6%',
         nowrap: true,
         render: (v) => <StatusBadge kind="active" status={String(v.isActive)} />,
@@ -298,7 +298,7 @@ function VendorsListPage(): React.JSX.Element {
         primary={
           canAdd ? (
             <Link to="/vendors/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> Add Vendor
+              <Icon name="plus" size={14} /> New Vendor
             </Link>
           ) : null
         }
@@ -344,7 +344,7 @@ function VendorsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load vendors'}
+          message={error instanceof Error ? error.message : 'Could not load vendors. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">

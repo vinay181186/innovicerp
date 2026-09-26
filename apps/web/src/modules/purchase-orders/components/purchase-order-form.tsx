@@ -20,6 +20,7 @@ import {
 } from './po-form-values';
 import { type PoItemMaster, PoLineRow } from './po-line-row';
 import { PoVendorField } from './po-vendor-field';
+import { PO_TYPE_LABELS, poStatusLabel } from '../lib/po-labels';
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
@@ -189,7 +190,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             id="poDate"
             type="date"
             className="innovic-input"
-            {...register('header.poDate', { required: 'Date is required' })}
+            {...register('header.poDate', { required: 'PO Date is required' })}
           />
         </div>
         <div className="form-grp">
@@ -204,7 +205,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work' || t === 'service').map(
               (t) => (
               <option key={t} value={t}>
-                {t.replaceAll('_', ' ')}
+                {PO_TYPE_LABELS[t]}
               </option>
             ))}
           </select>
@@ -227,7 +228,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
               readOnly
               title="Status changes only via Approve / Reject / Cancel, not a plain edit"
               style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-              value={watch('header.status')?.replaceAll('_', ' ') ?? ''}
+              value={poStatusLabel(watch('header.status') ?? '')}
             />
           </div>
         ) : null}
@@ -239,13 +240,13 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
         />
         <div className="form-grp">
           <label className="form-label" htmlFor="dueDate">
-            Due date
+            Due Date
           </label>
           <input id="dueDate" type="date" className="innovic-input" {...register('header.dueDate')} />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="prCodeText">
-            PR ref (audit)
+            PR No. (typed)
           </label>
           <input
             id="prCodeText"
@@ -387,7 +388,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
                   cannot represent and would silently rewrite on edit (ISSUE-104). */}
               <div className="form-grp" style={{ marginBottom: 10, maxWidth: 200 }}>
                 <label className="form-label" htmlFor="taxType">
-                  Tax type
+                  Tax Type
                 </label>
                 <select id="taxType" className="innovic-select" {...register('header.taxType')}>
                   <option value="">— None —</option>
@@ -565,7 +566,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             disabled={formState.isSubmitting || (isCreate && !docNoValid)}
           >
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? '✓ Save PO'}
+            {props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save PO')}
           </button>
         </div>
       </div>

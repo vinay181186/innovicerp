@@ -195,7 +195,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
+                    Move GRN {detail.code} to Trash? You can restore it from Trash.
                   </span>
                   <button
                     type="button"
@@ -208,7 +208,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                     ) : (
                       <Trash2 size={13} />
                     )}
-                    Confirm
+                    Move to Trash
                   </button>
                   <button
                     type="button"
@@ -252,7 +252,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             >
               {softDelete.error instanceof Error
                 ? softDelete.error.message
-                : 'Failed to delete GRN.'}
+                : 'Could not delete GRN. Try again.'}
             </div>
           ) : null}
           <DetailGrid detail={detail} />
@@ -279,8 +279,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Received</th>
-                <th>DC No.</th>
-                <th>QC</th>
+                <th>Vendor Challan No.</th>
+                <th>QC Status</th>
                 <th>Accepted</th>
                 <th>Rejected</th>
                 <th>QC Date</th>
@@ -348,7 +348,7 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
       {/* The linked OSP challan's own code when the GRN came from a DC receive;
           otherwise whatever the storekeeper typed on Against PO. */}
       <Pair label="DC No." value={detail.dcCode ?? detail.dcNo ?? '—'} />
-      <Pair label="Invoice No." value={detail.invoiceNo ?? '—'} />
+      <Pair label="Vendor Invoice No." value={detail.invoiceNo ?? '—'} />
       {/* On an NC-return GRN there is no PO: the header's poCodeText holds the
           NC code, so it is shown once, under an "NC" label. */}
       {detail.ncCode ? (

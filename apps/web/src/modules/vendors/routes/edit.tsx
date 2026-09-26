@@ -42,7 +42,7 @@ function VendorNewPage(): React.JSX.Element {
         () => void navigate({ to: '/vendors/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create vendor');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Vendor. Try again.');
     }
   };
 
@@ -67,7 +67,7 @@ function VendorNewPage(): React.JSX.Element {
           <div>
             <div className="panel-title">+ New Vendor</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for a supplier.
+              Create a master record for a vendor.
             </div>
           </div>
         </div>
@@ -108,7 +108,7 @@ function VendorEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/vendors/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update vendor');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Vendor. Try again.');
     }
   };
 

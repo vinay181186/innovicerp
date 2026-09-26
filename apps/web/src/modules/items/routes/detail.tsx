@@ -40,6 +40,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
+import { STORE_TXN_SOURCE_LABELS } from '@/modules/store-transactions/lib/txn-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem, useSoftDeleteItem } from '../api';
 import { printItemDrawing } from '../lib/print-drawing';
@@ -148,7 +149,7 @@ function ItemDetailPage(): React.JSX.Element {
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
+                    Move Item {item.code} to Trash? You can restore it from Trash.
                   </span>
                   <button
                     type="button"
@@ -161,7 +162,7 @@ function ItemDetailPage(): React.JSX.Element {
                     ) : (
                       <Trash2 size={13} />
                     )}
-                    Confirm
+                    Move to Trash
                   </button>
                   <button
                     type="button"
@@ -199,7 +200,7 @@ function ItemDetailPage(): React.JSX.Element {
             >
               {softDelete.error instanceof Error
                 ? softDelete.error.message
-                : 'Failed to delete item.'}
+                : 'Could not delete Item. Try again.'}
             </div>
           ) : null}
           <DetailGrid item={item} company={company} />
@@ -215,7 +216,7 @@ function OnHandBadge(props: { itemId: string }): React.JSX.Element {
   const { data, isLoading } = useItemBalance(props.itemId);
   if (isLoading) {
     return (
-      <span className="badge b-grey" title="Loading stock from v_item_stock">
+      <span className="badge b-grey" title="Loading stock…">
         <Loader2 size={11} className="animate-spin" style={{ marginRight: 4 }} /> stock…
       </span>
     );
@@ -224,10 +225,10 @@ function OnHandBadge(props: { itemId: string }): React.JSX.Element {
   return (
     <span
       className={`badge ${onHand > 0 ? 'b-green' : 'b-grey'}`}
-      title="On-hand from v_item_stock — sum of in/out/adjust txns"
+      title="Physical: stock on the shelf now"
     >
       <Package size={11} style={{ marginRight: 4 }} />
-      On hand:{' '}
+      Physical:{' '}
       <span className="mono" style={{ marginLeft: 4 }}>
         {onHand}
       </span>
@@ -264,11 +265,11 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Txn Date</th>
-              <th>Txn Type</th>
+              <th>Movement Date</th>
+              <th>Movement Type</th>
               <th>Source</th>
               <th>Ref No.</th>
-              <th>Txn Qty</th>
+              <th>Movement Qty</th>
               <th>Stock before → after</th>
               <th>Remarks</th>
             </tr>
@@ -283,13 +284,13 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
             ) : isError ? (
               <tr>
                 <td colSpan={7} className="empty-state" style={{ color: 'var(--red)' }}>
-                  Failed to load stock history.
+                  Could not load stock history. Try again.
                 </td>
               </tr>
             ) : (data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={7} className="empty-state">
-                  No stock transactions recorded
+                  No stock movements recorded
                 </td>
               </tr>
             ) : (
@@ -302,7 +303,7 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
                     <TxnTypeBadge type={r.txnType} />
                   </td>
                   <td className="text2" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    {r.sourceType.replaceAll('_', ' ')}
+                    {STORE_TXN_SOURCE_LABELS[r.sourceType]}
                   </td>
                   <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                     {r.sourceRef}
@@ -328,9 +329,9 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
   const { item, company } = props;
   return (
     <div className="form-grid">
-      <Pair label="Item type" value={item.itemType} />
+      <Pair label="Item Type" value={item.itemType} />
       <div className="form-grp">
-        <span className="form-label">Source</span>
+        <span className="form-label">Make / Buy</span>
         <div>
           <span className={`badge ${item.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}>
             {ITEM_PROCUREMENT_TYPE_LABEL[item.procurementType]}
@@ -339,7 +340,7 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
       </div>
       <Pair label="UOM" value={item.uom} />
       <Pair label="Material" value={item.material ?? '—'} />
-      <Pair label="HSN code" value={item.hsnCode ?? '—'} />
+      <Pair label="HSN Code" value={item.hsnCode ?? '—'} />
       {/* Old items only — a drawing uploaded on the item before drawings moved
           to the SO line. Never shown for an item without one. */}
       {item.drawingFilePath ? <DrawingFilePair item={item} company={company} /> : null}

@@ -65,7 +65,7 @@ function lineQtyError(raw: string, balance: number): string | null {
   const n = Number(t);
   if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Whole number only.';
   if (n < 0) return 'Min 0.';
-  if (n > balance) return `Cannot exceed balance of ${balance}.`;
+  if (n > balance) return `Cannot receive more than Pending (${balance}).`;
   return null;
 }
 
@@ -230,7 +230,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
       );
     } catch (err) {
       // 403 (no OSP DC entry right) and 409 (over-receive) arrive here verbatim.
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create GRN.');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save GRN. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -372,7 +372,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
               <th style={{ width: '16%' }}>Item Code</th>
               <th style={{ width: '22%' }}>Item Name</th>
               <th style={{ width: '8%' }}>Sent Qty</th>
-              <th style={{ width: '9%' }}>Received so far</th>
+              <th style={{ width: '9%' }}>Received</th>
               <th style={{ width: '8%' }}>Pending</th>
               <th style={{ width: '11%' }}>
                 Receive Now<span className="req">★</span>
@@ -485,7 +485,13 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
             Cancel
           </button>
           <button type="submit" className="btn btn-success" disabled={submitting}>
-            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}✓ Create GRN
+            {submitting ? (
+              <>
+                <Loader2 size={13} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              'Save GRN'
+            )}
           </button>
         </div>
       </div>

@@ -141,17 +141,17 @@ export function ToolIssueRegisterView({
                   <th>Item Code · Name</th>
                   <th className="td-ctr">Issue Qty</th>
                   <th>Issued To</th>
-                  <th>Ref</th>
-                  <th>Exp Return</th>
+                  <th>Reference No.</th>
+                  <th>Expected Return Date</th>
                   <th>Issue Status</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
                     Good
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--red)' }}>
-                    Dmg
+                    Damaged
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--amber)' }}>
-                    Used
+                    Consumed
                   </th>
                   <th className="td-ctr">Action</th>
                 </tr>
@@ -657,7 +657,7 @@ function ReturnModal({
     }
     if (g + d + c > remaining) {
       setErr(
-        `Return total (${g + d + c}) exceeds remaining (${remaining}). Issued ${issue.qty}, already returned ${alreadyTotal}.`,
+        `Return total (${g + d + c}) cannot be more than Pending (${remaining}). Issued ${issue.qty}, already returned ${alreadyTotal}.`,
       );
       return;
     }
@@ -711,7 +711,7 @@ function ReturnModal({
           <div className="text3" style={{ marginTop: 6, fontSize: 11 }}>
             Already returned: Good {issue.returnGoodQty} | Damaged {issue.returnDamagedQty} |
             Consumed {issue.returnConsumedQty} = {alreadyTotal} |{' '}
-            <b style={{ color: 'var(--red)' }}>Remaining: {remaining}</b>
+            <b style={{ color: 'var(--red)' }}>Pending: {remaining}</b>
           </div>
         ) : null}
       </div>

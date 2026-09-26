@@ -23,7 +23,7 @@ const istStamp = (iso: string): string =>
   new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
 const SUB_TABS: Array<{ key: OpLogChangeStatus; label: string; empty: string }> = [
-  { key: 'pending', label: 'Waiting', empty: 'Nothing waiting for approval.' },
+  { key: 'pending', label: 'Pending', empty: 'Nothing pending approval.' },
   { key: 'approved', label: 'Approved', empty: 'No approved corrections yet.' },
   { key: 'rejected', label: 'Rejected', empty: 'No rejected corrections yet.' },
 ];

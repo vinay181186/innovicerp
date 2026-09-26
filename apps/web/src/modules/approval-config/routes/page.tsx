@@ -37,6 +37,14 @@ function fmtTs(ts: string): string {
   );
 }
 
+// Screen word for the logged action code (APPROVE / REJECT / PAYMENT).
+function actionLabel(action: string): string {
+  if (action === 'APPROVE') return 'Approved';
+  if (action === 'REJECT') return 'Rejected';
+  if (action === 'PAYMENT') return 'Payment';
+  return action;
+}
+
 function ApprovalConfigPage(): React.JSX.Element {
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
@@ -419,7 +427,7 @@ function ApprovalConfigPage(): React.JSX.Element {
           <div>
             <span style={{ fontSize: 14, fontWeight: 700 }}>📄 Invoice Approval</span>
             <div className="text3" style={{ fontSize: 11 }}>
-              Require approval before invoice can be printed and sent to client.
+              Require approval before invoice can be printed and sent to the customer.
             </div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -481,7 +489,7 @@ function ApprovalConfigPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Log Date</th>
+                <th>Action Date &amp; Time</th>
                 <th>Action</th>
                 <th>Document Type</th>
                 <th>Details</th>
@@ -495,7 +503,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                 return (
                   <tr key={h.id}>
                     <td style={{ fontSize: 11 }}>{fmtTs(h.ts)}</td>
-                    <td style={{ fontWeight: 700, color, fontSize: 11 }}>{h.action}</td>
+                    <td style={{ fontWeight: 700, color, fontSize: 11 }}>{actionLabel(h.action)}</td>
                     <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{h.entity}</td>
                     <td className="text2" style={{ fontSize: 11 }}>{h.detail}</td>
                     <td style={{ fontSize: 11 }}>{h.userName ?? '—'}</td>

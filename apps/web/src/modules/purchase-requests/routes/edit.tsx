@@ -46,7 +46,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
           void navigate({ to: '/purchase-requests/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create purchase request');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save PR. Try again.');
     }
   };
 
@@ -130,7 +130,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
         () => void navigate({ to: '/purchase-requests/$id', params: { id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update purchase request');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save PR. Try again.');
     }
   };
 

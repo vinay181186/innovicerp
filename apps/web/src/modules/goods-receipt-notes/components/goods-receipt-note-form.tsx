@@ -21,6 +21,7 @@ import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { useVendorsList } from '@/modules/vendors/api';
+import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 interface LineFormValue {
   id?: string;
@@ -264,12 +265,12 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             id="grnDate"
             type="date"
             className="innovic-input"
-            {...register('header.grnDate', { required: 'Date is required' })}
+            {...register('header.grnDate', { required: 'GRN Date is required' })}
           />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="invoiceNo">
-            Invoice No.
+            Vendor Invoice No.
           </label>
           <input
             id="invoiceNo"
@@ -335,7 +336,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             disabled={isEdit}
             {...register('header.purchaseOrderId')}
           >
-            <option value="">— Free-text PO ref below —</option>
+            <option value="">— Type the PO No. below —</option>
             {pos.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
@@ -345,7 +346,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="poCodeText">
-            PO ref (audit)
+            PO No. (typed)
           </label>
           <input
             id="poCodeText"
@@ -359,7 +360,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             Vendor<span className="req">★</span>
           </label>
           <select id="vendorId" className="innovic-select" {...register('header.vendorId')}>
-            <option value="">— Free-text vendor below —</option>
+            <option value="">— Type the Vendor Code below —</option>
             {vendors.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.code} — {v.name}
@@ -372,7 +373,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="vendorCodeText">
-            Vendor Code (fallback)
+            Vendor Code
           </label>
           <input
             id="vendorCodeText"
@@ -501,7 +502,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                   </div>
 
                   <div className="form-grp">
-                    <label className="form-label">DC No.</label>
+                    <label className="form-label">Vendor Challan No.</label>
                     <input
                       className="innovic-input"
                       autoComplete="off"
@@ -518,7 +519,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                     >
                       {GRN_QC_STATUSES.map((s) => (
                         <option key={s} value={s}>
-                          {s.replaceAll('_', ' ')}
+                          {GRN_QC_STATUS_LABELS[s]}
                         </option>
                       ))}
                     </select>
@@ -558,7 +559,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                     />
                   </div>
                   <div className="form-grp">
-                    <label className="form-label">👤 QC By</label>
+                    <label className="form-label">👤 Inspected By</label>
                     {/* Until now the server stamped whoever SAVED the GRN, which
                         is usually the storekeeper and not the inspector. Locked
                         the same way as QC Status above: disabled, but still
@@ -675,7 +676,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             disabled={formState.isSubmitting || (isCreate && !docNoValid)}
           >
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : '✓ Create GRN')}
+            {props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save GRN')}
           </button>
         </div>
       </div>

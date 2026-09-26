@@ -66,7 +66,7 @@ export function CloseBalanceModal({
           }}
         >
           <div className="fw-700" style={{ color: 'var(--amber)' }}>
-            🚫 Close balance — {code}
+            🚫 Short Close — {code}
           </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
             <X size={14} />
@@ -86,7 +86,7 @@ export function CloseBalanceModal({
           >
             <div>
               <b className="mono">{bal.ordered}</b> of <b className="mono">{bal.qty}</b> is on
-              purchase orders. Closing the balance stops the remaining{' '}
+              purchase orders. Short Close stops the pending{' '}
               <b className="mono" style={{ color: 'var(--amber)' }}>
                 {bal.balance}
               </b>{' '}
@@ -109,7 +109,7 @@ export function CloseBalanceModal({
               value={reason}
               autoFocus
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Customer cut the order to 10 pcs — balance not required"
+              placeholder="e.g. Customer cut the order to 10 pcs — rest not required"
             />
           </div>
           {errorText ? (
@@ -144,7 +144,7 @@ export function CloseBalanceModal({
                   <Loader2 className="inline h-3 w-3 animate-spin" /> Closing…
                 </>
               ) : (
-                'Close balance'
+                'Short Close'
               )}
             </button>
           </div>

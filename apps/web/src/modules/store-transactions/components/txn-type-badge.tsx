@@ -2,6 +2,7 @@
 // in=green (stock added) → out=amber (stock removed) → adjust=grey (manual).
 
 import type { StoreTxnType } from '@innovic/shared';
+import { STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 
 const CLASSES: Record<StoreTxnType, string> = {
   in: 'b-green',
@@ -10,5 +11,7 @@ const CLASSES: Record<StoreTxnType, string> = {
 };
 
 export function TxnTypeBadge(props: { type: StoreTxnType }) {
-  return <span className={`badge ${CLASSES[props.type]}`}>{props.type}</span>;
+  return (
+    <span className={`badge ${CLASSES[props.type]}`}>{STORE_TXN_TYPE_LABELS[props.type]}</span>
+  );
 }

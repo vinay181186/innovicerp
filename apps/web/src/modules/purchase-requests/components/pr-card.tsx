@@ -207,7 +207,7 @@ export function PrCard({
               title={
                 bal.closed
                   ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`
-                  : `${bal.ordered} of ${bal.qty} ordered · ${bal.balance} left`
+                  : `${bal.ordered} of ${bal.qty} ordered · ${bal.balance} pending`
               }
             >
               {bal.label}
@@ -316,7 +316,7 @@ export function PrCard({
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
             <QtyBox label="PR Qty" value={pr.qty} />
-            <QtyBox label="Order Qty" value={bal.ordered} bordered />
+            <QtyBox label="On PO Qty" value={bal.ordered} bordered />
             {/* Negative = more ordered than requested. Red and flagged, never
                 clamped to 0 — somebody has to go and look at it. */}
             <QtyBox
@@ -327,7 +327,7 @@ export function PrCard({
             />
             {priceHidden ? null : (
               <QtyBox
-                label="Est. Cost"
+                label="Est. Rate (₹/pc)"
                 value={estCost > 0 ? `₹${estCost.toFixed(2)}` : '—'}
                 bordered
               />
@@ -355,7 +355,7 @@ export function PrCard({
             ) : null}
             <span>·</span>
             <span>
-              Req <span className="text2">{pr.requiredDate ?? '—'}</span>
+              Due Date <span className="text2">{pr.requiredDate ?? '—'}</span>
             </span>
             {pr.approvedAt ? (
               <>

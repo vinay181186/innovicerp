@@ -92,7 +92,7 @@ export function prOrderBalance(pr: PrBalanceSource): PrOrderBalance {
     state === 'over'
       ? 'Over-ordered'
       : state === 'closed'
-        ? 'Balance closed'
+        ? 'Short Closed'
         : state === 'full'
           ? 'Fully ordered'
           : state === 'partial'
@@ -150,7 +150,7 @@ export function prBalanceBadgeClass(state: PrBalanceState): string {
 /** "Balance closed — 90 not ordered". The one phrasing for a short-closed PR,
  *  used on the card and the detail page so both read the same. */
 export function prBalanceClosedText(bal: PrOrderBalance): string {
-  return `Balance closed — ${bal.closedQty} of ${bal.qty} not ordered`;
+  return `Short Closed — ${bal.closedQty} of ${bal.qty} not ordered`;
 }
 
 /** "90 of 100 left" — the one phrasing used in the PR picker's dropdown and
@@ -158,5 +158,5 @@ export function prBalanceClosedText(bal: PrOrderBalance): string {
 export function prBalanceText(pr: PrBalanceSource): string {
   const bal = prOrderBalance(pr);
   if (bal.closed) return prBalanceClosedText(bal);
-  return `${bal.balance} of ${bal.qty} left`;
+  return `${bal.balance} of ${bal.qty} pending`;
 }

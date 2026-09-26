@@ -37,6 +37,7 @@ import {
 import { CloseBalanceModal } from '../components/close-balance-modal';
 import { PrStatusBadge } from '../components/pr-status-badge';
 import { prBalanceClosedText, prBalanceColor, prOrderBalance } from '../lib/pr-balance';
+import { PR_STATUS_LABELS, PR_TYPE_LABELS } from '../lib/pr-labels';
 
 export const purchaseRequestDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -140,7 +141,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
       {
         onSuccess: () => setCloseOpen(false),
         onError: (e) =>
-          setCloseError(e instanceof Error ? e.message : 'Failed to close the balance'),
+          setCloseError(e instanceof Error ? e.message : 'Could not short close PR. Try again.'),
       },
     );
   };
@@ -219,9 +220,9 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                   setCloseError(null);
                   setCloseOpen(true);
                 }}
-                title={`Stop expecting the remaining ${bal.balance} of ${bal.qty}`}
+                title={`Stop expecting the pending ${bal.balance} of ${bal.qty}`}
               >
-                <Ban size={13} /> Close balance
+                <Ban size={13} /> Short Close
               </button>
             ) : null}
             {linkedToPo && detail.poId ? (
@@ -248,7 +249,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Delete?
+                    Move PR {detail.code} to Trash? You can restore it from Trash.
                   </span>
                   <button
                     type="button"
@@ -261,7 +262,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                     ) : (
                       <Trash2 size={13} />
                     )}
-                    Confirm
+                    Move to Trash
                   </button>
                   <button
                     type="button"
@@ -301,7 +302,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             >
               {softDelete.error instanceof Error
                 ? softDelete.error.message
-                : 'Failed to delete purchase request.'}
+                : 'Could not delete PR. Try again.'}
             </div>
           ) : null}
           {/* The facts a buyer scans for, in the SO detail strip idiom. */}
@@ -454,7 +455,7 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
       <div style={STRIP}>
         <Fact label="PR Qty" value={<span className="mono">{String(detail.qty)}</span>} />
         <Fact
-          label="Order Qty"
+          label="On PO Qty"
           title="On live purchase orders (cancelled POs not counted)"
           value={<span className="mono">{String(bal.ordered)}</span>}
         />
@@ -481,23 +482,20 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
         {priceHidden ? null : (
           <>
             <Fact
-              label="Est. Cost / pc"
+              label="Est. Rate (₹/pc)"
               value={<span className="mono">{estCostNum > 0 ? inr(estCostNum) : '—'}</span>}
             />
             <Fact
-              label="Total Est."
+              label="Est. Amount"
               value={<span className="mono">{total > 0 ? inr(total) : '—'}</span>}
             />
           </>
         )}
-        <Fact
-          label="Required Date"
-          value={<span className="mono">{detail.requiredDate ?? '—'}</span>}
-        />
+        <Fact label="Due Date" value={<span className="mono">{detail.requiredDate ?? '—'}</span>} />
         <Fact label="Operation" value={detail.operation ?? '—'} />
-        <Fact label="PR Type" value={detail.prType ?? '—'} />
+        <Fact label="PR Type" value={detail.prType ? PR_TYPE_LABELS[detail.prType] : '—'} />
         <Fact label="PO No." value={<span className="mono">{detail.poCode ?? '—'}</span>} />
-        <Fact label="PR Status" value={detail.status} />
+        <Fact label="PR Status" value={PR_STATUS_LABELS[detail.status]} />
         <Fact
           label="Approved At"
           value={<span className="mono">{detail.approvedAt ?? '—'}</span>}
@@ -508,7 +506,7 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
         />
         {bal.closed ? (
           <Fact
-            label="Balance Closed At"
+            label="Short Closed At"
             title={bal.closedReason ?? ''}
             value={<span className="mono">{bal.closedAt?.slice(0, 10) ?? '—'}</span>}
           />

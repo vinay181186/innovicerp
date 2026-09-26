@@ -57,6 +57,7 @@ import {
   prHasBalanceToOrder,
   prOrderBalance,
 } from '@/modules/purchase-requests/lib/pr-balance';
+import { PR_STATUS_LABELS } from '@/modules/purchase-requests/lib/pr-labels';
 import { useVendorsList } from '@/modules/vendors/api';
 
 const PAGE_SIZE = 100;
@@ -180,7 +181,7 @@ export function OutsourceJobsView(): React.JSX.Element {
             pr.estCost,
             pr.requiredDate,
             pr.poCode,
-            pr.status.replaceAll('_', ' '),
+            PR_STATUS_LABELS[pr.status],
             // The Status cell's second line — "90 of 100 left" / "balance
             // closed" — is text the user can read, so it is text the box can
             // find. Only when the row actually shows it, which is the same
@@ -249,11 +250,11 @@ export function OutsourceJobsView(): React.JSX.Element {
   async function submitBatch(): Promise<void> {
     setSubmitError(null);
     if (!vendorId) {
-      setSubmitError('Select a vendor');
+      setSubmitError('Vendor is required');
       return;
     }
     if (!poCode.trim()) {
-      setSubmitError('PO code is required');
+      setSubmitError('PO No. is required');
       return;
     }
     try {
@@ -274,7 +275,7 @@ export function OutsourceJobsView(): React.JSX.Element {
       setSelectedIds(new Set());
       setPoCode('');
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Create PO failed');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save PO. Try again.');
     }
   }
 
@@ -393,7 +394,7 @@ export function OutsourceJobsView(): React.JSX.Element {
           onChange={(e) => setSoNo(e.target.value || undefined)}
           style={{ width: 200, fontSize: 12 }}
         >
-          <option value="">All JC sources</option>
+          <option value="">All JC Nos.</option>
           {soNos.map((s) => (
             <option key={s} value={s}>
               {s}
@@ -422,7 +423,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>Process</th>
                 <th>Qty</th>
                 <th>Suggested Vendor</th>
-                <th style={{ color: 'var(--green)' }}>Est. Rate</th>
+                <th style={{ color: 'var(--green)' }}>Est. Rate (₹/pc)</th>
                 <th>Due Date</th>
                 <th>PR Status</th>
               </tr>
@@ -463,9 +464,10 @@ export function OutsourceJobsView(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Select the PRs that still have quantity left → Click <b>🛒 Create PO</b>. A part-ordered
-        PR can be picked again; the new PO covers what is LEFT, not the original qty. You can club
-        multiple PRs into 1 PO (same vendor). Vendor and rate can be changed during PO creation.
+        💡 Select the PRs that still have quantity pending, then click{' '}
+        <b>🛒 Create PO from Selected</b>. A part-ordered PR can be picked again; the new PO covers
+        what is PENDING, not the original qty. You can club multiple PRs into 1 PO (same vendor).
+        Vendor and rate can be changed during PO creation.
       </div>
 
       {/* Batch-create modal */}
@@ -748,7 +750,7 @@ function OspRow({
       <td style={{ fontSize: 11 }}>{pr.requiredDate ?? '—'}</td>
       <td>
         <span style={{ fontWeight: 700, color: statusColor(pr.status) }}>
-          {pr.status.replaceAll('_', ' ')}
+          {PR_STATUS_LABELS[pr.status]}
         </span>
         {pr.poCode ? (
           <span className="mono" style={{ fontSize: 10, marginLeft: 4, color: 'var(--cyan)' }}>
@@ -771,7 +773,7 @@ function OspRow({
                 : `${bal.ordered} of ${bal.qty} ordered`
             }
           >
-            {bal.closed ? '🚫 balance closed' : `${bal.balance} of ${bal.qty} left`}
+            {bal.closed ? '🚫 Short Closed' : `${bal.balance} of ${bal.qty} pending`}
           </div>
         ) : null}
       </td>

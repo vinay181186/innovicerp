@@ -45,7 +45,7 @@ import { GrnAgainstPoForm } from './grn-against-po-form';
 // Option text — the first two verbatim from legacy addGRN() L26533-26534.
 const TYPE_META: Record<GrnInwardType, { label: string }> = {
   purchase: { label: 'Against PO' },
-  job_work_return: { label: 'Against JWPO / DC' },
+  job_work_return: { label: 'Against JW PO / DC' },
   nc_return: { label: 'Against NC' },
 };
 
@@ -83,7 +83,7 @@ export function UnifiedGrnForm({
           void navigate({ to: '/goods-receipt-notes/$id', params: { id: created.id }, replace: true }),
       );
     } catch (e) {
-      setPurchaseErr(e instanceof Error ? e.message : 'Failed to create GRN');
+      setPurchaseErr(e instanceof Error ? e.message : 'Could not save GRN. Try again.');
     }
   };
 

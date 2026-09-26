@@ -56,6 +56,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
 import { PoSheetTable } from '../components/po-sheet-table';
 import { PoStatusBadge } from '../components/po-status-badge';
+import { PO_STATUS_LABELS, PO_TYPE_LABELS, poStatusLabel } from '../lib/po-labels';
 
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
 // PO list-query cap is 200; the count line flags a rare larger set.
@@ -191,7 +192,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   // ours by the status / type selects, which drive the same table.
   const activeFilter = [search.status, search.poType]
     .filter((v): v is PoStatus | PoType => Boolean(v))
-    .map((v) => v.replaceAll('_', ' '))
+    .map((v) => (v in PO_TYPE_LABELS ? PO_TYPE_LABELS[v as PoType] : poStatusLabel(v)))
     .join(', ');
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
@@ -258,7 +259,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               <option value="">All statuses</option>
               {PO_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
+                  {PO_STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -277,7 +278,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               <option value="">All types</option>
               {PO_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t.replaceAll('_', ' ')}
+                  {PO_TYPE_LABELS[t]}
                 </option>
               ))}
             </select>

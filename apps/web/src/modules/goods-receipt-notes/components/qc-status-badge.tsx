@@ -2,6 +2,7 @@
 // pending=amber (needs QC) → in_progress=blue (active) → completed=green.
 
 import type { GrnQcStatus } from '@innovic/shared';
+import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 const CLASSES: Record<GrnQcStatus, string> = {
   pending: 'b-amber',
@@ -10,5 +11,7 @@ const CLASSES: Record<GrnQcStatus, string> = {
 };
 
 export function QcStatusBadge(props: { status: GrnQcStatus }) {
-  return <span className={`badge ${CLASSES[props.status]}`}>{props.status.replaceAll('_', ' ')}</span>;
+  return (
+    <span className={`badge ${CLASSES[props.status]}`}>{GRN_QC_STATUS_LABELS[props.status]}</span>
+  );
 }

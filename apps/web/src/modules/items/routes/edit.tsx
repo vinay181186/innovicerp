@@ -56,7 +56,7 @@ function ItemNewPage(): React.JSX.Element {
         () => void navigate({ to: '/items/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create item');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Item. Try again.');
     }
   };
 
@@ -67,7 +67,7 @@ function ItemNewPage(): React.JSX.Element {
   if (!perms.entry) {
     return (
       <>
-        <PageHeader title="Add Item" backLabel={BACK_TO_LIST} onBack={goBack} />
+        <PageHeader title="New Item" backLabel={BACK_TO_LIST} onBack={goBack} />
         <PageState
           state="noaccess"
           message="⛔ You do not have create access to Item Master. Ask an admin for L2 Data Entry or above in Store."
@@ -81,7 +81,7 @@ function ItemNewPage(): React.JSX.Element {
       {exit.dialog}
       <ItemForm
         mode="create"
-        title="Add Item"
+        title="New Item"
         backLabel={BACK_TO_LIST}
         // NOT exit.leave: the old back link went through the guard too, so
         // leaving this way still asks "are you sure you want to exit?".
@@ -118,7 +118,7 @@ function ItemEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/items/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update item');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Item. Try again.');
     }
   };
 

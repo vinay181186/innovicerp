@@ -333,7 +333,7 @@ function ItemsListPage(): React.JSX.Element {
         render: (it) => <Tag tone="neutral">{it.uom}</Tag>,
       },
       {
-        header: 'Source',
+        header: 'Make / Buy',
         width: '9%',
         nowrap: true,
         // ADR-171 — Buy stands out (blue), Make is the quiet default.
@@ -377,10 +377,10 @@ function ItemsListPage(): React.JSX.Element {
               const v = e.target.value as ItemProcurementType | '';
               setSourceFilter(v === '' ? undefined : v);
             }}
-            title="Source — Make / Buy"
-            aria-label="Source — Make / Buy"
+            title="Make / Buy"
+            aria-label="Make / Buy"
             options={[
-              { value: '', label: 'All sources' },
+              { value: '', label: 'All — Make / Buy' },
               ...ITEM_PROCUREMENT_TYPES.map((t) => ({
                 value: t,
                 label: ITEM_PROCUREMENT_TYPE_LABEL[t],
@@ -391,7 +391,7 @@ function ItemsListPage(): React.JSX.Element {
         primary={
           canCreate ? (
             <Link to="/items/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> Add Item
+              <Icon name="plus" size={14} /> New Item
             </Link>
           ) : null
         }

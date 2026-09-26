@@ -34,6 +34,7 @@ import {
   PR_USER_ENTERED_FIELDS,
   type PrFormValues,
 } from './pr-form-values';
+import { PR_STATUS_LABELS, PR_TYPE_LABELS } from '../lib/pr-labels';
 import { PrVendorField } from './pr-vendor-field';
 
 type FormValues = PrFormValues;
@@ -202,7 +203,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             id="prDate"
             type="date"
             className="innovic-input"
-            {...register('prDate', { required: 'Date is required' })}
+            {...register('prDate', { required: 'PR Date is required' })}
           />
         </div>
         <div className="form-grp">
@@ -224,7 +225,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
         />
         <div className="form-grp">
           <label className="form-label" htmlFor="requiredDate">
-            Required Date
+            Due Date
           </label>
           <input
             id="requiredDate"
@@ -253,7 +254,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             >
               {PR_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
+                  {PR_STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -284,13 +285,13 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
               readOnly
               title="PR type is fixed when the PR is created"
               style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-              value={(watch('prType') ?? 'standard').replaceAll('_', ' ')}
+              value={PR_TYPE_LABELS[watch('prType') ?? 'standard']}
             />
           ) : (
             <select id="prType" className="innovic-select" {...register('prType')}>
               {PR_TYPES.filter((t) => t === 'standard' || t === 'service').map((t) => (
                 <option key={t} value={t}>
-                  {t.replaceAll('_', ' ')}
+                  {PR_TYPE_LABELS[t]}
                 </option>
               ))}
             </select>
@@ -324,7 +325,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
         </div>
         <div className="form-grp form-span-2">
           <label className="form-label" htmlFor="itemName">
-            Item Name (snapshot)
+            Item Name
           </label>
           {/* Rule: item code is the unique key — on-master name is derived +
               read-only; off-master free text stays editable. */}
@@ -359,7 +360,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="estCost">
-            Estimated Cost (₹)
+            Est. Rate (₹/pc)
           </label>
           <input
             id="estCost"
@@ -415,8 +416,13 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             </button>
           ) : null}
           <button type="submit" className="btn btn-success" disabled={formState.isSubmitting}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}✓{' '}
-            {props.submitLabel ?? (isEdit ? 'Save PR' : 'Create PR')}
+            {formState.isSubmitting ? (
+              <>
+                <Loader2 size={13} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              (props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save PR'))
+            )}
           </button>
         </div>
       </div>

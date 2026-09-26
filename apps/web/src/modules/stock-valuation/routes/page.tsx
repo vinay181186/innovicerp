@@ -187,7 +187,7 @@ function StockValuationPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>UOM</th>
-                <th>Stock Qty</th>
+                <th>Physical</th>
                 {priceHidden ? null : (
                   <>
                     <th>Rate</th>
@@ -269,7 +269,7 @@ function StockValuationPage(): React.JSX.Element {
         </div>
       </div>
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Stock Value = Current Stock Qty × Last GRN Rate (or PO Rate if no GRN). ⚠ = below minimum stock.
+        💡 Stock Value = Physical × Last GRN Rate (or PO Rate if no GRN). ⚠ = below minimum stock.
         Items with no rate show “No Rate”.
       </div>
     </div>

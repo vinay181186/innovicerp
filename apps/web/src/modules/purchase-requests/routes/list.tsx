@@ -40,6 +40,7 @@ import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
 import { PrCard } from '../components/pr-card';
+import { PR_STATUS_LABELS } from '../lib/pr-labels';
 
 const PAGE_SIZE = 25;
 
@@ -122,7 +123,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const handleApprove = useCallback(
     (pr: PurchaseRequestListItem): void => {
       setActionError(null);
-      if (!window.confirm(`Approve ${pr.code}?`)) return;
+      if (!window.confirm(`Approve PR ${pr.code}? A PO can then be made.`)) return;
       approveMut.mutate(pr.id, {
         onError: (e) => setActionError(e instanceof Error ? e.message : 'Approve failed'),
       });
@@ -252,7 +253,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                   {search.status ? (
                     <>
                       {' '}
-                      · <span className="text2">{search.status.replaceAll('_', ' ')}</span> only
+                      · <span className="text2">{PR_STATUS_LABELS[search.status]}</span> only
                     </>
                   ) : null}
                 </div>
@@ -277,7 +278,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                   <option value="">All statuses</option>
                   {PR_STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s.replaceAll('_', ' ')}
+                      {PR_STATUS_LABELS[s]}
                     </option>
                   ))}
                 </select>
@@ -356,7 +357,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
             </div>
           ) : isError ? (
             <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load purchase requests'}
+              {error instanceof Error ? error.message : 'Could not load PRs. Try again.'}
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>

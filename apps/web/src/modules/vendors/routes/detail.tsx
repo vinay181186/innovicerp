@@ -100,7 +100,7 @@ function VendorDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete vendor.'
+      : 'Could not delete Vendor. Try again.'
     : null;
 
   return (
@@ -141,10 +141,10 @@ function VendorDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete vendor ${vendor.code}?`}
-          message={`${vendor.name} will be removed from the Vendor Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move Vendor ${vendor.code} to Trash?`}
+          message={`${vendor.name} will be removed from the Vendor Master. You can restore it from Trash.`}
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}
@@ -158,7 +158,7 @@ function VendorFacts(props: { vendor: Vendor }): React.JSX.Element {
   const { vendor } = props;
   return (
     <ReadGrid>
-      <ReadField label="Contact person" size="lg" value={vendor.contactPerson} />
+      <ReadField label="Contact Person" size="lg" value={vendor.contactPerson} />
       <ReadField label="Email" size="lg" value={vendor.email} />
 
       <ReadField
@@ -167,13 +167,13 @@ function VendorFacts(props: { vendor: Vendor }): React.JSX.Element {
         value={vendor.rating ? <StatusBadge kind="rating" status={vendor.rating} /> : null}
       />
       <ReadField label="Phone" size="md" mono value={vendor.phone} />
-      <ReadField label="GST number" size="md" mono value={vendor.gstNumber} />
+      <ReadField label="GST No." size="md" mono value={vendor.gstNumber} />
 
       <ReadField label="City" size="lg" value={vendor.city} />
       <ReadField label="State" size="md" value={vendor.state} />
       <ReadField label="Pincode" size="xs" mono value={vendor.pincode} />
 
-      <ReadField label="Materials supplied" size="full" pre value={vendor.materialsSupplied} />
+      <ReadField label="Materials Supplied" size="full" pre value={vendor.materialsSupplied} />
       <ReadField label="Address" size="full" pre value={vendor.addressLine1} />
     </ReadGrid>
   );

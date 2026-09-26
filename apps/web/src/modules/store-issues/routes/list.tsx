@@ -482,7 +482,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
               <input
                 type="text"
                 className="innovic-input"
-                placeholder="e.g. JC-00001, SO-001"
+                placeholder="e.g. IN-JC-26-00001, IN-SO-00417"
                 value={refNo}
                 onChange={(e) => setRefNo(e.target.value)}
               />

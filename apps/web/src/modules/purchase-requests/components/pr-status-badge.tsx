@@ -5,6 +5,7 @@
 // steady-state and `cancelled` as neutral — legacy flags both.
 
 import type { PrStatus } from '@innovic/shared';
+import { PR_STATUS_LABELS } from '../lib/pr-labels';
 
 const CLASSES: Record<PrStatus, string> = {
   open: 'b-amber',
@@ -14,5 +15,5 @@ const CLASSES: Record<PrStatus, string> = {
 };
 
 export function PrStatusBadge(props: { status: PrStatus }) {
-  return <span className={`badge ${CLASSES[props.status]}`}>{props.status.replaceAll('_', ' ')}</span>;
+  return <span className={`badge ${CLASSES[props.status]}`}>{PR_STATUS_LABELS[props.status]}</span>;
 }

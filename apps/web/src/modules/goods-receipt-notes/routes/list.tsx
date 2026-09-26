@@ -28,6 +28,7 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNote, useGoodsReceiptNotesList } from '../api';
 import { QcStatusBadge } from '../components/qc-status-badge';
+import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 // Pagination is KEPT here (unlike SO Master): the GRN API is paginated and the
 // receipt book grows every day, so the whole list is not loaded in one go.
@@ -205,7 +206,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
               {search.qcStatus ? (
                 <>
                   {' '}
-                  · <span className="text2">{search.qcStatus.replaceAll('_', ' ')}</span> only
+                  · <span className="text2">{GRN_QC_STATUS_LABELS[search.qcStatus]}</span> only
                 </>
               ) : null}
             </div>
@@ -265,7 +266,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                     })
                   }
                 >
-                  {s ? s.replaceAll('_', ' ') : 'All'}
+                  {s ? GRN_QC_STATUS_LABELS[s] : 'All'}
                 </button>
               );
             })}
@@ -304,11 +305,11 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load goods receipt notes'}
+          {error instanceof Error ? error.message : 'Could not load GRNs. Try again.'}
         </div>
       ) : rows.length === 0 ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
-          No GRN entries yet
+          No GRNs yet. Click + New GRN.
         </div>
       ) : (
         rows.map((grn) => {
@@ -551,7 +552,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
   if (isError || !data) {
     return (
       <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load GRN detail'}
+        {error instanceof Error ? error.message : 'Could not load GRN detail. Try again.'}
       </div>
     );
   }

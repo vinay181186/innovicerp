@@ -242,7 +242,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Vendor Status
           </label>
           <select
             id="isActive"
@@ -259,7 +259,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Vendor'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -414,7 +414,7 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
-            Status
+            Vendor Status
           </label>
           <select
             id="isActive"
@@ -431,7 +431,7 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Changes'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />

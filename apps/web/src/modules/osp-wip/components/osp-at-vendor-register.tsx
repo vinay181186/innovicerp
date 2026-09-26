@@ -136,13 +136,13 @@ export function OspAtVendorRegister(): React.JSX.Element {
 
           <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
             💡 Every ordered piece reconciles as{' '}
-            <b>Order Qty = Accepted + In-QC + At-Vendor + Not-Sent</b>. "Accepted" is incoming-QC
-            passed; "In QC" is returned but QC still pending; "At Vendor" is material physically out
-            (sent − returned) — all tracked here, not in finished stock. <b>Not Sent</b> is the
-            order balance still to be outsourced eventually; <b>Ready to Send</b> is how much the
-            previous operation has actually cleared, i.e. what a challan will accept today. Figures
-            are derived from job-card counters and the return GRN's incoming QC; nothing is keyed
-            in.
+            <b>Order Qty = Accepted + In QC + At Vendor + Not Sent</b>. "Accepted" is accepted at
+            incoming QC; "In QC" is returned but QC still pending; "At Vendor" is material
+            physically out (sent − returned) — all tracked here, not in finished stock.{' '}
+            <b>Not Sent</b> is the pending qty still to be outsourced eventually;{' '}
+            <b>Ready to Send</b> is how much the previous operation has actually cleared, i.e. what
+            a challan will accept today. Figures are derived from job-card counters and the return
+            GRN's incoming QC; nothing is keyed in.
           </div>
         </>
       ) : null}

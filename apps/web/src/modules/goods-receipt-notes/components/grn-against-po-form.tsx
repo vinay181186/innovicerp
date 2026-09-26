@@ -22,6 +22,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
+import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 
 interface LineDraft {
   purchaseOrderLineId: string;
@@ -59,7 +60,7 @@ function lineQtyError(raw: string, balance: number): string | null {
   const n = Number(t);
   if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Whole number only.';
   if (n < 0) return 'Min 0.';
-  if (n > balance) return `Cannot exceed balance of ${balance}.`;
+  if (n > balance) return `Cannot receive more than Pending (${balance}).`;
   return null;
 }
 
@@ -116,7 +117,7 @@ export function GrnAgainstPoForm({
       return 'This PO sends material out to the vendor — receive it on the "Against JWPO / DC" tab.';
     }
     if (po.status !== 'open' && po.status !== 'partial') {
-      return `This PO is ${po.status.replaceAll('_', ' ')} — only approved (open / partial) POs can be received.`;
+      return `This PO is ${poStatusLabel(po.status)} — only approved (Open / Partly Received) POs can be received.`;
     }
     return null;
   }, [po]);
@@ -178,7 +179,7 @@ export function GrnAgainstPoForm({
     e.preventDefault();
     setFormError(null);
     if (!grnDate) {
-      setFormError('Date is required.');
+      setFormError('GRN Date is required.');
       return;
     }
     if (!po) {
@@ -293,7 +294,7 @@ export function GrnAgainstPoForm({
       <div className="form-grid-4" style={{ marginBottom: 16 }}>
         <div className="form-grp">
           <label className="form-label" htmlFor="invoiceNo">
-            Invoice No.
+            Vendor Invoice No.
           </label>
           <input
             id="invoiceNo"
@@ -350,13 +351,13 @@ export function GrnAgainstPoForm({
               <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
               <th style={{ width: '14%' }}>Item Code</th>
               <th style={{ width: '17%' }}>Item Name</th>
-              <th style={{ width: '7%' }}>PO Qty</th>
-              <th style={{ width: '8%' }}>Received so far</th>
+              <th style={{ width: '7%' }}>Qty</th>
+              <th style={{ width: '8%' }}>Received</th>
               <th style={{ width: '7%' }}>Pending</th>
               <th style={{ width: '10%' }}>
                 Receive Now<span className="req">★</span>
               </th>
-              <th style={{ width: '12%' }}>DC No.</th>
+              <th style={{ width: '12%' }}>Vendor Challan No.</th>
               <th style={{ width: '12%' }}>Remarks</th>
               <th style={{ width: '4%' }} />
             </tr>
@@ -430,7 +431,7 @@ export function GrnAgainstPoForm({
                       autoComplete="off"
                       value={l.dcRefNo}
                       onChange={(e) => patchLine(idx, { dcRefNo: e.target.value })}
-                      aria-label={`DC ref, line ${idx + 1}`}
+                      aria-label={`Vendor Challan No., line ${idx + 1}`}
                     />
                   </td>
                   <td>
@@ -456,7 +457,7 @@ export function GrnAgainstPoForm({
                       onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))}
                       aria-label={`Remove line ${idx + 1}`}
                     >
-                      Del
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -491,8 +492,13 @@ export function GrnAgainstPoForm({
             className="btn btn-success"
             disabled={submitting || poIneligible !== null}
           >
-            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            ✓ Create GRN
+            {submitting ? (
+              <>
+                <Loader2 size={13} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              'Save GRN'
+            )}
           </button>
         </div>
       </div>

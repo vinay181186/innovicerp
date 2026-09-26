@@ -15,6 +15,7 @@
 // for codes and money.
 
 import type { PurchaseOrderDetail, Vendor } from '@innovic/shared';
+import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
 
 /** Accent bar — the same reading the status badge already gives: green closed,
  *  red cancelled, amber part-received / awaiting QC, grey draft, blue open. */
@@ -160,7 +161,7 @@ export function PoHeaderBand({
               </span>
             }
           />
-          <Row label="PO Type" value={detail.poType.replaceAll('_', ' ')} />
+          <Row label="PO Type" value={PO_TYPE_LABELS[detail.poType]} />
           <Row label="PO Date" value={<span className="mono">{detail.poDate}</span>} />
           <Row
             label="PR"
@@ -245,7 +246,7 @@ export function PoHeaderBand({
 
         {/* ── Tax & approval ── */}
         <Col caption="Tax & Approval">
-          <Row label="Tax type" value={detail.taxType ?? '—'} />
+          <Row label="Tax Type" value={detail.taxType ? taxTypeLabel(detail.taxType) : '—'} />
           <Row label="Due Date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
           {detail.totalAmount == null ? null : (
             <div style={{ fontSize: 11, marginBottom: 6 }}>
