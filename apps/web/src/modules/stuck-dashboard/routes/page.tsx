@@ -8,8 +8,13 @@ import type { StuckDashboardResponse, StuckItem } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { apiFetch } from '@/lib/api';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ListHeader } from '@/ui/layout';
 
 export const stuckDashboardRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -26,11 +31,13 @@ function overColor(over: number): string {
 }
 
 function StuckDashboardPage(): React.JSX.Element {
-  const { data, isLoading, isError, error } = useQuery<StuckDashboardResponse>({
+  const { data, isLoading, isFetching, isError, error } = useQuery<StuckDashboardResponse>({
     queryKey: ['stuck-dashboard'],
     queryFn: () => apiFetch<StuckDashboardResponse>('/stuck-dashboard'),
     staleTime: 30_000,
   });
+  // Client-side search over the rows loaded — SO No., customer, stage, detail.
+  const [term, setTerm] = useState('');
 
   if (isLoading) {
     return (
@@ -50,7 +57,10 @@ function StuckDashboardPage(): React.JSX.Element {
   // Group by stage, preserving the global most-over-threshold ordering within
   // each group; order groups by size (legacy L18130).
   const grouped = new Map<string, StuckItem[]>();
-  for (const it of data.items) {
+  const items = data.items.filter((it) =>
+    matchesSearchTerm([it.soNo, it.customer, it.stage, it.detail], term),
+  );
+  for (const it of items) {
     const arr = grouped.get(it.stage);
     if (arr) arr.push(it);
     else grouped.set(it.stage, [it]);
@@ -59,25 +69,40 @@ function StuckDashboardPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr">⚠ Stuck Dashboard</div>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
+      <ListHeader
+        title="Stuck Dashboard"
+        icon="⚠"
+        count={items.length}
+        noun="stuck activity"
+        nounPlural="stuck activities"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search SO No., customer, stage, detail…"
+        updating={isFetching}
       >
-        <Tile label="Total Stuck" value={data.summary.totalStuck} color="var(--amber)" />
-        <Tile
-          label="Critical (>5d over)"
-          value={data.summary.criticalStuck}
-          color="var(--red)"
-          critical
+        <StatStrip
+          items={[
+            {
+              key: 'total',
+              label: 'Total Stuck',
+              count: data.summary.totalStuck,
+              color: 'var(--amber2)',
+            },
+            {
+              key: 'critical',
+              label: 'Critical (>5d over)',
+              count: data.summary.criticalStuck,
+              color: 'var(--red2)',
+            },
+            {
+              key: 'stages',
+              label: 'Stages Affected',
+              count: data.summary.stagesAffected,
+              color: 'var(--blue)',
+            },
+          ]}
         />
-        <Tile label="Stages Affected" value={data.summary.stagesAffected} color="var(--blue)" />
-      </div>
+      </ListHeader>
 
       {data.summary.totalStuck === 0 ? (
         <div
@@ -119,16 +144,17 @@ function StuckDashboardPage(): React.JSX.Element {
                 </div>
                 <div className="panel">
                   <div className="tbl-wrap">
-                    <table className="innovic-table">
+                    <table className="innovic-table tbl-grid">
                       <thead>
                         <tr>
                           <th>SO No.</th>
                           <th>Customer</th>
-                          <th className="td-ctr">Stuck For</th>
-                          <th className="td-ctr">Threshold</th>
-                          <th className="td-ctr">Over By</th>
+                          <th className="th-num">Stuck For</th>
+                          <th className="th-num">Threshold</th>
+                          <th className="th-num">Over By</th>
                           <th>Since</th>
                           <th>Detail</th>
+                          <th>Action</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -148,17 +174,30 @@ function StuckDashboardPage(): React.JSX.Element {
                                 </Link>
                               </td>
                               <td style={{ fontSize: 12 }}>{it.customer ?? '—'}</td>
-                              <td className="td-ctr mono fw-700" style={{ color: oc }}>
+                              <td className="td-num mono fw-700" style={{ color: oc }}>
                                 {it.days} days
                               </td>
-                              <td className="td-ctr mono text3">{it.threshold} days</td>
-                              <td className="td-ctr mono fw-700" style={{ color: oc }}>
+                              <td className="td-num mono text3">{it.threshold} days</td>
+                              <td className="td-num mono fw-700" style={{ color: oc }}>
                                 +{over}d
                               </td>
                               <td className="text3" style={{ fontSize: 11 }}>
                                 {it.since ?? '—'}
                               </td>
                               <td style={{ fontSize: 11 }}>{it.detail}</td>
+                              {/* Chase it: a task linked to the SO, titled with
+                                  the stage it is stuck in. */}
+                              <td style={{ whiteSpace: 'nowrap' }}>
+                                <AssignTaskButton
+                                  linkedRef={{
+                                    type: 'sales_order',
+                                    id: it.soId,
+                                    display: `SO ${it.soNo}`,
+                                    navPage: `/sales-orders/${it.soId}`,
+                                  }}
+                                  suggestedTitle={`Unstick ${it.soNo} — ${it.stage}`}
+                                />
+                              </td>
                             </tr>
                           );
                         })}
@@ -179,40 +218,6 @@ function StuckDashboardPage(): React.JSX.Element {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-// Legacy hand-rolls these tiles inline (L18123-18125) — they are NOT .panel and
-// NOT .stat-card. The Critical tile carries a red wash + red label; legacy spells
-// it rgba(239,68,68,0.06)/rgba(239,68,68,0.3) against its dark theme, which maps
-// to the light theme's signal tokens (ISSUE-067). Legacy sets no font-family on
-// the value, so no `mono` here — unlike the table's qty cells, which do use it.
-function Tile({
-  label,
-  value,
-  color,
-  critical = false,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  critical?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        textAlign: 'center',
-        padding: 14,
-        borderRadius: 'var(--radius2)',
-        background: critical ? 'var(--sig-critical-bg)' : 'var(--bg2)',
-        border: `1px solid ${critical ? 'var(--sig-critical-bd)' : 'var(--border)'}`,
-      }}
-    >
-      <div style={{ fontSize: 11, color: critical ? 'var(--red)' : 'var(--text3)' }}>{label}</div>
-      <div className="fw-700" style={{ fontSize: 26, color }}>
-        {value}
-      </div>
     </div>
   );
 }

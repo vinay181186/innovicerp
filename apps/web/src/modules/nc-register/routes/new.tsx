@@ -106,36 +106,25 @@ function NcRegisterNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link to="/nc-register" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to NC Register
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">⚠️ Report Non-Conformance</div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <NcRegisterForm
-            mode="create"
-            initial={seed}
-            submitError={submitError}
-            submitLabel="Save NC"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: CreateNcRegisterInput) => {
-              setSubmitError(null);
-              try {
-                const created = await create.mutateAsync(values);
-                exit.leave(
-                  () => void navigate({ to: '/nc-register/$id', params: { id: created.id } }),
-                );
-              } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');
-              }
-            }}
-          />
-        </div>
-      </div>
+      <NcRegisterForm
+        mode="create"
+        title="⚠️ Report Non-Conformance"
+        backLabel="Back to NC Register"
+        onBack={() => exit.leave(goBack)}
+        initial={seed}
+        submitError={submitError}
+        submitLabel="Save NC"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: CreateNcRegisterInput) => {
+          setSubmitError(null);
+          try {
+            const created = await create.mutateAsync(values);
+            exit.leave(() => void navigate({ to: '/nc-register/$id', params: { id: created.id } }));
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

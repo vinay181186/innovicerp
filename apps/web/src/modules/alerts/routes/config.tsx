@@ -14,11 +14,12 @@
 // Port-only beyond legacy's four columns: the rule `description` sub-line and
 // the Status (override/default) column — both real server fields.
 
-import { Link, createRoute } from '@tanstack/react-router';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { PageHeader } from '@/ui/layout';
 import { useAlertConfig, useToggleAlert } from '../api';
 import { DEPT_COLOR, DEPT_LABEL } from '../lib/dept';
 
@@ -31,27 +32,19 @@ export const alertsConfigRoute = createRoute({
 function AlertsConfigPage() {
   const { data: session } = useSession();
   const canEdit = session?.role === 'admin' || session?.role === 'manager';
+  const navigate = useNavigate();
 
   return (
     <div>
       {/* Header — legacy L22446 is a bare `.section-hdr`. The Back link has no
           legacy counterpart (legacy navigated from its sidebar); kept because
           it is the port's only in-page route back to the dashboard. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔔 Alert Configuration
-        </div>
-        <Link to="/alerts" className="btn btn-ghost" style={{ fontSize: 12 }}>
-          ← Back to Alerts
-        </Link>
-      </div>
+      <PageHeader
+        title="Alert Configuration"
+        icon="🔔"
+        backLabel="Back to Alerts"
+        onBack={() => void navigate({ to: '/alerts' })}
+      />
 
       {!canEdit ? (
         // Legacy L22428: bare `.empty-state` "⛔ Admin access required" (its
@@ -61,8 +54,8 @@ function AlertsConfigPage() {
         <div className="empty-state">
           ⛔ Admin access required
           <div style={{ fontSize: 11, marginTop: 8 }}>
-            Your role ({session?.role ?? 'unknown'}) cannot change alert configuration. The dashboard
-            remains visible — only admin/manager can flip toggles.
+            Your role ({session?.role ?? 'unknown'}) cannot change alert configuration. The
+            dashboard remains visible — only admin/manager can flip toggles.
           </div>
         </div>
       ) : (
@@ -118,7 +111,7 @@ function ConfigTable() {
           rule does the same job. */}
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th style={{ width: 40 }}>Active</th>

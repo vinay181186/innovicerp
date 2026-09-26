@@ -186,6 +186,8 @@ const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['Inspected By · Log Ref', 18],
   ['Verdict', 10],
 ];
+// Quantity columns read right-aligned, header and cells alike.
+const NUM_COLS = new Set(['QC Pending', 'Accepted', 'Rejected']);
 export function QcSheetTable(props: {
   view: QcView;
   children: ReactNode;
@@ -193,8 +195,8 @@ export function QcSheetTable(props: {
 }): React.JSX.Element {
   const cols = props.view === 'pending' ? PENDING_COLS : COMPLETED_COLS;
   return (
-    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--bg2)' }}>
-      <table className="innovic-table tbl-grid" style={{ width: '100%' }}>
+    <div className="tbl-wrap" style={{ background: 'var(--bg2)' }}>
+      <table className="innovic-table tbl-grid">
         <colgroup>
           {cols.map(([, w], i) => (
             <col key={i} style={{ width: `${w}%` }} />
@@ -203,7 +205,11 @@ export function QcSheetTable(props: {
         <thead>
           <tr>
             {cols.map(([label, , st], i) => (
-              <th key={i} style={{ ...TH, ...st }}>
+              <th
+                key={i}
+                className={NUM_COLS.has(label) ? 'th-num' : undefined}
+                style={{ ...TH, ...st }}
+              >
                 {label}
               </th>
             ))}
@@ -262,7 +268,7 @@ function ContextCell({ line1, line2 }: { line1: ReactNode; line2?: ReactNode }):
 
 function NumCell({ value, red }: { value: number; red?: boolean }): React.JSX.Element {
   return (
-    <td style={{ ...TD, ...NOWRAP }}>
+    <td className="td-num" style={{ ...TD, ...NOWRAP }}>
       <span
         style={{
           ...MONO,

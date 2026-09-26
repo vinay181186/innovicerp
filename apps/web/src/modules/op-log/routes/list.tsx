@@ -9,13 +9,16 @@
 
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { DocRefLink } from '@/modules/activity-log/components/doc-ref-link';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useOpLog, type ListOpLogQuery } from '../api';
+import { exportOpLog } from '../lib/export';
 
 const PAGE_SIZE = 50;
 
@@ -81,118 +84,123 @@ function OpLogListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const items = data?.items ?? [];
+  const [exporting, setExporting] = useState(false);
+
+  async function onExport(): Promise<void> {
+    setExporting(true);
+    try {
+      const { written, total: all } = await exportOpLog({
+        jcNo: search.jcNo,
+        logType: search.logType,
+        shift: search.shift,
+        fromDate: search.fromDate,
+        toDate: search.toDate,
+      });
+      if (written < all) {
+        window.alert(
+          `Exported the first ${written} of ${all} entries. Narrow the filter to export the rest.`,
+        );
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not export the operation log.');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Operation Log
-        </div>
-        <span className="mono text3" style={{ fontSize: 12 }}>
-          {total} entries
-        </span>
-      </div>
-
-      {/* Filters */}
-      <div
-        className="panel"
-        style={{
-          padding: 12,
-          marginBottom: 10,
-          display: 'flex',
-          gap: 8,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-      >
-        <input
-          className="innovic-input"
-          placeholder="Filter by JC No.…"
-          value={jcInput}
-          onChange={(e) => setJcInput(e.target.value)}
-          style={{ width: 180, fontSize: 12 }}
-        />
-        <select
-          className="innovic-select"
-          value={search.logType ?? ''}
-          onChange={(e) => {
-            const v = e.target.value as ListOpLogQuery['logType'] | '';
-            void navigate({
-              search: (prev) => ({ ...prev, logType: v === '' ? undefined : v, page: 1 }),
-              replace: true,
-            });
-          }}
-          style={{ width: 130, fontSize: 12 }}
-        >
-          <option value="">All types</option>
-          <option value="start">Start</option>
-          <option value="complete">Completed</option>
-          <option value="qc">QC Inspection</option>
-        </select>
-        <select
-          className="innovic-select"
-          value={search.shift ?? ''}
-          onChange={(e) => {
-            const v = e.target.value as ListOpLogQuery['shift'] | '';
-            void navigate({
-              search: (prev) => ({ ...prev, shift: v === '' ? undefined : v, page: 1 }),
-              replace: true,
-            });
-          }}
-          style={{ width: 120, fontSize: 12 }}
-        >
-          <option value="">All shifts</option>
-          <option value="day">Day</option>
-          <option value="night">Night</option>
-          <option value="general">General</option>
-        </select>
-        <span className="text3" style={{ fontSize: 11 }}>
-          From
-        </span>
-        <input
-          type="date"
-          className="innovic-input"
-          value={search.fromDate ?? ''}
-          onChange={(e) =>
-            void navigate({
-              search: (prev) => ({ ...prev, fromDate: e.target.value || undefined, page: 1 }),
-              replace: true,
-            })
-          }
-          style={{ width: 140, fontSize: 12 }}
-        />
-        <span className="text3" style={{ fontSize: 11 }}>
-          To
-        </span>
-        <input
-          type="date"
-          className="innovic-input"
-          value={search.toDate ?? ''}
-          onChange={(e) =>
-            void navigate({
-              search: (prev) => ({ ...prev, toDate: e.target.value || undefined, page: 1 }),
-              replace: true,
-            })
-          }
-          style={{ width: 140, fontSize: 12 }}
-        />
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
-      </div>
+      <ListHeader
+        title="Operation Log"
+        icon="☰"
+        count={data ? total : undefined}
+        noun="entry"
+        nounPlural="entries"
+        // Server-side filter on the JC number only — the placeholder says so.
+        search={jcInput}
+        onSearch={setJcInput}
+        searchPlaceholder="Filter by JC No.…"
+        updating={isFetching && !isLoading}
+        tools={
+          <>
+            <select
+              className="innovic-select"
+              value={search.logType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as ListOpLogQuery['logType'] | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, logType: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 130 }}
+            >
+              <option value="">All types</option>
+              <option value="start">Start</option>
+              <option value="complete">Completed</option>
+              <option value="qc">QC Inspection</option>
+            </select>
+            <select
+              className="innovic-select"
+              value={search.shift ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as ListOpLogQuery['shift'] | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, shift: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 120 }}
+            >
+              <option value="">All shifts</option>
+              <option value="day">Day</option>
+              <option value="night">Night</option>
+              <option value="general">General</option>
+            </select>
+            <input
+              type="date"
+              className="innovic-input"
+              title="Log date from"
+              aria-label="Log date from"
+              value={search.fromDate ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, fromDate: e.target.value || undefined, page: 1 }),
+                  replace: true,
+                })
+              }
+              style={{ width: 140 }}
+            />
+            <input
+              type="date"
+              className="innovic-input"
+              title="Log date to"
+              aria-label="Log date to"
+              value={search.toDate ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, toDate: e.target.value || undefined, page: 1 }),
+                  replace: true,
+                })
+              }
+              style={{ width: 140 }}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={exporting || total === 0}
+              title="Export every entry matching the current filter to Excel"
+              onClick={() => void onExport()}
+            >
+              {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬇'} Export
+            </button>
+          </>
+        }
+      />
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Log No.</th>
@@ -205,16 +213,16 @@ function OpLogListPage(): React.JSX.Element {
                     this column says which PART the logged qty belongs to. */}
                 <th>Item Code</th>
                 <th>Log Date</th>
-                <th className="td-ctr">Op</th>
+                <th>Op</th>
                 <th>Log Type</th>
                 <th>Shift</th>
                 <th>Planned Machine</th>
                 <th>Actual Machine</th>
                 <th>Operation</th>
-                <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                <th className="th-num" style={{ color: 'var(--green2)' }}>
                   Completed
                 </th>
-                <th className="td-ctr" style={{ color: 'var(--red2)' }}>
+                <th className="th-num" style={{ color: 'var(--red2)' }}>
                   Rejected
                 </th>
                 <th>Operator</th>
@@ -245,10 +253,15 @@ function OpLogListPage(): React.JSX.Element {
               ) : (
                 items.map((r) => (
                   <tr key={r.id}>
-                    <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.logNo}
+                    {/* Log No. and JC No. both open the job card the entry was
+                        logged against (resolved from the JC number — the op-log
+                        feed carries the number, not the card's id). */}
+                    <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                      <DocRefLink entity="Job Card" refId={r.jcNo} label={r.logNo} />
                     </td>
-                    <td className="td-code cyan">{r.jcNo}</td>
+                    <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
+                      <DocRefLink entity="Job Card" refId={r.jcNo} />
+                    </td>
                     {/* POL — '—' when no sales order sits behind the card. */}
                     <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                       {r.clientPoLineNo ?? '—'}
@@ -282,8 +295,10 @@ function OpLogListPage(): React.JSX.Element {
                         </div>
                       ) : null}
                     </td>
-                    <td className="text2">{fmtDate(r.logDate)}</td>
-                    <td className="td-ctr mono">{opSrNo(r.opSeq)}</td>
+                    <td className="text2" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(r.logDate)}
+                    </td>
+                    <td className="mono">{opSrNo(r.opSeq)}</td>
                     <td>
                       <span className={`badge ${logTypeBadge(r.logType)}`}>
                         {LOG_TYPE_LABEL[r.logType]}
@@ -324,10 +339,12 @@ function OpLogListPage(): React.JSX.Element {
                       </span>
                     </td>
                     <td>{r.operation ?? '?'}</td>
-                    <td className="td-ctr mono fw-700 green">{r.qty}</td>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
+                      {r.qty}
+                    </td>
                     <td
-                      className="td-ctr mono fw-700"
-                      style={{ color: r.rejectQty > 0 ? 'var(--red)' : 'var(--text3)' }}
+                      className="td-num mono fw-700"
+                      style={{ color: r.rejectQty > 0 ? 'var(--red2)' : 'var(--text3)' }}
                     >
                       {r.rejectQty}
                     </td>
@@ -346,53 +363,19 @@ function OpLogListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No entries'
-            : `Showing ${(search.page - 1) * PAGE_SIZE + 1}–${Math.min(search.page * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={search.page <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, search.page - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {search.page} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={search.page >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, search.page + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      <ListFooter
+        total={total}
+        noun="entry"
+        nounPlural="entries"
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        onPage={(p) =>
+          void navigate({
+            search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+            replace: true,
+          })
+        }
+      />
     </div>
   );
 }

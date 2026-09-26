@@ -32,19 +32,19 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
           <div className="empty-state">No inspections recorded yet</div>
         ) : (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 {/* Legacy L18897 colours none of these headers. */}
                 <tr>
                   <th>Inspector</th>
-                  <th className="td-ctr">Inspections</th>
-                  <th className="td-ctr">JCs</th>
-                  <th className="td-ctr">Accepted</th>
-                  <th className="td-ctr">Rejected</th>
-                  <th className="td-ctr" title="Green ≤ 5%, Amber 6–15%, Red > 15%">
+                  <th className="th-num">Inspections</th>
+                  <th className="th-num">JCs</th>
+                  <th className="th-num">Accepted</th>
+                  <th className="th-num">Rejected</th>
+                  <th className="th-num" title="Green ≤ 5%, Amber 6–15%, Red > 15%">
                     Rejection Rate
                   </th>
-                  <th className="td-ctr" title="Items now assigned to this inspector">
+                  <th className="th-num" title="Items now assigned to this inspector">
                     Current Load
                   </th>
                 </tr>
@@ -55,20 +55,20 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
                     <td className="fw-700" style={{ fontSize: 12 }}>
                       {p.name}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {p.inspections}
                     </td>
-                    <td className="td-ctr mono">{p.jcs}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green2)' }}>
+                    <td className="td-num mono">{p.jcs}</td>
+                    <td className="td-num mono" style={{ color: 'var(--green2)' }}>
                       {p.accepted}
                     </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red2)' }}>
+                    <td className="td-num mono" style={{ color: 'var(--red2)' }}>
                       {p.rejected}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: rejColor(p.rejRate) }}>
+                    <td className="td-num mono fw-700" style={{ color: rejColor(p.rejRate) }}>
                       {p.rejRate}%
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {p.currentLoad}
                     </td>
                   </tr>

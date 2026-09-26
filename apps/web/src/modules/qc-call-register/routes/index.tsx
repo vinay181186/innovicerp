@@ -24,6 +24,7 @@ import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
+import { ListHeader } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { todayLocal } from '@/lib/date';
@@ -245,7 +246,10 @@ function QcCallRegisterPage(): React.JSX.Element {
       search,
     );
   const matchIncC = (l: IncomingQcCompletedRow): boolean =>
-    matchesSearchTerm([l.grnNo, l.clientPoLineNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName], search);
+    matchesSearchTerm(
+      [l.grnNo, l.clientPoLineNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName],
+      search,
+    );
   const inStage = (s: QcStage): boolean => stage === null || stage === s;
 
   const pending = allPending.filter((o) => inStage(processStage(o.isLastOp)) && matchP(o));
@@ -280,27 +284,17 @@ function QcCallRegisterPage(): React.JSX.Element {
     else exportCompletedQc(logs, incCompletedF);
   }
 
-  // Legacy L4221's full-bleed box (margin:-16, height:calc(100vh - 112px)) is
-  // kept verbatim as the outer shell; it just becomes a flex COLUMN so the tab
-  // bar can sit above the sheet without a negative-margin collision. Everything
-  // below the bar gets the leftover height via flex:1 + minHeight:0.
+  // The tab bar sits above whichever tab is showing. No full-bleed box any
+  // more (it used margin:-16 + a fixed height): the app shell owns the gutter
+  // and the width, and the sheet scrolls inside its own .tbl-wrap.
   const shell = (children: React.ReactNode): React.JSX.Element => (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: 'calc(100vh - 112px)',
-        margin: -16,
-        overflow: 'hidden',
-      }}
-    >
+    <div>
       <div
         style={{
           display: 'flex',
           gap: 4,
           borderBottom: '1px solid var(--border)',
-          padding: '0 16px',
-          flexShrink: 0,
+          marginBottom: 'var(--sp-2)',
         }}
       >
         {(
@@ -348,30 +342,22 @@ function QcCallRegisterPage(): React.JSX.Element {
   // TPI first, ahead of the QC loading/error gates: TPI runs off its own query,
   // so a failing qc-history fetch must not black out the TPI tab.
   if (tab === 'tpi') {
-    return shell(
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
-        <TpiView />
-      </div>,
-    );
+    return shell(<TpiView />);
   }
   if (isLoading) {
     return shell(
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
-        <div className="panel">
-          <div className="empty-state">
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
-          </div>
+      <div className="panel">
+        <div className="empty-state">
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
         </div>
       </div>,
     );
   }
   if (isError || !data) {
     return shell(
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
-        <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load QC Call Register. Try again.'}
-          </div>
+      <div className="panel">
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          {error instanceof Error ? error.message : 'Could not load QC Call Register. Try again.'}
         </div>
       </div>,
     );
@@ -406,58 +392,53 @@ function QcCallRegisterPage(): React.JSX.Element {
       : completedFeed.length === 0;
   const stageName = stage ? QC_STAGES.find((s) => s.key === stage)?.label : null;
 
-  return shell(
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        flex: 1,
-        minHeight: 0,
-        background: 'var(--bg2)',
-      }}
-    >
-      {/* Title row: register totals left; Export · search · Pending|Completed right. */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '10px 16px',
-          borderBottom: '1px solid var(--border2)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.2 }}>QC Call Register</div>
-          <div className="text3" style={{ fontSize: 12 }}>
-            {pendingCount} calls · {pcsPending} pcs pending · {completeCount} completed
-          </div>
-        </div>
-        <div style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: 12 }}
-          disabled={isEmpty}
-          title={`Export the ${view} rows on screen to Excel`}
-          onClick={onExport}
-        >
-          ⬇ Export
-        </button>
-        <input
-          className="innovic-input"
-          style={{ fontSize: 12, width: 230 }}
-          placeholder="Search JC, GRN, SO, item, vendor…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <div style={{ display: 'flex', gap: 4 }}>
-          {viewBtn('pending', 'Pending')}
-          {viewBtn('completed', 'Completed')}
-        </div>
-      </div>
+  const shownCount =
+    view === 'pending' ? pending.length + incPendingF.length : completedFeed.length;
 
-      <QcStageStrip stats={stageStats} selected={stage} onSelect={setStage} />
+  return shell(
+    <>
+      <ListHeader
+        title="QC Call Register"
+        icon="📋"
+        count={shownCount}
+        noun={view === 'pending' ? 'pending call' : 'completed entry'}
+        nounPlural={view === 'pending' ? 'pending calls' : 'completed entries'}
+        filterNote={stageName ?? undefined}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search JC, GRN, SO, POL, item, part, vendor…"
+        tools={
+          <>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {viewBtn('pending', 'Pending')}
+              {viewBtn('completed', 'Completed')}
+            </div>
+            {view === 'completed' ? (
+              <Link
+                to="/qc-history"
+                className="btn btn-ghost btn-sm"
+                title="The full QC history log — every completed entry, not just the latest 30"
+              >
+                Full history →
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={isEmpty}
+              title={`Export the ${view} rows on screen to Excel`}
+              onClick={onExport}
+            >
+              ⬇ Export
+            </button>
+          </>
+        }
+      >
+        <div className="text3" style={{ fontSize: 12 }}>
+          {pendingCount} calls · {pcsPending} pcs pending · {completeCount} completed
+        </div>
+        <QcStageStrip stats={stageStats} selected={stage} onSelect={setStage} />
+      </ListHeader>
 
       <QcSheetTable
         view={view}
@@ -515,7 +496,7 @@ function QcCallRegisterPage(): React.JSX.Element {
           onClose={() => setInspect(null)}
         />
       ) : null}
-    </div>,
+    </>,
   );
 }
 

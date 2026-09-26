@@ -1,8 +1,11 @@
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowRight, Eye, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowRight, Eye, Loader2, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useSavedReportsList, useDeleteSavedReport } from '../api';
 
 export const savedReportsListRoute = createRoute({
@@ -14,31 +17,37 @@ export const savedReportsListRoute = createRoute({
 function SavedReportsListPage() {
   const { data, isLoading, isError, error } = useSavedReportsList();
   const deleteMutation = useDeleteSavedReport();
+  const [term, setTerm] = useState('');
 
   const onDelete = (id: string, name: string) => {
     if (!confirm(`Delete "${name}"? An admin can recover it if needed.`)) return;
     deleteMutation.mutate(id);
   };
 
-  return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <Sparkles className="mt-1 h-6 w-6 text-muted-foreground" />
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Saved reports</h1>
-              <p className="text-sm text-muted-foreground">Build and save your own reports.</p>
-            </div>
-          </div>
-          <Button asChild>
-            <Link to="/saved-reports/new">
-              <Plus />
-              New report
-            </Link>
-          </Button>
-        </div>
+  // Client-side search over the whole list (one fetch): the text each card
+  // shows — name, description, data source, owner.
+  const rows = (data?.reports ?? []).filter((r) =>
+    matchesSearchTerm([r.name, r.description, r.sourceKey, r.ownerEmail], term),
+  );
 
+  // No page wrapper of its own: the app shell owns the gutter and the width.
+  return (
+    <div>
+      <ListHeader
+        title="Saved Reports"
+        icon="✨"
+        count={data ? rows.length : undefined}
+        noun="saved report"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search report name, description, source, owner…"
+        primary={
+          <Link to="/saved-reports/new" className="btn btn-primary">
+            + New Report
+          </Link>
+        }
+      />
+      <div className="space-y-6">
         {isLoading ? (
           <Card>
             <CardContent className="py-6">
@@ -57,18 +66,22 @@ function SavedReportsListPage() {
               </CardDescription>
             </CardHeader>
           </Card>
-        ) : data.reports.length === 0 ? (
+        ) : rows.length === 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle>No saved reports yet</CardTitle>
-              <CardDescription>
-                Click <span className="font-medium">New report</span> to compose one.
-              </CardDescription>
+              <CardTitle>
+                {term.trim() ? 'No saved reports match your search' : 'No saved reports yet'}
+              </CardTitle>
+              {term.trim() ? null : (
+                <CardDescription>
+                  Click <span className="font-medium">New Report</span> to compose one.
+                </CardDescription>
+              )}
             </CardHeader>
           </Card>
         ) : (
           <div className="grid gap-3">
-            {data.reports.map((r) => (
+            {rows.map((r) => (
               <div
                 key={r.id}
                 className="flex items-start justify-between gap-3 rounded-lg border bg-card p-4 text-card-foreground"
@@ -83,11 +96,11 @@ function SavedReportsListPage() {
                       {r.name}
                     </Link>
                     {r.isShared ? (
-                      <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                      <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                         shared
                       </span>
                     ) : (
-                      <span className="rounded-full border bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <span className="rounded-full border bg-muted px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                         private
                       </span>
                     )}
@@ -95,7 +108,7 @@ function SavedReportsListPage() {
                   {r.description ? (
                     <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>
                   ) : null}
-                  <div className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <div className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
                     {r.sourceKey} · {r.spec.columns.length} columns ·{' '}
                     {r.spec.filters.length === 0
                       ? 'no filters'
@@ -131,6 +144,6 @@ function SavedReportsListPage() {
           </div>
         )}
       </div>
-    </main>
+    </div>
   );
 }

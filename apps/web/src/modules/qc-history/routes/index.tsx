@@ -11,6 +11,8 @@ import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ActionMenu, ListHeader } from '@/ui/layout';
 import { useQcHistory } from '../api';
 import { exportCompletedQc, exportPendingQc } from '../lib/export';
 
@@ -75,38 +77,86 @@ function QcHistoryPage(): React.JSX.Element {
     setTab('all');
   }
 
+  const shownCount = (showPend ? pending.length : 0) + (showComp ? logs.length : 0);
+
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📊 QC History
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" />
-            </span>
-          ) : null}
-          {TABS.map((tb) => (
-            <button
-              key={tb.key}
-              type="button"
-              className={`btn btn-sm ${tab === tb.key ? 'btn-primary' : 'btn-ghost'}`}
-              style={tb.color ? { color: tb.color } : undefined}
-              onClick={() => setTab(tb.key)}
-            >
-              {tb.label}
+      <ListHeader
+        title="QC History"
+        icon="📊"
+        count={data ? shownCount : undefined}
+        noun="row"
+        filterNote={tab === 'all' ? undefined : tab}
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search SO, JC, POL, item code, item name…"
+        updating={isFetching && !isLoading}
+        tools={
+          <>
+            {TABS.map((tb) => (
+              <button
+                key={tb.key}
+                type="button"
+                className={`btn btn-sm ${tab === tb.key ? 'btn-primary' : 'btn-ghost'}`}
+                style={tb.color && tab !== tb.key ? { color: tb.color } : undefined}
+                aria-pressed={tab === tb.key}
+                onClick={() => setTab(tb.key)}
+              >
+                {tb.label}
+              </button>
+            ))}
+            <input
+              type="date"
+              className="innovic-input"
+              title="QC date from"
+              aria-label="QC date from"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+            <input
+              type="date"
+              className="innovic-input"
+              title="QC date to"
+              aria-label="QC date to"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}>
+              Clear
             </button>
-          ))}
-        </div>
-      </div>
+            <ActionMenu
+              label="⬇ Export"
+              items={[
+                {
+                  label: 'Completed entries',
+                  disabled: logs.length === 0,
+                  onClick: () => exportCompletedQc(logs),
+                },
+                {
+                  label: 'Pending QC',
+                  disabled: pending.length === 0,
+                  onClick: () => exportPendingQc(pending),
+                },
+              ]}
+            />
+          </>
+        }
+      >
+        {data ? (
+          /* Stats — legacy L23604-23609, now one strip under the title. */
+          <StatStrip
+            items={[
+              {
+                key: 'overdue',
+                label: 'Overdue (>1 day)',
+                count: data.stats.overdue,
+                color: 'var(--red2)',
+              },
+              { key: 'today', label: "Today's Entries", count: data.stats.today },
+            ]}
+          />
+        ) : null}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -122,108 +172,6 @@ function QcHistoryPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Stats — legacy L23604-23609. `blue` has no accent rule in legacy's
-              stylesheet (only cyan/amber/green/red at L97-102), so that tile
-              renders bare there and here. */}
-          <div
-            className="stat-grid"
-            style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginBottom: 14 }}
-          >
-            <div className="stat-card red">
-              <div className="stat-label">Overdue (&gt;1 day)</div>
-              <div className="stat-val">{data.stats.overdue}</div>
-            </div>
-            <div className="stat-card blue">
-              <div className="stat-label">Today&apos;s Entries</div>
-              <div className="stat-val">{data.stats.today}</div>
-            </div>
-          </div>
-
-          {/* Filters — legacy L23611-23622 (inline-styled bg3 bar, not a .panel) */}
-          <div
-            style={{
-              padding: '10px 14px',
-              background: 'var(--bg3)',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              marginBottom: 14,
-              display: 'flex',
-              gap: 12,
-              flexWrap: 'wrap',
-              alignItems: 'flex-end',
-            }}
-          >
-            <div>
-              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
-                {/* The label names what the box actually matches, and it now
-                    matches the part name too, so it has to say so. */}
-                SO / JC / Item / Name
-              </label>
-              <input
-                className="innovic-input"
-                style={{ width: 160, fontSize: 12 }}
-                placeholder="🔍 Filter..."
-                value={term}
-                onChange={(e) => setTerm(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
-                Date From
-              </label>
-              <input
-                type="date"
-                className="innovic-input"
-                style={{ fontSize: 12 }}
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
-                Date To
-              </label>
-              <input
-                type="date"
-                className="innovic-input"
-                style={{ fontSize: 12 }}
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-              />
-            </div>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}>
-              Clear
-            </button>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{
-                  background: 'rgba(34,197,94,0.1)',
-                  color: 'var(--green2)',
-                  border: '1px solid rgba(34,197,94,0.3)',
-                }}
-                disabled={logs.length === 0}
-                onClick={() => exportCompletedQc(logs)}
-              >
-                ⬇ Export Completed
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{
-                  background: 'rgba(251,191,36,0.1)',
-                  color: 'var(--amber2)',
-                  border: '1px solid rgba(251,191,36,0.3)',
-                }}
-                disabled={pending.length === 0}
-                onClick={() => exportPendingQc(pending)}
-              >
-                ⬇ Export Pending
-              </button>
-            </div>
-          </div>
-
           {showPend ? (
             <div className="panel" style={{ marginBottom: 14 }}>
               <div className="panel-hdr">
@@ -232,7 +180,7 @@ function QcHistoryPage(): React.JSX.Element {
                 </span>
               </div>
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
                       <th>JC No.</th>
@@ -247,11 +195,17 @@ function QcHistoryPage(): React.JSX.Element {
                           the code column stays a clean key. */}
                       <th>Item Name</th>
                       <th>Operation</th>
-                      <th>Order Qty</th>
-                      <th>Completed</th>
-                      <th style={{ color: 'var(--green2)' }}>Accepted</th>
-                      <th style={{ color: 'var(--red2)' }}>Rejected</th>
-                      <th style={{ color: 'var(--amber2)' }}>Pending</th>
+                      <th className="th-num">Order Qty</th>
+                      <th className="th-num">Completed</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Accepted
+                      </th>
+                      <th className="th-num" style={{ color: 'var(--red2)' }}>
+                        Rejected
+                      </th>
+                      <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                        Pending
+                      </th>
                       <th>Since</th>
                       <th></th>
                     </tr>
@@ -280,7 +234,7 @@ function QcHistoryPage(): React.JSX.Element {
                 </span>
               </div>
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
                       <th>JC No.</th>
@@ -293,8 +247,12 @@ function QcHistoryPage(): React.JSX.Element {
                           tell you what was inspected. */}
                       <th>Item Name</th>
                       <th>Operation</th>
-                      <th style={{ color: 'var(--green2)' }}>Accepted</th>
-                      <th style={{ color: 'var(--red2)' }}>Rejected</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Accepted
+                      </th>
+                      <th className="th-num" style={{ color: 'var(--red2)' }}>
+                        Rejected
+                      </th>
                       <th>QC Date</th>
                       <th>Shift</th>
                       <th>Inspected By</th>
@@ -355,15 +313,15 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
         {o.itemName ? o.itemName : null}
       </td>
       <td style={{ fontSize: 11 }}>{o.operation}</td>
-      <td className="td-ctr mono fw-700">{o.orderQty}</td>
-      <td className="td-ctr mono fw-700">{o.completed}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
+      <td className="td-num mono fw-700">{o.orderQty}</td>
+      <td className="td-num mono fw-700">{o.completed}</td>
+      <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
         {o.qcAccepted}
       </td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
+      <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
         {o.qcRejected}
       </td>
-      <td className="td-ctr mono fw-700" style={{ fontSize: 16, color: 'var(--amber2)' }}>
+      <td className="td-num mono fw-700" style={{ fontSize: 16, color: 'var(--amber2)' }}>
         {o.qcPending}
       </td>
       <td className="text3" style={{ fontSize: 11 }}>
@@ -414,10 +372,10 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
         {l.itemName ? l.itemName : null}
       </td>
       <td style={{ fontSize: 11 }}>{l.operation}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
+      <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
         {l.accepted}
       </td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
+      <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
         {l.rejected}
       </td>
       <td style={{ fontSize: 11 }}>{fmtDate(l.logDate)}</td>

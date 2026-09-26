@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useMarkTasksViewed, useTaskList, useTaskUserOptions } from '../api';
 import { AssignTaskModal } from '../components/assign-task-modal';
 import {
@@ -172,38 +173,42 @@ function TaskBoardPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* Title row */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-          marginBottom: 10,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📋 Task Board
-          {data.unreadCount > 0 ? (
-            <span className="badge b-red" style={{ marginLeft: 8 }}>
-              🔔 {data.unreadCount} new
-            </span>
-          ) : null}
-          {isFetching ? (
-            <span className="text3 mono" style={{ fontSize: 11, marginLeft: 8, fontWeight: 400 }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setModal({ kind: 'todo' })}
-          >
-            + My To-Do
-          </button>
+      <ListHeader
+        title="Task Board"
+        icon="📋"
+        count={data.tasks.length}
+        noun="task"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search Task No., title, related document…"
+        updating={isFetching}
+        tools={
+          <>
+            {data.unreadCount > 0 ? (
+              <span className="badge b-red">🔔 {data.unreadCount} new</span>
+            ) : null}
+            <TaskFilters
+              view={view}
+              users={users}
+              departments={departments}
+              values={{ searchInput, status, priority, person, assignedBy, dept, due }}
+              onStatus={setStatus}
+              onPriority={setPriority}
+              onPerson={setPerson}
+              onAssignedBy={setAssignedBy}
+              onDept={setDept}
+              onDue={setDue}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setModal({ kind: 'todo' })}
+            >
+              + My To-Do
+            </button>
+          </>
+        }
+        primary={
           <button
             type="button"
             className="btn btn-primary"
@@ -211,62 +216,48 @@ function TaskBoardPage(): React.JSX.Element {
           >
             + Assign Task
           </button>
-        </div>
-      </div>
+        }
+      >
+        <TaskTabs tabs={tabs} view={view} countOf={tabCount} onChange={setView} />
 
-      <TaskTabs tabs={tabs} view={view} countOf={tabCount} onChange={setView} />
-
-      {/* KPI strip — each tile is a filter */}
-      <StatStrip
-        items={[
-          {
-            key: 'todo',
-            label: 'To Do',
-            count: counts.todo,
-            color: 'var(--amber2)',
-            active: status === 'todo',
-            onClick: () => toggleStatus('todo'),
-          },
-          {
-            key: 'in_progress',
-            label: 'In Progress',
-            count: counts.in_progress,
-            color: 'var(--blue)',
-            active: status === 'in_progress',
-            onClick: () => toggleStatus('in_progress'),
-          },
-          {
-            key: 'completed',
-            label: 'Completed',
-            count: counts.completed,
-            color: 'var(--green2)',
-            active: status === 'completed',
-            onClick: () => toggleStatus('completed'),
-          },
-          {
-            key: 'overdue',
-            label: 'Overdue',
-            count: counts.overdue,
-            color: 'var(--red2)',
-            active: due === 'overdue',
-            onClick: toggleOverdue,
-          },
-        ]}
-      />
-
-      <TaskFilters
-        view={view}
-        users={users}
-        departments={departments}
-        values={{ searchInput, status, priority, person, assignedBy, dept, due }}
-        onSearch={setSearchInput}
-        onStatus={setStatus}
-        onPriority={setPriority}
-        onPerson={setPerson}
-        onAssignedBy={setAssignedBy}
-        onDept={setDept}
-        onDue={setDue}
-      />
+        {/* KPI strip — each tile is a filter */}
+        <StatStrip
+          items={[
+            {
+              key: 'todo',
+              label: 'To Do',
+              count: counts.todo,
+              color: 'var(--amber2)',
+              active: status === 'todo',
+              onClick: () => toggleStatus('todo'),
+            },
+            {
+              key: 'in_progress',
+              label: 'In Progress',
+              count: counts.in_progress,
+              color: 'var(--blue)',
+              active: status === 'in_progress',
+              onClick: () => toggleStatus('in_progress'),
+            },
+            {
+              key: 'completed',
+              label: 'Completed',
+              count: counts.completed,
+              color: 'var(--green2)',
+              active: status === 'completed',
+              onClick: () => toggleStatus('completed'),
+            },
+            {
+              key: 'overdue',
+              label: 'Overdue',
+              count: counts.overdue,
+              color: 'var(--red2)',
+              active: due === 'overdue',
+              onClick: toggleOverdue,
+            },
+          ]}
+        />
+      </ListHeader>
 
       {isError ? (
         // A refetch failed (e.g. a non-admin landing on ?view=all): keep the

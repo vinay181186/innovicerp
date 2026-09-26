@@ -11,6 +11,7 @@ import { createRoute } from '@tanstack/react-router';
 import { useSession } from '@/lib/session';
 import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { LogEntryApprovals } from '../components/log-entry-approvals';
 
 export const approvalsRoute = createRoute({
@@ -27,7 +28,7 @@ function ApprovalsPage(): React.JSX.Element {
   if (!canApprove) {
     return (
       <div>
-        <div className="section-hdr">✅ Log Entry Approvals</div>
+        <ListHeader title="Log Entry Approvals" icon="✅" />
         <div className="panel">
           <div className="empty-state">
             Approving is limited to managers and admins. Your changes are sent here for one of them
@@ -38,18 +39,5 @@ function ApprovalsPage(): React.JSX.Element {
     );
   }
 
-  return (
-    <div>
-      <div className="section-hdr">
-        ✅ Log Entry Approvals
-        {pendingLogEntry ? (
-          <span className="badge b-amber" style={{ marginLeft: 6 }}>
-            {pendingLogEntry}
-          </span>
-        ) : null}
-      </div>
-
-      <LogEntryApprovals />
-    </div>
-  );
+  return <LogEntryApprovals pendingCount={pendingLogEntry} />;
 }

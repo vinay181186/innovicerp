@@ -229,7 +229,7 @@ function ResultsTable(props: {
   return (
     <div className="panel">
       <div className="tbl-wrap">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               {columns.map((col) => (

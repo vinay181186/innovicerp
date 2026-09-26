@@ -11,6 +11,8 @@ import { useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ListHeader } from '@/ui/layout';
 import { usePickUpQc, useQcCommand } from '../api';
 import { AssignModal } from '../components/AssignModal';
 import { FpyTab } from '../components/FpyTab';
@@ -40,9 +42,9 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 function fpyColor(pct: number): string {
-  if (pct >= 95) return 'var(--green)';
-  if (pct >= 85) return 'var(--amber)';
-  return 'var(--red)';
+  if (pct >= 95) return 'var(--green2)';
+  if (pct >= 85) return 'var(--amber2)';
+  return 'var(--red2)';
 }
 
 function QcCommandPage(): React.JSX.Element {
@@ -73,7 +75,17 @@ function QcCommandPage(): React.JSX.Element {
 
   function handlePickUp(jcOpId: string): void {
     setBusyId(jcOpId);
-    pickUp.mutate({ jcOpId }, { onSettled: () => setBusyId(null) });
+    // Picked up = it is yours to inspect now, so go straight to the QC Call
+    // Register with ?op= — its deep link opens the Inspect popup on this call.
+    pickUp.mutate(
+      { jcOpId },
+      {
+        onSettled: () => setBusyId(null),
+        onSuccess: () => {
+          void navigate({ to: '/qc-call-register', search: { op: jcOpId } });
+        },
+      },
+    );
   }
 
   const stats = cmd.data?.stats;
@@ -93,25 +105,52 @@ function QcCommandPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
+      <ListHeader
+        title="QC Command Center"
+        icon="🔬"
+        count={cmd.data ? cmd.data.queue.length : undefined}
+        noun="call in queue"
+        nounPlural="calls in queue"
+        updating={cmd.isFetching && !loading}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔬 QC Command Center
-        </div>
-        {cmd.isFetching ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" />
-          </span>
+        {/* Stats strip (legacy: Pending / Overdue / Oldest / Rework / FPY) */}
+        {!loading ? (
+          <StatStrip
+            items={[
+              {
+                key: 'pending',
+                label: 'QC Pending',
+                count: stats?.pendingOps ?? 0,
+                color: 'var(--red2)',
+              },
+              {
+                key: 'overdue',
+                label: 'Overdue',
+                count: stats?.overdue ?? 0,
+                color: 'var(--red2)',
+              },
+              {
+                key: 'oldest',
+                label: 'Oldest',
+                count: `${stats?.oldestAgeDays ?? 0}d`,
+                color: 'var(--amber2)',
+              },
+              {
+                key: 'rework',
+                label: 'Rework Items',
+                count: stats?.reworkItems ?? 0,
+                color: 'var(--purple2)',
+              },
+              {
+                key: 'fpy',
+                label: 'First-Pass Yield',
+                count: `${stats?.fpyPct ?? 0}%`,
+                color: fpyColor(stats?.fpyPct ?? 0),
+              },
+            ]}
+          />
         ) : null}
-      </div>
+      </ListHeader>
 
       {loading ? (
         <div className="panel">
@@ -121,26 +160,6 @@ function QcCommandPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Stats strip (legacy: Pending / Overdue / Oldest / Rework / FPY) */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-              gap: 10,
-              marginBottom: 16,
-            }}
-          >
-            <Stat label="QC Pending" value={stats?.pendingOps ?? 0} color="var(--red)" />
-            <Stat label="Overdue" value={stats?.overdue ?? 0} color="var(--red)" accent />
-            <Stat label="Oldest" value={`${stats?.oldestAgeDays ?? 0}d`} color="var(--amber)" />
-            <Stat label="Rework Items" value={stats?.reworkItems ?? 0} color="#8B5CF6" />
-            <Stat
-              label="First-Pass Yield"
-              value={`${stats?.fpyPct ?? 0}%`}
-              color={fpyColor(stats?.fpyPct ?? 0)}
-            />
-          </div>
-
           {/* Tabs */}
           <div
             style={{
@@ -193,35 +212,6 @@ function QcCommandPage(): React.JSX.Element {
           onClose={() => setAssignRow(null)}
         />
       ) : null}
-    </div>
-  );
-}
-
-// Legacy hand-rolls these tiles (L18633-18638) rather than using .stat-card —
-// bg2 + --border, except Overdue (`accent`) which gets a red wash, red border
-// and a red label (L18634). Values are plain 26px/700, not mono.
-function Stat(props: {
-  label: string;
-  value: number | string;
-  color: string;
-  accent?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        textAlign: 'center',
-        padding: 14,
-        borderRadius: 10,
-        background: props.accent ? 'rgba(239,68,68,0.06)' : 'var(--bg2)',
-        border: props.accent ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)',
-      }}
-    >
-      <div style={{ fontSize: 11, color: props.accent ? 'var(--red)' : 'var(--text3)' }}>
-        {props.label}
-      </div>
-      <div className="fw-700" style={{ fontSize: 26, color: props.color }}>
-        {props.value}
-      </div>
     </div>
   );
 }

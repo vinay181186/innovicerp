@@ -7,7 +7,9 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useDailyReportList } from '../api';
 import { EditReportModal, NewReportModal, ViewReportModal } from '../components/report-modals';
 
@@ -28,8 +30,9 @@ function DailyTaskReportsPage(): React.JSX.Element {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  const [term, setTerm] = useState('');
 
-  const { data, isLoading, isError, error } = useDailyReportList({
+  const { data, isLoading, isFetching, isError, error } = useDailyReportList({
     userId: userFilter || undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
@@ -50,69 +53,115 @@ function DailyTaskReportsPage(): React.JSX.Element {
     );
   }
 
+  // Client-side search over the rows loaded — the three text columns.
+  const rows = data.reports.filter((r) =>
+    matchesSearchTerm([fmtDate(r.reportDate), r.userName, SHIFT_LABELS[r.shift]], term),
+  );
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📋 Daily Task Reports
-        </div>
-        <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
-          + New Report
-        </button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        {data.isAdmin ? (
-          <select className="innovic-select" value={userFilter} onChange={(e) => setUserFilter(e.target.value)} style={{ fontSize: 12 }}>
-            <option value="">All Users</option>
-            {data.userOptions.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        <input type="date" className="innovic-input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ fontSize: 12 }} title="From" placeholder="From" />
-        <input type="date" className="innovic-input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ fontSize: 12 }} title="To" placeholder="To" />
-      </div>
+      <ListHeader
+        title="Daily Task Reports"
+        icon="📝"
+        count={rows.length}
+        noun="report"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search report date, user, shift…"
+        updating={isFetching}
+        tools={
+          <>
+            {data.isAdmin ? (
+              <select
+                className="innovic-select"
+                value={userFilter}
+                onChange={(e) => setUserFilter(e.target.value)}
+                style={{ width: 'auto' }}
+              >
+                <option value="">All Users</option>
+                {data.userOptions.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <input
+              type="date"
+              className="innovic-input"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              title="Report date from"
+              aria-label="Report date from"
+            />
+            <input
+              type="date"
+              className="innovic-input"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              title="Report date to"
+              aria-label="Report date to"
+            />
+          </>
+        }
+        primary={
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setModal({ kind: 'new' })}
+          >
+            + New Report
+          </button>
+        }
+      />
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Report Date</th>
                 <th>User</th>
                 <th>Shift</th>
-                <th className="td-ctr">Tasks</th>
-                <th className="td-ctr">Hours</th>
+                <th className="th-num">Tasks</th>
+                <th className="th-num">Hours</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {data.reports.length === 0 ? (
+              {rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="empty-state">
                     No reports found
                   </td>
                 </tr>
               ) : (
-                data.reports.map((r) => (
+                rows.map((r) => (
                   <tr key={r.id}>
                     <td style={{ fontWeight: 700 }}>{fmtDate(r.reportDate)}</td>
                     <td style={{ fontWeight: 600 }}>{r.userName ?? '—'}</td>
                     <td>{SHIFT_LABELS[r.shift]}</td>
-                    <td className="td-ctr mono fw-700">{r.taskCount}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="td-num mono fw-700">{r.taskCount}</td>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {r.totalHours.toFixed(1)}h
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 3 }}>
-                        <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setModal({ kind: 'view', id: r.id })}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 11 }}
+                          onClick={() => setModal({ kind: 'view', id: r.id })}
+                        >
                           👁 View
                         </button>
                         {r.canEdit ? (
-                          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setModal({ kind: 'edit', id: r.id })}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: 11 }}
+                            onClick={() => setModal({ kind: 'edit', id: r.id })}
+                          >
                             ✏ Edit
                           </button>
                         ) : null}
@@ -127,8 +176,12 @@ function DailyTaskReportsPage(): React.JSX.Element {
       </div>
 
       {modal.kind === 'new' ? <NewReportModal onClose={() => setModal({ kind: 'none' })} /> : null}
-      {modal.kind === 'edit' ? <EditReportModal id={modal.id} onClose={() => setModal({ kind: 'none' })} /> : null}
-      {modal.kind === 'view' ? <ViewReportModal id={modal.id} onClose={() => setModal({ kind: 'none' })} /> : null}
+      {modal.kind === 'edit' ? (
+        <EditReportModal id={modal.id} onClose={() => setModal({ kind: 'none' })} />
+      ) : null}
+      {modal.kind === 'view' ? (
+        <ViewReportModal id={modal.id} onClose={() => setModal({ kind: 'none' })} />
+      ) : null}
     </div>
   );
 }

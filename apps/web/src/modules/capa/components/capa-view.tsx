@@ -25,6 +25,7 @@ import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { ListHeader } from '@/ui/layout';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useNcRegisterList } from '@/modules/nc-register/api';
 import { useOperatorsList } from '@/modules/operators/api';
@@ -78,40 +79,56 @@ export function CapaView(props: {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        {props.title ? (
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            {props.title}
-          </div>
-        ) : (
-          <div />
-        )}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" />
-            </span>
-          ) : null}
-          {canCreate ? (
+      <ListHeader
+        title={props.title ?? 'CAPA'}
+        icon="🛡"
+        count={data ? filtered.length : undefined}
+        noun="CAPA"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search CAPA no., NC no., problem, JC, responsible…"
+        updating={isFetching && !isLoading}
+        primary={
+          canCreate ? (
             <button
               type="button"
               className="btn btn-primary"
-              style={{ background: 'var(--purple)' }}
               onClick={() => setModal({ kind: 'new' })}
             >
               ➕ New CAPA
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      >
+        {/* Counter cards — one strip */}
+        {counters ? (
+          <StatStrip
+            items={[
+              { key: 'total', label: 'Total', count: counters.total, color: 'var(--purple2)' },
+              { key: 'open', label: 'Open', count: counters.open, color: 'var(--amber2)' },
+              {
+                key: 'inProgress',
+                label: 'In Progress',
+                count: counters.inProgress,
+                color: 'var(--blue)',
+              },
+              {
+                key: 'verified',
+                label: 'Verified',
+                count: counters.verified,
+                color: 'var(--purple2)',
+              },
+              { key: 'closed', label: 'Closed', count: counters.closed, color: 'var(--green2)' },
+              {
+                key: 'effectiveness',
+                label: 'Effectiveness',
+                count: `${counters.effectivenessPct}%`,
+                color: 'var(--green2)',
+              },
+            ]}
+          />
+        ) : null}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -146,48 +163,9 @@ export function CapaView(props: {
             </div>
           ) : null}
 
-          {/* Counter cards */}
-          {counters ? (
-            <div style={{ marginBottom: 16 }}>
-              <StatStrip
-                items={[
-                  { key: 'total', label: 'Total', count: counters.total, color: 'var(--purple)' },
-                  { key: 'open', label: 'Open', count: counters.open, color: 'var(--amber2)' },
-                  {
-                    key: 'inProgress',
-                    label: 'In Progress',
-                    count: counters.inProgress,
-                    color: 'var(--blue)',
-                  },
-                  {
-                    key: 'verified',
-                    label: 'Verified',
-                    count: counters.verified,
-                    color: 'var(--purple)',
-                  },
-                  { key: 'closed', label: 'Closed', count: counters.closed, color: 'var(--green2)' },
-                  {
-                    key: 'effectiveness',
-                    label: 'Effectiveness',
-                    count: `${counters.effectivenessPct}%`,
-                    color: 'var(--green2)',
-                  },
-                ]}
-              />
-            </div>
-          ) : null}
-
-          <input
-            className="innovic-input"
-            style={{ minWidth: 220, fontSize: 13 }}
-            placeholder="🔍 Search CAPA, NC, problem..."
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-          />
-
-          <div className="panel" style={{ marginTop: 10 }}>
+          <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th>CAPA No.</th>

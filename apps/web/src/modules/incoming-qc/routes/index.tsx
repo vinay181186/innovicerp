@@ -15,7 +15,9 @@ import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useIncomingQc } from '../api';
 import { IncomingQcInspectModal } from '../components/incoming-qc-inspect-modal';
 
@@ -104,6 +106,30 @@ function IncomingQcPage(): React.JSX.Element {
     }
   }, [inspectLineId, pending]);
 
+  // Client-side search over the rows already loaded — every column the two
+  // tables show that carries text (GRN, PO, vendor, POL, item code/name).
+  const [term, setTerm] = useState('');
+  const pendingRows = (data?.pending ?? []).filter((r) =>
+    matchesSearchTerm(
+      [r.grnNo, r.poCode, r.vendorName, r.clientPoLineNo, r.itemCode, r.itemRevision, r.itemName],
+      term,
+    ),
+  );
+  const completedRows = (data?.completed ?? []).filter((r) =>
+    matchesSearchTerm(
+      [
+        r.grnNo,
+        r.vendorName,
+        r.clientPoLineNo,
+        r.itemCode,
+        r.itemRevision,
+        r.itemName,
+        r.qcRemarks,
+      ],
+      term,
+    ),
+  );
+
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
@@ -118,24 +144,78 @@ function IncomingQcPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
+      <ListHeader
+        title="Incoming QC"
+        icon="🔬"
+        count={data ? pendingRows.length : undefined}
+        noun="pending line"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search GRN, PO, vendor, POL, item code, item name…"
+        updating={isFetching && !isLoading}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔬 Incoming QC
-        </div>
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
+        {/* Pipeline dashboard — one strip */}
+        {data ? (
+          <StatStrip
+            items={[
+              {
+                key: 'grnsWaiting',
+                label: 'GRNs Waiting',
+                count: data.metrics.grnsWaiting,
+                color: 'var(--amber2)',
+              },
+              {
+                key: 'pendingQty',
+                label: 'Pending Qty',
+                count: data.metrics.pendingQty,
+                color: 'var(--red2)',
+              },
+              {
+                key: 'avgWait',
+                label: 'Avg Wait (days)',
+                count: data.metrics.avgWaitDays,
+                color:
+                  data.metrics.avgWaitDays > 3
+                    ? 'var(--red2)'
+                    : data.metrics.avgWaitDays > 1
+                      ? 'var(--amber2)'
+                      : 'var(--green2)',
+              },
+              {
+                key: 'oldest',
+                label: 'Oldest GRN',
+                count: `${data.metrics.oldestDays}d`,
+                color: data.metrics.oldestDays > 5 ? 'var(--red2)' : 'var(--amber2)',
+                sub: data.metrics.oldestGrnNo ?? undefined,
+              },
+              // Price-gated: the server sends null when prices are hidden.
+              ...(data.metrics.valueInQc == null
+                ? []
+                : [
+                    {
+                      key: 'valueInQc',
+                      label: 'Value in QC',
+                      count: `₹${data.metrics.valueInQc.toLocaleString('en-IN')}`,
+                      color: 'var(--amber2)',
+                    },
+                  ]),
+              {
+                key: 'todayAccepted',
+                label: 'Today Accepted',
+                count: data.metrics.todayAcceptedQty,
+                color: 'var(--green2)',
+                sub: `${data.metrics.todayAcceptedGrns} GRNs`,
+              },
+              {
+                key: 'todayRejected',
+                label: 'Today Rejected',
+                count: data.metrics.todayRejectedQty,
+                color: 'var(--red2)',
+              },
+            ]}
+          />
         ) : null}
-      </div>
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -151,79 +231,17 @@ function IncomingQcPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Pipeline dashboard — one strip */}
-          <div style={{ marginBottom: 16 }}>
-            <StatStrip
-              items={[
-                {
-                  key: 'grnsWaiting',
-                  label: 'GRNs Waiting',
-                  count: data.metrics.grnsWaiting,
-                  color: 'var(--amber2)',
-                },
-                {
-                  key: 'pendingQty',
-                  label: 'Pending Qty',
-                  count: data.metrics.pendingQty,
-                  color: 'var(--red2)',
-                },
-                {
-                  key: 'avgWait',
-                  label: 'Avg Wait (days)',
-                  count: data.metrics.avgWaitDays,
-                  color:
-                    data.metrics.avgWaitDays > 3
-                      ? 'var(--red)'
-                      : data.metrics.avgWaitDays > 1
-                        ? 'var(--amber)'
-                        : 'var(--green)',
-                },
-                {
-                  key: 'oldest',
-                  label: 'Oldest GRN',
-                  count: `${data.metrics.oldestDays}d`,
-                  color: data.metrics.oldestDays > 5 ? 'var(--red)' : 'var(--amber)',
-                  sub: data.metrics.oldestGrnNo ?? undefined,
-                },
-                // Price-gated: the server sends null when prices are hidden.
-                ...(data.metrics.valueInQc == null
-                  ? []
-                  : [
-                      {
-                        key: 'valueInQc',
-                        label: 'Value in QC',
-                        count: `₹${data.metrics.valueInQc.toLocaleString('en-IN')}`,
-                        color: 'var(--amber2)',
-                      },
-                    ]),
-                {
-                  key: 'todayAccepted',
-                  label: 'Today Accepted',
-                  count: data.metrics.todayAcceptedQty,
-                  color: 'var(--green2)',
-                  sub: `${data.metrics.todayAcceptedGrns} GRNs`,
-                },
-                {
-                  key: 'todayRejected',
-                  label: 'Today Rejected',
-                  count: data.metrics.todayRejectedQty,
-                  color: 'var(--red2)',
-                },
-              ]}
-            />
-          </div>
-
           {/* Pending inspection queue */}
           <div className="panel">
             <div className="panel-hdr">
               <span className="panel-title" style={{ color: 'var(--amber2)' }}>
-                ⏳ Pending Inspection ({data.pending.length} lines)
+                ⏳ Pending Inspection ({pendingRows.length} lines)
               </span>
             </div>
             {/* The sheet look (tbl-grid, as the Plans and Job Card lists):
                 bold blue column names, gridlines, cream / white rows, fixed
                 widths that add up to the page so nothing scrolls sideways. */}
-            <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+            <div className="tbl-wrap">
               <table className="innovic-table tbl-grid">
                 {/* POL added before Item Code; Vendor and Item Name gave up
                     the width so these still total 100. */}
@@ -262,14 +280,16 @@ function IncomingQcPage(): React.JSX.Element {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.pending.length === 0 ? (
+                  {pendingRows.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="empty-state">
-                        ✅ No items pending QC inspection
+                        {term.trim()
+                          ? 'No pending lines match your search'
+                          : '✅ No items pending QC inspection'}
                       </td>
                     </tr>
                   ) : (
-                    data.pending.map((r) => (
+                    pendingRows.map((r) => (
                       <PendingRow
                         key={r.grnLineId}
                         r={r}
@@ -289,7 +309,7 @@ function IncomingQcPage(): React.JSX.Element {
                 ✅ Recently Completed QC (last 20)
               </span>
             </div>
-            <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+            <div className="tbl-wrap">
               <table className="innovic-table tbl-grid">
                 {/* POL added before Item Code; Vendor, Item Code and Item Name
                     gave up the width so these still total 100. */}
@@ -334,14 +354,16 @@ function IncomingQcPage(): React.JSX.Element {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.completed.length === 0 ? (
+                  {completedRows.length === 0 ? (
                     <tr>
                       <td colSpan={14} className="empty-state">
-                        No completed QC inspections yet
+                        {term.trim()
+                          ? 'No completed lines match your search'
+                          : 'No completed QC inspections yet'}
                       </td>
                     </tr>
                   ) : (
-                    data.completed.map((r) => <CompletedRow key={r.grnLineId} r={r} />)
+                    completedRows.map((r) => <CompletedRow key={r.grnLineId} r={r} />)
                   )}
                 </tbody>
               </table>

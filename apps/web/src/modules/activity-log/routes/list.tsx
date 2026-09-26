@@ -1,10 +1,13 @@
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDateTime } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useActivityLog } from '../api';
+import { DocRefLink } from '../components/doc-ref-link';
 
 const PAGE_SIZE = 50;
 
@@ -128,7 +131,22 @@ function ActivityLogListPage() {
   const search = activityLogListRoute.useSearch();
   const navigate = activityLogListRoute.useNavigate();
 
+  // The search term lives in the URL (?search=, server-side); the box mirrors
+  // it and a 300ms debounce writes it back with replace + page 1 — the SO
+  // Master shape. (It used to wait for an Apply button.)
   const [pendingSearch, setPendingSearch] = useState(search.search ?? '');
+  useEffect(() => {
+    setPendingSearch(search.search ?? '');
+  }, [search.search]);
+  useEffect(() => {
+    const trimmed = normalizeSearchTerm(pendingSearch);
+    const next = trimmed === '' ? undefined : trimmed;
+    if (next === search.search) return;
+    const id = window.setTimeout(() => {
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [pendingSearch, search.search, navigate]);
 
   const offset = (search.page - 1) * PAGE_SIZE;
   const query = useMemo(
@@ -144,21 +162,6 @@ function ActivityLogListPage() {
     [search, offset],
   );
   const { data, isLoading, isError, error, isFetching } = useActivityLog(query);
-
-  const onSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    void navigate({
-      search: () => ({
-        ...(pendingSearch ? { search: pendingSearch } : {}),
-        ...(search.action ? { action: search.action } : {}),
-        ...(search.userId ? { userId: search.userId } : {}),
-        ...(search.fromDate ? { fromDate: search.fromDate } : {}),
-        ...(search.toDate ? { toDate: search.toDate } : {}),
-        page: 1,
-      }),
-      replace: true,
-    });
-  };
 
   const setFilter = (key: 'action' | 'userId' | 'fromDate' | 'toDate', value: string) => {
     void navigate({
@@ -180,107 +183,82 @@ function ActivityLogListPage() {
     void navigate({ search: () => ({ page: 1 }), replace: true });
   };
 
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   const goToPage = (n: number) => {
     void navigate({ search: (prev) => ({ ...prev, page: n }), replace: true });
   };
 
   return (
     <div>
-      {/* Legacy L11292: header flex row — section-hdr left, controls right. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 10,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Activity Log
-        </div>
-        {/* Legacy L11294: inline control row. From/To + Apply/Clear are
-            port-only — legacy searches in-memory on every keystroke, we hit
-            the server, so the text search stays submit-driven. */}
-        <form
-          onSubmit={onSearchSubmit}
-          style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
-        >
-          <input
-            type="search"
-            className="innovic-input"
-            style={{ width: 180 }}
-            placeholder="Search..."
-            value={pendingSearch}
-            onChange={(e) => setPendingSearch(e.target.value)}
-          />
-          <select
-            className="innovic-select"
-            style={{ width: 150 }}
-            value={search.action ?? ''}
-            onChange={(e) => setFilter('action', e.target.value)}
-          >
-            <option value="">All Actions</option>
-            {(data?.actions ?? []).map((a) => (
-              <option key={a} value={a}>
-                {actionLabel(a)}
-              </option>
-            ))}
-          </select>
-          <select
-            className="innovic-select"
-            style={{ width: 130 }}
-            value={search.userId ?? ''}
-            onChange={(e) => setFilter('userId', e.target.value)}
-          >
-            <option value="">All Users</option>
-            {(data?.users ?? [])
-              .filter((u) => u.id !== null)
-              .map((u) => (
-                <option key={u.id ?? u.name} value={u.id ?? ''}>
-                  {u.name}
+      <ListHeader
+        title="Activity Log"
+        icon="📜"
+        count={data ? data.total : undefined}
+        noun="entry"
+        nounPlural="entries"
+        search={pendingSearch}
+        onSearch={setPendingSearch}
+        searchPlaceholder="Search action, document type, detail, document no., user…"
+        updating={isFetching && !isLoading}
+        tools={
+          <>
+            <select
+              className="innovic-select"
+              style={{ width: 150 }}
+              value={search.action ?? ''}
+              onChange={(e) => setFilter('action', e.target.value)}
+            >
+              <option value="">All Actions</option>
+              {(data?.actions ?? []).map((a) => (
+                <option key={a} value={a}>
+                  {actionLabel(a)}
                 </option>
               ))}
-          </select>
-          <input
-            type="date"
-            className="innovic-input"
-            style={{ width: 140 }}
-            title="From"
-            value={search.fromDate ?? ''}
-            onChange={(e) => setFilter('fromDate', e.target.value)}
-          />
-          <input
-            type="date"
-            className="innovic-input"
-            style={{ width: 140 }}
-            title="To"
-            value={search.toDate ?? ''}
-            onChange={(e) => setFilter('toDate', e.target.value)}
-          />
-          {/* Legacy L11298: `log.length` is the full filtered count (legacy
-              renders every row). data.total is the server's count over the
-              same WHERE — never data.entries.length, which is one page. */}
-          <span className="text3" style={{ fontSize: 11 }}>
-            {data ? data.total : 0} entries
-          </span>
-          <button type="submit" className="btn btn-primary btn-sm" disabled={isFetching}>
-            {isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-            Apply
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClear}>
-            Clear
-          </button>
-        </form>
-      </div>
+            </select>
+            <select
+              className="innovic-select"
+              style={{ width: 130 }}
+              value={search.userId ?? ''}
+              onChange={(e) => setFilter('userId', e.target.value)}
+            >
+              <option value="">All Users</option>
+              {(data?.users ?? [])
+                .filter((u) => u.id !== null)
+                .map((u) => (
+                  <option key={u.id ?? u.name} value={u.id ?? ''}>
+                    {u.name}
+                  </option>
+                ))}
+            </select>
+            <input
+              type="date"
+              className="innovic-input"
+              style={{ width: 140 }}
+              title="Log date from"
+              aria-label="Log date from"
+              value={search.fromDate ?? ''}
+              onChange={(e) => setFilter('fromDate', e.target.value)}
+            />
+            <input
+              type="date"
+              className="innovic-input"
+              style={{ width: 140 }}
+              title="Log date to"
+              aria-label="Log date to"
+              value={search.toDate ?? ''}
+              onChange={(e) => setFilter('toDate', e.target.value)}
+            />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onClear}>
+              Clear
+            </button>
+          </>
+        }
+      />
 
       {/* Legacy L11302: bare panel → tbl-wrap → table. No panel-hdr, no
           tbl-frozen. Ref is a port-only column (see report). */}
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Log Date</th>
@@ -326,7 +304,7 @@ function ActivityLogListPage() {
                       <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                         {date}
                       </td>
-                      <td className="mono text3" style={{ fontSize: 11 }}>
+                      <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                         {time}
                       </td>
                       <td>
@@ -338,8 +316,8 @@ function ActivityLogListPage() {
                       <td className="text2" style={{ fontSize: 11 }}>
                         {e.detail}
                       </td>
-                      <td className="mono text3" style={{ fontSize: 11 }}>
-                        {e.refId ?? '—'}
+                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        <DocRefLink entity={e.entity} refId={e.refId} />
                       </td>
                       <td className="amber" style={{ fontSize: 11 }}>
                         {e.userName}
@@ -359,28 +337,15 @@ function ActivityLogListPage() {
       </div>
 
       {/* Port-only: legacy renders every row with no pager. */}
-      {data && data.total > PAGE_SIZE ? (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => goToPage(search.page - 1)}
-            disabled={search.page <= 1}
-          >
-            Previous
-          </button>
-          <span className="text3" style={{ fontSize: 11 }}>
-            Page {search.page} of {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => goToPage(search.page + 1)}
-            disabled={search.page >= totalPages}
-          >
-            Next
-          </button>
-        </div>
+      {data ? (
+        <ListFooter
+          total={data.total}
+          noun="entry"
+          nounPlural="entries"
+          page={search.page}
+          pageSize={PAGE_SIZE}
+          onPage={goToPage}
+        />
       ) : null}
     </div>
   );

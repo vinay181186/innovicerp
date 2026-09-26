@@ -15,7 +15,9 @@ import { Check, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests } from '@/modules/op-entry/api';
+import { ListHeader } from '@/ui/layout';
 
 // The op-log entry type as the user reads it (codes stay as stored).
 const LOG_TYPE_LABEL: Record<string, string> = { start: 'Start', complete: 'Completed', qc: 'QC' };
@@ -30,7 +32,12 @@ const SUB_TABS: Array<{ key: OpLogChangeStatus; label: string; empty: string }> 
   { key: 'rejected', label: 'Rejected', empty: 'No rejected corrections yet.' },
 ];
 
-export function LogEntryApprovals(): React.JSX.Element {
+export function LogEntryApprovals({
+  pendingCount,
+}: {
+  /** Waiting-queue size, shown as a badge beside the tabs. */
+  pendingCount?: number | undefined;
+}): React.JSX.Element {
   const [sub, setSub] = useState<OpLogChangeStatus>('pending');
   const list = useOpLogTimeChangeRequests({ status: sub, limit: 200 });
   const decide = useDecideOpLogTimeChange();
@@ -41,38 +48,67 @@ export function LogEntryApprovals(): React.JSX.Element {
   const rows = list.data ?? [];
   // Waiting is a FIFO queue (oldest first). The history tabs read better with
   // the most recent decision on top.
-  const ordered = sub === 'pending' ? rows : [...rows].reverse();
+  // Client-side search over the cards loaded (up to 200) — the JC, item,
+  // operation, machine, reason and the people on each card.
+  const [term, setTerm] = useState('');
+  const ordered = (sub === 'pending' ? rows : [...rows].reverse()).filter((r) =>
+    matchesSearchTerm(
+      [
+        r.jobCardCode,
+        r.itemCode,
+        r.itemRevision,
+        r.itemName,
+        r.clientPoLineNo,
+        r.operation,
+        r.machineCode,
+        r.reason,
+        r.requestedByName,
+        r.decidedByName,
+      ],
+      term,
+    ),
+  );
 
   return (
     <div>
-      {/* Sub-tabs: Waiting / Approved / Rejected. */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {SUB_TABS.map((t) => {
-          const isActive = sub === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => {
-                setSub(t.key);
-                setRejectingId(null);
-              }}
-              style={{
-                background: 'none',
-                border: `1px solid ${isActive ? 'var(--cyan)' : 'var(--border)'}`,
-                color: isActive ? 'var(--cyan)' : 'var(--text2)',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: isActive ? 700 : 500,
-                padding: '5px 12px',
-                cursor: 'pointer',
-              }}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <ListHeader
+        title="Log Entry Approvals"
+        icon="✅"
+        count={list.data ? ordered.length : undefined}
+        noun="request"
+        filterNote={active?.label}
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search JC, item, operation, machine, reason, person…"
+        updating={list.isFetching && !list.isLoading}
+        tools={
+          <>
+            {pendingCount ? (
+              <span className="badge b-amber" title="Waiting for a decision">
+                {pendingCount} waiting
+              </span>
+            ) : null}
+            {/* Sub-tabs: Waiting / Approved / Rejected. */}
+            {SUB_TABS.map((t) => {
+              const isActive = sub === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`}
+                  aria-pressed={isActive}
+                  onClick={() => {
+                    setSub(t.key);
+                    setRejectingId(null);
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </>
+        }
+      />
 
       {list.isLoading ? (
         <div className="empty-state">

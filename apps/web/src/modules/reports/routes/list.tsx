@@ -5,8 +5,9 @@ import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { apiDownload } from '@/lib/api';
 import { fmtDate, fmtDateTime } from '@/lib/date';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ActionMenu, PageHeader } from '@/ui/layout';
+import { ActionMenu, ListHeader, PageHeader } from '@/ui/layout';
 import { useReportList, useReportRun } from '../api';
 
 const listSearchSchema = z.object({
@@ -41,17 +42,23 @@ const DEPT_COLOR: Record<string, string> = {
 function ReportsListPage() {
   const search = reportsListRoute.useSearch();
   const { data, isLoading, isError, error } = useReportList();
+  // Catalogue search — client-side over the report list (one fetch): title,
+  // description and department group. Not applied in dept mode (?group=),
+  // which runs every report of that department inline.
+  const [term, setTerm] = useState('');
 
   const grouped = useMemo(() => {
     if (!data) return {} as Record<string, ReportDefinition[]>;
     const out: Record<string, ReportDefinition[]> = {};
     for (const r of data.reports) {
       if (search.group && r.group !== search.group) continue;
+      if (!search.group && !matchesSearchTerm([r.title, r.description, r.group], term)) continue;
       if (!out[r.group]) out[r.group] = [];
       out[r.group]!.push(r);
     }
     return out;
-  }, [data, search.group]);
+  }, [data, search.group, term]);
+  const shownCount = Object.values(grouped).reduce((n, g) => n + g.length, 0);
 
   const deptReports = search.group && data ? grouped[search.group] : undefined;
   const isDeptMode = Boolean(search.group);
@@ -92,10 +99,15 @@ function ReportsListPage() {
 
   return (
     <div>
-      <PageHeader
+      <ListHeader
         title="Reports"
         icon="📊"
-        actions={
+        count={data ? shownCount : undefined}
+        noun="report"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search report name, description, department…"
+        tools={
           <Link to="/saved-reports" className="btn btn-ghost">
             ✨ Saved Reports
           </Link>
@@ -113,6 +125,10 @@ function ReportsListPage() {
           <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
           </div>
+        </div>
+      ) : shownCount === 0 ? (
+        <div className="panel">
+          <div className="panel-body empty-state">No reports match your search.</div>
         </div>
       ) : (
         Object.entries(grouped).map(([group, reports]) => {
@@ -132,7 +148,7 @@ function ReportsListPage() {
                     style={{
                       fontWeight: 700,
                       background: color,
-                      color: '#fff',
+                      color: 'var(--bg2)',
                       border: `1px solid ${color}`,
                     }}
                     title={`${report.description} — ${report.columns.length} columns · ${
@@ -201,7 +217,7 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
         />
       </div>
       <div className="tbl-wrap">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               {report.columns.map((c) => (

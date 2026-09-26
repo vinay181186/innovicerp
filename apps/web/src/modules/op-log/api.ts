@@ -62,7 +62,7 @@ export const opLogKeys = {
   list: (q: ListOpLogQuery) => [...opLogKeys.all, 'list', q] as const,
 };
 
-function toQueryString(q: ListOpLogQuery): string {
+export function toQueryString(q: ListOpLogQuery): string {
   const params = new URLSearchParams();
   if (q.jcNo) params.set('jcNo', q.jcNo);
   if (q.logType) params.set('logType', q.logType);
