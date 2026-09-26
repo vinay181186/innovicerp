@@ -14,6 +14,7 @@
 
 import { type PurchaseOrderListItem, poSendsMaterialOut } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { PoStatusBadge } from './po-status-badge';
 
@@ -90,7 +91,7 @@ export function PoSheetTable({
                       {po.code}
                     </Link>
                     <div className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                      {po.poDate}
+                      {fmtDate(po.poDate)}
                     </div>
                   </td>
                   <td>

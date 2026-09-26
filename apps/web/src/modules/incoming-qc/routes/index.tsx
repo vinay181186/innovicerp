@@ -10,6 +10,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -363,7 +364,7 @@ function PendingRow({
     <tr>
       <td className="td-code cyan">{r.grnNo}</td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {r.grnDate}
+        {fmtDate(r.grnDate)}
       </td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
         {r.poCode ?? 'Manual'}
@@ -419,10 +420,10 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
     <tr>
       <td className="td-code cyan">{r.grnNo}</td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {r.grnDate}
+        {fmtDate(r.grnDate)}
       </td>
       <td className="text2" style={{ fontSize: 11, color: 'var(--green)' }}>
-        {r.qcDate ?? '—'}
+        {fmtDate(r.qcDate)}
       </td>
       <td
         className="td-ctr"

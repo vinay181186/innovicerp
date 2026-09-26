@@ -4,6 +4,7 @@ import type { JobWorkOrderDetail, JobWorkOrderLine, JwDocumentFile } from '@inno
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -452,7 +453,7 @@ function LineRow(props: {
         </>
       )}
       <td className="text2" style={{ fontSize: 11 }}>
-        {l.dueDate ?? '—'}
+        {fmtDate(l.dueDate)}
       </td>
       <td>
         <SoStatusBadge status={l.status} />
@@ -480,7 +481,7 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
   };
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
-      <StripItem label="JWSO Date" value={<span className="mono">{detail.jwDate}</span>} />
+      <StripItem label="JWSO Date" value={<span className="mono">{fmtDate(detail.jwDate)}</span>} />
       <StripItem
         label="Client PO No."
         value={

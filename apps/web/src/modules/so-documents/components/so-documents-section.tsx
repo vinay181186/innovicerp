@@ -14,6 +14,7 @@ import {
 import { Loader2, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import {
@@ -22,13 +23,6 @@ import {
   useDeleteSoDocument,
   useSoDocDetail,
 } from '../api';
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return '';
-  const d = iso.slice(0, 10);
-  const [y, m, day] = d.split('-');
-  return y && m && day ? `${day}-${m}-${y}` : d;
-}
 
 function fmtSize(bytes: number | null): string {
   const b = bytes ?? 0;
@@ -286,7 +280,7 @@ function FileRow({
     file.docType ?? file.category,
     file.fileSize != null ? fmtSize(file.fileSize) : null,
     file.uploadedByText,
-    fmtDate(file.createdAt),
+    fmtDate(file.createdAt, ''),
     file.jcCodeText,
   ]
     .filter(Boolean)

@@ -13,6 +13,7 @@ import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -188,7 +189,7 @@ function BomMasterDetailPage(): React.JSX.Element {
             </div>
             <div className="form-grp">
               <span className="form-label">Revision Date</span>
-              <div>{detail.revisionDate}</div>
+              <div>{fmtDate(detail.revisionDate)}</div>
             </div>
             <div className="form-grp">
               <span className="form-label">Linked SO Lines</span>
@@ -310,7 +311,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                       {rev.revision}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {new Date(rev.createdAt).toISOString().slice(0, 10)}
+                      {fmtDate(rev.createdAt)}
                     </td>
                     <td>{rev.changedByText}</td>
                     <td className="text2" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>

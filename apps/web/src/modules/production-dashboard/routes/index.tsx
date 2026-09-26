@@ -24,6 +24,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachineLoading } from '@/modules/machine-loading/api';
@@ -421,7 +422,7 @@ function MachineCard({
                     className="td-ctr"
                     style={{ fontSize: 10, color: dueSoon ? 'var(--red)' : 'var(--text3)' }}
                   >
-                    {o.dueDate ?? '—'}
+                    {fmtDate(o.dueDate)}
                   </td>
                 </tr>
               );
@@ -736,7 +737,7 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
       </div>
       {jc.dueDate ? (
         <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
-          Due: {jc.dueDate}
+          Due: {fmtDate(jc.dueDate)}
         </div>
       ) : null}
     </div>

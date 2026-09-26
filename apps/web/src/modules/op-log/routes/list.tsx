@@ -12,6 +12,7 @@ import { createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useOpLog, type ListOpLogQuery } from '../api';
@@ -44,11 +45,6 @@ function logTypeBadge(t: 'start' | 'complete' | 'qc'): string {
   if (t === 'start') return 'b-amber';
   if (t === 'qc') return 'b-purple';
   return 'b-green';
-}
-
-function fmtDate(d: string): string {
-  const dt = new Date(d + 'T00:00:00');
-  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function OpLogListPage(): React.JSX.Element {

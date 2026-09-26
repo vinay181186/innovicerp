@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtDate } from '@/lib/date';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useSoQcStatus } from '../api';
@@ -104,8 +105,8 @@ export function SoQcStatusView(): React.JSX.Element {
               </span>
             </div>
             <div className="text3" style={{ fontSize: 12 }}>
-              SO Date: {detail.data.so.soDate ?? '—'}
-              {detail.data.so.dueDate ? ` | Due: ${detail.data.so.dueDate}` : ''}
+              SO Date: {fmtDate(detail.data.so.soDate)}
+              {detail.data.so.dueDate ? ` | Due: ${fmtDate(detail.data.so.dueDate)}` : ''}
               {detail.data.so.type ? ` | Type: ${detail.data.so.type}` : ''}
             </div>
           </div>
@@ -439,7 +440,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               >
                 {t.rejected}
               </td>
-              <td>{t.date ?? '—'}</td>
+              <td>{fmtDate(t.date)}</td>
               <td>
                 <span className={`badge ${t.status === 'passed' ? 'b-green' : 'b-amber'}`}>
                   {t.status === 'passed' ? '✅ Accepted' : '⚠ Partly Accepted'}

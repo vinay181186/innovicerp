@@ -8,6 +8,7 @@
 import type { ProductionOrderClose, ProductionOrderDetail } from '@innovic/shared';
 import { Loader2, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useReverseProductionOrderClose } from '../api';
 
@@ -15,10 +16,6 @@ interface PoCloseLedgerProps {
   po: ProductionOrderDetail;
   /** True when the user may reverse a close (same edit gate as close). */
   canReverse: boolean;
-}
-
-function fmtDate(iso: string): string {
-  return iso.slice(0, 10);
 }
 
 export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX.Element {

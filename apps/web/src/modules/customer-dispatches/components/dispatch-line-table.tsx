@@ -12,8 +12,8 @@
 import type { DispatchableLine } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { fmtDate } from '@/lib/print/doc-print';
 
 export interface LineCard {
   id: number;
@@ -230,7 +230,7 @@ export function DispatchLineTable(props: {
                       {line ? line.itemAvailableQty : '—'}
                     </td>
                     <td className="td-ctr mono" style={{ whiteSpace: 'nowrap' }}>
-                      {line?.customerDispatchDate ? fmtDate(line.customerDispatchDate) : '—'}
+                      {fmtDate(line?.customerDispatchDate)}
                     </td>
                     <td>
                       <input

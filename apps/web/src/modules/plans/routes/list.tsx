@@ -12,6 +12,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlansList, usePlanningDashboard } from '../api';
@@ -371,14 +372,14 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                         {row.code}
                       </Link>
                       <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                        {row.planDate}
+                        {fmtDate(row.planDate)}
                       </div>
                       <div className="text3" style={{ fontSize: 11 }}>
                         {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
                       </div>
                       {row.customerDispatchDate ? (
                         <div className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                          Dispatch {row.customerDispatchDate}
+                          Dispatch {fmtDate(row.customerDispatchDate)}
                         </div>
                       ) : null}
                     </td>

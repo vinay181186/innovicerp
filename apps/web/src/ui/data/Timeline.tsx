@@ -16,11 +16,21 @@
 // component knowing a single route.
 
 import { EmptyState } from './EmptyState';
+import { fmtDate, fmtDateAndTime, fmtDateTime } from '@/lib/date';
+
+/** An event's `date` is a plain `YYYY-MM-DD`, a `YYYY-MM-DD HH:mm` stamp or
+ *  an ISO timestamp — each shown as DD-MMM-YYYY (plus HH:mm when it has one). */
+function showEventDate(v: string | null | undefined): string {
+  if (!v) return '—';
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})/.exec(v);
+  if (m) return fmtDateAndTime(m[1], m[2]);
+  return v.includes('T') ? fmtDateTime(v) : fmtDate(v);
+}
 
 export interface TimelineEvent {
   /** Stable key when two events share a date and label. */
   key?: string | undefined;
-  /** Already formatted for reading — ISO date, or `YYYY-MM-DD HH:mm`. */
+  /** ISO date, `YYYY-MM-DD HH:mm` or a timestamp — shown as DD-MMM-YYYY [HH:mm]. */
   date?: string | null | undefined;
   label: React.ReactNode;
   /** The second line on a regular event card. Ignored when compact. */
@@ -144,7 +154,7 @@ export function Timeline({
                     className="mono text2"
                     style={{ fontSize: 'var(--fs-xs)', marginRight: 'var(--sp-2)' }}
                   >
-                    {e.date ?? '—'}
+                    {showEventDate(e.date)}
                   </span>
                   {e.label}
                   {e.code ? (
@@ -193,7 +203,7 @@ export function Timeline({
                       className="mono"
                       style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', flexShrink: 0 }}
                     >
-                      {e.date ?? '—'}
+                      {showEventDate(e.date)}
                     </span>
                   </div>
                   {e.detail ? (

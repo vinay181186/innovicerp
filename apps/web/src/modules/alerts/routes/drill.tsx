@@ -16,6 +16,7 @@
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAlert } from '../api';
 import { DEPT_LABEL } from '../lib/dept';
@@ -125,7 +126,9 @@ function AlertDrillPage() {
                               ? ''
                               : c.type === 'number'
                                 ? Number(v).toLocaleString()
-                                : String(v);
+                                : c.type === 'date'
+                                  ? fmtDate(String(v), '')
+                                  : String(v);
                           // Legacy styles drill cells per code branch. Keyed off
                           // `type` here — the payload's only per-column signal:
                           //   first col  → `mono fw-700` + cyan (L22385 etc.)

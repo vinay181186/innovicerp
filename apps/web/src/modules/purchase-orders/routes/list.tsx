@@ -51,6 +51,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
@@ -477,7 +478,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                       flexWrap: 'wrap',
                     }}
                   >
-                    <span className="text2">{po.poDate}</span>
+                    <span className="text2">{fmtDate(po.poDate)}</span>
                     <span>·</span>
                     <span>
                       PR{' '}

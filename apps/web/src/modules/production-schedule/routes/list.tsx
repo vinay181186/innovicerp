@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
@@ -459,7 +460,7 @@ function Bar({
       onDragStart={(e) => e.dataTransfer.setData('text/jc-op-id', bar.jcOpId)}
       title={
         `${bar.jcCode} Op${fmtOpSrNo(bar.opSeq)} ${bar.operation}` +
-        (bar.dueDate ? ` (Due ${bar.dueDate})` : '') +
+        (bar.dueDate ? ` (Due ${fmtDate(bar.dueDate)})` : '') +
         (itemLabel ? `\n${itemLabel}` : '')
       }
       style={{

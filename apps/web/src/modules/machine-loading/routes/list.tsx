@@ -9,6 +9,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -405,7 +406,7 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
         </span>
       </td>
       <td className="text2 td-ctr" style={{ fontSize: 11 }}>
-        {op.dueDate ?? '—'}
+        {fmtDate(op.dueDate)}
       </td>
       <td className="td-ctr mono">{op.orderQty}</td>
       <td className="td-ctr green mono fw-700">

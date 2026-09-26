@@ -5,6 +5,7 @@ import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachinesList } from '../../machines/api';
@@ -164,7 +165,12 @@ function DailyReportPage(): React.JSX.Element {
           marginBottom: 16,
         }}
       >
-        <KpiTile label="Total Pieces" value={summary.totalPieces} color="var(--green)" sub={date} />
+        <KpiTile
+          label="Total Pieces"
+          value={summary.totalPieces}
+          color="var(--green)"
+          sub={fmtDate(date)}
+        />
         <KpiTile label="Log Entries" value={summary.logEntries} color="var(--text)" />
         <KpiTile label="Machines Active" value={summary.machinesActive} color="var(--cyan)" />
         <KpiTile label="Job Cards Active" value={summary.jcsActive} color="var(--amber)" />
@@ -190,7 +196,7 @@ function DailyReportPage(): React.JSX.Element {
         <div className="panel">
           <div className="empty-state" style={{ padding: 56 }}>
             <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
-            <b>No production entries for {date}</b>
+            <b>No production entries for {fmtDate(date)}</b>
             <br />
             <span className="text3" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
               Log completions via Op Entry to see them here

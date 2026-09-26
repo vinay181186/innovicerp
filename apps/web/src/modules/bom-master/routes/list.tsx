@@ -30,6 +30,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -202,6 +203,7 @@ function BomMastersListPage(): React.JSX.Element {
         className: 'mono text2',
         nowrap: true,
         key: 'revisionDate',
+        render: (b) => fmtDate(b.revisionDate),
       },
       {
         header: 'Linked SOs',

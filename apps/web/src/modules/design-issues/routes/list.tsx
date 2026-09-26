@@ -5,6 +5,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDesignIssuesAll } from '../api';
@@ -173,7 +174,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                         <Badge value={i.status} kind="status" />
                       </td>
                       <td style={{ fontSize: 11, fontWeight: 600 }}>{i.assignedToText ?? ''}</td>
-                      <td style={{ fontSize: 11 }}>{i.raisedDate}</td>
+                      <td style={{ fontSize: 11 }}>{fmtDate(i.raisedDate)}</td>
                       <td
                         className="mono fw-700"
                         style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}

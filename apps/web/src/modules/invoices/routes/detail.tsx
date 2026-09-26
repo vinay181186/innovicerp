@@ -35,7 +35,7 @@ import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
 import { useAddPayment, useInvoice } from '../api';
@@ -199,7 +199,7 @@ function InvoiceDetailPage(): React.JSX.Element {
 
       <div style={{ fontSize: 13, marginBottom: 10 }}>
         Customer: <b>{inv.clientName ?? '—'}</b> · SO No.: <b>{inv.soCode ?? '—'}</b> · Due Date:{' '}
-        <b>{inv.dueDate ?? '—'}</b>
+        <b>{fmtDate(inv.dueDate)}</b>
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -336,7 +336,7 @@ function InvoiceDetailPage(): React.JSX.Element {
               <tbody>
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
-                    <td style={{ fontSize: 11 }}>{p.paymentDate}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDate(p.paymentDate)}</td>
                     <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                       {inr(p.amount ?? 0)}
                     </td>

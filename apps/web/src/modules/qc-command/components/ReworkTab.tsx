@@ -2,11 +2,8 @@
 // once, or once with rejects — these directly impact project timeline.
 
 import { type QcReworkRow, opSrNo } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-
-function fmt(d: string | null): string {
-  return d ?? '—';
-}
 
 function attemptColor(attempts: number): string {
   if (attempts === 1) return 'var(--amber)';
@@ -117,8 +114,8 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                     <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
                       {g.totalRejected}
                     </td>
-                    <td style={{ fontSize: 11 }}>{fmt(g.firstEntry)}</td>
-                    <td style={{ fontSize: 11 }}>{fmt(g.lastEntry)}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDate(g.firstEntry)}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDate(g.lastEntry)}</td>
                     <td
                       className="td-ctr mono fw-700"
                       style={{ color: g.daysElapsed > 5 ? 'var(--red)' : 'var(--amber)' }}

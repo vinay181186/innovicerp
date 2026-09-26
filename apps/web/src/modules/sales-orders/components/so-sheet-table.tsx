@@ -14,6 +14,7 @@
 
 import type { SalesOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { fmtDate } from '@/lib/date';
 import { ChevronDown, ChevronRight, Eye, Pencil, Trash2 } from 'lucide-react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { SoStatusBadge } from './so-status-badge';
@@ -158,7 +159,7 @@ export function SoSheetTable({
                       className="mono"
                       style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}
                     >
-                      {so.soDate}
+                      {fmtDate(so.soDate)}
                     </div>
                   </td>
                   <td>
@@ -241,7 +242,9 @@ export function SoSheetTable({
                       fontWeight: overdue ? 700 : undefined,
                     }}
                   >
-                    {so.earliestDueDate ? `${so.earliestDueDate}${overdue ? ' ⚠' : ''}` : '—'}
+                    {so.earliestDueDate
+                      ? `${fmtDate(so.earliestDueDate)}${overdue ? ' ⚠' : ''}`
+                      : '—'}
                   </td>
                   <td>
                     <SoStatusBadge status={so.status} />

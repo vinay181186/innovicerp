@@ -13,17 +13,16 @@
 import { type OpLogChangeStatus, type OpLogTimeChangeRequest, opSrNo } from '@innovic/shared';
 import { Check, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests } from '@/modules/op-entry/api';
 
 // The op-log entry type as the user reads it (codes stay as stored).
 const LOG_TYPE_LABEL: Record<string, string> = { start: 'Start', complete: 'Completed', qc: 'QC' };
 
-const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '');
-const when = (date: string, time: string | null): string => (time ? `${date} ${hhmm(time)}` : date);
+const when = (date: string, time: string | null): string => fmtDateAndTime(date, time);
 
-const istStamp = (iso: string): string =>
-  new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+const istStamp = (iso: string): string => fmtDateTime(iso);
 
 const SUB_TABS: Array<{ key: OpLogChangeStatus; label: string; empty: string }> = [
   { key: 'pending', label: 'Pending', empty: 'Nothing pending approval.' },

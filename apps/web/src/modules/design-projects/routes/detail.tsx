@@ -26,7 +26,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useAddDesignIssueComment,
@@ -378,7 +378,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                             fontSize: 11,
                           }}
                         >
-                          {t.dueDate ?? '—'}
+                          {fmtDate(t.dueDate)}
                           {isOverdue ? ' ⚠' : ''}
                         </td>
                         <td className="td-ctr">
@@ -496,7 +496,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                           <span className="text3">👤 {t.assigneeText ?? ''}</span>
                           {t.dueDate ? (
                             <span style={{ color: isOverdue ? 'var(--red)' : 'var(--text3)' }}>
-                              📅 {t.dueDate}
+                              📅 {fmtDate(t.dueDate)}
                             </span>
                           ) : null}
                           {taskIssues > 0 ? (
@@ -734,7 +734,7 @@ function ViewTaskModal({
           <div className="text3" style={{ fontSize: 10 }}>
             Due Date
           </div>
-          <div>{task.dueDate ?? '—'}</div>
+          <div>{fmtDate(task.dueDate)}</div>
         </div>
         <div>
           <div className="text3" style={{ fontSize: 10 }}>
@@ -809,7 +809,7 @@ function ViewTaskModal({
             <div>
               <div style={{ fontSize: 11, fontWeight: 700 }}>
                 {d.author}{' '}
-                <span className="text3">{d.date}</span>
+                <span className="text3">{fmtDate(d.date)}</span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{d.text}</div>
             </div>
@@ -909,7 +909,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                       </td>
                       <td style={{ fontSize: 11 }}>{i.raisedByText ?? ''}</td>
                       <td style={{ fontSize: 11, fontWeight: 600 }}>{i.assignedToText ?? ''}</td>
-                      <td style={{ fontSize: 11 }}>{i.raisedDate}</td>
+                      <td style={{ fontSize: 11 }}>{fmtDate(i.raisedDate)}</td>
                       <td
                         className="mono fw-700"
                         style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}
@@ -1177,14 +1177,14 @@ function ViewIssueModal({
             Raised Date
           </div>
           <div>
-            {issue.raisedDate} ({ageDays}d)
+            {fmtDate(issue.raisedDate)} ({ageDays}d)
           </div>
         </div>
         <div>
           <div className="text3" style={{ fontSize: 10 }}>
             Resolved Date
           </div>
-          <div>{issue.resolvedDate ?? '—'}</div>
+          <div>{fmtDate(issue.resolvedDate)}</div>
         </div>
       </div>
       <div>
@@ -1221,7 +1221,7 @@ function ViewIssueModal({
             </div>
             <div>
               <div style={{ fontSize: 11, fontWeight: 700 }}>
-                {d.author} <span className="text3">{d.date}</span>
+                {d.author} <span className="text3">{fmtDate(d.date)}</span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{d.text}</div>
             </div>
@@ -1607,7 +1607,7 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                         </td>
                         <td style={{ fontSize: 11 }}>{d.requestedByText ?? ''}</td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                          {d.requestDate}
+                          {fmtDate(d.requestDate)}
                         </td>
                         <td
                           className="mono fw-700"
@@ -1681,7 +1681,7 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                         <td>
                           <Badge value={d.status} kind="status" />
                         </td>
-                        <td style={{ fontSize: 11 }}>{d.releasedDate ?? '—'}</td>
+                        <td style={{ fontSize: 11 }}>{fmtDate(d.releasedDate)}</td>
                       </tr>
                     );
                   })

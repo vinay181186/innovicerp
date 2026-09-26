@@ -6,6 +6,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -345,7 +346,7 @@ function JobQueuePage(): React.JSX.Element {
                             <PriorityBadge priority={r.priority} />
                           </td>
                           <td className="text2" style={{ fontSize: 11 }}>
-                            {r.dueDate ?? '—'}
+                            {fmtDate(r.dueDate)}
                           </td>
                           <td className="mono">{r.orderQty}</td>
                           <td className="green mono fw-700">

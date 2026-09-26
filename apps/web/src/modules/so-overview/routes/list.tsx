@@ -15,6 +15,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoOverview, useSoOverviewDetail } from '../api';
@@ -348,13 +349,13 @@ function Row({
         {row.totalBalanceQty}
       </td>
       <td style={{ fontSize: 11, fontWeight: 700, color: overdue ? 'var(--red)' : 'var(--text)' }}>
-        {row.earliestDueDate ?? '—'}
+        {fmtDate(row.earliestDueDate)}
       </td>
       <td className="td-ctr">
         <AlertFlags row={row} />
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {row.soDate}
+        {fmtDate(row.soDate)}
       </td>
       <td onClick={(e) => e.stopPropagation()}>
         <Link
@@ -575,7 +576,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
           </span>
           <br />
           <b style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>
-            {so.earliestDueDate ?? '—'}
+            {fmtDate(so.earliestDueDate)}
           </b>
         </div>
         <div>

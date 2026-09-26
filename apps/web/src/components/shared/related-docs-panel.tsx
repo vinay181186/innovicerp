@@ -21,6 +21,7 @@ import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { statusText } from '@/lib/status-text';
+import { fmtDate } from '@/lib/date';
 
 /** routeKind → how to render a linked code. The param id defaults to the row's
  *  own id but honours `linkId` when a route is scoped by a different key (e.g.
@@ -204,7 +205,7 @@ function DocRow({
         <StatusBadge status={doc.status} kind={routeKind} />
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {doc.date ?? '—'}
+        {fmtDate(doc.date)}
       </td>
     </tr>
   );

@@ -29,6 +29,7 @@
 import { type PurchaseRequestListItem, opSrNo } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import {
   type PrOrderBalance,
@@ -345,7 +346,7 @@ export function PrCard({
               flexWrap: 'wrap',
             }}
           >
-            <span className="text2">{pr.prDate}</span>
+            <span className="text2">{fmtDate(pr.prDate)}</span>
             <span>·</span>
             <SourceRef pr={pr} />
             {pr.operation ? (
@@ -356,18 +357,18 @@ export function PrCard({
             ) : null}
             <span>·</span>
             <span>
-              Due Date <span className="text2">{pr.requiredDate ?? '—'}</span>
+              Due Date <span className="text2">{fmtDate(pr.requiredDate)}</span>
             </span>
             {pr.approvedAt ? (
               <>
                 <span>·</span>
-                <span style={{ color: 'var(--blue)' }}>Approved {pr.approvedAt.slice(0, 10)}</span>
+                <span style={{ color: 'var(--blue)' }}>Approved {fmtDate(pr.approvedAt)}</span>
               </>
             ) : null}
             {pr.poCreatedAt ? (
               <>
                 <span>·</span>
-                <span style={{ color: 'var(--green)' }}>PO {pr.poCreatedAt.slice(0, 10)}</span>
+                <span style={{ color: 'var(--green)' }}>PO {fmtDate(pr.poCreatedAt)}</span>
               </>
             ) : null}
             {bal.closed ? (

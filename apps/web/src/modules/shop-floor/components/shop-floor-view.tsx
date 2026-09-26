@@ -14,6 +14,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate, fmtDateAndTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useStopOp } from '@/modules/op-entry/api';
@@ -275,11 +276,11 @@ export function ShopFloorView(): React.JSX.Element {
                           </span>
                         </td>
                         <td className="text2" style={{ fontSize: 11 }}>
-                          {r.dueDate ?? '—'}
+                          {fmtDate(r.dueDate)}
                         </td>
                         <td className="fw-700 amber">{r.operatorName ?? '—'}</td>
                         <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {r.startDate} {r.startTime}
+                          {fmtDateAndTime(r.startDate, r.startTime)}
                         </td>
                         {/* Legacy L10327 renders an empty <td> when !canEdit(). */}
                         <td>

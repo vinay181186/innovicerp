@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 
@@ -280,7 +281,7 @@ function ScDashboardPage(): React.JSX.Element {
                       <td className="td-ctr mono" style={{ fontSize: 11 }}>
                         {p.lineNo}
                       </td>
-                      <td style={{ fontSize: 11 }}>{p.poDate}</td>
+                      <td style={{ fontSize: 11 }}>{fmtDate(p.poDate)}</td>
                       <td className="fw-700" style={{ fontSize: 12 }}>
                         {p.vendorName ?? p.vendorCode ?? '—'}
                       </td>
@@ -501,7 +502,7 @@ function ScDashboardPage(): React.JSX.Element {
                         {g.poNo}
                       </Link>
                     </td>
-                    <td style={{ fontSize: 11 }}>{g.poDate}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDate(g.poDate)}</td>
                     <td className="fw-700">{g.vendorName ?? g.vendorCode ?? '—'}</td>
                     <td className="text2" style={{ fontSize: 11 }}>{g.soCode ?? '—'}</td>
                     <td className="td-ctr mono">{g.lines}</td>
@@ -567,7 +568,7 @@ function ScDashboardPage(): React.JSX.Element {
               data.recentGrn.map((g) => (
                 <tr key={g.grnNo}>
                   <td className="td-code cyan">{g.grnNo}</td>
-                  <td style={{ fontSize: 11 }}>{g.grnDate}</td>
+                  <td style={{ fontSize: 11 }}>{fmtDate(g.grnDate)}</td>
                   <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
                     {g.poNo ?? 'Manual'}
                   </td>

@@ -8,6 +8,7 @@ import { createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2, Lock, RotateCcw, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -64,15 +65,6 @@ export const trashListRoute = createRoute({
   validateSearch: listSearchSchema,
   component: TrashListPage,
 });
-
-function fmtTs(ts: string): string {
-  const dt = new Date(ts);
-  return (
-    dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ' ' +
-    dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  );
-}
 
 function TrashListPage(): React.JSX.Element {
   const search = trashListRoute.useSearch();
@@ -267,7 +259,7 @@ function TrashListPage(): React.JSX.Element {
                   items.map((it) => (
                     <tr key={`${it.type}:${it.id}`}>
                       <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        {fmtTs(it.deletedAt)}
+                        {fmtDateTime(it.deletedAt)}
                       </td>
                       <td>
                         <span className="badge b-grey">{typeLabel(it.type)}</span>

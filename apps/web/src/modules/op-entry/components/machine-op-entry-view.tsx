@@ -21,6 +21,7 @@ import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDateAndTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useMachinesList } from '@/modules/machines/api';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps } from '../api';
@@ -180,7 +181,8 @@ export function MachineOpEntryView(): React.JSX.Element {
                 {selectedMachine.code} — <span style={{ color: 'var(--green)' }}>🟢 Running</span>
               </div>
               <div className="text3" style={{ fontSize: 11 }}>
-                Started: {selectedRunning.startTime} by {selectedRunning.operatorName ?? ''}
+                Started: {fmtDateAndTime(selectedRunning.startDate, selectedRunning.startTime)} by{' '}
+                {selectedRunning.operatorName ?? ''}
               </div>
             </div>
             <div

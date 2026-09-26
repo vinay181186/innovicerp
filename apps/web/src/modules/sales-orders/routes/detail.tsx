@@ -24,6 +24,7 @@ import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/
 import { ItemBadge } from '@/components/shared/item-badge';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -400,7 +401,7 @@ function lineColumns(opts: {
       width: '8%',
       className: 'mono text2',
       nowrap: true,
-      render: (l) => l.dueDate ?? '—',
+      render: (l) => fmtDate(l.dueDate),
     },
     {
       header: 'SO Status',
@@ -422,7 +423,7 @@ const MILESTONE_COLUMNS: DataTableColumn<Milestone>[] = [
     width: '20%',
     className: 'mono',
     nowrap: true,
-    render: (m) => m.dueDate ?? '—',
+    render: (m) => fmtDate(m.dueDate),
   },
   {
     header: 'Remarks',
@@ -623,7 +624,7 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
   return (
     <ReadGrid>
       <ReadField label="SO Type" size="md" value={SO_TYPE_LABEL[detail.type]} />
-      <ReadField label="SO Date" size="sm" mono value={detail.soDate} />
+      <ReadField label="SO Date" size="sm" mono value={fmtDate(detail.soDate)} />
       <ReadField
         label="Client PO No."
         size="sm"

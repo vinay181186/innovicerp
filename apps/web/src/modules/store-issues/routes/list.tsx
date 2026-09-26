@@ -11,7 +11,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItemsList } from '../../items/api';
@@ -183,7 +183,7 @@ function StoreIssuesListPage(): React.JSX.Element {
                           </span>
                         </td>
                         <td className="text2" style={{ fontSize: 11 }}>
-                          {iss.issueDate}
+                          {fmtDate(iss.issueDate)}
                         </td>
                         <td>
                           <span className="td-code" style={{ color: 'var(--purple)' }}>

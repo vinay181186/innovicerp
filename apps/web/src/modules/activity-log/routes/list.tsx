@@ -2,6 +2,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDateTime } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useActivityLog } from '../api';
 
@@ -317,17 +318,8 @@ function ActivityLogListPage() {
                 </tr>
               ) : (
                 data.entries.map((e) => {
-                  const dt = new Date(e.ts);
-                  const date = dt.toLocaleDateString('en-IN', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
-                  });
-                  const time = dt.toLocaleTimeString('en-IN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false,
-                  });
+                  // `26-Sep-2026 14:05` IST, split across the Date and Time columns.
+                  const [date = '—', time = ''] = fmtDateTime(e.ts).split(' ');
                   const badgeClass = ACTION_BADGE[e.action] ?? 'b-grey';
                   return (
                     <tr key={e.id}>

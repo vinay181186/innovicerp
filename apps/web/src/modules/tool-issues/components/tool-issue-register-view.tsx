@@ -15,7 +15,7 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useItemsList } from '../../items/api';
 import {
@@ -164,7 +164,7 @@ export function ToolIssueRegisterView({
                       </span>
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {ti.issueDate}
+                      {fmtDate(ti.issueDate)}
                     </td>
                     <td>
                       <span style={{ color: 'var(--purple)', fontWeight: 600, fontSize: 11 }}>
@@ -181,7 +181,7 @@ export function ToolIssueRegisterView({
                       {ti.refNo ?? '—'}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {ti.expectedReturnDate ?? '—'}
+                      {fmtDate(ti.expectedReturnDate)}
                     </td>
                     <td>
                       <StatusBadge issue={ti} />
@@ -685,7 +685,7 @@ function ReturnModal({
             <span className="text3">To:</span> {issue.issuedTo}
           </div>
           <div>
-            <span className="text3">Date:</span> {issue.issueDate}
+            <span className="text3">Date:</span> {fmtDate(issue.issueDate)}
           </div>
         </div>
         {alreadyTotal > 0 ? (

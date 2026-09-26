@@ -9,7 +9,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoicesList } from '../api';
@@ -148,7 +148,7 @@ export function JwInvoiceView({
                       </span>
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {r.invoiceDate}
+                      {fmtDate(r.invoiceDate)}
                     </td>
                     <td
                       className="mono fw-700"

@@ -8,6 +8,7 @@
 
 import type { OpMachineOutput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
 
 interface Props {
   rows: OpMachineOutput[];
@@ -67,10 +68,10 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                     {r.rejectQty || ''}
                   </td>
                   <td className="mono" style={{ fontSize: 11 }}>
-                    {r.firstLogDate}
+                    {fmtDate(r.firstLogDate)}
                   </td>
                   <td className="mono" style={{ fontSize: 11 }}>
-                    {r.lastLogDate}
+                    {fmtDate(r.lastLogDate)}
                   </td>
                 </tr>
               ))}

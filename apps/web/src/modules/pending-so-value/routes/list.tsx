@@ -12,6 +12,7 @@ import type {
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { usePendingSoValue } from '../api';
@@ -299,7 +300,7 @@ function PsvRow({
       </td>
       <td>{row.customerName ?? '—'}</td>
       <td style={{ fontSize: 11 }}>
-        {row.soDate}
+        {fmtDate(row.soDate)}
       </td>
       <td
         style={{
@@ -308,7 +309,7 @@ function PsvRow({
           fontWeight: overdue ? 700 : undefined,
         }}
       >
-        {row.dueDate ?? '—'}
+        {fmtDate(row.dueDate)}
         {overdue ? ' ⚠' : ''}
       </td>
       {priceHidden ? null : (

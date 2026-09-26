@@ -13,6 +13,7 @@
 import type { DeliveryChallanListItem } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { DcStatusBadge } from './dc-status-badge';
+import { fmtDate } from '@/lib/date';
 
 /** Accent bar: amber still out at the vendor, green once it has come back,
  *  grey cancelled — the same meaning DcStatusBadge carries. */
@@ -205,7 +206,7 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
               flexWrap: 'wrap',
             }}
           >
-            <span className="text2">{dc.dcDate}</span>
+            <span className="text2">{fmtDate(dc.dcDate)}</span>
             <span>·</span>
             <span>
               SO <span className="text2">{dc.soCode ?? dc.soRefText ?? '—'}</span>

@@ -30,6 +30,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useRouteCardsList } from '@/modules/route-cards/api';
@@ -584,8 +585,8 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
         <Fact label="Covered" value={String(plan.coveredQty)} mono />
         <Fact label="Pending" value={String(plan.pendingQty)} mono />
         <Fact label="SO / JWSO No." value={so} mono />
-        <Fact label="Planned Start" value={plan.plannedStartDate ?? '—'} mono />
-        <Fact label="Planned End" value={plan.plannedEndDate ?? '—'} mono />
+        <Fact label="Planned Start" value={fmtDate(plan.plannedStartDate)} mono />
+        <Fact label="Planned End" value={fmtDate(plan.plannedEndDate)} mono />
         <Fact label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
         <Fact label="RM Size" value={plan.rawMaterialSizeText ?? '—'} />
         {plan.remarks ? (

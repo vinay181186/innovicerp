@@ -21,6 +21,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -265,7 +266,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                     className="mono"
                     style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
                   >
-                    <span className="text2">{jw.jwDate}</span>
+                    <span className="text2">{fmtDate(jw.jwDate)}</span>
                     <span>·</span>
                     <span>
                       PO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{jw.clientPoNo ?? '—'}</span>
@@ -277,7 +278,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                     </span>
                     <span>·</span>
                     <span style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>
-                      {jw.earliestDueDate ? `Due ${jw.earliestDueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                      {jw.earliestDueDate ? `Due ${fmtDate(jw.earliestDueDate)}${overdue ? ' ⚠' : ''}` : 'No due date'}
                     </span>
                     {jw.remarks ? (
                       <>
@@ -366,7 +367,7 @@ function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolea
                 <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance}</td>
                 <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{l.uom}</td>
                 {priceHidden ? null : <td className="td-ctr mono" style={{ fontSize: 11 }}>{l.rate}</td>}
-                <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
+                <td className="text2" style={{ fontSize: 11 }}>{fmtDate(l.dueDate)}</td>
                 <td><SoStatusBadge status={l.status} /></td>
                 {canEdit ? (
                   <td onClick={(e) => e.stopPropagation()}>

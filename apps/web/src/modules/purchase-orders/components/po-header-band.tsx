@@ -15,6 +15,7 @@
 // for codes and money.
 
 import type { PurchaseOrderDetail, Vendor } from '@innovic/shared';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
 
 /** Accent bar — the same reading the status badge already gives: green closed,
@@ -169,7 +170,7 @@ export function PoHeaderBand({
             }
           />
           <Row label="PO Type" value={PO_TYPE_LABELS[detail.poType]} />
-          <Row label="PO Date" value={<span className="mono">{detail.poDate}</span>} />
+          <Row label="PO Date" value={<span className="mono">{fmtDate(detail.poDate)}</span>} />
           <Row
             label="PR"
             value={
@@ -254,7 +255,7 @@ export function PoHeaderBand({
         {/* ── Tax & approval ── */}
         <Col caption="Tax & Approval">
           <Row label="Tax Type" value={taxTypeLabel(detail.taxType)} />
-          <Row label="Due Date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
+          <Row label="Due Date" value={<span className="mono">{fmtDate(detail.dueDate)}</span>} />
           {/* Only the rates that apply — a 0% rate is not shown. */}
           {detail.totalAmount == null || gstParts.length === 0 ? null : (
             <div style={{ fontSize: 11, marginBottom: 6 }}>
@@ -272,7 +273,10 @@ export function PoHeaderBand({
             </div>
           )}
           {detail.approvedAt ? (
-            <Row label="Approved at" value={<span className="mono">{detail.approvedAt}</span>} />
+            <Row
+              label="Approved at"
+              value={<span className="mono">{fmtDateTime(detail.approvedAt)}</span>}
+            />
           ) : null}
           {detail.approvalRemarks ? (
             <Row label="Approval note" value={detail.approvalRemarks} />
@@ -283,7 +287,7 @@ export function PoHeaderBand({
                 label="Rejected at"
                 value={
                   <span className="mono" style={{ color: 'var(--red)' }}>
-                    {detail.rejectedAt ?? '—'}
+                    {fmtDateTime(detail.rejectedAt)}
                   </span>
                 }
               />

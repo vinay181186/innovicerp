@@ -73,3 +73,82 @@ export function daysBetweenLocal(from: string, to: string): number | null {
     (Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000,
   );
 }
+
+// ── Display formatting ─────────────────────────────────────────────────────
+// THE one web display format (owner decision): dates read `26-Sep-2026`,
+// date + time reads `26-Sep-2026 14:05` (24-hour, IST). Display only — never
+// feed these strings back into an input, a query param or an API payload.
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** A plain calendar date: `YYYY-MM-DD` with nothing after it. */
+const PLAIN_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** IST calendar parts of an instant, or null when it is not a valid instant. */
+function istParts(v: string): { y: string; m: number; d: string; hh: string; mi: string } | null {
+  const dt = new Date(v);
+  if (Number.isNaN(dt.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(dt);
+  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? '';
+  return {
+    y: get('year'),
+    m: Number(get('month')),
+    d: get('day'),
+    hh: get('hour'),
+    mi: get('minute'),
+  };
+}
+
+/**
+ * `2026-09-26` → `26-Sep-2026`. A plain `YYYY-MM-DD` is read as a calendar date
+ * (pure string work, no timezone shift); a timestamp is shown as its IST date.
+ * null / blank → `empty` (default `—`); anything unparseable comes back as-is.
+ */
+export function fmtDate(v: string | null | undefined, empty = '—'): string {
+  if (!v || !v.trim()) return empty;
+  const s = v.trim();
+  const plain = PLAIN_DATE.exec(s);
+  if (plain) {
+    const mon = MONTHS[Number(plain[2]) - 1];
+    return mon ? `${plain[3]}-${mon}-${plain[1]}` : s;
+  }
+  const p = istParts(s);
+  const mon = p ? MONTHS[p.m - 1] : undefined;
+  return p && mon ? `${p.d}-${mon}-${p.y}` : s;
+}
+
+/**
+ * Timestamp → `26-Sep-2026 14:05` in IST (24-hour). A plain `YYYY-MM-DD` has
+ * no time, so it shows as the date alone. null / blank → `empty`.
+ */
+export function fmtDateTime(v: string | null | undefined, empty = '—'): string {
+  if (!v || !v.trim()) return empty;
+  const s = v.trim();
+  if (PLAIN_DATE.test(s)) return fmtDate(s, empty);
+  const p = istParts(s);
+  const mon = p ? MONTHS[p.m - 1] : undefined;
+  return p && mon ? `${p.d}-${mon}-${p.y} ${p.hh}:${p.mi}` : s;
+}
+
+/**
+ * A stored calendar date plus an optional wall-clock time (`HH:MM[:SS]`, as
+ * the log tables keep them) → `26-Sep-2026 14:05`, or the date alone when
+ * there is no time. No timezone maths — both parts are already local.
+ */
+export function fmtDateAndTime(
+  date: string | null | undefined,
+  time?: string | null,
+  empty = '—',
+): string {
+  const d = fmtDate(date, empty);
+  const m = time ? /^(\d{1,2}):(\d{2})/.exec(time.trim()) : null;
+  return m && date ? `${d} ${m[1]!.padStart(2, '0')}:${m[2]}` : d;
+}

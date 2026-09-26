@@ -19,6 +19,7 @@ import type { AssemblyListItem } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAssembliesList } from '../api';
 
@@ -190,7 +191,7 @@ function AssemblyListPage(): React.JSX.Element {
                               fontWeight: overdue ? 600 : undefined,
                             }}
                           >
-                            {row.dueDate ?? '—'}
+                            {fmtDate(row.dueDate)}
                           </td>
                           <td>{row.orderQty}</td>
                           <td style={{ color: 'var(--green2)' }}>{row.assembledQty}</td>

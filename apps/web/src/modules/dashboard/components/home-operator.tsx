@@ -6,6 +6,7 @@ import type { HomeResponse } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 function elapsedStr(min: number): string {
@@ -206,7 +207,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                         fontWeight: r.isOverdue ? 700 : 400,
                       }}
                     >
-                      {r.dueDate ?? '—'}
+                      {fmtDate(r.dueDate)}
                       {r.isOverdue ? ' ⚠' : ''}
                     </td>
                     <td>

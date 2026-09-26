@@ -12,7 +12,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -278,7 +278,7 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
           {dc.code}
         </Link>
       </td>
-      <td style={{ fontSize: 11 }}>{dc.dcDate}</td>
+      <td style={{ fontSize: 11 }}>{fmtDate(dc.dcDate)}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
         {dc.jwpoCodeText ?? '—'}
       </td>
@@ -414,7 +414,7 @@ function InwardView(): React.JSX.Element {
                       <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                         {inv.code}
                       </td>
-                      <td style={{ fontSize: 11 }}>{inv.inwardDate}</td>
+                      <td style={{ fontSize: 11 }}>{fmtDate(inv.inwardDate)}</td>
                       <td
                         className="mono"
                         style={{ color: 'var(--purple)', fontSize: 11 }}
