@@ -36,6 +36,7 @@ import {
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
+import { DEFAULT_PAYMENT_TERMS_DAYS } from './constants';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -470,6 +471,8 @@ export async function getInvoiceableSo(
         code: salesOrders.code,
         customer: salesOrders.customerName,
         clientGst: clients.gstNumber,
+        gstPercent: salesOrders.gstPercent,
+        paymentDays: clients.paymentDays,
       })
       .from(salesOrders)
       .leftJoin(clients, eq(clients.id, salesOrders.clientId))
@@ -489,6 +492,10 @@ export async function getInvoiceableSo(
       soCode: so.code,
       customer: so.customer,
       clientGst: so.clientGst ?? null,
+      // ADR-188: the invoice form's defaults come from upstream — GST % from
+      // the SO, Payment Terms from the customer's Payment Days.
+      gstPercent: n(so.gstPercent),
+      paymentDays: so.paymentDays ?? null,
       lines,
     };
   });
@@ -533,6 +540,8 @@ export async function createInvoice(
         clientCode: clients.code,
         clientName: clients.name,
         clientGst: clients.gstNumber,
+        soGstPercent: salesOrders.gstPercent,
+        clientPaymentDays: clients.paymentDays,
       })
       .from(salesOrders)
       .leftJoin(clients, eq(clients.id, salesOrders.clientId))
@@ -599,13 +608,19 @@ export async function createInvoice(
       }
     }
 
+    // Defaults are decided here, not in the browser (CLAUDE.md rule 1): GST %
+    // from the SO, Payment Terms from the client's Payment Days (ADR-188).
+    const gstPercent = input.gstPercent ?? n(so.soGstPercent);
+    const paymentTermsDays =
+      input.paymentTermsDays ?? so.clientPaymentDays ?? DEFAULT_PAYMENT_TERMS_DAYS;
+
     const lineAmounts = input.lines.map((l) => l.qty * l.rate);
     const subtotal = lineAmounts.reduce((s, v) => s + v, 0);
-    const gstAmount = Math.round(((subtotal * input.gstPercent) / 100) * 100) / 100;
+    const gstAmount = Math.round(((subtotal * gstPercent) / 100) * 100) / 100;
     const grand = subtotal + gstAmount;
 
     const due = new Date(input.invoiceDate);
-    due.setDate(due.getDate() + input.paymentTermsDays);
+    due.setDate(due.getDate() + paymentTermsDays);
     const dueDate = due.toISOString().slice(0, 10);
 
     const code = await nextInvoiceCode(tx, companyId);
@@ -622,11 +637,11 @@ export async function createInvoice(
         clientCodeText: so.clientCode ?? null,
         clientGstText: so.clientGst ?? null,
         subtotal: String(subtotal),
-        gstPercent: String(input.gstPercent),
+        gstPercent: String(gstPercent),
         gstAmount: String(gstAmount),
         grandTotal: String(grand),
         totalPaid: '0',
-        paymentTermsDays: input.paymentTermsDays,
+        paymentTermsDays,
         dueDate,
         status: 'unpaid',
         remarks: input.remarks ?? null,

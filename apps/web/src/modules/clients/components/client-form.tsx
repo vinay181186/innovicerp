@@ -17,7 +17,7 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { type UseFormRegister, useForm } from 'react-hook-form';
 import { useNextClientCode } from '../api';
 
 type CreateMode = {
@@ -53,6 +53,7 @@ const CREATE_DEFAULTS: CreateClientInput = {
   city: undefined,
   state: undefined,
   pincode: undefined,
+  paymentDays: null,
   isActive: true,
 };
 
@@ -67,6 +68,7 @@ function clientToUpdateDefaults(c: Client): UpdateClientInput {
     city: c.city ?? undefined,
     state: c.state ?? undefined,
     pincode: c.pincode ?? undefined,
+    paymentDays: c.paymentDays ?? null,
     isActive: c.isActive,
   };
 }
@@ -123,7 +125,14 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="name">
             Customer<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoFocus autoComplete="off" placeholder="Full company name" {...register('name')} />
+          <input
+            id="name"
+            className="innovic-input"
+            autoFocus
+            autoComplete="off"
+            placeholder="Full company name"
+            {...register('name')}
+          />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -131,20 +140,39 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="addressLine1">
             Address
           </label>
-          <input id="addressLine1" className="innovic-input" autoComplete="off" placeholder="Street address" {...register('addressLine1')} />
+          <input
+            id="addressLine1"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Street address"
+            {...register('addressLine1')}
+          />
         </div>
 
         <div className="form-grp">
           <label className="form-label" htmlFor="contactPerson">
             Contact Person
           </label>
-          <input id="contactPerson" className="innovic-input" autoComplete="off" placeholder="Contact name" {...register('contactPerson')} />
+          <input
+            id="contactPerson"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Contact name"
+            {...register('contactPerson')}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="email">
             Email
           </label>
-          <input id="email" className="innovic-input" type="email" autoComplete="off" placeholder="email@domain.com" {...register('email')} />
+          <input
+            id="email"
+            className="innovic-input"
+            type="email"
+            autoComplete="off"
+            placeholder="email@domain.com"
+            {...register('email')}
+          />
           {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
         </div>
 
@@ -158,7 +186,12 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="gstNumber">
             GSTIN
           </label>
-          <input id="gstNumber" className="innovic-input" autoComplete="off" {...register('gstNumber')} />
+          <input
+            id="gstNumber"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('gstNumber')}
+          />
         </div>
 
         <div className="form-grp">
@@ -178,7 +211,12 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="pincode">
             Pincode
           </label>
-          <input id="pincode" className="innovic-input" autoComplete="off" {...register('pincode')} />
+          <input
+            id="pincode"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('pincode')}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
@@ -195,6 +233,8 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
             <option value="false">Inactive</option>
           </select>
         </div>
+
+        <PaymentDaysField register={register} error={errors.paymentDays?.message} />
       </div>
 
       <FormFooter
@@ -233,7 +273,13 @@ function EditClientForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="name">
             Customer<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoComplete="off" placeholder="Full company name" {...register('name')} />
+          <input
+            id="name"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Full company name"
+            {...register('name')}
+          />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -241,20 +287,39 @@ function EditClientForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="addressLine1">
             Address
           </label>
-          <input id="addressLine1" className="innovic-input" autoComplete="off" placeholder="Street address" {...register('addressLine1')} />
+          <input
+            id="addressLine1"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Street address"
+            {...register('addressLine1')}
+          />
         </div>
 
         <div className="form-grp">
           <label className="form-label" htmlFor="contactPerson">
             Contact Person
           </label>
-          <input id="contactPerson" className="innovic-input" autoComplete="off" placeholder="Contact name" {...register('contactPerson')} />
+          <input
+            id="contactPerson"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Contact name"
+            {...register('contactPerson')}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="email">
             Email
           </label>
-          <input id="email" className="innovic-input" type="email" autoComplete="off" placeholder="email@domain.com" {...register('email')} />
+          <input
+            id="email"
+            className="innovic-input"
+            type="email"
+            autoComplete="off"
+            placeholder="email@domain.com"
+            {...register('email')}
+          />
           {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
         </div>
 
@@ -268,7 +333,12 @@ function EditClientForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="gstNumber">
             GSTIN
           </label>
-          <input id="gstNumber" className="innovic-input" autoComplete="off" {...register('gstNumber')} />
+          <input
+            id="gstNumber"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('gstNumber')}
+          />
         </div>
 
         <div className="form-grp">
@@ -288,7 +358,12 @@ function EditClientForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="pincode">
             Pincode
           </label>
-          <input id="pincode" className="innovic-input" autoComplete="off" {...register('pincode')} />
+          <input
+            id="pincode"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('pincode')}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="isActive">
@@ -305,6 +380,8 @@ function EditClientForm(props: EditMode): React.JSX.Element {
             <option value="false">Inactive</option>
           </select>
         </div>
+
+        <PaymentDaysField register={register} error={errors.paymentDays?.message} />
       </div>
 
       <FormFooter
@@ -314,6 +391,44 @@ function EditClientForm(props: EditMode): React.JSX.Element {
         onCancel={props.onCancel}
       />
     </form>
+  );
+}
+
+/** Payment Days (ADR-188) — how many days this customer is allowed to pay an
+ *  invoice in; a new invoice's Payment Terms starts from it. Optional:
+ *  a blank box saves as null (clears it on edit). The 0–365 range is the
+ *  shared schema's; the browser min/max only guide the spinner. */
+function PaymentDaysField(props: {
+  register: UseFormRegister<CreateClientInput> | UseFormRegister<UpdateClientInput>;
+  error: string | undefined;
+}): React.JSX.Element {
+  // Both forms carry `paymentDays` with the same type; the union of the two
+  // register functions is not callable as-is, so narrow to one signature.
+  const register = props.register as UseFormRegister<UpdateClientInput>;
+  return (
+    <div className="form-grp">
+      <label className="form-label" htmlFor="paymentDays">
+        Payment Days
+      </label>
+      <input
+        id="paymentDays"
+        className="innovic-input"
+        type="number"
+        inputMode="numeric"
+        min={0}
+        max={365}
+        step={1}
+        autoComplete="off"
+        placeholder="e.g. 45"
+        style={{ textAlign: 'right' }}
+        {...register('paymentDays', {
+          setValueAs: (v: string | number | null | undefined) =>
+            v === '' || v == null ? null : Number(v),
+        })}
+      />
+      {props.error ? <div className="form-error">{props.error}</div> : null}
+      <div className="form-help">Days the customer has to pay an invoice. Blank = not set.</div>
+    </div>
   );
 }
 

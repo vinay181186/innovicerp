@@ -2,22 +2,28 @@
 //
 // Mirror of legacy renderTrash (HTML L11309). Lists every soft-deleted
 // row across the curated set of entities (one UNION ALL backend query).
-// Restore (clears deleted_at) + Permanent Delete (hard) + Empty All.
+// Restore (clears deleted_at) only. There is no permanent delete inside the
+// app (CLAUDE.md rule 8 — hard deletes only via documented admin scripts after
+// a backup), so the legacy per-row Delete and Empty All are gone. The search
+// box is answered by the server (GET /trash?search=), so total and paging
+// count only the matching documents.
 
 import { createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, Lock, RotateCcw, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Loader2, Lock, RotateCcw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
+import { SearchInput } from '@/ui/forms';
 import {
-  useEmptyTrash,
-  usePermDeleteTrash,
   useRestoreFromTrash,
   useTrash,
   type ListTrashQuery,
   type TrashEntityType,
+  type TrashListItem,
 } from '../api';
 
 const PAGE_SIZE = 50;
@@ -56,6 +62,7 @@ function typeLabel(t: TrashEntityType): string {
 
 const listSearchSchema = z.object({
   type: z.string().optional(),
+  search: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
 });
 
@@ -75,18 +82,40 @@ function TrashListPage(): React.JSX.Element {
   const query: ListTrashQuery = useMemo(
     () => ({
       type: search.type as TrashEntityType | undefined,
+      search: search.search,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.type, search.page],
+    [search.type, search.search, search.page],
   );
 
   const { data, isLoading, isError, error } = useTrash(query);
   const restore = useRestoreFromTrash();
-  const permDel = usePermDeleteTrash();
-  const empty = useEmptyTrash();
 
-  const [actionError, setActionError] = useState<string | null>(null);
+  // The row whose Restore is being confirmed (ConfirmDialog, not window.confirm).
+  const [restoring, setRestoring] = useState<TrashListItem | null>(null);
+
+  const items = data?.items ?? [];
+
+  // The box keeps what the user typed (a trailing space included); only the
+  // normalised term goes to the URL, and a new term goes back to page 1.
+  const urlTerm = search.search;
+  const urlTermRef = useRef(urlTerm);
+  urlTermRef.current = urlTerm;
+  const [searchInput, setSearchInput] = useState(urlTerm ?? '');
+  useEffect(() => {
+    // Adopt a URL term the box did not produce (Back, a pasted link).
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (urlTerm ?? '') ? prev : (urlTerm ?? ''),
+    );
+  }, [urlTerm]);
+  useEffect(() => {
+    // Runs only when the box changes (not when the URL does), so a Back to
+    // another term is adopted above instead of being written over here.
+    const next = normalizeSearchTerm(searchInput) || undefined;
+    if (next === urlTermRef.current) return;
+    void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+  }, [searchInput, navigate]);
 
   if (!isAdmin) {
     return (
@@ -99,53 +128,17 @@ function TrashListPage(): React.JSX.Element {
     );
   }
 
-  const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   // `total` is scoped to the active type filter; `byType` is always computed
   // server-side over every type, so its sum is the true trash-wide count.
-  // Legacy gates Empty All on the UNFILTERED count (db.trash.length, L11335)
-  // and states that same unfiltered count in its confirm (L2191).
   const grandTotal = Object.values(data?.byType ?? {}).reduce((a, b) => a + b, 0);
 
-  async function onRestore(it: { type: TrashEntityType; id: string; label: string }): Promise<void> {
-    setActionError(null);
-    if (!window.confirm(`Restore ${typeLabel(it.type)} "${it.label}"?`)) return;
-    try {
-      await restore.mutateAsync({ type: it.type, id: it.id });
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Could not restore. Try again.');
-    }
-  }
-
-  async function onPermDelete(it: { type: TrashEntityType; id: string; label: string }): Promise<void> {
-    setActionError(null);
-    if (
-      !window.confirm(
-        `Permanently delete ${typeLabel(it.type)} "${it.label}"?\n\nThis CANNOT be undone.`,
-      )
-    )
-      return;
-    try {
-      await permDel.mutateAsync({ type: it.type, id: it.id });
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Could not delete permanently. Try again.');
-    }
-  }
-
-  async function onEmptyAll(): Promise<void> {
-    setActionError(null);
-    // Count is grandTotal, not `total`: Empty All deletes every soft-deleted
-    // row of every type, ignoring the active type filter.
-    const confirmText = window.prompt(
-      `Permanently delete all ${grandTotal} items? This cannot be undone. Type DELETE to confirm.`,
-    );
-    if (confirmText !== 'DELETE') return;
-    try {
-      await empty.mutateAsync();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Could not empty Trash. Try again.');
-    }
+  async function onRestoreConfirmed(): Promise<void> {
+    if (!restoring) return;
+    // A rejection is shown inside the dialog (ConfirmDialog catches it).
+    await restore.mutateAsync({ type: restoring.type, id: restoring.id });
+    setRestoring(null);
   }
 
   return (
@@ -165,7 +158,13 @@ function TrashListPage(): React.JSX.Element {
             Trash
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <SearchInput
+            value={searchInput}
+            debounceMs={300}
+            placeholder="Search document type, document, deleted by…"
+            onChange={setSearchInput}
+          />
           <select
             className="innovic-select"
             value={search.type ?? ''}
@@ -187,45 +186,13 @@ function TrashListPage(): React.JSX.Element {
               );
             })}
           </select>
-          {grandTotal > 0 ? (
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => void onEmptyAll()}
-              disabled={empty.isPending}
-            >
-              {empty.isPending ? (
-                <>
-                  <Loader2 className="inline h-3 w-3 animate-spin" /> Emptying…
-                </>
-              ) : (
-                'Empty All'
-              )}
-            </button>
-          ) : null}
         </div>
       </div>
-
-      {actionError ? (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: '8px 12px',
-            background: 'rgba(239,68,68,0.06)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            borderRadius: 6,
-            color: 'var(--red2)',
-            fontSize: 12,
-          }}
-        >
-          {actionError}
-        </div>
-      ) : null}
 
       {!isLoading && !isError && items.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 32 }}>
-            Trash is empty
+            {urlTerm ? 'No deleted documents match your search.' : 'Trash is empty'}
           </div>
         </div>
       ) : (
@@ -269,24 +236,14 @@ function TrashListPage(): React.JSX.Element {
                         {it.deletedByName ?? '—'}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            disabled={restore.isPending}
-                            onClick={() => void onRestore(it)}
-                          >
-                            <RotateCcw size={12} /> Restore
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            disabled={permDel.isPending}
-                            onClick={() => void onPermDelete(it)}
-                          >
-                            <Trash2 size={12} /> Delete
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={restore.isPending}
+                          onClick={() => setRestoring(it)}
+                        >
+                          <RotateCcw size={12} /> Restore
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -346,8 +303,21 @@ function TrashListPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        Only admins can delete permanently.
+        Only admins can open Trash. Restore puts a document back where it was; nothing is
+        permanently deleted from here.
       </div>
+
+      {restoring ? (
+        <ConfirmDialog
+          tone="primary"
+          title={`Restore ${typeLabel(restoring.type)} ${restoring.label}?`}
+          message="It goes back to its list exactly as it was before it was deleted."
+          confirmLabel="Restore"
+          pendingLabel="Restoring…"
+          onConfirm={onRestoreConfirmed}
+          onCancel={() => setRestoring(null)}
+        />
+      ) : null}
     </div>
   );
 }

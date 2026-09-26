@@ -37,6 +37,12 @@ export const invoiceableSoResponseSchema = z.object({
   soCode: z.string(),
   customer: z.string().nullable(),
   clientGst: z.string().nullable(),
+  /** The SO's GST % (sales_orders.gst_percent) — the new invoice's default
+   *  GST %, never a hard-coded 18 (ADR-188). */
+  gstPercent: z.number().nonnegative(),
+  /** The customer's Payment Days (clients.payment_days) — the new invoice's
+   *  default Payment Terms. Null when the customer has none set (ADR-188). */
+  paymentDays: z.number().int().nonnegative().nullable(),
   lines: z.array(invoiceableLineSchema),
 });
 export type InvoiceableSoResponse = z.infer<typeof invoiceableSoResponseSchema>;
@@ -44,8 +50,10 @@ export type InvoiceableSoResponse = z.infer<typeof invoiceableSoResponseSchema>;
 export const createInvoiceInputSchema = z.object({
   salesOrderId: z.string().uuid(),
   invoiceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  paymentTermsDays: z.coerce.number().int().nonnegative().default(45),
-  gstPercent: z.coerce.number().nonnegative().max(100).default(18),
+  // Omitted → the server decides: the client's Payment Days (else 45) and
+  // the SO's GST %.
+  paymentTermsDays: z.coerce.number().int().nonnegative().optional(),
+  gstPercent: z.coerce.number().nonnegative().max(100).optional(),
   remarks: z.string().max(1000).optional(),
   lines: z
     .array(

@@ -11,14 +11,10 @@ import type {
   ListDesignWorkLogQuery,
   ListDesignWorkLogResponse,
 } from '@innovic/shared';
-import { designProjects, designWorkLog } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { designProjects, designWorkLog, users } from '../../db/schema';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import {
-  AuthorizationError,
-  NotFoundError,
-  ValidationError,
-} from '../../lib/errors';
+import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -41,15 +37,103 @@ function num(v: unknown): number {
   return Number(v) || 0;
 }
 
+/**
+ * The engineer a free-text name refers to. design_work_log identifies
+ * engineers by login email (the Entry tab filters on it), but the Design
+ * Tracker's Log Time takes a typed worker name. Resolve it to a user of the
+ * same company whose email or full name matches (case-insensitive); exactly
+ * one match gives that user's email, otherwise the typed text is kept.
+ * Same rule as the 0150 data move.
+ */
+export async function resolveEngineerText(
+  tx: DbTransaction,
+  companyId: string,
+  worker: string,
+): Promise<string> {
+  const needle = worker.trim().toLowerCase();
+  if (!needle) return worker;
+  const matches = await tx
+    .select({ email: users.email })
+    .from(users)
+    .where(
+      and(
+        eq(users.companyId, companyId),
+        isNull(users.deletedAt),
+        sql`(lower(${users.email}) = ${needle} OR lower(${users.fullName}) = ${needle})`,
+      ),
+    )
+    .limit(2);
+  return matches.length === 1 && matches[0] ? matches[0].email : worker;
+}
+
+/** One design_work_log row to write. */
+export interface DesignWorkLogRowInput {
+  logDate: string;
+  engineerText: string;
+  designProjectId: string | null;
+  designTrackerId: string | null;
+  taskText: string | null;
+  category: DesignWorkLogEntry['category'];
+  hours: number;
+  description: string | null;
+}
+
+/**
+ * The ONE write path into design_work_log (ADR-188). The Work Log entry form
+ * and the Design Tracker's Log Time both come through here. Callers do their
+ * own access checks and run it inside their transaction.
+ */
+export async function insertDesignWorkLogRow(
+  tx: DbTransaction,
+  input: DesignWorkLogRowInput,
+  user: AuthContext,
+  project: { projectName: string | null; projectCode: string | null } = {
+    projectName: null,
+    projectCode: null,
+  },
+): Promise<DesignWorkLogEntry> {
+  const companyId = requireCompany(user);
+  const inserted = await tx
+    .insert(designWorkLog)
+    .values({
+      companyId,
+      logDate: input.logDate,
+      engineerText: input.engineerText,
+      designProjectId: input.designProjectId,
+      designTrackerId: input.designTrackerId,
+      taskText: input.taskText,
+      category: input.category,
+      hours: String(input.hours),
+      description: input.description,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const row = inserted[0];
+  if (!row) throw new ValidationError('Could not log work. Try again.');
+  return {
+    id: row.id,
+    logDate: dateLike(row.logDate),
+    engineerText: row.engineerText,
+    designProjectId: row.designProjectId,
+    designTrackerId: row.designTrackerId,
+    projectName: project.projectName,
+    projectCode: project.projectCode,
+    taskText: row.taskText,
+    category: row.category as DesignWorkLogEntry['category'],
+    hours: num(row.hours),
+    description: row.description,
+    createdAt: tsLike(row.createdAt),
+  };
+}
+
 export async function listDesignWorkLog(
   input: ListDesignWorkLogQuery,
   user: AuthContext,
 ): Promise<ListDesignWorkLogResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const engineerFrag = input.engineer
-      ? sql`AND wl.engineer_text = ${input.engineer}`
-      : sql``;
+    const engineerFrag = input.engineer ? sql`AND wl.engineer_text = ${input.engineer}` : sql``;
     const fromFrag = input.fromDate ? sql`AND wl.log_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND wl.log_date <= ${input.toDate}::date` : sql``;
     const projFrag = input.designProjectId
@@ -62,6 +146,7 @@ export async function listDesignWorkLog(
         wl.log_date AS "logDate",
         wl.engineer_text AS "engineerText",
         wl.design_project_id AS "designProjectId",
+        wl.design_tracker_id AS "designTrackerId",
         wl.task_text AS "taskText",
         wl.category,
         wl.hours,
@@ -94,6 +179,7 @@ export async function listDesignWorkLog(
         logDate: dateLike(r['logDate']),
         engineerText: String(r['engineerText'] ?? ''),
         designProjectId: (r['designProjectId'] as string | null) ?? null,
+        designTrackerId: (r['designTrackerId'] as string | null) ?? null,
         projectName: (r['projectName'] as string | null) ?? null,
         projectCode: (r['projectCode'] as string | null) ?? null,
         taskText: (r['taskText'] as string | null) ?? null,
@@ -114,10 +200,13 @@ export async function createDesignWorkLogEntry(
   // Logging a work entry needs L2 Data Entry+ in Design.
   await requireFormAccess(user, 'dsnworklog_create', 'entry');
   const companyId = requireCompany(user);
-  const userId = user.id;
   return withUserContext(user, async (tx) => {
     const projRows = await tx
-      .select({ id: designProjects.id, projectName: designProjects.projectName, code: designProjects.code })
+      .select({
+        id: designProjects.id,
+        projectName: designProjects.projectName,
+        code: designProjects.code,
+      })
       .from(designProjects)
       .where(
         and(
@@ -130,36 +219,21 @@ export async function createDesignWorkLogEntry(
     const proj = projRows[0];
     if (!proj) throw new NotFoundError('Design Project not found. Refresh the page.');
 
-    const inserted = await tx
-      .insert(designWorkLog)
-      .values({
-        companyId,
+    return insertDesignWorkLogRow(
+      tx,
+      {
         logDate: input.logDate,
         engineerText: user.email ?? user.id,
         designProjectId: proj.id,
+        designTrackerId: null,
         taskText: input.taskText ?? null,
         category: input.category,
-        hours: String(input.hours),
+        hours: input.hours,
         description: input.description ?? null,
-        createdBy: userId,
-        updatedBy: userId,
-      })
-      .returning();
-    const row = inserted[0];
-    if (!row) throw new ValidationError('Could not log work. Try again.');
-    return {
-      id: row.id,
-      logDate: dateLike(row.logDate),
-      engineerText: row.engineerText,
-      designProjectId: row.designProjectId,
-      projectName: proj.projectName,
-      projectCode: proj.code,
-      taskText: row.taskText,
-      category: row.category as DesignWorkLogEntry['category'],
-      hours: num(row.hours),
-      description: row.description,
-      createdAt: tsLike(row.createdAt),
-    };
+      },
+      user,
+      { projectName: proj.projectName, projectCode: proj.code },
+    );
   });
 }
 
