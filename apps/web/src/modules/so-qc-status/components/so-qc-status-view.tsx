@@ -71,7 +71,7 @@ export function SoQcStatusView(): React.JSX.Element {
         </div>
       ) : detail.isError || !detail.data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {detail.error instanceof Error
               ? detail.error.message
               : 'Could not load SO QC status. Try again.'}
@@ -178,21 +178,21 @@ function StageOpRow({ op }: { op: SoQcStageOp }): React.JSX.Element {
         {stageIcon(op.status)}
       </span>
       <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{op.operation}</span>
-      <span className="mono fw-700" style={{ fontSize: 10, color: countColor, whiteSpace: 'nowrap' }}>
+      <span className="mono fw-700" style={{ fontSize: 11, color: countColor, whiteSpace: 'nowrap' }}>
         {op.accepted}/{op.orderQty}
       </span>
       {op.rejected > 0 ? (
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', marginLeft: 2 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red2)', marginLeft: 2 }}>
           ({op.rejected} rej)
         </span>
       ) : null}
       {op.pending > 0 ? (
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--amber)', marginLeft: 2 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)', marginLeft: 2 }}>
           [{op.pending} pending]
         </span>
       ) : null}
       {op.attempts > 1 ? (
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--amber)', marginLeft: 2 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)', marginLeft: 2 }}>
           [{op.attempts}x]
         </span>
       ) : null}
@@ -247,14 +247,14 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
 
         {!l.hasAnyQc ? (
           <>
-            <td style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 11 }}>
+            <td style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 11 }}>
               ⚠ No QC stage defined for this line
             </td>
             <td className="text3">—</td>
             <td className="text3">—</td>
             <td className="text3">—</td>
             <td>
-              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)' }}>— N/A</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)' }}>— N/A</span>
             </td>
           </>
         ) : (
@@ -270,7 +270,7 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
                     <div
                       className="mono fw-700"
                       style={{
-                        fontSize: 10,
+                        fontSize: 11,
                         color: 'var(--cyan)',
                         padding: '3px 0 2px',
                         marginTop: ji > 0 ? 4 : 0,
@@ -365,18 +365,18 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>{g.vendorName ?? '—'}</td>
               <td className="mono">{g.receivedQty}</td>
-              <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+              <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                 {g.accepted}
               </td>
               <td
                 className="mono"
-                style={g.rejected > 0 ? { color: 'var(--red)', fontWeight: 700 } : undefined}
+                style={g.rejected > 0 ? { color: 'var(--red2)', fontWeight: 700 } : undefined}
               >
                 {g.rejected}
               </td>
               <td
                 className="mono"
-                style={g.pending > 0 ? { color: 'var(--amber)', fontWeight: 700 } : undefined}
+                style={g.pending > 0 ? { color: 'var(--amber2)', fontWeight: 700 } : undefined}
               >
                 {g.pending}
               </td>
@@ -431,12 +431,12 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>{t.organization ?? '—'}</td>
               <td>{t.inspector ?? '—'}</td>
-              <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+              <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                 {t.accepted}
               </td>
               <td
                 className="mono"
-                style={t.rejected > 0 ? { color: 'var(--red)', fontWeight: 700 } : undefined}
+                style={t.rejected > 0 ? { color: 'var(--red2)', fontWeight: 700 } : undefined}
               >
                 {t.rejected}
               </td>
@@ -481,7 +481,7 @@ function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
                 {d.jcCode}
               </td>
               <td>{d.docType}</td>
-              <td className="text3" style={{ fontSize: 10 }}>
+              <td className="text3" style={{ fontSize: 11 }}>
                 {d.fileName ?? '—'}
               </td>
               <td>
@@ -580,13 +580,13 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
 function Card(props: { label: string; value: number | string; sub: string; color: string }): React.JSX.Element {
   return (
     <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 9 }}>
+      <div className="text3" style={{ fontSize: 11 }}>
         {props.label}
       </div>
       <div className="mono fw-700" style={{ fontSize: 20, color: props.color }}>
         {props.value}
       </div>
-      <div className="text3" style={{ fontSize: 9 }}>
+      <div className="text3" style={{ fontSize: 11 }}>
         {props.sub}
       </div>
     </div>

@@ -31,7 +31,7 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
           Top Rejection Reasons — Total: {pareto.totalCount} NCs, {pareto.totalQty} pcs rejected
         </div>
         {pareto.rows.length === 0 ? (
-          <div className="empty-state" style={{ color: 'var(--green)' }}>
+          <div className="empty-state" style={{ color: 'var(--green2)' }}>
             ✅ No rejections recorded
           </div>
         ) : (
@@ -54,7 +54,7 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
                     <td className="td-ctr mono fw-700">{i + 1}</td>
                     <td style={{ fontSize: 12, fontWeight: 600 }}>{reasonLabel(r.reason)}</td>
                     <td className="td-ctr mono">{r.count}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
                       {r.rejectedQty}
                     </td>
                     <td className="td-ctr mono fw-700" style={{ color: rankColor(i) }}>

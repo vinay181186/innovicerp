@@ -11,7 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -74,7 +74,7 @@ function DesignTrackerListPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -109,11 +109,7 @@ function DesignTrackerListPage(): React.JSX.Element {
             <option value="overdue">Overdue</option>
           </select>
           {perms.entry ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowAdd(true)}
-            >
+            <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               + Assign Design
             </button>
           ) : null}
@@ -129,7 +125,7 @@ function DesignTrackerListPage(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load designs. Try again.'}
             </div>
           </div>
@@ -195,7 +191,14 @@ function KpiStrip({
   summary,
   onChange,
 }: {
-  summary: { total: number; pending: number; inProgress: number; review: number; approved: number; overdue: number };
+  summary: {
+    total: number;
+    pending: number;
+    inProgress: number;
+    review: number;
+    approved: number;
+    overdue: number;
+  };
   onChange: (k: FilterKey) => void;
 }): React.JSX.Element {
   // Legacy L7307–7314: plain --bg2 tiles, 1px --border, radius 10, no top accent
@@ -235,7 +238,7 @@ function KpiStrip({
       k: 'progress',
       label: 'In Progress',
       value: summary.inProgress,
-      color: 'var(--amber)',
+      color: 'var(--amber2)',
       labelColor: 'var(--text3)',
       background: 'var(--bg2)',
       border: '1px solid var(--border)',
@@ -255,7 +258,7 @@ function KpiStrip({
       k: 'approved',
       label: 'Approved',
       value: summary.approved,
-      color: 'var(--green)',
+      color: 'var(--green2)',
       labelColor: 'var(--text3)',
       background: 'var(--bg2)',
       border: '1px solid var(--border)',
@@ -265,7 +268,7 @@ function KpiStrip({
       k: 'overdue',
       label: 'Overdue',
       value: summary.overdue,
-      color: 'var(--red)',
+      color: 'var(--red2)',
       labelColor: 'var(--red)',
       background: 'rgba(239,68,68,0.06)',
       border: '1px solid rgba(239,68,68,0.3)',
@@ -296,7 +299,7 @@ function KpiStrip({
               border: t.border,
             }}
           >
-            <div style={{ fontSize: 10, color: t.labelColor }}>{t.label}</div>
+            <div style={{ fontSize: 11, color: t.labelColor }}>{t.label}</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
           </div>
         ))}
@@ -317,7 +320,7 @@ function Row({
   onEdit: () => void;
   onLogTime: () => void;
 }): React.JSX.Element {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
   const isOverdue = row.targetDate < today && row.status !== 'Approved';
   const stColor =
     row.status === 'Pending'
@@ -376,10 +379,7 @@ function Row({
       <td className="text2" style={{ fontSize: 11 }}>
         {fmtDate(row.startDate)}
       </td>
-      <td
-        className="text2"
-        style={{ fontSize: 11, color: isOverdue ? 'var(--red)' : undefined }}
-      >
+      <td className="text2" style={{ fontSize: 11, color: isOverdue ? 'var(--red)' : undefined }}>
         {fmtDate(row.targetDate)}
       </td>
       <td>
@@ -389,7 +389,7 @@ function Row({
             color: stColor,
             padding: '2px 10px',
             borderRadius: 10,
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 700,
           }}
         >
@@ -398,20 +398,17 @@ function Row({
       </td>
       <td className="td-ctr mono fw-700">Design Rev {row.revision}</td>
       <td className="td-ctr">
-        <span
-          className="mono fw-700"
-          style={{ color: hrsOver ? 'var(--red)' : 'var(--green)' }}
-        >
+        <span className="mono fw-700" style={{ color: hrsOver ? 'var(--red)' : 'var(--green)' }}>
           {row.totalHours}
         </span>
-        <span style={{ color: 'var(--text3)', fontSize: 10 }}> / {row.estimatedHours}h</span>
+        <span style={{ color: 'var(--text3)', fontSize: 11 }}> / {row.estimatedHours}h</span>
       </td>
       <td>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 11 }}
             onClick={onLogTime}
           >
             ⏱ Log
@@ -420,7 +417,7 @@ function Row({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ fontSize: 10 }}
+              style={{ fontSize: 11 }}
               onClick={onEdit}
             >
               ✏ Edit
@@ -430,10 +427,11 @@ function Row({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ fontSize: 10, color: 'var(--blue)' }}
+              style={{ fontSize: 11, color: 'var(--blue)' }}
               disabled={submitMut.isPending}
               onClick={() => {
-                if (window.confirm(`Submit ${row.code} for design review?`)) submitMut.mutate(row.id);
+                if (window.confirm(`Submit ${row.code} for design review?`))
+                  submitMut.mutate(row.id);
               }}
             >
               ✔ Submit
@@ -444,7 +442,7 @@ function Row({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10, color: 'var(--green)' }}
+                style={{ fontSize: 11, color: 'var(--green2)' }}
                 disabled={approveMut.isPending}
                 onClick={() => {
                   if (
@@ -460,7 +458,7 @@ function Row({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10, color: 'var(--red)' }}
+                style={{ fontSize: 11, color: 'var(--red2)' }}
                 disabled={reviseMut.isPending}
                 onClick={() => {
                   const reason = window.prompt('Revision reason:');
@@ -551,11 +549,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             type="text"
             className="innovic-input"
             placeholder="🔍 Type SO code or customer…"
-            value={
-              selectedSo
-                ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}`
-                : soSearch
-            }
+            value={selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : soSearch}
             onChange={(e) => {
               setSoId(null);
               setSoSearch(e.target.value);
@@ -706,9 +700,7 @@ function EditDesignModal({
           <select
             className="innovic-select"
             value={status}
-            onChange={(e) =>
-              setStatus(e.target.value as DesignTrackerListItem['status'])
-            }
+            onChange={(e) => setStatus(e.target.value as DesignTrackerListItem['status'])}
           >
             <option>Pending</option>
             <option>In Progress</option>
@@ -857,9 +849,7 @@ function LogTimeModal({
 
       {previous.length > 0 ? (
         <>
-          <div
-            style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}
-          >
+          <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}>
             Previous Entries
           </div>
           <div className="tbl-wrap" style={{ maxHeight: 200, overflowY: 'auto' }}>
@@ -876,13 +866,11 @@ function LogTimeModal({
                 {previous.map((t) => (
                   <tr key={t.id}>
                     <td style={{ fontSize: 11 }}>{fmtDate(t.logDate)}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                       {t.hours}h
                     </td>
                     <td style={{ fontSize: 11 }}>{t.workerText}</td>
-                    <td style={{ fontSize: 11, color: 'var(--text3)' }}>
-                      {t.description ?? ''}
-                    </td>
+                    <td style={{ fontSize: 11, color: 'var(--text3)' }}>{t.description ?? ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1023,9 +1011,7 @@ function Picklist({
           }}
         >
           <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? (
-            <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span>
-          ) : null}
+          {it.sub ? <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span> : null}
         </div>
       ))}
     </div>
@@ -1039,7 +1025,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,
       }}

@@ -100,7 +100,7 @@ export function SoDrawingHistory({
   const [previewPath, setPreviewPath] = useState<string | null>(null);
 
   if (isLoading) return <div className="empty-state">Loading drawing history…</div>;
-  if (isError) return <div className="empty-state" style={{ color: 'var(--red)' }}>Could not load drawing history.</div>;
+  if (isError) return <div className="empty-state" style={{ color: 'var(--red2)' }}>Could not load drawing history.</div>;
   if (!data || data.lines.length === 0) {
     return <div className="empty-state">No drawing history on this order yet.</div>;
   }

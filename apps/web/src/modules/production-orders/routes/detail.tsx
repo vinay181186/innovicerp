@@ -22,6 +22,7 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { useProductionOrder } from '../api';
 import { PoCloseForm } from '../components/po-close-form';
 import { PoCloseLedger } from '../components/po-close-ledger';
@@ -78,7 +79,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Production Order not found.'}
           </div>
         </div>
@@ -88,7 +89,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -111,163 +112,165 @@ function ProductionOrderDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/production-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Production Orders
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ fontSize: 16, color: 'var(--text)', fontWeight: 700 }}
+      {/* DetailHeader layout: Back link, code + status, one shortcut to the
+          order's Job Card, and Short Close in the Actions menu (red, last). */}
+      <DetailHeader
+        backLabel="Back to Production Orders"
+        backTo="/production-orders"
+        renderLink={(p) => <Link {...p} />}
+        code={data.code}
+        name="🏭 Production Order"
+        badges={<PoStatusBadge status={data.status} />}
+        actions={
+          <>
+            <Link
+              to="/job-cards/$id"
+              params={{ id: data.jobCardId }}
+              className="btn btn-ghost btn-sm"
+              title={`Open Job Card ${data.jcCodeText}`}
             >
-              {data.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}
-            >
-              🏭 Production Order
-              <PoStatusBadge status={data.status} />
-            </div>
+              Open Job Card
+            </Link>
+            <ActionMenu
+              items={[
+                {
+                  label: '⛔ Short Close',
+                  danger: true,
+                  hidden: !showShortCloseButton,
+                  title:
+                    'Stop this Production Order — its Job Card is frozen and the un-produced qty goes back to the plan',
+                  onClick: () => setShortCloseOpen(true),
+                },
+              ]}
+            />
+          </>
+        }
+      >
+        {!stopped && notClosed && !data.canClose && data.closeBlockedReason ? (
+          <div
+            className="text3"
+            style={{
+              fontSize: 12,
+              padding: '6px 10px',
+              background: 'var(--bg3)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              marginBottom: 10,
+            }}
+          >
+            🔒 Cannot close yet — {data.closeBlockedReason}
           </div>
-          {showShortCloseButton ? (
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => setShortCloseOpen(true)}
-              title="Stop this Production Order — its Job Card is frozen and the un-produced qty goes back to the plan"
+        ) : null}
+
+        <div className="form-grid form-grid-4">
+          <Fact label="Plan">
+            <Link
+              to="/plans/$id"
+              params={{ id: data.planId }}
+              className="mono fw-700"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
             >
-              ⛔ Short Close
-            </button>
-          ) : null}
-        </div>
+              {data.planCodeText}
+            </Link>
+          </Fact>
+          <Fact label="SO / JWSO No." mono>
+            {data.soCodeText ? (
+              <>
+                {data.soCodeText}
+                {data.lineNo ? <span className="text3"> / line {data.lineNo}</span> : null}
+              </>
+            ) : (
+              '—'
+            )}
+          </Fact>
+          <Fact label="Customer">{data.partyName ?? '—'}</Fact>
+          <Fact label="Customer Dispatch Date" mono>
+            {fmtDate(data.targetDate)}
+          </Fact>
 
-        <div className="panel-body">
-          {!stopped && notClosed && !data.canClose && data.closeBlockedReason ? (
-            <div
-              className="text3"
-              style={{
-                fontSize: 12,
-                padding: '6px 10px',
-                background: 'var(--bg3)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                marginBottom: 10,
-              }}
-            >
-              🔒 Cannot close yet — {data.closeBlockedReason}
-            </div>
-          ) : null}
-
-          <div className="form-grid form-grid-4">
-            <Fact label="Plan">
-              <Link
-                to="/plans/$id"
-                params={{ id: data.planId }}
-                className="mono fw-700"
-                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-              >
-                {data.planCodeText}
-              </Link>
-            </Fact>
-            <Fact label="SO / JWSO No." mono>
-              {data.soCodeText ? (
-                <>
-                  {data.soCodeText}
-                  {data.lineNo ? <span className="text3"> / line {data.lineNo}</span> : null}
-                </>
-              ) : (
-                '—'
-              )}
-            </Fact>
-            <Fact label="Customer">{data.partyName ?? '—'}</Fact>
-            <Fact label="Customer Dispatch Date" mono>
-              {fmtDate(data.targetDate)}
-            </Fact>
-
-            {/* POL — the line number printed on the CUSTOMER's own purchase
+          {/* POL — the line number printed on the CUSTOMER's own purchase
                 order. NOT our SO line number ("/ line n" above); on live data
                 our line 11 is the customer's line 20. Sits before the item
                 code, as on every other document. */}
-            <Fact label="POL" mono>
-              <span className="fw-700" style={{ color: 'var(--purple)' }}>
-                {data.clientPoLineNo ?? '—'}
-              </span>
-            </Fact>
-            <Fact label="Item Code" mono>
-              {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-              {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
-            </Fact>
-            <div className="form-grp form-span-2">
-              <span className="form-label">Item Name</span>
-              <div className="fw-700" style={{ color: 'var(--text)' }}>
-                {data.itemNameText ?? '—'}
-              </div>
+          <Fact label="POL" mono>
+            <span className="fw-700" style={{ color: 'var(--purple)' }}>
+              {data.clientPoLineNo ?? '—'}
+            </span>
+          </Fact>
+          <Fact label="Item Code" mono>
+            {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
+            {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
+          </Fact>
+          <div className="form-grp form-span-2">
+            <span className="form-label">Item Name</span>
+            <div className="fw-700" style={{ color: 'var(--text)' }}>
+              {data.itemNameText ?? '—'}
             </div>
-            <Fact label="Plan Qty" mono>
-              {data.orderQty}
-            </Fact>
-            {/* Raw material the order is cut from — read off its plan (same
-                labels as Plan detail). */}
-            <Fact label="RM Grade">{data.rawMaterialGradeText ?? '—'}</Fact>
-            <Fact label="RM Size">{data.rawMaterialSizeText ?? '—'}</Fact>
-            {/* ADR-182 — the shop floor's confirmation at Create, and the size
-                the store really cut (RM size above is the planned one). */}
-            <Fact label="Raw Material Available">
-              {data.rawMaterialAvailable ? (
-                <span style={{ color: 'var(--green)' }}>✓ Yes</span>
-              ) : (
-                <span style={{ color: 'var(--red)' }}>✗ No</span>
-              )}
-            </Fact>
-            <Fact label="Actual Size" mono>
-              {data.actualSize ?? '—'}
-            </Fact>
-
-            <Fact label="Route Card">
-              <Link
-                to="/route-cards/$id"
-                params={{ id: data.routeCardId }}
-                className="mono fw-700"
-                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-              >
-                {data.routeCardCodeText}
-              </Link>
-              <span className="text3" style={{ fontSize: 11 }}>
-                {' '}
-                · Route Card Rev {data.routeCardRevision}
-              </span>
-            </Fact>
-            <Fact label="JC No.">
-              <Link
-                to="/job-cards/$id"
-                params={{ id: data.jobCardId }}
-                className="mono fw-700"
-                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-              >
-                {data.jcCodeText}
-              </Link>
-            </Fact>
-            <Fact label="Created By">
-              {data.createdByName ?? '—'}
-              <span className="text3 mono" style={{ fontSize: 11 }}>
-                {' '}
-                · {fmtDate(data.createdAt)}
-              </span>
-            </Fact>
-            <Fact label="Remarks">{data.remarks ?? '—'}</Fact>
           </div>
+          {/* The Production Order's own qty (the list calls it Order Qty).
+                Was mislabelled "Plan Qty" — the plan's qty can be larger when
+                several orders cover one plan (ADR-182). */}
+          <Fact label="Order Qty" mono>
+            {data.orderQty}
+          </Fact>
+          {/* Raw material the order is cut from — read off its plan (same
+                labels as Plan detail). */}
+          <Fact label="RM Grade">{data.rawMaterialGradeText ?? '—'}</Fact>
+          <Fact label="RM Size">{data.rawMaterialSizeText ?? '—'}</Fact>
+          {/* ADR-182 — the shop floor's confirmation at Create, and the size
+                the store really cut (RM size above is the planned one). */}
+          <Fact label="Raw Material Available">
+            {data.rawMaterialAvailable ? (
+              <span style={{ color: 'var(--green2)' }}>✓ Yes</span>
+            ) : (
+              <span style={{ color: 'var(--red2)' }}>✗ No</span>
+            )}
+          </Fact>
+          <Fact label="Actual Size" mono>
+            {data.actualSize ?? '—'}
+          </Fact>
+
+          <Fact label="Route Card">
+            <Link
+              to="/route-cards/$id"
+              params={{ id: data.routeCardId }}
+              className="mono fw-700"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            >
+              {data.routeCardCodeText}
+            </Link>
+            <span className="text3" style={{ fontSize: 11 }}>
+              {' '}
+              · Route Card Rev {data.routeCardRevision}
+            </span>
+          </Fact>
+          <Fact label="JC No.">
+            <Link
+              to="/job-cards/$id"
+              params={{ id: data.jobCardId }}
+              className="mono fw-700"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            >
+              {data.jcCodeText}
+            </Link>
+          </Fact>
+          <Fact label="Created By">
+            {data.createdByName ?? '—'}
+            <span className="text3 mono" style={{ fontSize: 11 }}>
+              {' '}
+              · {fmtDate(data.createdAt)}
+            </span>
+          </Fact>
+          <Fact label="Remarks">{data.remarks ?? '—'}</Fact>
         </div>
-      </div>
+      </DetailHeader>
 
       {/* ADR-182 — the order was stopped. Red and high on the page, because it
           changes what every panel under it means. */}
       {stopped ? (
         <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--red)' }}>
           <div className="panel-hdr">
-            <div className="panel-title" style={{ color: 'var(--red)' }}>
+            <div className="panel-title" style={{ color: 'var(--red2)' }}>
               ⛔ Short closed on {fmtDate(data.shortClosedAt)} by {data.shortClosedByName ?? '—'} —{' '}
               {data.shortCloseReason ?? '—'}
             </div>

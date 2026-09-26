@@ -184,7 +184,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
         {props.submitError ? (
           <div
             style={{
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid #fca5a5',
               borderRadius: 6,

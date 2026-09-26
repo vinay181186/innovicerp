@@ -344,7 +344,7 @@ function ActivityLogListPage() {
                       <td className="amber" style={{ fontSize: 11 }}>
                         {e.userName}
                         {e.userId === null ? (
-                          <span className="text3" style={{ fontSize: 10, marginLeft: 4 }}>
+                          <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>
                             (snapshot)
                           </span>
                         ) : null}

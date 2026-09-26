@@ -31,8 +31,12 @@ export interface PageHeaderProps {
   actions?: ReactNode | undefined;
   /** Optional band under the title row — a TabStrip, Banner or filter row. */
   children?: ReactNode | undefined;
-  /** Pin the band while the page scrolls (long forms). */
+  /** Pin the band while the page scrolls. Every create/edit form sets this so
+   *  Save never scrolls away (ERPNext keeps its page head pinned the same way). */
   sticky?: boolean | undefined;
+  /** The form has unsaved edits: shows an amber "Not saved" pill before the
+   *  actions (ERPNext's "Not Saved" indicator). Pair with useSaveShortcut. */
+  dirty?: boolean | undefined;
 }
 
 export function PageHeader({
@@ -44,7 +48,19 @@ export function PageHeader({
   actions,
   children,
   sticky = false,
+  dirty = false,
 }: PageHeaderProps): React.JSX.Element {
+  const band =
+    dirty && actions ? (
+      <>
+        <span className="badge b-amber" role="status">
+          Not saved
+        </span>
+        {actions}
+      </>
+    ) : (
+      actions
+    );
   return (
     <HeaderBand
       title={title}
@@ -65,7 +81,7 @@ export function PageHeader({
           </button>
         ) : null
       }
-      actions={actions}
+      actions={band}
     >
       {children}
     </HeaderBand>

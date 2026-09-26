@@ -248,7 +248,7 @@ export function IncomingQcInspectFormView(props: {
           role="note"
           style={{
             fontSize: 11,
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
             border: '1px solid var(--amber)',
             borderRadius: 4,
             padding: '6px 8px',
@@ -260,7 +260,7 @@ export function IncomingQcInspectFormView(props: {
       )}
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 10 }}>
+          <label className="form-label" style={{ fontSize: 11 }}>
             QC Date
           </label>
           <input
@@ -271,7 +271,7 @@ export function IncomingQcInspectFormView(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 10 }}>
+          <label className="form-label" style={{ fontSize: 11 }}>
             👤 Inspected By ★
           </label>
           {/* The whole QC list comes back in one small response, so the
@@ -290,7 +290,7 @@ export function IncomingQcInspectFormView(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
+          <label className="form-label" style={{ fontSize: 11, color: 'var(--green2)' }}>
             ✅ Accepted (max {o.pendingQty})
           </label>
           <input
@@ -304,14 +304,14 @@ export function IncomingQcInspectFormView(props: {
             style={{
               fontSize: 18,
               fontWeight: 800,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               border: '2px solid var(--green)',
               textAlign: 'center',
             }}
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
+          <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
             ❌ Rejected
           </label>
           <input
@@ -325,14 +325,14 @@ export function IncomingQcInspectFormView(props: {
             style={{
               fontSize: 18,
               fontWeight: 800,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               border: '2px solid var(--red)',
               textAlign: 'center',
             }}
           />
         </div>
         <div className="form-grp form-full">
-          <label className="form-label" style={{ fontSize: 10 }}>
+          <label className="form-label" style={{ fontSize: 11 }}>
             Remarks
           </label>
           <input
@@ -352,7 +352,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
       </div>
       {form.err ? (
-        <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
           {form.err}
         </div>
       ) : null}
@@ -362,7 +362,7 @@ export function IncomingQcInspectFormView(props: {
         </button>
         <button
           type="button"
-          className="btn btn-success"
+          className="btn btn-primary"
           disabled={form.submitting}
           onClick={() => void form.doSubmit()}
         >

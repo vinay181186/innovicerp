@@ -2,7 +2,7 @@
 
 import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLineDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -10,6 +10,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ActionMenu } from '@/ui/layout';
 import { useSession } from '@/lib/session';
 import { useMyCompany } from '@/modules/settings/api';
 import { usePrintTemplates } from '@/modules/print-templates/api';
@@ -48,7 +49,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -70,7 +71,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'GRN not found'}
           </div>
         </div>
@@ -109,6 +110,9 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const totalAccepted = detail.lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
   const totalRejected = detail.lines.reduce((s, l) => s + l.qcRejectedQty, 0);
   const anyCompleted = detail.lines.some((l) => l.qcStatus === 'completed');
+  // The next step for a GRN is Incoming QC. `?line=` deep-links straight to
+  // the Inspect popup for that GRN line (incoming-qc/routes/index.tsx).
+  const firstQcPending = detail.lines.find((l) => l.qcStatus !== 'completed');
 
   return (
     <div>
@@ -139,19 +143,6 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               }}
               suggestedTitle={`Follow up on GRN ${detail.code}`}
             />
-            {/* Disabled until the blocks land. Printing early is worse than
-                waiting: the sheet comes out looking complete but carries none
-                of the special notes, terms, footer or signature an admin wrote,
-                and nothing on it says so. */}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={onPrint}
-              disabled={templatesLoading}
-              title={templatesLoading ? 'Loading print templates\u2026' : 'Print this GRN'}
-            >
-              <Printer size={13} /> Print
-            </button>
             {detail.purchaseOrderId ? (
               <Link
                 to="/purchase-orders/$id"
@@ -183,58 +174,77 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 Open DC
               </Link>
             ) : null}
-            {canEdit ? (
+            {/* Print stays disabled until the print blocks land. Printing early
+                is worse than waiting: the sheet comes out looking complete but
+                carries none of the special notes, terms, footer or signature an
+                admin wrote, and nothing on it says so. Delete opens the inline
+                "Move to Trash?" confirm below. */}
+            <ActionMenu
+              items={[
+                {
+                  label: 'Print',
+                  onClick: onPrint,
+                  disabled: templatesLoading,
+                  title: templatesLoading ? 'Loading print templates…' : 'Print this GRN',
+                },
+                {
+                  label: 'Edit',
+                  onClick: () =>
+                    void navigate({
+                      to: '/goods-receipt-notes/$id/edit',
+                      params: { id: detail.id },
+                    }),
+                  hidden: !canEdit,
+                },
+                {
+                  label: 'Delete',
+                  danger: true,
+                  onClick: () => setConfirmDelete(true),
+                  hidden: !canDelete || confirmDelete,
+                  disabled: anyCompleted,
+                  title: anyCompleted
+                    ? 'GRN has at least one QC-completed line — create a reversing GRN line instead'
+                    : undefined,
+                },
+              ]}
+            />
+            {/* The one next step: while any line still waits for QC. */}
+            {firstQcPending ? (
               <Link
-                to="/goods-receipt-notes/$id/edit"
-                params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
+                to="/incoming-qc"
+                search={{ line: firstQcPending.id }}
+                className="btn btn-primary"
               >
-                <Pencil size={13} /> Edit
+                Open in Incoming QC
               </Link>
             ) : null}
-            {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Move GRN {detail.code} to Trash? You can restore it from Trash.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Move to Trash
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
+            {canDelete && confirmDelete ? (
+              <>
+                <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
+                  Move GRN {detail.code} to Trash? You can restore it from Trash.
+                </span>
                 <button
                   type="button"
                   className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={anyCompleted}
-                  title={
-                    anyCompleted
-                      ? 'GRN has at least one QC-completed line — create a reversing GRN line instead'
-                      : undefined
-                  }
+                  onClick={onDelete}
+                  disabled={softDelete.isPending}
                 >
-                  <Trash2 size={13} /> Delete
+                  {softDelete.isPending ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={13} />
+                  )}
+                  Move to Trash
                 </button>
-              )
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={softDelete.isPending}
+                >
+                  Cancel
+                </button>
+              </>
             ) : null}
           </div>
         </div>
@@ -242,7 +252,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
           {softDelete.isError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -279,11 +289,11 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th>Received</th>
+                <th className="th-num">Received</th>
                 <th>Vendor Challan No.</th>
                 <th>QC Status</th>
-                <th>Accepted</th>
-                <th>Rejected</th>
+                <th className="th-num">Accepted</th>
+                <th className="th-num">Rejected</th>
                 <th>QC Date</th>
               </tr>
             </thead>
@@ -321,17 +331,15 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
         {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
       </td>
       <td>{l.itemName}</td>
-      <td className="mono">{l.receivedQty}</td>
-      <td className="mono" style={{ fontSize: 11 }}>
-        {l.dcRefNo ?? '—'}
-      </td>
+      <td className="mono td-num">{l.receivedQty}</td>
+      <td className="mono">{l.dcRefNo ?? '—'}</td>
       <td>
         <QcStatusBadge status={l.qcStatus} />
       </td>
-      <td className="mono" style={{ color: 'var(--green2)' }}>
+      <td className="mono td-num" style={{ color: 'var(--green2)' }}>
         {l.qcAcceptedQty}
       </td>
-      <td className="mono" style={{ color: 'var(--amber2)' }}>
+      <td className="mono td-num" style={{ color: 'var(--amber2)' }}>
         {l.qcRejectedQty}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>

@@ -78,7 +78,7 @@ function ApprovalConfigPage(): React.JSX.Element {
 
   if (!isAdmin) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
         <div style={{ fontSize: 28, marginBottom: 10 }}>🔒</div>
         Admin access required for Approval Configuration.
       </div>
@@ -95,7 +95,7 @@ function ApprovalConfigPage(): React.JSX.Element {
 
   if (isError) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--red2)', padding: 40 }}>
         {error instanceof Error ? error.message : 'Could not load approval settings. Try again.'}
       </div>
     );
@@ -152,7 +152,7 @@ function ApprovalConfigPage(): React.JSX.Element {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {submitOk ? (
-            <span className="text2" style={{ fontSize: 11, color: 'var(--green)' }}>
+            <span className="text2" style={{ fontSize: 11, color: 'var(--green2)' }}>
               ✅ Saved
             </span>
           ) : null}
@@ -181,7 +181,7 @@ function ApprovalConfigPage(): React.JSX.Element {
             background: 'rgba(239,68,68,0.06)',
             border: '1px solid rgba(239,68,68,0.3)',
             borderRadius: 6,
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >
@@ -210,7 +210,7 @@ function ApprovalConfigPage(): React.JSX.Element {
             border: '1px solid var(--border)',
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber2)', marginBottom: 10 }}>
             ₹ Amount Limits
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -228,7 +228,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                   width: '100%',
                   fontSize: 16,
                   fontWeight: 700,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   padding: 8,
                   border: '2px solid var(--amber)',
                   borderRadius: 6,
@@ -236,7 +236,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                   textAlign: 'right',
                 }}
               />
-              <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
+              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
                 Admin: no limit.
               </div>
             </div>
@@ -256,7 +256,7 @@ function ApprovalConfigPage(): React.JSX.Element {
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)', marginBottom: 8 }}>
             👤 PO Approvers (select users who can approve)
           </div>
-          <div className="text3" style={{ fontSize: 10, marginBottom: 8 }}>
+          <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
             Only selected users can approve/reject POs.
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -295,7 +295,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                   </span>
                   <span
                     style={{
-                      fontSize: 9,
+                      fontSize: 11,
                       color: 'var(--text3)',
                       padding: '1px 5px',
                       background: 'var(--bg4)',
@@ -305,7 +305,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                     {roleLabel(u.role)}
                   </span>
                   {isAdm ? (
-                    <span style={{ fontSize: 9, color: 'var(--green)' }}>(always)</span>
+                    <span style={{ fontSize: 11, color: 'var(--green2)' }}>(always)</span>
                   ) : null}
                 </label>
               );

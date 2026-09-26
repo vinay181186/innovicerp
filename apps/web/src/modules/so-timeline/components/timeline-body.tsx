@@ -53,7 +53,7 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 10,
+                fontSize: 11,
                 color: '#fff',
                 zIndex: 1,
                 border: '2px solid var(--bg)',
@@ -79,7 +79,7 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
                 }}
               >
                 <span style={{ fontSize: 12, fontWeight: 700, color: evt.color }}>{evt.label}</span>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>
                   {fmtDateTime(evt.date)}
                 </span>
               </div>

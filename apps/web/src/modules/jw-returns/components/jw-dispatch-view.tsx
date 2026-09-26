@@ -102,7 +102,7 @@ export function JwDispatchView({
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load JW returns. Try again.'}
             </div>
           </div>
@@ -116,7 +116,7 @@ export function JwDispatchView({
                   <th>JWSO No.</th>
                   <th>Customer</th>
                   <th>Item Name</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     Return Qty
                   </th>
                   <th>Transport</th>
@@ -153,7 +153,7 @@ export function JwDispatchView({
                     <td className="text2">{r.partName ?? '—'}</td>
                     <td
                       className="td-ctr mono fw-700"
-                      style={{ fontSize: 14, color: 'var(--green)' }}
+                      style={{ fontSize: 14, color: 'var(--green2)' }}
                     >
                       {r.qty}
                     </td>
@@ -166,7 +166,7 @@ export function JwDispatchView({
                     <td>
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: 700,
                           textTransform: 'uppercase',
                           letterSpacing: '0.04em',
@@ -193,7 +193,7 @@ export function JwDispatchView({
                           <button
                             type="button"
                             className="btn btn-ghost"
-                            style={{ color: 'var(--red)' }}
+                            style={{ color: 'var(--red2)' }}
                             disabled={cancelMut.isPending}
                             onClick={() => onCancel(r.id, r.code)}
                           >
@@ -427,7 +427,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -472,7 +472,7 @@ function Field({
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 4,

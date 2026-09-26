@@ -36,7 +36,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
   // the Design Issues page sees the no-access panel, not the page.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -123,7 +123,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load design issues. Try again.'}
             </div>
           </div>
@@ -223,7 +223,7 @@ function Tile({
       onClick={onClick}
       style={{ textAlign: 'center', padding: 12, cursor: 'pointer' }}
     >
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
@@ -249,7 +249,7 @@ function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.E
         display: 'inline-block',
         padding: '2px 9px',
         borderRadius: kind === 'status' ? 4 : 12,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         color: c,
         background: `${c}12`,

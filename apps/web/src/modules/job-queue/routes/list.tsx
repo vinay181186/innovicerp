@@ -92,7 +92,7 @@ function JobQueuePage(): React.JSX.Element {
           {isAdmin ? (
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
+              className="btn btn-ghost"
               disabled={backfillMut.isPending}
               title="Link operations that carry a machine as text only to the matching machine. Safe to run repeatedly."
               onClick={() => backfillMut.mutate()}
@@ -105,7 +105,7 @@ function JobQueuePage(): React.JSX.Element {
             </button>
           ) : null}
           {selectedMachine ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMachine(null)}>
+            <button type="button" className="btn btn-ghost" onClick={() => setMachine(null)}>
               All Machines ×
             </button>
           ) : null}
@@ -140,15 +140,15 @@ function JobQueuePage(): React.JSX.Element {
               <div className="mono fw-700" style={{ fontSize: 13 }}>
                 {m.machineCode}
               </div>
-              <div className="text3" style={{ fontSize: 10, marginBottom: 4 }}>
+              <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
                 {m.machineType ?? ''}
               </div>
               {m.runningCount > 0 ? (
-                <div style={{ color: 'var(--amber)', fontSize: 11, fontWeight: 700 }}>
+                <div style={{ color: 'var(--amber2)', fontSize: 11, fontWeight: 700 }}>
                   ▶ {m.runningCount} running
                 </div>
               ) : null}
-              <div style={{ fontSize: 10, color: 'var(--text3)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                 {m.pendingCount} pending ops
               </div>
             </div>
@@ -167,7 +167,7 @@ function JobQueuePage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load job queue. Try again.'}
             </div>
           </div>
@@ -198,7 +198,7 @@ function JobQueuePage(): React.JSX.Element {
                   style={{
                     padding: '2px 8px',
                     borderRadius: 10,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: 700,
                     background:
                       m.pendingHrs > 80
@@ -241,9 +241,13 @@ function JobQueuePage(): React.JSX.Element {
                       <th>Operation</th>
                       <th>Priority</th>
                       <th>Due Date</th>
-                      <th>Order Qty</th>
-                      <th style={{ color: 'var(--green)' }}>Completed</th>
-                      <th style={{ color: 'var(--amber)' }}>Available</th>
+                      <th className="th-num">Order Qty</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Completed
+                      </th>
+                      <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                        Available
+                      </th>
                       <th>Op Status</th>
                       <th>Action</th>
                     </tr>
@@ -348,8 +352,8 @@ function JobQueuePage(): React.JSX.Element {
                           <td className="text2" style={{ fontSize: 11 }}>
                             {fmtDate(r.dueDate)}
                           </td>
-                          <td className="mono">{r.orderQty}</td>
-                          <td className="green mono fw-700">
+                          <td className="mono td-num">{r.orderQty}</td>
+                          <td className="green mono fw-700 td-num">
                             {r.completed}
                             {/* ADR-164 — this row sits in its PLANNED machine's
                                 queue, so say which machine ACTUALLY made this
@@ -358,7 +362,7 @@ function JobQueuePage(): React.JSX.Element {
                                 per-machine breakdown for a 2+ machine split. */}
                             <ActualMachineLine planned={m.machineCode} machines={r.machines} />
                           </td>
-                          <td>
+                          <td className="td-num">
                             <span
                               className="mono fw-700"
                               style={{
@@ -373,7 +377,7 @@ function JobQueuePage(): React.JSX.Element {
                             {r.isRunning ? (
                               <span
                                 style={{
-                                  color: 'var(--amber)',
+                                  color: 'var(--amber2)',
                                   fontWeight: 700,
                                   fontSize: 12,
                                 }}
@@ -396,7 +400,7 @@ function JobQueuePage(): React.JSX.Element {
                                   style={{
                                     background: 'var(--green3)',
                                     border: '1px solid var(--green2)',
-                                    color: 'var(--green)',
+                                    color: 'var(--green2)',
                                     fontSize: 11,
                                     whiteSpace: 'nowrap',
                                   }}

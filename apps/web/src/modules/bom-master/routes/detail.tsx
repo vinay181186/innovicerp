@@ -9,7 +9,7 @@
 // it browser-side would violate CLAUDE.md rule 1. Reported, not invented.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -17,6 +17,7 @@ import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
+import { ActionMenu } from '@/ui/layout';
 import { useBomMaster, useDeleteBomMaster } from '../api';
 
 export const bomMasterDetailRoute = createRoute({
@@ -29,8 +30,8 @@ export const bomMasterDetailRoute = createRoute({
 // labels the BOM form's <select> uses (L8537-8539).
 const BOM_TYPE_DISPLAY: Record<string, { label: string; color: string }> = {
   manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
-  purchase: { label: '🛒 Buy', color: 'var(--green)' },
-  outsource: { label: '🏭 Outsrc', color: 'var(--amber)' },
+  purchase: { label: '🛒 Buy', color: 'var(--green2)' },
+  outsource: { label: '🏭 Outsrc', color: 'var(--amber2)' },
 };
 
 const BOM_TYPE_WORD: Record<string, string> = {
@@ -76,7 +77,7 @@ function BomMasterDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -98,7 +99,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'BOM not found.'}
           </div>
         </div>
@@ -140,31 +141,33 @@ function BomMasterDetailPage(): React.JSX.Element {
               </span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          {/* ONE primary next step (Edit / Revise) + an Actions menu for the
+              rest, Delete last in red. */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {perms.edit && (
               <Link
                 to="/bom-masters/$id/edit"
                 params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
+                className="btn btn-primary"
               >
                 <Pencil size={13} /> Edit / Revise
               </Link>
             )}
-            {perms.edit && perms.approve && (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={onDeleteClick}
-                disabled={del.isPending}
-                title={
-                  detail.linkedSoCount > 0
-                    ? `Linked to ${detail.linkedSoCount} SO line(s)`
-                    : 'Delete BOM'
-                }
-              >
-                <Trash2 size={13} /> Delete
-              </button>
-            )}
+            <ActionMenu
+              items={[
+                {
+                  label: 'Delete',
+                  danger: true,
+                  hidden: !(perms.edit && perms.approve),
+                  disabled: del.isPending,
+                  title:
+                    detail.linkedSoCount > 0
+                      ? `Linked to ${detail.linkedSoCount} SO line(s)`
+                      : 'Delete BOM',
+                  onClick: onDeleteClick,
+                },
+              ]}
+            />
           </div>
         </div>
         <div className="panel-body">
@@ -181,7 +184,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                     <span className="text3"> — {detail.parentItemName}</span>
                   </>
                 ) : (
-                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+                  <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
                     Not set — use Edit / Revise to pick it
                   </span>
                 )}
@@ -195,7 +198,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               <span className="form-label">Linked SO Lines</span>
               <div>
                 {detail.linkedSoCount > 0 ? (
-                  <span style={{ color: 'var(--green)', fontWeight: 700 }}>
+                  <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
                     {detail.linkedSoCount}
                   </span>
                 ) : (
@@ -208,7 +211,7 @@ function BomMasterDetailPage(): React.JSX.Element {
             <div
               style={{
                 marginTop: 8,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -232,10 +235,12 @@ function BomMasterDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 36 }}>Sr No</th>
+                <th className="th-num" style={{ width: 36 }}>
+                  Sr No
+                </th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Qty / Set</th>
+                <th className="th-num">Qty / Set</th>
                 <th>BOM Type</th>
                 {/* Raw material is per LINE: each child is a different part cut
                     from its own stock, and this is what the BOM cascade stamps
@@ -260,12 +265,12 @@ function BomMasterDetailPage(): React.JSX.Element {
                   };
                   return (
                     <tr key={line.id}>
-                      <td className="td-ctr mono fw-700">{idx + 1}</td>
+                      <td className="td-num mono fw-700">{idx + 1}</td>
                       <td className="td-code" style={{ color: 'var(--purple)' }}>
                         {line.childItemCode ?? '—'}
                       </td>
                       <td>{line.childItemName ?? '—'}</td>
-                      <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>
+                      <td className="td-num mono fw-700" style={{ fontSize: 14 }}>
                         {Number(line.qtyPerSet)}
                       </td>
                       <td>
@@ -307,7 +312,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               <tbody>
                 {detail.revisions.map((rev) => (
                   <tr key={rev.id}>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {rev.revision}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
@@ -322,13 +327,13 @@ function BomMasterDetailPage(): React.JSX.Element {
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 10 }}
+                          style={{ fontSize: 11 }}
                           onClick={() => setSnapshotRev(rev.revision)}
                         >
                           👁 View ({rev.itemsSnapshot.length})
                         </button>
                       ) : (
-                        <span className="text3" style={{ fontSize: 10 }}>
+                        <span className="text3" style={{ fontSize: 11 }}>
                           Current
                         </span>
                       )}
@@ -371,22 +376,22 @@ function BomMasterDetailPage(): React.JSX.Element {
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>Sr No</th>
+                    <th className="th-num">Sr No</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Qty / Set</th>
+                    <th className="th-num">Qty / Set</th>
                     <th>BOM Type</th>
                   </tr>
                 </thead>
                 <tbody>
                   {openSnapshot.itemsSnapshot.map((it, i) => (
                     <tr key={`${it.childItemId}-${i}`}>
-                      <td className="td-ctr mono">{i + 1}</td>
+                      <td className="td-num mono">{i + 1}</td>
                       <td className="td-code" style={{ color: 'var(--purple)' }}>
                         {it.childItemCode ?? '—'}
                       </td>
                       <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
-                      <td className="td-ctr mono fw-700">{Number(it.qtyPerSet)}</td>
+                      <td className="td-num mono fw-700">{Number(it.qtyPerSet)}</td>
                       <td style={{ fontSize: 11 }}>{BOM_TYPE_WORD[it.bomType] ?? it.bomType}</td>
                     </tr>
                   ))}

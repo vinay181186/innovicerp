@@ -1,22 +1,15 @@
 // Design Projects (Design slice C) — list view.
 // Mirrors legacy renderDesignProjects (HTML L7570).
 
-import {
-  type CreateDesignProjectInput,
-  type DesignProjectListItem,
-} from '@innovic/shared';
+import { type CreateDesignProjectInput, type DesignProjectListItem } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
-import {
-  useCreateDesignProject,
-  useDesignProjectsList,
-  useNextDesignProjectCode,
-} from '../api';
+import { useCreateDesignProject, useDesignProjectsList, useNextDesignProjectCode } from '../api';
 
 type FilterKey = 'all' | 'active' | 'released' | 'hold';
 
@@ -55,7 +48,7 @@ function DesignProjectsListPage(): React.JSX.Element {
   // VIEW was removed for this page sees the no-access panel, not the page.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -71,7 +64,12 @@ function DesignProjectsListPage(): React.JSX.Element {
           marginBottom: 16,
         }}
       >
-        <Tile label="Total" value={summary.total} color="var(--blue)" onClick={() => setFilter('all')} />
+        <Tile
+          label="Total"
+          value={summary.total}
+          color="var(--blue)"
+          onClick={() => setFilter('all')}
+        />
         <Tile
           label="Active"
           value={summary.active}
@@ -130,11 +128,7 @@ function DesignProjectsListPage(): React.JSX.Element {
             <option value="hold">On Hold</option>
           </select>
           {perms.entry ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowAdd(true)}
-            >
+            <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               + New Project
             </button>
           ) : null}
@@ -152,7 +146,7 @@ function DesignProjectsListPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error
                 ? error.message
                 : 'Could not load design projects. Try again.'}
@@ -206,14 +200,14 @@ function Tile({
         ...(onClick ? { cursor: 'pointer' } : {}),
       }}
     >
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }
 
 function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX.Element {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
   const isOverdue = project.targetDate < today && project.status !== 'Released';
   const borderColor =
     project.status === 'Released'
@@ -262,7 +256,7 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
           {isOverdue ? ' ⚠' : ''}
         </span>
         {project.openIssuesCount > 0 ? (
-          <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+          <span style={{ color: 'var(--red2)', fontWeight: 700 }}>
             ⚠ {project.openIssuesCount} open
           </span>
         ) : null}
@@ -280,8 +274,7 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
             style={{
               height: '100%',
               width: `${project.taskProgressPct}%`,
-              background:
-                project.taskProgressPct === 100 ? 'var(--green)' : 'var(--blue)',
+              background: project.taskProgressPct === 100 ? 'var(--green)' : 'var(--blue)',
               borderRadius: 2,
             }}
           />
@@ -290,7 +283,7 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
           style={{
             display: 'flex',
             justifyContent: 'space-between',
-            fontSize: 10,
+            fontSize: 11,
             color: 'var(--text3)',
             marginTop: 3,
           }}
@@ -320,7 +313,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
         display: 'inline-block',
         padding: '2px 9px',
         borderRadius: 12,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         color: c,
         background: `${c}12`,
@@ -398,21 +391,13 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label">Project No.</label>
-          <input
-            className="innovic-input"
-            value={next?.code ?? '(auto on save)'}
-            readOnly
-          />
+          <input className="innovic-input" value={next?.code ?? '(auto on save)'} readOnly />
         </div>
         <div className="form-grp">
           <label className="form-label">
             Project Name<span className="req">★</span>
           </label>
-          <input
-            className="innovic-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+          <input className="innovic-input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="form-grp">
           <label className="form-label">Sales Order</label>
@@ -420,11 +405,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
             type="text"
             className="innovic-input"
             placeholder="🔍 Type SO code or customer…"
-            value={
-              selectedSo
-                ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}`
-                : soSearch
-            }
+            value={selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : soSearch}
             onChange={(e) => {
               setSoId(null);
               setSoSearch(e.target.value);
@@ -540,11 +521,7 @@ function Modal({
       <div className="modal">
         <div className="modal-hdr">
           <span className="modal-title">{title}</span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm btn-icon"
-            onClick={onClose}
-          >
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
             ✕
           </button>
         </div>
@@ -585,9 +562,7 @@ function Picklist({
           }}
         >
           <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? (
-            <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span>
-          ) : null}
+          {it.sub ? <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span> : null}
         </div>
       ))}
     </div>
@@ -630,7 +605,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,
       }}

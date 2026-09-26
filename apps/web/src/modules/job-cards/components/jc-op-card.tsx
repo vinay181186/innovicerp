@@ -52,13 +52,13 @@ const NC_BREAKUP_ROWS: ReadonlyArray<{
   label: string;
   color: string;
 }> = [
-  { key: 'ncRaisedQty', label: 'NC Raised', color: 'var(--amber)' },
-  { key: 'underReworkQty', label: 'Under Rework', color: 'var(--amber)' },
-  { key: 'underRepairQty', label: 'Under Repair', color: 'var(--amber)' },
-  { key: 'rtvAwaitingChallanQty', label: 'Return Challan Pending', color: 'var(--amber)' },
+  { key: 'ncRaisedQty', label: 'NC Raised', color: 'var(--amber2)' },
+  { key: 'underReworkQty', label: 'Under Rework', color: 'var(--amber2)' },
+  { key: 'underRepairQty', label: 'Under Repair', color: 'var(--amber2)' },
+  { key: 'rtvAwaitingChallanQty', label: 'Return Challan Pending', color: 'var(--amber2)' },
   { key: 'sentToVendorQty', label: 'Sent to Vendor', color: 'var(--blue)' },
   { key: 'receivedQcPendingQty', label: 'Received – QC Pending', color: 'var(--blue)' },
-  { key: 'scrapQty', label: 'Scrap', color: 'var(--red)' },
+  { key: 'scrapQty', label: 'Scrap', color: 'var(--red2)' },
   { key: 'ncClosedQty', label: 'NC Closed', color: 'var(--text3)' },
 ];
 
@@ -180,7 +180,7 @@ function InfoCell({
     <div title={title} style={{ minWidth: 0 }}>
       <div
         style={{
-          fontSize: 10,
+          fontSize: 11,
           color: 'var(--text3)',
           textTransform: 'uppercase',
           letterSpacing: '.04em',
@@ -217,7 +217,7 @@ function Sub({
   title?: string;
 }): React.JSX.Element {
   return (
-    <div style={{ fontSize: 8, color }} title={title}>
+    <div style={{ fontSize: 11, color }} title={title}>
       {children}
     </div>
   );
@@ -598,10 +598,10 @@ export function JcOpCard({
                   : 'Issue more customer material from Party Material Issue to continue.')
               }
               sub={
-                <div style={{ fontSize: 8, color: 'var(--text3)' }}>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                   {rmAvailable.issuedQty} issued
                   {rmAvailable.availableQty === 0 ? (
-                    <div style={{ color: 'var(--red)' }}>issue material</div>
+                    <div style={{ color: 'var(--red2)' }}>issue material</div>
                   ) : null}
                 </div>
               }
@@ -694,7 +694,7 @@ export function JcOpCard({
                 {/* ADR-164 — where the pieces are ACTUALLY being made, when
                     that is not the planned machine. */}
                 {actual.differs ? (
-                  <span className="mono" style={{ color: 'var(--amber)' }}>
+                  <span className="mono" style={{ color: 'var(--amber2)' }}>
                     {' '}
                     → {actual.label}
                   </span>
@@ -704,7 +704,7 @@ export function JcOpCard({
                 {actual.split.map((m) => (
                   <div
                     key={m.machineCode}
-                    style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}
+                    style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}
                   >
                     {m.machineCode}: <b>{m.qty}</b> pcs
                   </div>
@@ -781,14 +781,14 @@ export function JcOpCard({
                   {' · '}
                   {SHIFT_LABELS[l.shift]}
                   {' · Qty '}
-                  <b style={{ color: 'var(--green)' }}>+{l.qty}</b>
+                  <b style={{ color: 'var(--green2)' }}>+{l.qty}</b>
                   {/* The reject was on the wire all along and never shown —
                           an entry that failed 9 of 10 read as "Qty +1" and
                           looked like an ordinary good day (ADR-183). */}
                   {l.rejectQty > 0 ? (
                     <>
                       {' · Rejected '}
-                      <b style={{ color: 'var(--red)' }}>{l.rejectQty}</b>
+                      <b style={{ color: 'var(--red2)' }}>{l.rejectQty}</b>
                     </>
                   ) : null}
                   {' · Operator '}
@@ -803,7 +803,7 @@ export function JcOpCard({
                         to="/nc-register/$id"
                         params={{ id: l.ncs[0]!.id }}
                         className="mono"
-                        style={{ color: 'var(--amber)', fontWeight: 700 }}
+                        style={{ color: 'var(--amber2)', fontWeight: 700 }}
                         title={`Open ${l.ncs[0]!.code}`}
                       >
                         {l.ncs[0]!.code}

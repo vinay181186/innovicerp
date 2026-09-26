@@ -108,7 +108,7 @@ export function AssignModal({
         </div>
       </div>
       {err ? (
-        <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
           {err}
         </div>
       ) : null}

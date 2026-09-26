@@ -8,8 +8,11 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useGoodsReceiptNote, useUpdateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from '../components/goods-receipt-note-form';
+
+const GRN_EDIT_FORM_ID = 'grn-edit-form';
 import { UnifiedGrnForm } from '../components/unified-grn-form';
 
 const newSearchSchema = z.object({
@@ -55,7 +58,7 @@ function GoodsReceiptNoteNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to GRN list
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have create access to GRN. Ask an admin for L2 Data Entry or above in
             Store.
           </div>
@@ -87,6 +90,17 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
     [navigate, id],
   );
   const exit = useExitConfirm({ onExit: goBack });
+  // Save lives in the sticky header; the form reports whether it can submit.
+  const [formStatus, setFormStatus] = useState({
+    submitting: false,
+    canSubmit: true,
+    dirty: false,
+  });
+  const submitForm = useCallback(() => {
+    const el = document.getElementById(GRN_EDIT_FORM_ID);
+    if (el instanceof HTMLFormElement) el.requestSubmit();
+  }, []);
+  useSaveShortcut(submitForm, formStatus.canSubmit && Boolean(detail) && perms.edit);
 
   const onSubmit = async (values: UpdateGoodsReceiptNoteInput): Promise<void> => {
     setSubmitError(null);
@@ -117,7 +131,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to GRN
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have edit access to GRN. Ask an admin for L3 Editor or above in Store.
           </div>
         </div>
@@ -134,7 +148,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'GRN not found'}
           </div>
         </div>
@@ -145,38 +159,40 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/goods-receipt-notes/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to GRN
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+      <PageHeader
+        sticky
+        icon="📥"
+        title="Edit GRN"
+        subtitle={<span className="td-code">{detail.code}</span>}
+        backLabel="Back to GRN"
+        onBack={goBack}
+        dirty={formStatus.dirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form={GRN_EDIT_FORM_ID}
+              className="btn btn-primary"
+              disabled={!formStatus.canSubmit}
             >
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit GRN
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <GoodsReceiptNoteForm
-            mode="edit"
-            detail={detail}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+              {formStatus.submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+              Save Changes
+            </button>
+          </>
+        }
+      />
+      <GoodsReceiptNoteForm
+        mode="edit"
+        detail={detail}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+        formId={GRN_EDIT_FORM_ID}
+        onStatusChange={setFormStatus}
+      />
     </div>
   );
 }

@@ -51,7 +51,7 @@ export function NcLinksBlock(props: {
             to="/nc-register/$id"
             params={{ id: detail.parentNcId }}
             className="mono fw-700"
-            style={{ ...linkStyle, color: 'var(--red)' }}
+            style={{ ...linkStyle, color: 'var(--red2)' }}
             title="Earlier NC whose vendor replacement was rejected again"
           >
             {detail.parentNcCode ?? '…'}
@@ -64,7 +64,7 @@ export function NcLinksBlock(props: {
             to="/nc-register/$id"
             params={{ id: detail.splitFromNcId }}
             className="mono"
-            style={{ ...linkStyle, color: 'var(--red)' }}
+            style={{ ...linkStyle, color: 'var(--red2)' }}
           >
             {splitParent?.code ?? '…'}
           </Link>
@@ -79,7 +79,7 @@ export function NcLinksBlock(props: {
                 to="/nc-register/$id"
                 params={{ id: s.id }}
                 className="mono"
-                style={{ ...linkStyle, color: 'var(--red)' }}
+                style={{ ...linkStyle, color: 'var(--red2)' }}
                 title={`${Number(s.rejectedQty)} pcs · ${NC_STATUS_LABELS[s.status]}`}
               >
                 {s.code}

@@ -50,7 +50,7 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
@@ -102,7 +102,7 @@ export function PartyGrnCard({
             <button
               type="button"
               className="btn btn-danger btn-sm"
-              style={{ fontSize: 10 }}
+              style={{ fontSize: 11 }}
               onClick={onCancel}
               title="Cancel this GRN and take the qty back off party stock"
             >

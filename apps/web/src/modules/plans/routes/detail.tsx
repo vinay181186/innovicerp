@@ -72,7 +72,7 @@ function PlanDetailPage(): React.JSX.Element {
           <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}>
             <ArrowLeft size={14} /> Back
           </Link>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Plan not found.'}
           </div>
         </div>
@@ -123,7 +123,7 @@ function PlanDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -261,7 +261,7 @@ function PlanDetailPage(): React.JSX.Element {
           {actionError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -370,7 +370,12 @@ function PlanDetailPage(): React.JSX.Element {
               Operations come from the item's Route Card. Create a Production Order to build the Job
               Card.{' '}
               {perms.entry && plan.planStatus === 'planned' && !plan.jcId ? (
-                <Link to="/production-orders/new" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+                <Link
+                  to="/production-orders/new"
+                  // Open the form on THIS plan (same search the Plans list sends).
+                  search={{ planId: plan.id, planCode: plan.code }}
+                  style={{ color: 'var(--cyan)', fontWeight: 600 }}
+                >
                   Create Production Order →
                 </Link>
               ) : null}
@@ -382,7 +387,7 @@ function PlanDetailPage(): React.JSX.Element {
               <div
                 className="text3"
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                   marginBottom: 4,
@@ -460,7 +465,7 @@ function KV({ label, value }: { label: string; value: React.ReactNode }): React.
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 2,

@@ -127,7 +127,7 @@ export function MachineGroupTab(): React.JSX.Element {
               key: 'active',
               label: 'Active',
               count: activeCount,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               active: status === 'active',
               onClick: () => setStatus('active'),
             },
@@ -135,7 +135,7 @@ export function MachineGroupTab(): React.JSX.Element {
               key: 'inactive',
               label: 'Inactive',
               count: inactiveCount,
-              color: 'var(--amber)',
+              color: 'var(--amber2)',
               active: status === 'inactive',
               onClick: () => setStatus('inactive'),
             },
@@ -147,7 +147,7 @@ export function MachineGroupTab(): React.JSX.Element {
         <div className="panel" style={{ marginBottom: 12 }}>
           <div
             className="panel-body"
-            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red)' }}
+            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red2)' }}
           >
             {softDelete.error instanceof Error
               ? softDelete.error.message
@@ -176,7 +176,7 @@ export function MachineGroupTab(): React.JSX.Element {
                 </tr>
               ) : list.isError ? (
                 <tr>
-                  <td colSpan={4} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={4} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {list.error instanceof Error
                       ? list.error.message
                       : 'Could not load machine groups. Try again.'}
@@ -421,7 +421,7 @@ function MachineGroupModal({
                 readOnly={Boolean(row)}
               />
               {row ? (
-                <div className="text3" style={{ fontSize: 10, marginTop: 3 }}>
+                <div className="text3" style={{ fontSize: 11, marginTop: 3 }}>
                   The group name cannot be changed — machines already carry it. Set Status to
                   Inactive to retire it.
                 </div>
@@ -455,7 +455,7 @@ function MachineGroupModal({
             </div>
           </div>
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
               {err}
             </div>
           ) : null}

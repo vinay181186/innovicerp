@@ -9,7 +9,7 @@ import {
   opSrNo,
   qcAfterOutsourceError,
 } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
+import { Link, useParams } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
@@ -236,6 +236,11 @@ export function PlanForm({
   hideOps,
 }: PlanFormProps): React.JSX.Element {
   const [values, setValues] = useState<PlanFormValues>(initialValues);
+  // The saved plan's id, for the "Create Production Order" link. The form is
+  // only ever mounted with a saved plan on the edit route (plans/$id/edit),
+  // so the id is read off that route rather than threaded through a new prop.
+  const routeParams: { id?: string | undefined } = useParams({ strict: false });
+  const editPlanId = isEdit ? routeParams.id : undefined;
 
   // Reload default ops button is wired against itemId; query enabled only when item is set.
   const {
@@ -399,7 +404,7 @@ export function PlanForm({
       {submitError ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid #fca5a5',
             borderRadius: 6,
@@ -737,7 +742,13 @@ export function PlanForm({
             <div className="text3" style={{ fontSize: 12 }}>
               Operations come from the item's Route Card. Create a Production Order to build the Job
               Card.{' '}
-              <Link to="/production-orders/new" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+              <Link
+                to="/production-orders/new"
+                // Open the form on THIS plan (same search the Plans list
+                // sends). Only an edit has a saved plan to name.
+                search={editPlanId ? { planId: editPlanId, planCode: values.code } : {}}
+                style={{ color: 'var(--cyan)', fontWeight: 600 }}
+              >
                 Create Production Order →
               </Link>
             </div>
@@ -760,7 +771,7 @@ export function PlanForm({
                     'Loading…'
                   ) : (
                     <>
-                      Route Card: <span style={{ color: 'var(--amber)' }}>none</span> &mdash; enter
+                      Route Card: <span style={{ color: 'var(--amber2)' }}>none</span> &mdash; enter
                       the operations below
                     </>
                   )}
@@ -954,7 +965,7 @@ export function PlanForm({
             <div
               role="alert"
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -1012,7 +1023,7 @@ function Field({
         className="text3"
         style={{
           display: 'block',
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 4,

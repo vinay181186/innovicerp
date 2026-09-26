@@ -74,7 +74,7 @@ function AccessControlListPage(): React.JSX.Element {
   if (!isAdmin) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           <Lock size={14} style={{ display: 'inline', marginRight: 6 }} />
           Admin access required.
         </div>
@@ -129,7 +129,7 @@ function AccessControlListPage(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={6} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={6} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {error instanceof Error
                       ? error.message
                       : 'Could not load access settings. Try again.'}
@@ -191,22 +191,22 @@ function UserAccessRow({
       </td>
       <td style={{ fontSize: 11 }}>
         {u.fullAccess ? (
-          <span style={{ color: 'var(--green)', fontWeight: 700 }}>L6 Super Admin — everything</span>
+          <span style={{ color: 'var(--green2)', fontWeight: 700 }}>L6 Super Admin — everything</span>
         ) : u.auditor ? (
-          <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+          <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
             L7 Auditor — reads everything, writes nothing
           </span>
         ) : u.tierSummary ? (
           <>
             {u.tierSummary}
             {stale ? (
-              <div style={{ color: 'var(--amber)', fontSize: 10, marginTop: 2 }}>
+              <div style={{ color: 'var(--amber2)', fontSize: 11, marginTop: 2 }}>
                 ⚠ still enforced as <b>{roleLabel(u.role)}</b> — open Configure and Save to apply
               </div>
             ) : null}
           </>
         ) : (
-          <span style={{ color: 'var(--red)', fontWeight: 600 }}>
+          <span style={{ color: 'var(--red2)', fontWeight: 600 }}>
             {u.role === 'admin'
               ? 'No departments set — but they are an admin, so they bypass this entirely.'
               : 'Not configured — this person can see nothing. Click Configure.'}
@@ -225,7 +225,7 @@ function UserAccessRow({
         {u.fullAccess || u.drawingDownload ? (
           <div
             className="badge b-cyan"
-            style={{ fontSize: 9, marginTop: 3, display: 'inline-block' }}
+            style={{ fontSize: 11, marginTop: 3, display: 'inline-block' }}
             title="Can download drawing files"
           >
             📐 Drawings

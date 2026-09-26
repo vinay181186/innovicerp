@@ -62,7 +62,7 @@ function RouteCardNewPage(): React.JSX.Element {
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You do not have create access to Route Cards. Ask an admin for L2 Data Entry or above in
         Design.
       </div>
@@ -91,6 +91,7 @@ function RouteCardNewPage(): React.JSX.Element {
         submitting={create.isPending}
         submitError={submitError}
         onCancel={() => exit.leave(goBack)}
+        onBack={goBack}
       />
     </>
   );

@@ -153,7 +153,7 @@ function SoOverviewPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load SO overview. Try again.'}
             </div>
           </div>
@@ -203,7 +203,7 @@ function OverallStatusPills({
     >
       <span
         className="text3"
-        style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em' }}
+        style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em' }}
       >
         Filter:
       </span>
@@ -218,7 +218,7 @@ function OverallStatusPills({
             type="button"
             className="btn btn-sm"
             style={{
-              fontSize: 10,
+              fontSize: 11,
               padding: '3px 10px',
               borderRadius: 12,
               background: active ? 'var(--cyan)' : 'var(--bg4)',
@@ -257,8 +257,8 @@ function OverviewTable({
                 <th>SO Status</th>
                 <th>Progress</th>
                 <th>Order Qty</th>
-                <th style={{ color: 'var(--green)' }}>Completed</th>
-                <th style={{ color: 'var(--red)' }}>Pending</th>
+                <th style={{ color: 'var(--green2)' }}>Completed</th>
+                <th style={{ color: 'var(--red2)' }}>Pending</th>
                 <th>Due Date</th>
                 <th>Alerts</th>
                 <th>SO Date</th>
@@ -339,7 +339,7 @@ function Row({
         </div>
       </td>
       <td className="td-ctr mono fw-700">{row.totalRequiredQty}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
         {row.totalDoneQty}
       </td>
       <td
@@ -381,7 +381,7 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
     flags.push(
       <span
         key="delayed"
-        style={{ color: 'var(--red)', fontWeight: 700, fontSize: 11 }}
+        style={{ color: 'var(--red2)', fontWeight: 700, fontSize: 11 }}
         title="Lines past due"
       >
         ⚠{row.alerts.delayedLines}
@@ -401,21 +401,21 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
   }
   if (row.alerts.qcPendingOps > 0) {
     flags.push(
-      <span key="qcpend" style={{ color: 'var(--amber)', fontSize: 11 }} title="Ops awaiting QC">
+      <span key="qcpend" style={{ color: 'var(--amber2)', fontSize: 11 }} title="Ops awaiting QC">
         🔬{row.alerts.qcPendingOps}
       </span>,
     );
   }
   if (row.stageCounts.hold > 0) {
     flags.push(
-      <span key="hold" style={{ color: 'var(--red)', fontSize: 11 }} title="Lines on hold">
+      <span key="hold" style={{ color: 'var(--red2)', fontSize: 11 }} title="Lines on hold">
         🚫{row.stageCounts.hold}
       </span>,
     );
   }
   if (flags.length === 0) {
     return (
-      <span className="text3" style={{ fontSize: 10 }}>
+      <span className="text3" style={{ fontSize: 11 }}>
         —
       </span>
     );
@@ -469,7 +469,7 @@ function SoOverviewDrill({
       ) : isError || !data ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load SO detail. Try again.'}
             </div>
           </div>
@@ -518,14 +518,14 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
         }}
       >
         <div>
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             SO No.
           </span>
           <br />
           <b style={{ color: 'var(--cyan)', fontSize: 18 }}>{so.code}</b>
         </div>
         <div>
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             Customer
           </span>
           <br />
@@ -537,7 +537,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
           ) : null}
         </div>
         <div>
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             SO Type
           </span>
           <br />
@@ -551,7 +551,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
         </div>
         {so.type === 'equipment' && so.equipmentItemName ? (
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               Equipment
             </span>
             <br />
@@ -560,18 +560,18 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
         ) : null}
         {bomNo ? (
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               BOM
             </span>
             <br />
-            <b style={{ color: 'var(--green)' }}>
+            <b style={{ color: 'var(--green2)' }}>
               {bomNo}
               {bomRev !== null ? ` BOM Rev ${bomRev}` : ''}
             </b>
           </div>
         ) : null}
         <div>
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             Due Date
           </span>
           <br />
@@ -580,7 +580,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
           </b>
         </div>
         <div>
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             Status
           </span>
           <br />
@@ -631,7 +631,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
           </span>
           <span>
             Completed:{' '}
-            <b style={{ color: 'var(--green)' }}>{so.totalDoneQty}</b>
+            <b style={{ color: 'var(--green2)' }}>{so.totalDoneQty}</b>
           </span>
           <span>
             Pending:{' '}
@@ -643,7 +643,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
             Items: <b style={{ color: 'var(--purple)' }}>{childRows.length}</b>
           </span>
           {so.alerts.delayedLines > 0 ? (
-            <span style={{ color: 'var(--red)' }}>
+            <span style={{ color: 'var(--red2)' }}>
               ⚠ {so.alerts.delayedLines} delayed
             </span>
           ) : null}
@@ -664,7 +664,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
           border: '1px solid var(--border)',
         }}
       >
-        <span className="text3" style={{ fontSize: 10, fontWeight: 700 }}>
+        <span className="text3" style={{ fontSize: 11, fontWeight: 700 }}>
           Stage:
         </span>
         {(Object.keys(stageCounts) as SoOverviewItemStage[]).map((k) => {
@@ -742,12 +742,12 @@ function DrillItemsTable({
             <th>Stage</th>
             <th>SO Status</th>
             <th>Order Qty</th>
-            <th style={{ color: 'var(--amber)' }}>Issued</th>
+            <th style={{ color: 'var(--amber2)' }}>Issued</th>
             <th style={{ color: 'var(--cyan)' }}>In Production</th>
-            <th style={{ color: 'var(--amber)' }}>QC Pending</th>
+            <th style={{ color: 'var(--amber2)' }}>QC Pending</th>
             <th style={{ color: 'var(--purple)' }}>At Vendor</th>
-            <th style={{ color: 'var(--green)' }}>Completed</th>
-            <th style={{ color: 'var(--red)' }}>Pending</th>
+            <th style={{ color: 'var(--green2)' }}>Completed</th>
+            <th style={{ color: 'var(--red2)' }}>Pending</th>
             <th>Current Op</th>
             <th>Machine / Vendor</th>
           </tr>
@@ -790,19 +790,19 @@ function DrillItemsTable({
                   <span className={`badge ${status.cls}`}>{status.label}</span>
                 </td>
                 <td className="td-ctr mono fw-700">{r.requiredQty}</td>
-                <td className="td-ctr mono" style={{ color: 'var(--amber)' }}>
+                <td className="td-ctr mono" style={{ color: 'var(--amber2)' }}>
                   {r.issuedQty}
                 </td>
                 <td className="td-ctr mono" style={{ color: 'var(--cyan)' }}>
                   {r.inProductionQty}
                 </td>
-                <td className="td-ctr mono" style={{ color: 'var(--amber)' }}>
+                <td className="td-ctr mono" style={{ color: 'var(--amber2)' }}>
                   {r.qcPendingQty}
                 </td>
                 <td className="td-ctr mono" style={{ color: 'var(--purple)' }}>
                   {r.atVendorQty}
                 </td>
-                <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
                   {r.completedQty}
                 </td>
                 <td
@@ -828,7 +828,7 @@ function DrillItemsTable({
                       🏭 {r.vendorName}
                     </span>
                   ) : r.currentLocation === 'QC' ? (
-                    <span style={{ color: 'var(--green)', fontWeight: 700 }}>🔬 QC</span>
+                    <span style={{ color: 'var(--green2)', fontWeight: 700 }}>🔬 QC</span>
                   ) : r.machineName ? (
                     <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>
                       ⚙ {r.machineName}

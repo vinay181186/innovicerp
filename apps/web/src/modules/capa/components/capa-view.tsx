@@ -121,7 +121,7 @@ export function CapaView(props: {
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load CAPA. Try again.'}
           </div>
         </div>
@@ -142,7 +142,7 @@ export function CapaView(props: {
               }}
             >
               <span style={{ fontSize: 16 }}>⚠️</span>
-              <b style={{ color: 'var(--amber)' }}>{overdue.length} CAPAs overdue</b>
+              <b style={{ color: 'var(--amber2)' }}>{overdue.length} CAPAs overdue</b>
             </div>
           ) : null}
 
@@ -152,7 +152,7 @@ export function CapaView(props: {
               <StatStrip
                 items={[
                   { key: 'total', label: 'Total', count: counters.total, color: 'var(--purple)' },
-                  { key: 'open', label: 'Open', count: counters.open, color: 'var(--amber)' },
+                  { key: 'open', label: 'Open', count: counters.open, color: 'var(--amber2)' },
                   {
                     key: 'inProgress',
                     label: 'In Progress',
@@ -165,12 +165,12 @@ export function CapaView(props: {
                     count: counters.verified,
                     color: 'var(--purple)',
                   },
-                  { key: 'closed', label: 'Closed', count: counters.closed, color: 'var(--green)' },
+                  { key: 'closed', label: 'Closed', count: counters.closed, color: 'var(--green2)' },
                   {
                     key: 'effectiveness',
                     label: 'Effectiveness',
                     count: `${counters.effectivenessPct}%`,
-                    color: 'var(--green)',
+                    color: 'var(--green2)',
                   },
                 ]}
               />
@@ -221,7 +221,7 @@ export function CapaView(props: {
                         <td>
                           <span
                             style={{
-                              fontSize: 10,
+                              fontSize: 11,
                               fontWeight: 700,
                               padding: '2px 6px',
                               borderRadius: 3,
@@ -236,7 +236,7 @@ export function CapaView(props: {
                           </span>
                         </td>
                         <td style={{ fontSize: 11 }}>{fmtDate(c.capaDate)}</td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--red)' }}>
+                        <td className="mono" style={{ fontSize: 11, color: 'var(--red2)' }}>
                           {c.ncRefs.join(', ')}
                         </td>
                         <td
@@ -284,7 +284,7 @@ export function CapaView(props: {
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              style={{ fontSize: 10 }}
+                              style={{ fontSize: 11 }}
                               onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
                             >
                               👁 View
@@ -293,7 +293,7 @@ export function CapaView(props: {
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm"
-                                style={{ fontSize: 10 }}
+                                style={{ fontSize: 11 }}
                                 onClick={() => setModal({ kind: 'edit', capa: c, readOnly: false })}
                               >
                                 ✏ Edit
@@ -526,7 +526,7 @@ function NewCapaModal({
         </div>
       </div>
       {err ? (
-        <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
           {err}
         </div>
       ) : null}
@@ -627,7 +627,7 @@ function EditCapaModal({
       >
         <span
           style={{
-            fontSize: 10,
+            fontSize: 11,
             padding: '2px 6px',
             borderRadius: 3,
             color: capa.type === 'Corrective' ? 'var(--red)' : 'var(--blue)',
@@ -797,7 +797,7 @@ function EditCapaModal({
       </fieldset>
 
       {err ? (
-        <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
           {err}
         </div>
       ) : null}

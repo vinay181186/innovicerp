@@ -214,7 +214,7 @@ function OpEntryPage() {
   // user flashes this panel on cold load.
   if (eff && !effectiveFormPerms(eff, 'op_entry').view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -410,7 +410,7 @@ function OpEntryPage() {
                   <span className="panel-title">Operations</span>
                 </div>
                 {ops.isError ? (
-                  <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
+                  <div className="panel-body" style={{ color: 'var(--red2)', fontSize: 13 }}>
                     {ops.error instanceof Error
                       ? ops.error.message
                       : 'Could not load operations. Try again.'}

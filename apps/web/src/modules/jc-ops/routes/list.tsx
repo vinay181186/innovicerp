@@ -60,7 +60,7 @@ function JcOpsPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !effectiveFormPerms(eff, 'jc_create').view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -111,7 +111,7 @@ function JcOpsPage(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load operations. Try again.'}
             </div>
           </div>
@@ -133,18 +133,18 @@ function JcOpsPage(): React.JSX.Element {
                   <th>Planned Machine</th>
                   <th>Actual Machine</th>
                   <th>Operation</th>
-                  <th className="td-ctr">Cycle Time (h)</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="th-num">Cycle Time (h)</th>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     QC
                   </th>
-                  <th className="td-ctr">Order Qty</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="th-num">Order Qty</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Completed
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
                     Pending
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                  <th className="th-num" style={{ color: 'var(--red2)' }}>
                     Pending Hrs
                   </th>
                   <th>Op Status</th>
@@ -254,7 +254,7 @@ function Row({
           <div
             className="text3"
             style={{
-              fontSize: 10,
+              fontSize: 11,
               maxWidth: 160,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -274,14 +274,14 @@ function Row({
           split. */}
       <td>
         {isOutsource ? (
-          <span style={{ fontSize: 10, color: 'var(--amber)' }}>—</span>
+          <span style={{ fontSize: 11, color: 'var(--amber2)' }}>—</span>
         ) : (
           <PlannedMachineCell planned={o.machineCode} />
         )}
       </td>
       <td>
         {isOutsource ? (
-          <span style={{ fontSize: 10, color: 'var(--amber)' }}>—</span>
+          <span style={{ fontSize: 11, color: 'var(--amber2)' }}>—</span>
         ) : (
           <ActualMachineCell planned={o.machineCode} machines={o.machines} />
         )}
@@ -294,7 +294,7 @@ function Row({
             {/* Legacy L11379 [OSP] tag — marks the row as outside-processing. */}
             <span
               style={{
-                fontSize: 9,
+                fontSize: 11,
                 fontWeight: 700,
                 color: '#7c3aed',
                 background: 'rgba(124,58,237,0.12)',
@@ -307,9 +307,9 @@ function Row({
             <br />
             <span
               style={{
-                fontSize: 9,
+                fontSize: 11,
                 fontWeight: 700,
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
                 background: 'rgba(255,176,32,0.15)',
                 padding: '2px 6px',
                 borderRadius: 3,
@@ -321,7 +321,7 @@ function Row({
             </span>
             <div
               style={{
-                fontSize: 9,
+                fontSize: 11,
                 color:
                   outsourceStatus === 'pending'
                     ? 'var(--text3)'
@@ -340,19 +340,19 @@ function Row({
               {OUTSOURCE_STATUS_LABELS[outsourceStatus] ?? outsourceStatus.replace(/_/g, ' ')}
             </div>
             {o.outsourceVendorName ? (
-              <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.outsourceVendorName}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{o.outsourceVendorName}</div>
             ) : null}
           </>
         ) : null}
       </td>
-      <td className="td-ctr mono">{o.cycleTime ? o.cycleTime.toFixed(3) : '—'}</td>
+      <td className="mono td-num">{o.cycleTime ? o.cycleTime.toFixed(3) : '—'}</td>
       <td className="td-ctr">
         {o.qcRequired ? (
           <span
             style={{
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 700,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               background: 'rgba(34,197,94,0.15)',
               padding: '2px 6px',
               borderRadius: 3,
@@ -361,25 +361,25 @@ function Row({
             YES
           </span>
         ) : (
-          <span style={{ fontSize: 9, color: 'var(--text3)' }}>NO</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>NO</span>
         )}
       </td>
-      <td className="td-ctr">{o.jcOrderQty}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="td-num">{o.jcOrderQty}</td>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
         {o.completed}
         {/* The per-machine breakdown of that total lives in the Planned /
             Actual machine cell (ADR-164), so it is not repeated here. */}
         {o.qcRequired && o.qcPending > 0 ? (
-          <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} QC</div>
+          <div style={{ fontSize: 11, color: 'var(--amber2)' }}>⏳{o.qcPending} QC</div>
         ) : null}
       </td>
-      <td className="td-ctr">
-        <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--amber)' }}>
+      <td className="td-num">
+        <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--amber2)' }}>
           {o.available}
         </span>
       </td>
-      <td className="td-ctr">
-        <span className="mono fw-700" style={{ color: 'var(--red)' }}>
+      <td className="td-num">
+        <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
           {o.pendingHrs.toFixed(1)}h
         </span>
       </td>
@@ -399,7 +399,7 @@ function Row({
                 style={{
                   background: 'var(--amber)',
                   color: '#000',
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 700,
                 }}
                 onClick={onCreatePr}
@@ -408,7 +408,7 @@ function Row({
               </button>
             ) : null
           ) : outsourceStatus === 'pr_raised' ? (
-            <span style={{ fontSize: 10, color: 'var(--amber)' }}>
+            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>
               ⏳ PR: {o.outsourcePrCode ?? ''}
             </span>
           ) : outsourceStatus === 'po_created' ? (
@@ -417,7 +417,7 @@ function Row({
                 to="/purchase-orders/$id"
                 params={{ id: o.outsourcePoId }}
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   color: 'var(--blue)',
                   textDecoration: 'underline dotted',
                 }}
@@ -425,12 +425,12 @@ function Row({
                 PO: {o.outsourcePoCode ?? ''}
               </Link>
             ) : (
-              <span style={{ fontSize: 10, color: 'var(--blue)' }}>
+              <span style={{ fontSize: 11, color: 'var(--blue)' }}>
                 PO: {o.outsourcePoCode ?? ''}
               </span>
             )
           ) : outsourceStatus === 'sent' ? (
-            <span style={{ fontSize: 10, color: 'var(--purple)' }}>
+            <span style={{ fontSize: 11, color: 'var(--purple)' }}>
               📦 At Vendor ({o.sentQty} pcs)
             </span>
           ) : null
@@ -467,7 +467,7 @@ function Row({
                 style={{
                   background: 'rgba(124,58,237,0.15)',
                   color: '#7c3aed',
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 700,
                 }}
                 onClick={onOutsource}
@@ -504,7 +504,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
       style={{
         padding: '2px 9px',
         borderRadius: 4,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         color: c,
         background: `${c}12`,
@@ -605,7 +605,7 @@ function ChangeMachineModal({
                 </span>
               ))}
               . Each stays recorded against its own machine. The new machine takes the pending{' '}
-              <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
+              <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
             </div>
           ) : row.completed > 0 ? (
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
@@ -614,19 +614,19 @@ function ChangeMachineModal({
                 {row.machines[0]?.machineCode ?? row.machineCode ?? 'the planned machine'}
               </b>
               . The new machine takes the pending{' '}
-              <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
+              <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
             </div>
           ) : (
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
               Nothing logged yet — the new machine takes all{' '}
-              <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
+              <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
             </div>
           )}
         </div>
         <div>
           <div
             className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+            style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
           >
             Assign Machine ★
           </div>
@@ -651,7 +651,7 @@ function ChangeMachineModal({
               padding: '10px 12px',
               background: 'rgba(239,68,68,0.08)',
               border: '1px solid var(--red)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 6,
               fontSize: 12,
               lineHeight: 1.5,
@@ -825,7 +825,7 @@ function CreatePrModal({
         <div style={{ marginBottom: 12 }}>
           <div
             className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+            style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
           >
             PR No. ★
           </div>
@@ -843,10 +843,10 @@ function CreatePrModal({
             <div
               className="text3"
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 textTransform: 'uppercase',
                 marginBottom: 4,
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
               }}
             >
               Qty Required ★
@@ -863,7 +863,7 @@ function CreatePrModal({
           <div style={{ flex: '1 1 140px' }}>
             <div
               className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
             >
               Est. Cost / pc (₹)
             </div>
@@ -880,7 +880,7 @@ function CreatePrModal({
           <div style={{ flex: '1 1 140px' }}>
             <div
               className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
             >
               Required By Date
             </div>
@@ -897,7 +897,7 @@ function CreatePrModal({
         <div style={{ marginTop: 12 }}>
           <div
             className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+            style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
           >
             Remarks
           </div>
@@ -916,7 +916,7 @@ function CreatePrModal({
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -1043,7 +1043,7 @@ function OutsourceBalanceModal({
             <span className="mono fw-700" style={{ color: 'var(--text)' }}>
               {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
             </span>{' '}
-            · Available: <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs. Sends the
+            · Available: <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs. Sends the
             pending qty to a vendor as a JW OSP purchase request.
           </div>
         </div>
@@ -1053,10 +1053,10 @@ function OutsourceBalanceModal({
             <div
               className="text3"
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 textTransform: 'uppercase',
                 marginBottom: 4,
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
               }}
             >
               Qty to outsource ★
@@ -1074,7 +1074,7 @@ function OutsourceBalanceModal({
           <div style={{ flex: '1 1 200px' }}>
             <div
               className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
             >
               Vendor ★
             </div>
@@ -1102,7 +1102,7 @@ function OutsourceBalanceModal({
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}

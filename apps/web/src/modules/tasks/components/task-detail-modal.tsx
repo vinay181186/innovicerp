@@ -111,7 +111,7 @@ export function TaskDetailModal({
         {isLoading ? (
           <div className="empty-state">Loading…</div>
         ) : isError || !t ? (
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Task not found'}
           </div>
         ) : (

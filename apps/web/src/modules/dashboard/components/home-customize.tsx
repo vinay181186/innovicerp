@@ -82,16 +82,16 @@ function CustomizeInner({
           return (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: isChecked ? 'var(--bg3)' : 'var(--bg4)', border: `1px solid ${isChecked ? w.color : 'var(--border)'}`, borderRadius: 8, marginBottom: 4, opacity: w.hasAccess ? 1 : 0.4 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0 4px', fontSize: 10, lineHeight: 1 }} disabled={idx === 0} onClick={() => move(idx, -1)} title="Move up">▲</button>
-                <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0 4px', fontSize: 10, lineHeight: 1 }} disabled={idx === order.length - 1} onClick={() => move(idx, 1)} title="Move down">▼</button>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0 4px', fontSize: 11, lineHeight: 1 }} disabled={idx === 0} onClick={() => move(idx, -1)} title="Move up">▲</button>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0 4px', fontSize: 11, lineHeight: 1 }} disabled={idx === order.length - 1} onClick={() => move(idx, 1)} title="Move down">▼</button>
               </div>
               <input type="checkbox" checked={isChecked} disabled={!w.hasAccess} onChange={() => toggle(key)} style={{ width: 16, height: 16, accentColor: w.color }} />
               <span style={{ fontSize: 13 }}>{w.icon}</span>
               <div style={{ flex: 1 }}>
                 <span style={{ fontWeight: 600, fontSize: 12 }}>{w.label}</span>{' '}
-                <span style={{ fontSize: 10, color: w.color }}>{w.dept ?? 'general'}</span>
+                <span style={{ fontSize: 11, color: w.color }}>{w.dept ?? 'general'}</span>
               </div>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{w.desc}</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>{w.desc}</span>
             </div>
           );
         })}
@@ -99,8 +99,8 @@ function CustomizeInner({
 
       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>🚀 QUICK ACCESS LINKS</div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-        <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setAllQl(true)}>☑ All</button>
-        <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setAllQl(false)}>☐ None</button>
+        <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setAllQl(true)}>☑ All</button>
+        <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setAllQl(false)}>☐ None</button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 6 }}>
         {data.quickLinks.map((l) => {

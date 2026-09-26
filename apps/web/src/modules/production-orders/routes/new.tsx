@@ -35,6 +35,9 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
   type PlanPickerItem,
   planPickerLabel,
@@ -156,9 +159,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
     !noRouteCard &&
     !directPurchase;
 
-  const onSubmit = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
-    if (!plan || !routeCardId || !canSubmit) return;
+  const save = async (): Promise<void> => {
+    if (!plan || !routeCardId || !canSubmit || create.isPending) return;
     setSubmitError(null);
     const input: CreateProductionOrderInput = {
       planId: plan.id,
@@ -178,6 +180,40 @@ function ProductionOrderNewPage(): React.JSX.Element {
       );
     }
   };
+  const onSubmit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    await save();
+  };
+  // Ctrl+S runs the same Save as the header button (off while it is disabled).
+  useSaveShortcut(() => void save(), canSubmit && !create.isPending);
+
+  // Why Save is off — the header button's tooltip.
+  const saveBlockedReason = !plan
+    ? 'Pick a plan first'
+    : noRouteCard
+      ? 'No route card for this item'
+      : !routeCardId
+        ? 'Pick the route card'
+        : directPurchase
+          ? 'Direct-purchase items cannot raise a Production Order'
+          : !targetDate
+            ? 'Set the customer dispatch date'
+            : orderQtyError
+              ? orderQtyError
+              : !rawMaterialAvailable
+                ? NO_RAW_MATERIAL
+                : undefined;
+
+  // FLOW FIX: "create it" opens the Route Card form already on this plan's
+  // item (route-cards/new reads ?itemId=&itemCode=&itemName=), so the planner
+  // does not pick again the item the plan already names.
+  const planItemCode = plan ? (plan.itemCode ?? plan.itemCodeText) : null;
+  const planItemName = plan ? (plan.itemName ?? plan.itemNameText) : null;
+  const newRouteCardSearch = {
+    ...(plan?.itemId ? { itemId: plan.itemId } : {}),
+    ...(planItemCode ? { itemCode: planItemCode } : {}),
+    ...(planItemName ? { itemName: planItemName } : {}),
+  };
 
   if (accessLoading) {
     return (
@@ -196,7 +232,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to Production Orders
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have create access to Production Orders. Ask an admin for L2 Data Entry or
             above in Production.
           </div>
@@ -206,313 +242,251 @@ function ProductionOrderNewPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    <form onSubmit={(e) => void onSubmit(e)}>
       {exit.dialog}
-      <Link to="/production-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Production Orders
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">🏭 Create Production Order</div>
-          </div>
-          <div className="td-code" style={{ fontSize: 14, color: 'var(--text)' }}>
+      <PageHeader
+        sticky
+        icon="🏭"
+        title="Create Production Order"
+        subtitle={
+          <span className="td-code">
             {nextCode.data?.code ?? (nextCode.isLoading ? '…' : 'IN-PRO-?????')}
+          </span>
+        }
+        backLabel="Back to Production Orders"
+        onBack={goBack}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => exit.leave(goBack)}
+              disabled={create.isPending}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!canSubmit || create.isPending}
+              title={saveBlockedReason}
+            >
+              {create.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Save
+              Production Order &amp; Create JC
+            </button>
+          </>
+        }
+      />
+
+      {/* What stops Save, under the header where the Save button is. */}
+      {noRouteCard ? (
+        <Banner tone="warn" role="alert">
+          ⚠ No route card for this item —{' '}
+          <Link to="/route-cards/new" search={newRouteCardSearch} className="fw-700">
+            create it
+          </Link>{' '}
+          first.
+        </Banner>
+      ) : null}
+      {directPurchase ? (
+        <Banner tone="warn" role="alert">
+          ⚠ Direct-purchase items are bought, not produced — this route card cannot raise a
+          Production Order.
+        </Banner>
+      ) : null}
+      {!rawMaterialAvailable ? (
+        <Banner tone="error" role="alert">
+          ⛔ {NO_RAW_MATERIAL} Tick <span className="fw-700">Raw material available</span> once the
+          store has confirmed it.
+        </Banner>
+      ) : null}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
+
+      <Panel title="Production Order Details">
+        {/* 12-column grid: PO No · Plan · Customer Dispatch Date, the plan
+            recap, then Route Card · Order Qty · Actual Size, the raw material
+            confirmation and Remarks. */}
+        <div className="form-grid-12">
+          <div className="form-grp f-sm">
+            <label className="form-label" htmlFor="po-code">
+              Production Order No
+            </label>
+            <input
+              id="po-code"
+              className="innovic-input mono fw-700"
+              value={nextCode.data?.code ?? ''}
+              readOnly
+              placeholder="assigned on save"
+            />
           </div>
-        </div>
-        <div className="panel-body">
-          <form onSubmit={(e) => void onSubmit(e)}>
-            <div className="form-grid form-grid-3">
-              <div className="form-grp">
-                <label className="form-label" htmlFor="po-code">
-                  Production Order No
-                </label>
-                <input
-                  id="po-code"
-                  className="innovic-input mono fw-700"
-                  value={nextCode.data?.code ?? ''}
-                  readOnly
-                  placeholder="assigned on save"
-                />
-              </div>
 
-              <div className="form-span-2">
-                <PlanPicker
-                  id="po-plan"
-                  mode="create"
-                  value={plan?.id ?? null}
-                  onChange={onPickPlan}
-                  fallbackLabel={plan ? planPickerLabel(plan, 'create') : undefined}
-                />
-              </div>
+          <div className="f-lg">
+            <PlanPicker
+              id="po-plan"
+              mode="create"
+              value={plan?.id ?? null}
+              onChange={onPickPlan}
+              fallbackLabel={plan ? planPickerLabel(plan, 'create') : undefined}
+            />
+          </div>
 
-              {plan ? (
-                <div className="form-full">
-                  <PlanSummary plan={plan} />
-                </div>
-              ) : null}
+          <div className="form-grp f-sm">
+            <label className="form-label" htmlFor="po-target-date">
+              Customer Dispatch Date<span className="req">★</span>
+            </label>
+            <input
+              id="po-target-date"
+              type="date"
+              className="innovic-input"
+              value={targetDate}
+              onChange={(e) => setTargetDate(e.target.value)}
+              required
+            />
+          </div>
 
-              <div className="form-grp form-span-2">
-                <label className="form-label" htmlFor="po-route-card">
-                  Route Card<span className="req">★</span>
-                </label>
-                <select
-                  id="po-route-card"
-                  className="innovic-select"
-                  value={routeCardId ?? ''}
-                  disabled={!plan || noRouteCard || routeCards.isLoading}
-                  onChange={(e) => setRouteCardId(e.target.value || null)}
-                >
-                  <option value="">
-                    {!plan
-                      ? 'Pick a plan first'
-                      : routeCards.isLoading
-                        ? 'Loading route cards…'
-                        : noRouteCard
-                          ? 'No route card for this item'
-                          : 'Select route card…'}
-                  </option>
-                  {rcItems.map((rc) => (
-                    <option key={rc.id} value={rc.id}>
-                      {rc.code} — Route Card Rev {rc.currentRevision} — {rc.opCount} op
-                      {rc.opCount === 1 ? '' : 's'}
-                    </option>
-                  ))}
-                </select>
-                {routeCard ? (
-                  <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                    <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
-                      {routeCard.code}
-                    </span>{' '}
-                    · Route Card Rev {routeCard.currentRevision} · {routeCard.opCount} operation
-                    {routeCard.opCount === 1 ? '' : 's'}{' '}
-                    <PlanTypeChip planType={routeCard.planType} />
-                    {routeCard.opCount === 0 ? (
-                      <span style={{ color: 'var(--amber)' }}>
-                        {' '}
-                        — this route card has no operations; add them before creating the JC.
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-
-              {/* ADR-182 — Order Qty. Defaults to the plan's Pending and is
-                  capped there; the server re-checks under the plan's row lock,
-                  so two people ordering at once cannot both fit. */}
-              <div className="form-grp">
-                <label className="form-label" htmlFor="po-order-qty">
-                  Order Qty<span className="req">★</span>
-                </label>
-                <input
-                  id="po-order-qty"
-                  type="number"
-                  className="innovic-input mono fw-700"
-                  value={orderQtyText}
-                  min={1}
-                  max={pendingQty || undefined}
-                  step={1}
-                  disabled={!plan || pendingQty === 0}
-                  onChange={(e) => setOrderQtyText(e.target.value)}
-                  placeholder={plan ? String(pendingQty) : 'Pick a plan first'}
-                />
-                {plan ? (
-                  <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                    Plan Qty {plan.planQty} · Covered {plan.coveredQty} · Pending{' '}
-                    <span className="fw-700" style={{ color: 'var(--cyan)' }}>
-                      {plan.pendingQty}
-                    </span>
-                  </div>
-                ) : null}
-                {orderQtyError ? <div className="form-error">{orderQtyError}</div> : null}
-              </div>
-
-              <div className="form-grp">
-                <label className="form-label" htmlFor="po-target-date">
-                  Customer Dispatch Date<span className="req">★</span>
-                </label>
-                <input
-                  id="po-target-date"
-                  type="date"
-                  className="innovic-input"
-                  value={targetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
-                  required
-                />
-              </div>
-
-              {/* ADR-182 — the shop floor's confirmation that the material is
-                  on hand. The server refuses a false value in these exact
-                  words, so the screen says them first. */}
-              <div className="form-grp">
-                <span className="form-label">
-                  Raw material available<span className="req">★</span>
-                </span>
-                <label
-                  htmlFor="po-rm-available"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    fontSize: 12,
-                    color: 'var(--text)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <input
-                    id="po-rm-available"
-                    type="checkbox"
-                    checked={rawMaterialAvailable}
-                    onChange={(e) => setRawMaterialAvailable(e.target.checked)}
-                  />
-                  The material for this order is in the store
-                </label>
-              </div>
-
-              {/* ADR-182 — what the store really had / really cut, beside the
-                  plan's master-picked Raw Material Size. Optional free text. */}
-              <div className="form-grp">
-                <label className="form-label" htmlFor="po-actual-size">
-                  Actual Size
-                </label>
-                <input
-                  id="po-actual-size"
-                  className="innovic-input"
-                  value={actualSize}
-                  maxLength={120}
-                  onChange={(e) => setActualSize(e.target.value)}
-                  placeholder="size actually cut"
-                />
-              </div>
-
-              <div className="form-grp form-full">
-                <label className="form-label" htmlFor="po-remarks">
-                  Remarks
-                </label>
-                <input
-                  id="po-remarks"
-                  className="innovic-input"
-                  value={remarks}
-                  maxLength={500}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  placeholder="Optional"
-                />
-              </div>
+          {plan ? (
+            <div className="f-full">
+              <PlanSummary plan={plan} />
             </div>
+          ) : null}
 
-            {noRouteCard ? (
-              <div
-                role="alert"
-                style={{
-                  marginTop: 12,
-                  padding: '8px 12px',
-                  fontSize: 12,
-                  color: 'var(--amber)',
-                  background: 'var(--bg3)',
-                  border: '1px solid var(--amber)',
-                  borderRadius: 6,
-                }}
-              >
-                ⚠ No route card for this item —{' '}
-                <Link to="/route-cards/new" className="fw-700">
-                  create it
-                </Link>{' '}
-                first.
-              </div>
-            ) : null}
-
-            {directPurchase ? (
-              <div
-                role="alert"
-                style={{
-                  marginTop: 12,
-                  padding: '8px 12px',
-                  fontSize: 12,
-                  color: 'var(--amber)',
-                  background: 'var(--bg3)',
-                  border: '1px solid var(--amber)',
-                  borderRadius: 6,
-                }}
-              >
-                ⚠ Direct-purchase items are bought, not produced — this route card cannot raise a
-                Production Order.
-              </div>
-            ) : null}
-
-            {!rawMaterialAvailable ? (
-              <div
-                role="alert"
-                style={{
-                  marginTop: 12,
-                  padding: '8px 12px',
-                  fontSize: 12,
-                  color: 'var(--red)',
-                  background: 'var(--bg3)',
-                  border: '1px solid var(--red)',
-                  borderRadius: 6,
-                }}
-              >
-                ⛔ {NO_RAW_MATERIAL} Tick <span className="fw-700">Raw material available</span>{' '}
-                once the store has confirmed it.
-              </div>
-            ) : null}
-
-            {submitError ? (
-              <div
-                role="alert"
-                style={{
-                  marginTop: 12,
-                  color: 'var(--red)',
-                  background: 'var(--red3)',
-                  border: '1px solid var(--red)',
-                  borderRadius: 6,
-                  padding: '6px 10px',
-                  fontSize: 12,
-                }}
-              >
-                {submitError}
-              </div>
-            ) : null}
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => exit.leave(goBack)}
-                disabled={create.isPending}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!canSubmit || create.isPending}
-                title={
-                  !plan
-                    ? 'Pick a plan first'
+          <div className="form-grp f-lg">
+            <label className="form-label" htmlFor="po-route-card">
+              Route Card<span className="req">★</span>
+            </label>
+            <select
+              id="po-route-card"
+              className="innovic-select"
+              value={routeCardId ?? ''}
+              disabled={!plan || noRouteCard || routeCards.isLoading}
+              onChange={(e) => setRouteCardId(e.target.value || null)}
+            >
+              <option value="">
+                {!plan
+                  ? 'Pick a plan first'
+                  : routeCards.isLoading
+                    ? 'Loading route cards…'
                     : noRouteCard
                       ? 'No route card for this item'
-                      : !routeCardId
-                        ? 'Pick the route card'
-                        : directPurchase
-                          ? 'Direct-purchase items cannot raise a Production Order'
-                          : !targetDate
-                            ? 'Set the customer dispatch date'
-                            : orderQtyError
-                              ? orderQtyError
-                              : !rawMaterialAvailable
-                                ? NO_RAW_MATERIAL
-                                : undefined
-                }
-              >
-                {create.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Save
-                Production Order &amp; Create JC
-              </button>
-            </div>
-          </form>
+                      : 'Select route card…'}
+              </option>
+              {rcItems.map((rc) => (
+                <option key={rc.id} value={rc.id}>
+                  {rc.code} — Route Card Rev {rc.currentRevision} — {rc.opCount} op
+                  {rc.opCount === 1 ? '' : 's'}
+                </option>
+              ))}
+            </select>
+            {routeCard ? (
+              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                  {routeCard.code}
+                </span>{' '}
+                · Route Card Rev {routeCard.currentRevision} · {routeCard.opCount} operation
+                {routeCard.opCount === 1 ? '' : 's'} <PlanTypeChip planType={routeCard.planType} />
+                {routeCard.opCount === 0 ? (
+                  <span style={{ color: 'var(--amber2)' }}>
+                    {' '}
+                    — this route card has no operations; add them before creating the JC.
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          {/* ADR-182 — Order Qty. Defaults to the plan's Pending and is
+              capped there; the server re-checks under the plan's row lock,
+              so two people ordering at once cannot both fit. */}
+          <div className="form-grp f-sm">
+            <label className="form-label" htmlFor="po-order-qty">
+              Order Qty<span className="req">★</span>
+            </label>
+            <input
+              id="po-order-qty"
+              type="number"
+              className="innovic-input mono fw-700"
+              value={orderQtyText}
+              min={1}
+              max={pendingQty || undefined}
+              step={1}
+              disabled={!plan || pendingQty === 0}
+              onChange={(e) => setOrderQtyText(e.target.value)}
+              placeholder={plan ? String(pendingQty) : 'Pick a plan first'}
+            />
+            {plan ? (
+              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                Plan Qty {plan.planQty} · Covered {plan.coveredQty} · Pending{' '}
+                <span className="fw-700" style={{ color: 'var(--cyan)' }}>
+                  {plan.pendingQty}
+                </span>
+              </div>
+            ) : null}
+            {orderQtyError ? <div className="form-error">{orderQtyError}</div> : null}
+          </div>
+
+          {/* ADR-182 — what the store really had / really cut, beside the
+              plan's master-picked Raw Material Size. Optional free text. */}
+          <div className="form-grp f-sm">
+            <label className="form-label" htmlFor="po-actual-size">
+              Actual Size
+            </label>
+            <input
+              id="po-actual-size"
+              className="innovic-input"
+              value={actualSize}
+              maxLength={120}
+              onChange={(e) => setActualSize(e.target.value)}
+              placeholder="size actually cut"
+            />
+          </div>
+
+          {/* ADR-182 — the shop floor's confirmation that the material is
+              on hand. The server refuses a false value in these exact
+              words, so the screen says them first. */}
+          <div className="form-grp f-full">
+            <span className="form-label">
+              Raw material available<span className="req">★</span>
+            </span>
+            <label
+              htmlFor="po-rm-available"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                color: 'var(--text)',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                id="po-rm-available"
+                type="checkbox"
+                checked={rawMaterialAvailable}
+                onChange={(e) => setRawMaterialAvailable(e.target.checked)}
+              />
+              The material for this order is in the store
+            </label>
+          </div>
+
+          <div className="form-grp f-full">
+            <label className="form-label" htmlFor="po-remarks">
+              Remarks
+            </label>
+            <input
+              id="po-remarks"
+              className="innovic-input"
+              value={remarks}
+              maxLength={500}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
         </div>
-      </div>
-    </div>
+      </Panel>
+    </form>
   );
 }
 
@@ -540,7 +514,7 @@ function PlanTypeChip({ planType }: { planType: PlanType }): React.JSX.Element {
       title="Plan Type (from the route card)"
       style={{
         display: 'inline-block',
-        fontSize: 10,
+        fontSize: 11,
         padding: '1px 6px',
         borderRadius: 4,
         color,
@@ -604,7 +578,7 @@ function Fact({ label, value, mono }: { label: string; value: string; mono?: boo
     <div>
       <div
         className="text3"
-        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}
+        style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}
       >
         {label}
       </div>

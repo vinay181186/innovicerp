@@ -82,7 +82,7 @@ function AccessCell({ access }: { access: UserAccessListItem | undefined }): Rea
   if (!access) return <span className="text3">—</span>;
   if (access.fullAccess)
     return (
-      <span className="fw-700" style={{ color: 'var(--green)', fontSize: 'var(--fs-xs)' }}>
+      <span className="fw-700" style={{ color: 'var(--green2)', fontSize: 'var(--fs-xs)' }}>
         L6 Super Admin
       </span>
     );
@@ -262,7 +262,7 @@ function UsersListPage(): React.JSX.Element {
           u.role === 'admin' || approverSet.has(u.id) ? (
             <span
               className="fw-700"
-              style={{ color: 'var(--green)', fontSize: 'var(--fs-xs)' }}
+              style={{ color: 'var(--green2)', fontSize: 'var(--fs-xs)' }}
               title={u.role === 'admin' ? 'Admin always approves' : 'PO approver'}
             >
               ✅ PO

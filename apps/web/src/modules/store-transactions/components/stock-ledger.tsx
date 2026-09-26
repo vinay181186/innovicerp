@@ -39,7 +39,7 @@ function KpiTile({
 }): React.JSX.Element {
   return (
     <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div className="mono fw-700" style={{ fontSize: 22, ...(color ? { color } : {}) }}>
         {value}
       </div>
@@ -109,14 +109,18 @@ export function StockLedger(): React.JSX.Element {
       {
         header: 'Qty',
         accessorKey: 'qty',
-        meta: { tdClass: 'td-ctr' },
+        meta: { tdClass: 'td-num', thClass: 'th-num' },
         cell: ({ row }) => {
           const t = row.original.txnType;
           return (
             <span
               className="mono fw-700"
               style={
-                t === 'in' ? { color: 'var(--green)' } : t === 'out' ? { color: 'var(--red)' } : undefined
+                t === 'in'
+                  ? { color: 'var(--green2)' }
+                  : t === 'out'
+                    ? { color: 'var(--red2)' }
+                    : undefined
               }
             >
               {t === 'in' ? '+' : t === 'out' ? '-' : ''}
@@ -165,7 +169,7 @@ export function StockLedger(): React.JSX.Element {
         header: 'Stock Before → After',
         id: 'stockAfter',
         accessorFn: (r) => r.stockAfter,
-        meta: { tdClass: 'mono' },
+        meta: { tdClass: 'mono td-num', thClass: 'th-num' },
         cell: ({ row }) => (
           <span style={{ fontSize: 11 }}>
             {row.original.stockBefore} → <b>{row.original.stockAfter}</b>
@@ -211,9 +215,17 @@ export function StockLedger(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          marginBottom: 14,
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+        }}
+      >
         <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Search</label>
+          <label style={{ fontSize: 11, color: 'var(--text3)' }}>Search</label>
           <br />
           <input
             className="innovic-input"
@@ -224,7 +236,7 @@ export function StockLedger(): React.JSX.Element {
           />
         </div>
         <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Type</label>
+          <label style={{ fontSize: 11, color: 'var(--text3)' }}>Type</label>
           <br />
           <select
             className="innovic-select"
@@ -245,7 +257,7 @@ export function StockLedger(): React.JSX.Element {
           </select>
         </div>
         <div>
-          <label style={{ fontSize: 10, color: 'var(--text3)' }}>Source</label>
+          <label style={{ fontSize: 11, color: 'var(--text3)' }}>Source</label>
           <br />
           <select
             className="innovic-select"
@@ -304,7 +316,11 @@ export function StockLedger(): React.JSX.Element {
                         onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                         style={canSort ? { cursor: 'pointer', userSelect: 'none' } : undefined}
                         aria-sort={
-                          sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined
+                          sorted === 'asc'
+                            ? 'ascending'
+                            : sorted === 'desc'
+                              ? 'descending'
+                              : undefined
                         }
                       >
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -313,7 +329,7 @@ export function StockLedger(): React.JSX.Element {
                             <span
                               aria-hidden
                               style={{
-                                fontSize: 9,
+                                fontSize: 11,
                                 opacity: sorted ? 1 : 0.3,
                                 color: sorted ? 'var(--cyan)' : 'inherit',
                               }}
@@ -339,7 +355,7 @@ export function StockLedger(): React.JSX.Element {
               ) : isError ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    <span style={{ color: 'var(--red)' }}>
+                    <span style={{ color: 'var(--red2)' }}>
                       {error instanceof Error
                         ? error.message
                         : 'Could not load store transactions. Try again.'}

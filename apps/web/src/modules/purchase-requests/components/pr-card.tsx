@@ -81,7 +81,7 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
@@ -194,7 +194,7 @@ export function PrCard({
             </span>{' '}
             <span className="fw-700">{pr.itemName ?? ''}</span>
           </span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber2)' }}>
             {pr.vendorName ?? pr.vendorCodeText ?? '—'}
           </span>
           <PrStatusBadge status={pr.status} />
@@ -245,8 +245,7 @@ export function PrCard({
               <>
                 <button
                   type="button"
-                  className="btn btn-sm btn-success"
-                  style={{ fontSize: 10 }}
+                  className="btn btn-sm btn-primary"
                   disabled={approving}
                   onClick={() => onApprove(pr)}
                 >
@@ -255,7 +254,6 @@ export function PrCard({
                 <button
                   type="button"
                   className="btn btn-sm btn-danger"
-                  style={{ fontSize: 10 }}
                   disabled={rejecting}
                   onClick={() => onReject(pr)}
                 >
@@ -271,8 +269,7 @@ export function PrCard({
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: pr.id }}
-                className="btn btn-sm btn-success"
-                style={{ fontSize: 10 }}
+                className="btn btn-sm btn-primary"
               >
                 Create PO
               </Link>
@@ -368,7 +365,7 @@ export function PrCard({
             {pr.poCreatedAt ? (
               <>
                 <span>·</span>
-                <span style={{ color: 'var(--green)' }}>PO {fmtDate(pr.poCreatedAt)}</span>
+                <span style={{ color: 'var(--green2)' }}>PO {fmtDate(pr.poCreatedAt)}</span>
               </>
             ) : null}
             {bal.closed ? (

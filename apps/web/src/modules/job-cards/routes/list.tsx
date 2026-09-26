@@ -60,6 +60,7 @@ import { fmtDate } from '@/lib/date';
 import { ItemBadge, ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
@@ -249,7 +250,7 @@ function JobCardsListPage(): React.JSX.Element {
 
   const total = data?.total ?? 0;
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIst();
 
   // Client-side pagination for the List View (Card View keeps its full scroll).
   // Keeps each page to PAGE_SIZE rows so only a page's worth of thumbnails load.
@@ -447,6 +448,7 @@ function JobCardsListPage(): React.JSX.Element {
       {
         header: 'Order Qty',
         width: '6%',
+        align: 'right',
         nowrap: true,
         render: (jc) => (
           <>
@@ -517,6 +519,7 @@ function JobCardsListPage(): React.JSX.Element {
       {
         header: 'Days Left',
         width: '5%',
+        align: 'right',
         nowrap: true,
         render: (jc) => {
           const dLeft = daysLeftFor(jc, today);
@@ -573,7 +576,7 @@ function JobCardsListPage(): React.JSX.Element {
             figures: no onClick, no filtering. */}
         <StatStrip
           items={[
-            { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber)' },
+            { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber2)' },
             {
               key: 'in_progress',
               label: 'In Progress',
@@ -584,9 +587,9 @@ function JobCardsListPage(): React.JSX.Element {
               key: 'completed',
               label: 'Completed',
               count: kpis.completed,
-              color: 'var(--green)',
+              color: 'var(--green2)',
             },
-            { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red)' },
+            { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red2)' },
           ]}
         />
 
@@ -806,7 +809,7 @@ function JobCardsListPage(): React.JSX.Element {
                   <QtyStrip
                     items={[
                       { label: 'Order Qty', value: jc.orderQty },
-                      { label: 'Completed', value: done, color: 'var(--green)' },
+                      { label: 'Completed', value: done, color: 'var(--green2)' },
                       {
                         label: 'Pending',
                         value: pending,

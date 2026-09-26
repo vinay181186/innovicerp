@@ -37,7 +37,7 @@ function CostCenterNewPage(): React.JSX.Element {
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You cannot create Cost Centres. Ask an admin.
       </div>
     );

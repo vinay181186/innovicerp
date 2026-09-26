@@ -14,6 +14,9 @@ import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
 import { computeReceivedByLine } from '../lib/receipt-math';
 
@@ -22,6 +25,8 @@ export const deliveryChallanReceiveRoute = createRoute({
   path: 'delivery-challans/$id/receive',
   component: DeliveryChallanReceivePage,
 });
+
+const RECEIVE_FORM_ID = 'dc-receive-form';
 
 interface LineDraft {
   dcLineId: string;
@@ -132,10 +137,27 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     }
   };
 
+  const submitForm = useCallback(() => {
+    const el = document.getElementById(RECEIVE_FORM_ID);
+    if (el instanceof HTMLFormElement) el.requestSubmit();
+  }, []);
+  useSaveShortcut(submitForm, canSubmit && perms.entry);
+  const dirty =
+    vendorInvoiceText !== '' || remarks !== '' || lineDrafts.some((d) => d.receivedQty !== '');
+
+  // FLOW HELPER (frontend only): put each line's Pending into its Receive Now
+  // box. Lines with nothing pending stay blank. Every box stays editable;
+  // nothing is filled until this is clicked.
+  const fillAllPending = (): void => {
+    setLineDrafts((prev) =>
+      prev.map((d) => ({ ...d, receivedQty: d.remaining > 0 ? String(d.remaining) : '' })),
+    );
+  };
+
   if (!perms.entry) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           ⛔ You do not have entry access to receive against a delivery challan.
         </div>
       </div>
@@ -158,7 +180,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Delivery challan not found'}
           </div>
         </div>
@@ -169,45 +191,51 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/delivery-challans/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to DC
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+      <PageHeader
+        sticky
+        title={`Receive against ${detail.vendorName ?? detail.vendorCodeText}`}
+        subtitle={
+          <>
+            <span className="td-code">{detail.code}</span> · Received qty goes to Incoming QC.
+          </>
+        }
+        backLabel="Back to DC"
+        onBack={goBack}
+        dirty={dirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form={RECEIVE_FORM_ID}
+              className="btn btn-primary"
+              disabled={!canSubmit}
             >
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Receive against {detail.vendorName ?? detail.vendorCodeText}
-            </div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Received qty goes to Incoming QC.
-            </div>
-          </div>
-        </div>
-      </div>
+              {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+              {submitting ? 'Recording…' : 'Record receipt'}
+            </button>
+          </>
+        }
+      />
 
-      <form onSubmit={(e) => void onSubmit(e)}>
+      {/* Save error right under the header's Save. */}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
+
+      <form id={RECEIVE_FORM_ID} onSubmit={(e) => void onSubmit(e)}>
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">Receipt header</div>
+            <h2 className="panel-title">Receipt header</h2>
           </div>
           <div className="panel-body">
-            <div className="form-grid form-grid-3">
-              <div className="form-grp">
-                <label className="form-label" htmlFor="receiptDate">
-                  Receipt date<span className="req">★</span>
-                </label>
+            {/* 12-column grid: Receipt date · Vendor invoice · Remarks (3 + 3 + 6). */}
+            <FormGrid>
+              <FormField label="Receipt date" required size="sm" htmlFor="receiptDate">
                 <input
                   id="receiptDate"
                   type="date"
@@ -216,11 +244,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   onChange={(e) => setReceiptDate(e.target.value)}
                   required
                 />
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="vendorInvoice">
-                  Vendor invoice
-                </label>
+              </FormField>
+              <FormField label="Vendor invoice" size="sm" htmlFor="vendorInvoice">
                 <input
                   id="vendorInvoice"
                   type="text"
@@ -229,11 +254,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   value={vendorInvoiceText}
                   onChange={(e) => setVendorInvoiceText(e.target.value)}
                 />
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="remarks">
-                  Remarks
-                </label>
+              </FormField>
+              <FormField label="Remarks" size="lg" htmlFor="remarks">
                 <input
                   id="remarks"
                   type="text"
@@ -242,101 +264,71 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                 />
-              </div>
-            </div>
+              </FormField>
+            </FormGrid>
           </div>
         </div>
 
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">Lines</div>
+            <h2 className="panel-title">Lines</h2>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={fillAllPending}>
+              Fill all pending
+            </button>
           </div>
-          <div className="panel-body">
-            <div className="tbl-wrap">
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th>Ln</th>
-                    {/* POL = the CUSTOMER's own PO line number off the SO line
-                        behind this challan line. */}
-                    <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item Code · Name</th>
-                    <th>Sent</th>
-                    <th>Received</th>
-                    <th>Pending</th>
-                    <th>Receive Now</th>
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>Ln</th>
+                  {/* POL = the CUSTOMER's own PO line number off the SO line
+                      behind this challan line. */}
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
+                  <th>Item Code · Name</th>
+                  <th className="th-num">Sent</th>
+                  <th className="th-num">Received</th>
+                  <th className="th-num">Pending</th>
+                  <th className="th-num">Receive Now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineDrafts.map((d, idx) => (
+                  <tr key={d.dcLineId}>
+                    <td className="mono">{d.lineNo}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {d.clientPoLineNo ?? '—'}
+                    </td>
+                    <td>
+                      <span className="mono fw-700">
+                        {itemCodeWithRev(d.itemCodeText, d.itemRevision)}
+                      </span>
+                      {d.itemNameText ? (
+                        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                          {d.itemNameText}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="mono td-num">{d.sentQty.toFixed(0)}</td>
+                    <td className="mono td-num">{d.alreadyReceived.toFixed(0)}</td>
+                    <td className="mono td-num fw-700">{d.remaining.toFixed(0)}</td>
+                    <td className="td-num">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={d.remaining}
+                        className="innovic-input"
+                        value={d.receivedQty}
+                        onChange={(e) => updateDraft(idx, { receivedQty: e.target.value })}
+                        disabled={d.remaining === 0}
+                        style={{ width: 90 }}
+                      />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {lineDrafts.map((d, idx) => (
-                    <tr key={d.dcLineId}>
-                      <td className="mono">{d.lineNo}</td>
-                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                        {d.clientPoLineNo ?? '—'}
-                      </td>
-                      <td>
-                        <span className="mono">
-                          {itemCodeWithRev(d.itemCodeText, d.itemRevision)}
-                        </span>
-                        {d.itemNameText ? (
-                          <div className="text3" style={{ fontSize: 11 }}>
-                            {d.itemNameText}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="mono">{d.sentQty.toFixed(0)}</td>
-                      <td className="mono">{d.alreadyReceived.toFixed(0)}</td>
-                      <td className="mono fw-700">{d.remaining.toFixed(0)}</td>
-                      <td>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          max={d.remaining}
-                          className="innovic-input"
-                          value={d.receivedQty}
-                          onChange={(e) => updateDraft(idx, { receivedQty: e.target.value })}
-                          disabled={d.remaining === 0}
-                          style={{ width: 90, textAlign: 'right' }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        {submitError ? (
-          <div
-            style={{
-              color: 'var(--red)',
-              background: 'var(--red3)',
-              border: '1px solid #fca5a5',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
-          >
-            {submitError}
-          </div>
-        ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          <Link
-            to="/delivery-challans/$id"
-            params={{ id }}
-            className="btn btn-ghost"
-            onClick={exit.allow}
-          >
-            Cancel
-          </Link>
-          <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
-            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {submitting ? 'Recording…' : 'Record receipt'}
-          </button>
         </div>
       </form>
     </div>

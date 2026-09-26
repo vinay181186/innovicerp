@@ -67,7 +67,7 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
@@ -160,7 +160,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -269,9 +269,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() =>
-              setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
-            }
+            onClick={() => setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))}
             disabled={rows.length === 0}
             title={allExpanded ? 'Hide every card’s lines' : 'Show every card’s lines'}
           >
@@ -299,7 +297,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           Loading…
         </div>
       ) : isError ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
           {error instanceof Error ? error.message : 'Could not load GRNs. Try again.'}
         </div>
       ) : rows.length === 0 ? (
@@ -404,7 +402,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                     cursor: 'pointer',
                   }}
                 >
-                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                  <div
+                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
+                  >
                     <QtyBox label="Received" value={grn.totalReceivedQty} />
                     <QtyBox
                       label="Accepted"
@@ -550,7 +550,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>
+      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load GRN detail. Try again.'}
       </div>
     );
@@ -568,7 +568,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
       >
         <div
           style={{
-            fontSize: 10,
+            fontSize: 11,
             color: 'var(--blue)',
             fontFamily: 'var(--mono)',
             fontWeight: 700,
@@ -597,9 +597,13 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th>Received</th>
-            <th style={{ color: 'var(--green)' }}>Accepted</th>
-            <th style={{ color: 'var(--red)' }}>Rejected</th>
+            <th className="th-num">Received</th>
+            <th className="th-num" style={{ color: 'var(--green2)' }}>
+              Accepted
+            </th>
+            <th className="th-num" style={{ color: 'var(--red2)' }}>
+              Rejected
+            </th>
             <th>QC</th>
             <th>QC Date</th>
           </tr>
@@ -636,11 +640,17 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
                 >
                   {l.itemName}
                 </td>
-                <td className="mono fw-700">{l.receivedQty}</td>
-                <td className="mono fw-700" style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}>
+                <td className="mono fw-700 td-num">{l.receivedQty}</td>
+                <td
+                  className="mono fw-700 td-num"
+                  style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}
+                >
                   {l.qcAcceptedQty}
                 </td>
-                <td className="mono" style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}>
+                <td
+                  className="mono td-num"
+                  style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}
+                >
                   {l.qcRejectedQty}
                 </td>
                 <td>
@@ -687,7 +697,7 @@ function GrnKpiStrip({
             key: 'qcpending',
             label: 'QC Pending',
             count: summary.qcPending,
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
             onClick: () => onSelectStatus('pending'),
             active: activeStatus === 'pending',
           },
@@ -695,7 +705,7 @@ function GrnKpiStrip({
             key: 'qccleared',
             label: 'QC Cleared',
             count: summary.qcCleared,
-            color: 'var(--green)',
+            color: 'var(--green2)',
             onClick: () => onSelectStatus('completed'),
             active: activeStatus === 'completed',
           },

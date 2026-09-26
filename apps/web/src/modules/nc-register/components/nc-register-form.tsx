@@ -286,7 +286,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                   ✓ {watch('itemNameText') ?? ''}
                 </div>
               ) : watch('itemCodeText')?.trim() ? (
-                <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 2 }}>
+                <div style={{ color: 'var(--red2)', fontSize: 11, marginTop: 2 }}>
                   ⚠ not found in item master
                 </div>
               ) : null}
@@ -455,7 +455,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         {props.submitError ? (
           <div
             style={{
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid #fca5a5',
               borderRadius: 6,
@@ -473,7 +473,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting}>
+          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
             {props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save NC')}
           </button>

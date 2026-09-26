@@ -276,7 +276,7 @@ function PlanningWorkflowPage(): JSX.Element {
   // only while access is still loading — don't block then.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -425,7 +425,7 @@ function OrderList({
                 <td
                   colSpan={columns.length}
                   className="empty-state"
-                  style={{ color: 'var(--red)' }}
+                  style={{ color: 'var(--red2)' }}
                 >
                   {error}
                 </td>
@@ -571,7 +571,7 @@ function HeaderField({
     <div style={{ minWidth: 0 }}>
       <div
         className="mono text3"
-        style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '.08em' }}
+        style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}
       >
         {label}
       </div>
@@ -628,7 +628,7 @@ function OrderDetail({
     return (
       <>
         <div style={{ marginBottom: 14 }}>{backBtn}</div>
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
           {detail.error instanceof Error
             ? detail.error.message
             : 'Could not load order. Try again.'}
@@ -709,7 +709,7 @@ function OrderDetail({
             borderColor: 'var(--green)',
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green2)' }}>
             ✓ {stockNote.what}
           </span>
           <span className="text3" style={{ fontSize: 11 }}>
@@ -722,7 +722,7 @@ function OrderDetail({
               {stockNote.reservedQty}
             </b>{' '}
             · Available{' '}
-            <b className="mono" style={{ color: 'var(--green)' }}>
+            <b className="mono" style={{ color: 'var(--green2)' }}>
               {stockNote.availableQty}
             </b>
           </span>
@@ -783,7 +783,7 @@ function OrderDetail({
                           {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
                         </span>
                         {line.clientPoLineNo ? (
-                          <div className="mono" style={{ fontSize: 9, color: 'var(--purple)' }}>
+                          <div className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                             POL {line.clientPoLineNo}
                           </div>
                         ) : null}
@@ -792,7 +792,7 @@ function OrderDetail({
                         <div style={{ marginTop: 2 }}>
                           <span
                             className={`badge ${line.itemProcurementType === 'buy' ? 'b-amber' : 'b-grey'}`}
-                            style={{ fontSize: 9, padding: '0 6px' }}
+                            style={{ fontSize: 11, padding: '0 6px' }}
                             title={
                               line.itemProcurementType === 'buy'
                                 ? 'Bought-in item — raise a purchase request'
@@ -867,7 +867,7 @@ function OrderDetail({
                         <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>
                           {status.label}
                         </span>
-                        <div className="mono text3" style={{ fontSize: 9 }}>
+                        <div className="mono text3" style={{ fontSize: 11 }}>
                           {status.pct}%
                         </div>
                       </td>
@@ -928,7 +928,7 @@ function OrderDetail({
                               In Production (no plan)
                             </span>
                             <span className="text2">{line.directJcQty} pcs</span>
-                            <span className="mono text3" style={{ fontSize: 10 }}>
+                            <span className="mono text3" style={{ fontSize: 11 }}>
                               {line.directJcCodes.join(', ')}
                             </span>
                           </div>
@@ -980,7 +980,7 @@ function OrderDetail({
                             material and is never bought in. */}
                           {line.itemProcurementType === 'buy' ? (
                             so.source === 'jw' ? (
-                              <span className="text3" style={{ fontSize: 10 }}>
+                              <span className="text3" style={{ fontSize: 11 }}>
                                 Buy item — client material
                               </span>
                             ) : line.remaining > 0 && perms.entry ? (
@@ -1012,7 +1012,7 @@ function OrderDetail({
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              style={{ color: 'var(--amber)', fontWeight: 700 }}
+                              style={{ color: 'var(--amber2)', fontWeight: 700 }}
                               disabled={allocateCap(lineFacts(so.soCode, line)) <= 0}
                               title={
                                 allocateCap(lineFacts(so.soCode, line)) > 0
@@ -1240,7 +1240,7 @@ function SearchResults({
         </div>
       ) : null}
       {failed.length > 0 ? (
-        <div className="empty-state" style={{ color: 'var(--red)', padding: 12 }}>
+        <div className="empty-state" style={{ color: 'var(--red2)', padding: 12 }}>
           Could not load {failed.length} of {capped.length} orders — {failedMsg}
         </div>
       ) : null}
@@ -1357,7 +1357,7 @@ function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element {
       <span className="text2">
         PR · <b>{pr.qty} pcs</b>
       </span>
-      <span style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 10 }}>
+      <span style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 11 }}>
         {pr.status === 'po_created' && pr.poCode ? (
           <>
             PO <span className="mono">{pr.poCode}</span>
@@ -1469,14 +1469,14 @@ function PlanChip({
         {typeLabel} · <b>{plan.planQty} pcs</b>
       </span>
       {!isRouteCard && !isDP && !isFO && plan.opsCount > 0 ? (
-        <span className="text3" style={{ fontSize: 9 }}>
+        <span className="text3" style={{ fontSize: 11 }}>
           ({plan.opsCount} ops{plan.hasOutsourceOp ? ', 🏭 outsrc' : ''})
         </span>
       ) : null}
       {isFO && plan.foVendorCodeText ? (
-        <span style={{ fontSize: 9, color: 'var(--purple)' }}>→ {plan.foVendorCodeText}</span>
+        <span style={{ fontSize: 11, color: 'var(--purple)' }}>→ {plan.foVendorCodeText}</span>
       ) : null}
-      <span style={{ fontWeight: 700, color: stColor, fontSize: 10 }}>{statusLabel}</span>
+      <span style={{ fontWeight: 700, color: stColor, fontSize: 11 }}>{statusLabel}</span>
 
       {/* Route-card plan: the Production Order (once raised) is the way on. */}
       {isRouteCard && plan.productionOrderId && plan.productionOrderCode ? (
@@ -1484,7 +1484,7 @@ function PlanChip({
           to="/production-orders/$id"
           params={{ id: plan.productionOrderId }}
           className="mono fw-700"
-          style={{ fontSize: 10, color: 'var(--blue)' }}
+          style={{ fontSize: 11, color: 'var(--blue)' }}
           title="Open the Production Order"
         >
           {plan.productionOrderCode}
@@ -1496,7 +1496,7 @@ function PlanChip({
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700 }}
+          style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}
           onClick={onEdit}
         >
           ✏ Edit
@@ -1507,7 +1507,7 @@ function PlanChip({
           <button
             type="button"
             className={`btn btn-sm ${executeError ? 'btn-danger' : 'btn-success'}`}
-            style={{ fontSize: 10, fontWeight: 700, opacity: isExecuting ? 0.7 : 1 }}
+            style={{ fontSize: 11, fontWeight: 700, opacity: isExecuting ? 0.7 : 1 }}
             disabled={isExecuting}
             title={executeError ?? undefined}
             onClick={onExecute}
@@ -1527,7 +1527,7 @@ function PlanChip({
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 11 }}
             disabled={isExecuting}
             onClick={onEdit}
             title="Edit plan"
@@ -1537,7 +1537,7 @@ function PlanChip({
         </>
       ) : null}
       {plan.planStatus === 'pr_created' ? (
-        <span className="mono" style={{ color: 'var(--purple)', fontSize: 10, fontWeight: 700 }}>
+        <span className="mono" style={{ color: 'var(--purple)', fontSize: 11, fontWeight: 700 }}>
           PR:
           <PrLink
             id={plan.foPrId ?? plan.dpPrId}
@@ -1545,7 +1545,7 @@ function PlanChip({
             color="var(--purple)"
           />
           {plan.foMatPrCode ? (
-            <span style={{ color: 'var(--amber)', marginLeft: 4 }}>
+            <span style={{ color: 'var(--amber2)', marginLeft: 4 }}>
               Mat:
               <PrLink id={plan.foMatPrId} code={plan.foMatPrCode} color="var(--amber)" />
             </span>
@@ -1557,7 +1557,7 @@ function PlanChip({
           className="mono"
           style={{
             color: 'var(--purple)',
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 700,
             display: 'inline-flex',
             gap: 3,
@@ -1582,7 +1582,7 @@ function PlanChip({
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 10, color: 'var(--cyan)' }}
+          style={{ fontSize: 11, color: 'var(--cyan)' }}
           onClick={onViewJc}
           title="Open the Job Card"
         >

@@ -81,7 +81,7 @@ export function PartyMaterialIssueView({
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -114,7 +114,7 @@ export function PartyMaterialIssueView({
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error
                 ? error.message
                 : 'Could not load party material issues. Try again.'}
@@ -136,7 +136,7 @@ export function PartyMaterialIssueView({
                       not WHICH PART, which is why the first column now exists. */}
                   <th>Item Name</th>
                   <th>Material</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     Issue Qty
                   </th>
                   <th>Remarks</th>
@@ -184,7 +184,7 @@ export function PartyMaterialIssueView({
                         <div
                           className="text3"
                           style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             maxWidth: 160,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -209,7 +209,7 @@ export function PartyMaterialIssueView({
                     </td>
                     <td
                       className="td-ctr mono fw-700"
-                      style={{ fontSize: 14, color: 'var(--green)' }}
+                      style={{ fontSize: 14, color: 'var(--green2)' }}
                     >
                       {it.qty}
                     </td>
@@ -233,7 +233,7 @@ export function PartyMaterialIssueView({
                           className="btn btn-sm"
                           style={{
                             background: 'rgba(239,68,68,0.08)',
-                            color: 'var(--red)',
+                            color: 'var(--red2)',
                             border: '1px solid rgba(239,68,68,0.3)',
                             padding: '2px 8px',
                           }}
@@ -312,7 +312,7 @@ function CancelIssueModal({
           ⚠ Cancel {row.code}
         </div>
         <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          Returns <b style={{ color: 'var(--green)' }}>{row.qty}</b> to party stock. Refused if
+          Returns <b style={{ color: 'var(--green2)' }}>{row.qty}</b> to party stock. Refused if
           already machined.
         </div>
         <Field label="Reason ★">
@@ -331,7 +331,7 @@ function CancelIssueModal({
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -542,7 +542,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
             {selectedPm ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
                 Available party stock:{' '}
-                <span style={{ color: 'var(--green)', fontWeight: 700 }}>
+                <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
                   {selectedPm.stockQty}
                 </span>{' '}
                 {selectedPm.uom}
@@ -569,7 +569,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -614,7 +614,7 @@ function Field({
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 4,

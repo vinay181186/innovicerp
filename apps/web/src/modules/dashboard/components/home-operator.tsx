@@ -79,13 +79,13 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                   ) : null}
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>ELAPSED</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>ELAPSED</div>
                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)' }}>
                     {elapsedStr(r.elapsedMin)}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>PROGRESS</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>PROGRESS</div>
                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)' }}>
                     {r.completed}/{r.orderQty}
                   </div>
@@ -147,7 +147,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                 <th>Planned Machine</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Available</th>
+                <th className="th-num">Available</th>
                 <th>Due Date</th>
                 <th />
               </tr>
@@ -195,7 +195,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                       {r.itemName ?? ''}
                     </td>
                     <td
-                      className="td-ctr mono"
+                      className="mono td-num"
                       style={{ fontSize: 15, fontWeight: 800, color: 'var(--sig-warn)' }}
                     >
                       {r.available}

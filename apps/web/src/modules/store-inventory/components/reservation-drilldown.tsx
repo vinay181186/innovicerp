@@ -71,7 +71,7 @@ export function ReservationDrilldown({
           <Loader2 size={14} className="inline animate-spin" /> Loading…
         </div>
       ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
           {error instanceof Error ? error.message : 'Could not load reservations. Try again.'}
         </div>
       ) : (
@@ -93,9 +93,13 @@ export function ReservationDrilldown({
                   <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Customer</th>
                   <th>Item Code</th>
-                  <th style={{ color: 'var(--purple)' }}>Reserved</th>
-                  <th>Consumed</th>
-                  <th style={{ color: 'var(--green)' }}>Pending</th>
+                  <th className="th-num" style={{ color: 'var(--purple)' }}>
+                    Reserved
+                  </th>
+                  <th className="th-num">Consumed</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    Pending
+                  </th>
                   <th>Source</th>
                   <th>Reservation Status</th>
                   <th>Production Order No.</th>
@@ -146,11 +150,11 @@ export function ReservationDrilldown({
                       <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                         {itemCodeWithRev(row.itemCode, row.itemRevision)}
                       </td>
-                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
                         {row.qty}
                       </td>
-                      <td className="mono text3">{row.consumedQty}</td>
-                      <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                      <td className="mono text3 td-num">{row.consumedQty}</td>
+                      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                         {row.remainingQty}
                       </td>
                       <td style={{ fontSize: 11 }}>{RESERVATION_SOURCE_LABEL[row.source]}</td>

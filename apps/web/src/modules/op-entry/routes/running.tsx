@@ -62,7 +62,7 @@ function RunningOpsPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error
               ? error.message
               : 'Could not load running operations. Try again.'}

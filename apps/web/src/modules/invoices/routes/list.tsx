@@ -105,7 +105,7 @@ function InvoiceListPage(): React.JSX.Element {
                 key: 'invoiced',
                 label: 'Total Invoiced',
                 count: inr(s.totalInvoiced ?? 0),
-                color: 'var(--green)',
+                color: 'var(--green2)',
               },
               {
                 key: 'received',
@@ -117,19 +117,19 @@ function InvoiceListPage(): React.JSX.Element {
                 key: 'outstanding',
                 label: 'Outstanding',
                 count: inr(s.outstanding ?? 0),
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
               },
               {
                 key: 'overdue',
                 label: 'Overdue',
                 count: inr(s.overdueAmount ?? 0),
-                color: 'var(--red)',
-                sub: <span style={{ color: 'var(--red)' }}>{s.overdueCount} inv</span>,
+                color: 'var(--red2)',
+                sub: <span style={{ color: 'var(--red2)' }}>{s.overdueCount} inv</span>,
               },
             ]),
-        { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red)' },
-        { key: 'partial', label: 'Partly Paid', count: s.partialCount, color: 'var(--amber)' },
-        { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green)' },
+        { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red2)' },
+        { key: 'partial', label: 'Partly Paid', count: s.partialCount, color: 'var(--amber2)' },
+        { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green2)' },
       ]
     : [];
 
@@ -148,7 +148,7 @@ function InvoiceListPage(): React.JSX.Element {
           className: 'mono fw-700',
           nowrap: true,
           render: (inv) => (
-            <span style={{ color: 'var(--green)' }}>{inr(inv.grandTotal ?? 0)}</span>
+            <span style={{ color: 'var(--green2)' }}>{inr(inv.grandTotal ?? 0)}</span>
           ),
         },
         {
@@ -242,7 +242,7 @@ function InvoiceListPage(): React.JSX.Element {
             label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
           />
           {inv.overdue ? (
-            <span className="fw-700" style={{ fontSize: 'var(--fs-xs)', color: 'var(--red)' }}>
+            <span className="fw-700" style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}>
               ⚠ OVERDUE
             </span>
           ) : null}
@@ -310,7 +310,7 @@ function InvoiceListPage(): React.JSX.Element {
                         params={{ id: inv.id }}
                         className="btn btn-ghost btn-sm"
                         title="Add payment"
-                        style={{ color: 'var(--green)' }}
+                        style={{ color: 'var(--green2)' }}
                       >
                         💳 Pay
                       </Link>

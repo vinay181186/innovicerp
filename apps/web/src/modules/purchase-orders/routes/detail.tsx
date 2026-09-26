@@ -45,11 +45,12 @@
 import type { PurchaseOrderLine } from '@innovic/shared';
 import { poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Check, Inbox, Loader2, Pencil, Printer, Send, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Check, Inbox, Loader2, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
+import { ActionMenu } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -94,6 +95,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -112,7 +114,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Purchase order not found'}
           </div>
         </div>
@@ -126,7 +128,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -156,7 +158,10 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   //   Edit / Issue DC / Receive -> edit (L3 Editor and up)
   const canEdit = perms.edit;
   const isAdmin = me?.role === 'admin';
-  const canIssueOrReceive = ['draft', 'open', 'partial', 'qc_pending'].includes(detail.status);
+  // 'draft' is deliberately NOT here: the GRN form refuses a draft PO
+  // (grn-against-po-form.tsx), so offering Receive on one was a dead end. A
+  // draft shows the step disabled with "Approve the PO first" instead.
+  const canIssueOrReceive = ['open', 'partial', 'qc_pending'].includes(detail.status);
   // Approve/Reject needs BOTH halves, matching what the API enforces
   // (service.ts approvePurchaseOrder: requireFormAccess(…,'approve') AND the
   // loadApprovalContext `isApprover` check). The TIER says whether you may
@@ -211,6 +216,18 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
 
+  // The ONE next step, as a real button. Job Work AND Service both send OUR
+  // material out and expect it back, so both get Issue DC. Everything else is a
+  // buy and gets Receive (GRN). Before this a service PO fell into the
+  // else-branch and was offered "Receive (new GRN)" — booking stock in against a
+  // purchase with no incoming material.
+  const sendsOut = poSendsMaterialOut(detail.poType);
+  const nextLabel = sendsOut ? 'Issue DC' : 'Receive (GRN)';
+  const nextIcon = sendsOut ? <Send size={13} /> : <Inbox size={13} />;
+  // A draft PO is not approved yet — the GRN / DC forms refuse it — so the step
+  // shows, disabled, with the reason, instead of opening a dead-end form.
+  const nextBlockedByDraft = detail.status === 'draft' && canEdit;
+
   return (
     <div>
       <Link to="/purchase-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
@@ -231,114 +248,125 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             </div>
             <PoStatusBadge status={detail.status} />
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <AssignTaskButton
-              linkedRef={{
-                type: 'purchase_order',
-                id: detail.id,
-                display: `PO ${detail.code}`,
-                navPage: `/purchase-orders/${detail.id}`,
-              }}
-              suggestedTitle={`Follow up on PO ${detail.code}`}
-            />
+          {/* ONE primary next step + an Actions menu for the rest. While the PO
+              awaits approval, Approve IS the next step (primary) with Reject
+              beside it; Receive / Issue DC then shows disabled until approval. */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {showApprovalActions ? (
               <>
                 <button
                   type="button"
-                  className="btn btn-sm"
-                  style={{ background: 'var(--green)', color: '#fff', fontWeight: 700 }}
+                  className="btn btn-primary"
                   onClick={() => setApproveOpen(true)}
                 >
                   <Check size={13} /> Approve
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setRejectOpen(true)}
-                >
+                <button type="button" className="btn btn-ghost" onClick={() => setRejectOpen(true)}>
                   <X size={13} /> Reject
                 </button>
               </>
             ) : null}
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
-              <Printer size={13} /> Print
-            </button>
-            {/* Job Work AND Service both send OUR material out and expect it
-                back, so both get Issue DC. Everything else is a buy and gets
-                Receive/GRN. Before this a service PO fell into the else-branch
-                and was offered "Receive (new GRN)" — booking stock in against a
-                purchase with no incoming material. */}
-            {canIssueOrReceive && poSendsMaterialOut(detail.poType) && canEdit ? (
-              <Link
-                to="/delivery-challans/new"
-                search={{ poId: detail.id }}
-                className="btn btn-primary btn-sm"
-              >
-                <Send size={13} /> Issue DC
-              </Link>
-            ) : null}
-            {canIssueOrReceive && !poSendsMaterialOut(detail.poType) && canEdit ? (
-              <Link
-                to="/goods-receipt-notes/new"
-                search={{ poId: detail.id }}
-                className="btn btn-primary btn-sm"
-              >
-                <Inbox size={13} /> Receive (new GRN)
-              </Link>
-            ) : null}
-            {canEdit ? (
-              <Link
-                to="/purchase-orders/$id/edit"
-                params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                <Pencil size={13} /> Edit
-              </Link>
-            ) : null}
-            {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Move PO {detail.code} to Trash? You can restore it from Trash.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Move to Trash
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
+            {canIssueOrReceive && canEdit ? (
+              sendsOut ? (
+                <Link
+                  to="/delivery-challans/new"
+                  search={{ poId: detail.id }}
+                  className="btn btn-primary"
                 >
-                  <Trash2 size={13} /> Delete
-                </button>
+                  {nextIcon} {nextLabel}
+                </Link>
+              ) : (
+                <Link
+                  to="/goods-receipt-notes/new"
+                  search={{ poId: detail.id }}
+                  className="btn btn-primary"
+                >
+                  {nextIcon} {nextLabel}
+                </Link>
               )
+            ) : nextBlockedByDraft ? (
+              <button
+                type="button"
+                className={showApprovalActions ? 'btn btn-ghost' : 'btn btn-primary'}
+                disabled
+                title="Approve the PO first"
+              >
+                {nextIcon} {nextLabel}
+              </button>
             ) : null}
+            <ActionMenu
+              items={[
+                { label: 'Print', onClick: onPrint },
+                { label: 'Assign Task', onClick: () => setAssignOpen(true) },
+                {
+                  label: 'Edit',
+                  hidden: !canEdit,
+                  onClick: () =>
+                    void navigate({ to: '/purchase-orders/$id/edit', params: { id: detail.id } }),
+                },
+                {
+                  label: 'Delete',
+                  danger: true,
+                  hidden: !canDelete,
+                  onClick: () => setConfirmDelete(true),
+                },
+              ]}
+            />
           </div>
         </div>
+        {canDelete && confirmDelete ? (
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              flexWrap: 'wrap',
+              margin: '10px 14px 0',
+            }}
+          >
+            <span className="text3" style={{ fontSize: 12 }}>
+              Move PO {detail.code} to Trash? You can restore it from Trash.
+            </span>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={onDelete}
+              disabled={softDelete.isPending}
+            >
+              {softDelete.isPending ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Trash2 size={13} />
+              )}
+              Move to Trash
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setConfirmDelete(false)}
+              disabled={softDelete.isPending}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
+        {assignOpen ? (
+          <AssignTaskModal
+            linkedRef={{
+              type: 'purchase_order',
+              id: detail.id,
+              display: `PO ${detail.code}`,
+              navPage: `/purchase-orders/${detail.id}`,
+            }}
+            suggestedTitle={`Follow up on PO ${detail.code}`}
+            onClose={() => setAssignOpen(false)}
+          />
+        ) : null}
         {softDelete.isError ? (
           <div
             style={{
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid var(--red)',
               borderRadius: 6,
@@ -370,22 +398,28 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Ln</th>
+                <th className="th-num">Ln</th>
                 {/* POL = the customer's own PO line number, carried down from
                     the Sales Order line this PO line was raised against. */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Source</th>
-                <th>Qty</th>
+                <th className="th-num">Qty</th>
                 {priceHidden ? null : (
                   <>
-                    <th>Rate</th>
-                    <th style={{ color: 'var(--green)' }}>Amount</th>
+                    <th className="th-num">Rate</th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Amount
+                    </th>
                   </>
                 )}
-                <th style={{ color: 'var(--green)' }}>Received</th>
-                <th style={{ color: 'var(--red)' }}>Pending</th>
+                <th className="th-num" style={{ color: 'var(--green2)' }}>
+                  Received
+                </th>
+                <th className="th-num" style={{ color: 'var(--red2)' }}>
+                  Pending
+                </th>
                 <th>Due Date</th>
                 <th>Remarks</th>
               </tr>
@@ -438,7 +472,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              <div className="fw-700" style={{ color: 'var(--green)' }}>
+              <div className="fw-700" style={{ color: 'var(--green2)' }}>
                 ✅ Approve PO {detail.code}?
               </div>
               <button
@@ -466,7 +500,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                     background: 'rgba(239,68,68,0.06)',
                     border: '1px solid rgba(239,68,68,0.3)',
                     borderRadius: 6,
-                    color: 'var(--red)',
+                    color: 'var(--red2)',
                     fontSize: 12,
                   }}
                 >
@@ -483,8 +517,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm"
-                  style={{ background: 'var(--green)', color: '#fff', fontWeight: 700 }}
+                  className="btn btn-success btn-sm"
                   disabled={approveMut.isPending}
                   onClick={() => void doApprove()}
                 >
@@ -533,7 +566,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              <div className="fw-700" style={{ color: 'var(--red)' }}>
+              <div className="fw-700" style={{ color: 'var(--red2)' }}>
                 ❌ Reject PO — {detail.code}
               </div>
               <button
@@ -576,7 +609,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                     background: 'rgba(239,68,68,0.06)',
                     border: '1px solid rgba(239,68,68,0.3)',
                     borderRadius: 6,
-                    color: 'var(--red)',
+                    color: 'var(--red2)',
                     fontSize: 12,
                   }}
                 >
@@ -614,9 +647,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   );
 }
 
-// Legacy L26336-26348. Cell classes mirror legacy exactly: money/qty are
-// `td-ctr mono` (legacy centres them — right-aligning would be an improvement,
-// not parity), Item Code is `td-code` on the <td> in var(--purple) (a real
+// Legacy L26336-26348. Numbers (Ln, qty, rate, amount, received, pending) sit
+// RIGHT-aligned with `td-num` (house rule 2026-09-26), Item Code is `td-code` on the <td> in var(--purple) (a real
 // token with no utility class), Received is always green and Pending flips
 // red/green on >0.
 function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): React.JSX.Element {
@@ -627,7 +659,7 @@ function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): Reac
   const pending = Math.max(0, l.qty - l.receivedQty);
   return (
     <tr>
-      <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+      <td className="td-num mono fw-700" style={{ color: 'var(--blue)' }}>
         {l.lineNo}
       </td>
       {/* POL — the CUSTOMER's PO line number off the SO line behind this row.
@@ -639,22 +671,22 @@ function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): Reac
           was raised against. A hand-typed line has no SO behind it and keeps
           the bare code, with no trailing slash. */}
       <td className="td-code">{itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}</td>
-      <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.itemName}</td>
-      <td className="mono text2" style={{ fontSize: 10 }}>
+      <td style={{ color: 'var(--amber2)', fontWeight: 700 }}>{l.itemName}</td>
+      <td className="mono text2" style={{ fontSize: 11 }}>
         {l.sourceJcOpId ? 'JC op' : '—'}
       </td>
-      <td className="mono fw-700">{l.qty}</td>
+      <td className="td-num mono fw-700">{l.qty}</td>
       {priceHidden ? null : (
         <>
-          <td className="mono" style={{ fontSize: 11 }}>
+          <td className="td-num mono" style={{ fontSize: 11 }}>
             {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
           </td>
-          <td className="mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
+          <td className="td-num mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
         </>
       )}
-      <td className="mono green fw-700">{l.receivedQty}</td>
+      <td className="td-num mono green fw-700">{l.receivedQty}</td>
       <td
-        className="mono"
+        className="td-num mono"
         style={{ color: pending > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}
       >
         {pending}

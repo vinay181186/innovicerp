@@ -54,7 +54,7 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
@@ -168,7 +168,7 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
                 to="/delivery-challans/$id/receive"
                 params={{ id: dc.id }}
                 className="btn btn-success btn-sm"
-                style={{ fontSize: 10 }}
+                style={{ fontSize: 11 }}
                 title="Receive material back from the vendor"
               >
                 + Receive

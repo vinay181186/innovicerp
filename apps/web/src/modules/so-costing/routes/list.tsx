@@ -58,7 +58,7 @@ function SoCostingListPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load SO costing. Try again.'}
       </div>
     );
@@ -81,18 +81,28 @@ function SoCostingListPage(): React.JSX.Element {
               <tr>
                 <th>SO No.</th>
                 <th>Customer</th>
-                <th className="td-ctr">Lines</th>
-                <th className="td-ctr">Total Qty</th>
+                <th className="th-num">Lines</th>
+                <th className="th-num">Total Qty</th>
                 {priceHidden ? null : (
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>SO Value</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    SO Value
+                  </th>
                 )}
                 <th>Cost Centre</th>
                 {priceHidden ? null : (
                   <>
-                    <th className="td-ctr" style={{ color: 'var(--blue)' }}>Material</th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Outsource</th>
-                    <th className="td-ctr" style={{ color: 'var(--cyan)' }}>Machine Time</th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>Total Cost</th>
+                    <th className="th-num" style={{ color: 'var(--blue)' }}>
+                      Material
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      Outsource
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--cyan)' }}>
+                      Machine Time
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Total Cost
+                    </th>
                   </>
                 )}
               </tr>
@@ -117,20 +127,32 @@ function SoCostingListPage(): React.JSX.Element {
                       </Link>
                     </td>
                     <td>{r.customer ?? '—'}</td>
-                    <td className="td-ctr">{r.lineCount}</td>
-                    <td className="td-ctr mono fw-700">{r.totalQty}</td>
+                    <td className="td-num">{r.lineCount}</td>
+                    <td className="mono fw-700 td-num">{r.totalQty}</td>
                     {priceHidden ? null : (
-                      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>{money(r.soValue)}</td>
+                      <td className="mono td-num" style={{ color: 'var(--green2)' }}>
+                        {money(r.soValue)}
+                      </td>
                     )}
                     <td style={{ fontSize: 11, color: 'var(--teal, #0d9488)' }}>
-                      {r.costCenter ? `${r.costCenter}${r.costCenterName ? ` — ${r.costCenterName}` : ''}` : '—'}
+                      {r.costCenter
+                        ? `${r.costCenter}${r.costCenterName ? ` — ${r.costCenterName}` : ''}`
+                        : '—'}
                     </td>
                     {priceHidden ? null : (
                       <>
-                        <td className="td-ctr mono" style={{ color: 'var(--blue)' }}>{money(r.materialCost)}</td>
-                        <td className="td-ctr mono" style={{ color: 'var(--amber)' }}>{money(r.outsourceCost)}</td>
-                        <td className="td-ctr mono" style={{ color: 'var(--cyan)' }}>{money(r.machineTimeCost)}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>{money(r.totalCost)}</td>
+                        <td className="mono td-num" style={{ color: 'var(--blue)' }}>
+                          {money(r.materialCost)}
+                        </td>
+                        <td className="mono td-num" style={{ color: 'var(--amber2)' }}>
+                          {money(r.outsourceCost)}
+                        </td>
+                        <td className="mono td-num" style={{ color: 'var(--cyan)' }}>
+                          {money(r.machineTimeCost)}
+                        </td>
+                        <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
+                          {money(r.totalCost)}
+                        </td>
                       </>
                     )}
                   </tr>

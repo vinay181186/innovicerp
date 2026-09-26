@@ -64,7 +64,7 @@ function AlertDrillPage() {
       ) : isError || !data ? (
         <div className="panel">
           <div className="empty-state">
-            <span style={{ color: 'var(--red)' }}>
+            <span style={{ color: 'var(--red2)' }}>
               {notFound
                 ? `No registered alert with code ${code}.`
                 : (error?.message ?? 'Could not load alert. Try again.')}
@@ -89,7 +89,7 @@ function AlertDrillPage() {
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>
               {DEPT_LABEL[data.alert.dept]} · {data.alert.code}
             </span>{' '}
-            <span className="mono fw-700" style={{ color: 'var(--amber)', marginLeft: 8 }}>
+            <span className="mono fw-700" style={{ color: 'var(--amber2)', marginLeft: 8 }}>
               {data.alert.count} records
             </span>
           </div>

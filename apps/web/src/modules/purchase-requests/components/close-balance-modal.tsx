@@ -65,7 +65,7 @@ export function CloseBalanceModal({
             borderBottom: '1px solid var(--border)',
           }}
         >
-          <div className="fw-700" style={{ color: 'var(--amber)' }}>
+          <div className="fw-700" style={{ color: 'var(--amber2)' }}>
             🚫 Short Close — {code}
           </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
@@ -85,7 +85,7 @@ export function CloseBalanceModal({
             }}
           >
             Stop ordering the pending{' '}
-            <b className="mono" style={{ color: 'var(--amber)' }}>
+            <b className="mono" style={{ color: 'var(--amber2)' }}>
               {bal.balance}
             </b>
             ? Existing POs stay.
@@ -111,7 +111,7 @@ export function CloseBalanceModal({
                 background: 'var(--red3)',
                 border: '1px solid var(--sig-critical-bd)',
                 borderRadius: 6,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 fontSize: 12,
               }}
             >

@@ -78,10 +78,18 @@ export function NeedsPlanningTable(): React.JSX.Element {
         render: (r) => r.partName ?? '—',
         title: (r) => r.partName ?? '',
       },
-      { header: 'Order Qty', width: '6%', className: 'mono fw-700', nowrap: true, key: 'orderQty' },
+      {
+        header: 'Order Qty',
+        width: '6%',
+        align: 'right',
+        className: 'mono fw-700',
+        nowrap: true,
+        key: 'orderQty',
+      },
       {
         header: 'Plan Qty',
         width: '6%',
+        align: 'right',
         className: 'mono',
         nowrap: true,
         render: (r) => (
@@ -91,6 +99,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
       {
         header: 'Pending',
         width: '6%',
+        align: 'right',
         className: 'mono fw-700',
         headColor: 'var(--red)',
         nowrap: true,

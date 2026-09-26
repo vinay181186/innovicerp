@@ -101,7 +101,7 @@ function QcDocumentsPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !effectiveFormPerms(eff, 'qcdocs_upload').view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -248,7 +248,7 @@ function MatrixView(): React.JSX.Element {
           className="btn btn-sm"
           style={{
             background: 'rgba(34,197,94,0.1)',
-            color: 'var(--green)',
+            color: 'var(--green2)',
             border: '1px solid rgba(34,197,94,0.3)',
           }}
           disabled={!matrix}
@@ -266,7 +266,7 @@ function MatrixView(): React.JSX.Element {
             className="btn btn-sm"
             style={{
               background: 'rgba(34,197,94,0.1)',
-              color: 'var(--green)',
+              color: 'var(--green2)',
               border: '1px solid rgba(34,197,94,0.3)',
             }}
             disabled={
@@ -318,19 +318,19 @@ function MatrixView(): React.JSX.Element {
           }}
         >
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO</span>
             <br />
             <b style={{ color: 'var(--cyan)', fontSize: 16 }}>{matrix.so.code}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Customer</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Customer</span>
             <br />
             <b>{matrix.so.customerName ?? ''}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>QC Ops</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>QC Ops</span>
             <br />
-            <b style={{ color: 'var(--green)' }}>{matrix.totalDone}</b>
+            <b style={{ color: 'var(--green2)' }}>{matrix.totalDone}</b>
             <span style={{ color: 'var(--text3)' }}> / {matrix.totalTotal}</span>
           </div>
           <div
@@ -375,7 +375,7 @@ function MatrixView(): React.JSX.Element {
                 <th>Order Qty</th>
                 <th>JC No.</th>
                 {cols.map((c) => (
-                  <th key={c} style={{ color: 'var(--green)', minWidth: 90 }}>
+                  <th key={c} style={{ color: 'var(--green2)', minWidth: 90 }}>
                     {c}
                   </th>
                 ))}
@@ -440,7 +440,7 @@ function MatrixView(): React.JSX.Element {
                   <td
                     colSpan={7 + cols.length}
                     className="empty-state"
-                    style={{ color: 'var(--red)' }}
+                    style={{ color: 'var(--red2)' }}
                   >
                     {error instanceof Error
                       ? error.message
@@ -514,14 +514,14 @@ function MatrixView(): React.JSX.Element {
 
 function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
   if (!cell.applicable) {
-    return <td style={{ color: 'var(--text3)', fontSize: 10 }}>—</td>;
+    return <td style={{ color: 'var(--text3)', fontSize: 11 }}>—</td>;
   }
   if (cell.done) {
     if (cell.hasDoc) {
       return (
         <td>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)' }}>✅ Completed</div>
-          <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate, '')}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--green2)' }}>✅ Completed</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(cell.docDate, '')}</div>
           <button
             type="button"
             className="btn"
@@ -532,9 +532,9 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
               background: 'rgba(34,197,94,0.1)',
               border: '1px solid rgba(34,197,94,0.3)',
               borderRadius: 3,
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 700,
-              color: 'var(--green)',
+              color: 'var(--green2)',
             }}
             onClick={(e) => {
               e.stopPropagation();
@@ -548,9 +548,9 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
     }
     return (
       <td>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)' }}>✅ Completed</div>
-        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate, '')}</div>
-        <div style={{ fontSize: 9, color: 'var(--amber)', fontStyle: 'italic' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--green2)' }}>✅ Completed</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(cell.docDate, '')}</div>
+        <div style={{ fontSize: 11, color: 'var(--amber2)', fontStyle: 'italic' }}>
           Report Missing
         </div>
       </td>
@@ -559,17 +559,17 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
   if (cell.pending) {
     return (
       <td>
-        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}>⏳ Pending</div>
-        <div style={{ fontSize: 9, color: 'var(--amber)' }}>{cell.qcPending} pcs</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)' }}>⏳ Pending</div>
+        <div style={{ fontSize: 11, color: 'var(--amber2)' }}>{cell.qcPending} pcs</div>
         {cell.accepted > 0 ? (
-          <div style={{ fontSize: 9, color: 'var(--green)' }}>{cell.accepted} Accepted</div>
+          <div style={{ fontSize: 11, color: 'var(--green2)' }}>{cell.accepted} Accepted</div>
         ) : null}
       </td>
     );
   }
   return (
     <td>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>Waiting</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>Waiting</div>
     </td>
   );
 }
@@ -587,19 +587,19 @@ function OverallTd({
   // linked JC gets a bare, left-aligned "No JC" td (L23072); a JC that simply
   // has no QC ops gets a centred "No QC" span (L23096).
   if (overall === 'no_jc') {
-    return <td style={{ color: 'var(--text3)', fontSize: 10 }}>No JC</td>;
+    return <td style={{ color: 'var(--text3)', fontSize: 11 }}>No JC</td>;
   }
   if (overall === 'no_qc') {
     return (
       <td>
-        <span style={{ color: 'var(--text3)', fontSize: 10 }}>No QC</span>
+        <span style={{ color: 'var(--text3)', fontSize: 11 }}>No QC</span>
       </td>
     );
   }
   if (overall === 'complete') {
     return (
       <td>
-        <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 11 }}>
+        <span style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 11 }}>
           ✅ {done}/{total}
         </span>
       </td>
@@ -607,7 +607,7 @@ function OverallTd({
   }
   return (
     <td>
-      <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 11 }}>
+      <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 11 }}>
         {done}/{total}
       </span>
     </td>
@@ -755,7 +755,7 @@ function LineDetailModal({
               <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
             </div>
           ) : isError ? (
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load line details. Try again.'}
             </div>
           ) : data ? (
@@ -805,14 +805,14 @@ function LineDetailBody({
         <div>
           {/* POL — the customer's own PO line number, read-only here; it is
               typed only on the Sales Order. */}
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>POL</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>POL</span>
           <br />
           <b className="mono" style={{ color: 'var(--purple)' }}>
             {data.clientPoLineNo ?? '—'}
           </b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>Item Code</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item Code</span>
           <br />
           <b style={{ color: 'var(--purple)' }}>
             {itemCodeWithRev(data.itemCode, data.itemRevision, '')}
@@ -820,17 +820,17 @@ function LineDetailBody({
           {data.itemName ?? ''}
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>JC No.</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>JC No.</span>
           <br />
           <b style={{ color: 'var(--cyan)' }}>{data.jcCode}</b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>Order Qty</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
           <br />
           <b>{data.orderQty} pcs</b>
         </div>
         <div>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>QC Batches</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>QC Batches</span>
           <br />
           <b>{data.batches.length}</b>
         </div>
@@ -841,7 +841,7 @@ function LineDetailBody({
               className="btn btn-sm"
               style={{
                 background: 'rgba(34,197,94,0.1)',
-                color: 'var(--green)',
+                color: 'var(--green2)',
                 border: '1px solid rgba(34,197,94,0.3)',
               }}
               onClick={() => void downloadAllLine(data)}
@@ -873,18 +873,18 @@ function LineDetailBody({
                 fontSize: 12,
               }}
             >
-              <span className="mono fw-700" style={{ color: 'var(--green)' }}>
+              <span className="mono fw-700" style={{ color: 'var(--green2)' }}>
                 Batch {i + 1}
               </span>
               <span>{fmtDate(b.date, '')}</span>
               <span>
                 Op{opSrNo(b.opSeq)}: <b>{b.operation}</b>
               </span>
-              <span style={{ color: 'var(--green)' }}>
+              <span style={{ color: 'var(--green2)' }}>
                 Accepted: <b>{b.accepted}</b>
               </span>
               {b.rejected > 0 ? (
-                <span style={{ color: 'var(--red)' }}>
+                <span style={{ color: 'var(--red2)' }}>
                   Rejected: <b>{b.rejected}</b>
                 </span>
               ) : null}
@@ -1015,13 +1015,13 @@ function DocSection({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--green)' }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--green2)' }}>
             {section.docType}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>{section.fullName}</span>
           <span
             style={{
-              fontSize: 10,
+              fontSize: 11,
               padding: '2px 8px',
               borderRadius: 10,
               fontWeight: 700,
@@ -1037,7 +1037,7 @@ function DocSection({
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10, marginLeft: 6, color: 'var(--green)' }}
+            style={{ fontSize: 11, marginLeft: 6, color: 'var(--green2)' }}
             onClick={() => void downloadDocs(uploads, jcCode)}
             title="Save every file in this section"
           >
@@ -1066,9 +1066,9 @@ function DocSection({
               ({up.srTo - up.srFrom + 1} pcs)
             </span>
           ) : null}
-          <span style={{ fontSize: 10, color: 'var(--text2)' }}>{up.fileName}</span>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>{fmtDate(up.createdAt, '')}</span>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>{up.uploadedByText ?? ''}</span>
+          <span style={{ fontSize: 11, color: 'var(--text2)' }}>{up.fileName}</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{fmtDate(up.createdAt, '')}</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{up.uploadedByText ?? ''}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
             <button
               type="button"
@@ -1078,9 +1078,9 @@ function DocSection({
                 background: 'rgba(34,197,94,0.1)',
                 border: '1px solid rgba(34,197,94,0.3)',
                 borderRadius: 4,
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 700,
-                color: 'var(--green)',
+                color: 'var(--green2)',
               }}
               onClick={() => void openStoragePath(up.storagePath, jcCode)}
             >
@@ -1090,7 +1090,7 @@ function DocSection({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10, color: 'var(--red)' }}
+                style={{ fontSize: 11, color: 'var(--red2)' }}
                 disabled={del.isPending}
                 onClick={() => void onDelete(up.id)}
               >
@@ -1157,7 +1157,7 @@ function DocSection({
               }}
             />
           </label>
-          {err ? <span style={{ fontSize: 11, color: 'var(--red)' }}>{err}</span> : null}
+          {err ? <span style={{ fontSize: 11, color: 'var(--red2)' }}>{err}</span> : null}
         </div>
       ) : null}
     </div>
@@ -1328,7 +1328,7 @@ function RegisterView(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={11} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={11} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {error instanceof Error
                       ? error.message
                       : 'Could not load QC Documents. Try again.'}
@@ -1560,7 +1560,7 @@ function UploadModal({
             </div>
           </div>
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
               {err}
             </div>
           ) : null}

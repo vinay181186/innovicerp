@@ -127,7 +127,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -282,7 +282,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
                   count: (data?.summary?.totalDispatched ?? 0).toLocaleString('en-IN', {
                     maximumFractionDigits: 2,
                   }),
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                   sub: 'pieces',
                   title: 'Total quantity sent out on the DCs matching this filter',
                 },
@@ -308,7 +308,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               Loading…
             </div>
           ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load DCs. Try again.'}
             </div>
           ) : rows.length === 0 ? (

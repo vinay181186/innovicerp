@@ -67,7 +67,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
         <div
           role="alert"
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
             borderRadius: 6,
@@ -112,7 +112,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
           <thead>
             <tr>
               <th>Close Date</th>
-              <th>Close Qty</th>
+              <th className="th-num">Close Qty</th>
               <th>Closed By</th>
               <th>Note</th>
               <th>Reversed</th>
@@ -128,7 +128,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
               return (
                 <tr key={c.id}>
                   <td className="mono">{fmtDate(c.closedAt)}</td>
-                  <td className="mono fw-700" style={{ color: 'var(--text)' }}>
+                  <td className="mono fw-700 td-num" style={{ color: 'var(--text)' }}>
                     {c.isReversal ? `−${c.qty}` : c.qty}
                     {c.lostQty ? (
                       <span className="text3" style={{ fontSize: 11 }}>

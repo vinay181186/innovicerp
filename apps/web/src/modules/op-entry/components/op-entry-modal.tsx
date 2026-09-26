@@ -55,7 +55,7 @@ export interface OpEntryModalTarget {
 function Fact({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 10 }}>
+      <div className="text3" style={{ fontSize: 11 }}>
         {label}
       </div>
       <div className="fw-700" style={{ fontSize: 12 }}>
@@ -201,7 +201,7 @@ export function OpEntryModal({
           }}
         >
           <div>
-            <div className="text3" style={{ fontSize: 10 }}>
+            <div className="text3" style={{ fontSize: 11 }}>
               JC No.
             </div>
             <div className="mono fw-700 cyan" style={{ fontSize: 13 }}>
@@ -222,7 +222,7 @@ export function OpEntryModal({
               wrap by themselves on a phone. */}
           {itemCode || op.itemName ? (
             <div>
-              <div className="text3" style={{ fontSize: 10 }}>
+              <div className="text3" style={{ fontSize: 11 }}>
                 Item Code
               </div>
               {/* POL — the line number printed on the CUSTOMER's own purchase
@@ -230,7 +230,7 @@ export function OpEntryModal({
                   order sits behind the card, so a job-work job reads exactly as
                   this strip always has. */}
               {op.clientPoLineNo ? (
-                <div className="mono text3" style={{ fontSize: 10 }}>
+                <div className="mono text3" style={{ fontSize: 11 }}>
                   POL{' '}
                   <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                     {op.clientPoLineNo}
@@ -247,7 +247,7 @@ export function OpEntryModal({
                 <div
                   className="text3"
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
@@ -262,7 +262,7 @@ export function OpEntryModal({
           <Fact label="Operation" value={`Op ${fmtOpSrNo(op.opSeq)} · ${op.operation}`} />
           <Fact label="Planned Machine" value={planned} />
           <div>
-            <div className="text3" style={{ fontSize: 10 }}>
+            <div className="text3" style={{ fontSize: 11 }}>
               Actual Machine
             </div>
             <div className="fw-700" style={{ fontSize: 12 }}>
@@ -272,7 +272,7 @@ export function OpEntryModal({
               <div
                 className="text3"
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -284,7 +284,7 @@ export function OpEntryModal({
             ) : null}
           </div>
           <div>
-            <div className="text3" style={{ fontSize: 10 }}>
+            <div className="text3" style={{ fontSize: 11 }}>
               Available
             </div>
             <div className="mono fw-700 amber" style={{ fontSize: 15 }}>

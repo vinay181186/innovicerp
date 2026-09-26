@@ -3,6 +3,12 @@
 // Header: BOM No (auto on create) + Name + Status + Revision indicator.
 // Line editor: item picker (the shared SearchableSelect) + qty/set + bom_type
 // dropdown + remove button. Excel template download + import.
+//
+// Layout is the app theme (create-page pattern): sticky PageHeader (Cancel +
+// blue Save, Ctrl+S, "Not saved") → Panel(BOM Details) → Panel(Parent Item) →
+// Panel(Child Items: .innovic-table.tbl-grid.tbl-edit) → Panel(Revision Note).
+// The private `bomx-` stylesheet (40px inputs, 36px buttons, own palette) is
+// gone.
 
 import type {
   BomLineType,
@@ -11,19 +17,8 @@ import type {
   Item,
   ListItemsResponse,
 } from '@innovic/shared';
-import {
-  Boxes,
-  Copy,
-  Download,
-  FileText,
-  Package,
-  Plus,
-  Search,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Copy, Download, Plus, Trash2, Upload } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
@@ -33,6 +28,10 @@ import {
   MaterialSizePicker,
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextBomNo } from '../api';
 
 // xlsx (~400 KB raw / 140 KB gzip) is dynamic-imported inside the two
@@ -43,139 +42,21 @@ async function loadXlsx(): Promise<XlsxModule> {
   return import('xlsx');
 }
 
-// One grid shared by the child header row AND every child data row, so the
-// columns line up exactly. Track minimums add up to 578px + 50px of gap; below
-// that the block scrolls horizontally inside itself rather than squeezing the
-// Type select or clipping the delete button off the end of the row.
-const CHILD_GRID = '40px minmax(140px,1.1fr) minmax(150px,2fr) 90px minmax(120px,150px) 38px';
-
-// The parent uses the same first three tracks so Item Code / Item Name sit in
-// one continuous column from parent to child, then gives Qty the rest. It has
-// no Type (a parent is always the thing being assembled) and no delete (there
-// is exactly one).
-const PARENT_GRID = 'minmax(140px,1.1fr) minmax(150px,2fr) 110px';
-
 const STATUS_LABEL: Record<BomFormHeaderDraft['status'], string> = {
   active: 'Active',
   draft: 'Draft',
   obsolete: 'Obsolete',
 };
 
-const STATUS_PILL: Record<BomFormHeaderDraft['status'], string> = {
-  active: 'bomx-pill-green',
-  draft: 'bomx-pill-amber',
-  obsolete: 'bomx-pill-red',
+/** Status → the theme's badge colour (green live · amber draft · red retired). */
+const STATUS_BADGE: Record<BomFormHeaderDraft['status'], string> = {
+  active: 'b-green',
+  draft: 'b-amber',
+  obsolete: 'b-red',
 };
 
-// Scoped stylesheet. Inline styles cannot express :focus / :hover / :disabled,
-// and those three states are most of what makes a form feel solid — so the
-// chrome lives here under a bomx- prefix that cannot collide with the app's
-// global panel/innovic-* classes.
-const BOMX_CSS = `
-.bomx { display:flex; flex-direction:column; gap:16px;
-  font-family:'Inter Tight',Inter,system-ui,-apple-system,'Segoe UI',sans-serif;
-  color:#0f172a; }
-.bomx-card { background:#fff; border:1px solid #dfe4ec; border-radius:12px;
-  box-shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
-  display:flex; flex-direction:column; overflow:hidden; }
-.bomx-hd { display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:14px 18px; background:#f8fafc; border-bottom:1px solid #e6ebf2; }
-.bomx-hd-l { display:flex; align-items:center; gap:10px; min-width:0; }
-.bomx-ic { width:28px; height:28px; border-radius:8px; background:#eef2f8;
-  display:flex; align-items:center; justify-content:center; color:#475569; flex:none; }
-.bomx-ttl { font-size:15px; font-weight:700; letter-spacing:-.01em; }
-.bomx-pill { font-size:11px; font-weight:700; letter-spacing:.02em; padding:3px 9px;
-  border-radius:999px; background:#eef2f7; color:#64748b; white-space:nowrap; }
-.bomx-pill-green { background:#e7f6ed; color:#15803d; }
-.bomx-pill-amber { background:#fdf3e3; color:#b45309; }
-.bomx-pill-red { background:#fdeaea; color:#b91c1c; }
-.bomx-hd-r { display:flex; align-items:center; gap:8px; flex:none; }
-.bomx-meta { font-size:12px; color:#94a3b8; white-space:nowrap; }
-.bomx-body { display:flex; flex-direction:column; gap:18px; padding:18px; }
-.bomx-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; }
-.bomx-f { display:flex; flex-direction:column; gap:6px; min-width:0; }
-.bomx-lbl { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-  color:#64748b; }
-.bomx-req { color:#dc2626; }
-.bomx-help { font-size:11px; color:#94a3b8; line-height:1.35; }
-.bomx-sec { display:flex; flex-direction:column; gap:8px; }
-.bomx-parent { background:#f4f7fb; border:1px solid #e6ebf2; border-radius:10px; padding:14px; }
-.bomx-pgrid { display:grid; grid-template-columns:${PARENT_GRID}; gap:10px; align-items:end; }
-.bomx-block { border:1px solid #e6ebf2; border-radius:10px; overflow:hidden;
-  display:flex; flex-direction:column; }
-.bomx-scroll { overflow-x:auto; display:flex; flex-direction:column; }
-.bomx-row { display:grid; grid-template-columns:${CHILD_GRID}; gap:10px; align-items:center;
-  padding:10px 12px; }
-.bomx-row-hd { background:#f7f9fc; border-bottom:1px solid #e6ebf2; font-size:10px;
-  font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#64748b; }
-/* One part = one .bomx-line: the item row on top, its RAW MATERIAL sub-line
-   under it. The separator moved onto the wrapper so Grade/Size stay visually
-   attached to the part they belong to instead of looking like a new row. */
-.bomx-line { display:flex; flex-direction:column; }
-.bomx-line + .bomx-line { border-top:1px solid #eef2f7; }
-.bomx-row-hd + .bomx-line { border-top:none; }
-/* Indented to line up under Item Code (12px row padding + 40px # + 10px gap),
-   and width-capped so the two boxes stay finger-sized rather than stretching
-   across the whole block on a wide screen. */
-.bomx-sub { padding:0 12px 10px 62px; }
-.bomx-sub > * { max-width:520px; }
-.bomx-num { width:28px; height:28px; border-radius:7px; background:#eef2f7; color:#475569;
-  font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
-.bomx-search { position:relative; min-width:0; }
-.bomx-search > svg { position:absolute; left:10px; top:50%; transform:translateY(-50%);
-  color:#94a3b8; pointer-events:none; z-index:1; }
-.bomx-search input { padding-left:30px !important; }
-.bomx input, .bomx select { height:40px; border-radius:8px; border:1px solid #cfd8e6;
-  background:#fff; color:#0f172a; font-size:13px; padding:0 10px; width:100%;
-  font-family:inherit; outline:none; transition:border-color .12s, box-shadow .12s; }
-.bomx input:focus, .bomx select:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.15); }
-.bomx input[readonly] { background:#f1f5f9; color:#64748b; cursor:default; }
-.bomx input[readonly]:focus { border-color:#cfd8e6; box-shadow:none; }
-.bomx input:disabled, .bomx select:disabled { background:#f1f5f9; color:#94a3b8; }
-.bomx-ctr { text-align:center; }
-.bomx-btn { height:36px; border-radius:8px; padding:0 14px; font-size:13px; font-weight:600;
-  display:inline-flex; align-items:center; gap:6px; white-space:nowrap; cursor:pointer;
-  border:1px solid #cfd8e6; background:#fff; color:#334155; font-family:inherit;
-  transition:background .12s, border-color .12s; }
-.bomx-btn:hover:not(:disabled) { background:#f4f7fb; border-color:#b9c5d6; }
-.bomx-btn:disabled { opacity:.5; cursor:not-allowed; }
-.bomx-btn-primary { background:#2563eb; border-color:#2563eb; color:#fff; }
-.bomx-btn-primary:hover:not(:disabled) { background:#1d4ed8; border-color:#1d4ed8; }
-.bomx-del { width:32px; height:32px; border-radius:7px; padding:0; justify-content:center;
-  border:1px solid #f3d3d3; background:#fdf3f3; color:#dc2626; }
-.bomx-del:hover:not(:disabled) { background:#fbe6e6; border-color:#eebcbc; }
-.bomx-tools { display:flex; align-items:center; gap:8px; padding:12px;
-  border-top:1px solid #eef2f7; background:#fcfdfe; }
-.bomx-tools-sp { margin-left:auto; font-size:12px; color:#94a3b8; white-space:nowrap; }
-.bomx-empty { padding:22px 12px; text-align:center; font-size:13px; color:#94a3b8; }
-.bomx-alert { display:flex; gap:8px; padding:10px 12px; border-radius:8px; font-size:12px;
-  line-height:1.45; }
-.bomx-alert-red { background:#fdeaea; border:1px solid #f6cccc; color:#b91c1c; }
-.bomx-alert-amber { background:#fdf6ea; border:1px solid #f5e0bb; color:#92400e; }
-.bomx-alert-green { background:#eaf7ef; border:1px solid #c6e9d3; color:#15803d; }
-.bomx-alert ul { margin:6px 0 0; padding-left:18px; }
-/* Import report. An 83-row failure used to print 10 lines and "… and 73 more"
-   with no way to see, keep or clear them — so the list scrolls in full, the
-   repeated reasons are counted once at the top, and the box can be dismissed. */
-.bomx-alert-col { flex-direction:column; gap:6px; }
-.bomx-alert-hd { display:flex; align-items:flex-start; gap:8px; }
-.bomx-alert-hd > :first-child { flex:1; min-width:0; }
-.bomx-alert-acts { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-.bomx-alert-act { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
-  border:1px solid currentColor; background:transparent; color:inherit;
-  border-radius:6px; padding:3px 8px; font-size:11px; font-weight:600;
-  font-family:inherit; opacity:.85; }
-.bomx-alert-act:hover { opacity:1; }
-.bomx-alert-x { padding:3px 5px; border-color:transparent; }
-.bomx-alert-rollup { margin:0; padding-left:18px; font-weight:600; }
-.bomx-alert-rows { max-height:220px; overflow-y:auto; margin:0; padding:6px 10px;
-  border-radius:6px; background:var(--bg2); border:1px solid currentColor;
-  list-style:none; }
-.bomx-alert-rows li { margin:1px 0; }
-.bomx-ta { border-radius:8px; border:1px solid #cfd8e6; padding:10px; font-size:13px;
-  font-family:inherit; width:100%; resize:vertical; outline:none; }
-.bomx-ta:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.15); }
-`;
+/** A part row while the parent is unset: inert, not hidden (see below). */
+const LOCKED_ROW: React.CSSProperties = { opacity: 0.45, pointerEvents: 'none' };
 
 export interface BomFormLineDraft {
   childItemId: string;
@@ -843,9 +724,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     return null;
   }, [header, resolvedLines, itemById, resolvedParentId, parentItem]);
 
-  const submit = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
-    if (validationError) return;
+  const save = async (): Promise<void> => {
+    if (validationError || submitting) return;
     await onSubmit(
       // Hand back the RESOLVED parent id so a pasted code saves too.
       { ...header, parentItemId: resolvedParentId },
@@ -854,6 +734,28 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       mode === 'edit' && revisionNote.trim() ? revisionNote.trim() : null,
     );
   };
+  const submit = (e: React.FormEvent): void => {
+    e.preventDefault();
+    void save();
+  };
+  // Ctrl+S runs the same Save as the header button, and is off whenever that
+  // button is disabled.
+  useSaveShortcut(() => void save(), !validationError && !submitting);
+
+  // "Not saved" pill. The create form's auto-filled BOM No. is ours, not the
+  // user's, so on create the number does not count as an edit.
+  const initialSnapshot = useRef(
+    JSON.stringify({
+      h: { ...initialHeader, bomNo: mode === 'create' ? '' : initialHeader.bomNo },
+      l: initialLines,
+    }),
+  );
+  const isDirty =
+    revisionNote.trim() !== '' ||
+    JSON.stringify({
+      h: { ...header, bomNo: mode === 'create' ? '' : header.bomNo },
+      l: lines,
+    }) !== initialSnapshot.current;
 
   const saveLabel = submitting
     ? 'Saving…'
@@ -861,146 +763,212 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       ? 'Save BOM'
       : `Save as BOM Rev ${nextRevision}`;
 
-  return (
-    <form className="bomx" onSubmit={(e) => void submit(e)}>
-      <style>{BOMX_CSS}</style>
+  // Child grid: # · Item Code · Item Name · Qty / Set · BOM Type · (remove).
+  const childCols = 6;
 
-      {/* ── Card 1: BOM header ───────────────────────────────────────────── */}
-      <div className="bomx-card">
-        <div className="bomx-hd">
-          <div className="bomx-hd-l">
-            <span className="bomx-ic">
-              <Package size={15} />
-            </span>
-            <span className="bomx-ttl">
-              {mode === 'create' ? 'New BOM' : `Edit BOM — ${bom?.bomNo ?? ''}`}
-            </span>
-            <span className={`bomx-pill ${STATUS_PILL[header.status]}`}>
+  return (
+    <form onSubmit={submit}>
+      <PageHeader
+        sticky
+        title={mode === 'create' ? 'New BOM' : `Edit BOM — ${bom?.bomNo ?? ''}`}
+        subtitle={
+          <span style={{ display: 'inline-flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
+            <span className={`badge ${STATUS_BADGE[header.status]}`}>
               {STATUS_LABEL[header.status]}
             </span>
             {mode === 'edit' ? (
-              <span className="bomx-pill">
+              <span className="badge b-grey">
                 BOM REV {bom?.revision ?? 1} → {nextRevision}
               </span>
             ) : null}
-          </div>
-          {/* Save and Cancel live in the header, not a detached footer — the
-              form is one card and the commit action belongs with its title. */}
-          <div className="bomx-hd-r">
-            <button type="button" className="bomx-btn" onClick={onCancel}>
+          </span>
+        }
+        dirty={isDirty}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={onCancel}>
               Cancel
             </button>
             <button
               type="submit"
-              className="bomx-btn bomx-btn-primary"
+              className="btn btn-primary"
               disabled={Boolean(validationError) || submitting}
-              title={validationError ?? undefined}
+              title={validationError ?? 'Save (Ctrl+S)'}
             >
               {saveLabel}
             </button>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <div className="bomx-body">
-          <div className="bomx-fields">
-            <div className="bomx-f">
-              <span className="bomx-lbl">
-                BOM No. <span className="bomx-req">*</span>
-              </span>
-              <input
-                value={header.bomNo}
-                onChange={(e) => setHeader({ ...header, bomNo: e.target.value })}
-                placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
-              />
-              <span className="bomx-help">Auto-generated · editable</span>
-            </div>
-            <div className="bomx-f">
-              <span className="bomx-lbl">
-                BOM Name <span className="bomx-req">*</span>
-              </span>
-              <input
-                value={header.bomName}
-                onChange={(e) => setHeader({ ...header, bomName: e.target.value })}
-                placeholder="e.g. Hydraulic Press Assembly"
-              />
-              <span className="bomx-help">Shown across production and planning screens</span>
-            </div>
-            <div className="bomx-f">
-              <span className="bomx-lbl">BOM Status</span>
-              <select
-                value={header.status}
-                onChange={(e) =>
-                  setHeader({ ...header, status: e.target.value as BomFormHeaderDraft['status'] })
-                }
-              >
-                <option value="active">Active</option>
-                <option value="draft">Draft</option>
-                <option value="obsolete">Obsolete</option>
-              </select>
-              <span className="bomx-help">Only Active BOMs attach to sales orders</span>
-            </div>
-            <div className="bomx-f">
-              <span className="bomx-lbl">BOM Rev</span>
-              <input value={String(bom?.revision ?? 1)} readOnly />
-              <span className="bomx-help">Increments on each release</span>
-            </div>
-          </div>
+      {/* Under the header, next to Save — where the disabled button is. */}
+      {validationError ? <Banner tone="warn">{validationError}</Banner> : null}
+      {submitError ? (
+        <Banner tone="error" role="alert">
+          {submitError}
+        </Banner>
+      ) : null}
 
-          {/* Next to Save, where the disabled button is — not at the far end of
-              the page where you would never look for it. */}
-          {validationError ? (
-            <div className="bomx-alert bomx-alert-red">{validationError}</div>
-          ) : null}
-          {submitError ? <div className="bomx-alert bomx-alert-red">{submitError}</div> : null}
-        </div>
-      </div>
-
-      {/* ── Card 2: Bill of Materials ────────────────────────────────────── */}
-      <div className="bomx-card">
-        <div className="bomx-hd">
-          <div className="bomx-hd-l">
-            <span className="bomx-ic">
-              <Boxes size={15} />
-            </span>
-            <span className="bomx-ttl">Bill of Materials</span>
-            <span className="bomx-pill">
-              {lines.length} line{lines.length === 1 ? '' : 's'}
-            </span>
-          </div>
-          <div className="bomx-meta">
-            {filledChildCount} of {lines.length} lines filled
-          </div>
-        </div>
-
-        <div className="bomx-body">
-          {importSummary ? (
-            <div
-              className={`bomx-alert bomx-alert-col ${
-                importFatal
-                  ? 'bomx-alert-red'
-                  : importErrors.length > 0
-                    ? 'bomx-alert-amber'
-                    : 'bomx-alert-green'
-              }`}
+      {/* ── BOM header ─────────────────────────────────────────────────── */}
+      <Panel title="BOM Details">
+        <FormGrid>
+          <FormField
+            label="BOM No."
+            required
+            size="sm"
+            htmlFor="bom-no"
+            help="Auto-generated · editable"
+          >
+            <input
+              id="bom-no"
+              className="innovic-input mono"
+              value={header.bomNo}
+              onChange={(e) => setHeader({ ...header, bomNo: e.target.value })}
+              placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
+            />
+          </FormField>
+          <FormField
+            label="BOM Name"
+            required
+            size="md"
+            htmlFor="bom-name"
+            help="Shown across production and planning screens"
+          >
+            <input
+              id="bom-name"
+              className="innovic-input"
+              value={header.bomName}
+              onChange={(e) => setHeader({ ...header, bomName: e.target.value })}
+              placeholder="e.g. Hydraulic Press Assembly"
+            />
+          </FormField>
+          <FormField
+            label="BOM Status"
+            size="sm"
+            htmlFor="bom-status"
+            help="Only Active BOMs attach to sales orders"
+          >
+            <select
+              id="bom-status"
+              className="innovic-select"
+              value={header.status}
+              onChange={(e) =>
+                setHeader({ ...header, status: e.target.value as BomFormHeaderDraft['status'] })
+              }
             >
-              <div className="bomx-alert-hd">
-                <div>
-                  {importSummary}
-                  {errorRollup.length > 0 ? (
-                    <ul className="bomx-alert-rollup">
-                      {errorRollup.map(([kind, count]) => (
-                        <li key={kind}>
-                          {count} row{count === 1 ? '' : 's'}: {ERROR_KIND_LABEL[kind]}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-                <div className="bomx-alert-acts">
+              <option value="active">Active</option>
+              <option value="draft">Draft</option>
+              <option value="obsolete">Obsolete</option>
+            </select>
+          </FormField>
+          <FormField label="BOM Rev" size="xs" htmlFor="bom-rev" help="Increments on each release">
+            <input
+              id="bom-rev"
+              className="innovic-input mono is-derived"
+              value={String(bom?.revision ?? 1)}
+              readOnly
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
+
+      {/* ── Parent item ────────────────────────────────────────────────── */}
+      <Panel title="Parent Item">
+        <FormGrid>
+          <FormField label="Item Code" required size="md" htmlFor="bom-parent-item">
+            <SearchableSelect
+              id="bom-parent-item"
+              value={resolvedParentId || null}
+              onChange={onParentPicked}
+              onSearch={onParentSearch}
+              loading={itemsFetching}
+              options={itemOptions}
+              placeholder="Search parent item code…"
+              emptyText="No matching item"
+              selectedLabel={(o) => o.code ?? o.name}
+              {...(parentItem
+                ? { valueLabel: parentItem.code }
+                : header.parentItemCodeText
+                  ? { valueLabel: header.parentItemCodeText }
+                  : {})}
+            />
+          </FormField>
+          <FormField label="Item Name" size="lg" htmlFor="bom-parent-name">
+            <input
+              id="bom-parent-name"
+              className="innovic-input is-derived"
+              readOnly
+              placeholder="auto-filled"
+              value={
+                parentItem
+                  ? parentItem.material
+                    ? `${parentItem.name} [${parentItem.material}]`
+                    : parentItem.name
+                  : ''
+              }
+            />
+          </FormField>
+          <FormField label="Qty" required size="xs" htmlFor="bom-parent-qty">
+            {/* Always 1, read-only: a BOM defines the parts for ONE finished
+                unit, and every child's Qty/Set is already "per one parent".
+                Editable here would be a second place to say the same number. */}
+            <input
+              id="bom-parent-qty"
+              className="innovic-input mono is-derived"
+              readOnly
+              value="1"
+              title="A BOM builds one unit — each child's Qty / Set is per one parent."
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
+
+      {/* ── Child items ────────────────────────────────────────────────── */}
+      <Panel
+        title="Child Items"
+        bodyPadding="none"
+        actions={
+          <span className="text3 mono">
+            {filledChildCount} of {lines.length} line{lines.length === 1 ? '' : 's'} filled
+          </span>
+        }
+      >
+        <div className="panel-body">
+          <div className="form-help" style={{ marginTop: 0 }}>
+            {parentLocked
+              ? 'Pick the parent item above to unlock the part list.'
+              : 'Pick an item code — the name auto-fills from the Item Master.'}
+          </div>
+
+          {importSummary ? (
+            <div style={{ marginTop: 'var(--sp-2)' }}>
+              <Banner
+                tone={importFatal ? 'error' : importErrors.length > 0 ? 'warn' : 'success'}
+                flush
+                onDismiss={clearImportReport}
+                title={importSummary}
+              >
+                {errorRollup.length > 0 ? (
+                  <ul style={{ margin: 0, paddingLeft: 18, fontWeight: 600 }}>
+                    {errorRollup.map(([kind, count]) => (
+                      <li key={kind}>
+                        {count} row{count === 1 ? '' : 's'}: {ERROR_KIND_LABEL[kind]}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 'var(--sp-1)',
+                    flexWrap: 'wrap',
+                    marginTop: 'var(--sp-1)',
+                  }}
+                >
                   {importFatal ? (
                     <button
                       type="button"
-                      className="bomx-alert-act"
+                      className="btn btn-ghost btn-sm"
                       onClick={() => void downloadTemplate()}
                     >
                       <Download size={12} /> Download template
@@ -1010,199 +978,141 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                     <>
                       <button
                         type="button"
-                        className="bomx-alert-act"
+                        className="btn btn-ghost btn-sm"
                         onClick={() => void copyErrors()}
                       >
                         <Copy size={12} /> {copiedErrors ? 'Copied' : 'Copy'}
                       </button>
-                      <button type="button" className="bomx-alert-act" onClick={downloadErrors}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={downloadErrors}
+                      >
                         <Download size={12} /> CSV
                       </button>
                     </>
                   ) : null}
-                  <button
-                    type="button"
-                    className="bomx-alert-act bomx-alert-x"
-                    aria-label="Dismiss import report"
-                    title="Dismiss"
-                    onClick={clearImportReport}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-
-              {/* The way out of "not found in master": this form can only match
-                  items, so hand the unknown codes back in the Item Master
-                  importer's own layout instead of leaving a dead end. */}
-              {missingCodes.length > 0 ? (
-                <div>
-                  <button
-                    type="button"
-                    className="bomx-alert-act"
-                    onClick={() => void downloadMissingItemsSheet()}
-                  >
-                    <Download size={12} /> Download {missingCodes.length} missing code
-                    {missingCodes.length === 1 ? '' : 's'} as an Item Master import sheet
-                  </button>
-                  <div style={{ marginTop: 4 }}>
-                    Fill in the Name column, import it on Item Master, then run this BOM import
-                    again.
-                  </div>
-                </div>
-              ) : null}
-
-              {importErrors.length > 0 ? (
-                <ol className="bomx-alert-rows">
-                  {importErrors.map((err, i) => (
-                    <li key={i}>
-                      Row {err.rowIndex + 2}: {err.itemCode} — {err.reason}
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-            </div>
-          ) : null}
-
-          {/* ── PARENT ITEM ─────────────────────────────────────────────── */}
-          <section className="bomx-sec">
-            <span className="bomx-lbl">Parent Item</span>
-            <div className="bomx-parent">
-              <div className="bomx-pgrid">
-                <div className="bomx-f">
-                  <span className="bomx-lbl">
-                    Item Code <span className="bomx-req">*</span>
-                  </span>
-                  <div className="bomx-search">
-                    <Search size={14} />
-                    <SearchableSelect
-                      id="bom-parent-item"
-                      value={resolvedParentId || null}
-                      onChange={onParentPicked}
-                      onSearch={onParentSearch}
-                      loading={itemsFetching}
-                      options={itemOptions}
-                      placeholder="Search parent item code…"
-                      emptyText="No matching item"
-                      selectedLabel={(o) => o.code ?? o.name}
-                      {...(parentItem
-                        ? { valueLabel: parentItem.code }
-                        : header.parentItemCodeText
-                          ? { valueLabel: header.parentItemCodeText }
-                          : {})}
-                    />
-                  </div>
-                </div>
-                <div className="bomx-f">
-                  <span className="bomx-lbl">Item Name</span>
-                  <input
-                    readOnly
-                    placeholder="auto-filled"
-                    value={
-                      parentItem
-                        ? parentItem.material
-                          ? `${parentItem.name} [${parentItem.material}]`
-                          : parentItem.name
-                        : ''
-                    }
-                  />
-                </div>
-                <div className="bomx-f">
-                  <span className="bomx-lbl">
-                    Qty <span className="bomx-req">*</span>
-                  </span>
-                  {/* Always 1, read-only: a BOM defines the parts for ONE
-                      finished unit, and every child's Qty/Set is already "per
-                      one parent". Editable here would be a second place to say
-                      the same number. */}
-                  <input
-                    className="bomx-ctr"
-                    readOnly
-                    value="1"
-                    title="A BOM builds one unit — each child's Qty / Set is per one parent."
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* ── CHILD ITEMS ─────────────────────────────────────────────── */}
-          <section className="bomx-sec">
-            <span className="bomx-lbl">Child Items</span>
-            <span className="bomx-help">
-              {parentLocked
-                ? 'Pick the parent item above to unlock the part list.'
-                : 'Pick an item code — the name auto-fills from the Item Master.'}
-            </span>
-
-            <div className="bomx-block">
-              {/* Own scroller: below ~630px of row width the tracks cannot all
-                  fit, and squeezing them would push the Type select and the
-                  delete button off the row. Scrolling keeps every control
-                  reachable instead of hiding the destructive one. */}
-              <div className="bomx-scroll">
-                <div className="bomx-row bomx-row-hd">
-                  <span>#</span>
-                  <span>
-                    Item Code <span className="bomx-req">*</span>
-                  </span>
-                  <span>Item Name</span>
-                  <span className="bomx-ctr">
-                    Qty / Set <span className="bomx-req">*</span>
-                  </span>
-                  <span>Type</span>
-                  <span />
                 </div>
 
-                {lines.length === 0 ? (
-                  <div className="bomx-empty">
-                    {parentLocked
-                      ? 'Locked — pick the parent item above first.'
-                      : 'No parts yet. Use + Add child item below.'}
+                {/* The way out of "not found in master": this form can only
+                    match items, so hand the unknown codes back in the Item
+                    Master importer's own layout instead of leaving a dead end. */}
+                {missingCodes.length > 0 ? (
+                  <div style={{ marginTop: 'var(--sp-1)' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => void downloadMissingItemsSheet()}
+                    >
+                      <Download size={12} /> Download {missingCodes.length} missing code
+                      {missingCodes.length === 1 ? '' : 's'} as an Item Master import sheet
+                    </button>
+                    <div style={{ marginTop: 4 }}>
+                      Fill in the Name column, import it on Item Master, then run this BOM import
+                      again.
+                    </div>
                   </div>
                 ) : null}
 
-                {/* RESOLVED lines so a pasted exact code fills the Name box at
-                    once. While the parent is unset the rows go inert rather
-                    than vanishing: on the EDIT form a pre-0085 BOM already has
-                    parts, and hiding them would read as "my BOM lost its
-                    parts". */}
-                {resolvedLines.map((line, idx) => {
-                  const item = line.childItemId
-                    ? (itemById.get(line.childItemId) ??
-                      (itemPage?.items ?? []).find((i) => i.id === line.childItemId))
-                    : null;
-                  return (
-                    <div
-                      key={idx}
-                      className="bomx-line"
-                      aria-disabled={parentLocked}
-                      style={parentLocked ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
-                    >
-                      <div className="bomx-row">
-                        <span className="bomx-num">{idx + 1}</span>
-                        <div className="bomx-search">
-                          <Search size={14} />
-                          <SearchableSelect
-                            id={`bom-item-${idx}`}
-                            value={line.childItemId || null}
-                            onChange={(id) => onItemPicked(idx, id)}
-                            onSearch={(t) => onItemSearch(idx, t)}
-                            loading={itemsFetching}
-                            options={itemOptions}
-                            placeholder="Search item code…"
-                            emptyText="No matching item"
-                            selectedLabel={(o) => o.code ?? o.name}
-                            {...(item
-                              ? { valueLabel: item.code }
-                              : line.childItemCodeText
-                                ? { valueLabel: line.childItemCodeText }
-                                : {})}
-                          />
-                        </div>
+                {/* Import report. An 83-row failure used to print 10 lines and
+                    "… and 73 more" with no way to see, keep or clear them — so
+                    the list scrolls in full, the repeated reasons are counted
+                    once at the top, and the box can be dismissed. */}
+                {importErrors.length > 0 ? (
+                  <ol
+                    style={{
+                      maxHeight: 220,
+                      overflowY: 'auto',
+                      margin: 'var(--sp-1) 0 0',
+                      padding: 'var(--sp-1) var(--sp-2)',
+                      borderRadius: 'var(--radius)',
+                      background: 'var(--bg2)',
+                      border: '1px solid var(--border)',
+                      listStyle: 'none',
+                    }}
+                  >
+                    {importErrors.map((err, i) => (
+                      <li key={i}>
+                        Row {err.rowIndex + 2}: {err.itemCode} — {err.reason}
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
+              </Banner>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Own scroller (.tbl-wrap): below the table's natural width it
+            scrolls sideways rather than squeezing the Type select or pushing
+            the delete button off the row. */}
+        <div className="tbl-wrap">
+          <table className="innovic-table tbl-grid tbl-edit">
+            <thead>
+              <tr>
+                <th className="th-num" style={{ width: 44 }}>
+                  #
+                </th>
+                <th style={{ minWidth: 160 }}>
+                  Item Code<span className="req">★</span>
+                </th>
+                <th style={{ minWidth: 200 }}>Item Name</th>
+                <th className="th-num" style={{ width: 100 }}>
+                  Qty / Set<span className="req">★</span>
+                </th>
+                <th style={{ width: 150 }}>BOM Type</th>
+                <th style={{ width: 48 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {lines.length === 0 ? (
+                <tr>
+                  <td colSpan={childCols} className="empty-state">
+                    {parentLocked
+                      ? 'Locked — pick the parent item above first.'
+                      : 'No parts yet. Use + Add child item below.'}
+                  </td>
+                </tr>
+              ) : null}
+
+              {/* RESOLVED lines so a pasted exact code fills the Name box at
+                  once. While the parent is unset the rows go inert rather than
+                  vanishing: on the EDIT form a pre-0085 BOM already has parts,
+                  and hiding them would read as "my BOM lost its parts". */}
+              {resolvedLines.map((line, idx) => {
+                const item = line.childItemId
+                  ? (itemById.get(line.childItemId) ??
+                    (itemPage?.items ?? []).find((i) => i.id === line.childItemId))
+                  : null;
+                const inert = parentLocked ? LOCKED_ROW : undefined;
+                return (
+                  <Fragment key={idx}>
+                    <tr aria-disabled={parentLocked} style={inert}>
+                      <td className="td-num mono fw-700">{idx + 1}</td>
+                      <td>
+                        <SearchableSelect
+                          id={`bom-item-${idx}`}
+                          value={line.childItemId || null}
+                          onChange={(id) => onItemPicked(idx, id)}
+                          onSearch={(t) => onItemSearch(idx, t)}
+                          loading={itemsFetching}
+                          options={itemOptions}
+                          placeholder="Search item code…"
+                          emptyText="No matching item"
+                          selectedLabel={(o) => o.code ?? o.name}
+                          {...(item
+                            ? { valueLabel: item.code }
+                            : line.childItemCodeText
+                              ? { valueLabel: line.childItemCodeText }
+                              : {})}
+                        />
+                      </td>
+                      <td>
                         <input
+                          className="innovic-input is-derived"
                           readOnly
                           placeholder="auto-filled"
+                          aria-label={`Item Name, line ${idx + 1}`}
                           value={
                             item
                               ? item.material
@@ -1211,15 +1121,22 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                               : ''
                           }
                         />
+                      </td>
+                      <td className="td-num">
                         <input
                           type="number"
                           min="0.01"
                           step="0.01"
-                          className="bomx-ctr"
+                          className="innovic-input mono"
+                          aria-label={`Qty / Set, line ${idx + 1}`}
                           value={line.qtyPerSet}
                           onChange={(e) => updateLine(idx, { qtyPerSet: e.target.value })}
                         />
+                      </td>
+                      <td>
                         <select
+                          className="innovic-select"
+                          aria-label={`BOM Type, line ${idx + 1}`}
                           value={line.bomType}
                           onChange={(e) =>
                             updateLine(idx, { bomType: e.target.value as BomLineType })
@@ -1231,138 +1148,144 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td>
                         <button
                           type="button"
-                          className="bomx-btn bomx-del"
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: 'var(--red2)' }}
                           onClick={() => removeLine(idx)}
                           title="Remove line"
                           aria-label={`Remove line ${idx + 1}`}
                         >
                           <Trash2 size={14} />
                         </button>
-                      </div>
+                      </td>
+                    </tr>
 
-                      {/* Raw material for THIS part, on its own sub-line rather
-                          than two more tracks on an already six-track row —
-                          eight boxes side by side would only be reachable by
-                          scrolling the block sideways. Both optional (a
-                          purchase/outsource part is bought, not cut), so
-                          neither label carries a ★. */}
-                      <div className="bomx-sub">
-                        <RawMaterialGroup>
-                          <div className="bomx-f">
-                            <span className="bomx-lbl">Grade</span>
-                            <MaterialGradePicker
-                              id={`bom-line-grade-${idx}`}
-                              valueId={line.rawMaterialGradeId}
-                              valueText={line.rawMaterialGradeText}
-                              onChange={(gradeId, text) =>
-                                updateLine(idx, {
-                                  rawMaterialGradeId: gradeId,
-                                  rawMaterialGradeText: text,
-                                })
-                              }
-                            />
-                          </div>
-                          <div className="bomx-f">
-                            <span className="bomx-lbl">Size</span>
-                            <MaterialSizePicker
-                              id={`bom-line-size-${idx}`}
-                              valueId={line.rawMaterialSizeId}
-                              valueText={line.rawMaterialSizeText}
-                              onChange={(sizeId, text) =>
-                                updateLine(idx, {
-                                  rawMaterialSizeId: sizeId,
-                                  rawMaterialSizeText: text,
-                                })
-                              }
-                            />
-                          </div>
-                        </RawMaterialGroup>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Toolbar is the last row INSIDE the block — the actions belong
-                  to the list they act on, not to the card header. */}
-              <div className="bomx-tools">
-                <button
-                  type="button"
-                  className="bomx-btn bomx-btn-primary"
-                  disabled={parentLocked}
-                  title={parentLocked ? 'Pick the parent item first' : undefined}
-                  onClick={addLine}
-                >
-                  <Plus size={14} /> Add child item
-                </button>
-                {/* Template stays open even while locked — you may well want the
-                    empty sheet before you have decided the parent. */}
-                <button type="button" className="bomx-btn" onClick={() => void downloadTemplate()}>
-                  <Download size={14} /> Template
-                </button>
-                <button
-                  type="button"
-                  className="bomx-btn"
-                  disabled={parentLocked}
-                  title={parentLocked ? 'Pick the parent item first' : undefined}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload size={14} /> Import Excel
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  style={{ display: 'none' }}
-                  onChange={(e) => void onImportFile(e)}
-                />
-                {/* The filled-vs-total count lives in the card header. Only
-                    the exception is repeated here, next to the button that
-                    creates blank rows. */}
-                {blankChildCount > 0 ? (
-                  <span className="bomx-tools-sp" style={{ color: '#b45309' }}>
-                    {blankChildCount} blank row{blankChildCount > 1 ? 's' : ''} — pick an item or
-                    remove
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </section>
+                    {/* Raw material for THIS part, on its own sub-row rather
+                        than two more columns on the part row. Both optional (a
+                        purchase/outsource part is bought, not cut), so neither
+                        label carries a ★. */}
+                    <tr aria-disabled={parentLocked} style={inert}>
+                      <td />
+                      <td colSpan={childCols - 1} style={{ whiteSpace: 'normal' }}>
+                        <div style={{ maxWidth: 520 }}>
+                          <RawMaterialGroup>
+                            <div className="form-grp">
+                              <label className="form-label" htmlFor={`bom-line-grade-${idx}`}>
+                                Grade
+                              </label>
+                              <MaterialGradePicker
+                                id={`bom-line-grade-${idx}`}
+                                valueId={line.rawMaterialGradeId}
+                                valueText={line.rawMaterialGradeText}
+                                onChange={(gradeId, text) =>
+                                  updateLine(idx, {
+                                    rawMaterialGradeId: gradeId,
+                                    rawMaterialGradeText: text,
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="form-grp">
+                              <label className="form-label" htmlFor={`bom-line-size-${idx}`}>
+                                Size
+                              </label>
+                              <MaterialSizePicker
+                                id={`bom-line-size-${idx}`}
+                                valueId={line.rawMaterialSizeId}
+                                valueText={line.rawMaterialSizeText}
+                                onChange={(sizeId, text) =>
+                                  updateLine(idx, {
+                                    rawMaterialSizeId: sizeId,
+                                    rawMaterialSizeText: text,
+                                  })
+                                }
+                              />
+                            </div>
+                          </RawMaterialGroup>
+                        </div>
+                      </td>
+                    </tr>
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </div>
 
-      {/* ── Card 3: revision note (edit only) ────────────────────────────── */}
+        {/* Toolbar under the list — the actions belong to the list they act on. */}
+        <div
+          className="panel-body"
+          style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', flexWrap: 'wrap' }}
+        >
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={parentLocked}
+            title={parentLocked ? 'Pick the parent item first' : undefined}
+            onClick={addLine}
+          >
+            <Plus size={14} /> Add child item
+          </button>
+          {/* Template stays open even while locked — you may well want the empty
+              sheet before you have decided the parent. */}
+          <button type="button" className="btn btn-ghost" onClick={() => void downloadTemplate()}>
+            <Download size={14} /> Template
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={parentLocked}
+            title={parentLocked ? 'Pick the parent item first' : undefined}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload size={14} /> Import Excel
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            style={{ display: 'none' }}
+            onChange={(e) => void onImportFile(e)}
+          />
+          {/* The filled-vs-total count lives in the panel header. Only the
+              exception is repeated here, next to the button that creates blank
+              rows. */}
+          {blankChildCount > 0 ? (
+            <span style={{ marginLeft: 'auto', color: 'var(--amber2)' }}>
+              {blankChildCount} blank row{blankChildCount > 1 ? 's' : ''} — pick an item or remove
+            </span>
+          ) : null}
+        </div>
+      </Panel>
+
+      {/* ── Revision note (edit only) ──────────────────────────────────── */}
       {mode === 'edit' ? (
-        <div className="bomx-card">
-          <div className="bomx-hd">
-            <div className="bomx-hd-l">
-              <span className="bomx-ic">
-                <FileText size={15} />
-              </span>
-              <span className="bomx-ttl">Revision Note</span>
-              <span className="bomx-pill">
-                BOM REV {bom?.revision ?? 1} → {nextRevision}
-              </span>
+        <Panel
+          title="Revision Note"
+          actions={
+            <span className="badge b-grey">
+              BOM REV {bom?.revision ?? 1} → {nextRevision}
+            </span>
+          }
+        >
+          <div className="form-grp">
+            <textarea
+              id="bom-rev-note"
+              className="innovic-textarea"
+              rows={2}
+              aria-label="Revision Note"
+              value={revisionNote}
+              onChange={(e) => setRevisionNote(e.target.value)}
+              placeholder="Auto-generated on save. You can edit…"
+            />
+            <div className="form-help">
+              Generated from what changed when you save. Edit it first if you want your own wording.
             </div>
           </div>
-          <div className="bomx-body">
-            <div className="bomx-f">
-              <textarea
-                className="bomx-ta"
-                rows={2}
-                value={revisionNote}
-                onChange={(e) => setRevisionNote(e.target.value)}
-                placeholder="Auto-generated on save. You can edit…"
-              />
-              <span className="bomx-help">
-                Generated from what changed when you save. Edit it first if you want your own
-                wording.
-              </span>
-            </div>
-          </div>
-        </div>
+        </Panel>
       ) : null}
     </form>
   );

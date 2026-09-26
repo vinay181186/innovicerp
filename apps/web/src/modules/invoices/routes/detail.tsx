@@ -39,6 +39,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
+import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
 import { invoiceDocHtml, printInvoice } from '../lib/print';
 
@@ -83,7 +84,7 @@ function InvoiceDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -98,7 +99,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   }
   if (isError || !inv) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load invoice. Try again.'}
       </div>
     );
@@ -142,9 +143,9 @@ function InvoiceDetailPage(): React.JSX.Element {
           label: `GST ${inv.gstPercent}%`,
           value: inr(inv.gstAmount ?? 0),
           size: 16,
-          color: 'var(--amber)',
+          color: 'var(--amber2)',
         },
-        { label: 'Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green)' },
+        { label: 'Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green2)' },
         { label: 'Paid', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
         {
           label: 'Outstanding',
@@ -176,31 +177,32 @@ function InvoiceDetailPage(): React.JSX.Element {
             label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
           />
         </div>
+        {/* One primary next step (Add Payment) + the Actions menu for the rest. */}
         <div style={{ display: 'flex', gap: 8 }}>
+          <ActionMenu
+            items={[
+              {
+                label: 'Print',
+                onClick: () => {
+                  if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
+                },
+              },
+            ]}
+          />
           {perms.entry && inv.status !== 'paid' ? (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setPayOpen((v) => !v)}
-            >
+            <button type="button" className="btn btn-primary" onClick={() => setPayOpen((v) => !v)}>
               💳 Add Payment
             </button>
           ) : null}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
-            }}
-          >
-            🖨 Print
-          </button>
         </div>
       </div>
 
       <div style={{ fontSize: 13, marginBottom: 10 }}>
-        Customer: <b>{inv.clientName ?? '—'}</b> · SO No.: <b>{inv.soCode ?? '—'}</b> · Due Date:{' '}
-        <b>{fmtDate(inv.dueDate)}</b>
+        Customer: <b>{inv.clientName ?? '—'}</b> · SO No.:{' '}
+        <Link to="/sales-orders/$id" params={{ id: inv.salesOrderId }} className="fw-700">
+          {inv.soCode ?? '—'}
+        </Link>{' '}
+        · Due Date: <b>{fmtDate(inv.dueDate)}</b>
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -280,7 +282,7 @@ function InvoiceDetailPage(): React.JSX.Element {
               </div>
             </div>
             {payErr ? (
-              <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{payErr}</div>
+              <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{payErr}</div>
             ) : null}
             <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
               <button
@@ -338,7 +340,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
                     <td style={{ fontSize: 11 }}>{fmtDate(p.paymentDate)}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                       {inr(p.amount ?? 0)}
                     </td>
                     <td style={{ fontSize: 11 }}>{p.mode}</td>

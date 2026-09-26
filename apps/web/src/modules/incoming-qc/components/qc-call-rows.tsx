@@ -65,7 +65,7 @@ export function IncomingPendingRow(props: {
             {o.opName ? ` · ${o.opName}` : ''}
           </>
         ) : (
-          <span style={{ color: 'var(--amber)', fontWeight: 700 }}>No job card</span>
+          <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>No job card</span>
         )
       }
       qty={o.pendingQty}

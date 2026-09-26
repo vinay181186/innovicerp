@@ -118,7 +118,7 @@ function AlertsDashboardPage() {
       ) : isError || !data ? (
         <div className="panel">
           <div className="empty-state">
-            <span style={{ color: 'var(--red)' }}>
+            <span style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load alerts. Try again.'}
             </span>
           </div>
@@ -142,7 +142,7 @@ function AlertsDashboardPage() {
                 >
                   <div
                     style={{
-                      fontSize: 10,
+                      fontSize: 11,
                       color: DEPT_COLOR[dept],
                       fontWeight: 700,
                       textTransform: 'uppercase',
@@ -171,7 +171,7 @@ function AlertsDashboardPage() {
                 borderTop: '3px solid var(--red)',
               }}
             >
-              <div style={{ fontSize: 10, color: 'var(--red)', fontWeight: 700 }}>TOTAL</div>
+              <div style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700 }}>TOTAL</div>
               <div
                 className="mono fw-700"
                 style={{ fontSize: 20, color: total > 0 ? 'var(--red)' : 'var(--green)' }}

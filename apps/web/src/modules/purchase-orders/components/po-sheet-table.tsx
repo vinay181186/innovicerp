@@ -56,16 +56,16 @@ export function PoSheetTable({
           </colgroup>
           <thead>
             <tr>
-              <th>Sr No</th>
+              <th className="th-num">Sr No</th>
               <th>PO No.</th>
               <th>PO Type</th>
-              <th style={{ textAlign: 'left' }}>Vendor</th>
+              <th>Vendor</th>
               <th>PR Ref</th>
-              <th>Lines</th>
-              <th>Total Qty</th>
-              <th>Received</th>
-              <th>Pending</th>
-              <th>Value</th>
+              <th className="th-num">Lines</th>
+              <th className="th-num">Total Qty</th>
+              <th className="th-num">Received</th>
+              <th className="th-num">Pending</th>
+              <th className="th-num">Value</th>
               <th>PO Status</th>
               <th>Action</th>
             </tr>
@@ -78,7 +78,7 @@ export function PoSheetTable({
               const vendor = po.vendorName ?? po.vendorCodeText ?? '—';
               return (
                 <tr key={po.id} onClick={() => onOpen(po.id)} style={{ cursor: 'pointer' }}>
-                  <td className="text3">{i + 1}</td>
+                  <td className="td-num text3">{i + 1}</td>
                   <td>
                     <Link
                       to="/purchase-orders/$id"
@@ -100,7 +100,7 @@ export function PoSheetTable({
                       {isJW ? 'JW' : isSvc ? 'SVC' : 'MAT'}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'left' }}>
+                  <td>
                     <span
                       className="fw-700"
                       style={{
@@ -122,11 +122,11 @@ export function PoSheetTable({
                       {po.prCodeText ?? '—'}
                     </span>
                   </td>
-                  <td className="mono">{po.lineCount}</td>
-                  <td>
+                  <td className="td-num mono">{po.lineCount}</td>
+                  <td className="td-num">
                     <span className="mono fw-700">{po.totalQty}</span>
                   </td>
-                  <td>
+                  <td className="td-num">
                     <span
                       className="mono fw-700"
                       style={{ color: po.receivedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
@@ -134,7 +134,7 @@ export function PoSheetTable({
                       {po.receivedQty}
                     </span>
                   </td>
-                  <td>
+                  <td className="td-num">
                     <span
                       className="mono fw-700"
                       style={{ color: pending > 0 ? 'var(--amber)' : 'var(--green)' }}
@@ -142,7 +142,7 @@ export function PoSheetTable({
                       {pending}
                     </span>
                   </td>
-                  <td>
+                  <td className="td-num">
                     {/* null = prices hidden for this viewer (API-side). */}
                     {po.totalAmount == null ? (
                       <span className="text3">—</span>

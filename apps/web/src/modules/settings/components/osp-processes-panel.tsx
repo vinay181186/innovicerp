@@ -149,7 +149,7 @@ export function OspProcessesPanel(): React.JSX.Element {
             <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
           </div>
         ) : isError ? (
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load OSP processes. Try again.'}
           </div>
         ) : items.length === 0 ? (
@@ -184,7 +184,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                     </td>
                     <td className="td-ctr">
                       {p.vendorName && p.autoPo ? (
-                        <span style={{ color: 'var(--green)', fontWeight: 700 }}>✅ Yes</span>
+                        <span style={{ color: 'var(--green2)', fontWeight: 700 }}>✅ Yes</span>
                       ) : (
                         <span className="text3">—</span>
                       )}
@@ -329,7 +329,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                     background: 'rgba(239,68,68,0.06)',
                     border: '1px solid rgba(239,68,68,0.3)',
                     borderRadius: 6,
-                    color: 'var(--red)',
+                    color: 'var(--red2)',
                     fontSize: 12,
                   }}
                 >

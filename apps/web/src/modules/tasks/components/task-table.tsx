@@ -83,7 +83,7 @@ export function TaskTableRow({
         {t.attachmentCount > 0 ? (
           <span
             className="text3"
-            style={{ fontSize: 10, marginLeft: 6 }}
+            style={{ fontSize: 11, marginLeft: 6 }}
             title={`${t.attachmentCount} attachment(s)`}
           >
             📎{t.attachmentCount}
@@ -92,7 +92,7 @@ export function TaskTableRow({
         {t.commentCount > 0 ? (
           <span
             className="text3"
-            style={{ fontSize: 10, marginLeft: 4 }}
+            style={{ fontSize: 11, marginLeft: 4 }}
             title={`${t.commentCount} remark(s)`}
           >
             💬{t.commentCount}

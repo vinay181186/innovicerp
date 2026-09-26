@@ -9,6 +9,8 @@ import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ReportFilter, ReportShell, reportTotalRowStyle } from '@/ui/data/ReportShell';
 import { exportStockValuation } from '../lib/export';
 
 export const stockValuationRoute = createRoute({
@@ -58,18 +60,23 @@ function StockValuationPage(): React.JSX.Element {
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   }, [rows, filter, showZero, search]);
 
+  const shell = (body: React.ReactNode): React.JSX.Element => (
+    <ReportShell title="Stock Valuation" icon="📦">
+      {body}
+    </ReportShell>
+  );
   if (isLoading) {
-    return (
-      <div className="empty-state" style={{ padding: 40 }}>
+    return shell(
+      <div className="empty-state">
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
-      </div>
+      </div>,
     );
   }
   if (isError || !data) {
-    return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+    return shell(
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load stock valuation. Try again.'}
-      </div>
+      </div>,
     );
   }
 
@@ -84,101 +91,86 @@ function StockValuationPage(): React.JSX.Element {
   const tblTotal = filtered.reduce((s, r) => s + (r.value ?? 0), 0);
 
   return (
-    <div>
-      <div className="section-hdr" style={{ marginBottom: 12 }}>
-        📦 Stock Valuation
-      </div>
-
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
-        {catKeys.map((k) => (
-          <button
-            key={k}
-            type="button"
-            className="btn btn-sm"
+    <ReportShell
+      title="Stock Valuation"
+      icon="📦"
+      filters={
+        <>
+          <ReportFilter label="Item Category" htmlFor="sv-category" size="lg">
+            <select
+              id="sv-category"
+              className="innovic-select"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            >
+              {catKeys.map((k) => (
+                <option key={k} value={k}>
+                  {k === 'all' ? 'All Categories' : k} ({catCount(k)})
+                </option>
+              ))}
+            </select>
+          </ReportFilter>
+          {/* Legacy L21029 — searchBox('svSearch','svTable','Search item code or name...'). */}
+          <ReportFilter label="Search" htmlFor="sv-search" size="lg">
+            <input
+              id="sv-search"
+              className="innovic-input"
+              placeholder="Search item code, item name…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </ReportFilter>
+          {/* Legacy L20980 — the zero-stock toggle. */}
+          <label
+            className="form-label"
             style={{
-              fontWeight: 700,
-              background: filter === k ? 'var(--blue)' : 'var(--bg4)',
-              color: filter === k ? '#fff' : 'var(--text2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--sp-1)',
+              height: 'var(--control-h)',
+              cursor: 'pointer',
             }}
-            onClick={() => setFilter(k)}
           >
-            {k === 'all' ? 'All Categories' : k} ({catCount(k)})
-          </button>
-        ))}
-      </div>
-
-      {/* Legacy L20980 — the zero-stock toggle sits directly under the category
-          filter buttons, above the summary cards. */}
-      <label
-        style={{
-          fontSize: 11,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          marginBottom: 14,
-          cursor: 'pointer',
-        }}
-      >
-        <input type="checkbox" checked={showZero} onChange={(e) => setShowZero(e.target.checked)} /> Show
-        zero-stock items
-      </label>
-
-      {priceHidden ? null : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: 8,
-            marginBottom: 16,
-          }}
-        >
-          <div className="panel" style={{ padding: 10, textAlign: 'center', border: '2px solid var(--cyan)' }}>
-            <div style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>Total Stock Value</div>
-            <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--cyan)' }}>
-              {inr(data.grandTotal)}
-            </div>
-            <div className="text3" style={{ fontSize: 9 }}>
-              {data.grandStockItems} / {data.grandItems} items in stock
-            </div>
-          </div>
-          {data.categories.map((c) => (
-            <div key={c.category} className="panel" style={{ padding: 10, textAlign: 'center' }}>
-              <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-                {c.category}
-              </div>
-              <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
-                {inr(c.value)}
-              </div>
-              <div className="text3" style={{ fontSize: 9 }}>
-                {c.stockCount} in stock
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Legacy L21029 — searchBox('svSearch','svTable','Search item code or name...').
-          Width/padding mirror legacy's own inline styles; our .innovic-input is
-          width:100%, which legacy's classless input is not. */}
-      <input
-        className="innovic-input"
-        placeholder="🔍 Search item code or name..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ padding: '7px 12px', width: 220 }}
-      />
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{ fontSize: 11 }}
-          onClick={() => exportStockValuation(rows)}
-        >
-          ⬇ Export to Excel
-        </button>
-      </div>
-
+            <input
+              type="checkbox"
+              checked={showZero}
+              onChange={(e) => setShowZero(e.target.checked)}
+            />{' '}
+            Show zero-stock items
+          </label>
+        </>
+      }
+      onClear={() => {
+        setFilter('all');
+        setShowZero(false);
+        setSearch('');
+      }}
+      onExport={{ excel: () => exportStockValuation(rows) }}
+      kpis={
+        priceHidden ? undefined : (
+          <StatStrip
+            items={[
+              {
+                key: 'all',
+                label: 'Total Stock Value',
+                count: inr(data.grandTotal),
+                color: 'var(--cyan)',
+                sub: `${data.grandStockItems} / ${data.grandItems} items in stock`,
+              },
+              ...data.categories.map((c) => ({
+                key: c.category,
+                label: c.category,
+                count: inr(c.value),
+                color: 'var(--green2)',
+                sub: `${c.stockCount} in stock`,
+              })),
+            ]}
+          />
+        )
+      }
+      rowCount={filtered.length}
+      rowNoun="item"
+    >
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
@@ -188,11 +180,13 @@ function StockValuationPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>UOM</th>
-                <th>Physical</th>
+                <th className="th-num">Physical</th>
                 {priceHidden ? null : (
                   <>
-                    <th>Rate</th>
-                    <th title="Physical × Last GRN Rate (or PO Rate if no GRN)">Stock Value</th>
+                    <th className="th-num">Rate</th>
+                    <th className="th-num" title="Physical × Last GRN Rate (or PO Rate if no GRN)">
+                      Stock Value
+                    </th>
                   </>
                 )}
                 <th>Last GRN Date</th>
@@ -209,7 +203,7 @@ function StockValuationPage(): React.JSX.Element {
                 filtered.map((r) => (
                   <tr key={r.itemId}>
                     <td>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: catColor(r.category) }}>
+                      <span style={{ fontWeight: 700, color: catColor(r.category) }}>
                         {r.category}
                       </span>
                     </td>
@@ -217,9 +211,9 @@ function StockValuationPage(): React.JSX.Element {
                       {r.code}
                     </td>
                     <td>{r.name}</td>
-                    <td style={{ fontSize: 11 }}>{r.uom}</td>
+                    <td>{r.uom}</td>
                     <td
-                      className="mono fw-700"
+                      className="td-num mono fw-700"
                       title={r.lowStock ? 'Below minimum stock' : undefined}
                       style={{
                         color:
@@ -236,31 +230,31 @@ function StockValuationPage(): React.JSX.Element {
                     {priceHidden ? null : (
                       <>
                         <td
-                          className="mono"
+                          className="td-num mono"
                           style={{ color: r.hasRate ? undefined : 'var(--text3)' }}
                         >
                           {r.hasRate ? inr(r.rate) : 'No Rate'}
                         </td>
                         <td
-                          className="mono fw-700"
+                          className="td-num mono fw-700"
                           style={{ color: (r.value ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}
                         >
                           {inr(r.value)}
                         </td>
                       </>
                     )}
-                    <td style={{ fontSize: 11 }}>{fmtDate(r.lastGrnDate)}</td>
+                    <td>{fmtDate(r.lastGrnDate)}</td>
                   </tr>
                 ))
               )}
             </tbody>
             <tfoot>
-              <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-                <td colSpan={priceHidden ? 5 : 6} style={{ fontSize: 12, color: 'var(--text2)' }}>
+              <tr style={reportTotalRowStyle}>
+                <td colSpan={priceHidden ? 5 : 6} style={{ color: 'var(--text2)' }}>
                   TOTAL ({filtered.length} items)
                 </td>
                 {priceHidden ? null : (
-                  <td className="mono" style={{ color: 'var(--cyan)' }}>
+                  <td className="td-num mono" style={{ color: 'var(--cyan)' }}>
                     {inr(tblTotal)}
                   </td>
                 )}
@@ -270,6 +264,6 @@ function StockValuationPage(): React.JSX.Element {
           </table>
         </div>
       </div>
-    </div>
+    </ReportShell>
   );
 }

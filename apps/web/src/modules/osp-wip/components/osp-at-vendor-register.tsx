@@ -48,7 +48,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load OSP register. Try again.'}
             </div>
           </div>
@@ -62,7 +62,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
               <span className="panel-title">
                 Outsourced Operations{' '}
                 {filter !== 'all' ? (
-                  <span style={{ color: 'var(--amber)', fontSize: 12 }}>
+                  <span style={{ color: 'var(--amber2)', fontSize: 12 }}>
                     (Filtered:{' '}
                     {filter === 'at_vendor'
                       ? 'still at vendor'
@@ -100,7 +100,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
                     <th className="td-ctr">Sent</th>
                     <th
                       className="td-ctr"
-                      style={{ color: 'var(--amber)' }}
+                      style={{ color: 'var(--amber2)' }}
                       title="Physically out at the vendor (sent − returned)"
                     >
                       At Vendor
@@ -114,7 +114,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
                     </th>
                     <th
                       className="td-ctr"
-                      style={{ color: 'var(--green)' }}
+                      style={{ color: 'var(--green2)' }}
                       title="Accepted at incoming QC"
                     >
                       Accepted

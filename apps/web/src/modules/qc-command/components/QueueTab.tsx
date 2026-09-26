@@ -84,7 +84,7 @@ export function QueueTab({
                   ? {
                       fontSize: 11,
                       background: 'rgba(239,68,68,0.1)',
-                      color: 'var(--red)',
+                      color: 'var(--red2)',
                       border: '1px solid var(--red)',
                     }
                   : { fontSize: 11 }
@@ -100,7 +100,7 @@ export function QueueTab({
       {/* Legacy L18691 returns early on an empty queue: no panel, no table, no
           tip — just the sort bar and this line. */}
       {sorted.length === 0 ? (
-        <div className="empty-state" style={{ color: 'var(--green)' }}>
+        <div className="empty-state" style={{ color: 'var(--green2)' }}>
           ✅ No QC Pending items
         </div>
       ) : (
@@ -142,12 +142,12 @@ export function QueueTab({
                         </td>
                         <td className="td-code" style={{ color: 'var(--cyan)' }}>
                           {it.jcCode}{' '}
-                          <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                          <span style={{ color: 'var(--red2)', fontWeight: 700 }}>
                             Op{opSrNo(it.opSeq)}
                           </span>
                         </td>
                         <td style={{ fontSize: 12 }}>
-                          <b style={{ color: 'var(--red)' }}>{it.operation}</b>
+                          <b style={{ color: 'var(--red2)' }}>{it.operation}</b>
                           <br />
                           {/* An inspector reads the code to find the drawing, so
                               it carries weight rather than sitting in the faintest
@@ -193,13 +193,13 @@ export function QueueTab({
                         <td style={{ fontSize: 12 }}>
                           <span style={{ color: 'var(--cyan)' }}>{it.soCode ?? '—'}</span>
                           <br />
-                          <span className="text3" style={{ fontSize: 10 }}>
+                          <span className="text3" style={{ fontSize: 11 }}>
                             {it.customer ?? '—'}
                           </span>
                         </td>
                         <td
                           className="td-ctr mono fw-700"
-                          style={{ color: 'var(--amber)', fontSize: 14 }}
+                          style={{ color: 'var(--amber2)', fontSize: 14 }}
                         >
                           {it.pendingQty}
                         </td>
@@ -241,7 +241,7 @@ export function QueueTab({
                                 <button
                                   type="button"
                                   className="btn btn-ghost btn-sm"
-                                  style={{ fontSize: 11, color: 'var(--green)' }}
+                                  style={{ fontSize: 11, color: 'var(--green2)' }}
                                   disabled={busyId === it.jcOpId}
                                   onClick={() => onPickUp(it.jcOpId)}
                                 >

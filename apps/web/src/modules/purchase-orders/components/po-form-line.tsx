@@ -1,7 +1,8 @@
-// ONE PO line on the redesigned form — three table rows:
-//   1. SR NO. · PR NO. · ITEM CODE · NAME · QTY · RATE · AMOUNT · DUE DATE · ✕
-//   2. RAM REMARK  (full width)
-//   3. REMARKS     (full width) + the "+ Add Line" button at its right end
+// ONE PO line on the redesigned form:
+//   1. SR NO. · PR NO. · ITEM CODE · NAME · QTY · RATE · AMOUNT · DUE DATE · ▸ More ✕
+//   2. (optional) the "no open PRs" note, full width
+//   3. (▸ More) RAM REMARK · REMARKS · RECEIVED (edit) — the less-used fields
+//   "+ Add Line" sits once, in the Line Items panel header.
 //
 // Split out of `po-form.tsx` because the PR → line auto-fill is a PER-LINE data
 // fetch: `usePurchaseRequest` cannot be called inside the parent's
@@ -20,7 +21,7 @@
 //
 // Clearing the PR is deliberately NOT a reset: it unlinks the line (sourcePrId +
 // sourcePrCode) and leaves the item fields where they are, so the buyer can keep
-// the row as a hand-entered one. The footer stops counting it toward "at least
+// the row as a hand-entered one. The save check stops counting it toward "at least
 // one line has a PR" the moment sourcePrId goes.
 //
 // The PR control is DISABLED until the header names a vendor. A PR belongs to a
@@ -43,13 +44,15 @@ import {
 } from '@/lib/use-field-cascade';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { prOrderBalance } from '@/modules/purchase-requests/lib/pr-balance';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid } from '@/ui/forms';
 import { PO_FORM_ITEM_DATALIST_ID, type PoFormLineValue, type PoFormValues } from './po-form-types';
 import { PICK_VENDOR_FIRST_PLACEHOLDER, noOpenPrsMessage, PrPicker } from './pr-picker';
 
 export type PoItemMasterRow = ListItemsResponse['items'][number];
 
 /** What a PR fill writes with. Dirty (it changes what would be saved) but NOT
- *  validating: this form blocks from its own watched values in the footer, and
+ *  validating: this form blocks from its own watched values in its banner, and
  *  firing RHF validation from an auto-fill would flash errors on untouched rows. */
 const PR_FILL_OPTIONS: SetValueConfig = { shouldDirty: true };
 
@@ -87,7 +90,7 @@ export interface PoFormLineProps {
   /** The header's vendor. When set, the picker offers only that vendor's PRs
    *  (plus the vendor-less OSP ones) — the PR's vendor is what ties it here.
    *  Changing it re-queries this line's picker; a line whose PR belongs to the
-   *  OLD vendor is named in the footer rather than silently wiped. */
+   *  OLD vendor is named in the blocking banner rather than silently wiped. */
   headerVendorId: string | null;
   /** That vendor's name, for the "no open PRs for <vendor>" note. Display only. */
   vendorName: string;
@@ -102,7 +105,6 @@ export interface PoFormLineProps {
   /** Reports the loaded PR up, so the form can seed Vendor + PO Remarks. */
   onPrLoaded: (pr: PurchaseRequestDetail) => void;
   onRemove: () => void;
-  onAddLine: () => void;
   canRemove: boolean;
 }
 
@@ -120,7 +122,6 @@ export function PoFormLine({
   itemsLoaded,
   onPrLoaded,
   onRemove,
-  onAddLine,
   canRemove,
 }: PoFormLineProps): React.JSX.Element {
   const { register, setValue, getValues } = form;
@@ -230,7 +231,7 @@ export function PoFormLine({
   // cascade's "controller has not changed" guard would rightly skip.
   //
   // The same effect reports the PR upward: the header seeds Vendor + PO Remarks
-  // from the first one, and the footer needs every PR it has seen to name a line
+  // from the first one, and the save check needs every PR it has seen to name a line
   // whose PR belongs to a vendor the header no longer holds.
   const reportedPrId = useRef<string | null>(null);
   useEffect(() => {
@@ -279,17 +280,25 @@ export function PoFormLine({
       ? noOpenPrsMessage(vendorName)
       : null;
 
+  // The "▸ More" detail row holds the less-used fields (RAM Remark, line
+  // Remarks, and Received on edit) so the grid stays at eight data columns. It
+  // opens by itself when a saved line already carries a remark, so nothing the
+  // document holds is hidden on arrival.
+  const [moreOpen, setMoreOpen] = useState(() =>
+    Boolean(line?.ramRemark?.trim() || line?.lineRemarks?.trim()),
+  );
+
   return (
     <Fragment>
-      <tr className="pof-r-top">
-        <td className="pof-sr">{idx + 1}</td>
+      <tr>
+        <td className="td-num mono fw-700">{idx + 1}</td>
         {/* 168, not 128. A real PR code is `IN-JWPR-00003` — 13 monospace
             characters, plus the input's padding and the dropdown caret — and at
             128px the last digit was cut off, which on a document number is the
             one character you cannot afford to lose. Same width as Item Code. */}
         <td style={{ width: 168 }}>
           {lockedPrCode ? (
-            <span className="pof-prcode" title={lockedPrCode}>
+            <span className="mono fw-700" title={lockedPrCode}>
               {lockedPrCode}
             </span>
           ) : (
@@ -315,8 +324,8 @@ export function PoFormLine({
               onNoOptions={setNoPrsForVendor}
               onChange={(id) => {
                 // Clearing UNLINKS the line — id and code go, the item fields
-                // stay. The footer stops counting this line toward "at least one
-                // line has a PR" as soon as sourcePrId is gone.
+                // stay. The save check stops counting this line toward "at
+                // least one line has a PR" as soon as sourcePrId is gone.
                 setValue(`lines.${idx}.sourcePrId`, id ?? undefined, { shouldDirty: true });
                 if (!id) setValue(`lines.${idx}.sourcePrCode`, undefined, { shouldDirty: true });
               }}
@@ -325,7 +334,7 @@ export function PoFormLine({
         </td>
         <td style={{ width: 168 }}>
           <input
-            className="pof-in pof-in-sm pof-num"
+            className="innovic-input mono"
             list={PO_FORM_ITEM_DATALIST_ID}
             autoComplete="off"
             placeholder="Item code…"
@@ -335,64 +344,61 @@ export function PoFormLine({
         </td>
         <td style={{ minWidth: 200 }}>
           <input
-            className="pof-in pof-in-sm"
+            className="innovic-input"
             autoComplete="off"
             placeholder="Name…"
             aria-label={`Item Name, line ${idx + 1}`}
             {...register(`lines.${idx}.itemName` as const)}
           />
         </td>
-        <td style={{ width: 92 }}>
+        <td className="td-num" style={{ width: 92 }}>
           <input
             type="number"
             min={0}
-            className="pof-in pof-in-sm pof-num"
+            className="innovic-input mono"
             aria-label={`Qty, line ${idx + 1}`}
             {...register(`lines.${idx}.qty` as const, { valueAsNumber: true })}
           />
         </td>
-        <td style={{ width: 108 }}>
+        <td className="td-num" style={{ width: 108 }}>
           <input
             type="number"
             step="0.01"
             min={0}
-            className="pof-in pof-in-sm pof-num"
+            className="innovic-input mono"
             aria-label={`Rate, line ${idx + 1}`}
             {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
           />
         </td>
-        <td style={{ width: 118 }}>
-          {/* Derived, never typed — qty × rate. */}
-          <div className="pof-amt" title="Qty × Rate">
-            ₹{inrFormat(amount)}
-          </div>
+        {/* Derived, never typed — qty × rate. */}
+        <td className="td-num mono" style={{ width: 118 }} title="Qty × Rate">
+          ₹{inrFormat(amount)}
         </td>
-        {/* THIS LINE's due date. Nothing to do with the header's Delivery Date /
+        {/* THIS LINE's due date. Nothing to do with the header's Due Date /
             Delivery Days pair: that promises one delivery for the whole PO, this
             one dates a single item. Neither writes to the other. */}
         <td style={{ width: 138 }}>
           <input
             type="date"
-            className="pof-in pof-in-sm pof-num"
+            className="innovic-input mono"
             aria-label={`Due Date, line ${idx + 1}`}
             {...register(`lines.${idx}.dueDate` as const)}
           />
         </td>
-        {isEdit ? (
-          <td style={{ width: 92 }}>
-            <input
-              className="pof-in pof-in-sm pof-num"
-              readOnly
-              title="Received qty moves only with a GRN, never a plain edit"
-              aria-label={`Received, line ${idx + 1}`}
-              value={line?.receivedQty ?? 0}
-            />
-          </td>
-        ) : null}
-        <td style={{ width: 48 }}>
+        <td style={{ whiteSpace: 'nowrap' }}>
           <button
             type="button"
-            className="pof-x"
+            className="btn btn-ghost btn-sm"
+            aria-expanded={moreOpen}
+            aria-label={`${moreOpen ? 'Hide' : 'Show'} more fields, line ${idx + 1}`}
+            onClick={() => setMoreOpen((o) => !o)}
+          >
+            {moreOpen ? '▾' : '▸'} More
+          </button>{' '}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ color: 'var(--red2)' }}
             onClick={onRemove}
             disabled={!canRemove}
             title={canRemove ? 'Remove this line' : 'A PO needs at least one line'}
@@ -404,53 +410,58 @@ export function PoFormLine({
       </tr>
 
       {/* The note sits on its own full-width row rather than under the 168px PR
-          cell, where a sentence would wrap to six lines and read as a tiny grey
-          hint. Same amber / blue as the rest of the `pof-` palette. */}
+          cell, where a sentence would wrap to six lines and stop being read. */}
       {noteText ? (
-        <tr className="pof-r-note">
+        <tr>
           <td />
-          <td colSpan={colCount - 1}>
-            <div className="pof-tip pof-tip-info" role="status">
-              <span className="pof-tip-t">{noteText}</span>
-            </div>
+          <td colSpan={colCount - 1} style={{ whiteSpace: 'normal' }}>
+            <Banner tone="info" flush>
+              {noteText}
+            </Banner>
           </td>
         </tr>
       ) : null}
 
-      <tr>
-        <td className="pof-sub-l" colSpan={2}>
-          Ram Remark
-        </td>
-        <td colSpan={colCount - 2}>
-          <input
-            className="pof-in pof-in-sm"
-            autoComplete="off"
-            placeholder="RAM remark…"
-            aria-label={`RAM remark, line ${idx + 1}`}
-            {...register(`lines.${idx}.ramRemark` as const)}
-          />
-        </td>
-      </tr>
-
-      <tr className="pof-r-end">
-        <td className="pof-sub-l" colSpan={2}>
-          Remarks
-        </td>
-        <td colSpan={colCount - 3}>
-          <input
-            className="pof-in pof-in-sm"
-            autoComplete="off"
-            placeholder="Remarks for this line…"
-            aria-label={`Remarks, line ${idx + 1}`}
-            {...register(`lines.${idx}.lineRemarks` as const)}
-          />
-        </td>
-        <td>
-          <button type="button" className="pof-add" onClick={onAddLine}>
-            + Add Line
-          </button>
-        </td>
-      </tr>
+      {moreOpen ? (
+        <tr>
+          <td />
+          <td colSpan={colCount - 1} style={{ whiteSpace: 'normal' }}>
+            <FormGrid>
+              {isEdit ? (
+                <FormField label="Received" size="xs" htmlFor={`pof-recv-${idx}`}>
+                  <input
+                    id={`pof-recv-${idx}`}
+                    className="innovic-input mono is-derived"
+                    readOnly
+                    title="Received qty moves only with a GRN, never a plain edit"
+                    value={line?.receivedQty ?? 0}
+                  />
+                </FormField>
+              ) : null}
+              <FormField label="Ram Remark" size={isEdit ? 'md' : 'lg'} htmlFor={`pof-ram-${idx}`}>
+                <input
+                  id={`pof-ram-${idx}`}
+                  className="innovic-input"
+                  autoComplete="off"
+                  placeholder="RAM remark…"
+                  aria-label={`RAM remark, line ${idx + 1}`}
+                  {...register(`lines.${idx}.ramRemark` as const)}
+                />
+              </FormField>
+              <FormField label="Remarks" size="lg" htmlFor={`pof-rmk-${idx}`}>
+                <input
+                  id={`pof-rmk-${idx}`}
+                  className="innovic-input"
+                  autoComplete="off"
+                  placeholder="Remarks for this line…"
+                  aria-label={`Remarks, line ${idx + 1}`}
+                  {...register(`lines.${idx}.lineRemarks` as const)}
+                />
+              </FormField>
+            </FormGrid>
+          </td>
+        </tr>
+      ) : null}
     </Fragment>
   );
 }

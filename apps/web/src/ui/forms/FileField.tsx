@@ -151,7 +151,7 @@ export function FileField({
           </button>
         ) : null}
         {error ? (
-          <span style={{ color: 'var(--red)', fontSize: 'var(--fs-xs)' }}>{error}</span>
+          <span style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}>{error}</span>
         ) : null}
       </div>
     );

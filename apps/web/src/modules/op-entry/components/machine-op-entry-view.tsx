@@ -178,7 +178,7 @@ export function MachineOpEntryView(): React.JSX.Element {
               }}
             >
               <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
-                {selectedMachine.code} — <span style={{ color: 'var(--green)' }}>🟢 Running</span>
+                {selectedMachine.code} — <span style={{ color: 'var(--green2)' }}>🟢 Running</span>
               </div>
               <div className="text3" style={{ fontSize: 11 }}>
                 Started: {fmtDateAndTime(selectedRunning.startDate, selectedRunning.startTime)} by{' '}
@@ -201,7 +201,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 9 }}>
+                <div className="text3" style={{ fontSize: 11 }}>
                   JC No.
                 </div>
                 <div className="mono fw-700 cyan">{selectedRunning.jobCardCode}</div>
@@ -224,7 +224,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                     border: '1px solid var(--border)',
                   }}
                 >
-                  <div className="text3" style={{ fontSize: 9 }}>
+                  <div className="text3" style={{ fontSize: 11 }}>
                     Item Code
                   </div>
                   {/* POL — the line number printed on the CUSTOMER's own
@@ -232,7 +232,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                       when no sales order sits behind the card, so a job-work
                       job reads exactly as this tile always has. */}
                   {selectedRunning.clientPoLineNo ? (
-                    <div className="mono text3" style={{ fontSize: 10 }}>
+                    <div className="mono text3" style={{ fontSize: 11 }}>
                       POL{' '}
                       <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                         {selectedRunning.clientPoLineNo}
@@ -250,7 +250,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                     <div
                       className="text3"
                       style={{
-                        fontSize: 10,
+                        fontSize: 11,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -270,7 +270,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 9 }}>
+                <div className="text3" style={{ fontSize: 11 }}>
                   Operation
                 </div>
                 <div className="fw-700">
@@ -285,7 +285,7 @@ export function MachineOpEntryView(): React.JSX.Element {
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 9 }}>
+                <div className="text3" style={{ fontSize: 11 }}>
                   Available
                 </div>
                 <div className="mono fw-700 amber" style={{ fontSize: 18 }}>
@@ -474,7 +474,7 @@ function PendingOpsSection({
         </div>
       ) : ops.length > 0 ? (
         <>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber2)', marginBottom: 8 }}>
             Pending Jobs for this Machine ({ops.length})
           </div>
           <div className="tbl-wrap">
@@ -488,7 +488,9 @@ function PendingOpsSection({
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th style={{ color: 'var(--amber)' }}>Available</th>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                    Available
+                  </th>
                   <th></th>
                 </tr>
               </thead>
@@ -523,7 +525,7 @@ function PendingOpsSection({
                     />
                     <td className="mono fw-700">Op {opSrNo(op.opSeq)}</td>
                     <td className="fw-700">{op.operation}</td>
-                    <td className="mono fw-700 amber">{op.available}</td>
+                    <td className="mono fw-700 amber td-num">{op.available}</td>
                     <td>
                       {canOpEntry ? (
                         <button
@@ -557,7 +559,7 @@ function PendingOpsSection({
             style={{
               fontSize: 12,
               fontWeight: 700,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               marginTop: 16,
               marginBottom: 8,
             }}
@@ -575,7 +577,9 @@ function PendingOpsSection({
                   <th>Item Name</th>
                   <th>Op</th>
                   <th>Operation</th>
-                  <th style={{ color: 'var(--green)' }}>Completed</th>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    Completed
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -602,7 +606,7 @@ function PendingOpsSection({
                     />
                     <td className="mono">Op{opSrNo(row.op.opSeq)}</td>
                     <td>{row.op.operation}</td>
-                    <td className="mono fw-700 green">{row.qty}</td>
+                    <td className="mono fw-700 green td-num">{row.qty}</td>
                   </tr>
                 ))}
               </tbody>

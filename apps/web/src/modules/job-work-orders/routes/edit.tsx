@@ -74,9 +74,28 @@ function JobWorkOrderNewPage(): React.JSX.Element {
       const created = await create.mutateAsync(values);
       // Upload the chosen Client PO document + Email Ref against the new JWSO
       // (best-effort — the JWSO is already saved).
-      await registerJwDoc(poFileRef.current, me?.companyId, created.id, created.code, createDoc, 'po-docs', 'Client PO');
-      await registerJwDoc(emailFileRef.current, me?.companyId, created.id, created.code, createDoc, 'email_reference', 'Email Reference');
-      exit.leave(() => void navigate({ to: '/job-work-orders/$id', params: { id: created.id }, replace: true }));
+      await registerJwDoc(
+        poFileRef.current,
+        me?.companyId,
+        created.id,
+        created.code,
+        createDoc,
+        'po-docs',
+        'Client PO',
+      );
+      await registerJwDoc(
+        emailFileRef.current,
+        me?.companyId,
+        created.id,
+        created.code,
+        createDoc,
+        'email_reference',
+        'Email Reference',
+      );
+      exit.leave(
+        () =>
+          void navigate({ to: '/job-work-orders/$id', params: { id: created.id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save JWSO. Try again.');
     }
@@ -84,7 +103,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You do not have create access to JWSO Master. Ask an admin for L2 Data Entry or above in
         Sales.
       </div>
@@ -94,31 +113,22 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      <div>
-        <Link to="/job-work-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-          <ArrowLeft size={14} /> Back to JWSO Master
-        </Link>
-        <div className="panel">
-          <div className="panel-hdr">
-            <div>
-              <div className="panel-title">+ New JWSO Order</div>
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                Customer-supplied raw material → we machine and deliver.
-              </div>
-            </div>
-          </div>
-          <div className="panel-body">
-            <JobWorkOrderForm
-              mode="create"
-              onSubmit={onSubmit}
-              onPoFileChange={(f) => { poFileRef.current = f; }}
-              onEmailFileChange={(f) => { emailFileRef.current = f; }}
-              submitError={submitError}
-              onCancel={() => exit.leave(goBack)}
-            />
-          </div>
-        </div>
-      </div>
+      <JobWorkOrderForm
+        mode="create"
+        pageTitle="New JWSO Order"
+        pageSubtitle="Customer-supplied raw material → we machine and deliver."
+        backLabel="Back to JWSO Master"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        onPoFileChange={(f) => {
+          poFileRef.current = f;
+        }}
+        onEmailFileChange={(f) => {
+          emailFileRef.current = f;
+        }}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </>
   );
 }
@@ -147,9 +157,27 @@ function JobWorkOrderEditPage(): React.JSX.Element {
       const saved = await update.mutateAsync(values);
       // Upload a newly-picked Client PO document + Email Ref against this JWSO
       // (best-effort).
-      await registerJwDoc(poFileRef.current, me?.companyId, id, saved.code, createDoc, 'po-docs', 'Client PO');
-      await registerJwDoc(emailFileRef.current, me?.companyId, id, saved.code, createDoc, 'email_reference', 'Email Reference');
-      exit.leave(() => void navigate({ to: '/job-work-orders/$id', params: { id }, replace: true }));
+      await registerJwDoc(
+        poFileRef.current,
+        me?.companyId,
+        id,
+        saved.code,
+        createDoc,
+        'po-docs',
+        'Client PO',
+      );
+      await registerJwDoc(
+        emailFileRef.current,
+        me?.companyId,
+        id,
+        saved.code,
+        createDoc,
+        'email_reference',
+        'Email Reference',
+      );
+      exit.leave(
+        () => void navigate({ to: '/job-work-orders/$id', params: { id }, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
     }
@@ -157,7 +185,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
 
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You do not have edit access to JWSO Master. Ask an admin for L2 Data Entry or above in
         Sales.
       </div>
@@ -181,7 +209,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Job-work order not found'}
           </div>
         </div>
@@ -192,39 +220,22 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      <div>
-        <Link
-          to="/job-work-orders/$id"
-          params={{ id }}
-          className="btn btn-ghost btn-sm"
-          style={{ marginBottom: 10 }}
-        >
-          <ArrowLeft size={14} /> Back to JWSO
-        </Link>
-        <div className="panel">
-          <div className="panel-hdr">
-            <div>
-              <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
-                {detail.code}
-              </div>
-              <div className="panel-title" style={{ marginTop: 2 }}>
-                Edit Job-Work Order
-              </div>
-            </div>
-          </div>
-          <div className="panel-body">
-            <JobWorkOrderForm
-              mode="edit"
-              detail={detail}
-              onSubmit={onSubmit}
-              onPoFileChange={(f) => { poFileRef.current = f; }}
-              onEmailFileChange={(f) => { emailFileRef.current = f; }}
-              submitError={submitError}
-              onCancel={() => exit.leave(goBack)}
-            />
-          </div>
-        </div>
-      </div>
+      <JobWorkOrderForm
+        mode="edit"
+        detail={detail}
+        pageTitle={`Edit Job-Work Order — ${detail.code}`}
+        backLabel="Back to JWSO"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        onPoFileChange={(f) => {
+          poFileRef.current = f;
+        }}
+        onEmailFileChange={(f) => {
+          emailFileRef.current = f;
+        }}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </>
   );
 }

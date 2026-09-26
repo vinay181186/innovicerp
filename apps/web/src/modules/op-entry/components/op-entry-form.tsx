@@ -622,7 +622,7 @@ export function OpEntryForm({
         borderRadius: 6,
         background: 'var(--amber3)',
         border: '1px solid var(--amber2)',
-        color: 'var(--amber)',
+        color: 'var(--amber2)',
         fontSize: 12,
         fontWeight: 600,
       }}
@@ -632,7 +632,7 @@ export function OpEntryForm({
   ) : null;
 
   const errorBanner = errorMessage ? (
-    <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+    <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
       {errorMessage}
     </div>
   ) : null;
@@ -651,7 +651,7 @@ export function OpEntryForm({
         borderRadius: 6,
         background: 'var(--green3)',
         border: '1px solid var(--green2)',
-        color: 'var(--green)',
+        color: 'var(--green2)',
         fontSize: 12,
         fontWeight: 600,
       }}
@@ -1356,7 +1356,7 @@ export function OpEntryForm({
                 color: 'var(--text2)',
               }}
             >
-              Pending on this op: <b style={{ color: 'var(--amber)' }}>{op.pendingQty}</b>
+              Pending on this op: <b style={{ color: 'var(--amber2)' }}>{op.pendingQty}</b>
             </span>
           </div>
         </div>

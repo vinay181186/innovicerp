@@ -53,7 +53,7 @@ export function SoLineDrawingCell({
 
   if (busy) {
     return (
-      <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+      <span className="text3" style={{ whiteSpace: 'nowrap' }}>
         <Loader2 size={12} className="inline animate-spin" /> …
       </span>
     );
@@ -61,11 +61,12 @@ export function SoLineDrawingCell({
 
   if (value) {
     return (
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center', whiteSpace: 'nowrap' }}>
+      <div
+        style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'center', whiteSpace: 'nowrap' }}
+      >
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ padding: '2px 6px', fontSize: 11 }}
           onClick={() => setPreviewOpen(true)}
           title="Preview drawing"
         >
@@ -73,8 +74,7 @@ export function SoLineDrawingCell({
         </button>
         <button
           type="button"
-          className="btn btn-sm"
-          style={{ padding: '2px 6px', fontSize: 11, background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)' }}
+          className="btn btn-ghost btn-sm red"
           onClick={() => onChange(undefined)}
           title="Clear drawing"
           aria-label="Clear drawing"
@@ -99,15 +99,10 @@ export function SoLineDrawingCell({
       <input
         type="file"
         className="innovic-input"
-        style={{ fontSize: 11, padding: '2px' }}
         accept="image/*,.pdf"
         onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
       />
-      {err ? (
-        <div className="form-error" style={{ fontSize: 10 }}>
-          {err}
-        </div>
-      ) : null}
+      {err ? <div className="form-error">{err}</div> : null}
     </div>
   );
 }

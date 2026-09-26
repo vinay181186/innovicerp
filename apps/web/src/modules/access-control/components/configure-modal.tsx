@@ -580,7 +580,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   </option>
                 ))}
               </select>
-              <span className="text3" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
+              <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                 (sets L3)
               </span>
             </label>
@@ -633,7 +633,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
           </div>
         ) : isError ? (
-          <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+          <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load access settings. Try again.'}
           </div>
         ) : (
@@ -648,7 +648,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   borderRadius: 8,
                 }}
               >
-                <div className="text3" style={{ fontSize: 10, marginBottom: 6 }}>
+                <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
                   Clone permissions from another user — copy there, paste here, then Save.
                 </div>
                 <textarea
@@ -660,7 +660,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}
                 />
                 {importError ? (
-                  <div style={{ marginTop: 6, color: 'var(--red)', fontSize: 11 }}>
+                  <div style={{ marginTop: 6, color: 'var(--red2)', fontSize: 11 }}>
                     {importError}
                   </div>
                 ) : null}
@@ -797,7 +797,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 <span
                   className="mono"
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     letterSpacing: '0.08em',
                     color: 'var(--text3)',
                     minWidth: 190,
@@ -807,13 +807,13 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 </span>
                 <span
                   className="mono"
-                  style={{ fontSize: 10, letterSpacing: '0.06em', color: 'var(--text3)', flex: 1 }}
+                  style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--text3)', flex: 1 }}
                 >
                   TIER — {tierLegend}
                 </span>
                 <span
                   className="mono"
-                  style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--text3)' }}
+                  style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text3)' }}
                 >
                   EXTRA
                 </span>
@@ -909,7 +909,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         <div
                           style={{
                             padding: '5px 12px 5px 30px',
-                            fontSize: 10,
+                            fontSize: 11,
                             color: 'var(--text3)',
                             borderBottom: '1px solid var(--border)',
                           }}
@@ -948,7 +948,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         >
                           <span
                             className="mono"
-                            style={{ fontSize: 9, letterSpacing: '0.08em', color: 'var(--text3)' }}
+                            style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text3)' }}
                           >
                             FORM / FEATURE
                           </span>
@@ -958,7 +958,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                               className="mono"
                               title={ACTION_HINT[a]}
                               style={{
-                                fontSize: 9,
+                                fontSize: 11,
                                 letterSpacing: '0.06em',
                                 color: a === 'price' ? 'var(--orange2)' : 'var(--text3)',
                                 textAlign: 'center',
@@ -1133,7 +1133,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   background: 'var(--bg3)',
                   border: '1px solid var(--amber)',
                   borderRadius: 6,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   fontSize: 12,
                 }}
               >
@@ -1166,7 +1166,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   background: 'var(--red3)',
                   border: '1px solid var(--red)',
                   borderRadius: 6,
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                   fontSize: 12,
                 }}
               >

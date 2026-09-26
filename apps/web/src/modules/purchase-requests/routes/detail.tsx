@@ -22,10 +22,11 @@
 
 import { type PurchaseRequestDetail, opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Ban, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
+import { ActionMenu } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -68,6 +69,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const closeBalanceMut = useClosePurchaseRequestBalance();
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -85,7 +87,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Purchase request not found'}
           </div>
         </div>
@@ -99,7 +101,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -124,6 +126,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // What is still to order. A PR for 100 with a PO for 10 has 90 left, so
   // "has a PO" is no longer the test for whether another PO may be raised.
   const bal = prOrderBalance(detail);
+  const canOrder = detail.status !== 'cancelled' && bal.balance > 0 && canCreatePo;
   // Offered only when there is something to close: part of it bought, part of
   // it still outstanding, nothing closed yet, request not cancelled. A PR with
   // NOTHING ordered is a Reject, not a close — the API refuses it by name, so
@@ -191,108 +194,123 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               <PrStatusBadge status={detail.status} />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <AssignTaskButton
-              linkedRef={{
-                type: 'purchase_request',
-                id: detail.id,
-                display: `PR ${detail.code}`,
-                navPage: `/purchase-requests/${detail.id}`,
-              }}
-              suggestedTitle={`Follow up on PR ${detail.code}`}
-            />
-            {/* Offered while quantity is LEFT, whatever POs already exist. The old
-                test (`!linkedToPo`) removed the button the moment one PO was
-                raised, even a PO for 10 of 100. Cancelled PRs stay unorderable. */}
-            {detail.status !== 'cancelled' && bal.balance > 0 && canCreatePo ? (
+          {/* ONE primary next step + an Actions menu for the rest. The step is
+              Create PO while quantity is LEFT (whatever POs already exist — the
+              old `!linkedToPo` test removed it after a PO for 10 of 100), else
+              View linked PO once the PR is fully ordered. Cancelled PRs stay
+              unorderable. */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {canOrder ? (
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: detail.id }}
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary"
               >
                 <FileText size={13} /> Create PO
               </Link>
-            ) : null}
-            {canCloseBalance ? (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  setCloseError(null);
-                  setCloseOpen(true);
-                }}
-                title={`Stop expecting the pending ${bal.balance} of ${bal.qty}`}
-              >
-                <Ban size={13} /> Short Close
-              </button>
-            ) : null}
-            {linkedToPo && detail.poId ? (
-              // Once a PO exists this PR is locked — surface the PO to view
-              // instead of Create PO, and hide Edit below.
+            ) : linkedToPo && detail.poId ? (
               <Link
                 to="/purchase-orders/$id"
                 params={{ id: detail.poId }}
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary"
               >
                 <FileText size={13} /> View linked PO
               </Link>
             ) : null}
-            {canEdit && !linkedToPo ? (
-              <Link
-                to="/purchase-requests/$id/edit"
-                params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                <Pencil size={13} /> Edit
-              </Link>
-            ) : null}
-            {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Move PR {detail.code} to Trash? You can restore it from Trash.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Move to Trash
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={linkedToPo}
-                  title={linkedToPo ? 'PR has a linked PO — cancel instead of delete' : undefined}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
-            ) : null}
+            <ActionMenu
+              items={[
+                {
+                  // Once a PO exists this PR is locked — surface the PO to view,
+                  // and hide Edit below.
+                  label: 'View linked PO',
+                  hidden: !(canOrder && linkedToPo && detail.poId),
+                  onClick: () => {
+                    if (detail.poId)
+                      void navigate({ to: '/purchase-orders/$id', params: { id: detail.poId } });
+                  },
+                },
+                {
+                  label: 'Short Close',
+                  hidden: !canCloseBalance,
+                  title: `Stop expecting the pending ${bal.balance} of ${bal.qty}`,
+                  onClick: () => {
+                    setCloseError(null);
+                    setCloseOpen(true);
+                  },
+                },
+                { label: 'Assign Task', onClick: () => setAssignOpen(true) },
+                {
+                  label: 'Edit',
+                  hidden: !(canEdit && !linkedToPo),
+                  onClick: () =>
+                    void navigate({ to: '/purchase-requests/$id/edit', params: { id: detail.id } }),
+                },
+                {
+                  label: 'Delete',
+                  danger: true,
+                  hidden: !canDelete,
+                  disabled: linkedToPo,
+                  title: linkedToPo ? 'PR has a linked PO — cancel instead of delete' : undefined,
+                  onClick: () => setConfirmDelete(true),
+                },
+              ]}
+            />
           </div>
         </div>
+        {canDelete && confirmDelete && !linkedToPo ? (
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              flexWrap: 'wrap',
+              margin: '10px 14px 0',
+            }}
+          >
+            <span className="text3" style={{ fontSize: 12 }}>
+              Move PR {detail.code} to Trash? You can restore it from Trash.
+            </span>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={onDelete}
+              disabled={softDelete.isPending}
+            >
+              {softDelete.isPending ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Trash2 size={13} />
+              )}
+              Move to Trash
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setConfirmDelete(false)}
+              disabled={softDelete.isPending}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
+        {assignOpen ? (
+          <AssignTaskModal
+            linkedRef={{
+              type: 'purchase_request',
+              id: detail.id,
+              display: `PR ${detail.code}`,
+              navPage: `/purchase-requests/${detail.id}`,
+            }}
+            suggestedTitle={`Follow up on PR ${detail.code}`}
+            onClose={() => setAssignOpen(false)}
+          />
+        ) : null}
         <div className="panel-body">
           {softDelete.isError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--sig-critical-bd)',
                 borderRadius: 6,
@@ -411,7 +429,7 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
       {bal.state === 'over' ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--sig-critical-bd)',
             borderRadius: 6,

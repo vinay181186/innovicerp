@@ -184,16 +184,35 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const allExpanded = groups.length > 0 && groups.every((g) => expanded.has(g.dispatchId));
 
   const tabBar = (
-    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+    <div
+      style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}
+    >
       {(['so', 'jw'] as const).map((t) => (
-        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'so' ? '🚚 Customer Dispatch' : '📦 JW Return'}</button>
+        <button
+          key={t}
+          type="button"
+          onClick={() => setTab(t)}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+            color: tab === t ? 'var(--cyan)' : 'var(--text3)',
+            fontSize: 12,
+            fontWeight: 700,
+            padding: '6px 12px',
+            cursor: 'pointer',
+            marginBottom: -1,
+          }}
+        >
+          {t === 'so' ? '🚚 Customer Dispatch' : '📦 JW Return'}
+        </button>
       ))}
     </div>
   );
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -230,7 +249,15 @@ function CustomerDispatchListPage(): React.JSX.Element {
           borderBottom: '1px solid var(--border)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
           <div>
             <div className="section-hdr" style={{ marginBottom: 0 }}>
               📦 Customer Dispatch
@@ -239,7 +266,8 @@ function CustomerDispatchListPage(): React.JSX.Element {
               {groups.length} dispatch{groups.length === 1 ? '' : 'es'}
               {soFilter ? (
                 <>
-                  {' '}· <span className="text2">{soFilter}</span> only
+                  {' '}
+                  · <span className="text2">{soFilter}</span> only
                 </>
               ) : null}
             </div>
@@ -253,7 +281,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
             >
               <option value="">All SOs</option>
               {soOptions.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
             <input
@@ -265,8 +295,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
             />
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 12 }}
+              className="btn btn-ghost"
               title="Export the current (SO-filtered) register to Excel"
               onClick={() => exportDispatchRegister(soRows, soFilter || undefined)}
             >
@@ -274,8 +303,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 12 }}
+              className="btn btn-ghost"
               title="Print the dispatch register"
               disabled={isLoading}
               onClick={() => {
@@ -288,8 +316,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 12 }}
+              className="btn btn-ghost"
               disabled={groups.length === 0}
               title={allExpanded ? 'Hide every card’s items' : 'Show every card’s items'}
               onClick={() =>
@@ -324,7 +351,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 key: 'pcs',
                 label: 'Total Dispatched',
                 count: totalPcs,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 sub: 'pieces',
               },
               {
@@ -339,10 +366,11 @@ function CustomerDispatchListPage(): React.JSX.Element {
 
       {isLoading ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+          Loading…
         </div>
       ) : isError || !data ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
           {error instanceof Error ? error.message : 'Could not load dispatches. Try again.'}
         </div>
       ) : (
@@ -358,21 +386,27 @@ function CustomerDispatchListPage(): React.JSX.Element {
                     <tr>
                       <th>Item Code</th>
                       <th>Item Name</th>
-                      <th>Total Dispatched</th>
-                      <th>No. of Dispatches</th>
-                      <th style={{ color: 'var(--green)' }}>Current Stock</th>
+                      <th className="th-num">Total Dispatched</th>
+                      <th className="th-num">No. of Dispatches</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Current Stock
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.map((s) => (
                       <tr key={s.code + s.name}>
-                        <td className="td-code" style={{ color: 'var(--purple)' }}>{s.code}</td>
+                        <td className="td-code" style={{ color: 'var(--purple)' }}>
+                          {s.code}
+                        </td>
                         <td className="fw-700">{s.name}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>{s.total}</td>
-                        <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
+                          {s.total}
+                        </td>
+                        <td className="mono td-num" style={{ fontSize: 11, color: 'var(--text3)' }}>
                           {s.count}
                         </td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                        <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                           {s.stock ?? 0}
                         </td>
                       </tr>

@@ -141,7 +141,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load TPI. Try again.'}
           </div>
         </div>
@@ -160,12 +160,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               }}
             >
               <span style={{ fontWeight: 700, fontSize: 13 }}>
-                <span style={{ color: 'var(--amber)' }}>⏳</span> Pending TPI ({pending.length})
+                <span style={{ color: 'var(--amber2)' }}>⏳</span> Pending TPI ({pending.length})
               </span>
             </div>
             <div style={{ padding: 10 }}>
               {pending.length === 0 ? (
-                <div className="empty-state" style={{ padding: 20, color: 'var(--green)' }}>
+                <div className="empty-state" style={{ padding: 20, color: 'var(--green2)' }}>
                   ✅ No pending TPI calls
                 </div>
               ) : (
@@ -194,12 +194,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               }}
             >
               <span style={{ fontWeight: 700, fontSize: 13 }}>
-                <span style={{ color: 'var(--green)' }}>✅</span> Completed TPI ({completed.length})
+                <span style={{ color: 'var(--green2)' }}>✅</span> Completed TPI ({completed.length})
               </span>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10 }}
+                style={{ fontSize: 11 }}
                 disabled={completed.length === 0}
                 onClick={() => void exportTpiRecords(completed)}
               >
@@ -281,7 +281,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                           {l.itemName ? l.itemName : null}
                         </td>
                         <td style={{ fontSize: 11 }}>{l.operation}</td>
-                        <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                        <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                           {l.accepted}
                         </td>
                         <td
@@ -290,10 +290,10 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         >
                           {l.rejected}
                         </td>
-                        <td style={{ fontSize: 11, color: 'var(--amber)' }}>
+                        <td style={{ fontSize: 11, color: 'var(--amber2)' }}>
                           {fmtDate(l.callDate)}
                         </td>
-                        <td style={{ fontSize: 11, color: 'var(--green)' }}>
+                        <td style={{ fontSize: 11, color: 'var(--green2)' }}>
                           {fmtDate(l.attendedDate)}
                         </td>
                         <td
@@ -315,10 +315,10 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>
                           {l.inspector ?? '—'}
                         </td>
-                        <td className="text2" style={{ fontSize: 10 }}>
+                        <td className="text2" style={{ fontSize: 11 }}>
                           {l.organization ?? '—'}
                         </td>
-                        <td style={{ fontSize: 10, fontWeight: 700, color: 'var(--purple)' }}>
+                        <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>
                           {l.certNo ?? '—'}
                         </td>
                         <td style={{ fontSize: 11 }}>
@@ -466,7 +466,7 @@ function PendingTpi(props: {
             Op{opSrNo(o.opSeq)} — {o.operation}
           </span>
           {o.waitDays > 1 ? (
-            <span style={{ fontSize: 10, color: 'var(--red)', fontWeight: 700, marginLeft: 8 }}>
+            <span style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginLeft: 8 }}>
               ⚠ Waiting {o.waitDays} days
             </span>
           ) : null}
@@ -509,12 +509,12 @@ function PendingTpi(props: {
             • Order: {o.orderQty} pcs
           </div>
           {o.callDate ? (
-            <div style={{ fontSize: 10, color: 'var(--amber)' }}>Called: {fmtDate(o.callDate)}</div>
+            <div style={{ fontSize: 11, color: 'var(--amber2)' }}>Called: {fmtDate(o.callDate)}</div>
           ) : null}
         </div>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{o.qcPending}</div>
-          <div className="text3" style={{ fontSize: 9 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber2)' }}>{o.qcPending}</div>
+          <div className="text3" style={{ fontSize: 11 }}>
             Pending
           </div>
         </div>
@@ -530,14 +530,14 @@ function PendingTpi(props: {
             borderTop: '2px solid var(--green)',
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green2)', marginBottom: 12 }}>
             ✅ TPI Entry — {o.jcCode} Op{opSrNo(o.opSeq)}
           </div>
 
           {/* Legacy L21413-21416: Date | Shift */}
           <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>
                 TPI Date
               </label>
               <input
@@ -548,7 +548,7 @@ function PendingTpi(props: {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>
                 Shift
               </label>
               <select
@@ -568,7 +568,7 @@ function PendingTpi(props: {
           {/* Legacy L21417-21420: the big centred Accept / Reject qty inputs */}
           <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
+              <label className="form-label" style={{ fontSize: 11, color: 'var(--green2)' }}>
                 ✅ Accepted (max {o.qcPending})
               </label>
               <input
@@ -582,7 +582,7 @@ function PendingTpi(props: {
                 style={{
                   fontSize: 20,
                   fontWeight: 800,
-                  color: 'var(--green)',
+                  color: 'var(--green2)',
                   textAlign: 'center',
                   padding: 8,
                   border: '2px solid var(--green)',
@@ -591,7 +591,7 @@ function PendingTpi(props: {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
+              <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
                 ❌ Rejected
               </label>
               <input
@@ -605,7 +605,7 @@ function PendingTpi(props: {
                 style={{
                   fontSize: 20,
                   fontWeight: 800,
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                   textAlign: 'center',
                   padding: 8,
                   border: '2px solid var(--red)',
@@ -631,7 +631,7 @@ function PendingTpi(props: {
             </div>
             <div className="form-grid" style={{ gap: 10 }}>
               <div className="form-grp">
-                <label className="form-label" style={{ fontSize: 10 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>
                   Inspector Name ★
                 </label>
                 {/* What gets SAVED is unchanged: still the inspector's name as
@@ -658,7 +658,7 @@ function PendingTpi(props: {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label" style={{ fontSize: 10 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>
                   Organisation ★
                 </label>
                 <input
@@ -669,7 +669,7 @@ function PendingTpi(props: {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label" style={{ fontSize: 10 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>
                   TPI Certificate No.
                 </label>
                 <input
@@ -681,7 +681,7 @@ function PendingTpi(props: {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label" style={{ fontSize: 10 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>
                   Remarks
                 </label>
                 <input
@@ -712,7 +712,7 @@ function PendingTpi(props: {
           </div>
 
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginBottom: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginBottom: 8 }}>
               {err}
             </div>
           ) : null}

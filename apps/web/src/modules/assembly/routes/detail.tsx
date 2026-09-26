@@ -61,7 +61,7 @@ function AssemblyDetailPage(): React.JSX.Element {
           <Link to="/assemblies" className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}>
             <ArrowLeft size={14} /> Back
           </Link>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Assembly Tracker not found.'}
           </div>
         </div>
@@ -116,7 +116,7 @@ function AssemblyDetailPage(): React.JSX.Element {
       {actionError ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid #fca5a5',
             borderRadius: 6,
@@ -149,7 +149,7 @@ function AssemblyDetailPage(): React.JSX.Element {
               className="text3"
               style={{
                 display: 'block',
-                fontSize: 10,
+                fontSize: 11,
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 marginBottom: 4,
@@ -173,7 +173,7 @@ function AssemblyDetailPage(): React.JSX.Element {
               className="text3"
               style={{
                 display: 'block',
-                fontSize: 10,
+                fontSize: 11,
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 marginBottom: 4,
@@ -195,7 +195,7 @@ function AssemblyDetailPage(): React.JSX.Element {
               className="text3"
               style={{
                 display: 'block',
-                fontSize: 10,
+                fontSize: 11,
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 marginBottom: 4,
@@ -217,7 +217,7 @@ function AssemblyDetailPage(): React.JSX.Element {
               className="text3"
               style={{
                 display: 'block',
-                fontSize: 10,
+                fontSize: 11,
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 marginBottom: 4,
@@ -360,7 +360,7 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
           <div style={{ fontSize: 22, fontWeight: 700, color: countColor }}>
             {rollup.assembledQty}/{rollup.orderQty}
           </div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             assembled
           </div>
         </div>
@@ -413,26 +413,26 @@ function RollupPanel({
           }}
         >
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               ORDER QTY
             </span>
             <br />
             <b style={{ fontSize: 18 }}>{rollup.orderQty}</b>
           </div>
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               CAN ASSEMBLE
             </span>
             <br />
             <b style={{ fontSize: 18, color: canAssembleColor }}>{rollup.canAssembleAdditional}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10 }}>ASSEMBLED</span>
+            <span style={{ fontSize: 11 }}>ASSEMBLED</span>
             <br />
             <b style={{ fontSize: 18 }}>{rollup.assembledQty}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--amber)' }}>IN ASSEMBLY</span>
+            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>IN ASSEMBLY</span>
             <br />
             <b
               style={{ fontSize: 18, color: rollup.inProgressQty > 0 ? 'var(--amber)' : undefined }}
@@ -441,12 +441,12 @@ function RollupPanel({
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--cyan)' }}>DISPATCHED</span>
+            <span style={{ fontSize: 11, color: 'var(--cyan)' }}>DISPATCHED</span>
             <br />
             <b style={{ fontSize: 18, color: 'var(--cyan)' }}>{rollup.dispatchedQty}</b>
           </div>
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               PENDING
             </span>
             <br />
@@ -457,7 +457,7 @@ function RollupPanel({
             </b>
           </div>
           <div>
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               COMPONENTS
             </span>
             <br />
@@ -467,10 +467,10 @@ function RollupPanel({
           </div>
           {rollup.bottleneck && rollup.bottleneck.enoughForUnits < rollup.orderQty ? (
             <div>
-              <span style={{ fontSize: 10, color: 'var(--red)' }}>BOTTLENECK</span>
+              <span style={{ fontSize: 11, color: 'var(--red2)' }}>BOTTLENECK</span>
               <br />
               {/* Legacy prints childName||childCode; the rollup carries only the code. */}
-              <b style={{ color: 'var(--red)' }}>{rollup.bottleneck.childItemCode}</b>
+              <b style={{ color: 'var(--red2)' }}>{rollup.bottleneck.childItemCode}</b>
             </div>
           ) : null}
         </div>
@@ -482,8 +482,8 @@ function RollupPanel({
 // Legacy L28804–28805 (type label + colour map).
 const TYPE_META: Record<AssemblyComponentRow['bomType'], { label: string; color: string }> = {
   manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
-  purchase: { label: '🛒 Buy', color: 'var(--green)' },
-  outsource: { label: '🔧 JW', color: 'var(--amber)' },
+  purchase: { label: '🛒 Buy', color: 'var(--green2)' },
+  outsource: { label: '🔧 JW', color: 'var(--amber2)' },
 };
 
 function ComponentsPanel({
@@ -528,7 +528,7 @@ function ComponentsPanel({
               <th>Stock</th>
               <th>In Assembly</th>
               <th>Assembled</th>
-              <th style={{ color: 'var(--red)' }}>Pending</th>
+              <th style={{ color: 'var(--red2)' }}>Pending</th>
               <th>Enough For</th>
               <th>Stock Status</th>
             </tr>
@@ -567,7 +567,7 @@ function ComponentsPanel({
                 <td style={{ color: 'var(--amber2)', fontWeight: 600 }}>
                   {c.qtyPerSet * inProgressQty}
                 </td>
-                <td className="fw-700" style={{ color: 'var(--green)' }}>
+                <td className="fw-700" style={{ color: 'var(--green2)' }}>
                   {c.qtyPerSet * assembledQty}
                 </td>
                 <td
@@ -673,7 +673,7 @@ function UnitsPanel({
         </div>
       </div>
       {error ? (
-        <div style={{ color: 'var(--red)', padding: '6px 10px', fontSize: 12 }}>{error}</div>
+        <div style={{ color: 'var(--red2)', padding: '6px 10px', fontSize: 12 }}>{error}</div>
       ) : null}
       <div className="tbl-wrap">
         <table className="innovic-table">
@@ -709,7 +709,7 @@ function UnitsPanel({
                   <td className="fw-700">
                     {u.qty}
                     {wip ? (
-                      <span className="text3" style={{ fontSize: 10 }}>
+                      <span className="text3" style={{ fontSize: 11 }}>
                         {' '}
                         left
                       </span>

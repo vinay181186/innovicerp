@@ -132,7 +132,7 @@ function PlansListPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -209,7 +209,7 @@ function PlansListPage(): React.JSX.Element {
             <option value="assembly">🔧 Assembly</option>
           </select>
           {perms.entry ? (
-            <Link to="/plans/new" className="btn btn-primary btn-sm">
+            <Link to="/plans/new" className="btn btn-primary">
               <Plus size={13} /> New plan
             </Link>
           ) : null}
@@ -260,7 +260,7 @@ function PlansListPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load plans. Try again.'}
             </div>
           </div>
@@ -323,8 +323,8 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>SO No.</th>
-                <th className="td-ctr">Order Qty</th>
-                <th className="td-ctr">Plan Qty</th>
+                <th className="th-num">Order Qty</th>
+                <th className="th-num">Plan Qty</th>
                 <th>Production Order No.</th>
                 <th>JC No.</th>
                 <th>Plan Status</th>
@@ -389,16 +389,16 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                         {row.lineNo ? ` · Ln ${row.lineNo}` : ''}
                       </span>
                     </td>
-                    <td className="td-ctr mono fw-700">{row.orderQty}</td>
+                    <td className="mono fw-700 td-num">{row.orderQty}</td>
                     {/* ADR-182 — Plan Qty, and under it how much of it the
                         plan's Production Orders already cover. `Pending` is
                         what a new order may still be raised for (NAMING.md —
                         never "Remaining" or "Balance"). Only route-card plans
                         carry orders, so only they show the two lines. */}
-                    <td className="td-ctr mono fw-700">
+                    <td className="mono fw-700 td-num">
                       {row.planQty}
                       {row.derivedStatus ? (
-                        <div className="text3" style={{ fontSize: 10, fontWeight: 400 }}>
+                        <div className="text3" style={{ fontSize: 11, fontWeight: 400 }}>
                           Covered {row.coveredQty}
                           <br />
                           Pending{' '}

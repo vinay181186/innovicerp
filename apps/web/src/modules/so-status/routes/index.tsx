@@ -72,7 +72,7 @@ function SoStatusIndexPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)', padding: 24 }}>
+      <div className="empty-state" style={{ color: 'var(--red2)', padding: 24 }}>
         {error instanceof Error ? error.message : 'Could not load SO list. Try again.'}
       </div>
     );
@@ -172,7 +172,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                   <span
                     className="text3"
                     style={{
-                      fontSize: 10,
+                      fontSize: 11,
                       background: 'var(--bg4)',
                       padding: '1px 5px',
                       borderRadius: 3,
@@ -195,17 +195,17 @@ function SoStatusIndexPage(): React.JSX.Element {
                 </div>
                 {bomPending ? (
                   <div
-                    style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700, marginTop: 2 }}
+                    style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700, marginTop: 2 }}
                   >
                     ⚠ BOM Pending
                   </div>
                 ) : null}
                 <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
-                  <span className="text3" style={{ fontSize: 10 }}>
+                  <span className="text3" style={{ fontSize: 11 }}>
                     Qty: <b>{r.totalRequiredQty}</b>
                   </span>
-                  <span className="text3" style={{ fontSize: 10 }}>
-                    Completed: <b style={{ color: 'var(--green)' }}>{r.totalDoneQty}</b>
+                  <span className="text3" style={{ fontSize: 11 }}>
+                    Completed: <b style={{ color: 'var(--green2)' }}>{r.totalDoneQty}</b>
                   </span>
                   <div
                     style={{
@@ -225,7 +225,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                       }}
                     />
                   </div>
-                  <span className="text3" style={{ fontSize: 10 }}>
+                  <span className="text3" style={{ fontSize: 11 }}>
                     {r.overallPct}%
                   </span>
                 </div>

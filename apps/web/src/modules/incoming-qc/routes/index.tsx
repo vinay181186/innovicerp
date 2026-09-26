@@ -110,7 +110,7 @@ function IncomingQcPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !effectiveFormPerms(eff, 'qc_incoming').view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -145,7 +145,7 @@ function IncomingQcPage(): React.JSX.Element {
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load Incoming QC. Try again.'}
           </div>
         </div>
@@ -159,13 +159,13 @@ function IncomingQcPage(): React.JSX.Element {
                   key: 'grnsWaiting',
                   label: 'GRNs Waiting',
                   count: data.metrics.grnsWaiting,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                 },
                 {
                   key: 'pendingQty',
                   label: 'Pending Qty',
                   count: data.metrics.pendingQty,
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                 },
                 {
                   key: 'avgWait',
@@ -193,21 +193,21 @@ function IncomingQcPage(): React.JSX.Element {
                         key: 'valueInQc',
                         label: 'Value in QC',
                         count: `₹${data.metrics.valueInQc.toLocaleString('en-IN')}`,
-                        color: 'var(--amber)',
+                        color: 'var(--amber2)',
                       },
                     ]),
                 {
                   key: 'todayAccepted',
                   label: 'Today Accepted',
                   count: data.metrics.todayAcceptedQty,
-                  color: 'var(--green)',
+                  color: 'var(--green2)',
                   sub: `${data.metrics.todayAcceptedGrns} GRNs`,
                 },
                 {
                   key: 'todayRejected',
                   label: 'Today Rejected',
                   count: data.metrics.todayRejectedQty,
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                 },
               ]}
             />
@@ -216,7 +216,7 @@ function IncomingQcPage(): React.JSX.Element {
           {/* Pending inspection queue */}
           <div className="panel">
             <div className="panel-hdr">
-              <span className="panel-title" style={{ color: 'var(--amber)' }}>
+              <span className="panel-title" style={{ color: 'var(--amber2)' }}>
                 ⏳ Pending Inspection ({data.pending.length} lines)
               </span>
             </div>
@@ -251,9 +251,13 @@ function IncomingQcPage(): React.JSX.Element {
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Received</th>
-                    <th style={{ color: 'var(--amber)' }}>Days Waiting</th>
-                    <th style={{ color: 'var(--amber)' }}>QC Pending</th>
+                    <th className="th-num">Received</th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      Days Waiting
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
+                      QC Pending
+                    </th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -281,7 +285,7 @@ function IncomingQcPage(): React.JSX.Element {
           {/* Recently completed */}
           <div className="panel" style={{ marginTop: 16 }}>
             <div className="panel-hdr">
-              <span className="panel-title" style={{ color: 'var(--green)' }}>
+              <span className="panel-title" style={{ color: 'var(--green2)' }}>
                 ✅ Recently Completed QC (last 20)
               </span>
             </div>
@@ -309,17 +313,21 @@ function IncomingQcPage(): React.JSX.Element {
                   <tr>
                     <th>GRN No.</th>
                     <th>GRN Date</th>
-                    <th style={{ color: 'var(--green)' }}>QC Date</th>
-                    <th>Days to Inspect</th>
+                    <th style={{ color: 'var(--green2)' }}>QC Date</th>
+                    <th className="th-num">Days to Inspect</th>
                     <th>Vendor</th>
                     {/* POL = the CUSTOMER's own PO line number off the SO line
                         behind this receipt. */}
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Received</th>
-                    <th style={{ color: 'var(--green)' }}>Accepted</th>
-                    <th style={{ color: 'var(--red)' }}>Rejected</th>
+                    <th className="th-num">Received</th>
+                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                      Accepted
+                    </th>
+                    <th className="th-num" style={{ color: 'var(--red2)' }}>
+                      Rejected
+                    </th>
                     <th>QC Result</th>
                     <th>Remarks</th>
                     <th>Report</th>
@@ -382,8 +390,8 @@ function PendingRow({
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>
-      <td className="td-ctr mono fw-700">{r.receivedQty}</td>
-      <td className="td-ctr">
+      <td className="mono fw-700 td-num">{r.receivedQty}</td>
+      <td className="td-num">
         <span
           style={{
             fontWeight: 800,
@@ -398,7 +406,7 @@ function PendingRow({
           ⏳ {r.waitDays}d
         </span>
       </td>
-      <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--amber)' }}>
+      <td className="mono fw-700 td-num" style={{ fontSize: 14, color: 'var(--amber2)' }}>
         {r.pendingQty}
       </td>
       <td>
@@ -422,11 +430,11 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
       <td className="text2" style={{ fontSize: 11 }}>
         {fmtDate(r.grnDate)}
       </td>
-      <td className="text2" style={{ fontSize: 11, color: 'var(--green)' }}>
+      <td className="text2" style={{ fontSize: 11, color: 'var(--green2)' }}>
         {fmtDate(r.qcDate)}
       </td>
       <td
-        className="td-ctr"
+        className="td-num"
         style={{ fontSize: 11, fontWeight: 700, color: respColor(r.respDays) }}
       >
         {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : `${r.respDays}d`}
@@ -441,11 +449,11 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>
-      <td className="td-ctr mono fw-700">{r.receivedQty}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="mono fw-700 td-num">{r.receivedQty}</td>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
         {r.acceptedQty}
       </td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+      <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
         {r.rejectedQty}
       </td>
       <td>
@@ -469,7 +477,7 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
         {r.qcReportPath ? (
           <QcReportLink path={r.qcReportPath} name={r.qcReportName} label="Report" />
         ) : (
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             —
           </span>
         )}

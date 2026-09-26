@@ -23,7 +23,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -33,6 +33,9 @@ import { todayLocal } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { downloadJwLineTemplate, parseJwLineFile } from '../lib/import-export';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
 
@@ -86,7 +89,14 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   status: 'open',
   gstPercent: 18,
 };
-const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: '' };
+const NEW_LINE: LineFormValue = {
+  itemCodeText: '',
+  partName: '',
+  uom: 'NOS',
+  orderQty: 1,
+  rate: 0,
+  revision: '',
+};
 
 /** ADR-177: the Rev box capitalises AS TYPED ('b' shows as 'B' at once), so what
  *  the person sees is what the form holds and the server stores. Wraps the
@@ -95,7 +105,9 @@ const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', or
  *  value lowercase). The caret is put back where it was so typing in the middle
  *  of "R1" does not jump to the end. Only the case changes — trim and the
  *  character rule stay with the schema / `pattern`. Twin of the SO form's. */
-function upperCaseRevField<T extends string>(field: UseFormRegisterReturn<T>): UseFormRegisterReturn<T> {
+function upperCaseRevField<T extends string>(
+  field: UseFormRegisterReturn<T>,
+): UseFormRegisterReturn<T> {
   return {
     ...field,
     onChange: (e: { target: HTMLInputElement; type?: unknown }) => {
@@ -104,7 +116,8 @@ function upperCaseRevField<T extends string>(field: UseFormRegisterReturn<T>): U
       if (upper !== el.value) {
         const { selectionStart, selectionEnd } = el;
         el.value = upper;
-        if (selectionStart !== null && selectionEnd !== null) el.setSelectionRange(selectionStart, selectionEnd);
+        if (selectionStart !== null && selectionEnd !== null)
+          el.setSelectionRange(selectionStart, selectionEnd);
       }
       return field.onChange(e);
     },
@@ -126,7 +139,7 @@ type CreateMode = {
   onPoFileChange?: (file: File | null) => void;
   /** Email reference attached against the Client PO (uploaded after save). */
   onEmailFileChange?: (file: File | null) => void;
-};
+} & PageHeaderSlot;
 type EditMode = {
   mode: 'edit';
   detail: JobWorkOrderDetail;
@@ -137,8 +150,75 @@ type EditMode = {
   /** Client PO document picked below Client PO No. (uploaded on save). */
   onPoFileChange?: (file: File | null) => void;
   onEmailFileChange?: (file: File | null) => void;
-};
+} & PageHeaderSlot;
 export type JobWorkOrderFormProps = CreateMode | EditMode;
+
+/** Create-page pattern (ERPNext gap report 2026-09-26): when the route passes a
+ *  `pageTitle`, the form renders the page's sticky PageHeader itself — Back,
+ *  title, Cancel and the blue Save top-right — and lays each section on its own
+ *  Panel. Without it (a route that still wraps the form in its own panel) the
+ *  form keeps the flat sections and the Save row at the foot, so it never
+ *  renders a panel inside a panel. */
+type PageHeaderSlot = {
+  pageTitle?: string;
+  pageSubtitle?: ReactNode;
+  backLabel?: string;
+  onBack?: () => void;
+};
+
+/** One form section: a Panel on a standalone page, a plain titled block when
+ *  the route already wraps the form in a panel. */
+function Section({
+  standalone,
+  title,
+  actions,
+  table = false,
+  children,
+}: {
+  standalone: boolean;
+  title: string;
+  actions?: ReactNode;
+  table?: boolean;
+  children: ReactNode;
+}): React.JSX.Element {
+  if (standalone) {
+    return (
+      <Panel
+        title={title}
+        actions={actions}
+        {...(table ? { bodyPadding: 'none' as const, bodyClassName: 'tbl-wrap' } : {})}
+      >
+        {children}
+      </Panel>
+    );
+  }
+  return (
+    <div style={{ marginBottom: 'var(--sp-4)' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 'var(--sp-2)',
+          flexWrap: 'wrap',
+          marginBottom: 'var(--sp-2)',
+        }}
+      >
+        <h2 className="panel-title">{title}</h2>
+        {actions ? (
+          <div style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'center' }}>{actions}</div>
+        ) : null}
+      </div>
+      {table ? (
+        <div className="tbl-wrap" style={{ border: '1px solid var(--border)', borderRadius: 8 }}>
+          {children}
+        </div>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
 
 export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
@@ -432,6 +512,18 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     }
   }
 
+  // Per-line "▸ More" detail row (Material, Drawing No., Drawing File, Assembly
+  // BOM), keyed by the react-hook-form field id. Collapsed rows keep their
+  // values: react-hook-form holds unmounted fields (shouldUnregister is off).
+  const [openMore, setOpenMore] = useState<Set<string>>(() => new Set());
+  const toggleMore = (key: string): void =>
+    setOpenMore((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   const onValid = async (values: FormValues): Promise<void> => {
     setPoEmailError(null);
     setLineError(null);
@@ -449,7 +541,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // if the API has not started sending the column yet) — '0' is non-blank.
     const badRev = values.lines.findIndex((l) => !String(l.revision ?? '').trim());
     if (badRev >= 0) {
-      setLineError(`Line ${badRev + 1}: enter the Drawing Rev — the revision printed on the customer's drawing.`);
+      setLineError(
+        `Line ${badRev + 1}: enter the Drawing Rev — the revision printed on the customer's drawing.`,
+      );
       return;
     }
     // ADR-177: a saved line's Rev never goes backwards (B → A, 2 → 1). Checked
@@ -532,355 +626,759 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     }
   };
 
+  const standalone = Boolean(props.pageTitle);
+  const saveDisabled = formState.isSubmitting || (isCreate && !docNoValid);
+  const submitForm = handleSubmit(onValid);
+  // Ctrl+S runs the same Save as the header button.
+  useSaveShortcut(() => void submitForm(), !saveDisabled);
+  const cancelButton = props.onCancel ? (
+    <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+      Cancel
+    </button>
+  ) : null;
+  // Legacy called this "✓ Save JW" on .btn-success (addJW L12890 / editJW
+  // L12926). One Save colour now: blue primary. Same label in both modes.
+  const saveButton = (
+    <button type="submit" className="btn btn-primary" disabled={saveDisabled}>
+      {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+      {props.submitLabel ?? (isCreate ? 'Save JWSO' : 'Save Changes')}
+    </button>
+  );
+  const errorBanners = (
+    <>
+      {lineError ? (
+        <Banner tone="error" role="alert">
+          {lineError}
+        </Banner>
+      ) : null}
+      {props.submitError ? (
+        <Banner tone="error" role="alert">
+          {props.submitError}
+        </Banner>
+      ) : null}
+    </>
+  );
+
   return (
-    <form onSubmit={handleSubmit(onValid)}>
+    <form onSubmit={submitForm}>
+      {standalone ? (
+        <>
+          <PageHeader
+            sticky
+            title={props.pageTitle ?? ''}
+            subtitle={props.pageSubtitle}
+            backLabel={props.backLabel}
+            onBack={props.onBack ?? props.onCancel}
+            dirty={formState.isDirty}
+            actions={
+              <>
+                {cancelButton}
+                {saveButton}
+              </>
+            }
+          />
+          {/* Errors sit under the header, beside the Save that raised them. */}
+          {errorBanners}
+        </>
+      ) : null}
       <datalist id="dlJwItems">
         {items.map((it) => (
-          <option key={it.id} value={it.code}>{it.name}</option>
+          <option key={it.id} value={it.code}>
+            {it.name}
+          </option>
         ))}
       </datalist>
       <datalist id="dlRmItems">
         {rmItems.map((it) => (
-          <option key={it.id} value={it.code}>{it.name}{it.material ? ` [${it.material}]` : ''}</option>
+          <option key={it.id} value={it.code}>
+            {it.name}
+            {it.material ? ` [${it.material}]` : ''}
+          </option>
         ))}
       </datalist>
 
-      {/* Header — 4-up grid (matches the SO form's `.form-grid-4`): the four
-          short fields (JWSO No · Date · Due Date · GST %) fit on ONE row instead
-          of two 2-up rows. `.form-full` still spans the whole row; the rich
-          Client PO No. block takes `.form-span-2` to keep room for its controls. */}
-      <div className="form-grid-4" style={{ marginBottom: 16 }}>
-        {/* No ★: `code` is `.optional()` and the server generates the next
-            IN-JW-##### in series when omitted — the field's own help text says
-            "leave blank to auto-generate on save", and useDocNumber treats empty
-            as valid, so nothing enforces a star here. Matches the PO form. */}
-        <DocNumberInput
-          type="job_work_order"
-          label="JWSO No."
-          readOnly={isEdit}
-          value={watch('header.code') ?? ''}
-          onChange={(v) => setValue('header.code', v)}
-          onValidityChange={setDocNoValid}
-        />
-        <div className="form-grp">
-          <label className="form-label" htmlFor="jwDate">JWSO Date<span className="req">★</span></label>
-          <input id="jwDate" type="date" className="innovic-input" {...register('header.jwDate', { required: 'Date is required' })} />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="jwDueDate">Due Date</label>
-          <input id="jwDueDate" type="date" className="innovic-input" {...register('header.dueDate')} />
-        </div>
-
-        <div className="form-grp">
-          <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green)' }}>GST %</label>
-          <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
-            {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
-          </select>
-        </div>
-        {isEdit ? (
-          <div className="form-grp">
-            <label className="form-label" htmlFor="status">JWSO Status</label>
-            {/* Status is read-only on edit: it is driven by the JC-completion
-                cascade (open→closed), the JW-Return cascade (→dispatched) and
-                soft-delete for cancel — a manual edit only causes drift, and the
-                server ignores any status in the update payload. */}
-            <input id="status" className="innovic-input" readOnly {...register('header.status')} />
-          </div>
-        ) : null}
-
-        <div className="form-grp form-span-2">
-          <label className="form-label">Customer<span className="req">★</span> (type to search)</label>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <SearchableSelect
-                id="clientId"
-                value={selectedClientId}
-                onChange={(id) => {
-                  setValue('header.clientId', id ?? undefined, { shouldValidate: true });
-                  const c = clients.find((x) => x.id === id);
-                  setClientLabel(c ? `${c.code} — ${c.name}` : '');
-                }}
-                onSearch={setClientSearch}
-                loading={clientsFetching}
-                options={clients.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
-                placeholder="🔍 Type customer code or name…"
-                valueLabel={
-                  selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientLabel || undefined
-                }
-              />
-            </div>
-            <button type="button" className="btn btn-ghost btn-sm" title="Add a new customer without leaving this form" style={{ whiteSpace: 'nowrap' }} onClick={() => setShowAddClient(true)}>+ New</button>
-          </div>
-          <input type="hidden" {...register('header.clientId', { required: 'Customer is required' })} />
-          {errors.header?.clientId?.message ? (
-            <div className="form-error">{errors.header.clientId.message}</div>
-          ) : null}
-        </div>
-
-        <div className="form-grp form-span-2">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-            <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
-              Client PO No. {isCreate ? <span className="req">★</span> : null}
+      {/* Header on the 12-column grid, in reading order: Customer + Client PO
+          first, the Customer Material the client supplies right after the
+          customer, then JWSO No. / dates, GST % and (edit) status, then
+          Remarks. Every field and its wiring is unchanged — only the order and
+          the widths moved. */}
+      <Section standalone={standalone} title="JWSO Details">
+        <div className="form-grid-12">
+          <div className="form-grp f-lg">
+            <label className="form-label">
+              Customer<span className="req">★</span> (type to search)
             </label>
-            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
-            {emailFileName ? (
-              <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                📧 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
-                {emailFileUrl ? (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <SearchableSelect
+                  id="clientId"
+                  value={selectedClientId}
+                  onChange={(id) => {
+                    setValue('header.clientId', id ?? undefined, { shouldValidate: true });
+                    const c = clients.find((x) => x.id === id);
+                    setClientLabel(c ? `${c.code} — ${c.name}` : '');
+                  }}
+                  onSearch={setClientSearch}
+                  loading={clientsFetching}
+                  options={clients.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
+                  placeholder="🔍 Type customer code or name…"
+                  valueLabel={
+                    selectedClient
+                      ? `${selectedClient.code} — ${selectedClient.name}`
+                      : clientLabel || undefined
+                  }
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                title="Add a new customer without leaving this form"
+                style={{ whiteSpace: 'nowrap' }}
+                onClick={() => setShowAddClient(true)}
+              >
+                + New
+              </button>
+            </div>
+            <input
+              type="hidden"
+              {...register('header.clientId', { required: 'Customer is required' })}
+            />
+            {errors.header?.clientId?.message ? (
+              <div className="form-error">{errors.header.clientId.message}</div>
+            ) : null}
+          </div>
+
+          <div className="form-grp f-lg">
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                marginBottom: 4,
+              }}
+            >
+              <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
+                Client PO No. {isCreate ? <span className="req">★</span> : null}
+              </label>
+              <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
+              {emailFileName ? (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--green2)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  📧{' '}
+                  <span
+                    style={{
+                      maxWidth: 140,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {emailFileName}
+                  </span>
+                  {emailFileUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
+                      style={{
+                        color: 'var(--blue)',
+                        fontSize: 11,
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        padding: 0,
+                      }}
+                    >
+                      👁 View
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
-                    style={{ color: 'var(--blue)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    onClick={clearEmailFile}
+                    style={{
+                      color: 'var(--red2)',
+                      fontSize: 11,
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
                   >
-                    👁 View
+                    ✕
                   </button>
-                ) : null}
-                <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
-              </span>
-            ) : (
-              <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                📧 Attach Email Ref
-                <input type="file" accept=".eml,.msg,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickEmailFile} />
-              </label>
-            )}
-          </div>
-          <input
-            id="clientPoNo"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Client PO reference"
-            {...register('header.clientPoNo', {
-              onChange: (e) => {
-                if (e.target.value.trim()) setPoEmailError(null);
-              },
-            })}
-          />
-          {/* Upload PO Doc (#8) — reflects on the JWSO after save. */}
-          <div style={{ marginTop: 6 }}>
-            <input
-              ref={poFileRef}
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
-              style={{ display: 'none' }}
-              onChange={onPickPoFile}
-            />
-            {poFileName ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                <span className="mono" style={{ color: 'var(--blue)' }}>📎 {poFileName}</span>
-                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={clearPoFile} aria-label="Remove PO document">✕</button>
-              </div>
-            ) : (
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => poFileRef.current?.click()}>
-                📤 Upload PO Doc
-              </button>
-            )}
-            {poFileError ? <div className="form-error">{poFileError}</div> : null}
-          </div>
-          {poEmailError ? (
-            <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red)' }}>⚠ {poEmailError}</div>
-          ) : null}
-        </div>
-
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="remarks">Remarks</label>
-          <textarea id="remarks" className="innovic-textarea" rows={2} {...register('header.remarks')} />
-        </div>
-      </div>
-
-      {/* Client Material Details (legacy L12839) */}
-      <div style={{ border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: 12, margin: '0 0 16px', background: 'rgba(34,197,94,0.04)' }}>
-        <div style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '.08em', marginBottom: 8 }}>▸ CLIENT MATERIAL DETAILS</div>
-        <div className="form-grid">
-          <div className="form-grp">
-            <label className="form-label">Customer Material (Party Supplied Item)</label>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input className="innovic-input" style={{ flex: 1 }} autoComplete="off" list="dlRmItems" placeholder="🔍 Search -rm items…" {...register('header.clientMaterial')} />
-              <Link to="/items/new" className="btn btn-ghost btn-sm" title="Create a new -rm item" style={{ whiteSpace: 'nowrap' }}>+ New</Link>
+                </span>
+              ) : (
+                <label
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    border: '1px dashed var(--border)',
+                    color: 'var(--text3)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }}
+                >
+                  📧 Attach Email Ref
+                  <input
+                    type="file"
+                    accept=".eml,.msg,.pdf,.jpg,.jpeg,.png,.webp"
+                    style={{ display: 'none' }}
+                    onChange={onPickEmailFile}
+                  />
+                </label>
+              )}
             </div>
-            {/* Legacy `fJwRmItemInfo` (L12849 / _jwFillRmItem L12746): confirms the
-                typed code against the item master. Legacy also shows a "⚠ Item not
-                found in master" branch; that is NOT ported — legacy searched the
-                whole client-side `db.items`, whereas `items` here is one 200-row
-                page, so absence from the page does not prove absence from the
-                master and the warning would fire falsely. Positive match only. */}
-            {matchedRmItem ? (
-              <div className="form-help" style={{ color: 'var(--green)' }}>
-                ✅ <b>{matchedRmItem.name}</b>{matchedRmItem.material ? ` [${matchedRmItem.material}]` : ''}
+            <input
+              id="clientPoNo"
+              className="innovic-input"
+              autoComplete="off"
+              placeholder="Client PO reference"
+              {...register('header.clientPoNo', {
+                onChange: (e) => {
+                  if (e.target.value.trim()) setPoEmailError(null);
+                },
+              })}
+            />
+            {/* Upload PO Doc (#8) — reflects on the JWSO after save. */}
+            <div style={{ marginTop: 6 }}>
+              <input
+                ref={poFileRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+                style={{ display: 'none' }}
+                onChange={onPickPoFile}
+              />
+              {poFileName ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                  <span className="mono" style={{ color: 'var(--blue)' }}>
+                    📎 {poFileName}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={clearPoFile}
+                    aria-label="Remove PO document"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => poFileRef.current?.click()}
+                >
+                  📤 Upload PO Doc
+                </button>
+              )}
+              {poFileError ? <div className="form-error">{poFileError}</div> : null}
+            </div>
+            {poEmailError ? (
+              <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red2)' }}>
+                ⚠ {poEmailError}
               </div>
             ) : null}
           </div>
-          <div className="form-grp">
+
+          {/* Client Material Details (legacy L12839) — right after the customer,
+            since it is the customer who supplies it. */}
+          <div className="form-grp f-lg">
+            <label className="form-label">Customer Material (Party Supplied Item)</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                className="innovic-input"
+                style={{ flex: 1 }}
+                autoComplete="off"
+                list="dlRmItems"
+                placeholder="🔍 Search -rm items…"
+                {...register('header.clientMaterial')}
+              />
+              <Link
+                to="/items/new"
+                className="btn btn-ghost btn-sm"
+                title="Create a new -rm item"
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                + New
+              </Link>
+            </div>
+            {/* Legacy `fJwRmItemInfo` (L12849 / _jwFillRmItem L12746): confirms the
+              typed code against the item master. Legacy also shows a "⚠ Item not
+              found in master" branch; that is NOT ported — legacy searched the
+              whole client-side `db.items`, whereas `items` here is one 200-row
+              page, so absence from the page does not prove absence from the
+              master and the warning would fire falsely. Positive match only. */}
+            {matchedRmItem ? (
+              <div className="form-help" style={{ color: 'var(--green2)' }}>
+                ✅ <b>{matchedRmItem.name}</b>
+                {matchedRmItem.material ? ` [${matchedRmItem.material}]` : ''}
+              </div>
+            ) : null}
+          </div>
+          <div className="form-grp f-sm">
             <label className="form-label">Material Qty (Customer Supplied)</label>
-            <input type="number" min={0} step="0.01" className="innovic-input" placeholder="0" {...register('header.clientMaterialQty', { valueAsNumber: true })} />
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className="innovic-input"
+              placeholder="0"
+              {...register('header.clientMaterialQty', { valueAsNumber: true })}
+            />
+          </div>
+
+          {/* No ★: `code` is `.optional()` and the server generates the next
+            IN-JW-##### in series when omitted — the field's own help text says
+            "leave blank to auto-generate on save", and useDocNumber treats empty
+            as valid, so nothing enforces a star here. Matches the PO form. */}
+          <div className="f-sm">
+            <DocNumberInput
+              type="job_work_order"
+              label="JWSO No."
+              readOnly={isEdit}
+              value={watch('header.code') ?? ''}
+              onChange={(v) => setValue('header.code', v)}
+              onValidityChange={setDocNoValid}
+            />
+          </div>
+          <div className="form-grp f-sm">
+            <label className="form-label" htmlFor="jwDate">
+              JWSO Date<span className="req">★</span>
+            </label>
+            <input
+              id="jwDate"
+              type="date"
+              className="innovic-input"
+              {...register('header.jwDate', { required: 'Date is required' })}
+            />
+          </div>
+          <div className="form-grp f-sm">
+            <label className="form-label" htmlFor="jwDueDate">
+              Due Date
+            </label>
+            <input
+              id="jwDueDate"
+              type="date"
+              className="innovic-input"
+              {...register('header.dueDate')}
+            />
+          </div>
+          <div className="form-grp f-sm">
+            <label className="form-label" htmlFor="gstPercent">
+              GST %
+            </label>
+            <select
+              id="gstPercent"
+              className="innovic-select"
+              {...register('header.gstPercent', { valueAsNumber: true })}
+            >
+              {[0, 5, 12, 18, 28].map((g) => (
+                <option key={g} value={g}>
+                  {g}%
+                </option>
+              ))}
+            </select>
+          </div>
+          {isEdit ? (
+            <div className="form-grp f-sm">
+              <label className="form-label" htmlFor="status">
+                JWSO Status
+              </label>
+              {/* Status is read-only on edit: it is driven by the JC-completion
+                cascade (open→closed), the JW-Return cascade (→dispatched) and
+                soft-delete for cancel — a manual edit only causes drift, and the
+                server ignores any status in the update payload. */}
+              <input
+                id="status"
+                className="innovic-input"
+                readOnly
+                {...register('header.status')}
+              />
+            </div>
+          ) : null}
+
+          <div className="form-grp f-full">
+            <label className="form-label" htmlFor="remarks">
+              Remarks
+            </label>
+            <textarea
+              id="remarks"
+              className="innovic-textarea"
+              rows={2}
+              {...register('header.remarks')}
+            />
           </div>
         </div>
-      </div>
+      </Section>
 
       {/* Line items */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div className="form-label" style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}>▸ JWSO Line Items</div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => downloadJwLineTemplate()}>⬇ Template</button>
-          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => lineFileRef.current?.click()}>📄 Import Excel</button>
-          <input ref={lineFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImportLines(f); }} />
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => append({ ...NEW_LINE })}><Plus size={13} /> Add Line</button>
+      <Section
+        standalone={standalone}
+        title="JWSO Line Items"
+        table
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => downloadJwLineTemplate()}
+            >
+              ⬇ Template
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => lineFileRef.current?.click()}
+            >
+              📄 Import Excel
+            </button>
+            <input
+              ref={lineFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onImportLines(f);
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => append({ ...NEW_LINE })}
+            >
+              <Plus size={13} /> Add Line
+            </button>
+          </>
+        }
+      >
+        {importMsg
+          ? (() => {
+              // Warn styling (amber) when the sheet carried codes missing from Item
+              // Master — mirrors the SO form's "missing codes" banner.
+              const isWarn = importMsg.includes('not found in Item Master');
+              return (
+                <div
+                  className={isWarn ? undefined : 'text3'}
+                  style={{
+                    fontSize: 11,
+                    margin: 'var(--sp-2)',
+                    ...(isWarn
+                      ? {
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          background: 'rgba(245,158,11,0.10)',
+                          border: '1px solid rgba(245,158,11,0.35)',
+                          color: 'var(--amber2)',
+                        }
+                      : {}),
+                  }}
+                >
+                  {isWarn ? '⚠ ' : ''}
+                  {importMsg}{' '}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setImportMsg(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })()
+          : null}
+
+        {/* The Assembly-BOM note, once above the table instead of under every
+          line's select — the rule is the same on every row. The BOM itself now
+          sits in each line's "▸ More" row. (0086: picking a BOM turns the line
+          into an assembly — one Job Card per component on save, and
+          readiness/return then follow the WEAKEST component rather than this
+          line's own output. A BOM holding a bought part is refused
+          server-side: job work runs on client-supplied material.) */}
+        <div className="text3" style={{ fontSize: 11, margin: 'var(--sp-2)' }}>
+          Assembly BOM (under ▸ More) — leave blank unless the customer ships parts for you to
+          assemble.
         </div>
-      </div>
-      {importMsg ? (() => {
-        // Warn styling (amber) when the sheet carried codes missing from Item
-        // Master — mirrors the SO form's "missing codes" banner.
-        const isWarn = importMsg.includes('not found in Item Master');
-        return (
-          <div
-            className={isWarn ? undefined : 'text3'}
-            style={{
-              fontSize: 11,
-              marginBottom: 8,
-              ...(isWarn
-                ? {
-                    padding: '8px 10px',
-                    borderRadius: 6,
-                    background: 'rgba(245,158,11,0.10)',
-                    border: '1px solid rgba(245,158,11,0.35)',
-                    color: 'var(--amber)',
-                  }
-                : {}),
-            }}
-          >
-            {isWarn ? '⚠ ' : ''}{importMsg}{' '}
-            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button>
-          </div>
-        );
-      })() : null}
 
-      {/* The Assembly-BOM note, once above the table instead of under every
-          line's select — the column is narrow and the rule is the same on every
-          row. (0086: picking a BOM turns the line into an assembly — one Job
-          Card per component on save, and readiness/return then follow the
-          WEAKEST component rather than this line's own output. A BOM holding a
-          bought part is refused server-side: job work runs on client-supplied
-          material.) */}
-      <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
-        Assembly BOM — leave blank unless the customer ships parts for you to assemble.
-      </div>
-
-      {/* Same shape as the SO line editor: one row per line in a fixed-layout
-          table, so the columns line up down the page instead of every line being
-          its own bordered card. `overflow: visible` keeps the native datalist
-          drop-down from being clipped. */}
-      <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
-        <table className="innovic-table tbl-ctr" style={{ width: '100%', tableLayout: 'fixed', minWidth: 1180 }}>
+        {/* Same shape as the SO line editor: one row per line in a fixed-layout
+          table. Eight data columns stay visible (Ln, Item Code, Item Name,
+          Drawing Rev, UOM, Order Qty, Rate, Amount); the less-used Material,
+          Drawing No., Drawing File and Assembly BOM open per line under
+          "▸ More", like ERPNext's grid row edit. */}
+        <table
+          className="innovic-table tbl-ctr"
+          style={{ width: '100%', tableLayout: 'fixed', minWidth: 900 }}
+        >
           <thead>
             <tr>
-              <th style={{ width: '3%' }}>Ln</th>
-              <th style={{ width: '12%' }}>Item Code</th>
-              <th style={{ width: '12%' }}>Item Name <span className="req">★</span></th>
-              <th style={{ width: '8%' }}>Material</th>
-              <th style={{ width: '8%' }}>Drawing No.</th>
-              <th style={{ width: '11%' }}>Drawing File</th>
-              <th style={{ width: '5%' }}>Drawing Rev <span className="req">★</span></th>
-              <th style={{ width: '5%' }}>UOM</th>
-              <th style={{ width: '6%' }}>Order Qty <span className="req">★</span></th>
-              <th style={{ width: '6%', color: 'var(--green)' }}>Rate (₹)</th>
-              <th style={{ width: '7%', color: 'var(--green)' }}>Amount</th>
-              <th style={{ width: '14%' }}>Assembly BOM</th>
-              <th style={{ width: '3%' }} />
+              <th style={{ width: '4%' }}>Ln</th>
+              <th style={{ width: '16%' }}>Item Code</th>
+              <th style={{ width: '22%' }}>
+                Item Name <span className="req">★</span>
+              </th>
+              <th style={{ width: '8%' }}>
+                Drawing Rev <span className="req">★</span>
+              </th>
+              <th style={{ width: '8%' }}>UOM</th>
+              <th className="th-num" style={{ width: '9%' }}>
+                Order Qty <span className="req">★</span>
+              </th>
+              <th className="th-num" style={{ width: '10%', color: 'var(--green2)' }}>
+                Rate (₹)
+              </th>
+              <th className="th-num" style={{ width: '10%', color: 'var(--green2)' }}>
+                Amount
+              </th>
+              <th style={{ width: '8%' }} />
+              <th style={{ width: '5%' }} />
             </tr>
           </thead>
           <tbody>
             {fields.length === 0 ? (
               <tr>
-                <td colSpan={13} className="empty-state" style={{ padding: 14 }}>
+                <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
                   No lines yet — click <strong>+ Add Line</strong>. At least one is required.
                 </td>
               </tr>
             ) : (
               fields.map((field, idx) => {
-                const amt = (Number(watchedLines?.[idx]?.orderQty) || 0) * (Number(watchedLines?.[idx]?.rate) || 0);
+                const amt =
+                  (Number(watchedLines?.[idx]?.orderQty) || 0) *
+                  (Number(watchedLines?.[idx]?.rate) || 0);
                 // On-master item → name is derived + read-only; off-master (free
                 // text code with no master match) keeps the name editable.
                 const lineItemCode = (watchedLines?.[idx]?.itemCodeText ?? '').trim().toUpperCase();
                 const lineOnMaster = lineItemCode ? itemsByCode.has(lineItemCode) : false;
+                const isOpen = openMore.has(field.id);
+                // How many of the folded fields hold a value — shown on the
+                // toggle so a filled Material / BOM is never hidden silently.
+                const wl = watchedLines?.[idx];
+                const filledMore = [
+                  wl?.material,
+                  wl?.drawingNo,
+                  wl?.drawingFilePath,
+                  wl?.sourceBomMasterId,
+                ].filter((v) => typeof v === 'string' && v.trim() !== '').length;
                 return (
-                  <tr key={field.id}>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{idx + 1}</td>
-                    <td>
-                      <input className="innovic-input" autoComplete="off" list="dlJwItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const, { onChange: (e) => fillLineFromItem(idx, e.target.value) })} />
-                    </td>
-                    <td>
-                      <input className="innovic-input" autoComplete="off" placeholder="Item Name" readOnly={lineOnMaster} title={lineOnMaster ? 'Auto-filled from Item Master (item code is the key)' : undefined} style={lineOnMaster ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined} {...register(`lines.${idx}.partName` as const, { required: 'Item Name is required' })} />
-                      {errors.lines?.[idx]?.partName?.message ? <div className="form-error" style={{ fontSize: 10 }}>{errors.lines[idx]?.partName?.message}</div> : null}
-                    </td>
-                    <td><input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.material` as const)} /></td>
-                    <td><input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.drawingNo` as const)} /></td>
-                    <td>
-                      <JwLineDrawingCell
-                        value={watch(`lines.${idx}.drawingFilePath` as const)}
-                        onChange={(p) => setValue(`lines.${idx}.drawingFilePath` as const, p ?? null, { shouldDirty: true })}
-                      />
-                    </td>
-                    {/* The client's drawing revision, typed exactly as it reads on
+                  <Fragment key={field.id}>
+                    <tr>
+                      <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                        {idx + 1}
+                      </td>
+                      <td>
+                        <input
+                          className="innovic-input"
+                          autoComplete="off"
+                          list="dlJwItems"
+                          placeholder="🔍 ITM-001"
+                          {...register(`lines.${idx}.itemCodeText` as const, {
+                            onChange: (e) => fillLineFromItem(idx, e.target.value),
+                          })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="innovic-input"
+                          autoComplete="off"
+                          placeholder="Item Name"
+                          readOnly={lineOnMaster}
+                          title={
+                            lineOnMaster
+                              ? 'Auto-filled from Item Master (item code is the key)'
+                              : undefined
+                          }
+                          style={
+                            lineOnMaster
+                              ? { background: 'var(--bg4)', color: 'var(--text3)' }
+                              : undefined
+                          }
+                          {...register(`lines.${idx}.partName` as const, {
+                            required: 'Item Name is required',
+                          })}
+                        />
+                        {errors.lines?.[idx]?.partName?.message ? (
+                          <div className="form-error">{errors.lines[idx]?.partName?.message}</div>
+                        ) : null}
+                      </td>
+                      {/* The client's drawing revision, typed exactly as it reads on
                         their print ('A', 'B', 'R1', '0'). Independent of the Drawing
-                        File cell beside it in BOTH directions. Compulsory — onValid
+                        File (under ▸ More) in BOTH directions. Compulsory — onValid
                         refuses the save when it is blank. */}
-                    <td><input className="innovic-input" autoComplete="off" placeholder="Drawing Rev" maxLength={32} style={{ textTransform: 'uppercase' }} pattern={REV_INPUT_PATTERN} title={REV_INPUT_TITLE} {...upperCaseRevField(register(`lines.${idx}.revision` as const))} /></td>
-                    <td>
-                      <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
-                        {UOMS.map((u) => <option key={u} value={u}>{u}</option>)}
-                      </select>
-                    </td>
-                    <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} /></td>
-                    <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
-                    <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
-                    <td>
-                      <select className="innovic-select" {...register(`lines.${idx}.sourceBomMasterId` as const)}>
-                        <option value="">— none (plain machining) —</option>
-                        {jwUsableBoms.map((b) => (
-                          <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button>
-                    </td>
-                  </tr>
+                      <td>
+                        <input
+                          className="innovic-input"
+                          autoComplete="off"
+                          placeholder="Drawing Rev"
+                          maxLength={32}
+                          style={{ textTransform: 'uppercase' }}
+                          pattern={REV_INPUT_PATTERN}
+                          title={REV_INPUT_TITLE}
+                          {...upperCaseRevField(register(`lines.${idx}.revision` as const))}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          className="innovic-select"
+                          {...register(`lines.${idx}.uom` as const)}
+                        >
+                          {UOMS.map((u) => (
+                            <option key={u} value={u}>
+                              {u}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="td-num">
+                        <input
+                          type="number"
+                          min={1}
+                          placeholder="Qty"
+                          className="innovic-input"
+                          style={{ fontWeight: 700, color: 'var(--cyan)' }}
+                          {...register(`lines.${idx}.orderQty` as const, {
+                            valueAsNumber: true,
+                            min: { value: 1, message: 'Min 1' },
+                          })}
+                        />
+                      </td>
+                      <td className="td-num">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          placeholder="₹ Rate"
+                          className="innovic-input"
+                          style={{ color: 'var(--green2)' }}
+                          {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
+                        />
+                      </td>
+                      <td
+                        className="mono td-num"
+                        style={{ color: 'var(--green2)', fontWeight: 700 }}
+                      >
+                        {amt > 0 ? `₹${inrFormat(amt)}` : '—'}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          aria-expanded={isOpen}
+                          onClick={() => toggleMore(field.id)}
+                          title="Material, Drawing No., Drawing File and Assembly BOM for this line"
+                        >
+                          {isOpen ? '▾ Less' : `▸ More${filledMore ? ` (${filledMore})` : ''}`}
+                        </button>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm btn-icon"
+                          onClick={() => remove(idx)}
+                          aria-label={`Remove line ${idx + 1}`}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                    {isOpen ? (
+                      <tr>
+                        <td colSpan={10} style={{ background: 'var(--bg2)' }}>
+                          <div className="form-grid-12" style={{ textAlign: 'left' }}>
+                            <div className="form-grp f-md">
+                              <label className="form-label">Material</label>
+                              <input
+                                className="innovic-input"
+                                autoComplete="off"
+                                {...register(`lines.${idx}.material` as const)}
+                              />
+                            </div>
+                            <div className="form-grp f-md">
+                              <label className="form-label">Drawing No.</label>
+                              <input
+                                className="innovic-input"
+                                autoComplete="off"
+                                {...register(`lines.${idx}.drawingNo` as const)}
+                              />
+                            </div>
+                            <div className="form-grp f-md">
+                              <label className="form-label">Drawing File</label>
+                              <JwLineDrawingCell
+                                value={watch(`lines.${idx}.drawingFilePath` as const)}
+                                onChange={(p) =>
+                                  setValue(`lines.${idx}.drawingFilePath` as const, p ?? null, {
+                                    shouldDirty: true,
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="form-grp f-lg">
+                              <label className="form-label">Assembly BOM</label>
+                              <select
+                                className="innovic-select"
+                                {...register(`lines.${idx}.sourceBomMasterId` as const)}
+                              >
+                                <option value="">— none (plain machining) —</option>
+                                {jwUsableBoms.map((b) => (
+                                  <option key={b.id} value={b.id}>
+                                    {b.bomNo} — {b.bomName}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 );
               })
             )}
           </tbody>
         </table>
-      </div>
+      </Section>
 
       {/* JWSO Totals (parity with the SO form) */}
-      <div style={{ marginTop: 12, border: '2px solid var(--green)', borderRadius: 8, padding: '10px 16px', background: 'rgba(34,197,94,0.03)' }}>
+      <div
+        style={{
+          marginTop: 12,
+          border: '2px solid var(--green)',
+          borderRadius: 8,
+          padding: '10px 16px',
+          background: 'rgba(34,197,94,0.03)',
+        }}
+      >
         <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Tot label="Subtotal" value={subtotal} />
           <Tot label={`GST (${gstPercent}%)`} value={gstAmt} />
           <Tot label="Grand Total" value={grand} bold />
         </div>
-        <div className="text3" style={{ fontSize: 10, textAlign: 'right', marginTop: 4 }}>{lineCount} item{lineCount === 1 ? '' : 's'} • {totalPcs} total pcs</div>
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        {lineError ? (
-          <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{lineError}</div>
-        ) : null}
-        {props.submitError ? (
-          <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{props.submitError}</div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          {props.onCancel ? <button type="button" className="btn btn-ghost" onClick={props.onCancel}>Cancel</button> : null}
-          {/* Footer derived from the legacy call sites: addJW L12890 and editJW
-              L12926 both call showModalLg(title, body, onSave) with NO saveLabel,
-              so L28034 derives it from the title — both titles contain "JW" →
-              "Save JW" — and L28044 renders `&#10003; ${_saveLabel}` on
-              .btn-success. Same label in both modes, by construction. */}
-          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isCreate ? 'Save JWSO' : 'Save Changes')}
-          </button>
+        <div className="text3" style={{ fontSize: 11, textAlign: 'right', marginTop: 4 }}>
+          {lineCount} item{lineCount === 1 ? '' : 's'} • {totalPcs} total pcs
         </div>
       </div>
+
+      {standalone ? null : (
+        // Route still wraps the form in its own panel (no page header slot):
+        // keep the Save row at the foot, blue primary.
+        <div style={{ marginTop: 16 }}>
+          {errorBanners}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            {cancelButton}
+            {saveButton}
+          </div>
+        </div>
+      )}
 
       {showAddClient ? (
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />
@@ -927,35 +1425,85 @@ function QuickAddClient({
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 200,
+      }}
       onClick={onClose}
     >
       <div
-        style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, width: 'min(420px, 94vw)' }}
+        style={{
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: 20,
+          width: 'min(420px, 94vw)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="section-hdr" style={{ marginBottom: 12 }}>🏢 New Customer</div>
+        <div className="section-hdr" style={{ marginBottom: 12 }}>
+          🏢 New Customer
+        </div>
         <div className="form-grp">
-          <label className="form-label">Customer<span className="req">★</span></label>
-          <input className="innovic-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Company / customer name" />
+          <label className="form-label">
+            Customer<span className="req">★</span>
+          </label>
+          <input
+            className="innovic-input"
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Company / customer name"
+          />
         </div>
         <div className="form-grp">
           <label className="form-label">Contact Person</label>
-          <input className="innovic-input" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} placeholder="Optional" />
+          <input
+            className="innovic-input"
+            value={contactPerson}
+            onChange={(e) => setContactPerson(e.target.value)}
+            placeholder="Optional"
+          />
         </div>
         <div className="form-grp">
           <label className="form-label">Phone</label>
-          <input className="innovic-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
+          <input
+            className="innovic-input"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="Optional"
+          />
         </div>
         <div className="form-grp">
           <label className="form-label">GST No.</label>
-          <input className="innovic-input" value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} placeholder="Optional" />
+          <input
+            className="innovic-input"
+            value={gstNumber}
+            onChange={(e) => setGstNumber(e.target.value)}
+            placeholder="Optional"
+          />
         </div>
         <div className="form-help">Code auto-generates (CLI-###).</div>
-        {err ? <div className="form-error" style={{ marginTop: 6 }}>{err}</div> : null}
+        {err ? (
+          <div className="form-error" style={{ marginTop: 6 }}>
+            {err}
+          </div>
+        ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 14 }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn btn-primary" disabled={create.isPending} onClick={() => void onSave()}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={create.isPending}
+            onClick={() => void onSave()}
+          >
             {create.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Add Customer
           </button>
         </div>
@@ -964,11 +1512,30 @@ function QuickAddClient({
   );
 }
 
-function Tot({ label, value, bold }: { label: string; value: number; bold?: boolean }): React.JSX.Element {
+function Tot({
+  label,
+  value,
+  bold,
+}: {
+  label: string;
+  value: number;
+  bold?: boolean;
+}): React.JSX.Element {
   return (
     <div style={{ textAlign: 'right' }}>
-      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase' }}>{label}</div>
-      <div className="mono" style={{ fontSize: bold ? 18 : 14, fontWeight: 700, color: bold ? 'var(--green)' : 'var(--text)' }}>₹{inrFormat(value)}</div>
+      <div className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+        {label}
+      </div>
+      <div
+        className="mono"
+        style={{
+          fontSize: bold ? 18 : 14,
+          fontWeight: 700,
+          color: bold ? 'var(--green)' : 'var(--text)',
+        }}
+      >
+        ₹{inrFormat(value)}
+      </div>
     </div>
   );
 }
@@ -986,35 +1553,42 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
       // Header-level Due Date = the earliest line due date (lines all share it now).
       ...(() => {
-        const due = detail.lines.map((l) => l.dueDate).filter((d): d is string => Boolean(d)).sort()[0];
+        const due = detail.lines
+          .map((l) => l.dueDate)
+          .filter((d): d is string => Boolean(d))
+          .sort()[0];
         return due ? { dueDate: due } : {};
       })(),
       ...(detail.clientMaterial ? { clientMaterial: detail.clientMaterial } : {}),
-      ...(detail.clientMaterialQty !== null ? { clientMaterialQty: Number(detail.clientMaterialQty) } : {}),
+      ...(detail.clientMaterialQty !== null
+        ? { clientMaterialQty: Number(detail.clientMaterialQty) }
+        : {}),
     },
     lines:
       detail.lines.length > 0
-        ? detail.lines.map((l): LineFormValue => ({
-            id: l.id,
-            ...(l.itemId ? { itemId: l.itemId } : {}),
-            itemCodeText: l.itemCodeText ?? '',
-            partName: l.partName,
-            ...(l.material ? { material: l.material } : {}),
-            ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
-            // '0' fallback for a JWSO saved before migration 0120 (and for the
-            // window before the API starts sending the column). Non-blank, so
-            // editing an old JWSO is never blocked by the compulsory-Rev rule.
-            // Upper-cased on load (ADR-177) so a pre-capital-rule 'b' does not
-            // fail the input's `pattern` and block the save.
-            revision: normalizeRevision(l.revision ?? '0'),
-            drawingFilePath: l.drawingFilePath ?? null,
-            uom: l.uom,
-            orderQty: l.orderQty,
-            rate: Number(l.rate),
-            ...(l.dueDate ? { dueDate: l.dueDate } : {}),
-            status: l.status,
-            ...(l.sourceBomMasterId ? { sourceBomMasterId: l.sourceBomMasterId } : {}),
-          }))
+        ? detail.lines.map(
+            (l): LineFormValue => ({
+              id: l.id,
+              ...(l.itemId ? { itemId: l.itemId } : {}),
+              itemCodeText: l.itemCodeText ?? '',
+              partName: l.partName,
+              ...(l.material ? { material: l.material } : {}),
+              ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
+              // '0' fallback for a JWSO saved before migration 0120 (and for the
+              // window before the API starts sending the column). Non-blank, so
+              // editing an old JWSO is never blocked by the compulsory-Rev rule.
+              // Upper-cased on load (ADR-177) so a pre-capital-rule 'b' does not
+              // fail the input's `pattern` and block the save.
+              revision: normalizeRevision(l.revision ?? '0'),
+              drawingFilePath: l.drawingFilePath ?? null,
+              uom: l.uom,
+              orderQty: l.orderQty,
+              rate: Number(l.rate),
+              ...(l.dueDate ? { dueDate: l.dueDate } : {}),
+              status: l.status,
+              ...(l.sourceBomMasterId ? { sourceBomMasterId: l.sourceBomMasterId } : {}),
+            }),
+          )
         : [{ ...NEW_LINE }],
   };
 }

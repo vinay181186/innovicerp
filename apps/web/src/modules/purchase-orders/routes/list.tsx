@@ -97,7 +97,7 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
@@ -194,7 +194,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -317,7 +317,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel">
-          <div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>
+          <div className="empty-state" style={{ padding: 20, color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load purchase orders. Try again.'}
           </div>
         </div>

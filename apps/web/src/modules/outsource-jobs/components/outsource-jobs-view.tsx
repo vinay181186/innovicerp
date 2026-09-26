@@ -330,7 +330,7 @@ export function OutsourceJobsView(): React.JSX.Element {
               key: 'open',
               label: 'Open',
               count: openPR,
-              color: 'var(--amber)',
+              color: 'var(--amber2)',
               active: statusBand === 'open',
               onClick: () => setStatusBand((prev) => (prev === 'open' ? undefined : 'open')),
             },
@@ -338,7 +338,7 @@ export function OutsourceJobsView(): React.JSX.Element {
               key: 'po_created',
               label: 'PO Created',
               count: poCreated,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               active: statusBand === 'po_created',
               onClick: () =>
                 setStatusBand((prev) => (prev === 'po_created' ? undefined : 'po_created')),
@@ -399,7 +399,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>Process</th>
                 <th>Qty</th>
                 <th>Suggested Vendor</th>
-                <th style={{ color: 'var(--green)' }}>Est. Rate (₹/pc)</th>
+                <th style={{ color: 'var(--green2)' }}>Est. Rate (₹/pc)</th>
                 <th>Due Date</th>
                 <th>PR Status</th>
               </tr>
@@ -413,7 +413,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={10} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={10} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {error instanceof Error
                       ? error.message
                       : 'Could not load outsource jobs. Try again.'}
@@ -500,7 +500,7 @@ export function OutsourceJobsView(): React.JSX.Element {
               >
                 Creating PO for <b>{selectedIds.size} line(s)</b> · Qty to Order:{' '}
                 <b>{totalSelectedQty}</b> · Est. value:{' '}
-                <b style={{ color: 'var(--green)' }}>₹{inr(totalSelectedValue)}</b>
+                <b style={{ color: 'var(--green2)' }}>₹{inr(totalSelectedValue)}</b>
               </div>
               <div className="form-grid-3">
                 <div className="form-grp">
@@ -556,7 +556,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                       <th>Item Code</th>
                       <th>Process</th>
                       <th>Qty to Order</th>
-                      <th style={{ color: 'var(--green)' }}>Rate (₹)</th>
+                      <th style={{ color: 'var(--green2)' }}>Rate (₹)</th>
                       <th>Amount</th>
                     </tr>
                   </thead>
@@ -587,7 +587,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                             {orderQty !== pr.qty ? (
                               <div
                                 className="text3"
-                                style={{ fontSize: 10, fontWeight: 400 }}
+                                style={{ fontSize: 11, fontWeight: 400 }}
                                 title={`${pr.qty - orderQty} of ${pr.qty} is already on a purchase order`}
                               >
                                 of {pr.qty} requested
@@ -612,11 +612,11 @@ export function OutsourceJobsView(): React.JSX.Element {
                                 width: 80,
                                 fontSize: 12,
                                 fontWeight: 700,
-                                color: 'var(--green)',
+                                color: 'var(--green2)',
                               }}
                             />
                           </td>
-                          <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                          <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                             ₹{inr(rate * orderQty)}
                           </td>
                         </tr>
@@ -633,7 +633,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                     background: 'rgba(239,68,68,0.06)',
                     border: '1px solid rgba(239,68,68,0.3)',
                     borderRadius: 6,
-                    color: 'var(--red)',
+                    color: 'var(--red2)',
                     fontSize: 12,
                   }}
                 >
@@ -714,12 +714,12 @@ function OspRow({
       </td>
       <td className="mono fw-700">{pr.qty}</td>
       <td style={{ fontSize: 11 }}>
-        {pr.vendorName ?? <span style={{ color: 'var(--amber)' }}>TBD</span>}
+        {pr.vendorName ?? <span style={{ color: 'var(--amber2)' }}>TBD</span>}
         {pr.vendorCodeText && pr.vendorCodeText !== pr.vendorName ? (
-          <span style={{ color: 'var(--text3)', fontSize: 10 }}> [{pr.vendorCodeText}]</span>
+          <span style={{ color: 'var(--text3)', fontSize: 11 }}> [{pr.vendorCodeText}]</span>
         ) : null}
       </td>
-      <td className="mono" style={{ color: 'var(--green)' }}>
+      <td className="mono" style={{ color: 'var(--green2)' }}>
         {Number(pr.estCost) > 0 ? `₹${Number(pr.estCost).toFixed(2)}` : '—'}
       </td>
       <td style={{ fontSize: 11 }}>{fmtDate(pr.requiredDate)}</td>
@@ -728,7 +728,7 @@ function OspRow({
           {PR_STATUS_LABELS[pr.status]}
         </span>
         {pr.poCode ? (
-          <span className="mono" style={{ fontSize: 10, marginLeft: 4, color: 'var(--cyan)' }}>
+          <span className="mono" style={{ fontSize: 11, marginLeft: 4, color: 'var(--cyan)' }}>
             {pr.poCode}
           </span>
         ) : null}
@@ -741,7 +741,7 @@ function OspRow({
         {bal.ordered > 0 && (bal.balance > 0 || bal.closed) ? (
           <div
             className="mono"
-            style={{ fontSize: 10, color: prBalanceColor(bal.state) }}
+            style={{ fontSize: 11, color: prBalanceColor(bal.state) }}
             title={
               bal.closed
                 ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`

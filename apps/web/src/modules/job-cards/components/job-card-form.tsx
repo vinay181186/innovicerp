@@ -39,6 +39,10 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
+import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode, useUpdateJobCard } from '../api';
 import {
   buildJcWriteInput,
@@ -386,11 +390,24 @@ export function JobCardForm({
     return page;
   }, [vendorsData, ops, knownVendors]);
 
-  const sourceByLabel = useMemo(() => {
-    const m = new Map<string, JobCardSourceOption>();
-    for (const o of availableSources) m.set(sourceLabel(o), o);
-    return m;
-  }, [availableSources]);
+  // Source picker rows: the full open-JWSO line list is already in memory, so
+  // the shared SearchableSelect filters it client-side (no server search).
+  // The row reads "[JWSO] CODE / Ln — Customer (Part) [Avail: n]", the same
+  // words the old <datalist> label carried.
+  const sourcePickerOptions = useMemo(
+    () =>
+      availableSources.map((o) => {
+        const tag = o.type === 'jw' ? '[JWSO]' : '[SO]';
+        const ln = o.lineNo && o.lineNo !== 1 ? ` / L${o.lineNo}` : '';
+        const part = o.partName ? ` (${o.partName})` : '';
+        return {
+          id: o.lineId,
+          code: `${tag} ${o.code}${ln}`,
+          name: `${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`,
+        };
+      }),
+    [availableSources],
+  );
   const selectedSource = sourceLineId
     ? allSources.find((o) => o.lineId === sourceLineId)
     : undefined;
@@ -410,12 +427,12 @@ export function JobCardForm({
   const opCount = ops.filter((o) => o.opType !== 'qc').length;
   const qcCount = ops.filter((o) => o.opType === 'qc').length;
 
-  const onSourceChange = (val: string): void => {
+  const onSourceChange = (lineId: string | null): void => {
     // User is editing the field — freeze the ISSUE-169 auto-sync effect so it
     // never overwrites what they type.
     setSourceTextSynced(true);
-    setSourceText(val);
-    const opt = sourceByLabel.get(val);
+    const opt = lineId ? availableSources.find((o) => o.lineId === lineId) : undefined;
+    setSourceText(opt ? sourceLabel(opt) : '');
     if (!opt) {
       setSourceLineId(null);
       setSourceType(null);
@@ -619,10 +636,46 @@ export function JobCardForm({
       setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');
     }
   };
+  // Ctrl+S runs the same Save as the header button.
+  useSaveShortcut(() => void onSubmit(), !submitting);
 
   return (
     <div>
       {exit.dialog}
+      <PageHeader
+        sticky
+        title={isEdit ? `Edit Job Card${model?.code ? ` — ${model.code}` : ''}` : 'New Job Card'}
+        backLabel="Back to Job Cards"
+        onBack={goBack}
+        actions={
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={submitting}
+              onClick={() => void onSubmit()}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Saving…
+                </>
+              ) : isEdit ? (
+                'Save Changes'
+              ) : (
+                'Save Job Card'
+              )}
+            </button>
+          </>
+        }
+      />
+      {error ? (
+        <Banner tone="error" role="alert">
+          {error}
+        </Banner>
+      ) : null}
       <datalist id="dlJcItem">
         {items.map((i) => (
           <option key={i.id} value={i.code}>
@@ -630,199 +683,179 @@ export function JobCardForm({
           </option>
         ))}
       </datalist>
-      <datalist id="dlJcSource">
-        {availableSources.map((o) => (
-          <option key={o.lineId} value={sourceLabel(o)} />
-        ))}
-      </datalist>
 
-      {/* ── JC DETAILS ── */}
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-hdr">
-          <div className="panel-title">▸ Job Card Details</div>
-        </div>
-        <div className="panel-body">
-          <div className="form-grid">
-            <div className="form-grp">
-              <label className="form-label">JC No.</label>
-              <input
-                className="innovic-input"
-                value={model?.code ?? nextJc?.code ?? '(auto on save)'}
-                readOnly
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">JC Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={jcDate}
-                onChange={(e) => setJcDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label">
-                {isEdit ? 'SO / JWSO No.' : 'JWSO No.'}
-                {!isEdit ? <span className="req">★</span> : null}
-              </label>
-              {!isEdit ? (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--amber)',
-                    marginBottom: 4,
-                    fontWeight: 600,
-                  }}
-                >
-                  ⓘ JWSO only. Sales Order items: Planning → Production Order.
-                </div>
-              ) : null}
-              <input
-                className="innovic-input"
-                list={isEdit ? undefined : 'dlJcSource'}
-                value={sourceText}
-                readOnly={isEdit}
-                placeholder={isEdit ? 'Source is fixed after creation' : '🔍 Search JWSO number…'}
-                onChange={(e) => onSourceChange(e.target.value)}
-                style={isEdit ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined}
-                title={
-                  isEdit ? 'A Job Card’s source order cannot be changed after creation.' : undefined
-                }
-              />
-              {/* Line display (legacy #fSoLineDisplay, _jcCascadeFromOrder L1883-87). */}
-              {selectedSource ? (
-                <div style={{ fontSize: 11, marginTop: 4 }}>
-                  <span className="cyan fw-700">
-                    {selectedSource.type === 'jw' ? '[JW] ' : ''}Ln {selectedSource.lineNo || 1}
-                  </span>
-                  {selectedSource.clientPoLineNo ? (
-                    <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                      {' '}
-                      [POL:{selectedSource.clientPoLineNo}]
-                    </span>
-                  ) : null}{' '}
-                  — {selectedSource.code}
-                  {selectedSource.partName ? (
-                    <>
-                      {' · '}
-                      <b>{selectedSource.partName}</b>
-                    </>
-                  ) : null}{' '}
-                  · <span className="text3">{selectedSource.customerName ?? ''}</span>
-                </div>
-              ) : null}
-              {selectedSource ? (
-                <div
-                  style={{
-                    marginTop: 6,
-                    padding: '6px 10px',
-                    borderRadius: 6,
-                    fontSize: 12,
-                    background:
-                      selectedSource.remaining <= 0 ? 'var(--red3)' : 'rgba(34,197,94,0.06)',
-                    border: `1px solid ${selectedSource.remaining <= 0 ? '#fca5a5' : 'rgba(34,197,94,0.2)'}`,
-                    color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--text2)',
-                  }}
-                >
-                  <b style={{ color: 'var(--cyan)' }}>{selectedSource.code}:</b> Order Qty{' '}
-                  <b>{selectedSource.orderQty}</b> | Already in JCs <b>{selectedSource.inJc}</b> |{' '}
-                  <b
-                    style={{ color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--green)' }}
-                  >
-                    Available: {selectedSource.remaining}
-                  </b>
-                </div>
-              ) : null}
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Priority</label>
-              <select
-                className="innovic-select"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as 'normal' | 'high')}
+      {/* ── JC DETAILS ── 12-column grid: source order first, then JC No. /
+          date, then item / qty / due / priority, then raw material + remarks. */}
+      <Panel title="Job Card Details" style={{ marginBottom: 'var(--sp-3)' }}>
+        <FormGrid>
+          <FormField label={isEdit ? 'SO / JWSO No.' : 'JWSO No.'} required={!isEdit} size="lg">
+            {!isEdit ? (
+              <div
+                style={{
+                  fontSize: 'var(--fs-xs)',
+                  color: 'var(--amber2)',
+                  marginBottom: 4,
+                  fontWeight: 600,
+                }}
               >
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label">
-                Item Code <span className="req">★</span>
-              </label>
+                ⓘ JWSO only. Sales Order items: Planning → Production Order.
+              </div>
+            ) : null}
+            {isEdit ? (
               <input
                 className="innovic-input"
-                list="dlJcItem"
-                value={itemCode}
-                placeholder="🔍 Search item code or name…"
-                onChange={(e) => setItemCode(e.target.value)}
+                value={sourceText}
+                readOnly
+                placeholder="Source is fixed after creation"
+                style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
+                title="A Job Card’s source order cannot be changed after creation."
               />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">
-                Order Qty <span className="req">★</span>
-              </label>
-              <input
-                type="number"
-                min={1}
-                className="innovic-input"
-                value={orderQty}
-                onChange={(e) => setOrderQty(e.target.value)}
+            ) : (
+              <SearchableSelect
+                value={sourceLineId}
+                onChange={onSourceChange}
+                options={sourcePickerOptions}
+                valueLabel={sourceText || undefined}
+                placeholder="🔍 Search JWSO number…"
               />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Due Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-              />
-            </div>
-            {/* Raw material — Grade + Size under one bracket, both optional
-                (no ★ on either). Same two pickers Planning uses, so a
-                hand-raised JC carries the same fields a planned one does. */}
-            <div className="form-full">
-              <RawMaterialGroup>
-                <div className="form-grp">
-                  <label className="form-label">Grade</label>
-                  <MaterialGradePicker
-                    valueId={rmGradeId}
-                    valueText={rmGradeText}
-                    onChange={(id, text) => {
-                      setRmGradeId(id);
-                      setRmGradeText(text);
-                    }}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">Size</label>
-                  <MaterialSizePicker
-                    valueId={rmSizeId}
-                    valueText={rmSizeText}
-                    onChange={(id, text) => {
-                      setRmSizeId(id);
-                      setRmSizeText(text);
-                    }}
-                  />
-                </div>
-              </RawMaterialGroup>
-            </div>
-            {/* Remarks has no legacy counterpart (jcModalBody has no such field),
-                but job_cards.remarks is a real column the service persists —
-                kept per "legacy has fewer fields than ours → keep ours". */}
-            <div className="form-grp form-full">
-              <label className="form-label">Remarks</label>
-              <textarea
-                className="innovic-textarea"
-                rows={2}
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Optional notes for this job card"
-              />
-            </div>
+            )}
+            {/* Line display (legacy #fSoLineDisplay, _jcCascadeFromOrder L1883-87). */}
+            {selectedSource ? (
+              <div style={{ fontSize: 'var(--fs-xs)', marginTop: 4 }}>
+                <span className="cyan fw-700">
+                  {selectedSource.type === 'jw' ? '[JW] ' : ''}Ln {selectedSource.lineNo || 1}
+                </span>
+                {selectedSource.clientPoLineNo ? (
+                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                    {' '}
+                    [POL:{selectedSource.clientPoLineNo}]
+                  </span>
+                ) : null}{' '}
+                — {selectedSource.code}
+                {selectedSource.partName ? (
+                  <>
+                    {' · '}
+                    <b>{selectedSource.partName}</b>
+                  </>
+                ) : null}{' '}
+                · <span className="text3">{selectedSource.customerName ?? ''}</span>
+              </div>
+            ) : null}
+            {selectedSource ? (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  fontSize: 'var(--fs-xs)',
+                  background:
+                    selectedSource.remaining <= 0 ? 'var(--red3)' : 'rgba(34,197,94,0.06)',
+                  border: `1px solid ${selectedSource.remaining <= 0 ? 'var(--red)' : 'rgba(34,197,94,0.2)'}`,
+                  color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--text2)',
+                }}
+              >
+                <b style={{ color: 'var(--cyan)' }}>{selectedSource.code}:</b> Order Qty{' '}
+                <b>{selectedSource.orderQty}</b> | Already in JCs <b>{selectedSource.inJc}</b> |{' '}
+                <b style={{ color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--green)' }}>
+                  Available: {selectedSource.remaining}
+                </b>
+              </div>
+            ) : null}
+          </FormField>
+          <FormField label="JC No." size="sm">
+            <input
+              className="innovic-input"
+              value={model?.code ?? nextJc?.code ?? '(auto on save)'}
+              readOnly
+            />
+          </FormField>
+          <FormField label="JC Date" size="sm">
+            <input
+              type="date"
+              className="innovic-input"
+              value={jcDate}
+              onChange={(e) => setJcDate(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Item Code" required size="md">
+            <input
+              className="innovic-input"
+              list="dlJcItem"
+              value={itemCode}
+              placeholder="🔍 Search item code or name…"
+              onChange={(e) => setItemCode(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Order Qty" required size="sm">
+            <input
+              type="number"
+              min={1}
+              className="innovic-input"
+              value={orderQty}
+              onChange={(e) => setOrderQty(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Due Date" size="sm">
+            <input
+              type="date"
+              className="innovic-input"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Priority" size="xs">
+            <select
+              className="innovic-select"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as 'normal' | 'high')}
+            >
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+            </select>
+          </FormField>
+          {/* Raw material — Grade + Size under one bracket, both optional
+              (no ★ on either). Same two pickers Planning uses, so a
+              hand-raised JC carries the same fields a planned one does. */}
+          <div className="f-full">
+            <RawMaterialGroup>
+              <div className="form-grp">
+                <label className="form-label">Grade</label>
+                <MaterialGradePicker
+                  valueId={rmGradeId}
+                  valueText={rmGradeText}
+                  onChange={(id, text) => {
+                    setRmGradeId(id);
+                    setRmGradeText(text);
+                  }}
+                />
+              </div>
+              <div className="form-grp">
+                <label className="form-label">Size</label>
+                <MaterialSizePicker
+                  valueId={rmSizeId}
+                  valueText={rmSizeText}
+                  onChange={(id, text) => {
+                    setRmSizeId(id);
+                    setRmSizeText(text);
+                  }}
+                />
+              </div>
+            </RawMaterialGroup>
           </div>
-        </div>
-      </div>
+          {/* Remarks has no legacy counterpart (jcModalBody has no such field),
+              but job_cards.remarks is a real column the service persists —
+              kept per "legacy has fewer fields than ours → keep ours". */}
+          <FormField label="Remarks" size="full">
+            <textarea
+              className="innovic-textarea"
+              rows={2}
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Optional notes for this job card"
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
 
       {/* ── DRAWING ATTACHMENT (legacy jcModalBody L5996-6006) ── */}
       <div className="panel" style={{ marginBottom: 12 }}>
@@ -890,7 +923,7 @@ export function JobCardForm({
             <button
               type="button"
               className="btn btn-sm"
-              style={{ color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)' }}
+              style={{ color: 'var(--green2)', border: '1px solid rgba(34,197,94,0.3)' }}
               onClick={() => addOp('qc')}
             >
               + Add QC Op
@@ -898,7 +931,7 @@ export function JobCardForm({
             <button
               type="button"
               className="btn btn-sm"
-              style={{ color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}
+              style={{ color: 'var(--amber2)', border: '1px solid rgba(245,158,11,0.4)' }}
               onClick={() => addOp('outsource')}
             >
               + Add OSP Op
@@ -910,7 +943,7 @@ export function JobCardForm({
             <div
               role="alert"
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
                 borderRadius: 6,
@@ -1050,26 +1083,10 @@ export function JobCardForm({
         </div>
       </div>
 
-      {error ? (
-        <div
-          style={{
-            color: 'var(--red)',
-            background: 'var(--red3)',
-            border: '1px solid #fca5a5',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
-
       {balanceNote ? (
         <div
           style={{
-            color: 'var(--green)',
+            color: 'var(--green2)',
             background: 'rgba(34,197,94,0.08)',
             border: '1px solid rgba(34,197,94,0.3)',
             borderRadius: 6,
@@ -1104,28 +1121,6 @@ export function JobCardForm({
           }}
         />
       ) : null}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-success"
-          disabled={submitting}
-          onClick={() => void onSubmit()}
-        >
-          {submitting ? (
-            <>
-              <Loader2 size={13} className="animate-spin" /> Saving…
-            </>
-          ) : isEdit ? (
-            'Save Changes'
-          ) : (
-            'Save Job Card'
-          )}
-        </button>
-      </div>
     </div>
   );
 }

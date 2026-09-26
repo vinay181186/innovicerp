@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { apiDownload } from '@/lib/api';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ActionMenu, PageHeader } from '@/ui/layout';
 import { useReportList, useReportRun } from '../api';
 
 const listSearchSchema = z.object({
@@ -57,35 +58,30 @@ function ReportsListPage() {
 
   if (isDeptMode) {
     // Dept-summary mode — mirrors legacy renderDeptReport(dept) chrome
-    // (HTML L20029): dept-coloured section title + .panel/.innovic-table per
+    // (HTML L20029): a PageHeader title (no longer dept-tinted) + .panel/.innovic-table per
     // report, Excel-only export per panel. Legacy shows one report at a time
     // behind a tab row (L20037–20043); we stack every dept report instead, so
     // nothing is hidden behind a tab.
     const dept = search.group!;
-    const titleColor = DEPT_COLOR[dept] ?? 'var(--cyan)';
     return (
-      <div style={{ padding: 20 }}>
-        <div className="section-hdr" style={{ marginBottom: 8, color: titleColor }}>
-          <span style={{ fontSize: 16 }}>📊</span> {dept} Reports
-        </div>
+      <div>
+        <PageHeader title={`${dept} Reports`} icon="📊" />
 
         {isLoading ? (
           <div className="panel">
-            <div className="panel-body text3" style={{ fontSize: 12 }}>
+            <div className="panel-body text3">
               <Loader2 size={14} className="inline animate-spin" /> Loading reports…
             </div>
           </div>
         ) : isError || !data ? (
           <div className="panel">
-            <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
+            <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
             </div>
           </div>
         ) : (deptReports?.length ?? 0) === 0 ? (
           <div className="panel">
-            <div className="panel-body empty-state">
-              No reports configured for this department.
-            </div>
+            <div className="panel-body empty-state">No reports configured for this department.</div>
           </div>
         ) : (
           (deptReports ?? []).map((r) => <InlineReportPanel key={r.slug} report={r} />)
@@ -95,33 +91,26 @@ function ReportsListPage() {
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📊 Reports
-        </div>
-        <Link to="/saved-reports" className="btn btn-sm btn-ghost">
-          ✨ Saved Reports
-        </Link>
-      </div>
+    <div>
+      <PageHeader
+        title="Reports"
+        icon="📊"
+        actions={
+          <Link to="/saved-reports" className="btn btn-ghost">
+            ✨ Saved Reports
+          </Link>
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
-          <div className="panel-body text3" style={{ fontSize: 12 }}>
+          <div className="panel-body text3">
             <Loader2 size={14} className="inline animate-spin" /> Loading reports…
           </div>
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
+          <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
           </div>
         </div>
@@ -188,7 +177,7 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
           padding: '8px 12px',
           background: 'var(--bg4)',
           fontWeight: 700,
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -200,33 +189,23 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
             ({rowCount} rows)
           </span>
         </span>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => void onExcel()}
-          disabled={excelLoading || rowCount === 0}
-          style={{ fontSize: 10 }}
-        >
-          {excelLoading ? (
-            <>
-              <Loader2 size={10} className="inline animate-spin" /> Excel
-            </>
-          ) : (
-            '⬇ Excel'
-          )}
-        </button>
+        <ActionMenu
+          label={excelLoading ? 'Exporting…' : 'Export'}
+          items={[
+            {
+              label: 'Excel',
+              onClick: () => void onExcel(),
+              disabled: excelLoading || rowCount === 0,
+            },
+          ]}
+        />
       </div>
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
             <tr>
               {report.columns.map((c) => (
-                <th
-                  key={c.key}
-                  style={{
-                    textAlign: c.type === 'number' ? 'right' : undefined,
-                  }}
-                >
+                <th key={c.key} className={c.type === 'number' ? 'th-num' : undefined}>
                   {c.label}
                 </th>
               ))}
@@ -237,7 +216,7 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
               <tr>
                 <td
                   colSpan={report.columns.length}
-                  style={{ padding: '12px', color: 'var(--text3)', fontSize: 11 }}
+                  style={{ padding: '12px', color: 'var(--text3)', fontSize: 'var(--fs-xs)' }}
                 >
                   <Loader2 size={12} className="inline animate-spin" /> Running…
                 </td>
@@ -246,7 +225,7 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
               <tr>
                 <td
                   colSpan={report.columns.length}
-                  style={{ padding: '12px', color: 'var(--red)', fontSize: 11 }}
+                  style={{ padding: '12px', color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}
                 >
                   {error instanceof Error ? error.message : 'Could not run report. Try again.'}
                 </td>
@@ -255,7 +234,13 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
               data.rows.map((row, i) => (
                 <tr key={i}>
                   {report.columns.map((c, ci) => (
-                    <td key={c.key} style={cellStyle(c, row[c.key], ci)}>
+                    <td
+                      key={c.key}
+                      className={
+                        c.type === 'number' || typeof row[c.key] === 'number' ? 'td-num' : undefined
+                      }
+                      style={cellStyle(c, row[c.key], ci)}
+                    >
                       {formatCell(c, row[c.key])}
                     </td>
                   ))}
@@ -286,16 +271,15 @@ function formatCell(col: ReportColumn, raw: unknown): string {
  *  LAST write wins per property: a status colour overrides the column-0 cyan,
  *  and a numeric zero renders muted. Legacy sniffs numeric columns from the
  *  first five rows (L20076–20078); the server types them for us, so `col.type`
- *  stands in for legacy's `numCols[ci]`. */
+ *  stands in for legacy's `numCols[ci]`. Right-alignment is the `td-num` class
+ *  on the cell, not an inline style. */
 function cellStyle(col: ReportColumn, raw: unknown, ci: number): React.CSSProperties {
   const st: React.CSSProperties = {};
   const isNum = typeof raw === 'number';
   if (isNum) {
-    st.textAlign = 'right';
     st.fontFamily = 'var(--mono)';
     st.fontWeight = 600;
   } else if (col.type === 'number') {
-    st.textAlign = 'right';
     st.fontFamily = 'var(--mono)';
   }
   if (ci === 0) {
@@ -315,9 +299,7 @@ function cellStyle(col: ReportColumn, raw: unknown, ci: number): React.CSSProper
 
 /** Conditional colours for known status keywords — matches legacy `_rptTbl` (HTML L20096–20100). */
 function statusColor(raw: string): string | undefined {
-  if (
-    ['DELAYED', 'ZERO', 'Pending', 'Cancelled', 'NO GRN', 'Not Planned', 'Open'].includes(raw)
-  ) {
+  if (['DELAYED', 'ZERO', 'Pending', 'Cancelled', 'NO GRN', 'Not Planned', 'Open'].includes(raw)) {
     return 'var(--red)';
   }
   if (
@@ -338,7 +320,9 @@ function statusColor(raw: string): string | undefined {
   ) {
     return 'var(--green)';
   }
-  if (['Approved', 'PARTIAL', 'In Planning', 'Planned', 'Design Active', 'In Progress'].includes(raw)) {
+  if (
+    ['Approved', 'PARTIAL', 'In Planning', 'Planned', 'Design Active', 'In Progress'].includes(raw)
+  ) {
     return 'var(--blue)';
   }
   if (['PENDING', 'AT VENDOR', 'On Hold', 'In Review', 'Submitted'].includes(raw)) {

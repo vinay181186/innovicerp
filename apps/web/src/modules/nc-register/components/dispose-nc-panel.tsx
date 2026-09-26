@@ -343,7 +343,7 @@ function DisposeOutcome(props: {
             to="/nc-register/$id"
             params={{ id: remainderNc.id }}
             className="mono fw-700"
-            style={{ color: 'var(--red)', textDecoration: 'none' }}
+            style={{ color: 'var(--red2)', textDecoration: 'none' }}
           >
             {remainderNc.code}
           </Link>

@@ -241,7 +241,7 @@ export function StopOpModal({
             borderBottom: '1px solid var(--border)',
           }}
         >
-          <div className="fw-700" style={{ color: 'var(--amber)' }}>
+          <div className="fw-700" style={{ color: 'var(--amber2)' }}>
             ■ Stop Operation
           </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
@@ -464,18 +464,18 @@ export function StopOpModal({
           </div>
 
           {overCap ? (
-            <div style={{ fontSize: 11, color: 'var(--red)' }}>
+            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
               Completed + Rejected ({totalNum}) cannot be more than Available ({target.availableQty}
               ).
             </div>
           ) : null}
           {dateInFuture ? (
-            <div style={{ fontSize: 11, color: 'var(--red)' }}>
+            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
               Log Date cannot be in the future.
             </div>
           ) : null}
           {qtyIsJunk || rejIsJunk ? (
-            <div style={{ fontSize: 11, color: 'var(--red)' }}>
+            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
               Enter whole numbers (0 or more) in {qtyIsJunk ? 'Completed' : 'Rejected'}.
             </div>
           ) : null}
@@ -483,7 +483,7 @@ export function StopOpModal({
               and leaving the operator to hunt for the reason. Hidden while every
               box is still empty, i.e. on open. */}
           {missing.length > 0 && missing.length < 5 ? (
-            <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+            <div style={{ fontSize: 11, color: 'var(--amber2)' }}>
               Still to fill in: <b>{missing.join(', ')}</b>.
             </div>
           ) : null}
@@ -495,7 +495,7 @@ export function StopOpModal({
                 background: 'var(--red3)',
                 border: '1px solid var(--sig-critical-bd)',
                 borderRadius: 6,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 fontSize: 12,
               }}
             >

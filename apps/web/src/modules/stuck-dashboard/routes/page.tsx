@@ -41,7 +41,7 @@ function StuckDashboardPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load stuck jobs. Try again.'}
       </div>
     );
@@ -84,7 +84,7 @@ function StuckDashboardPage(): React.JSX.Element {
           className="empty-state"
           style={{
             padding: 60,
-            color: 'var(--green)',
+            color: 'var(--green2)',
             background: 'var(--sig-ok-bg)',
             borderRadius: 'var(--radius2)',
           }}
@@ -209,7 +209,7 @@ function Tile({
         border: `1px solid ${critical ? 'var(--sig-critical-bd)' : 'var(--border)'}`,
       }}
     >
-      <div style={{ fontSize: 10, color: critical ? 'var(--red)' : 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: critical ? 'var(--red)' : 'var(--text3)' }}>{label}</div>
       <div className="fw-700" style={{ fontSize: 26, color }}>
         {value}
       </div>

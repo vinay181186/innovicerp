@@ -45,7 +45,7 @@ function QcProcessNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to QC Process Master
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have permission to add a QC Process. Ask an admin.
           </div>
         </div>

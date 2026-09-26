@@ -158,7 +158,7 @@ function TaskBoardPage(): React.JSX.Element {
   }
   if (!data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load tasks. Try again.'}
       </div>
     );
@@ -223,7 +223,7 @@ function TaskBoardPage(): React.JSX.Element {
             key: 'todo',
             label: 'To Do',
             count: counts.todo,
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
             active: status === 'todo',
             onClick: () => toggleStatus('todo'),
           },
@@ -239,7 +239,7 @@ function TaskBoardPage(): React.JSX.Element {
             key: 'completed',
             label: 'Completed',
             count: counts.completed,
-            color: 'var(--green)',
+            color: 'var(--green2)',
             active: status === 'completed',
             onClick: () => toggleStatus('completed'),
           },
@@ -247,7 +247,7 @@ function TaskBoardPage(): React.JSX.Element {
             key: 'overdue',
             label: 'Overdue',
             count: counts.overdue,
-            color: 'var(--red)',
+            color: 'var(--red2)',
             active: due === 'overdue',
             onClick: toggleOverdue,
           },

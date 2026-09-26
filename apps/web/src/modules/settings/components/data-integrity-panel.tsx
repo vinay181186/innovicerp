@@ -74,7 +74,7 @@ export function DataIntegrityPanel(): React.JSX.Element {
               background: 'rgba(239,68,68,0.06)',
               border: '1px solid rgba(239,68,68,0.3)',
               borderRadius: 6,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               fontSize: 12,
             }}
           >

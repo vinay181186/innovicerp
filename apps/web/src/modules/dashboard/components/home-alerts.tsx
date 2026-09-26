@@ -22,7 +22,11 @@ const DEPT_NAV: Record<string, string> = {
 export function HomeAlerts({ quickLinkPages }: { quickLinkPages: string[] }): React.JSX.Element {
   const { data, isLoading } = useAlerts();
   if (isLoading || !data) {
-    return <div className="empty-state" style={{ padding: 40 }}><Loader2 className="inline h-4 w-4 animate-spin" /> Loading alerts…</div>;
+    return (
+      <div className="empty-state" style={{ padding: 40 }}>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading alerts…
+      </div>
+    );
   }
   const visible = data.alerts.filter((a) => a.count > 0);
   const total = visible.reduce((s, a) => s + a.count, 0);
@@ -34,11 +38,28 @@ export function HomeAlerts({ quickLinkPages }: { quickLinkPages: string[] }): Re
         <QuickLinks pages={quickLinkPages} />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, padding: '10px 16px', background: total > 0 ? 'var(--sig-critical-bg)' : 'var(--sig-ok-bg)', border: `1px solid ${total > 0 ? 'var(--sig-critical-bd)' : 'var(--sig-ok-bd)'}`, borderRadius: 8 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 14,
+          padding: '10px 16px',
+          background: total > 0 ? 'var(--sig-critical-bg)' : 'var(--sig-ok-bg)',
+          border: `1px solid ${total > 0 ? 'var(--sig-critical-bd)' : 'var(--sig-ok-bd)'}`,
+          borderRadius: 8,
+        }}
+      >
         <span style={{ fontSize: 22 }}>{total > 0 ? '🔔' : '✅'}</span>
         <div>
-          <div style={{ fontWeight: 700, color: total > 0 ? 'var(--sig-critical)' : 'var(--sig-ok)' }}>{total} Pending Actions</div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{visible.length} active alerts across {depts.size} departments</div>
+          <div
+            style={{ fontWeight: 700, color: total > 0 ? 'var(--sig-critical)' : 'var(--sig-ok)' }}
+          >
+            {total} Pending Actions
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+            {visible.length} active alerts across {depts.size} departments
+          </div>
         </div>
       </div>
 
@@ -46,20 +67,57 @@ export function HomeAlerts({ quickLinkPages }: { quickLinkPages: string[] }): Re
         <div className="tbl-wrap">
           <table className="innovic-table">
             <thead>
-              <tr><th>Department</th><th>Code</th><th>Alert Name</th><th className="td-ctr">Records</th></tr>
+              <tr>
+                <th>Department</th>
+                <th>Code</th>
+                <th>Alert Name</th>
+                <th className="th-num">Records</th>
+              </tr>
             </thead>
             <tbody>
               {visible.length === 0 ? (
-                <tr><td colSpan={4} className="empty-state" style={{ color: 'var(--sig-ok)', fontWeight: 700 }}>✅ All clear! No pending actions.</td></tr>
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="empty-state"
+                    style={{ color: 'var(--sig-ok)', fontWeight: 700 }}
+                  >
+                    ✅ All clear! No pending actions.
+                  </td>
+                </tr>
               ) : (
                 visible.map((a) => {
                   const urgent = a.name.toLowerCase().includes('overdue');
                   return (
                     <tr key={a.code}>
-                      <td><Link to={DEPT_NAV[a.dept] ?? '/'} style={{ fontWeight: 700, fontSize: 12, color: 'var(--cyan)', textDecoration: 'none' }}>{a.dept}</Link></td>
-                      <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>{a.code}</td>
+                      <td>
+                        <Link
+                          to={DEPT_NAV[a.dept] ?? '/'}
+                          style={{
+                            fontWeight: 700,
+                            fontSize: 12,
+                            color: 'var(--cyan)',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          {a.dept}
+                        </Link>
+                      </td>
+                      <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        {a.code}
+                      </td>
                       <td style={{ fontWeight: 600 }}>{a.name}</td>
-                      <td className="td-ctr"><span className="mono fw-700" style={{ fontSize: 16, color: urgent ? 'var(--sig-critical)' : 'var(--sig-warn)' }}>{a.count}</span></td>
+                      <td className="td-num">
+                        <span
+                          className="mono fw-700"
+                          style={{
+                            fontSize: 16,
+                            color: urgent ? 'var(--sig-critical)' : 'var(--sig-warn)',
+                          }}
+                        >
+                          {a.count}
+                        </span>
+                      </td>
                     </tr>
                   );
                 })

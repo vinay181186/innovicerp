@@ -48,12 +48,20 @@ function QtyBox({
         borderLeft: bordered ? '1px solid var(--border)' : undefined,
       }}
     >
-      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>
+      <div
+        className="mono fw-700"
+        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
+      >
         {value}
       </div>
       <div
         className="mono"
-        style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+        style={{
+          fontSize: 11,
+          color: 'var(--text3)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}
       >
         {label}
       </div>
@@ -79,7 +87,10 @@ export function DispatchCard(props: {
   const cancelled = g.status === 'cancelled';
 
   return (
-    <div className="panel" style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}>
+    <div
+      className="panel"
+      style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
+    >
       {/* Accent bar — green dispatched, grey cancelled. */}
       <div style={{ width: 4, flexShrink: 0, background: accentFor(g) }} />
       {/* A cancelled dispatch was reversed, so its card is dimmed — the same
@@ -107,17 +118,22 @@ export function DispatchCard(props: {
           <span className="td-code" style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}>
             {g.code}
           </span>
-          <span className="fw-700" style={{ fontSize: 13 }}>{g.customer ?? '—'}</span>
+          <span className="fw-700" style={{ fontSize: 13 }}>
+            {g.customer ?? '—'}
+          </span>
           {cancelled ? <span className="badge b-grey">Cancelled</span> : null}
           <span style={{ flex: 1 }} />
           {/* Stop the row-toggle when clicking an action button. */}
           {!cancelled ? (
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+            <div
+              style={{ display: 'flex', gap: 4, alignItems: 'center' }}
+              onClick={(e) => e.stopPropagation()}
+            >
               <Link
                 to="/invoices/new"
                 search={{ dispatchId: g.dispatchId }}
                 className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--green)' }}
+                style={{ color: 'var(--green2)' }}
                 title="Raise an invoice against this dispatch"
               >
                 🧾 Invoice
@@ -154,7 +170,14 @@ export function DispatchCard(props: {
           </div>
           <div
             className="mono"
-            style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+            style={{
+              fontSize: 11,
+              color: 'var(--text3)',
+              display: 'flex',
+              gap: 6,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+            }}
           >
             <span className="text2">{fmtDate(g.date)}</span>
             <span>·</span>
@@ -186,7 +209,7 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div
         style={{
-          fontSize: 10,
+          fontSize: 11,
           color: 'var(--blue)',
           fontFamily: 'var(--mono)',
           fontWeight: 700,
@@ -204,9 +227,11 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th className="td-ctr" style={{ color: 'var(--red)' }}>Dispatch Qty</th>
+            <th className="th-num" style={{ color: 'var(--red2)' }}>
+              Dispatch Qty
+            </th>
             <th className="td-ctr">UOM</th>
-            <th className="td-ctr">Stock Before → After</th>
+            <th className="th-num">Stock Before → After</th>
           </tr>
         </thead>
         <tbody>
@@ -216,7 +241,10 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
               <td className="td-code" style={{ color: 'var(--cyan)', fontSize: 11 }}>
                 {l.jcNo ?? <span style={{ color: 'var(--text3)' }}>—</span>}
               </td>
-              <td className="mono" style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
+              <td
+                className="mono"
+                style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}
+              >
                 {l.clientPoLineNo ?? '—'}
               </td>
               {/* Code carries the customer's drawing revision — "IN-IT-0007/B"
@@ -226,11 +254,13 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
                 {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
               </td>
               <td className="fw-700">{l.itemName}</td>
-              <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>{l.qty}</td>
+              <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
+                {l.qty}
+              </td>
               <td className="td-ctr">
                 <span className="badge b-grey">{l.uom ?? 'NOS'}</span>
               </td>
-              <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+              <td className="mono td-num" style={{ fontSize: 11, color: 'var(--text3)' }}>
                 {l.stockBefore ?? '—'}→{l.stockAfter ?? '—'}
               </td>
             </tr>

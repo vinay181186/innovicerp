@@ -107,7 +107,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'NC not found.'}
           </div>
         </div>
@@ -121,7 +121,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !effectiveFormPerms(eff, 'nc_dispose').view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -436,21 +436,21 @@ function NcRegisterDetailPage(): React.JSX.Element {
               key: 'rejected',
               label: 'Rejected',
               count: Number(detail.rejectedQty),
-              color: 'var(--red)',
+              color: 'var(--red2)',
               title: 'Pieces this NC covers',
             },
             {
               key: 'cleared',
               label: 'Cleared',
               count: Number(detail.clearedQty),
-              color: 'var(--green)',
+              color: 'var(--green2)',
               title: 'Accepted at QC after recovery',
             },
             {
               key: 'failed',
               label: 'Rejected Again',
               count: Number(detail.failedQty),
-              color: 'var(--amber)',
+              color: 'var(--amber2)',
               title: 'Rejected at QC after recovery',
             },
             {
@@ -735,7 +735,7 @@ function InlinePair(props: { label: string; children: React.ReactNode }): React.
 function CtxField(props: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div>
-      <span className="text3" style={{ fontSize: 10 }}>
+      <span className="text3" style={{ fontSize: 11 }}>
         {props.label}
       </span>
       <br />
