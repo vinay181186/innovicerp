@@ -11,7 +11,7 @@
 // (modules/clients/routes/list.tsx) as the reference. The composition is the
 // canonical one and nothing else:
 //
-//   <ListHeader>            title · count · SearchInput · Active filter · primary
+//   <ListHeader>            title · count · primary; filter bar: SearchInput · Active · Clear
 //   <Banner>                a refused delete, in the server's own words
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
 //   <ListFooter>            count line · 💡 hint
@@ -211,10 +211,10 @@ function TpiMastersListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <Select
             aria-label="Active"
-            fieldWidth="md"
+            title="Active"
             value={search.isActive === undefined ? '' : String(search.isActive)}
             options={[
               { value: '', label: 'All' },
@@ -230,6 +230,14 @@ function TpiMastersListPage(): React.JSX.Element {
             }}
           />
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, isActive: undefined, search: undefined }),
+            replace: true,
+          });
+        }}
+        filtersActive={search.isActive !== undefined || searchInput.trim() !== ''}
         primary={
           perms.entry ? (
             <Link to="/tpi-masters/new" className="btn btn-primary">

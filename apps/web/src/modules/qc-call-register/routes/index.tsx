@@ -1,7 +1,8 @@
 // QC Call Register (legacy renderQCDashboard L4126, page `qcdashboard`).
 // One ruled sheet (the user's mockup 2c): a title row with the register's
-// totals, Export, one search box and a Pending | Completed toggle; a three-cell
-// stage strip (Incoming / In-Process / Final Inspection) that also filters; and
+// totals, Export, one search box and a Pending | Completed toggle; a Stage
+// dropdown in the filter bar (Incoming / In-Process / Final Inspection, with
+// counts — it replaced the three-cell stage strip, 2026-09-26); and
 // a hairline-ruled table. Clicking a pending call opens the accept/reject
 // entry form as a popup over the register (QcCallInspectModal for a job-card
 // op, IncomingQcInspectModal for a GRN line — the Op Entry pattern), so the
@@ -45,7 +46,6 @@ import {
   PendingSheetRow,
   QC_STAGES,
   QcSheetTable,
-  QcStageStrip,
   dayDiff,
   processStage,
   type QcStage,
@@ -430,12 +430,24 @@ function QcCallRegisterPage(): React.JSX.Element {
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search JC, GRN, SO, POL, item, part, vendor…"
-        tools={
+        filters={
           <>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {viewBtn('pending', 'Pending')}
-              {viewBtn('completed', 'Completed')}
-            </div>
+            <select
+              className="innovic-select"
+              aria-label="QC stage"
+              title="QC stage"
+              value={stage ?? ''}
+              onChange={(e) => setStage(e.target.value === '' ? null : (e.target.value as QcStage))}
+            >
+              <option value="">
+                {`All stages (${stageStats.incoming.count + stageStats.inprocess.count + stageStats.final.count})`}
+              </option>
+              {QC_STAGES.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {`${s.label} (${stageStats[s.key].count})`}
+                </option>
+              ))}
+            </select>
             {view === 'pending' ? (
               <button
                 type="button"
@@ -453,6 +465,20 @@ function QcCallRegisterPage(): React.JSX.Element {
                 👤 Mine
               </button>
             ) : null}
+          </>
+        }
+        onClearFilters={() => {
+          setStage(null);
+          setMineOnly(false);
+          setSearch('');
+        }}
+        filtersActive={stage !== null || mineOnly || search.trim() !== ''}
+        tools={
+          <>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {viewBtn('pending', 'Pending')}
+              {viewBtn('completed', 'Completed')}
+            </div>
             {view === 'completed' ? (
               <Link
                 to="/qc-history"
@@ -477,7 +503,6 @@ function QcCallRegisterPage(): React.JSX.Element {
         <div className="text3" style={{ fontSize: 12 }}>
           {pendingCount} calls · {pcsPending} pcs pending · {completeCount} completed
         </div>
-        <QcStageStrip stats={stageStats} selected={stage} onSelect={setStage} />
       </ListHeader>
 
       {raisedNc ? (

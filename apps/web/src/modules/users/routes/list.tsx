@@ -299,11 +299,11 @@ function UsersListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <Select
               aria-label="Filter by role"
-              fieldWidth="md"
+              title="Role"
               value={search.role ?? ''}
               onChange={(e) => {
                 const v = e.target.value as UserRole | '';
@@ -319,7 +319,7 @@ function UsersListPage(): React.JSX.Element {
             />
             <Select
               aria-label="Filter by active"
-              fieldWidth="sm"
+              title="Active"
               value={search.isActive === undefined ? '' : String(search.isActive)}
               onChange={(e) => {
                 const v = e.target.value;
@@ -340,6 +340,20 @@ function UsersListPage(): React.JSX.Element {
             />
           </>
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              role: undefined,
+              isActive: undefined,
+              search: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={!!search.role || search.isActive !== undefined || searchInput.trim() !== ''}
         primary={
           <Link to="/users/new" className="btn btn-primary">
             <Icon name="plus" size={14} /> Add User

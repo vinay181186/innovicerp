@@ -24,11 +24,11 @@ export const qcHistoryRoute = createRoute({
 
 type Tab = 'all' | 'pending' | 'completed';
 
-// Legacy L23599-23601: All is plain, Pending is amber, Completed is green.
-const TABS: { key: Tab; label: string; color?: string }[] = [
+// Legacy L23599-23601 tabs, now the Status dropdown in the filter bar.
+const TABS: { key: Tab; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending', color: 'var(--amber2)' },
-  { key: 'completed', label: 'Completed', color: 'var(--green2)' },
+  { key: 'pending', label: 'Pending' },
+  { key: 'completed', label: 'Completed' },
 ];
 
 function QcHistoryPage(): React.JSX.Element {
@@ -78,6 +78,13 @@ function QcHistoryPage(): React.JSX.Element {
   }
 
   const shownCount = (showPend ? pending.length : 0) + (showComp ? logs.length : 0);
+  // Row counts per status, over the searched / dated rows — the Status
+  // dropdown's option labels (it replaced the All / Pending / Completed tabs).
+  const tabCount: Record<Tab, number> = {
+    all: pending.length + logs.length,
+    pending: pending.length,
+    completed: logs.length,
+  };
 
   return (
     <div>
@@ -91,20 +98,21 @@ function QcHistoryPage(): React.JSX.Element {
         onSearch={setTerm}
         searchPlaceholder="Search SO, JC, POL, item code, item name…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
-            {TABS.map((tb) => (
-              <button
-                key={tb.key}
-                type="button"
-                className={`btn btn-sm ${tab === tb.key ? 'btn-primary' : 'btn-ghost'}`}
-                style={tb.color && tab !== tb.key ? { color: tb.color } : undefined}
-                aria-pressed={tab === tb.key}
-                onClick={() => setTab(tb.key)}
-              >
-                {tb.label}
-              </button>
-            ))}
+            <select
+              className="innovic-select"
+              aria-label="QC status"
+              title="QC status"
+              value={tab}
+              onChange={(e) => setTab(e.target.value as Tab)}
+            >
+              {TABS.map((tb) => (
+                <option key={tb.key} value={tb.key}>
+                  {`${tb.label} (${tabCount[tb.key]})`}
+                </option>
+              ))}
+            </select>
             <input
               type="date"
               className="innovic-input"
@@ -121,9 +129,12 @@ function QcHistoryPage(): React.JSX.Element {
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
             />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}>
-              Clear
-            </button>
+          </>
+        }
+        onClearFilters={clearFilters}
+        filtersActive={tab !== 'all' || term.trim() !== '' || dateFrom !== '' || dateTo !== ''}
+        tools={
+          <>
             <ActionMenu
               label="⬇ Export"
               items={[

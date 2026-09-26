@@ -1,7 +1,7 @@
 // Log Entry tab of Settings → Approvals (ADR-130).
 //
-// Date/time corrections on op entries. Sub-tabbed into Waiting / Approved /
-// Rejected so a decision does not vanish the moment it is made — the row keeps
+// Date/time corrections on op entries. Split by a Status dropdown in the
+// filter bar (Pending / Approved / Rejected) so a decision does not vanish the moment it is made — the row keeps
 // its full trail (who decided, when, and the reject reason). While a request
 // sits in Waiting the entry is UNTOUCHED: the shop floor, the JC feed and every
 // report still read the original values, so nothing here can move a production
@@ -92,32 +92,40 @@ export function LogEntryApprovals({
         onSearch={setTerm}
         searchPlaceholder="Search JC, item, operation, machine, reason, person…"
         updating={list.isFetching && !list.isLoading}
+        filters={
+          /* Status: Pending / Approved / Rejected (were sub-tab buttons). Only
+             the waiting count is known without loading the other lists. */
+          <select
+            className="innovic-select"
+            aria-label="Request status"
+            title="Request status"
+            value={sub}
+            onChange={(e) => {
+              setSub(e.target.value as OpLogChangeStatus);
+              setRejectingId(null);
+            }}
+          >
+            {SUB_TABS.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.key === 'pending' && pendingCount != null
+                  ? `${t.label} (${pendingCount})`
+                  : t.label}
+              </option>
+            ))}
+          </select>
+        }
+        onClearFilters={() => {
+          setSub('pending');
+          setRejectingId(null);
+          setTerm('');
+        }}
+        filtersActive={sub !== 'pending' || term.trim() !== ''}
         tools={
-          <>
-            {pendingCount ? (
-              <span className="badge b-amber" title="Waiting for a decision">
-                {pendingCount} waiting
-              </span>
-            ) : null}
-            {/* Sub-tabs: Waiting / Approved / Rejected. */}
-            {SUB_TABS.map((t) => {
-              const isActive = sub === t.key;
-              return (
-                <button
-                  key={t.key}
-                  type="button"
-                  className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`}
-                  aria-pressed={isActive}
-                  onClick={() => {
-                    setSub(t.key);
-                    setRejectingId(null);
-                  }}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </>
+          pendingCount ? (
+            <span className="badge b-amber" title="Waiting for a decision">
+              {pendingCount} waiting
+            </span>
+          ) : null
         }
       >
         {tabs}

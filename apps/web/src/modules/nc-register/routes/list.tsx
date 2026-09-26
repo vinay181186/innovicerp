@@ -212,10 +212,12 @@ function NcRegisterListPage(): React.JSX.Element {
             onSearch={setSearchInput}
             searchPlaceholder="Search NC no., item code, item name, reason…"
             updating={isFetching && !isLoading}
-            tools={
+            filters={
               <>
                 <select
                   className="innovic-select"
+                  aria-label="NC status"
+                  title="NC status"
                   value={search.status ?? ''}
                   onChange={(e) => {
                     const v = e.target.value as NcStatus | '';
@@ -224,7 +226,6 @@ function NcRegisterListPage(): React.JSX.Element {
                       replace: true,
                     });
                   }}
-                  style={{ width: 160 }}
                 >
                   <option value="">All Status</option>
                   {NC_STATUSES.map((s) => (
@@ -235,6 +236,8 @@ function NcRegisterListPage(): React.JSX.Element {
                 </select>
                 <select
                   className="innovic-select"
+                  aria-label="Reason category"
+                  title="Reason category"
                   value={search.reasonCategory ?? ''}
                   onChange={(e) => {
                     const v = e.target.value as NcReasonCategory | '';
@@ -247,7 +250,6 @@ function NcRegisterListPage(): React.JSX.Element {
                       replace: true,
                     });
                   }}
-                  style={{ width: 160 }}
                 >
                   <option value="">All Reasons</option>
                   {NC_REASON_CATEGORIES.map((r) => (
@@ -258,6 +260,20 @@ function NcRegisterListPage(): React.JSX.Element {
                 </select>
               </>
             }
+            onClearFilters={() => {
+              setSearchInput('');
+              void navigate({
+                search: (prev) => ({
+                  ...prev,
+                  status: undefined,
+                  reasonCategory: undefined,
+                  search: undefined,
+                  page: 1,
+                }),
+                replace: true,
+              });
+            }}
+            filtersActive={!!search.status || !!search.reasonCategory || searchInput.trim() !== ''}
             primary={
               canReportNc ? (
                 <Link to="/nc-register/new" className="btn btn-primary">

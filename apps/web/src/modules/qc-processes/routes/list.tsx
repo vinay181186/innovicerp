@@ -5,7 +5,7 @@
 // canonical one and nothing else:
 //
 //   <TabStrip>              QC Processes | Report Types
-//   <ListHeader>            title · count · SearchInput · Active filter · primary
+//   <ListHeader>            title · count · primary; filter bar: SearchInput · Active · Clear
 //   <Panel>                 the 💡 what-this-master-is-for note
 //   <Banner>                a refused delete, in the server's own words
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
@@ -242,10 +242,10 @@ function QcProcessesListPage(): React.JSX.Element {
             search={searchInput}
             onSearch={setSearchInput}
             updating={isFetching && !isLoading}
-            tools={
+            filters={
               <Select
                 aria-label="Active"
-                fieldWidth="md"
+                title="Active"
                 value={search.isActive === undefined ? '' : String(search.isActive)}
                 options={[
                   { value: '', label: 'All' },
@@ -265,6 +265,14 @@ function QcProcessesListPage(): React.JSX.Element {
                 }}
               />
             }
+            onClearFilters={() => {
+              setSearchInput('');
+              void navigate({
+                search: (prev) => ({ ...prev, isActive: undefined, search: undefined, page: 1 }),
+                replace: true,
+              });
+            }}
+            filtersActive={search.isActive !== undefined || searchInput.trim() !== ''}
             primary={
               perms.entry ? (
                 <Link to="/qc-processes/new" className="btn btn-primary">

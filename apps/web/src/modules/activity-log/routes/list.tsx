@@ -203,11 +203,12 @@ function ActivityLogListPage() {
         onSearch={setPendingSearch}
         searchPlaceholder="Search action, document type, detail, document no., user…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <select
               className="innovic-select"
-              style={{ width: 150 }}
+              aria-label="Action"
+              title="Action"
               value={search.action ?? ''}
               onChange={(e) => setFilter('action', e.target.value)}
             >
@@ -220,7 +221,8 @@ function ActivityLogListPage() {
             </select>
             <select
               className="innovic-select"
-              style={{ width: 130 }}
+              aria-label="User"
+              title="User"
               value={search.userId ?? ''}
               onChange={(e) => setFilter('userId', e.target.value)}
             >
@@ -236,7 +238,6 @@ function ActivityLogListPage() {
             <input
               type="date"
               className="innovic-input"
-              style={{ width: 140 }}
               title="Log date from"
               aria-label="Log date from"
               value={search.fromDate ?? ''}
@@ -245,16 +246,20 @@ function ActivityLogListPage() {
             <input
               type="date"
               className="innovic-input"
-              style={{ width: 140 }}
               title="Log date to"
               aria-label="Log date to"
               value={search.toDate ?? ''}
               onChange={(e) => setFilter('toDate', e.target.value)}
             />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onClear}>
-              Clear
-            </button>
           </>
+        }
+        onClearFilters={onClear}
+        filtersActive={
+          !!search.action ||
+          !!search.userId ||
+          !!search.fromDate ||
+          !!search.toDate ||
+          pendingSearch.trim() !== ''
         }
       />
 

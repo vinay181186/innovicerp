@@ -121,10 +121,12 @@ function OpLogListPage(): React.JSX.Element {
         onSearch={setJcInput}
         searchPlaceholder="Filter by JC No.…"
         updating={isFetching && !isLoading}
-        tools={
+        filters={
           <>
             <select
               className="innovic-select"
+              aria-label="Log type"
+              title="Log type"
               value={search.logType ?? ''}
               onChange={(e) => {
                 const v = e.target.value as ListOpLogQuery['logType'] | '';
@@ -133,7 +135,6 @@ function OpLogListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 130 }}
             >
               <option value="">All types</option>
               <option value="start">Start</option>
@@ -142,6 +143,8 @@ function OpLogListPage(): React.JSX.Element {
             </select>
             <select
               className="innovic-select"
+              aria-label="Shift"
+              title="Shift"
               value={search.shift ?? ''}
               onChange={(e) => {
                 const v = e.target.value as ListOpLogQuery['shift'] | '';
@@ -150,7 +153,6 @@ function OpLogListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 120 }}
             >
               <option value="">All shifts</option>
               <option value="day">Day</option>
@@ -169,7 +171,6 @@ function OpLogListPage(): React.JSX.Element {
                   replace: true,
                 })
               }
-              style={{ width: 140 }}
             />
             <input
               type="date"
@@ -183,8 +184,33 @@ function OpLogListPage(): React.JSX.Element {
                   replace: true,
                 })
               }
-              style={{ width: 140 }}
             />
+          </>
+        }
+        onClearFilters={() => {
+          setJcInput('');
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              jcNo: undefined,
+              logType: undefined,
+              shift: undefined,
+              fromDate: undefined,
+              toDate: undefined,
+              page: 1,
+            }),
+            replace: true,
+          });
+        }}
+        filtersActive={
+          !!search.logType ||
+          !!search.shift ||
+          !!search.fromDate ||
+          !!search.toDate ||
+          jcInput.trim() !== ''
+        }
+        tools={
+          <>
             <button
               type="button"
               className="btn btn-ghost btn-sm"

@@ -159,9 +159,11 @@ function TrashListPage(): React.JSX.Element {
             onChange={setSearchInput}
           />
         }
-        tools={
+        filters={
           <select
             className="innovic-select"
+            aria-label="Document type"
+            title="Document type"
             value={search.type ?? ''}
             onChange={(e) =>
               void navigate({
@@ -169,7 +171,6 @@ function TrashListPage(): React.JSX.Element {
                 replace: true,
               })
             }
-            style={{ width: 160 }}
           >
             <option value="">All Document Types ({grandTotal})</option>
             {TYPE_OPTIONS.map((t) => {
@@ -182,6 +183,14 @@ function TrashListPage(): React.JSX.Element {
             })}
           </select>
         }
+        onClearFilters={() => {
+          setSearchInput('');
+          void navigate({
+            search: (prev) => ({ ...prev, type: undefined, search: undefined, page: 1 }),
+            replace: true,
+          });
+        }}
+        filtersActive={!!search.type || searchInput.trim() !== ''}
       />
 
       {!isLoading && !isError && items.length === 0 ? (
