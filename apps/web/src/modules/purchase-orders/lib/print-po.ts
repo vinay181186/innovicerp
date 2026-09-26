@@ -51,7 +51,7 @@ function docTypeOf(po: PurchaseOrderDetail): PrintDocType {
 // that on a printed document.
 const PO_TYPE_LABEL: Record<string, string> = {
   standard: 'Standard',
-  job_work: 'Job work',
+  job_work: 'Job Work',
   outsource: 'Outsource',
   service: 'Service',
 };
@@ -150,7 +150,7 @@ export function printPurchaseOrder(args: {
   // and same labels the challan's recipient box uses, so a vendor holding both
   // documents reads them the same way.
   const recipientFields: SheetField[] = [
-    { label: 'Code', value: vendor?.code ?? po.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Vendor Code', value: vendor?.code ?? po.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: vendorName, variant: 'name' },
     {
       label: 'Address',
@@ -173,7 +173,7 @@ export function printPurchaseOrder(args: {
   // the Order box said the same thing twice and cost four lines of the box.
   // Removed on the user's instruction, 2026-09-09.
   const documentFields: SheetField[] = [
-    { label: isSpo ? 'SPO No.' : 'PO No.', value: po.code, variant: 'mono', strong: true },
+    { label: 'PO No.', value: po.code, variant: 'mono', strong: true },
     // The type decides what happens to the material afterwards -- job work and
     // service send OUR parts out and expect them back; standard buys goods. A
     // vendor holding the paper should not have to infer which one this is.
@@ -181,10 +181,10 @@ export function printPurchaseOrder(args: {
     // The sales order behind it, resolved by the detail read from the first line
     // that carries one. Blank on a hand-raised PO, which genuinely has no SO.
     { label: 'SO No.', value: po.soCode ?? '', variant: 'mono' },
-    { label: isSpo ? 'SPO Date' : 'PO Date', value: challanDate(po.poDate), variant: 'mono' },
+    { label: 'PO Date', value: challanDate(po.poDate), variant: 'mono' },
     { label: 'Due Date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
-    { label: 'PR Ref.', value: po.prCodeText ?? '', variant: 'mono' },
-    { label: 'Contact person', value: po.createdByName ?? dash },
+    { label: 'PR No.', value: po.prCodeText ?? '', variant: 'mono' },
+    { label: 'Our Contact Person', value: po.createdByName ?? dash },
   ];
 
   const model: SheetPrintModel = {

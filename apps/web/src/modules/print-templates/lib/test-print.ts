@@ -181,7 +181,7 @@ export const PO_SAMPLE_LINES: SheetLine[] = [
 // "today" and "today + 15".
 export function poSampleRecipient(isSpo = false): SheetField[] {
   return [
-    { label: 'Code', value: 'VND-999', variant: 'mono' },
+    { label: 'Vendor Code', value: 'VND-999', variant: 'mono' },
     {
       label: 'Name',
       value: isSpo ? 'Sample Services Pvt Ltd' : 'Sample Vendor Pvt Ltd',
@@ -200,13 +200,13 @@ export function poSampleRecipient(isSpo = false): SheetField[] {
 export function poSampleOrder(isSpo = false): SheetField[] {
   return [
     {
-      label: isSpo ? 'SPO No.' : 'PO No.',
+      label: 'PO No.',
       value: isSpo ? 'IN-SPO-99999' : 'IN-PO-99999',
       variant: 'mono',
       strong: true,
     },
     {
-      label: isSpo ? 'SPO Date' : 'PO Date',
+      label: 'PO Date',
       value: challanDate(format(new Date(), 'yyyy-MM-dd')),
       variant: 'mono',
     },
@@ -215,8 +215,8 @@ export function poSampleOrder(isSpo = false): SheetField[] {
       value: challanDate(format(addDays(new Date(), 15), 'yyyy-MM-dd')),
       variant: 'mono',
     },
-    { label: 'PR Ref.', value: 'IN-PR-99999', variant: 'mono' },
-    { label: 'Contact person', value: 'Admin User' },
+    { label: 'PR No.', value: 'IN-PR-99999', variant: 'mono' },
+    { label: 'Our Contact Person', value: 'Admin User' },
   ];
 }
 
@@ -308,7 +308,7 @@ function openChallanTestPrint(
   // visibly three months later rather than today's date twice.
   const sampleDcDate = format(new Date(), 'yyyy-MM-dd');
   const recipient: SheetField[] = [
-    { label: 'Code', value: 'VND-099', variant: 'mono' },
+    { label: 'Vendor Code', value: 'VND-099', variant: 'mono' },
     { label: 'Name', value: 'Sample Process House', variant: 'name' },
     { label: 'Address', value: 'GIDC, Vadodara', extra: ['Gujarat — 390010'] },
     { label: 'GSTIN', value: '24AAACS1234D1Z5', variant: 'mono' },
@@ -338,8 +338,8 @@ function openChallanTestPrint(
       email: SAMPLE_COMPANY.email ?? '',
       phone: SAMPLE_COMPANY.phone ?? '',
     },
-    recipient: { label: 'Recipient', fields: recipient },
-    document: { label: 'Document', fields: document },
+    recipient: { label: 'Vendor', fields: recipient },
+    document: { label: 'Challan', fields: document },
     lines: [
       {
         itemCode: 'STL-PL-6',

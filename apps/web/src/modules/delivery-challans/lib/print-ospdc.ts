@@ -75,7 +75,7 @@ export function printOspDc(args: {
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
   const recipientFields: SheetField[] = [
-    { label: 'Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Vendor Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
       label: 'Address',
@@ -113,8 +113,8 @@ export function printOspDc(args: {
     blocks,
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Recipient', fields: recipientFields },
-    document: { label: 'Document', fields: documentFields },
+    recipient: { label: 'Vendor', fields: recipientFields },
+    document: { label: 'Challan', fields: documentFields },
     lines: dc.lines.map((l) => ({
       // LIVE master code/name first, issue-time snapshot only as the fallback.
       // itemCodeText is filled with the item NAME when the source line had no

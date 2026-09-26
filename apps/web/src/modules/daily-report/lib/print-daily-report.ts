@@ -28,7 +28,7 @@ function machineSection(group: DailyReportResponse['groups'][number]): string {
     </tr>`,
     )
     .join('');
-  return `<h2>${esc(group.machineCode)} — ${esc(group.machineName ?? group.machineCode)} &nbsp; <span style="color:#16a34a">${group.totalQty} pcs produced</span></h2>
+  return `<h2>${esc(group.machineCode)} — ${esc(group.machineName ?? group.machineCode)} &nbsp; <span style="color:#16a34a">${group.totalQty} pcs Completed</span></h2>
     <table><thead><tr>
       <th>JC No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>Op</th><th>Operation</th>
       <th>Shift</th><th>Completed</th><th>Operator</th><th>Remarks</th>
@@ -48,7 +48,7 @@ export function printDailyReport(args: {
   const body = `
     <div class="doc-title"><h1>DAILY PRODUCTION REPORT &nbsp;|&nbsp; ${esc(fmtDate(date) || date)} &nbsp;|&nbsp; ${esc(machineLabel)}</h1><span class="print-meta">${printedMeta()}</span></div>
     <div class="info-grid">
-      <div class="info-box"><div class="info-lbl">Total Pieces Produced</div><div class="info-val" style="color:#16a34a;font-size:22px">${summary.totalPieces}</div></div>
+      <div class="info-box"><div class="info-lbl">Total Completed</div><div class="info-val" style="color:#16a34a;font-size:22px">${summary.totalPieces}</div></div>
       <div class="info-box"><div class="info-lbl">Log Entries</div><div class="info-val">${summary.logEntries}</div></div>
       <div class="info-box"><div class="info-lbl">Machines Active</div><div class="info-val">${summary.machinesActive}</div></div>
       <div class="info-box"><div class="info-lbl">JCs Active</div><div class="info-val">${summary.jcsActive}</div></div>
@@ -60,5 +60,9 @@ export function printDailyReport(args: {
       <div class="sign-box">Quality Control</div>
     </div>`;
 
-  return printWindow({ title: `Daily Production Report — ${date}`, body, company });
+  return printWindow({
+    title: `Daily Production Report — ${fmtDate(date) || date}`,
+    body,
+    company,
+  });
 }

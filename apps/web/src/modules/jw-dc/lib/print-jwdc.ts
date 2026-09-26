@@ -58,7 +58,7 @@ export function printJwDc(args: {
     [vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean).join(', '),
   ].filter(Boolean);
   const recipientFields: SheetField[] = [
-    { label: 'Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
+    { label: 'Vendor Code', value: vendor?.code ?? dc.vendorCodeText ?? '', variant: 'mono' },
     { label: 'Name', value: recipientName, variant: 'name' },
     {
       label: 'Address',
@@ -87,8 +87,8 @@ export function printJwDc(args: {
     blocks: templatesToBlocks('JW DC', templates),
     data,
     company: buildDocCompany(company),
-    recipient: { label: 'Recipient', fields: recipientFields },
-    document: { label: 'Document', fields: documentFields },
+    recipient: { label: 'Vendor', fields: recipientFields },
+    document: { label: 'Challan', fields: documentFields },
     lines: dc.lines.map((l) => ({
       // Live join first, snapshot second — exactly what the detail table above
       // shows. The snapshot `itemCodeText` falls back to the item NAME when the

@@ -14,6 +14,7 @@ import { opSrNo } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
+import { challanDate } from '@/lib/print/sheet-print';
 
 // Legacy priority/status → badge class.
 function priorityBadge(priority: MachineLoadOp['priority']): string {
@@ -72,7 +73,7 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
       <td style="text-align:center">${opSrNo(o.opSeq)}</td>
       <td>${esc(o.operation)}</td>
       <td>${priorityBadge(o.priority)}</td>
-      <td style="text-align:center">${esc(o.dueDate ?? '—')}</td>
+      <td style="text-align:center">${esc(challanDate(o.dueDate) || '—')}</td>
       <td style="text-align:center">${o.orderQty}</td>
       <td style="text-align:center;color:#16a34a;font-weight:700">${doneCell(o)}</td>
       <td style="text-align:center;font-weight:700;color:${o.available > 0 ? '#d97706' : '#9ca3af'}">${o.available}</td>
@@ -84,7 +85,7 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
   return `${head}<table><thead><tr>
       <th>Sr No</th><th>JC No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>SO No.</th>
       <th>Op</th><th>Operation</th><th>Priority</th><th>Due Date</th>
-      <th>Order Qty</th><th>Completed</th><th>Available</th><th>Pend Hrs</th><th>Op Status</th>
+      <th>Order Qty</th><th>Completed</th><th>Available</th><th>Pending Hrs</th><th>Op Status</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
