@@ -350,7 +350,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load purchase orders'}
+            {error instanceof Error ? error.message : 'Could not load purchase orders. Try again.'}
           </div>
         </div>
       ) : rows.length === 0 ? (

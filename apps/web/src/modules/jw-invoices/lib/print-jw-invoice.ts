@@ -140,7 +140,7 @@ export function printJwInvoice(args: {
   // the challan and the PO use for their vendor, so a reader who handles all
   // three documents reads them the same way — only the party changes.
   const recipientFields: SheetField[] = [
-    { label: 'Code', value: client?.code ?? '', variant: 'mono' },
+    { label: 'Customer Code', value: client?.code ?? '', variant: 'mono' },
     { label: 'Name', value: clientName, variant: 'name' },
     {
       label: 'Address',
@@ -164,7 +164,7 @@ export function printJwInvoice(args: {
     { label: 'JWSO No.', value: invoice.jwCodeText ?? '', variant: 'mono' },
     // Spelled out as a field, not left to the reader: this is a service bill
     // against material the client already owns.
-    { label: 'Nature of charge', value: 'Job work — labour / processing' },
+    { label: 'Nature of Charge', value: 'Job work — labour / processing' },
   ];
 
   const model: SheetPrintModel = {

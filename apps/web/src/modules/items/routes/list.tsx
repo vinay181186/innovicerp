@@ -238,7 +238,7 @@ function ItemsListPage(): React.JSX.Element {
         warnings: errors,
       });
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : 'Import failed');
+      setImportError(e instanceof Error ? e.message : 'Could not import file. Try again.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -441,7 +441,7 @@ function ItemsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load items'}
+          message={error instanceof Error ? error.message : 'Could not load items. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">
@@ -579,7 +579,7 @@ function ImportResultBanner(props: {
             {duplicates.length > 0
               ? ` · ${duplicates.length} duplicate${duplicates.length === 1 ? '' : 's'} skipped`
               : ''}
-            {failures.length > 0 ? ` · ${failures.length} failed` : ''}
+            {failures.length > 0 ? ` · ${failures.length} not imported` : ''}
           </>
         }
       >
@@ -602,7 +602,7 @@ function ImportResultBanner(props: {
                   className="fw-700"
                   style={{ color: 'var(--red2)', marginBottom: 'var(--sp-1)' }}
                 >
-                  ✕ Failed rows ({failures.length})
+                  ✕ Rows not imported ({failures.length})
                 </div>
                 <div className="text3" style={{ marginBottom: 'var(--sp-1)' }}>
                   ⚠ These rows were rejected on save — the actual reason is shown next to each. Fix

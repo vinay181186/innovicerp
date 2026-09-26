@@ -216,7 +216,7 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Machine'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -351,7 +351,7 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Changes'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />

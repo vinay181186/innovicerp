@@ -261,7 +261,8 @@ export async function adjustStock(
       )
       .limit(1);
     const itm = itemRows[0];
-    if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);
+    if (!itm)
+      throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
 
     await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itm.id}::uuid FOR UPDATE`);
 
@@ -275,7 +276,7 @@ export async function adjustStock(
       input.direction === 'add' ? stockBefore + input.qty : stockBefore - input.qty;
     if (stockAfter < 0) {
       throw new ConflictError(
-        `Cannot remove ${input.qty} — only ${stockBefore} available for ${itm.code}`,
+        `Item ${itm.code}: Qty (${input.qty}) cannot be more than In Stock (${stockBefore}).`,
       );
     }
 
@@ -315,7 +316,7 @@ export async function setMinStock(
         and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
       )
       .returning({ minStockQty: items.minStockQty });
-    if (result.length === 0) throw new NotFoundError(`Item ${input.itemId} not found`);
+    if (result.length === 0) throw new NotFoundError('Item not found. Refresh the page.');
     return { ok: true as const, minQty: result[0]!.minStockQty };
   });
 }
@@ -350,7 +351,7 @@ export async function getStockAvailability(
       .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
       .limit(1);
     const itm = itemRows[0];
-    if (!itm) throw new NotFoundError(`Item ${itemId} not found`);
+    if (!itm) throw new NotFoundError('Item not found. Refresh the page.');
 
     const position = await readStockPosition(tx, companyId, itm.id);
     return { itemId: itm.id, itemCode: itm.code, ...position };

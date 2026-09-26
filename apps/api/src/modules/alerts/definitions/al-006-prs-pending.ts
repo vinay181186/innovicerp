@@ -1,4 +1,4 @@
-// AL-006 — Pending purchase indents (purchase). Legacy line 22267-22268.
+// AL-006 — Pending PRs (purchase). Legacy line 22267-22268.
 // Filter: status = 'open'. Same shape as AL-002 but no age threshold.
 
 import { sql } from 'drizzle-orm';
@@ -8,14 +8,14 @@ export const al006PrsPending: RegisteredAlert = {
   definition: {
     code: 'AL-006',
     dept: 'purchase',
-    name: 'Pending purchase indents',
-    description: 'Purchase requests in "open" status awaiting approval.',
+    name: 'Pending PRs',
+    description: 'PRs with PR Status Open, waiting for approval.',
     columns: [
       { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },
       { key: 'vendor', label: 'Vendor', type: 'text' },
       { key: 'item', label: 'Item Code', type: 'text' },
-      { key: 'qty', label: 'Qty', type: 'number' },
+      { key: 'qty', label: 'PR Qty', type: 'number' },
     ],
     defaultActive: true,
   },

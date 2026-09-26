@@ -194,7 +194,7 @@ function BomMastersListPage(): React.JSX.Element {
         width: '7%',
         className: 'mono fw-700',
         nowrap: true,
-        render: (b) => <span style={{ color: 'var(--cyan)' }}>Rev {b.revision}</span>,
+        render: (b) => <span style={{ color: 'var(--cyan)' }}>BOM Rev {b.revision}</span>,
       },
       {
         header: 'Revision Date',

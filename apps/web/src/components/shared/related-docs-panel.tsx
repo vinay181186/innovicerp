@@ -20,6 +20,7 @@ import type {
 import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { statusText } from '@/lib/status-text';
 
 /** routeKind → how to render a linked code. The param id defaults to the row's
  *  own id but honours `linkId` when a route is scoped by a different key (e.g.
@@ -171,9 +172,15 @@ function statusBadgeClass(status: string | null): string {
   }
 }
 
-export function StatusBadge({ status }: { status: string | null }): React.JSX.Element | null {
+export function StatusBadge({
+  status,
+  kind,
+}: {
+  status: string | null;
+  kind?: string | null;
+}): React.JSX.Element | null {
   if (!status) return null;
-  return <span className={`badge ${statusBadgeClass(status)}`}>{status.replaceAll('_', ' ')}</span>;
+  return <span className={`badge ${statusBadgeClass(status)}`}>{statusText(status, kind)}</span>;
 }
 
 function DocRow({
@@ -194,7 +201,7 @@ function DocRow({
         ) : null}
       </td>
       <td>
-        <StatusBadge status={doc.status} />
+        <StatusBadge status={doc.status} kind={routeKind} />
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
         {doc.date ?? '—'}

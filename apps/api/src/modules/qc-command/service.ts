@@ -488,7 +488,7 @@ async function assertOpInCompany(
     SELECT 1 FROM public.jc_ops
     WHERE id = ${jcOpId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
   `)) as unknown as unknown[];
-  if (rows.length === 0) throw new NotFoundError(`Operation ${jcOpId} not found`);
+  if (rows.length === 0) throw new NotFoundError('Operation not found. Refresh the page.');
 }
 
 /** Upserts the single active assignment for an op (insert, or update if present). */

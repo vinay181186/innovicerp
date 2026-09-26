@@ -54,6 +54,15 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
+// Screen words for PO Type codes, for error text only (matches the web's
+// po-labels.ts).
+const PO_TYPE_LABEL: Record<string, string> = {
+  standard: 'Standard',
+  job_work: 'Job Work',
+  outsource: 'Outsource',
+  service: 'Service',
+};
+
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v);
@@ -272,7 +281,7 @@ export async function getJwDcOutwardDetail(
       )
       .limit(1);
     const header = headerRows[0];
-    if (!header) throw new NotFoundError(`JW DC Outward ${id} not found`);
+    if (!header) throw new NotFoundError('JW DC not found. Refresh the page.');
 
     const lineRows = (await tx.execute(sql`
       SELECT
@@ -448,7 +457,7 @@ export async function getJwDcRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`JW DC Outward ${id} not found`);
+    if (!header) throw new NotFoundError('JW DC not found. Refresh the page.');
 
     // Distinct items sent out on this DC's lines (upstream master link).
     const lineRows = await tx
@@ -644,10 +653,10 @@ export async function getJwDcPoLines(
       )
       .limit(1);
     const po = poRows[0];
-    if (!po) throw new NotFoundError(`Purchase Order ${purchaseOrderId} not found`);
+    if (!po) throw new NotFoundError('PO not found. Refresh the page.');
     if (!poSendsMaterialOut(po.poType)) {
       throw new ValidationError(
-        `PO ${po.code} does not send material out (type=${po.poType}) — only Job Work and Service POs can raise an outward DC`,
+        `PO ${po.code} has PO Type ${PO_TYPE_LABEL[po.poType] ?? po.poType}. Only Job Work and Service POs can send material out.`,
       );
     }
 
@@ -717,7 +726,7 @@ export async function createJwDcOutward(
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) {
-    throw new ValidationError('At least one line is required');
+    throw new ValidationError('Add at least one row.');
   }
 
   return withUserContext(user, async (tx) => {
@@ -734,10 +743,10 @@ export async function createJwDcOutward(
       )
       .limit(1);
     const po = poRows[0];
-    if (!po) throw new NotFoundError(`Purchase Order ${input.purchaseOrderId} not found`);
+    if (!po) throw new NotFoundError('PO not found. Refresh the page.');
     if (!poSendsMaterialOut(po.poType)) {
       throw new ValidationError(
-        `PO ${po.code} does not send material out (type=${po.poType}) — only Job Work and Service POs can be dispatched`,
+        `PO ${po.code} has PO Type ${PO_TYPE_LABEL[po.poType] ?? po.poType}. Only Job Work and Service POs can send material out.`,
       );
     }
 
@@ -755,7 +764,7 @@ export async function createJwDcOutward(
     const polById = new Map(poLineRows.map((p) => [p.id, p]));
     for (const id of poLineIds) {
       if (!polById.has(id)) {
-        throw new NotFoundError(`PO line ${id} not found on PO ${po.code}`);
+        throw new NotFoundError(`A line is no longer on PO ${po.code}. Please reload the PO.`);
       }
     }
 
@@ -776,7 +785,7 @@ export async function createJwDcOutward(
       const available = Math.max(0, pol.qty - (sentMap.get(pol.id) ?? 0));
       if (ln.sentQty > available) {
         throw new ConflictError(
-          `Line ${pol.itemCodeText ?? pol.itemName}: send qty ${ln.sentQty} exceeds available ${available}`,
+          `${pol.itemCodeText ?? pol.itemName}: Send Qty (${ln.sentQty}) cannot be more than Pending (${available}).`,
         );
       }
     }
@@ -818,7 +827,7 @@ export async function createJwDcOutward(
       })
       .returning();
     const header = inserted[0];
-    if (!header) throw new ValidationError('Failed to insert JW DC outward header');
+    if (!header) throw new ValidationError('Could not save JW DC. Try again.');
 
     // 7) Insert lines + emit store_transactions + decrement item stock
     for (const [idx, ln] of input.lines.entries()) {
@@ -838,8 +847,8 @@ export async function createJwDcOutward(
         // the real balance negative).
         if (ln.sentQty > stockBefore) {
           throw new ValidationError(
-            `Insufficient stock to send: on-hand ${stockBefore}, sending ${ln.sentQty} ` +
-              `for ${pol.itemCodeText ?? pol.itemName}. Receive material into store first.`,
+            `${pol.itemCodeText ?? pol.itemName}: Send Qty (${ln.sentQty}) cannot be more than ` +
+              `In Stock (${stockBefore}). Receive material into store first.`,
           );
         }
         const stockAfter = stockBefore - ln.sentQty;
@@ -1002,7 +1011,7 @@ export async function createJwDcInward(
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) {
-    throw new ValidationError('At least one line is required');
+    throw new ValidationError('Add at least one row.');
   }
 
   return withUserContext(user, async (tx) => {
@@ -1019,7 +1028,7 @@ export async function createJwDcInward(
       )
       .limit(1);
     const out = outRows[0];
-    if (!out) throw new NotFoundError(`JW DC Outward ${input.jwDcOutwardId} not found`);
+    if (!out) throw new NotFoundError('JW DC not found. Refresh the page.');
 
     // 2) Load outward lines being received against
     const outLineIds = Array.from(new Set(input.lines.map((l) => l.jwDcOutwardLineId)));
@@ -1035,7 +1044,9 @@ export async function createJwDcInward(
     const olById = new Map(outLineRows.map((p) => [p.id, p]));
     for (const id of outLineIds) {
       if (!olById.has(id)) {
-        throw new NotFoundError(`Outward line ${id} not found on DC ${out.code}`);
+        throw new NotFoundError(
+          `A line is no longer on JW DC ${out.code}. Please reload the JW DC.`,
+        );
       }
     }
 
@@ -1057,7 +1068,7 @@ export async function createJwDcInward(
       const pending = Math.max(0, ol.sentQty - alreadyReturned);
       if (ln.receivedQty > pending) {
         throw new ConflictError(
-          `Line ${ol.itemCodeText}: received qty ${ln.receivedQty} exceeds pending ${pending}`,
+          `${ol.itemCodeText}: Received Qty (${ln.receivedQty}) cannot be more than Pending (${pending}).`,
         );
       }
     }
@@ -1088,7 +1099,7 @@ export async function createJwDcInward(
       })
       .returning();
     const header = inserted[0];
-    if (!header) throw new ValidationError('Failed to insert JW DC inward header');
+    if (!header) throw new ValidationError('Could not save JW DC receipt. Try again.');
 
     // 6) Insert lines + restore stock for OK qty
     for (const ln of input.lines) {

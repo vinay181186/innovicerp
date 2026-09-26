@@ -82,7 +82,8 @@ async function assertVendorExists(
       and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
     )
     .limit(1);
-  if (rows.length === 0) throw new ValidationError(`Vendor ${vendorId} not found in this company`);
+  if (rows.length === 0)
+    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
 }
 
 async function assertPurchaseOrderExists(
@@ -102,7 +103,7 @@ async function assertPurchaseOrderExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Purchase order ${purchaseOrderId} not found in this company`);
+    throw new ValidationError('Selected PO was not found. Please select the PO again.');
   }
 }
 
@@ -118,9 +119,7 @@ async function assertItemIdsExist(
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('Item not found. Please select the Item Code again.');
   }
 }
 
@@ -142,9 +141,7 @@ async function assertPoLineIdsExist(
       ),
     );
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`PO line id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('This PO line no longer exists. Please reload the PO.');
   }
 }
 
@@ -194,21 +191,19 @@ async function assertPoReceiptFits(
       )
       .limit(1);
     const po = poRows[0];
-    if (!po) throw new ValidationError(`Purchase order ${headerPoId} not found in this company`);
+    if (!po) throw new ValidationError('Selected PO was not found. Please select the PO again.');
     poCode = po.code;
     if (po.status === 'draft') {
-      throw new ConflictError(
-        `${po.code} is not approved yet — nothing can be received against it`,
-      );
+      throw new ConflictError(`Cannot receive against PO ${po.code}: it is not approved yet.`);
     }
     if (po.status === 'cancelled' || po.status === 'closed') {
       throw new ConflictError(
-        `${po.code} is ${po.status} — nothing more can be received against it`,
+        `PO ${po.code} is ${po.status === 'closed' ? 'Closed' : 'Cancelled'}. Nothing more can be received against it.`,
       );
     }
     if (poSendsMaterialOut(po.poType)) {
       throw new ConflictError(
-        `${po.code} is a job-work PO — receive it against its Delivery Challan (GRN → Against JWPO / DC)`,
+        `PO ${po.code} is a Job Work PO. Receive it against its DC (GRN → Against JWPO / DC).`,
       );
     }
   }
@@ -225,17 +220,15 @@ async function assertPoReceiptFits(
   for (const positions of byPoLine.values()) {
     if (positions.length > 1) {
       throw new ValidationError(
-        `PO line on line ${positions[0]} appears twice in this GRN (also line ${positions
+        `Row #${positions[0]}: the same PO line is also on row #${positions
           .slice(1)
-          .join(', ')}) — combine it into one line`,
+          .join(', #')}. Combine them into one row.`,
       );
     }
   }
   if (byPoLine.size === 0) return;
   if (!headerPoId) {
-    throw new ValidationError(
-      'Pick the purchase order in the header before linking lines to its PO lines',
-    );
+    throw new ValidationError('Select the PO in the header before picking its PO lines.');
   }
 
   const poLineRows = await tx
@@ -263,15 +256,18 @@ async function assertPoReceiptFits(
     const poLine = poLineById.get(poLineId);
     // assertPoLineIdsExist already ran, so a miss here can only be a race
     // with a concurrent delete — refuse rather than post against nothing.
-    if (!poLine) throw new ValidationError(`PO line id(s) not found: ${poLineId}`);
+    if (!poLine)
+      throw new ValidationError(`Row #${n}: this PO line no longer exists. Please reload the PO.`);
     if (poLine.purchaseOrderId !== headerPoId) {
-      throw new ValidationError(`Line ${n} belongs to a different purchase order`);
+      throw new ValidationError(
+        `Row #${n}: this line is not on PO ${poCode}. Please pick it again.`,
+      );
     }
     const incoming = lines[n - 1]!.receivedQty;
     const balance = poLine.qty - poLine.receivedQty;
     if (incoming > balance) {
       throw new ConflictError(
-        `${poCode} line ${poLine.lineNo} (${poLine.itemName}): ordered ${poLine.qty}, already received ${poLine.receivedQty}, this GRN adds ${incoming} — only ${Math.max(balance, 0)} more can be received`,
+        `Row #${n} (${poLine.itemName}): Qty (${incoming}) cannot be more than Pending Qty (${Math.max(balance, 0)}) on PO ${poCode} — Qty ${poLine.qty}, Received ${poLine.receivedQty}.`,
       );
     }
   }
@@ -300,7 +296,7 @@ function resolveLineItemRefs(
 ): { itemId: string | null; itemCodeText: string | null } {
   if (line.itemId) return { itemId: line.itemId, itemCodeText: null };
   const code = line.itemCodeText?.trim();
-  if (!code) throw new ValidationError('itemId or itemCodeText is required');
+  if (!code) throw new ValidationError('Item Code is required.');
   const found = resolved.get(code);
   return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
 }
@@ -308,14 +304,14 @@ function resolveLineItemRefs(
 function assignLineNos(lines: GoodsReceiptNoteLineInput[], startFrom: number): number[] {
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Provide lineNo on every line or none');
+    throw new ValidationError('Ln is required on every row, or leave all blank.');
   }
   if (provided.length === 0) return lines.map((_, i) => startFrom + i);
   const seen = new Set<number>();
   const out: number[] = [];
   for (const l of lines) {
     const n = l.lineNo!;
-    if (seen.has(n)) throw new ValidationError(`Duplicate lineNo ${n} within input`);
+    if (seen.has(n)) throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
     seen.add(n);
     out.push(n);
   }
@@ -650,7 +646,7 @@ async function getGoodsReceiptNoteInternal(
       LIMIT 1
     `);
   const headerRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
-  if (!headerRow) throw new NotFoundError(`Goods receipt note ${id} not found`);
+  if (!headerRow) throw new NotFoundError('GRN not found. It may have been moved to Trash.');
 
   const lineResult = await tx.execute(sql`
       SELECT
@@ -1046,7 +1042,7 @@ export async function insertGrnForOspReceipt(
     {
       action: 'CREATE',
       entity: 'GoodsReceiptNote',
-      detail: `${code} — auto from OSP receipt (DC ${args.dcNo ?? ''})`,
+      detail: `${code} — created from OSP receipt (DC ${args.dcNo ?? ''})`,
       refId: code,
     },
     companyId,
@@ -1078,7 +1074,7 @@ export async function updateGoodsReceiptNote(
       )
       .limit(1);
     if (existingHdrRows.length === 0) {
-      throw new NotFoundError(`Goods receipt note ${id} not found`);
+      throw new NotFoundError('GRN not found. It may have been moved to Trash.');
     }
 
     if (input.header.vendorId !== undefined && input.header.vendorId !== null) {
@@ -1186,7 +1182,7 @@ async function mergeLines(
         u.data.receivedQty !== u.prev.receivedQty;
       if (qcChanged) {
         throw new ConflictError(
-          `GRN line ${u.prev.lineNo} is QC-completed; create a reversing GRN line instead of editing`,
+          `Row #${u.prev.lineNo}: QC is Completed, so this line cannot be edited.`,
         );
       }
     }
@@ -1198,7 +1194,7 @@ async function mergeLines(
     const prev = existingById.get(aid)!;
     if (prev.qcStatus === 'completed') {
       throw new ConflictError(
-        `Cannot remove GRN line ${prev.lineNo} — already QC-completed; create a reversing GRN line instead`,
+        `Row #${prev.lineNo}: QC is Completed, so this line cannot be removed.`,
       );
     }
   }
@@ -1441,7 +1437,7 @@ export async function softDeleteGoodsReceiptNote(
       .limit(1);
     const hdr = existingHdr[0];
     if (!hdr) {
-      throw new NotFoundError(`Goods receipt note ${id} not found`);
+      throw new NotFoundError('GRN not found. It may have been moved to Trash.');
     }
 
     const linesToDelete = await tx
@@ -1456,7 +1452,7 @@ export async function softDeleteGoodsReceiptNote(
     const completed = linesToDelete.find((l) => l.qcStatus === 'completed');
     if (completed) {
       throw new ConflictError(
-        `Cannot delete GRN — line ${completed.lineNo} is QC-completed; create a reversing GRN line instead`,
+        `Cannot delete GRN ${hdr.code}: QC is Completed on row #${completed.lineNo}.`,
       );
     }
 
@@ -1551,7 +1547,7 @@ export async function getGrnRelated(id: string, user: AuthContext): Promise<Docu
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Goods receipt note ${id} not found`);
+    if (!header) throw new NotFoundError('GRN not found. It may have been moved to Trash.');
 
     // ── Upstream: source purchase order (plain header FK) ───────────────────
     const poRows = header.purchaseOrderId

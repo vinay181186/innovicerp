@@ -74,7 +74,7 @@ function OperatorDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Operator not found'}
+          message={error instanceof Error ? error.message : 'Operator not found.'}
         />
       </div>
     );
@@ -106,7 +106,7 @@ function OperatorDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete operator.'
+      : 'Could not delete Operator. Try again.'
     : null;
 
   return (
@@ -165,7 +165,7 @@ function OperatorFacts(props: { operator: Operator }): React.JSX.Element {
   return (
     <ReadGrid>
       <ReadField label="Department" size="lg" value={operator.department} />
-      <ReadField label="Linked user" size="lg" mono value={operator.userId} />
+      <ReadField label="Linked User" size="lg" mono value={operator.userId} />
 
       <ReadField label="Skills / Machines" size="full" pre value={operator.skills} />
     </ReadGrid>

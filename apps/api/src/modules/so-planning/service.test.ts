@@ -343,7 +343,7 @@ describe('so-planning — right pane detail', () => {
   });
 
   it('throws ValidationError on bad uuid', async () => {
-    await expect(service.getPlanningSoDetail('not-a-uuid', admin)).rejects.toThrow(/Invalid/);
+    await expect(service.getPlanningSoDetail('not-a-uuid', admin)).rejects.toThrow(/not found/i);
   });
 });
 
@@ -379,6 +379,6 @@ describe('so-planning — Job Work orders (full plan parity)', () => {
 
 describe('so-planning — BOM aggregator', () => {
   it('rejects when SO line has no linked BOM', async () => {
-    await expect(service.getPlanningBom(lineA1Id, admin)).rejects.toThrow(/no linked BOM/);
+    await expect(service.getPlanningBom(lineA1Id, admin)).rejects.toThrow(/has no BOM/);
   });
 });

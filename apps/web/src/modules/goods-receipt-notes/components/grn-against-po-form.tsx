@@ -114,7 +114,7 @@ export function GrnAgainstPoForm({
   const poIneligible = useMemo((): string | null => {
     if (!po) return null;
     if (poSendsMaterialOut(po.poType)) {
-      return 'This PO sends material out to the vendor — receive it on the "Against JWPO / DC" tab.';
+      return 'This PO sends material out to the vendor — receive it on the "Against JW PO / DC" tab.';
     }
     if (po.status !== 'open' && po.status !== 'partial') {
       return `This PO is ${poStatusLabel(po.status)} — only approved (Open / Partly Received) POs can be received.`;
@@ -337,7 +337,7 @@ export function GrnAgainstPoForm({
         className="form-label"
         style={{ fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}
       >
-        Line items — pending on this PO
+        Line Items — pending on this PO
       </div>
 
       {/* Same shape as the SO form's line table: fixed layout, % widths. */}
@@ -370,7 +370,7 @@ export function GrnAgainstPoForm({
                     ? 'Pick a purchase order to load its pending lines.'
                     : !po
                       ? 'Loading PO lines…'
-                      : 'Every line on this PO is fully received — nothing left to book in.'}
+                      : 'Every line on this PO is fully received — nothing pending to receive.'}
                 </td>
               </tr>
             ) : (

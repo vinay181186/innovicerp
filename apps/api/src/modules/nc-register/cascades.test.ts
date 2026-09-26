@@ -277,7 +277,7 @@ describe('nc-register dispose cascades (T-040b, QC–NC handling design §1–§
     expect(res.remainderNc!.rejectedQty).toBe('3.00');
     expect(res.remainderNc!.status).toBe('pending');
     expect(res.remainderNc!.splitFromNcId).toBe(f.ncId);
-    expect(res.remainderNc!.closeBlockedReason).toBe('No disposition chosen');
+    expect(res.remainderNc!.closeBlockedReason).toBe('Please select a Disposition first.');
 
     const audit = await db
       .select({ action: activityLog.action, detail: activityLog.detail })
@@ -285,7 +285,7 @@ describe('nc-register dispose cascades (T-040b, QC–NC handling design §1–§
       .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, f.ncCode)));
     const actions = audit.map((r) => r.action).sort();
     expect(actions).toEqual(['NC_DISPOSE', 'NC_SPLIT']);
-    expect(audit.find((r) => r.action === 'NC_DISPOSE')!.detail).toContain('qty=2');
+    expect(audit.find((r) => r.action === 'NC_DISPOSE')!.detail).toContain('2 pcs');
     expect(audit.find((r) => r.action === 'NC_DISPOSE')!.detail).toContain(`${f.ncCode}/2`);
   });
 
@@ -784,7 +784,7 @@ describe('nc-register close-rework — legacy in-route rows (0088 / 0089)', () =
       expect(r.userName).toBe(admin.email);
       expect(r.detail).toContain(f.ncCode);
     }
-    expect(auditRows[0]!.detail).toContain('reworkDone=4');
+    expect(auditRows[0]!.detail).toContain('4 Rework Completed');
 
     // Closing twice is refused.
     await expect(service.closeNc(f.ncId, admin)).rejects.toBeInstanceOf(ConflictError);

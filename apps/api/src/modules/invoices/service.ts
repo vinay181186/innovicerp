@@ -168,7 +168,7 @@ async function getInvoiceInternal(
     .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)))
     .limit(1);
   const inv = rows[0];
-  if (!inv) throw new NotFoundError(`Invoice ${id} not found`);
+  if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
 
   // An invoice is a legal document: line code/name are FROZEN at invoice time
   // in the snapshot columns (item_code_text / item_name). We read them directly
@@ -280,7 +280,7 @@ export async function getInvoiceRelated(
       .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)))
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Invoice ${id} not found`);
+    if (!header) throw new NotFoundError('Invoice not found. Refresh the page.');
 
     // ── Upstream: sales order this invoice bills against ────────────────────
     const soRows = header.salesOrderId
@@ -443,7 +443,7 @@ export async function getInvoiceableSo(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (!so) throw new NotFoundError('SO not found. Refresh the page.');
     const lines = await loadInvoiceableLines(tx, companyId, soId);
     return {
       salesOrderId: so.id,
@@ -505,17 +505,17 @@ export async function createInvoice(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${input.salesOrderId} not found`);
+    if (!so) throw new NotFoundError('SO not found. Refresh the page.');
 
     // Validate qty <= available (dispatched − invoiced) per line, in-tx.
     const availLines = await loadInvoiceableLines(tx, companyId, input.salesOrderId);
     const byLine = new Map(availLines.map((l) => [l.salesOrderLineId, l]));
     for (const l of input.lines) {
       const a = byLine.get(l.salesOrderLineId);
-      if (!a) throw new ValidationError(`Line ${l.salesOrderLineId} does not belong to SO ${so.code}`);
+      if (!a) throw new ValidationError(`This line is not on SO ${so.code}. Please reload the SO.`);
       if (l.qty > a.availableQty) {
         throw new ConflictError(
-          `${a.itemName}: only ${a.availableQty} available to invoice (dispatched − invoiced); requested ${l.qty}`,
+          `Ln ${a.lineNo} (${a.itemCode ?? a.itemName}): Qty (${l.qty}) cannot be more than To Invoice (${a.availableQty}).`,
         );
       }
     }
@@ -612,13 +612,15 @@ export async function addPayment(
       )
       .limit(1);
     const inv = rows[0];
-    if (!inv) throw new NotFoundError(`Invoice ${invoiceId} not found`);
+    if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
 
     const grand = n(inv.grandTotal);
     const paid = n(inv.totalPaid);
     const balance = grand - paid;
     if (input.amount > balance + 0.01) {
-      throw new ConflictError(`Amount ₹${input.amount} exceeds balance ₹${balance.toFixed(2)}`);
+      throw new ConflictError(
+        `Amount (₹${input.amount}) cannot be more than Outstanding Amount (₹${balance.toFixed(2)}).`,
+      );
     }
 
     await tx.insert(invoicePayments).values({

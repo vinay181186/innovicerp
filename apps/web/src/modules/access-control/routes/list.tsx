@@ -27,6 +27,7 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useUserAccessList } from '../api';
 import { ConfigureAccessModal } from '../components/configure-modal';
+import { roleLabel } from '@/lib/role-label';
 
 const accessControlSearchSchema = z.object({
   configure: z.string().uuid().optional(),
@@ -217,7 +218,7 @@ function UserAccessRow({
             {u.tierSummary}
             {stale ? (
               <div style={{ color: 'var(--amber)', fontSize: 10, marginTop: 2 }}>
-                ⚠ still enforced as <b>{u.role}</b> — open Configure and Save to apply
+                ⚠ still enforced as <b>{roleLabel(u.role)}</b> — open Configure and Save to apply
               </div>
             ) : null}
           </>

@@ -113,7 +113,7 @@ export async function getItem(id: string, user: AuthContext): Promise<Item> {
       .where(and(eq(items.id, id), isNull(items.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Item ${id} not found`);
+    if (!row) throw new NotFoundError('Item not found. It may have been moved to Trash.');
     return row as unknown as Item;
   });
 }
@@ -164,10 +164,10 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
       if (dup) {
         if (dup.deletedAt) {
           throw new ConflictError(
-            `Item code "${code}" belongs to a deleted item — restore it instead of re-creating`,
+            `Item Code "${code}" is in Trash. Restore it from Trash instead.`,
           );
         }
-        throw new ConflictError(`Item code "${code}" already exists`);
+        throw new ConflictError(`Item Code "${code}" already exists.`);
       }
 
       const inserted = await tx
@@ -277,12 +277,12 @@ export async function createItemsBulk(
           skipped.push({
             index,
             name,
-            reason: `code "${code}" belongs to a deleted item — restore it instead of re-creating`,
+            reason: `Item Code "${code}" already exists in Trash — restore it from Trash instead`,
           });
           continue;
         }
         if (takenCodes.has(key)) {
-          skipped.push({ index, name, reason: `code "${code}" already exists` });
+          skipped.push({ index, name, reason: `Item Code "${code}" already exists` });
           continue;
         }
       } else {
@@ -362,7 +362,7 @@ export async function updateItem(
       .where(and(eq(items.id, id), isNull(items.deletedAt)))
       .limit(1);
     if (existing.length === 0) {
-      throw new NotFoundError(`Item ${id} not found`);
+      throw new NotFoundError('Item not found. It may have been moved to Trash.');
     }
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
@@ -408,7 +408,7 @@ export async function softDeleteItem(id: string, user: AuthContext): Promise<{ o
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Item ${id} not found`);
+      throw new NotFoundError('Item not found. It may have been moved to Trash.');
     }
     await tx
       .update(items)

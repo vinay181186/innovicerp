@@ -16,13 +16,15 @@
 //  - The signature block omits legacy's left "PAN: AQKPM4121A / E. & O.E."
 //    (L21371). `companies` has no PAN column, and hardcoding it would fight the
 //    letterhead direction ("text comes from the companies row").
-//  - Dates print as raw ISO; legacy uses fmt() → "15 Jul 26" (L21360/21363).
+//  - Dates print in the sheet's date format (challanDate → "06 Sep 2026"),
+//    the same as every other printed document; legacy used fmt() (L21360/21363).
 
 import type { Company, InvoiceDetail } from '@innovic/shared';
 import { companyAddressLines } from '@/lib/print/company';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { inrFormat } from '@/lib/print/doc-print';
 import { letterheadFooterHtml, letterheadHeaderHtml } from '@/lib/print/letterhead';
+import { challanDate } from '@/lib/print/sheet-print';
 
 const STATE_MAP: Record<string, string> = {
   '24': 'Gujarat',
@@ -130,7 +132,7 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
       <div style="text-align:center;padding:8px;border-bottom:2px solid #333;font-size:17px;font-weight:900;letter-spacing:2px">TAX INVOICE</div>
       <div style="display:flex;border-bottom:1px solid #999">
         <div style="flex:1;padding:8px 10px;font-size:10px;border-right:1px solid #999">
-          <div style="font-weight:700;font-size:11px;text-decoration:underline;margin-bottom:3px">Bill To</div>
+          <div style="font-weight:700;font-size:11px;text-decoration:underline;margin-bottom:3px">Customer</div>
           <div style="font-weight:700;font-size:12px">${esc(inv.clientName ?? '')}</div>
           ${gst ? `<div>GSTIN: <b>${esc(gst)}</b></div>` : ''}
           ${STATE_MAP[stateCode] ? `<div>State: ${STATE_MAP[stateCode]}, Code: ${stateCode}</div>` : ''}
@@ -138,14 +140,14 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
         <div style="flex:1;padding:8px 10px;font-size:10px">
           <div style="font-weight:700;font-size:11px;text-decoration:underline;margin-bottom:3px">Invoice Details</div>
           <div style="font-weight:700;font-size:14px;color:#1a5276">${esc(inv.code)}</div>
-          <div>Date: ${esc(inv.invoiceDate)}</div>
-          <div>SO Ref: <b>${esc(inv.soCode ?? '')}</b></div>
-          <div>Payment: ${inv.paymentTermsDays} Days</div>
-          <div>Due: <b>${esc(inv.dueDate ?? '')}</b></div>
+          <div>Invoice Date: ${esc(challanDate(inv.invoiceDate))}</div>
+          <div>SO No.: <b>${esc(inv.soCode ?? '')}</b></div>
+          <div>Payment Terms: ${inv.paymentTermsDays} Days</div>
+          <div>Due Date: <b>${esc(challanDate(inv.dueDate))}</b></div>
         </div>
       </div>
       <table style="width:100%;border-collapse:collapse">
-        <thead><tr><th style="${TH}">Sr No.</th><th style="${TH}">POL</th><th style="${TH};text-align:left">Item Code</th><th style="${TH};text-align:left">Item Name</th><th style="${TH}">Invoice Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
+        <thead><tr><th style="${TH}">Sr No</th><th style="${TH}">POL</th><th style="${TH};text-align:left">Item Code</th><th style="${TH};text-align:left">Item Name</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
         <tbody>${lineRows}
           ${
             priceHidden

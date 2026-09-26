@@ -38,7 +38,7 @@ export function DrawingUploadField({
       const path = await uploadFile(file, me.companyId, { folder: 'item-drawings' });
       onChange(path);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
     } finally {
       setBusy(false);
     }

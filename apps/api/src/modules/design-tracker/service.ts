@@ -316,7 +316,7 @@ export async function getDesignTrackerDetail(
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Design ${id} not found`);
+    if (!row) throw new NotFoundError('Design not found. Refresh the page.');
 
     const logs = await tx
       .select()
@@ -406,7 +406,7 @@ export async function createDesignTracker(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales Order ${input.salesOrderId} not found`);
+    if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
     // Reject if an existing (non-deleted) design already targets this SO
     const dup = await tx
@@ -466,7 +466,7 @@ export async function createDesignTracker(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert design');
+    if (!row) throw new ValidationError('Could not save Design. Try again.');
     return rowToTracker(row, await soLineFactsFor(tx, row.salesOrderId, row.itemId));
   });
 }
@@ -492,7 +492,7 @@ export async function updateDesignTracker(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design ${id} not found`);
+    if (!existing) throw new NotFoundError('Design not found. Refresh the page.');
 
     const patch: Partial<typeof designTracker.$inferInsert> = {
       updatedAt: new Date(),
@@ -510,7 +510,7 @@ export async function updateDesignTracker(
       .where(eq(designTracker.id, existing.id))
       .returning();
     const row = updated[0];
-    if (!row) throw new ValidationError('Failed to update design');
+    if (!row) throw new ValidationError('Could not save Design. Try again.');
     return rowToTracker(row, await soLineFactsFor(tx, row.salesOrderId, row.itemId));
   });
 }
@@ -535,7 +535,7 @@ export async function logDesignTime(
         ),
       )
       .limit(1);
-    if (!rows[0]) throw new NotFoundError(`Design ${designTrackerId} not found`);
+    if (!rows[0]) throw new NotFoundError('Design not found. Refresh the page.');
 
     const inserted = await tx
       .insert(designTimeLog)
@@ -551,7 +551,7 @@ export async function logDesignTime(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to log time');
+    if (!row) throw new ValidationError('Could not log time. Try again.');
     return {
       id: row.id,
       designTrackerId: row.designTrackerId,
@@ -584,7 +584,7 @@ export async function submitDesignForReview(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design ${id} not found`);
+    if (!existing) throw new NotFoundError('Design not found. Refresh the page.');
     if (existing.status !== 'In Progress' && existing.status !== 'Revision') {
       throw new ConflictError(
         `Design ${existing.code} cannot be submitted: current status is ${existing.status}`,
@@ -607,7 +607,7 @@ export async function submitDesignForReview(
 
 export async function approveDesign(id: string, user: AuthContext): Promise<DesignTracker> {
   if (user.role !== 'admin' && user.role !== 'manager') {
-    throw new AuthorizationError('Only admin/manager can approve designs');
+    throw new AuthorizationError('You do not have permission to approve designs. Ask an admin.');
   }
   await requireFormAccess(user, 'design_create', 'approve');
   const companyId = requireCompany(user);
@@ -625,7 +625,7 @@ export async function approveDesign(id: string, user: AuthContext): Promise<Desi
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design ${id} not found`);
+    if (!existing) throw new NotFoundError('Design not found. Refresh the page.');
     if (existing.status !== 'Review') {
       throw new ConflictError(
         `Design ${existing.code} cannot be approved: must be in Review (currently ${existing.status})`,
@@ -653,7 +653,9 @@ export async function reviseDesign(
   user: AuthContext,
 ): Promise<DesignTracker> {
   if (user.role !== 'admin' && user.role !== 'manager') {
-    throw new AuthorizationError('Only admin/manager can send designs back for revision');
+    throw new AuthorizationError(
+      'You do not have permission to send designs back for revision. Ask an admin.',
+    );
   }
   await requireFormAccess(user, 'design_create', 'approve');
   const companyId = requireCompany(user);
@@ -671,7 +673,7 @@ export async function reviseDesign(
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Design ${id} not found`);
+    if (!existing) throw new NotFoundError('Design not found. Refresh the page.');
     if (existing.status !== 'Review') {
       throw new ConflictError(
         `Design ${existing.code} cannot be sent back: must be in Review (currently ${existing.status})`,

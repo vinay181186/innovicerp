@@ -66,7 +66,7 @@ function QcProcessEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'QC process not found'}
+            {error instanceof Error ? error.message : 'QC Process not found.'}
           </div>
         </div>
       </div>

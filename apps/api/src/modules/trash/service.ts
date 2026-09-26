@@ -222,6 +222,15 @@ async function deleteRowGuarded(
   }
 }
 
+// Screen words for the activity-log line. The type codes above stay as they
+// are (they are the API contract); only the two that break the naming
+// standard get a display name here.
+function typeLabel(type: TrashEntityType): string {
+  if (type === 'Client') return 'Customer';
+  if (type === 'Job Work Order') return 'JWSO';
+  return type;
+}
+
 function unionSql(companyId: string, typeFilter?: TrashEntityType): string {
   const parts = ENTITIES.filter((e) => !typeFilter || e.type === typeFilter).map(
     (e) =>
@@ -309,7 +318,7 @@ export async function restoreFromTrash(
 
   return withUserContext(user, async (tx) => {
     const entity = ENTITIES.find((e) => e.type === input.type);
-    if (!entity) throw new ValidationError(`Unknown entity type "${input.type}"`);
+    if (!entity) throw new ValidationError('This record type cannot be restored from Trash.');
 
     const result = await tx.execute(
       sql.raw(
@@ -322,14 +331,15 @@ export async function restoreFromTrash(
       ),
     );
     const rows = result as unknown as { id: string }[];
-    if (rows.length === 0) throw new NotFoundError(`${input.type} ${input.id} not found in trash`);
+    if (rows.length === 0)
+      throw new NotFoundError('This record is no longer in Trash. Refresh the page.');
 
     await emitActivityLog(
       tx,
       {
         action: 'RESTORE',
         entity: input.type,
-        detail: `Restored ${input.type} ${input.id}`,
+        detail: `Restored ${typeLabel(input.type)} from Trash`,
         refId: input.id,
       },
       companyId,
@@ -348,7 +358,7 @@ export async function permDeleteTrash(
 
   return withUserContext(user, async (tx) => {
     const entity = ENTITIES.find((e) => e.type === input.type);
-    if (!entity) throw new ValidationError(`Unknown entity type "${input.type}"`);
+    if (!entity) throw new ValidationError('This record type cannot be restored from Trash.');
 
     // ADR-184 — refuse while other documents still point at this row.
     const dependents = await describeDependents(tx, input.type, input.id, companyId);
@@ -365,7 +375,7 @@ export async function permDeleteTrash(
       {
         action: 'PERM DELETE',
         entity: input.type,
-        detail: `Permanently deleted ${input.type} ${input.id}`,
+        detail: `Permanently deleted ${typeLabel(input.type)} from Trash`,
         refId: input.id,
       },
       companyId,
@@ -374,7 +384,7 @@ export async function permDeleteTrash(
 
     const outcome = await deleteRowGuarded(tx, entity, input.id, companyId);
     if (outcome === 'missing') {
-      throw new NotFoundError(`${input.type} ${input.id} not found in trash`);
+      throw new NotFoundError('This record is no longer in Trash. Refresh the page.');
     }
     if (outcome === 'blocked') {
       throw new ConflictError(

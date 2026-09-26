@@ -129,22 +129,24 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
 
   // GOODS RECEIPT NOTE
   // An INWARD document: it is not sent to the vendor, it is filed in store and
-  // signed by the people who counted and checked the material. Hence the
-  // three-name signature block rather than the outward 'For Innovic Technology'.
+  // signed by the people who counted and checked the material. The receiver
+  // signs in the sheet's own "Received by" cell (print-grn.ts receiverCell), so
+  // the block names only the checker and the signatory — rather than the
+  // outward 'For Innovic Technology'.
   grn_special_notes: '',
   grn_terms:
     '1. Quantity received is subject to inspection; acceptance is confirmed only after QC clearance.\n2. Short supply, excess supply or damage in transit must be reported to the vendor within 48 hours of receipt.\n3. Rejected material is held at the vendor’s risk and cost, and must be collected against a debit note.\n4. Payment is released against accepted quantity only, not against quantity received.\n5. This receipt does not by itself constitute acceptance of the goods.',
   grn_footer:
     'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
-  grn_signature: 'Received By\n\n\n\nChecked By\n\n\n\nAuthorised Signatory',
+  grn_signature: 'Checked By\n\n\n\nAuthorised Signatory',
   // JOB WORK INVOICE — labour only. That the material stays the client's
   // throughout is the one thing a reader must never have to infer from a
   // document that otherwise looks like an ordinary sale invoice, so it is
   // factory text rather than something each admin has to remember to type.
   jwinv_special_notes:
-    'This invoice is for the labour / processing charge only. The material processed under it is supplied by the client and remains the property of the client throughout — no material value is charged on this invoice.',
+    'This invoice is for the labour / processing charge only. The material processed under it is supplied by the customer and remains the property of the customer throughout — no material value is charged on this invoice.',
   jwinv_terms:
-    '1. This invoice covers job-work charges against the Job Work Order and quantity stated above.\n2. Quantity billed is the quantity returned to the client and accepted; rejected pieces are not billed.\n3. GST is charged on the job-work value only, at the rate shown.\n4. Payment is due within the terms agreed on the Job Work Order.\n5. Any discrepancy must be raised in writing within 7 days of the invoice date.',
+    '1. This invoice covers job-work charges against the JWSO and quantity stated above.\n2. Quantity billed is the quantity returned to the customer and accepted; rejected pieces are not billed.\n3. GST is charged on the job-work value only, at the rate shown.\n4. Payment is due within the terms agreed on the JWSO.\n5. Any discrepancy must be raised in writing within 7 days of the invoice date.',
   jwinv_footer:
     'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
   jwinv_signature: 'Prepared By\n\n\n\nAuthorised Signatory',

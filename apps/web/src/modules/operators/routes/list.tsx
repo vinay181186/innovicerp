@@ -155,7 +155,7 @@ function OperatorsListPage(): React.JSX.Element {
           (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
       );
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not import the file. Try again.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -296,7 +296,7 @@ function OperatorsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load operators'}
+          message={error instanceof Error ? error.message : 'Could not load operators. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">

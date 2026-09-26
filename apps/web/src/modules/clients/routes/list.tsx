@@ -153,7 +153,7 @@ function ClientsListPage(): React.JSX.Element {
           (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
       );
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';

@@ -27,7 +27,7 @@ export function NcLinksBlock(props: {
             params={{ id: childId }}
             className="mono"
             style={{ ...linkStyle, color: 'var(--cyan)' }}
-            title="Open the child job card"
+            title="Open the rework Job Card"
           >
             {detail.childJobCardCode}
           </Link>

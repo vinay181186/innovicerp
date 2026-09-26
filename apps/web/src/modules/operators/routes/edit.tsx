@@ -42,7 +42,7 @@ function OperatorNewPage(): React.JSX.Element {
         () => void navigate({ to: '/operators/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create operator');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Operator. Try again.');
     }
   };
 
@@ -122,7 +122,7 @@ function OperatorEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/operators/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update operator');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Operator. Try again.');
     }
   };
 
@@ -170,7 +170,7 @@ function OperatorEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Operator not found'}
+            {error instanceof Error ? error.message : 'Operator not found.'}
           </div>
         </div>
       </div>

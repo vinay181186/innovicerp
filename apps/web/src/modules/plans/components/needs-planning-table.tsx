@@ -79,7 +79,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
       },
       { header: 'Order Qty', width: '6%', className: 'mono fw-700', nowrap: true, key: 'orderQty' },
       {
-        header: 'Planned',
+        header: 'Plan Qty',
         width: '6%',
         className: 'mono',
         nowrap: true,

@@ -17,6 +17,7 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useUsersList } from '@/modules/users/api';
 import { useApprovalConfig, useApprovalHistory, useSaveApprovalConfig } from '../api';
+import { roleLabel } from '@/lib/role-label';
 
 export const approvalConfigRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -81,7 +82,7 @@ function ApprovalConfigPage(): React.JSX.Element {
   if (isError) {
     return (
       <div className="empty-state" style={{ color: 'var(--red)', padding: 40 }}>
-        {error instanceof Error ? error.message : 'Failed to load approval config'}
+        {error instanceof Error ? error.message : 'Could not load approval settings. Try again.'}
       </div>
     );
   }
@@ -116,7 +117,9 @@ function ApprovalConfigPage(): React.JSX.Element {
       setSubmitOk(true);
       window.setTimeout(() => setSubmitOk(false), 3000);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Save failed');
+      setSubmitError(
+        e instanceof Error ? e.message : 'Could not save approval settings. Try again.',
+      );
     }
   }
 
@@ -304,7 +307,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                       borderRadius: 3,
                     }}
                   >
-                    {u.role}
+                    {roleLabel(u.role)}
                   </span>
                   {isAdm ? (
                     <span style={{ fontSize: 9, color: 'var(--green)' }}>(always)</span>

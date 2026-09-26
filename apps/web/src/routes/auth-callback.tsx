@@ -59,7 +59,7 @@ function AuthCallbackPage() {
       <div className="rounded-lg border bg-card p-8 text-card-foreground space-y-3 text-center">
         {error ? (
           <>
-            <h1 className="text-lg font-semibold text-destructive">Sign-in failed</h1>
+            <h1 className="text-lg font-semibold text-destructive">Could not sign in</h1>
             <p className="text-sm text-muted-foreground">{error}</p>
             <a className="text-sm underline underline-offset-4" href="/login">
               Try again

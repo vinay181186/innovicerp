@@ -65,7 +65,7 @@ function TpiMasterEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Inspector not found'}
+            {error instanceof Error ? error.message : 'Inspector not found.'}
           </div>
         </div>
       </div>

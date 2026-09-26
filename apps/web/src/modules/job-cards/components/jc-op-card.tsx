@@ -31,7 +31,7 @@
 // View QC Report / View All Logs / ⋮. "Due :" on a row needs
 // jc_ops.planned_end, which the op-entry contract does not carry yet.
 import type { JcOpEnriched, JobCardListItem, JobCardRmAvailable, OpLog } from '@innovic/shared';
-import { fmtOpSrNo, opSrNo } from '@innovic/shared';
+import { fmtOpSrNo, opSrNo, SHIFT_LABELS } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { machineSplitTitle, resolveActualMachine } from '@/components/shared/machine-split';
@@ -52,14 +52,14 @@ const NC_BREAKUP_ROWS: ReadonlyArray<{
   label: string;
   color: string;
 }> = [
-  { key: 'ncRaisedQty', label: 'NC raised', color: 'var(--amber)' },
-  { key: 'underReworkQty', label: 'Under rework', color: 'var(--amber)' },
-  { key: 'underRepairQty', label: 'Under repair', color: 'var(--amber)' },
-  { key: 'rtvAwaitingChallanQty', label: 'Return challan pending', color: 'var(--amber)' },
-  { key: 'sentToVendorQty', label: 'Sent to vendor', color: 'var(--blue)' },
-  { key: 'receivedQcPendingQty', label: 'Received – QC pending', color: 'var(--blue)' },
+  { key: 'ncRaisedQty', label: 'NC Raised', color: 'var(--amber)' },
+  { key: 'underReworkQty', label: 'Under Rework', color: 'var(--amber)' },
+  { key: 'underRepairQty', label: 'Under Repair', color: 'var(--amber)' },
+  { key: 'rtvAwaitingChallanQty', label: 'Return Challan Pending', color: 'var(--amber)' },
+  { key: 'sentToVendorQty', label: 'Sent to Vendor', color: 'var(--blue)' },
+  { key: 'receivedQcPendingQty', label: 'Received – QC Pending', color: 'var(--blue)' },
   { key: 'scrapQty', label: 'Scrap', color: 'var(--red)' },
-  { key: 'ncClosedQty', label: 'NC closed', color: 'var(--text3)' },
+  { key: 'ncClosedQty', label: 'NC Closed', color: 'var(--text3)' },
 ];
 
 /** One-line strip under the header. Renders nothing while the op has no NC
@@ -596,7 +596,7 @@ export function JcOpCard({
                 `Already produced on this operation: ${rmAvailable.consumedQty}. ` +
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`
-                  : 'Issue more client material from Party Material Issue to continue.')
+                  : 'Issue more customer material from Party Material Issue to continue.')
               }
               sub={
                 <div style={{ fontSize: 8, color: 'var(--text3)' }}>
@@ -786,7 +786,7 @@ export function JcOpCard({
                         {fmtJcStamp(l.logDate, l.startTime)}
                       </span>
                       {' · '}
-                      {l.shift}
+                      {SHIFT_LABELS[l.shift]}
                       {' · Qty '}
                       <b style={{ color: 'var(--green)' }}>+{l.qty}</b>
                       {/* The reject was on the wire all along and never shown —

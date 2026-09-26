@@ -49,6 +49,17 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
+// Screen words for PR status codes, for error text only (matches the web's
+// pr-labels.ts). Unknown codes fall back to Title Case.
+const PR_STATUS_LABEL: Record<string, string> = {
+  open: 'Open',
+  approved: 'Approved',
+  po_created: 'PO Created',
+  cancelled: 'Cancelled',
+};
+const prStatusLabel = (status: string): string =>
+  PR_STATUS_LABEL[status] ?? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 function prDetail(
   code: string,
   itemName: string | null | undefined,
@@ -74,7 +85,7 @@ async function assertVendorExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Vendor ${vendorId} not found in this company`);
+    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
   }
 }
 
@@ -117,7 +128,7 @@ async function assertItemExists(
     .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Item ${itemId} not found in this company`);
+    throw new ValidationError('Selected Item was not found. Please select the Item Code again.');
   }
 }
 
@@ -175,7 +186,7 @@ async function assertJcOpExists(
     .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`JC op ${jcOpId} not found in this company`);
+    throw new ValidationError('Selected JC operation was not found. Please pick the Op again.');
   }
 }
 
@@ -196,7 +207,7 @@ async function assertSoLineExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`SO line ${soLineId} not found in this company`);
+    throw new ValidationError('Selected SO line was not found. Please pick the SO line again.');
   }
 }
 
@@ -868,7 +879,7 @@ export async function getPurchaseRequest(
       )
       .limit(1);
     const found = rows[0];
-    if (!found) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!found) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     const orderedQty = deriveOrderedQty({
       qty: found.row.qty,
       poId: found.row.poId,
@@ -921,7 +932,7 @@ export async function createPurchaseRequest(
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase request code "${code}" already exists`);
+      throw new ConflictError(`PR No. "${code}" already exists.`);
     }
 
     if (input.vendorId) await assertVendorExists(tx, input.vendorId, companyId);
@@ -1042,7 +1053,7 @@ export async function updatePurchaseRequest(
       )
       .limit(1);
     if (existing.length === 0) {
-      throw new NotFoundError(`Purchase request ${id} not found`);
+      throw new NotFoundError('PR not found. It may have been moved to Trash.');
     }
     // A PR with quantity on a LIVE purchase order is locked — no further edits.
     //
@@ -1053,9 +1064,7 @@ export async function updatePurchaseRequest(
     // any live quantity stays locked exactly as before.
     const orderedQty = await loadOrderedQty(tx, existing[0]!);
     if (orderedQty > 0) {
-      throw new ConflictError(
-        `Purchase request ${existing[0]!.code} is linked to a PO and cannot be edited`,
-      );
+      throw new ConflictError(`Cannot edit PR ${existing[0]!.code}: it is linked to a PO.`);
     }
 
     if (input.vendorId !== undefined && input.vendorId !== null) {
@@ -1159,11 +1168,11 @@ export async function approvePurchaseRequest(
       )
       .limit(1);
     const pr = existing[0];
-    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     // Only a pre-approval PR ('open') can be approved.
     if (pr.status !== 'open') {
       throw new ValidationError(
-        `PR ${pr.code} is ${pr.status}; only open purchase requests can be approved`,
+        `Cannot approve PR ${pr.code}: it is ${prStatusLabel(pr.status)}. Only Open PRs can be approved.`,
       );
     }
 
@@ -1193,7 +1202,7 @@ export async function approvePurchaseRequest(
       {
         action: 'APPROVE',
         entity: 'PurchaseRequest',
-        detail: `${row.code} approved by ${user.email ?? user.id}`,
+        detail: `${row.code} approved by ${user.fullName || user.email}`,
         refId: row.code,
       },
       companyId,
@@ -1213,7 +1222,7 @@ export async function rejectPurchaseRequest(
   const companyId = requireCompany(user);
 
   if (!reason || !reason.trim()) {
-    throw new ValidationError('Rejection reason is required');
+    throw new ValidationError('Reason is required to Reject.');
   }
   const trimmedReason = reason.trim();
 
@@ -1230,7 +1239,7 @@ export async function rejectPurchaseRequest(
       )
       .limit(1);
     const pr = existing[0];
-    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     // Quantity already on a LIVE purchase order carries the procurement
     // obligation on that PO; a cancelled PR is terminal. Same change as the edit
     // guard: this asks how much is actually on order instead of reading the
@@ -1239,7 +1248,9 @@ export async function rejectPurchaseRequest(
     const orderedQty = await loadOrderedQty(tx, pr);
     if (orderedQty > 0 || pr.status === 'cancelled') {
       throw new ValidationError(
-        `PR ${pr.code} is ${pr.status}; only open or approved purchase requests can be rejected`,
+        orderedQty > 0
+          ? `Cannot reject PR ${pr.code}: a PO has already been placed against it.`
+          : `Cannot reject PR ${pr.code}: it is ${prStatusLabel(pr.status)}. Only Open or Approved PRs can be rejected.`,
       );
     }
 
@@ -1280,7 +1291,7 @@ export async function rejectPurchaseRequest(
         entity: 'PurchaseRequest',
         detail:
           `${row.code} rejected: ${trimmedReason}` +
-          (released > 0 ? ` — JC operation released (retype/remove now allowed)` : ''),
+          (released > 0 ? ` — JC operation freed; it can now be changed or removed` : ''),
         refId: row.code,
       },
       companyId,
@@ -1318,7 +1329,7 @@ export async function closePurchaseRequestBalance(
 
   const trimmedReason = input.reason.trim();
   if (!trimmedReason) {
-    throw new ValidationError('A reason is required to close the balance');
+    throw new ValidationError('Reason is required to Short Close.');
   }
 
   return withUserContext(user, async (tx) => {
@@ -1331,15 +1342,15 @@ export async function closePurchaseRequestBalance(
       .where(and(eq(purchaseRequests.id, id), eq(purchaseRequests.companyId, companyId)))
       .limit(1);
     const pr = existing[0];
-    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     if (pr.deletedAt !== null) {
-      throw new ValidationError(`PR ${pr.code} has been deleted; its balance cannot be closed`);
+      throw new ValidationError(`PR ${pr.code} is in Trash. It cannot be Short Closed.`);
     }
     if (pr.status === 'cancelled') {
-      throw new ValidationError(`PR ${pr.code} is cancelled; it has no balance to close`);
+      throw new ValidationError(`PR ${pr.code} is Cancelled. It cannot be Short Closed.`);
     }
     if (pr.balanceClosedAt !== null) {
-      throw new ValidationError(`PR ${pr.code} already has its balance closed`);
+      throw new ValidationError(`PR ${pr.code} is already Short Closed.`);
     }
 
     const orderedQty = await loadOrderedQty(tx, pr);
@@ -1352,13 +1363,13 @@ export async function closePurchaseRequestBalance(
     // not). The user is sent to that button by name.
     if (orderedQty <= 0) {
       throw new ValidationError(
-        `PR ${pr.code} has nothing on order — use Reject to cancel the whole request, not Close Balance`,
+        `Nothing is ordered on PR ${pr.code} yet. Use Reject to cancel the whole PR.`,
       );
     }
     // Fully ordered (or over-ordered): closing would change nothing.
     if (balanceQty <= 0) {
       throw new ValidationError(
-        `PR ${pr.code} has nothing left to order (${orderedQty} of ${pr.qty} already ordered); there is no balance to close`,
+        `PR ${pr.code} has no Pending Qty (${orderedQty} of ${pr.qty} already ordered). Nothing to Short Close.`,
       );
     }
 
@@ -1385,7 +1396,7 @@ export async function closePurchaseRequestBalance(
       {
         action: 'BALANCE_CLOSE',
         entity: 'PurchaseRequest',
-        detail: `${row.code} balance closed — ${balanceQty} of ${row.qty} abandoned: ${trimmedReason}`,
+        detail: `${row.code} Short Closed — ${balanceQty} of ${row.qty} not ordered: ${trimmedReason}`,
         refId: row.code,
       },
       companyId,
@@ -1462,14 +1473,14 @@ export async function softDeletePurchaseRequest(
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Purchase request ${id} not found`);
+      throw new NotFoundError('PR not found. It may have been moved to Trash.');
     }
     // Block deletion when a PO has been generated — that PO carries the
     // procurement obligation. Cancel the PR instead (status='cancelled') if
     // needed; deletion is for mistakes pre-PO only.
     if (row.poId !== null) {
       throw new ConflictError(
-        `Purchase request ${id} has a linked purchase order — cancel instead of delete`,
+        `Cannot delete PR ${row.code}: a PO is linked. Cancel the PR instead.`,
       );
     }
     await tx
@@ -1539,7 +1550,7 @@ export async function getPurchaseRequestRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Purchase request ${id} not found`);
+    if (!header) throw new NotFoundError('PR not found. It may have been moved to Trash.');
 
     // ── Upstream: vendor (source supplier) ─────────────────────────────────
     const vendorRows = header.vendorId

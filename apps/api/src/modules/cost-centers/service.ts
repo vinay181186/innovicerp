@@ -99,7 +99,7 @@ export async function getCostCenter(id: string, user: AuthContext): Promise<Cost
       .where(and(eq(costCenters.id, id), isNull(costCenters.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Cost center ${id} not found`);
+    if (!row) throw new NotFoundError('Cost Centre not found. It may have been moved to Trash.');
     return row as unknown as CostCenter;
   });
 }
@@ -126,7 +126,7 @@ export async function createCostCenter(
       )
       .limit(1);
     if (existing.length > 0) {
-      throw new ConflictError(`Cost center code "${input.code}" already exists`);
+      throw new ConflictError(`Cost Centre Code "${input.code}" already exists.`);
     }
 
     const inserted = await tx
@@ -162,7 +162,8 @@ export async function updateCostCenter(
       .from(costCenters)
       .where(and(eq(costCenters.id, id), isNull(costCenters.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Cost center ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Cost Centre not found. It may have been moved to Trash.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
     if (input.name !== undefined) updates.name = input.name.trim();
@@ -193,7 +194,8 @@ export async function softDeleteCostCenter(id: string, user: AuthContext): Promi
       .from(costCenters)
       .where(and(eq(costCenters.id, id), isNull(costCenters.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Cost center ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Cost Centre not found. It may have been moved to Trash.');
     await tx
       .update(costCenters)
       .set({ deletedAt: new Date(), updatedBy: user.id })

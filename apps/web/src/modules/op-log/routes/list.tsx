@@ -7,7 +7,7 @@
 // a JC number says WHICH JOB and not WHICH PART. TPI rows tagged. No delete
 // (see service.ts note — legacy `delLog` violates CLAUDE.md Rule #8).
 
-import { opSrNo } from '@innovic/shared';
+import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -36,7 +36,7 @@ export const opLogListRoute = createRoute({
 
 const LOG_TYPE_LABEL: Record<'start' | 'complete' | 'qc', string> = {
   start: 'Start',
-  complete: 'Complete',
+  complete: 'Completed',
   qc: 'QC Inspection',
 };
 
@@ -118,7 +118,7 @@ function OpLogListPage(): React.JSX.Element {
       >
         <input
           className="innovic-input"
-          placeholder="Filter by JC code…"
+          placeholder="Filter by JC No.…"
           value={jcInput}
           onChange={(e) => setJcInput(e.target.value)}
           style={{ width: 180, fontSize: 12 }}
@@ -137,7 +137,7 @@ function OpLogListPage(): React.JSX.Element {
         >
           <option value="">All types</option>
           <option value="start">Start</option>
-          <option value="complete">Complete</option>
+          <option value="complete">Completed</option>
           <option value="qc">QC Inspection</option>
         </select>
         <select
@@ -237,7 +237,7 @@ function OpLogListPage(): React.JSX.Element {
               ) : isError ? (
                 <tr>
                   <td colSpan={16} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load op log'}
+                    {error instanceof Error ? error.message : 'Could not load op log. Try again.'}
                   </td>
                 </tr>
               ) : items.length === 0 ? (
@@ -298,7 +298,7 @@ function OpLogListPage(): React.JSX.Element {
                         </span>
                       ) : null}
                     </td>
-                    <td className="text2">{r.shift}</td>
+                    <td className="text2">{SHIFT_LABELS[r.shift as Shift] ?? r.shift}</td>
                     {/* ADR-164 — PLANNED is the op's jc_ops machine; ACTUAL is
                         the machine this entry was stamped with. The actual
                         turns amber only when it is not the plan. */}

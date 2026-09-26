@@ -3,9 +3,15 @@
 // + all its lines land in Excel, filter/pivot-friendly. Same xlsx pattern as
 // the SO Master export.
 
-import type { CustomerDispatchRegisterRow } from '@innovic/shared';
+import type { CustomerDispatchRegisterRow, CustomerDispatchStatus } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { itemCodeWithRev } from '@/lib/item-code';
+
+// Status code → the word the user reads (no shared label map exists yet).
+const DISPATCH_STATUS_LABEL: Record<CustomerDispatchStatus, string> = {
+  dispatched: 'Dispatched',
+  cancelled: 'Cancelled',
+};
 
 const COLUMNS = [
   'Dispatch No.',
@@ -48,11 +54,14 @@ export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFi
     r.remarks ?? '',
     r.stockBefore ?? '',
     r.stockAfter ?? '',
-    r.status,
+    DISPATCH_STATUS_LABEL[r.status],
   ]);
   const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], ...data]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Dispatch Register');
-  const suffix = soFilter ? `-${soFilter}` : '';
-  XLSX.writeFile(wb, `dispatch-register${suffix}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const suffix = soFilter ? ` ${soFilter}` : '';
+  XLSX.writeFile(
+    wb,
+    `Dispatch Register Export${suffix} ${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
 }

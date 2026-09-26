@@ -102,7 +102,7 @@ export async function getOperator(id: string, user: AuthContext): Promise<Operat
       .where(and(eq(operators.id, id), isNull(operators.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Operator ${id} not found`);
+    if (!row) throw new NotFoundError('Operator not found. Refresh the page.');
     return row as unknown as Operator;
   });
 }
@@ -319,7 +319,7 @@ export async function updateOperator(
       .from(operators)
       .where(and(eq(operators.id, id), isNull(operators.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Operator ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('Operator not found. Refresh the page.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name;
@@ -346,7 +346,7 @@ export async function softDeleteOperator(id: string, user: AuthContext): Promise
       .from(operators)
       .where(and(eq(operators.id, id), isNull(operators.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Operator ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('Operator not found. Refresh the page.');
     await tx
       .update(operators)
       .set({ deletedAt: new Date(), updatedBy: user.id })

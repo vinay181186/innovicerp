@@ -2,9 +2,24 @@
 // (L4555). Builds a Lines sheet (per-line progress) + a Job Cards sheet
 // (every linked JC) from the already-loaded SoStatusResponse using SheetJS.
 
-import type { SoStatusResponse } from '@innovic/shared';
+import type { SoStatusJcStatus, SoStatusLineStatus, SoStatusResponse } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { itemCodeWithRev } from '@/lib/item-code';
+
+// Status codes → the words the SO Status screen shows (so-status-detail.tsx).
+const LINE_STATUS_LABEL: Record<SoStatusLineStatus, string> = {
+  complete: 'Completed',
+  qc_pending: 'QC Pending',
+  no_jc: 'No JC',
+  in_progress: 'In Progress',
+};
+const JC_STATUS_LABEL: Record<SoStatusJcStatus, string> = {
+  complete: 'Completed',
+  qc_pending: 'QC Pending',
+  in_progress: 'In Progress',
+  no_ops: 'No Operations',
+};
+const PRIORITY_LABEL: Record<string, string> = { high: 'High', normal: 'Normal' };
 
 export function exportSoStatusExcel(data: SoStatusResponse): void {
   const { header, lines } = data;
@@ -26,10 +41,10 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
     'Order Qty': l.orderQty,
     Completed: l.doneQty,
     'Progress %': l.completionPct,
-    'SO Status': l.status,
+    'SO Status': LINE_STATUS_LABEL[l.status],
     'JC Issued': l.chips.jcIssued.qty,
     'PO Raised': l.chips.poRaised.qty,
-    'GRN Recd': l.chips.grnReceived.qty,
+    'GRN Received': l.chips.grnReceived.qty,
     'QC Accepted': l.chips.qcAccepted.qty,
     Produced: l.chips.produced.qty,
     Dispatched: l.chips.dispatched.qty,
@@ -53,9 +68,9 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
       Completed: jc.doneQty,
       Pending: jc.remainingQty,
       'Progress %': jc.completionPct,
-      Priority: jc.priority,
+      Priority: PRIORITY_LABEL[jc.priority] ?? jc.priority,
       'Due Date': jc.dueDate ?? '',
-      'JC Status': jc.status,
+      'JC Status': JC_STATUS_LABEL[jc.status],
     })),
   );
 
@@ -63,8 +78,10 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lineRows), 'Lines');
   XLSX.utils.book_append_sheet(
     wb,
-    XLSX.utils.json_to_sheet(jcRows.length ? jcRows : [{ 'SO No.': header.code, note: 'No job cards' }]),
+    XLSX.utils.json_to_sheet(
+      jcRows.length ? jcRows : [{ 'SO No.': header.code, Note: 'No job cards' }],
+    ),
     'Job Cards',
   );
-  XLSX.writeFile(wb, `so-status-${header.code}.xlsx`);
+  XLSX.writeFile(wb, `SO Status Export ${header.code}.xlsx`);
 }

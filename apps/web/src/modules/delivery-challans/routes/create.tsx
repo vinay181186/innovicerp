@@ -104,7 +104,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <div className="section-hdr" style={{ marginBottom: 8 }}>
-        📦 OSP Delivery Challan &amp; Outward
+        📦 OSP Outward DC
       </div>
 
       <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
@@ -552,7 +552,7 @@ function PoDcFormBody({
           <div>
             {/* Reads "PO No / NC No" because this same summary slot carries the
                 NC number on the Against-NC form. */}
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO No / NC No</span>
+            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO No. / NC No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {po.code}
@@ -943,12 +943,12 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
           <table className="innovic-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th>NC No</th>
+                <th>NC No.</th>
                 {/* POL = the CUSTOMER's own PO line number off the SO line
                     behind the job card this NC was raised on. */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code · Name</th>
-                <th>Qty to return</th>
+                <th>Qty to Return</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
@@ -1123,7 +1123,7 @@ function NcDcFormBody({
           }}
         >
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO No / NC No</span>
+            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO No. / NC No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {nc.code}

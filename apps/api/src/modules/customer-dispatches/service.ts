@@ -112,7 +112,7 @@ async function syncSoDispatchStatus(
         detail:
           next === 'dispatched'
             ? `${soCode} — All lines fully dispatched`
-            : `${soCode} — Dispatch reversed → ${next}`,
+            : `${soCode} — Dispatch cancelled; status back to ${next === 'closed' ? 'Closed' : 'Open'}`,
         refId: soCode,
       },
       companyId,
@@ -155,8 +155,8 @@ async function moveDispatchStock(
   // dispatch could drive on_hand negative — SO-517 class of bug).
   if (dir === 'out' && qty > before) {
     throw new ConflictError(
-      `Insufficient stock to dispatch${component ? ` ${component.code}` : ''}: ` +
-        `on-hand ${before}, requested ${qty}. Cannot dispatch more than physical stock.`,
+      `${component ? `${component.code}: ` : ''}Dispatch Qty (${qty}) cannot be more than ` +
+        `In Stock (${before}).`,
     );
   }
   const after = dir === 'out' ? before - qty : before + qty;
@@ -477,7 +477,7 @@ async function loadSo(
     )
     .limit(1);
   const so = rows[0];
-  if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+  if (!so) throw new NotFoundError('SO not found. Refresh the page.');
   return so;
 }
 
@@ -724,7 +724,7 @@ async function getDispatchInternal(
     )
     .limit(1);
   const h = rows[0];
-  if (!h) throw new NotFoundError(`Dispatch ${id} not found`);
+  if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
 
   const lineRows = await tx
     .select({
@@ -825,11 +825,11 @@ export async function createDispatch(
     for (const l of input.lines) {
       const d = byLine.get(l.salesOrderLineId);
       if (!d) {
-        throw new ValidationError(`Line ${l.salesOrderLineId} does not belong to SO ${so.code}`);
+        throw new ValidationError(`This line is not on SO ${so.code}. Please reload the SO.`);
       }
       if (l.qty > d.availableQty) {
         throw new ConflictError(
-          `${d.itemName}: only ${d.availableQty} ready to dispatch (requested ${l.qty})`,
+          `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): Dispatch Qty (${l.qty}) cannot be more than Dispatchable (${d.availableQty}).`,
         );
       }
       // The order itself is the outer ceiling. Readiness is derived from
@@ -839,8 +839,8 @@ export async function createDispatch(
       // and the invoice cap are computed from.
       if (l.qty > d.pendingQty) {
         throw new ConflictError(
-          `${d.itemName}: only ${d.pendingQty} still pending on this order line ` +
-            `(ordered ${d.orderQty}, already dispatched ${d.dispatchedQty}) — requested ${l.qty}`,
+          `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): Dispatch Qty (${l.qty}) cannot be more than ` +
+            `Pending (${d.pendingQty}) — Order Qty ${d.orderQty}, Already Dispatched ${d.dispatchedQty}.`,
         );
       }
     }
@@ -984,9 +984,9 @@ export async function cancelDispatch(
       )
       .limit(1);
     const h = rows[0];
-    if (!h) throw new NotFoundError(`Dispatch ${id} not found`);
+    if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
     if (h.status === 'cancelled')
-      throw new ValidationError(`Dispatch ${h.code} is already cancelled`);
+      throw new ValidationError(`Dispatch ${h.code} is already Cancelled.`);
 
     const lineRows = await tx
       .select()
@@ -1019,8 +1019,8 @@ export async function cancelDispatch(
       const invoiced = Number(chk[0]?.invoiced ?? 0);
       if (invoiced > dispatched - l.qty) {
         throw new ValidationError(
-          `Cannot cancel dispatch ${h.code}: line ${l.lineNo} is already invoiced ` +
-            `(invoiced ${invoiced}, dispatched ${dispatched}). Cancel or credit the invoice first.`,
+          `Cannot cancel Dispatch ${h.code}: Ln ${l.lineNo} is already invoiced ` +
+            `(Invoiced ${invoiced}, Dispatched ${dispatched}). Cancel the invoice first.`,
         );
       }
     }

@@ -69,6 +69,60 @@ const ACTION_BADGE: Record<string, string> = {
   JW_CLOSED: 'b-green',
 };
 
+// The words shown for each action code. The codes stay as stored (they are
+// the filter values); only the text changes. Unmapped codes read as Title
+// Case with document abbreviations (SO, JC, PR, …) kept upper-case.
+const ACTION_LABEL: Record<string, string> = {
+  CREATE: 'Created',
+  EDIT: 'Edited',
+  DELETE: 'Deleted',
+  RESTORE: 'Restored',
+  DISPATCH: 'Dispatched',
+  'PERM DELETE': 'Deleted Permanently',
+  OP_START: 'Operation Started',
+  OP_STOP: 'Operation Stopped',
+  OP_COMPLETE: 'Operation Completed',
+  'OP START': 'Operation Started',
+  'OP COMPLETE': 'Operation Completed',
+  PR_CONVERT: 'PR Converted to PO',
+  NC_DISPOSE: 'NC Disposition Set',
+  NC_CLOSE_REWORK: 'NC Closed after Rework',
+  JC_COMPLETE: 'JC Completed',
+  SO_LINE_CLOSED: 'SO Line Closed',
+  SO_CLOSED: 'SO Closed',
+  JW_LINE_CLOSED: 'JWSO Line Closed',
+  JW_CLOSED: 'JWSO Closed',
+};
+const ACTION_ABBR = new Set([
+  'SO',
+  'JC',
+  'PR',
+  'PO',
+  'NC',
+  'GRN',
+  'DC',
+  'QC',
+  'JWSO',
+  'BOM',
+  'OSP',
+  'TPI',
+  'CAPA',
+]);
+function actionLabel(action: string): string {
+  return (
+    ACTION_LABEL[action] ??
+    action
+      .split(/[_ ]+/)
+      .filter(Boolean)
+      .map((w) =>
+        ACTION_ABBR.has(w.toUpperCase())
+          ? w.toUpperCase()
+          : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+      )
+      .join(' ')
+  );
+}
+
 function ActivityLogListPage() {
   const search = activityLogListRoute.useSearch();
   const navigate = activityLogListRoute.useNavigate();
@@ -170,7 +224,7 @@ function ActivityLogListPage() {
             <option value="">All Actions</option>
             {(data?.actions ?? []).map((a) => (
               <option key={a} value={a}>
-                {a}
+                {actionLabel(a)}
               </option>
             ))}
           </select>
@@ -284,7 +338,7 @@ function ActivityLogListPage() {
                         {time}
                       </td>
                       <td>
-                        <span className={`badge ${badgeClass}`}>{e.action}</span>
+                        <span className={`badge ${badgeClass}`}>{actionLabel(e.action)}</span>
                       </td>
                       <td className="fw-700" style={{ fontSize: 12 }}>
                         {e.entity}

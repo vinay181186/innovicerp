@@ -237,7 +237,8 @@ export async function createToolIssue(
       )
       .limit(1);
     const itm = itemRows[0];
-    if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);
+    if (!itm)
+      throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
 
     await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itm.id}::uuid FOR UPDATE`);
 
@@ -249,7 +250,7 @@ export async function createToolIssue(
     const stockBefore = Number(balRows[0]?.on_hand ?? 0);
     if (input.qty > stockBefore) {
       throw new ConflictError(
-        `Insufficient stock for ${itm.code}: available ${stockBefore}, requested ${input.qty}`,
+        `Item ${itm.code}: Qty (${input.qty}) cannot be more than In Stock (${stockBefore}).`,
       );
     }
     const stockAfter = stockBefore - input.qty;
@@ -298,7 +299,7 @@ export async function createToolIssue(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert tool issue');
+    if (!row) throw new ValidationError('Could not save Tool Issue. Try again.');
 
     return rowToToolIssue(row);
   });
@@ -329,9 +330,9 @@ export async function recordToolReturn(
       )
       .limit(1);
     const ti = tiRows[0];
-    if (!ti) throw new NotFoundError(`Tool issue ${toolIssueId} not found`);
+    if (!ti) throw new NotFoundError('Tool Issue not found. Refresh the page.');
     if (ti.returnStatus === 'returned') {
-      throw new ConflictError(`Tool issue ${ti.code} is already fully returned`);
+      throw new ConflictError(`Tool Issue ${ti.code} is already fully Returned.`);
     }
 
     await tx.execute(sql`SELECT 1 FROM public.tool_issues WHERE id = ${ti.id}::uuid FOR UPDATE`);
@@ -345,7 +346,7 @@ export async function recordToolReturn(
     if (alreadyReturned + totalThisReturn > ti.qty) {
       const remaining = ti.qty - alreadyReturned;
       throw new ConflictError(
-        `Return overshoots issued qty. Issued ${ti.qty}, already returned ${alreadyReturned}, remaining ${remaining}, this return ${totalThisReturn}.`,
+        `Return Qty (${totalThisReturn}) cannot be more than Pending Return Qty (${remaining}) — Issued ${ti.qty}, already Returned ${alreadyReturned}.`,
       );
     }
 
@@ -415,7 +416,7 @@ export async function recordToolReturn(
       .where(eq(toolIssues.id, ti.id))
       .returning();
     const row = updated[0];
-    if (!row) throw new ValidationError('Failed to update tool issue after return');
+    if (!row) throw new ValidationError('Could not save Tool Return. Try again.');
 
     return rowToToolIssue(row);
   });

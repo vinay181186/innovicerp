@@ -472,7 +472,7 @@ function Row({
                 }}
                 onClick={onOutsource}
               >
-                🏭 Outsource balance
+                🏭 Outsource Pending
               </button>
             ) : null}
           </div>
@@ -604,7 +604,7 @@ function ChangeMachineModal({
                   <b style={{ color: 'var(--text2)' }}>{m.machineCode}</b>: {m.qty} pcs
                 </span>
               ))}
-              . Each stays recorded against its own machine. The new machine takes the remaining{' '}
+              . Each stays recorded against its own machine. The new machine takes the pending{' '}
               <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
             </div>
           ) : row.completed > 0 ? (
@@ -613,7 +613,7 @@ function ChangeMachineModal({
               <b style={{ color: 'var(--text2)' }}>
                 {row.machines[0]?.machineCode ?? row.machineCode ?? 'the planned machine'}
               </b>
-              . The new machine takes the remaining{' '}
+              . The new machine takes the pending{' '}
               <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
             </div>
           ) : (
@@ -936,10 +936,10 @@ function CreatePrModal({
           >
             {create.isPending ? (
               <>
-                <Loader2 size={14} className="inline animate-spin" /> Creating…
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
               </>
             ) : (
-              'Create PR'
+              'Save PR'
             )}
           </button>
         </div>
@@ -1013,7 +1013,7 @@ function OutsourceBalanceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Outsource Balance — {row.jcCode} Op{opSrNo(row.opSeq)}
+          Outsource Pending Qty — {row.jcCode} Op{opSrNo(row.opSeq)}
         </div>
         <div
           style={{
@@ -1044,7 +1044,7 @@ function OutsourceBalanceModal({
               {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
             </span>{' '}
             · Available: <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs. Sends the
-            balance to a vendor as a JW OSP purchase request.
+            pending qty to a vendor as a JW OSP purchase request.
           </div>
         </div>
 
@@ -1125,7 +1125,7 @@ function OutsourceBalanceModal({
                 <Loader2 size={14} className="inline animate-spin" /> Outsourcing…
               </>
             ) : (
-              'Outsource balance'
+              'Outsource Pending'
             )}
           </button>
         </div>

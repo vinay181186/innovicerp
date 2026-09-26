@@ -183,7 +183,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
       setApproveOpen(false);
       setApproveRemarks('');
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Approve failed');
+      setActionError(e instanceof Error ? e.message : 'Could not approve PO. Try again.');
     }
   }
 
@@ -199,7 +199,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
       setRejectOpen(false);
       setRejectReason('');
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Reject failed');
+      setActionError(e instanceof Error ? e.message : 'Could not reject PO. Try again.');
     }
   }
 

@@ -143,7 +143,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
               <tr>
                 <th>JC No.</th>
                 <th>Op</th>
-                <th>Machine</th>
+                <th>Planned Machine</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="td-ctr">Available</th>

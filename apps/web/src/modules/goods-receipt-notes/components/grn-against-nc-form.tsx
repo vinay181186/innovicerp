@@ -355,7 +355,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
         className="form-label"
         style={{ fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}
       >
-        Line items — still out on this return challan
+        Line Items — still out on this return challan
       </div>
 
       <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
@@ -388,7 +388,7 @@ export function GrnAgainstNcForm({ onLeave, onCancel }: GrnAgainstNcFormProps): 
                     ? 'Pick an NC to load its return challan.'
                     : !dc
                       ? 'Loading return challan lines…'
-                      : 'Every line on this return challan is already received — nothing left to book in.'}
+                      : 'Every line on this return challan is already received — nothing pending to receive.'}
                 </td>
               </tr>
             ) : (

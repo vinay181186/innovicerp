@@ -13,15 +13,15 @@ import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
 
 // No Code column — the server auto-generates the next CLI-### on import.
 const COLUMNS = [
-  'Name*',
+  'Customer Name*',
   'Contact Person',
   'Phone',
   'Email',
-  'GST No.',
+  'GSTIN',
   'Address',
   'City',
   'State',
-  'PIN',
+  'Pincode',
   'Status (Active/Inactive)',
 ] as const;
 
@@ -34,7 +34,7 @@ export function downloadClientTemplate(): void {
   ws['!cols'] = [22, 18, 14, 22, 18, 30, 14, 12, 8, 18].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Customers');
-  XLSX.writeFile(wb, 'Customer_Import_Template.xlsx');
+  XLSX.writeFile(wb, 'Customer Import Template.xlsx');
 }
 
 export interface ClientImportResult {
@@ -55,10 +55,19 @@ export async function parseClientImportFile(file: File): Promise<ClientImportRes
     // Code is optional — the server auto-generates the next CLI-### when it is
     // omitted. A file that still carries a Code column is honoured if present.
     const code = getCol(r, ['Code*', 'Code', 'code', 'Client Code']);
-    const name = getCol(r, ['Name*', 'Name', 'name', 'Client Name']);
+    // Headers renamed 2026-09-26 (Name → Customer Name, GST No. → GSTIN, PIN →
+    // Pincode); the old names stay in each alias list so older sheets import.
+    const name = getCol(r, [
+      'Customer Name*',
+      'Customer Name',
+      'Name*',
+      'Name',
+      'name',
+      'Client Name',
+    ]);
     if (!code && !name) return;
     if (!name) {
-      errors.push(`Row ${rowNum}: Name is required — skipped`);
+      errors.push(`Row ${rowNum}: Customer Name is required — skipped`);
       return;
     }
     if (code && seen.has(code)) {
@@ -75,11 +84,11 @@ export async function parseClientImportFile(file: File): Promise<ClientImportRes
       contactPerson: getCol(r, ['Contact Person', 'Contact', 'contact']) || undefined,
       email: getCol(r, ['Email', 'email']) || undefined,
       phone: getCol(r, ['Phone', 'phone']) || undefined,
-      gstNumber: getCol(r, ['GST No.', 'GST', 'gst', 'GST No']) || undefined,
+      gstNumber: getCol(r, ['GSTIN', 'GST No.', 'GST', 'gst', 'GST No']) || undefined,
       addressLine1: getCol(r, ['Address', 'address']) || undefined,
       city: getCol(r, ['City', 'city']) || undefined,
       state: getCol(r, ['State', 'state']) || undefined,
-      pincode: getCol(r, ['PIN', 'Pincode', 'pincode', 'PinCode']) || undefined,
+      pincode: getCol(r, ['Pincode', 'PIN', 'pincode', 'PinCode']) || undefined,
       isActive: status.value,
     });
   });

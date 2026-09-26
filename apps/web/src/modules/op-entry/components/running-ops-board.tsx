@@ -92,7 +92,8 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
       { id: stopRow.id, ...input },
       {
         onSuccess: () => setStopRow(null),
-        onError: (e) => setStopError(e instanceof Error ? e.message : 'Stop failed'),
+        onError: (e) =>
+          setStopError(e instanceof Error ? e.message : 'Could not stop operation. Try again.'),
       },
     );
   }

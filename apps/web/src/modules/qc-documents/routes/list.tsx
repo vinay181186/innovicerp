@@ -639,9 +639,9 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
     const cells = r.cells.map((c) => {
       if (!c.applicable) return '—';
       if (c.done)
-        return c.hasDoc ? `✅ Completed (${fmtDate(c.docDate)})` : 'Completed - Report Missing';
+        return c.hasDoc ? `Completed (${fmtDate(c.docDate)})` : 'Completed, Report Missing';
       if (c.pending)
-        return `⏳ Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} Accepted` : ''}`;
+        return `Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} Accepted` : ''}`;
       return 'Waiting';
     });
     const overall =

@@ -20,6 +20,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { ACCESS_DEPTS } from '@innovic/shared';
 import { useUserAccessList } from '@/modules/access-control/api';
 import { useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
+import { roleLabel } from '@/lib/role-label';
 
 function roleBadgeClass(role: string): string {
   if (role === 'admin') return 'b-red';
@@ -296,7 +297,9 @@ function UserEditPage(): React.JSX.Element {
                   ) : (
                     <span className="text3">Not set</span>
                   )}
-                  <span className={`badge ${roleBadgeClass(detail.role)}`}>{detail.role}</span>
+                  <span className={`badge ${roleBadgeClass(detail.role)}`}>
+                    {roleLabel(detail.role)}
+                  </span>
                   <Link to="/access-control" search={{ configure: detail.id }} className="btn btn-ghost btn-sm">
                     <Lock size={13} /> Change in Access Control
                   </Link>

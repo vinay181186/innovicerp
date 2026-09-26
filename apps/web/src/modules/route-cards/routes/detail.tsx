@@ -85,7 +85,7 @@ function RouteCardDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Route card not found.'}
+            {error instanceof Error ? error.message : 'Route Card not found.'}
           </div>
         </div>
       </div>
@@ -391,6 +391,13 @@ function RouteCardDetailPage(): React.JSX.Element {
 // Each row opens now. The colours and chips deliberately match the live
 // operations table above, so an old routing reads exactly like the current one.
 
+// Op Type as the user reads it — never the raw code.
+const OP_TYPE_LABEL: Record<string, string> = {
+  process: 'In-house',
+  outsource: 'Outsource',
+  qc: 'QC',
+};
+
 function opAccent(opType: string): string {
   return opType === 'qc'
     ? 'var(--green)'
@@ -440,7 +447,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                       {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                     </td>
                     <td className="mono fw-700" style={{ color: 'var(--amber)' }}>
-                      Rev {rev.revisionNo}
+                      Route Card Rev {rev.revisionNo}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
                       {new Date(rev.createdAt).toISOString().slice(0, 10)}
@@ -468,7 +475,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                             marginBottom: 6,
                           }}
                         >
-                          ROUTING AT REV {rev.revisionNo}
+                          ROUTING AT ROUTE CARD REV {rev.revisionNo}
                         </div>
                         <div className="tbl-wrap">
                           <table className="innovic-table">
@@ -498,7 +505,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                         className="badge"
                                         style={{ color: accent, fontWeight: 700 }}
                                       >
-                                        {op.opType.toUpperCase()}
+                                        {OP_TYPE_LABEL[op.opType] ?? op.opType}
                                       </span>
                                     </td>
                                     <td className="mono" style={{ fontSize: 12 }}>

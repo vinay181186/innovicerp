@@ -191,7 +191,8 @@ export async function createStoreIssue(
       )
       .limit(1);
     const itm = itemRows[0];
-    if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);
+    if (!itm)
+      throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
 
     // 2) Lock the items row for the duration of the tx so concurrent
     //    issues cant double-spend stock.
@@ -206,7 +207,7 @@ export async function createStoreIssue(
     const stockBefore = Number(balRows[0]?.on_hand ?? 0);
     if (input.qty > stockBefore) {
       throw new ConflictError(
-        `Insufficient stock for ${itm.code}: available ${stockBefore}, requested ${input.qty}`,
+        `Item ${itm.code}: Qty (${input.qty}) cannot be more than In Stock (${stockBefore}).`,
       );
     }
     const stockAfter = stockBefore - input.qty;
@@ -257,7 +258,7 @@ export async function createStoreIssue(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert store issue');
+    if (!row) throw new ValidationError('Could not save Item Issue. Try again.');
 
     return {
       id: row.id,

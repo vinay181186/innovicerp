@@ -295,7 +295,7 @@ export async function deleteQcDocument(id: string, user: AuthContext): Promise<{
         ),
       )
       .returning({ id: qcDocuments.id });
-    if (updated.length === 0) throw new NotFoundError(`QC document ${id} not found`);
+    if (updated.length === 0) throw new NotFoundError('QC Document not found. Refresh the page.');
     return { id };
   });
 }
@@ -406,7 +406,7 @@ export async function getQcMatrix(
         AND so.deleted_at IS NULL
     `);
     const soRow = rows(soRows)[0];
-    if (!soRow) throw new NotFoundError(`Sales order ${salesOrderId} not found`);
+    if (!soRow) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
     // SO lines (one row per line, with item code/name). Lines with no JC still
     // surface as a "No JC" matrix row (legacy L23070-23073).
@@ -700,7 +700,7 @@ export async function getQcLineDetail(
         AND jc.deleted_at IS NULL
     `);
     const jcRow = rows(jcRows)[0];
-    if (!jcRow) throw new NotFoundError(`Job card ${jobCardId} not found`);
+    if (!jcRow) throw new NotFoundError('Job Card not found. Refresh the page.');
 
     // QC ops on this JC (drives doc-type sections + batch op names).
     const opRows = rows(

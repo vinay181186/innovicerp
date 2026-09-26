@@ -419,7 +419,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
           <tr>
             <th>JC No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
-            <th>Organization</th>
+            <th>Organisation</th>
             <th>Inspected By</th>
             <th>Accepted</th>
             <th>Rejected</th>
@@ -583,7 +583,12 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
       }}
     >
       <Card label="QC OPS" value={`${t.qcPassed}/${t.qcOps}`} sub="accepted" color={allDone(t.qcPassed, t.qcOps)} />
-      <Card label="INCOMING QC" value={`${t.grnDone}/${t.grn}`} sub="done" color={allDone(t.grnDone, t.grn)} />
+      <Card
+        label="INCOMING QC"
+        value={`${t.grnDone}/${t.grn}`}
+        sub="completed"
+        color={allDone(t.grnDone, t.grn)}
+      />
       <Card
         label="QC PENDING"
         value={t.pendingOps}
@@ -591,7 +596,12 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
         color={t.pendingOps > 0 ? 'var(--red)' : 'var(--green)'}
       />
       <Card label="DOCUMENTS" value={`${t.docsUp}/${t.docs}`} sub="uploaded" color={allDone(t.docsUp, t.docs)} />
-      <Card label="TPI" value={`${t.tpi}/${t.tpi}`} sub="done" color={t.tpi > 0 ? 'var(--green)' : 'var(--text3)'} />
+      <Card
+        label="TPI"
+        value={`${t.tpi}/${t.tpi}`}
+        sub="completed"
+        color={t.tpi > 0 ? 'var(--green)' : 'var(--text3)'}
+      />
     </div>
   );
 }

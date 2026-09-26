@@ -111,7 +111,7 @@ export async function getVendor(id: string, user: AuthContext): Promise<Vendor> 
       .where(and(eq(vendors.id, id), isNull(vendors.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Vendor ${id} not found`);
+    if (!row) throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
     return row as unknown as Vendor;
   });
 }
@@ -159,10 +159,10 @@ export async function createVendor(input: CreateVendorInput, user: AuthContext):
       if (dup) {
         if (dup.deletedAt) {
           throw new ConflictError(
-            `Vendor code "${code}" belongs to a deleted vendor — restore it instead of re-creating`,
+            `Vendor Code "${code}" is in Trash. Restore it from Trash instead.`,
           );
         }
-        throw new ConflictError(`Vendor code "${code}" already exists`);
+        throw new ConflictError(`Vendor Code "${code}" already exists.`);
       }
 
       const inserted = await tx
@@ -259,7 +259,7 @@ export async function createVendorsBulk(
       let code = v.code?.trim();
       if (code) {
         if (takenCodes.has(code.toLowerCase())) {
-          skipped.push({ index, name, reason: `code "${code}" is already used` });
+          skipped.push({ index, name, reason: `Vendor Code "${code}" is already used` });
           continue;
         }
       } else {
@@ -325,7 +325,8 @@ export async function updateVendor(
       .from(vendors)
       .where(and(eq(vendors.id, id), isNull(vendors.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Vendor ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name;
@@ -362,7 +363,8 @@ export async function softDeleteVendor(id: string, user: AuthContext): Promise<{
       .from(vendors)
       .where(and(eq(vendors.id, id), isNull(vendors.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Vendor ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
     await tx
       .update(vendors)
       .set({ deletedAt: new Date(), updatedBy: user.id })

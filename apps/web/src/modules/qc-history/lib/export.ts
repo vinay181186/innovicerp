@@ -25,10 +25,17 @@ import {
   type QcHistoryLogRow,
   type QcHistoryPendingRow,
   opSrNo,
+  SHIFT_LABELS,
 } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/print/doc-print';
+
+/** Shift code ('day') → the word the screens show ('Day'); unknown text passes through. */
+function shiftLabel(code: string | null): string {
+  if (!code) return '';
+  return (SHIFT_LABELS as Record<string, string>)[code] ?? code;
+}
 
 function stamp(): string {
   return new Date().toISOString().slice(0, 10);
@@ -48,7 +55,7 @@ function tagged(
   grn: string,
   rest: Record<string, unknown>,
 ): Record<string, unknown> {
-  return mixed ? { Source: source, GRN: grn, ...rest } : rest;
+  return mixed ? { Source: source, 'GRN No.': grn, ...rest } : rest;
 }
 
 export function exportCompletedQc(
@@ -69,10 +76,10 @@ export function exportCompletedQc(
         Accepted: l.accepted,
         Rejected: l.rejected,
         'QC Date': fmtDate(l.logDate),
-        Shift: l.shift ?? '',
+        Shift: shiftLabel(l.shift),
         'Inspected By': l.inspector ?? '',
         Remarks: l.remarks ?? '',
-        'Log No': l.logNo,
+        'Log No.': l.logNo,
       }),
     ),
     ...incoming.map((l) =>
@@ -90,11 +97,11 @@ export function exportCompletedQc(
         Shift: '',
         'Inspected By': l.qcInspectedBy ?? '',
         Remarks: l.qcRemarks ?? '',
-        'Log No': '',
+        'Log No.': '',
       }),
     ),
   ];
-  download(rows, 'QC Completed', `qc-completed-${stamp()}.xlsx`);
+  download(rows, 'QC Completed', `QC Completed Export ${stamp()}.xlsx`);
 }
 
 export function exportPendingQc(
@@ -117,8 +124,8 @@ export function exportPendingQc(
         Accepted: o.qcAccepted,
         Rejected: o.qcRejected,
         Pending: o.qcPending,
-        Since: fmtDate(o.pendSince),
-        Overdue: o.overdue ? 'YES' : '',
+        'Pending Since': fmtDate(o.pendSince),
+        Overdue: o.overdue ? 'Yes' : '',
       }),
     ),
     ...incoming.map((o) =>
@@ -135,10 +142,10 @@ export function exportPendingQc(
         Accepted: '',
         Rejected: '',
         Pending: o.pendingQty,
-        Since: fmtDate(o.grnDate),
+        'Pending Since': fmtDate(o.grnDate),
         Overdue: '',
       }),
     ),
   ];
-  download(rows, 'QC Pending', `qc-pending-${stamp()}.xlsx`);
+  download(rows, 'QC Pending', `QC Pending Export ${stamp()}.xlsx`);
 }

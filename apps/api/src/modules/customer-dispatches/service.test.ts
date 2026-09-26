@@ -258,6 +258,6 @@ describe('customer dispatch — assembly finished-good stock legs', () => {
         { salesOrderId: soId, dispatchDate: '2026-08-03', lines: [{ salesOrderLineId: soLineId, qty: 4 }] },
         admin,
       ),
-    ).rejects.toThrow(/only 3 ready to dispatch/);
+    ).rejects.toThrow(/cannot be more than Dispatchable \(3\)/);
   });
 });

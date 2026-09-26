@@ -161,7 +161,7 @@ export function StockLedger(): React.JSX.Element {
         ),
       },
       {
-        header: 'Stock before → after',
+        header: 'Stock Before → After',
         id: 'stockAfter',
         accessorFn: (r) => r.stockAfter,
         meta: { tdClass: 'mono' },
@@ -333,7 +333,9 @@ export function StockLedger(): React.JSX.Element {
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
                     <span style={{ color: 'var(--red)' }}>
-                      {error instanceof Error ? error.message : 'Failed to load store transactions'}
+                      {error instanceof Error
+                        ? error.message
+                        : 'Could not load store transactions. Try again.'}
                     </span>
                   </td>
                 </tr>

@@ -72,7 +72,7 @@ export function ReservationDrilldown({
         </div>
       ) : isError ? (
         <div className="empty-state" style={{ color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load reservations'}
+          {error instanceof Error ? error.message : 'Could not load reservations. Try again.'}
         </div>
       ) : (
         <>
@@ -103,7 +103,7 @@ export function ReservationDrilldown({
                   <th style={{ color: 'var(--green)' }}>Pending</th>
                   <th>Source</th>
                   <th>Reservation Status</th>
-                  <th>Production Order No</th>
+                  <th>Production Order No.</th>
                   <th>JC No.</th>
                   <th>Reserved On</th>
                   <th>Reserved By</th>

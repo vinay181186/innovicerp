@@ -67,7 +67,7 @@ export function DcReceiptsPanel({
                     <th>Item Code · Name</th>
                     <th>Received</th>
                     <th>Rejected</th>
-                    <th>Reject reason</th>
+                    <th>Rejection Reason</th>
                   </tr>
                 </thead>
                 <tbody>

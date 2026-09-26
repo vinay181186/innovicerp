@@ -39,6 +39,7 @@ import { userAccess, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { labelOf, ROLE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
@@ -399,7 +400,7 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
       .where(and(eq(users.id, userId), isNull(users.deletedAt)))
       .limit(1);
     if (target.length === 0 || target[0]!.companyId !== companyId) {
-      throw new NotFoundError(`User ${userId} not found`);
+      throw new NotFoundError('User not found. Refresh the page.');
     }
 
     const rows = await tx
@@ -487,7 +488,7 @@ export async function saveUserAccess(
       .where(and(eq(users.id, userId), isNull(users.deletedAt)))
       .limit(1);
     if (target.length === 0 || target[0]!.companyId !== companyId) {
-      throw new NotFoundError(`User ${userId} not found`);
+      throw new NotFoundError('User not found. Refresh the page.');
     }
     const targetUser = target[0]!;
 
@@ -513,7 +514,7 @@ export async function saveUserAccess(
     ) {
       throw new ValidationError(
         `${targetUser.fullName ?? targetUser.email} is an admin. Saving this access would ` +
-          `change them to "${derivedRole}" and they would lose admin rights. Tick Full Access ` +
+          `change them to "${labelOf(ROLE_LABEL, derivedRole)}" and they would lose admin rights. Tick Full Access ` +
           `to keep them an admin, or confirm the change.`,
       );
     }
@@ -598,7 +599,7 @@ export async function saveUserAccess(
               ? 'YES'
               : 'no'
           }` +
-          ` [role → ${derivedRole}]`,
+          ` [role → ${labelOf(ROLE_LABEL, derivedRole)}]`,
         refId: userId,
       },
       companyId,

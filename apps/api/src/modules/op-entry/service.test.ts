@@ -621,7 +621,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
       .where(and(eq(activityLog.action, 'CREATE'), eq(activityLog.entity, 'NonConformance')));
     const myNcRow = ncAudit.find((r) => r.refId === ncs[0]?.code);
     expect(myNcRow).toBeDefined();
-    expect(myNcRow?.detail).toContain('auto from QC reject');
+    expect(myNcRow?.detail).toContain('Rejected at QC (auto NC)');
 
     // T-040f: op_seq=2 IS the last op on testJc → stock cascade fired.
     // qty=8 accepted → store_transactions IN row crediting testItem with 8.
@@ -876,7 +876,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
         },
         admin,
       ),
-    ).rejects.toThrow(/exceeds QC pending/);
+    ).rejects.toThrow(/cannot be more than QC Pending/);
 
     // No NC row should exist — tx rolled back.
     const ncs = await db.select().from(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
@@ -988,7 +988,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
         },
         admin,
       ),
-    ).rejects.toThrow(/exceeds QC pending/);
+    ).rejects.toThrow(/cannot be more than QC Pending/);
 
     if (qcOpId) {
       await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
@@ -1014,7 +1014,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
         },
         admin,
       ),
-    ).rejects.toThrow(/No QC pending/);
+    ).rejects.toThrow(/Nothing is QC Pending/);
 
     if (qcOpId) {
       await db.delete(jcOps).where(eq(jcOps.id, qcOpId));

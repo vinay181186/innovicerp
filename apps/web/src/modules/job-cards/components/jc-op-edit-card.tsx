@@ -19,7 +19,7 @@
 // The edit table has no Start / Log / QC action cell — so this card has no
 // footer either. No logic, no calculation and no API call changed.
 import type { JcOpEnriched, JobCardListItem, OpLog } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import { opSrNo, SHIFT_LABELS } from '@innovic/shared';
 import { useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -478,10 +478,10 @@ export function JcOpEditCard({
                       border: '1px solid rgba(245,158,11,0.4)',
                       padding: '2px 6px',
                     }}
-                    title={`Outsource the remaining ${op.available} pc(s) of this started operation`}
+                    title={`Outsource the pending ${op.available} pc(s) of this started operation`}
                     onClick={onOutsourceBalance}
                   >
-                    🏭 Outsource balance
+                    🏭 Outsource Pending
                   </button>
                 ) : (
                   <label
@@ -510,7 +510,7 @@ export function JcOpEditCard({
                         color: isOut ? 'var(--amber)' : 'var(--text3)',
                       }}
                     >
-                      {op.hasStarted ? 'OUTSRC 🔒' : 'OUTSOURCE'}
+                      {op.hasStarted ? 'Outsource 🔒' : 'Outsource'}
                     </span>
                   </label>
                 )}
@@ -626,7 +626,7 @@ export function JcOpEditCard({
                     <span className="mono" style={{ color: 'var(--text3)' }}>
                       {l.logDate}
                     </span>{' '}
-                    · {l.shift} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
+                    · {SHIFT_LABELS[l.shift]} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
                     {l.operatorName ?? ''}
                   </div>
                 ))}

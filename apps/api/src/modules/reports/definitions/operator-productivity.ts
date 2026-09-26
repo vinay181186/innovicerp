@@ -11,7 +11,7 @@ export const operatorProductivityReport: RegisteredReport = {
     slug: 'operator-productivity',
     title: 'Operator productivity',
     description:
-      'Per-operator total qty + log count + reject rate over a date range. Aggregates op_log; operators with zero logs in the window do not appear.',
+      'Per-operator total qty, entry count and reject rate over a date range, from Op Entry. Operators with no entries in the window do not appear.',
     group: 'Operations',
     filters: [
       { key: 'fromDate', label: 'Log Date From', kind: 'date' },

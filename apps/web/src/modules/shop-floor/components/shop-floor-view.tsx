@@ -40,7 +40,8 @@ export function ShopFloorView(): React.JSX.Element {
       { id: stopRow.row.runningOpId, ...input },
       {
         onSuccess: () => setStopRow(null),
-        onError: (e) => setStopError(e instanceof Error ? e.message : 'Stop failed'),
+        onError: (e) =>
+          setStopError(e instanceof Error ? e.message : 'Could not stop operation. Try again.'),
       },
     );
   }
@@ -119,7 +120,7 @@ export function ShopFloorView(): React.JSX.Element {
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+              {error instanceof Error ? error.message : 'Could not load shop floor. Try again.'}
             </div>
           </div>
         </div>

@@ -116,7 +116,7 @@ export async function getTpiMaster(id: string, user: AuthContext): Promise<TpiMa
       .where(and(eq(tpiMasters.id, id), isNull(tpiMasters.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`TPI inspector ${id} not found`);
+    if (!row) throw new NotFoundError('TPI Inspector not found. Refresh the page.');
     return row as unknown as TpiMaster;
   });
 }
@@ -183,7 +183,8 @@ export async function updateTpiMaster(
       .from(tpiMasters)
       .where(and(eq(tpiMasters.id, id), isNull(tpiMasters.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`TPI inspector ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('TPI Inspector not found. Refresh the page.');
 
     // `code` is absent from UpdateTpiMasterInput and is never written here: the
     // TPI logs already signed off under that name have to keep agreeing with
@@ -217,7 +218,8 @@ export async function softDeleteTpiMaster(id: string, user: AuthContext): Promis
       .from(tpiMasters)
       .where(and(eq(tpiMasters.id, id), isNull(tpiMasters.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`TPI inspector ${id} not found`);
+    if (existing.length === 0)
+      throw new NotFoundError('TPI Inspector not found. Refresh the page.');
 
     // Soft delete only. A TPI log stores the inspector's name as text, so
     // removing the master row never rewrites an inspection already signed off —

@@ -205,7 +205,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                     Qty: <b>{r.totalRequiredQty}</b>
                   </span>
                   <span className="text3" style={{ fontSize: 10 }}>
-                    Done: <b style={{ color: 'var(--green)' }}>{r.totalDoneQty}</b>
+                    Completed: <b style={{ color: 'var(--green)' }}>{r.totalDoneQty}</b>
                   </span>
                   <div
                     style={{

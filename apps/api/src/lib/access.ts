@@ -39,6 +39,14 @@ const ACTION_VERB: Record<AccessAction, string> = {
   approve: 'approve records in',
 };
 
+// The tick-box names on the Access Control screen, for the refusal message.
+const ACTION_TICK: Record<AccessAction, string> = {
+  view: 'View',
+  entry: 'Entry',
+  edit: 'Edit',
+  approve: 'Approve',
+};
+
 function formLabel(formKey: AccessFormKey): string {
   return ACCESS_FORMS.find((f) => f.key === formKey)?.label ?? formKey;
 }
@@ -77,7 +85,7 @@ export async function requireFormAccess(
 
   throw new AuthorizationError(
     `Your access does not let you ${ACTION_VERB[action]} ${formLabel(formKey)}. ` +
-      `Ask an admin to raise your tier for this department, or to tick ${action} ` +
+      `Ask an admin to raise your tier for this department, or to tick ${ACTION_TICK[action]} ` +
       `on ${formLabel(formKey)} in Access Control.`,
   );
 }

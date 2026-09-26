@@ -612,7 +612,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         '<td class="colh ctr" style="width:24mm">Received</td>' +
         '<td class="colh ctr" style="width:22mm">Accepted</td>' +
         '<td class="colh ctr" style="width:22mm">Rejected</td>' +
-        '<td class="colh ctr" style="width:24mm">QC status</td>'
+        '<td class="colh ctr" style="width:24mm">QC Status</td>'
       : '<td class="colh ctr" style="width:11mm">Sr No</td>' +
       polHead +
       '<td class="colh">Item Code</td>' +
@@ -689,15 +689,15 @@ export function buildSheetHtml(model: SheetPrintModel): string {
 
   const wordsRow = money?.amountInWords
     ? sectionRow(
-        `<div class="terms words"><b>Amount chargeable (in words)</b><br><i>${esc(money.amountInWords)}</i></div>`,
+        `<div class="terms words"><b>Amount in Words</b><br><i>${esc(money.amountInWords)}</i></div>`,
       )
     : '';
 
   const receiver =
-    model.receiverCell ?? (po ? '' : 'Received by &mdash; job worker<br>Name, sign &amp; date');
+    model.receiverCell ?? (po ? '' : 'Received By (Vendor)<br>Name, Sign &amp; Date');
   const signCells = [
-    'Prepared by',
-    signature || `Authorised signatory<br>for ${esc(company.name)}`,
+    'Prepared By',
+    signature || `Authorised Signatory<br>for ${esc(company.name)}`,
     ...(receiver ? [receiver] : []),
   ];
 
@@ -721,8 +721,8 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         ${qtyTotalRow}
         ${moneyRows}
         ${wordsRow}
-        ${specialNotes ? sectionRow(`<div class="terms"><b>Special notes</b><br>${specialNotes}</div>`) : ''}
-        ${terms ? sectionRow(`<div class="terms"><b>Conditions</b><br>${terms}</div>`) : ''}
+        ${specialNotes ? sectionRow(`<div class="terms"><b>Special Notes</b><br>${specialNotes}</div>`) : ''}
+        ${terms ? sectionRow(`<div class="terms"><b>Terms &amp; Conditions</b><br>${terms}</div>`) : ''}
         ${sectionRow(
           `<div class="signs" style="grid-template-columns:repeat(${signCells.length},1fr)">${signCells
             .map((c) => `<div>${c}</div>`)

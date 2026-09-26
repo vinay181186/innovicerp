@@ -61,7 +61,7 @@ export const PICK_VENDOR_FIRST_PLACEHOLDER = 'Select a Vendor first…';
  *  PO is raised (ADR-152). */
 export function noOpenPrsMessage(vendorName: string): string {
   const who = vendorName.trim() === '' ? 'this vendor' : vendorName.trim();
-  return `No Purchase Requests left to order for ${who} — raise a PR first, or choose another vendor.`;
+  return `No Purchase Requests pending to order for ${who} — raise a PR first, or choose another vendor.`;
 }
 
 export interface PrPickerProps {

@@ -44,6 +44,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
+import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import {
   soPlanningKeys,
   usePlanningSoDetail,
@@ -465,7 +466,7 @@ function OrderList({
                       {so.customerName ?? '—'}
                     </td>
                     <td>
-                      <span className="badge b-grey">{so.soType.replaceAll('_', ' ')}</span>
+                      <span className="badge b-grey">{soTypeLabel(so.soType)}</span>
                     </td>
                     <td className="mono">{so.dueDate ?? '—'}</td>
                     <td className="mono">{so.totalLines}</td>
@@ -542,7 +543,7 @@ const LINE_COLS: { key: string; label: string; width: number; title?: string }[]
     key: 'balance',
     label: 'Pending to Plan',
     width: 5,
-    title: 'Order qty − dispatched − reserved to this line: what still has to be made or bought',
+    title: 'Order Qty − Dispatched − Reserved to this line: what still has to be made or bought',
   },
   { key: 'planned', label: 'Planned', width: 4 },
   { key: 'inProd', label: 'In Production', width: 4 },
@@ -679,7 +680,7 @@ function OrderDetail({
           <span className="fw-700">{so.customerName ?? '—'}</span>
         </HeaderField>
         <HeaderField label={so.source === 'jw' ? 'JWSO Type' : 'SO Type'}>
-          <span className="badge b-grey">{so.soType.replaceAll('_', ' ')}</span>
+          <span className="badge b-grey">{soTypeLabel(so.soType)}</span>
         </HeaderField>
         <HeaderField label="Due Date">
           <span className="mono">{so.dueDate ?? '—'}</span>
@@ -1185,7 +1186,11 @@ function SearchResults({
   const failed = details.filter((d) => d.isError);
   const firstError = failed[0]?.error;
   const failedMsg =
-    firstError instanceof Error ? firstError.message : failed.length > 0 ? 'Failed to load SO' : '';
+    firstError instanceof Error
+      ? firstError.message
+      : failed.length > 0
+        ? 'Could not load SO. Try again.'
+        : '';
 
   const groups = capped.flatMap((so, i) => {
     const data = details[i]?.data;

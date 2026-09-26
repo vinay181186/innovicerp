@@ -424,7 +424,7 @@ export function PlanForm({
             gap: 10,
           }}
         >
-          <Field label="Plan code">
+          <Field label="Plan No.">
             <input
               className="innovic-input"
               readOnly={isEdit}
@@ -433,7 +433,7 @@ export function PlanForm({
               onChange={(e) => update('code', e.target.value)}
             />
           </Field>
-          <Field label="Plan date *">
+          <Field label="Plan Date *">
             <input
               type="date"
               className="innovic-input"
@@ -442,7 +442,7 @@ export function PlanForm({
               onChange={(e) => update('planDate', e.target.value)}
             />
           </Field>
-          <Field label="Plan type *">
+          <Field label="Plan Type *">
             <select
               className="innovic-select"
               value={values.planType}
@@ -562,7 +562,7 @@ export function PlanForm({
               }
             />
           </Field>
-          <Field label="Planned start">
+          <Field label="Planned Start">
             <input
               type="date"
               className="innovic-input"
@@ -570,7 +570,7 @@ export function PlanForm({
               onChange={(e) => update('plannedStartDate', e.target.value)}
             />
           </Field>
-          <Field label="Planned end">
+          <Field label="Planned End">
             <input
               type="date"
               className="innovic-input"
@@ -627,7 +627,7 @@ export function PlanForm({
               gap: 10,
             }}
           >
-            <Field label="Vendor code *">
+            <Field label="Vendor Code *">
               <input
                 className="innovic-input"
                 required
@@ -642,7 +642,7 @@ export function PlanForm({
                 onChange={(e) => update('dpVendorId', e.target.value || null)}
               />
             </Field>
-            <Field label="Unit cost">
+            <Field label="Unit Cost">
               <input
                 type="number"
                 step="0.01"
@@ -678,7 +678,7 @@ export function PlanForm({
               gap: 10,
             }}
           >
-            <Field label="JW Vendor code *">
+            <Field label="JW Vendor Code *">
               <input
                 className="innovic-input"
                 required
@@ -709,7 +709,7 @@ export function PlanForm({
             {/* ADR-095: Material Source removed. A full-outsource job buys the
                 finished part; the vendor supplies his own material, so there is
                 nothing for the planner to choose and no material PR is raised. */}
-            <Field label="Delivery date">
+            <Field label="Due Date">
               <input
                 type="date"
                 className="innovic-input"
@@ -978,7 +978,7 @@ export function PlanForm({
       {/* Remarks */}
       <div className="panel">
         <div className="panel-body">
-          <Field label="Plan remarks" full>
+          <Field label="Plan Remarks" full>
             <textarea
               className="innovic-input"
               rows={2}

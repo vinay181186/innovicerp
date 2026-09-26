@@ -11,7 +11,7 @@
 // immediately (they are the approver), and can decide a pending request from
 // this card without walking to Settings → Approvals.
 
-import type { OpLog, OpLogTimeChangeRequest } from '@innovic/shared';
+import { SHIFT_LABELS, type OpLog, type OpLogTimeChangeRequest } from '@innovic/shared';
 import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
 import { todayIst } from '@/lib/date';
@@ -28,7 +28,7 @@ interface Props {
 
 const TYPE_LABEL: Record<OpLog['logType'], string> = {
   start: 'Start',
-  complete: 'Complete',
+  complete: 'Completed',
   qc: 'QC Inspection',
 };
 
@@ -211,7 +211,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="mono" style={{ fontSize: 12 }} title="Qty done / rejected">
+                  <span className="mono" style={{ fontSize: 12 }} title="Completed / Rejected">
                     {l.qty}
                     {l.rejectQty ? (
                       <span style={{ color: 'var(--red)' }}> · rej {l.rejectQty}</span>
@@ -303,7 +303,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                 <span>·</span>
                 <span style={{ color: 'var(--text2)' }}>{l.operatorName ?? '—'}</span>
                 <span>·</span>
-                <span style={{ textTransform: 'uppercase' }}>{l.shift}</span>
+                <span>{SHIFT_LABELS[l.shift]}</span>
               </div>
 
               {/* Remarks + retimed marker (display only, not while editing) */}

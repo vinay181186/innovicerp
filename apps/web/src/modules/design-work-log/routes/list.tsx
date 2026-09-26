@@ -182,7 +182,7 @@ function EntryTab(): React.JSX.Element {
         setTask('');
         setDescription('');
       },
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
     });
   };
 

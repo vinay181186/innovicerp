@@ -19,6 +19,7 @@ import { Fragment, useMemo, useRef, useState } from 'react';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import type { SheetField } from '@/lib/print/sheet-print';
 import { useSession } from '@/lib/session';
+import { statusText } from '@/lib/status-text';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates, useRestorePrintTemplateDefault, useSavePrintTemplate } from '../api';
 import { RevisionsModal } from '../components/revisions-modal';
@@ -1052,7 +1053,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               {l.qcRejectedQty}
                             </td>
                             <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                              {l.qcStatus.replaceAll('_', ' ')}
+                              {statusText(l.qcStatus)}
                             </td>
                           </tr>
                         ))}

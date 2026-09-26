@@ -14,6 +14,7 @@ import {
   CAPA_RC_METHODS,
   CAPA_STATUSES,
   CAPA_TYPES,
+  NC_REASON_CATEGORY_LABELS,
   type CapaRecord,
   type CreateCapaInput,
   type UpdateCapaInput,
@@ -491,7 +492,7 @@ function NewCapaModal({
             <option value="">{ncQuery.isLoading ? 'Loading NCs…' : '— None —'}</option>
             {availableNcs.map((nc) => (
               <option key={nc.id} value={nc.code}>
-                {nc.code} — {nc.reasonCategory} — {nc.jcCode ?? ''}
+                {nc.code} — {NC_REASON_CATEGORY_LABELS[nc.reasonCategory]} — {nc.jcCode ?? ''}
               </option>
             ))}
           </select>

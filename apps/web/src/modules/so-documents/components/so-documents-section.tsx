@@ -451,7 +451,7 @@ function UploadDialog({
         });
         ok += 1;
       } catch (e) {
-        fails.push(`${f.name}: ${e instanceof Error ? e.message : 'failed'}`);
+        fails.push(`${f.name}: ${e instanceof Error ? e.message : 'could not upload'}`);
       }
     }
     setBusy(false);

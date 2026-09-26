@@ -33,6 +33,13 @@ interface Props {
   onOpenEntry: (target: OpEntryModalTarget) => void;
 }
 
+// Op Type as the user reads it — never the raw code.
+const OP_TYPE_LABEL: Record<string, string> = {
+  process: 'In-house',
+  outsource: 'Outsource',
+  qc: 'QC',
+};
+
 /** What the row's button should say, or null when this operation has no action
  *  the operator can perform right now.
  *
@@ -174,8 +181,8 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       />
                     )}
                   </td>
-                  <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    {op.opType}
+                  <td className="text3" style={{ fontSize: 11 }}>
+                    {OP_TYPE_LABEL[op.opType] ?? op.opType}
                   </td>
                   {/* Completed count. A QC / qc_required step records its
                       throughput as qc_accepted_qty (via `qc` logs), NOT as

@@ -11,7 +11,7 @@ export const al014PoOverdue: RegisteredAlert = {
     code: 'AL-014',
     dept: 'purchase',
     name: 'Overdue PO delivery',
-    description: 'Purchase orders in open/partial status with due_date in the past.',
+    description: 'POs that are Open or Partly Received with a Due Date in the past.',
     columns: [
       { key: 'po_code', label: 'PO No.', type: 'text' },
       { key: 'po_date', label: 'PO Date', type: 'date' },

@@ -295,7 +295,7 @@ export function Builder(props: Props): JSX.Element {
                 className="innovic-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Open SOs by client"
+                placeholder="e.g. Open SOs by customer"
                 required
               />
             </div>

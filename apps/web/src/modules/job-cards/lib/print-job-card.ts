@@ -161,7 +161,7 @@ export function printJobCard(args: {
   const soLine = so ? String(so.lineNo) : '';
   const pol = jc.clientPoLineNo ?? '';
   const routeCard = jc.routeCardCode
-    ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / Rev ${jc.routeCardRevision}` : ''}`
+    ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / ${jc.routeCardRevision}` : ''}`
     : '';
   // The drawing is the item code with the customer's revision from the SO /
   // JWSO line, written CODE/REV like every other document (ADR-177);
@@ -174,14 +174,14 @@ export function printJobCard(args: {
     fact('Ln', soLine),
     fact('POL', pol),
     fact('Item Name', jc.itemName),
-    fact('Route Card / Rev', routeCard, { last: true }),
+    fact('RC No. / Route Card Rev', routeCard, { last: true }),
   ].join('');
   const right = [
     fact('JC Date', fmt(jc.jcDate)),
     fact('Due Date', fmt(jc.dueDate)),
-    fact('Order Qty', `${jc.orderQty} pcs`, { strong: true }),
+    fact('JC Qty', `${jc.orderQty} pcs`, { strong: true }),
     fact('Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision), { strong: true }),
-    fact('Drawing No. / Rev', drawing, { last: true }),
+    fact('CODE/REV', drawing, { last: true }),
   ].join('');
 
   const rows =
@@ -192,11 +192,11 @@ export function printJobCard(args: {
     <thead><tr>
       <th style="width:8mm">Op</th>
       <th>Operation</th>
-      <th style="width:17mm">Plan<br>Machine</th>
+      <th style="width:17mm">Planned<br>Machine</th>
       <th style="width:17mm">Actual<br>Machine</th>
       <th style="width:20mm">Operator</th>
-      <th style="width:16mm">Start</th>
-      <th style="width:16mm">Finish</th>
+      <th style="width:16mm">Start<br>Date</th>
+      <th style="width:16mm">End<br>Date</th>
       <th style="width:11mm">Accepted</th>
       <th style="width:13mm">Rejected</th>
       <th style="width:20mm">QC / Report</th>
@@ -205,16 +205,16 @@ export function printJobCard(args: {
     <tbody>${rows}</tbody>
   </table>`;
 
-  const trace = `<div class="jsec">Material / Traceability &nbsp;·&nbsp; NCR / Rework references</div>
+  const trace = `<div class="jsec">Material / Traceability &nbsp;·&nbsp; NC / Rework References</div>
     <div class="jtrace">
       <div>${fact('Material Grade', jc.rawMaterialGradeText ?? '')}${fact('Actual Size', args.actualSize ?? '')}${fact('Heat / Lot No.', '')}</div>
-      <div>${fact('NCR No.', jc.parentNcCode ?? '')}${fact('Rework JC', '')}</div>
+      <div>${fact('NC No.', jc.parentNcCode ?? '')}${fact('Rework JC', '')}</div>
     </div>`;
 
   const signs = `<div class="jsign">
-      <div>${fact('Prepared By', '')}${fact('Date', '')}</div>
-      <div>${fact('Checked / Appr.', '')}${fact('Date', '')}</div>
-      <div>${fact('QC Release', '')}${fact('Date', '')}</div>
+      <div>${fact('Prepared By', '')}${fact('Sign Date', '')}</div>
+      <div>${fact('Checked / Approved By', '')}${fact('Sign Date', '')}</div>
+      <div>${fact('QC Release', '')}${fact('Sign Date', '')}</div>
     </div>`;
 
   const foot = `<div class="jfoot">

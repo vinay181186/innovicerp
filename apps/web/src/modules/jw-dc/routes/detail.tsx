@@ -120,7 +120,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Line items ({dc.lines.length})</div>
+          <div className="panel-title">Line Items ({dc.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             sent <b style={{ color: 'var(--text)' }}>{dc.totalSentQty}</b> · returned{' '}
             <b style={{ color: 'var(--green)' }}>{dc.totalReturnedQty}</b> · pending{' '}

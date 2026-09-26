@@ -530,7 +530,7 @@ export async function getPlanningSoDetail(
   soId: string,
   user: AuthContext,
 ): Promise<PlanningDetailResponse> {
-  if (!UUID_RE.test(soId)) throw new ValidationError(`Invalid SO id: ${soId}`);
+  if (!UUID_RE.test(soId)) throw new ValidationError('Sales Order not found. Refresh the page.');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -892,7 +892,7 @@ async function getJwPlanningDetail(
     )
     .limit(1);
   const jw = jwRows[0];
-  if (!jw) throw new NotFoundError(`Sales order / Job Work order ${jwId} not found`);
+  if (!jw) throw new NotFoundError('Sales Order / JWSO not found. Refresh the page.');
 
   // 2. Lines + items.
   const lineRows = await tx
@@ -1122,7 +1122,8 @@ export async function getPlanningBom(
   soLineId: string,
   user: AuthContext,
 ): Promise<PlanningBomResponse> {
-  if (!UUID_RE.test(soLineId)) throw new ValidationError(`Invalid SO line id: ${soLineId}`);
+  if (!UUID_RE.test(soLineId))
+    throw new ValidationError('Sales Order line not found. Refresh the page.');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1149,7 +1150,7 @@ export async function getPlanningBom(
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Sales order line ${soLineId} not found`);
+    if (!row) throw new NotFoundError('Sales Order line not found. Refresh the page.');
 
     // Resolve which BOM to use: Equipment SO uses parent SO's bomMasterId;
     // otherwise the line's sourceBomMasterId.
@@ -1160,7 +1161,7 @@ export async function getPlanningBom(
         : row.line.sourceBomMasterId;
     if (!bomId) {
       throw new ValidationError(
-        `SO line ${soLineId} has no linked BOM master (neither parent Equipment BOM nor line sourceBomMasterId)`,
+        `SO ${row.soCode} Ln ${row.line.lineNo} has no BOM. Link a BOM on the Sales Order first.`,
       );
     }
 
@@ -1181,7 +1182,7 @@ export async function getPlanningBom(
       )
       .limit(1);
     const bom = bomHeaders[0];
-    if (!bom) throw new NotFoundError(`BOM master ${bomId} not found`);
+    if (!bom) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
 
     // 3. BOM lines + child items.
     const childRows = await tx
@@ -1351,7 +1352,8 @@ export async function raisePlanningPr(
   input: RaisePlanningPrInput,
   user: AuthContext,
 ): Promise<RaisePlanningPrResponse> {
-  if (!UUID_RE.test(soLineId)) throw new ValidationError(`Invalid SO line id: ${soLineId}`);
+  if (!UUID_RE.test(soLineId))
+    throw new ValidationError('Sales Order line not found. Refresh the page.');
   await requireFormAccess(user, 'plan_create', 'entry');
   const companyId = requireCompany(user);
 
@@ -1396,10 +1398,10 @@ export async function raisePlanningPr(
           .limit(1);
         if (jw.length > 0) {
           throw new ValidationError(
-            "Job-work lines are the client's material and cannot raise a purchase PR",
+            'Cannot raise a PR on a JWSO line — the Customer supplies the material.',
           );
         }
-        throw new NotFoundError(`Sales order line ${soLineId} not found`);
+        throw new NotFoundError('Sales Order line not found. Refresh the page.');
       }
 
       // 2. Only a Buy item may be bought from here.
@@ -1407,7 +1409,7 @@ export async function raisePlanningPr(
       const itemCode = row.itemCode ?? row.line.itemCodeText ?? '—';
       if (!itemId || !row.itemCode) {
         throw new ValidationError(
-          `SO ${row.soCode} line ${row.line.lineNo} has no Item Master item — pick one on the sales order before raising a PR`,
+          `SO ${row.soCode} Ln ${row.line.lineNo} has no Item Code — pick one on the Sales Order before raising a PR.`,
         );
       }
       if (toProcurementType(row.itemProcurementType) !== 'buy') {
@@ -1459,8 +1461,8 @@ export async function raisePlanningPr(
       const remaining = Math.max(0, orderQty - plannedQty - prQty - directJcQty);
       if (input.qty > remaining) {
         throw new ValidationError(
-          `Only ${remaining} of ${orderQty} left to cover on SO ${row.soCode} line ${row.line.lineNo} ` +
-            `(planned ${plannedQty}, on PR ${prQty}, on Job Card ${directJcQty}) — cannot raise a PR for ${input.qty}`,
+          `PR Qty (${input.qty}) cannot be more than Pending (${remaining}) on SO ${row.soCode} ` +
+            `Ln ${row.line.lineNo}.`,
         );
       }
 
@@ -1502,7 +1504,7 @@ export async function raisePlanningPr(
         {
           action: 'CREATE',
           entity: 'PurchaseRequest',
-          detail: `${pr.code} — ${row.itemName ?? itemCode} x ${input.qty} (from Planning, SO ${row.soCode} line ${row.line.lineNo})`,
+          detail: `${pr.code} — ${row.itemName ?? itemCode} x ${input.qty} (from Planning, SO ${row.soCode} Ln ${row.line.lineNo})`,
           refId: pr.code,
         },
         companyId,

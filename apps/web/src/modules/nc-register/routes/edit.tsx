@@ -68,7 +68,7 @@ function NcRegisterEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'NC not found'}
+            {error instanceof Error ? error.message : 'NC not found.'}
           </div>
         </div>
       </div>

@@ -158,7 +158,7 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Operator'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -248,7 +248,7 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save'}
+        submitLabel={props.submitLabel ?? 'Save Changes'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />

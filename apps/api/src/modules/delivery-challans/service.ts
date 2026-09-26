@@ -426,7 +426,7 @@ async function loadDeliveryChallanWithLines(
       LIMIT 1
     `);
   const headerRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
-  if (!headerRow) throw new NotFoundError(`Delivery challan ${id} not found`);
+  if (!headerRow) throw new NotFoundError('DC not found. Refresh the page.');
 
   const lineRows = await tx
     .select({
@@ -700,8 +700,8 @@ export async function getSendableForPo(
       // amount of shop-floor detail changes it.
       const fullySent = poQty > 0 && poBalance === 0;
       const fullySentReason =
-        `All ${pcs(poQty)} on this purchase order line have already gone out on ` +
-        `earlier challans. There is nothing left to send on it.`;
+        `All ${pcs(poQty)} on this PO line have already gone out on ` +
+        `earlier challans. Nothing is Pending to send on it.`;
 
       // A buying PO: the PO line is the whole story.
       if (s.kind === 'unlinked') {
@@ -712,7 +712,7 @@ export async function getSendableForPo(
           limitReason: fullySent
             ? fullySentReason
             : sentOnDcs > 0
-              ? `Earlier challans have already sent ${sentOnDcs} of the ${pcs(poQty)} on this purchase order line, so ${poBalance} are left.`
+              ? `Earlier challans have already sent ${sentOnDcs} of the ${pcs(poQty)} on this PO line, so ${poBalance} are Pending.`
               : null,
           jobCardCode: null,
           opSeq: null,
@@ -723,12 +723,12 @@ export async function getSendableForPo(
       const opAllowed = Math.max(0, s.effectiveSendable);
       const maxSendNow = Math.min(poBalance, opAllowed);
       // display rule — see opSrNo in @innovic/shared
-      const where = `Job card ${s.jcCode} operation ${opSrNo(s.op.opSeq)}`;
+      const where = `JC ${s.jcCode} Op ${opSrNo(s.op.opSeq)}`;
       // The same phrase for mid-sentence use. Written out rather than
       // where.toLowerCase() — that lowercased the job card CODE too, turning
       // IN-JC-26-00010 into "in-jc-26-00010", which is not its name and is not
       // what anyone would search for.
-      const whereMid = `job card ${s.jcCode} operation ${opSrNo(s.op.opSeq)}`;
+      const whereMid = `JC ${s.jcCode} Op ${opSrNo(s.op.opSeq)}`;
 
       // Which limit is actually doing the stopping decides what the user is
       // told, because each one has a different way out — finish the operation
@@ -747,7 +747,7 @@ export async function getSendableForPo(
       } else if (opBinding && materialBinding && s.cap) {
         limitKind = 'material';
         limitReason =
-          `${where} is waiting on the client's material — ` +
+          `${where} is waiting on the customer's material — ` +
           `${maxSendNow === 0 ? 'nothing can go out yet' : `only ${pcs(maxSendNow)} can go out`}. ` +
           `JWSO ${s.cap.jwCode}: ${s.cap.received} of ${s.cap.orderQty} ` +
           `${s.cap.issuedBased ? 'issued to this job card' : 'received for this part'}.`;
@@ -764,7 +764,7 @@ export async function getSendableForPo(
         limitReason =
           `Of the ${pcs(s.inputAvail)} ${whereMid} has received, ` +
           `${s.inHouseCompleted} finished in-house and ${s.alreadySent} already went to the ` +
-          `vendor — none are left to send out.`;
+          `vendor — nothing is Pending to send out.`;
       } else if (opBinding && maxSendNow === 0 && s.alreadySent > 0) {
         limitKind = 'at_vendor';
         limitReason =
@@ -778,7 +778,7 @@ export async function getSendableForPo(
           `${s.alreadySent} already went to the vendor.`;
       } else if (sentOnDcs > 0) {
         limitKind = 'po_balance';
-        limitReason = `Earlier challans have already sent ${sentOnDcs} of the ${pcs(poQty)} on this purchase order line, so ${poBalance} are left.`;
+        limitReason = `Earlier challans have already sent ${sentOnDcs} of the ${pcs(poQty)} on this PO line, so ${poBalance} are Pending.`;
       }
 
       lines.push({
@@ -813,7 +813,8 @@ async function assertVendorExists(
       and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
     )
     .limit(1);
-  if (rows.length === 0) throw new ValidationError(`Vendor ${vendorId} not found in this company`);
+  if (rows.length === 0)
+    throw new ValidationError('Selected Vendor was not found. Please select the Vendor again.');
 }
 
 async function assertPurchaseOrderExists(
@@ -833,7 +834,7 @@ async function assertPurchaseOrderExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Purchase order ${purchaseOrderId} not found in this company`);
+    throw new ValidationError('Selected PO was not found. Please select the PO again.');
   }
 }
 
@@ -854,7 +855,7 @@ async function assertSalesOrderLineExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Sales order line ${salesOrderLineId} not found in this company`);
+    throw new ValidationError('Selected SO line was not found. Please select it again.');
   }
 }
 
@@ -870,9 +871,7 @@ async function assertItemIdsExist(
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('Item not found. Please select the Item Code again.');
   }
 }
 
@@ -924,8 +923,7 @@ async function loadPoLineMap(
     });
   }
   if (out.size !== unique.length) {
-    const missing = unique.filter((id) => !out.has(id));
-    throw new ValidationError(`PO line id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('This PO line no longer exists. Please reload the PO.');
   }
   return out;
 }
@@ -979,14 +977,14 @@ function assignLineNos(
 ): number[] {
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Provide lineNo on every line or none');
+    throw new ValidationError('Ln is required on every row, or leave all blank.');
   }
   if (provided.length === 0) return lines.map((_, i) => startFrom + i);
   const seen = new Set<number>();
   const out: number[] = [];
   for (const l of lines) {
     const n = l.lineNo!;
-    if (seen.has(n)) throw new ValidationError(`Duplicate lineNo ${n} within input`);
+    if (seen.has(n)) throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
     seen.add(n);
     out.push(n);
   }
@@ -1063,7 +1061,7 @@ export async function createDeliveryChallan(
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Delivery challan code "${code}" already exists`);
+      throw new ConflictError(`DC No. "${code}" already exists.`);
     }
 
     // Vendor/item may be an FK OR free text (ADR-015 / ADR-012 #10), mirroring
@@ -1102,7 +1100,7 @@ export async function createDeliveryChallan(
       const pol = poLines.get(l.purchaseOrderLineId)!;
       if (input.header.purchaseOrderId && pol.purchaseOrderId !== input.header.purchaseOrderId) {
         throw new ValidationError(
-          `PO line ${l.purchaseOrderLineId} does not belong to PO ${input.header.purchaseOrderId}`,
+          `Ln ${pol.lineNo}: this line is not on the selected PO. Please pick it again.`,
         );
       }
       const prev = incomingByPoLine.get(l.purchaseOrderLineId) ?? 0;
@@ -1114,9 +1112,8 @@ export async function createDeliveryChallan(
       const remaining = pol.qty - already;
       if (inc > remaining) {
         throw new ConflictError(
-          `Line ${pol.lineNo}${pol.itemCodeText ? ` (${pol.itemCodeText})` : ''} has ` +
-            `${remaining} pcs left to send of the ${pol.qty} on the purchase order — ` +
-            `cannot send ${inc}.`,
+          `Ln ${pol.lineNo}${pol.itemCodeText ? ` (${pol.itemCodeText})` : ''}: ` +
+            `Qty (${inc}) cannot be more than Pending (${remaining}) — PO Qty ${pol.qty}.`,
         );
       }
     }
@@ -1243,12 +1240,12 @@ export async function cancelDeliveryChallan(
       )
       .limit(1);
     const header = headerRows[0];
-    if (!header) throw new NotFoundError(`Delivery challan ${id} not found`);
+    if (!header) throw new NotFoundError('DC not found. Refresh the page.');
     if (header.status === 'cancelled') {
-      throw new ConflictError(`Delivery challan ${header.code} is already cancelled`);
+      throw new ConflictError(`DC ${header.code} is already Cancelled.`);
     }
     if (header.status === 'received') {
-      throw new ConflictError(`Delivery challan ${header.code} has been received; cannot cancel`);
+      throw new ConflictError(`Cannot cancel DC ${header.code}: it is Received.`);
     }
     // T-059b — block cancel once receipts exist. Reversing receipts cleanly
     // (reverse the stock IN, unwind any auto-NC, restore JC status) is out
@@ -1256,7 +1253,7 @@ export async function cancelDeliveryChallan(
     // flow is ever needed (no UI today).
     if (await dcHasActiveReceipts(tx, id)) {
       throw new ConflictError(
-        `Delivery challan ${header.code} has receipts; cannot cancel until receipts are voided`,
+        `Cannot cancel DC ${header.code}: receipts are recorded. Cancel those receipts first.`,
       );
     }
 
@@ -1367,7 +1364,7 @@ async function generateReceiptCode(
       .limit(1);
     if (dup.length === 0) return code;
   }
-  throw new ConflictError(`Unable to allocate a unique receipt code for ${dcCode}`);
+  throw new ConflictError(`Could not number the receipt for DC ${dcCode}. Try again.`);
 }
 
 export async function receiveAgainstDeliveryChallan(
@@ -1393,12 +1390,14 @@ export async function receiveAgainstDeliveryChallan(
       )
       .limit(1);
     const dcHeader = headerRows[0];
-    if (!dcHeader) throw new NotFoundError(`Delivery challan ${deliveryChallanId} not found`);
+    if (!dcHeader) throw new NotFoundError('DC not found. Refresh the page.');
     if (dcHeader.status === 'cancelled') {
-      throw new ConflictError(`Delivery challan ${dcHeader.code} is cancelled; cannot receive`);
+      throw new ConflictError(`Cannot receive against DC ${dcHeader.code}: it is Cancelled.`);
     }
     if (dcHeader.status === 'received') {
-      throw new ConflictError(`Delivery challan ${dcHeader.code} is already fully received`);
+      throw new ConflictError(
+        `Cannot receive against DC ${dcHeader.code}: it is already fully Received.`,
+      );
     }
 
     // Load outward lines for this DC + validate every input line belongs to it.
@@ -1417,9 +1416,7 @@ export async function receiveAgainstDeliveryChallan(
     const inputLineIds = input.lines.map((l) => l.deliveryChallanLineId);
     for (const id of inputLineIds) {
       if (!dcLineById.has(id)) {
-        throw new ValidationError(
-          `DC line ${id} does not belong to delivery challan ${dcHeader.code}`,
-        );
+        throw new ValidationError(`A line is not on DC ${dcHeader.code}. Please reload the DC.`);
       }
     }
 
@@ -1473,7 +1470,7 @@ export async function receiveAgainstDeliveryChallan(
       const totalAfter = prior + incReceived;
       if (totalAfter > sentQty) {
         throw new ConflictError(
-          `DC line ${dcLine.lineNo} sent ${sentQty} pcs; cumulative receive ${totalAfter} would exceed it`,
+          `Ln ${dcLine.lineNo}: Received (${totalAfter}) cannot be more than Sent Qty (${sentQty}). Reduce the Qty.`,
         );
       }
     }
@@ -1642,7 +1639,7 @@ export async function receiveAgainstDeliveryChallan(
       {
         action: 'DC_RECEIVE',
         entity: 'DeliveryChallan',
-        detail: `${dcHeader.code} — receipt ${receiptCode}${autoGrn ? ` → GRN ${autoGrn.code} (pending QC)` : ''}`,
+        detail: `${dcHeader.code} — receipt ${receiptCode}${autoGrn ? ` → GRN ${autoGrn.code} (QC Pending)` : ''}`,
         refId: dcHeader.code,
       },
       companyId,
@@ -1730,7 +1727,7 @@ export async function getDeliveryChallanRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Delivery challan ${id} not found`);
+    if (!header) throw new NotFoundError('DC not found. Refresh the page.');
 
     // ── Upstream: source PO (nullable header FK) ────────────────────────────
     const poRows = header.purchaseOrderId

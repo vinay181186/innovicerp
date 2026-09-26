@@ -110,7 +110,9 @@ async function assertItemIdsExist(
   const unique = Array.from(new Set(ids));
   if (lookup.byId.size !== unique.length) {
     const missing = unique.filter((id) => !lookup.byId.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError(
+      `Item not found on this BOM (${missing.length} row(s)). Pick it again from Item Master.`,
+    );
   }
   return lookup;
 }
@@ -131,7 +133,7 @@ function assertParentIsUsable(
 ): void {
   const parent = lookup.byId.get(parentItemId);
   if (!parent) {
-    throw new ValidationError(`Parent item not found: ${parentItemId}`);
+    throw new ValidationError('Parent item not found. Pick it again from Item Master.');
   }
   const at = lines.findIndex((l) => l.childItemId === parentItemId);
   if (at >= 0) {
@@ -289,7 +291,7 @@ async function loadBomMasterDetail(
     )
     .limit(1);
   const header = headers[0];
-  if (!header) throw new NotFoundError(`BOM master ${id} not found`);
+  if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
 
   // Parent item display values. Nullable only for pre-0085 BOMs.
   const parent = header.parentItemId
@@ -430,7 +432,7 @@ export async function getBomMasterRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`BOM master ${id} not found`);
+    if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
 
     // ── Upstream: distinct component items referenced by this BOM's lines ────
     const itemRows = await tx
@@ -745,7 +747,7 @@ export async function updateBomMaster(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`BOM master ${id} not found`);
+    if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
 
     // bomNo collision check (only when it changed).
     if (input.bomNo !== header.bomNo) {
@@ -864,7 +866,7 @@ export async function updateBomMaster(
 
 export async function softDeleteBomMaster(id: string, user: AuthContext): Promise<BomMaster> {
   if (user.role !== 'admin') {
-    throw new AuthorizationError(`Role "${user.role}" cannot delete BOM masters — admin required`);
+    throw new AuthorizationError('You do not have permission to delete BOMs. Ask an admin.');
   }
   await requireFormAccess(user, 'bom_create', 'edit');
   await requireFormAccess(user, 'bom_create', 'approve');
@@ -883,7 +885,7 @@ export async function softDeleteBomMaster(id: string, user: AuthContext): Promis
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`BOM master ${id} not found`);
+    if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
 
     // Block if any non-cancelled SO line links this BOM (BOM-8 cascade).
     const links = await tx
@@ -899,7 +901,7 @@ export async function softDeleteBomMaster(id: string, user: AuthContext): Promis
     const linkedCount = links[0]?.value ?? 0;
     if (linkedCount > 0) {
       throw new ConflictError(
-        `BOM "${header.bomNo}" is linked to ${linkedCount} sales order line(s); cannot delete`,
+        `Cannot delete BOM ${header.bomNo} — it is used on ${linkedCount} SO line(s). Remove it from those lines first.`,
       );
     }
 

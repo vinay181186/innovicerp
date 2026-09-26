@@ -43,7 +43,7 @@
 // pending, linked back through split_from_nc_id. Every NC row is therefore
 // exactly one disposition — there is no child table to reconcile.
 
-import { opSrNo } from '@innovic/shared';
+import { NC_STATUS_LABELS, opSrNo } from '@innovic/shared';
 import { and, asc, desc, eq, isNull, like, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
@@ -60,6 +60,7 @@ import { requireFormAccess } from '../../lib/access';
 import { nextNcCodeFrom } from '../../lib/nc-code';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { jobCardOrderChainCte } from '../../lib/production-order-link';
+import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { reinjectLogType } from './reinject-log-type';
@@ -219,21 +220,25 @@ export async function disposeNcCascade(
     .limit(1);
   const loaded = ncRows[0];
   if (!loaded) {
-    throw new ValidationError(`NC ${ncId} not found`);
+    throw new ValidationError('NC not found. Refresh the page.');
   }
   if (loaded.status !== 'pending') {
-    throw new ConflictError(`NC ${loaded.code} is already ${loaded.status} — cannot re-dispose`);
+    throw new ConflictError(
+      `NC ${loaded.code} is already ${labelOf(NC_STATUS_LABELS, loaded.status)}.`,
+    );
   }
 
   // Interlock 2: never disposition more than the NC still owes.
   const open = ncOpenQty(loaded);
   const qty = input.qty ?? open;
   if (qty > open) {
-    throw new ValidationError(`Disposition qty ${qty} exceeds the open NC qty ${open}`);
+    throw new ValidationError(
+      `Disposition Qty (${qty}) cannot be more than the NC's open qty (${open}).`,
+    );
   }
   if (qty <= 0) {
     throw new ValidationError(
-      `Disposition qty must be at least 1 (NC ${loaded.code} has ${open} open)`,
+      `Disposition Qty must be at least 1 (NC ${loaded.code} has ${open} open).`,
     );
   }
 
@@ -318,7 +323,7 @@ export async function disposeNcCascade(
       })
       .returning({ id: ncRegister.id, code: ncRegister.code });
     const sib = sibling[0];
-    if (!sib) throw new ValidationError('Failed to split the NC');
+    if (!sib) throw new ValidationError('Could not split the NC. Try again.');
     await tx
       .update(ncRegister)
       .set({ rejectedQty: qty.toFixed(2), updatedBy: ctx.userId })
@@ -419,14 +424,10 @@ export async function disposeNcCascade(
 
   if (input.action === 'use_as_is') {
     if (nc.opSeq == null) {
-      throw new ValidationError(
-        'Use-As-Is disposition requires the NC to have op_seq + jc_op_id set',
-      );
+      throw new ValidationError('Cannot Use As Is: this NC is not linked to a JC operation.');
     }
     if (nc.jcOpId == null) {
-      throw new ValidationError(
-        'Use-As-Is disposition requires the NC to have a resolved jc_op_id',
-      );
+      throw new ValidationError('Cannot Use As Is: this NC is not linked to a JC operation.');
     }
 
     // Operator resolution: byName lookup against operators master. Falls
@@ -618,7 +619,7 @@ export async function disposeNcCascade(
     .limit(1);
   const origin = originRows[0];
   if (!origin) {
-    throw new ValidationError(`Origin JC ${nc.jobCardId} not found`);
+    throw new ValidationError('Original Job Card not found. Refresh the page.');
   }
 
   // ADR-184 — Make Fresh is refused on a Production Order's card (or any
@@ -684,7 +685,7 @@ export async function disposeNcCascade(
 
   const newJc = insertedJc[0];
   if (!newJc) {
-    throw new ValidationError('Failed to create supplementary JC');
+    throw new ValidationError('Could not create the supplementary JC. Try again.');
   }
 
   // ADR-184 — the supplementary JC makes the SAME part by the SAME route, so
@@ -913,7 +914,7 @@ export async function autoCreateNcFromQcReject(
   user: AuthContext,
 ): Promise<AutoCreateNcResult> {
   if (ctx.rejectedQty <= 0) {
-    throw new ValidationError('autoCreateNcFromQcReject called with rejectedQty <= 0');
+    throw new ValidationError('Rejected Qty must be more than 0 to raise an NC.');
   }
 
   // Look up itemId + itemCode from the JC. NC requires itemId NOT NULL +
@@ -928,7 +929,7 @@ export async function autoCreateNcFromQcReject(
     .where(and(eq(jobCards.id, ctx.jobCardId), eq(jobCards.companyId, ctx.companyId)))
     .limit(1);
   const jc = jcRows[0];
-  if (!jc) throw new NotFoundError(`JC ${ctx.jobCardId} not found for auto-NC`);
+  if (!jc) throw new NotFoundError('Job Card not found. Refresh the page.');
 
   const itemRows = await tx
     .select({ code: items.code })
@@ -1051,7 +1052,7 @@ export async function autoCreateNcFromQcReject(
     {
       action: 'CREATE',
       entity: 'NonConformance',
-      detail: `${row.code} — ${itemCode || '—'} qty=${row.rejectedQty} (auto from QC reject)`,
+      detail: `${row.code} — ${itemCode || '—'}, ${row.rejectedQty} pcs Rejected at QC (auto NC)`,
       refId: row.code,
     },
     ctx.companyId,

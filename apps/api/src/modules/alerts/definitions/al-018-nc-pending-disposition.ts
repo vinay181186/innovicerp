@@ -1,4 +1,4 @@
-// AL-018 — NCs pending disposition (qc). Legacy line 22291-22292.
+// AL-018 — NC Disposition Pending (qc). Legacy line 22291-22292.
 // Filter: nc_register.status = 'pending'.
 
 import { sql } from 'drizzle-orm';
@@ -8,8 +8,8 @@ export const al018NcPendingDisposition: RegisteredAlert = {
   definition: {
     code: 'AL-018',
     dept: 'qc',
-    name: 'NCs pending disposition',
-    description: 'Non-conformance records awaiting a disposition decision.',
+    name: 'NC Disposition Pending',
+    description: 'NCs still waiting for a disposition decision.',
     columns: [
       { key: 'nc_code', label: 'NC No.', type: 'text' },
       { key: 'nc_date', label: 'NC Date', type: 'date' },

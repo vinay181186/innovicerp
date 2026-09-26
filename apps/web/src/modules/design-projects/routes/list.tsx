@@ -84,7 +84,11 @@ function DesignProjectsListPage(): React.JSX.Element {
           color="var(--green)"
           onClick={() => setFilter('released')}
         />
-        <Tile label="Tasks Done" value={`${summary.doneTasks}/${summary.totalTasks}`} color="var(--purple)" />
+        <Tile
+          label="Tasks Completed"
+          value={`${summary.doneTasks}/${summary.totalTasks}`}
+          color="var(--purple)"
+        />
         <Tile
           label="Open Issues"
           value={summary.openIssues}
@@ -381,7 +385,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
     if (description.trim()) input.description = description.trim();
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
     });
   };
 

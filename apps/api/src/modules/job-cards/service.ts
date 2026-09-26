@@ -363,7 +363,8 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
       )
       .limit(1);
-    if (exists.length === 0) throw new NotFoundError(`Job card ${id} not found`);
+    if (exists.length === 0)
+      throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
 
     const result = await tx.execute(sql`
       SELECT
@@ -496,7 +497,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       WHERE jc.id = ${id}::uuid
     `);
     const row = (result as unknown as Array<Record<string, unknown>>)[0];
-    if (!row) throw new NotFoundError(`Job card ${id} not found`);
+    if (!row) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     return toListItem(row);
   });
 }
@@ -781,7 +782,7 @@ export async function getJobCardEditModel(
       LIMIT 1
     `)) as unknown as Array<Record<string, unknown>>;
     const h = headRows[0];
-    if (!h) throw new NotFoundError(`Job card ${id} not found`);
+    if (!h) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
 
     const opRows = (await tx.execute(sql`
       SELECT o.id, o.op_seq AS "opSeq",
@@ -936,7 +937,7 @@ export async function getJobCardStatusExtras(
       LIMIT 1
     `)) as unknown as Array<{ code: string }>;
     const jcRow = jcRows[0];
-    if (!jcRow) throw new NotFoundError(`Job card ${id} not found`);
+    if (!jcRow) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     const jcCode = jcRow.code;
     const jcLike = `%${jcCode}%`;
 
@@ -1499,7 +1500,7 @@ async function assertLineBalance(
         )
         .limit(1)
     )[0];
-    if (!line) throw new ValidationError('Linked SO/JW line not found');
+    if (!line) throw new ValidationError('The SO / JWSO line was not found. Pick the line again.');
 
     // A BOM line's child job cards ALL hang off the parent SO line but are for
     // DIFFERENT items, each needing its own qtyPerSet × parent qty. Summing
@@ -1526,9 +1527,8 @@ async function assertLineBalance(
       const remaining = Math.max(0, bomLine.required - inJC);
       if (input.orderQty > remaining) {
         throw new ValidationError(
-          `Cannot exceed the BOM requirement for ${bomLine.childCode}. ` +
-            `Needed: ${bomLine.required} (${bomLine.qtyPerSet} per set × ${line.oq}) | ` +
-            `Already in Job Cards: ${inJC} | Remaining: ${remaining}`,
+          `JC Qty (${input.orderQty}) for ${bomLine.childCode} cannot be more than Pending ` +
+            `(${remaining}) on the BOM.`,
         );
       }
       return;
@@ -1549,7 +1549,8 @@ async function assertLineBalance(
     const remaining = Math.max(0, line.oq - inJC);
     if (input.orderQty > remaining) {
       throw new ValidationError(
-        `Cannot exceed SO Line balance. Ordered: ${line.oq} | Already in JCs: ${inJC} | Remaining: ${remaining}`,
+        `JC Qty (${input.orderQty}) cannot be more than Pending (${remaining}). ` +
+          `Order Qty ${line.oq}, already on JCs ${inJC}.`,
       );
     }
   };
@@ -1583,16 +1584,16 @@ function withTerminalQcOp(
 
 /** Validate ops (legacy addJC op validations), returning the type per op. */
 function validateOps(ops: JcOpInput[]): ResolvedOpType[] {
-  return ops.map((o) => {
+  return ops.map((o, i) => {
     const t = o.opType;
     if (t === 'process' && (!o.machineCode || !o.operation)) {
-      throw new ValidationError('All in-house operations need machine and operation name.');
+      throw new ValidationError(`Row #${i + 1}: Machine and Operation are required.`);
     }
     if (t === 'qc' && !o.operation) {
-      throw new ValidationError('All QC operations need a process name.');
+      throw new ValidationError(`Row #${i + 1}: QC Process is required.`);
     }
     if (t === 'outsource' && !o.outsourceVendorCode) {
-      throw new ValidationError('All outsource operations need a vendor selected.');
+      throw new ValidationError(`Row #${i + 1}: Vendor is required for an OSP operation.`);
     }
     return t;
   });
@@ -1785,7 +1786,7 @@ export async function createJobCard(
   // NC rework and BOM cascade insert JCs internally and bypass this entry point.
   if (!input.sourceJwLineId) {
     throw new ValidationError(
-      'Direct Job Cards are disabled — create the Job Card from Planning (execute a Plan). Manual creation is allowed only for Job Work (JW) orders.',
+      'Create Job Cards from Planning. Manual Job Cards are allowed only for JWSO.',
     );
   }
 
@@ -1961,7 +1962,7 @@ export async function updateJobCard(
       )
       .limit(1);
     const head = headRows[0];
-    if (!head) throw new NotFoundError(`Job card ${id} not found`);
+    if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     // ADR-182 — a short-closed Production Order's card is frozen: it records
     // what really happened before the order was stopped and must not be edited.
     await assertProductionOrderNotShortClosed(tx, id);
@@ -1986,7 +1987,7 @@ export async function updateJobCard(
         const openQty = Number(nc.rejectedQty) - Number(nc.clearedQty) - Number(nc.failedQty);
         if (input.orderQty > openQty) {
           throw new ValidationError(
-            `Recovery job card qty ${input.orderQty} exceeds the open NC qty ${openQty}`,
+            `JC Qty (${input.orderQty}) cannot be more than the NC's open qty (${openQty}).`,
           );
         }
       }
@@ -2105,7 +2106,7 @@ export async function updateJobCard(
         });
       if (structurallyChanged) {
         throw new ValidationError(
-          'This job card is complete — its operations are frozen. Reopen it to change operations.',
+          'This JC is Completed, so its operations cannot change. Reopen it first.',
         );
       }
     }
@@ -2122,9 +2123,10 @@ export async function updateJobCard(
       const isStarted = started.has(ex.id);
       const isCommitted = committed.has(ex.id);
       if (!isStarted && !isCommitted) continue;
+      // display rule — see opSrNo in @innovic/shared
       const subject = isStarted
-        ? 'an operation that already has logged work'
-        : 'an outsourced operation that already has a PR/PO — cancel the PR/PO first';
+        ? `Op ${opSrNo(ex.opSeq)} — it already has logged work`
+        : `Op ${opSrNo(ex.opSeq)} — its PR / PO exists. Cancel it first`;
       if (!payloadIds.has(ex.id)) {
         throw new ValidationError(`Cannot remove ${subject}.`);
       }
@@ -2134,7 +2136,7 @@ export async function updateJobCard(
       }
       const newSeq = newSeqById.get(ex.id);
       if (newSeq !== undefined && newSeq !== ex.opSeq) {
-        throw new ValidationError(`Cannot re-sequence ${subject}.`);
+        throw new ValidationError(`Cannot move ${subject}.`);
       }
       // Machine change on a started op is ALLOWED. Since migration 0095 each
       // op_log row permanently carries the machine that produced its qty, so
@@ -2151,7 +2153,7 @@ export async function updateJobCard(
         (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
       ) {
         throw new ValidationError(
-          'Stop the running machine session before changing the machine — the pieces already made are recorded against the current machine, then switch.',
+          'Stop Operation first, then change the machine. Pieces already made stay recorded on the current machine.',
         );
       }
       if (
@@ -2161,7 +2163,7 @@ export async function updateJobCard(
       ) {
         // display rule — see opSrNo in @innovic/shared
         machineSwaps.push(
-          `op ${opSrNo(ex.opSeq)} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
+          `Op ${opSrNo(ex.opSeq)} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
         );
       }
     }
@@ -2368,7 +2370,7 @@ export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok
         and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
       )
       .limit(1);
-    if (!rows[0]) throw new NotFoundError(`Job card ${id} not found`);
+    if (!rows[0]) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
     // ADR-182 — nor may it be deleted; the stopped order still points at it.
     await assertProductionOrderNotShortClosed(tx, id);
 
@@ -2451,7 +2453,7 @@ export async function getJobCardRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Job card ${id} not found`);
+    if (!header) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
 
     const row = (
       id_: string,

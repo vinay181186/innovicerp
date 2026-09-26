@@ -45,7 +45,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
       return;
     }
     if (qty > remaining) {
-      setErr(`Cannot exceed remaining: ${remaining} pcs`);
+      setErr(`Qty cannot be more than Pending (${remaining}).`);
       return;
     }
     setErr(null);
@@ -140,7 +140,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
             </div>
           </div>
           <div style={{ ...tileStyle, border: '1px solid var(--green)' }}>
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>REMAINING</div>
+            <div style={{ fontSize: 10, color: 'var(--text3)' }}>PENDING</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green)' }}>
               {remaining}
             </div>

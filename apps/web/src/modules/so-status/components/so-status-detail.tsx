@@ -352,7 +352,7 @@ function EquipmentBomBanner({
         <>
           <div>
             <div className="text3" style={{ fontSize: 10 }}>LINKED BOM</div>
-            <div style={{ fontWeight: 700, color: 'var(--green)' }}>{info.bomNo} Rev {info.bomRev ?? '—'}</div>
+            <div style={{ fontWeight: 700, color: 'var(--green)' }}>{info.bomNo} BOM Rev {info.bomRev ?? '—'}</div>
             <div className="text3" style={{ fontSize: 11 }}>{info.bomName} ({info.bomPartsCount} items)</div>
           </div>
           <div style={{ marginLeft: 'auto' }}>
@@ -392,7 +392,7 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty/Set</th>
+              <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty / Set</th>
               <th style={{ color: 'var(--cyan)', fontWeight: 800 }}>Total Need</th><th>BOM Type</th>
               <th style={{ color: 'var(--green)' }}>Stock</th>
               <th style={{ color: 'var(--red)' }}>Pending</th><th>Plan Status</th>
@@ -680,17 +680,35 @@ function JcPriorityBadge({ priority }: { priority: string }): React.JSX.Element 
   );
 }
 
+// Tooltip words for the op's stored codes — the same labels the JC-op status
+// badge shows; anything unmapped reads as Title Case, never the raw code.
+const OP_CODE_LABEL: Record<string, string> = {
+  process: 'In-house',
+  outsource: 'Outsource',
+  qc: 'QC',
+  qc_pending: 'QC Pending',
+  complete: 'Completed',
+  pr_raised: 'PR Raised',
+  po_created: 'PO Created',
+  at_vendor: 'At Vendor',
+  received: 'Received – QC Pending',
+  ready_for_pr: 'Ready for PR',
+};
+function opCodeLabel(raw: string): string {
+  return OP_CODE_LABEL[raw] ?? raw.replace(/_/g, ' ').replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
 // Legacy op chip (L4335-4341): an inline outlined chip — not a .badge. The
 // trailing ✓ marks QC-REQUIRED (op.qcReq), not completion. 🏭 marks outsource.
 function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
   const isOS = op.opType === 'outsource';
   const ic = opChipColor(op);
   const title =
-    `Op ${opSrNo(op.opSeq)} — ${op.operation} (${op.opType})` +
-    (isOS ? ` [OUTSOURCE: ${op.outsourceStatus ?? 'pending'}]` : '') +
-    `\ninput ${op.inputAvail} · completed ${op.completed}` +
-    (op.qcRequired || op.opType === 'qc' ? ` · qc-acc ${op.qcAccepted}/${op.qcRejected}-rej/${op.qcPending}-pend` : '') +
-    `\nstatus: ${op.status}`;
+    `Op ${opSrNo(op.opSeq)} — ${op.operation} (${opCodeLabel(op.opType)})` +
+    (isOS ? ` · Outsource: ${opCodeLabel(op.outsourceStatus ?? 'pending')}` : '') +
+    `\nAvailable ${op.inputAvail} · Completed ${op.completed}` +
+    (op.qcRequired || op.opType === 'qc' ? ` · Accepted ${op.qcAccepted} · Rejected ${op.qcRejected} · QC Pending ${op.qcPending}` : '') +
+    `\nStatus: ${opCodeLabel(op.status)}`;
   return (
     <>
       <span

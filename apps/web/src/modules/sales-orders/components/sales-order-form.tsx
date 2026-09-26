@@ -61,6 +61,7 @@ import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
 import { downloadSoLineTemplate, parseSoLineFile } from '../lib/import-export';
+import { SO_TYPE_LABEL } from '../lib/so-status-label';
 import { SoLineDrawingCell } from './so-line-drawing-cell';
 
 interface LineFormValue {
@@ -157,7 +158,7 @@ function upperCaseRevField<T extends string>(field: UseFormRegisterReturn<T>): U
  *  Browsers compile `pattern` with the `v` flag, where `/` and `-` inside a
  *  class must be escaped or the whole pattern is silently ignored. */
 const REV_INPUT_PATTERN = '[A-Z0-9][A-Z0-9.\\/\\-]{0,31}';
-const REV_INPUT_TITLE = 'Rev: letters, digits, . - / only';
+const REV_INPUT_TITLE = 'Drawing Rev: letters, digits, . - / only';
 
 /** Chrome for the form's own action bar. The Back link, title and breadcrumb are
  *  the page's to name, but the Save buttons must stay inside <form> to keep
@@ -358,7 +359,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const attachedBomId = watch('header.bomMasterId') ?? '';
   const attachedBom = attachedBomId ? (boms.find((b) => b.id === attachedBomId) ?? null) : null;
   const attachedBomLabel = attachedBom
-    ? `${attachedBom.bomNo} — ${attachedBom.bomName} (Rev ${attachedBom.revision}, ${attachedBom.lineCount} items)`
+    ? `${attachedBom.bomNo} — ${attachedBom.bomName} (BOM Rev ${attachedBom.revision}, ${attachedBom.lineCount} items)`
     : attachedBomId
       ? 'BOM attached'
       : '— No BOM (BOM Pending) —';
@@ -500,7 +501,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       if (errs.length) parts.push(`${errs.length} row(s) skipped.`);
       setImportMsg(parts.join(' ') || 'No rows found in the sheet.');
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
     } finally {
       if (lineFileRef.current) lineFileRef.current.value = '';
     }
@@ -552,7 +553,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       // is wrong instead of being handed the API's raw schema rejection.
       const badRev = values.lines.findIndex((l) => !String(l.revision ?? '').trim());
       if (badRev >= 0) {
-        setLineError(`Line ${badRev + 1}: enter the drawing Rev — the revision printed on the customer's drawing.`);
+        setLineError(`Line ${badRev + 1}: enter the Drawing Rev — the revision printed on the customer's drawing.`);
         return;
       }
       // ADR-177: a saved line's Rev never goes backwards (B → A, 2 → 1). Checked
@@ -720,7 +721,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         <div className="form-grp">
           <label className="form-label" htmlFor="type">SO Type<span className="req">★</span></label>
           <select id="type" className="innovic-select" {...register('header.type')}>
-            {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
+            {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{SO_TYPE_LABEL[t]}</option>)}
           </select>
         </div>
 
@@ -939,7 +940,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 >
                   {equipBom ? (
                     <>
-                      ✓ {equipBom.bomNo} — {equipBom.bomName} (Rev {equipBom.revision},{' '}
+                      ✓ {equipBom.bomNo} — {equipBom.bomName} (BOM Rev {equipBom.revision},{' '}
                       {equipBom.lineCount} parts) attached automatically for {equipItem.code}.
                     </>
                   ) : (
@@ -1035,11 +1036,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   <th style={{ width: '8%' }}>Material</th>
                   <th style={{ width: '8%' }}>Drawing No.</th>
                   <th style={{ width: '11%' }}>Drawing File</th>
-                  <th style={{ width: '6%' }}>Rev <span className="req">★</span></th>
+                  <th style={{ width: '6%' }}>Drawing Rev <span className="req">★</span></th>
                   <th style={{ width: '8%' }}>POL</th>
                   <th style={{ width: '5%' }}>UOM</th>
                   <th style={{ width: '7%' }} className="td-ctr">Order Qty <span className="req">★</span></th>
-                  <th style={{ width: '6%', color: 'var(--green)' }}>Rate ₹</th>
+                  <th style={{ width: '6%', color: 'var(--green)' }}>Rate (₹)</th>
                   <th style={{ width: '6%', color: 'var(--green)' }}>Amount</th>
                   <th style={{ width: '3%' }} />
                 </tr>
@@ -1095,13 +1096,13 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             without sending a new file, and the same revision can be re-uploaded
                             after a bad scan. Compulsory — onValid refuses the save when it is
                             blank, and the API rejects a blank one too. */}
-                        <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} style={{ textTransform: 'uppercase' }} pattern={REV_INPUT_PATTERN} title={REV_INPUT_TITLE} {...upperCaseRevField(register(`lines.${idx}.revision` as const))} /></td>
+                        <td><input className="innovic-input" autoComplete="off" placeholder="Drawing Rev" maxLength={32} style={{ textTransform: 'uppercase' }} pattern={REV_INPUT_PATTERN} title={REV_INPUT_TITLE} {...upperCaseRevField(register(`lines.${idx}.revision` as const))} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="POL" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
                         <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
-                        <td><button type="button" className="btn btn-sm" style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', padding: '3px 8px' }} onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}>Del</button></td>
+                        <td><button type="button" className="btn btn-sm" style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', padding: '3px 8px' }} onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}>Delete</button></td>
                       </tr>
                     );
                   })

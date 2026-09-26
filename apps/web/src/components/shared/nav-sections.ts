@@ -102,9 +102,9 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
-          { to: '/goods-receipt-notes', label: 'GRN (Goods Receipt)', icon: '📥', formKey: 'grn_create' },
+          { to: '/goods-receipt-notes', label: 'Goods Receipt Note (GRN)', icon: '📥', formKey: 'grn_create' },
           { to: '/issue-register', label: 'Item Issue Register', icon: '📋', formKey: 'issue_create' },
-          { to: '/party-grn', label: 'Party Material', icon: '📥', formKey: 'party_create' },
+          { to: '/party-grn', label: 'Party GRN', icon: '📥', formKey: 'party_create' },
         ],
       },
       {
@@ -133,7 +133,7 @@ export const SECTIONS: readonly NavSection[] = [
           // In the order the work flows (user, 2026-09-19): a Production
           // Order is raised first (ADR-170: Plan + Route Card + Target Date →
           // JC), then the shop floor books against it, then it is closed.
-          { to: '/production-orders/new', label: 'Create Production Order', icon: '🏭', formKey: 'prodorder_create' },
+          { to: '/production-orders/new', label: 'New Production Order', icon: '🏭', formKey: 'prodorder_create' },
           { to: '/op-entry', label: 'Op Entry', icon: '✚', formKey: 'op_entry' },
           { to: '/jc-ops', label: 'JC Operations', icon: '⨯', formKey: 'jc_create' },
           { to: '/daily-report', label: 'Daily Report', icon: '📊' },

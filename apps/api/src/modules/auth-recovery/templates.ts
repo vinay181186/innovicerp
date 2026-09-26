@@ -8,7 +8,7 @@
 
 import { RESET_LINK_VALID_MINUTES } from '@innovic/shared';
 
-const FOOTER = 'Innovic ERP';
+const FOOTER = 'Innovic Technology — Innovic ERP';
 
 export function escapeHtml(s: string): string {
   return s

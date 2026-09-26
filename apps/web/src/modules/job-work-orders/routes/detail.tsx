@@ -189,7 +189,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>Line items ({detail.lines.length})</div>
+          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>Line Items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
             {!priceHidden && lineValueTotal > 0 ? (
@@ -200,7 +200,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             {clientMatTotal > 0 ? (
               <>
                 {' '}
-                · client material{' '}
+                · customer material{' '}
                 <b style={{ color: 'var(--text)' }}>
                   {partyReceivedTotal}/{clientMatTotal}
                 </b>
@@ -222,7 +222,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <th>UOM</th>
                 {priceHidden ? null : (
                   <>
-                    <th style={{ color: 'var(--green)' }}>Rate ₹</th>
+                    <th style={{ color: 'var(--green)' }}>Rate (₹)</th>
                     <th style={{ color: 'var(--green)' }}>Amount</th>
                   </>
                 )}

@@ -128,7 +128,7 @@ export async function generateOspPrForOp(
     .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
     .limit(1);
   const op = opRows[0];
-  if (!op) throw new NotFoundError(`Op ${jcOpId} not found`);
+  if (!op) throw new NotFoundError('Operation not found. Refresh the page.');
 
   // 2. Match the operation name against configured OSP processes.
   const cfgRows = await tx
@@ -155,7 +155,11 @@ export async function generateOspPrForOp(
       .from(purchaseRequests)
       .where(eq(purchaseRequests.id, op.outsourcePrId))
       .limit(1);
-    throw new ConflictError(`OSP PR already exists for this op: ${linked[0]?.code ?? 'linked'}`);
+    throw new ConflictError(
+      linked[0]
+        ? `PR ${linked[0].code} is already raised for this operation. Open it instead.`
+        : 'A PR is already raised for this operation. Open it instead.',
+    );
   }
   const dup = await tx
     .select({ code: purchaseRequests.code })
@@ -169,7 +173,11 @@ export async function generateOspPrForOp(
       ),
     )
     .limit(1);
-  if (dup[0]) throw new ConflictError(`OSP PR already exists for this op: ${dup[0].code}`);
+  if (dup[0]) {
+    throw new ConflictError(
+      `PR ${dup[0].code} is already raised for this operation. Open it instead.`,
+    );
+  }
 
   // 4. Load the JC + its item (code/name) for the PR/PO line.
   const jcRows = await tx
@@ -186,7 +194,7 @@ export async function generateOspPrForOp(
     .where(and(eq(jobCards.id, op.jobCardId), eq(jobCards.companyId, companyId)))
     .limit(1);
   const jc = jcRows[0];
-  if (!jc) throw new NotFoundError(`Job card for op ${jcOpId} not found`);
+  if (!jc) throw new NotFoundError('Job Card not found. Refresh the page.');
 
   // Vendor snapshot from the matched OSP process (name for the result message).
   let vendorName: string | null = null;

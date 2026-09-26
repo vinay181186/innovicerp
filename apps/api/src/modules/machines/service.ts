@@ -47,7 +47,7 @@ async function assertMachineGroupExists(
       ),
     )
     .limit(1);
-  if (rows.length === 0) throw new NotFoundError(`Machine group ${machineGroupId} not found`);
+  if (rows.length === 0) throw new NotFoundError('Machine Group not found. Refresh the page.');
 }
 
 // numeric columns come back as strings from postgres.js — coerce hour_rate.
@@ -153,7 +153,7 @@ export async function getMachine(id: string, user: AuthContext): Promise<Machine
       .where(and(eq(machines.id, id), isNull(machines.deletedAt)))
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Machine ${id} not found`);
+    if (!row) throw new NotFoundError('Machine not found. Refresh the page.');
     const m = toMachine(row);
     return showMoney ? m : hideMachineMoney(m);
   });
@@ -225,7 +225,7 @@ export async function updateMachine(
       .from(machines)
       .where(and(eq(machines.id, id), isNull(machines.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Machine ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('Machine not found. Refresh the page.');
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.name !== undefined) updates.name = input.name;
@@ -272,7 +272,7 @@ export async function softDeleteMachine(id: string, user: AuthContext): Promise<
       .from(machines)
       .where(and(eq(machines.id, id), isNull(machines.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`Machine ${id} not found`);
+    if (existing.length === 0) throw new NotFoundError('Machine not found. Refresh the page.');
     await tx
       .update(machines)
       .set({ deletedAt: new Date(), updatedBy: user.id })

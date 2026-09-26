@@ -106,7 +106,7 @@ async function assertClientExists(
     )
     .limit(1);
   if (rows.length === 0) {
-    throw new ValidationError(`Client ${clientId} not found in this company`);
+    throw new ValidationError('Selected Customer was not found. Please select the Customer again.');
   }
   return rows[0]!.name;
 }
@@ -147,9 +147,7 @@ async function assertItemIdsExist(
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
-    const found = new Set(rows.map((r) => r.id));
-    const missing = unique.filter((id) => !found.has(id));
-    throw new ValidationError(`Item id(s) not found: ${missing.join(', ')}`);
+    throw new ValidationError('Item not found. Please select the Item Code again.');
   }
 }
 
@@ -167,7 +165,7 @@ function resolveLineItemRefs(
   const code = line.itemCodeText?.trim();
   if (!code) {
     // Refine on the schema already blocks this, but be defensive.
-    throw new ValidationError('itemId or itemCodeText is required');
+    throw new ValidationError('Item Code is required.');
   }
   const found = resolved.get(code);
   return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
@@ -214,7 +212,7 @@ function assignLineNos(lines: SalesOrderLineInput[], startFrom: number): number[
   // If any line has lineNo, all must — otherwise reject (mixing is ambiguous).
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Provide lineNo on every line or none');
+    throw new ValidationError('Ln is required on every row, or leave all blank.');
   }
   if (provided.length === 0) {
     return lines.map((_, i) => startFrom + i);
@@ -225,7 +223,7 @@ function assignLineNos(lines: SalesOrderLineInput[], startFrom: number): number[
   for (const l of lines) {
     const n = l.lineNo!;
     if (seen.has(n)) {
-      throw new ValidationError(`Duplicate lineNo ${n} within input`);
+      throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
     }
     seen.add(n);
     out.push(n);
@@ -655,7 +653,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Sales order ${id} not found`);
+    if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
     const lineRows = await tx
       .select({
@@ -797,7 +795,7 @@ export async function getSalesOrderRelated(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Sales order ${id} not found`);
+    if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
     // SO lines drive the plan / job-card / PO joins and the upstream BOM link
     // (all reference sales_order_lines).
@@ -1113,7 +1111,7 @@ export async function getSalesOrderDrawingHistory(
       )
       .limit(1);
     const header = headers[0];
-    if (!header) throw new NotFoundError(`Sales order ${id} not found`);
+    if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
     // One pass over every revision row of every live line. The line's identity
     // (item code, part name, current Rev) is joined LIVE — the item_code_text
@@ -1576,7 +1574,7 @@ export async function updateSalesOrder(
       )
       .limit(1);
     const existingHdr = existingHdrRows[0];
-    if (!existingHdr) throw new NotFoundError(`Sales order ${id} not found`);
+    if (!existingHdr) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;
@@ -1800,7 +1798,7 @@ async function reconcileAmendedLineReservations(
         {
           action: 'UPDATE',
           entity: 'Reservation',
-          detail: `${soCode} L${b.lineNo} — ${released} released back to free stock (${reason})`,
+          detail: `${soCode} Ln ${b.lineNo} — ${released} released back to free stock (${reason})`,
           refId: soCode,
         },
         companyId,
@@ -2132,7 +2130,7 @@ export async function softDeleteSalesOrder(id: string, user: AuthContext): Promi
       .limit(1);
     const row = existing[0];
     if (!row) {
-      throw new NotFoundError(`Sales order ${id} not found`);
+      throw new NotFoundError('SO not found. It may have been moved to Trash.');
     }
 
     // ADR-184 — an SO with live plans, production orders, dispatches or

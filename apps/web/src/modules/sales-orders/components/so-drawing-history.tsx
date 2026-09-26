@@ -159,7 +159,7 @@ export function SoDrawingHistory({
         <>
           <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
             Line {active.lineNo} · {active.partName}
-            {active.drawingNo ? ` · Drawing ${active.drawingNo}` : ''} · current Rev{' '}
+            {active.drawingNo ? ` · Drawing ${active.drawingNo}` : ''} · current Drawing Rev{' '}
             {/* The Rev typed on the SO line TODAY. A string since 0119, printed
                 as-is — never compared with or counted against the sequence
                 numbers below, which measure a different thing entirely. */}
@@ -173,7 +173,7 @@ export function SoDrawingHistory({
                     the customer's revision. '#' is the change count; 'Rev' is what was
                     written on the paper. */}
                 <tr>
-                  <th style={{ width: '9%' }}>#</th>
+                  <th style={{ width: '9%' }}>Change No.</th>
                   <th style={{ width: '10%' }}>Drawing Rev</th>
                   <th style={{ width: '12%' }}>Change</th>
                   <th style={{ width: '31%' }}>File</th>

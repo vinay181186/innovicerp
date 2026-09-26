@@ -114,7 +114,7 @@ function upperCaseRevField<T extends string>(field: UseFormRegisterReturn<T>): U
  *  Browsers compile `pattern` with the `v` flag, where `/` and `-` inside a
  *  class must be escaped or the whole pattern is silently ignored. */
 const REV_INPUT_PATTERN = '[A-Z0-9][A-Z0-9.\\/\\-]{0,31}';
-const REV_INPUT_TITLE = 'Rev: letters, digits, . - / only';
+const REV_INPUT_TITLE = 'Drawing Rev: letters, digits, . - / only';
 
 type CreateMode = {
   mode: 'create';
@@ -426,7 +426,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       if (errs.length) parts.push(`${errs.length} row(s) skipped.`);
       setImportMsg(parts.join(' ') || 'No rows found in the sheet.');
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
     } finally {
       if (lineFileRef.current) lineFileRef.current.value = '';
     }
@@ -449,7 +449,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // if the API has not started sending the column yet) — '0' is non-blank.
     const badRev = values.lines.findIndex((l) => !String(l.revision ?? '').trim());
     if (badRev >= 0) {
-      setLineError(`Line ${badRev + 1}: enter the drawing Rev — the revision printed on the customer's drawing.`);
+      setLineError(`Line ${badRev + 1}: enter the Drawing Rev — the revision printed on the customer's drawing.`);
       return;
     }
     // ADR-177: a saved line's Rev never goes backwards (B → A, 2 → 1). Checked
@@ -781,10 +781,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               <th style={{ width: '8%' }}>Material</th>
               <th style={{ width: '8%' }}>Drawing No.</th>
               <th style={{ width: '11%' }}>Drawing File</th>
-              <th style={{ width: '5%' }}>Rev <span className="req">★</span></th>
+              <th style={{ width: '5%' }}>Drawing Rev <span className="req">★</span></th>
               <th style={{ width: '5%' }}>UOM</th>
               <th style={{ width: '6%' }}>Order Qty <span className="req">★</span></th>
-              <th style={{ width: '6%', color: 'var(--green)' }}>Rate ₹</th>
+              <th style={{ width: '6%', color: 'var(--green)' }}>Rate (₹)</th>
               <th style={{ width: '7%', color: 'var(--green)' }}>Amount</th>
               <th style={{ width: '14%' }}>Assembly BOM</th>
               <th style={{ width: '3%' }} />
@@ -826,7 +826,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         their print ('A', 'B', 'R1', '0'). Independent of the Drawing
                         File cell beside it in BOTH directions. Compulsory — onValid
                         refuses the save when it is blank. */}
-                    <td><input className="innovic-input" autoComplete="off" placeholder="Rev" maxLength={32} style={{ textTransform: 'uppercase' }} pattern={REV_INPUT_PATTERN} title={REV_INPUT_TITLE} {...upperCaseRevField(register(`lines.${idx}.revision` as const))} /></td>
+                    <td><input className="innovic-input" autoComplete="off" placeholder="Drawing Rev" maxLength={32} style={{ textTransform: 'uppercase' }} pattern={REV_INPUT_PATTERN} title={REV_INPUT_TITLE} {...upperCaseRevField(register(`lines.${idx}.revision` as const))} /></td>
                     <td>
                       <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
                         {UOMS.map((u) => <option key={u} value={u}>{u}</option>)}

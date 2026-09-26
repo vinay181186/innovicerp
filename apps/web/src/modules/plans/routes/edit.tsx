@@ -44,7 +44,7 @@ function PlanEditPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-body">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Plan not found'}
+            {error instanceof Error ? error.message : 'Plan not found.'}
           </div>
         </div>
       </div>

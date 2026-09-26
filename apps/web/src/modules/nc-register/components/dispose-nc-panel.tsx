@@ -227,7 +227,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 ) : null}
                 {qtyValid && remainder > 0 ? (
                   <div className="form-help">
-                    The remaining {remainder} pcs stay as a separate pending NC.
+                    The other {remainder} pcs stay as a separate pending NC.
                   </div>
                 ) : null}
               </div>

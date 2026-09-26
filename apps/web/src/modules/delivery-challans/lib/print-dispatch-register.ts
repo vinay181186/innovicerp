@@ -87,7 +87,7 @@ export function printDispatchRegister(args: {
     <tbody>${tableRows || '<tr><td colspan="8" style="text-align:center;color:#aaa">No DC records</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Store In-Charge</div>
-      <div class="sign-box">Dispatch Manager</div>
+      <div class="sign-box">Purchase</div>
       <div class="sign-box">Authorised By</div>
     </div>`;
 

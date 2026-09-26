@@ -175,7 +175,7 @@ export async function getPartyMaterial(id: string, user: AuthContext): Promise<P
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError(`Party material ${id} not found`);
+    if (!row) throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
     return rowToPartyMaterial(row.pm, { itemCode: row.itemCode, itemName: row.itemName });
   });
 }
@@ -204,7 +204,7 @@ export async function createPartyMaterial(
       )
       .limit(1);
     if (existing[0]) {
-      throw new ConflictError(`Party material code ${input.code} already exists`);
+      throw new ConflictError(`Party Material Code "${input.code}" already exists.`);
     }
 
     const clientRows = await tx
@@ -219,7 +219,7 @@ export async function createPartyMaterial(
       )
       .limit(1);
     const cl = clientRows[0];
-    if (!cl) throw new NotFoundError(`Client ${input.clientId} not found`);
+    if (!cl) throw new NotFoundError('Selected Customer was not found. Please select again.');
 
     let itemCodeText: string | null = null;
     if (input.itemId) {
@@ -231,7 +231,8 @@ export async function createPartyMaterial(
         )
         .limit(1);
       const itm = itemRows[0];
-      if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);
+      if (!itm)
+        throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
       itemCodeText = itm.code;
     }
 
@@ -256,7 +257,7 @@ export async function createPartyMaterial(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Failed to insert party material');
+    if (!row) throw new ValidationError('Could not save Party Material. Try again.');
     return rowToPartyMaterial(row);
   });
 }
@@ -284,7 +285,8 @@ export async function updatePartyMaterial(
       )
       .limit(1);
     const existing = existingRows[0];
-    if (!existing) throw new NotFoundError(`Party material ${id} not found`);
+    if (!existing)
+      throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
 
     const patch: Partial<typeof partyMaterials.$inferInsert> = {
       updatedAt: new Date(),
@@ -307,7 +309,7 @@ export async function updatePartyMaterial(
         )
         .limit(1);
       const cl = clientRows[0];
-      if (!cl) throw new NotFoundError(`Client ${input.clientId} not found`);
+      if (!cl) throw new NotFoundError('Selected Customer was not found. Please select again.');
       patch.clientId = cl.id;
       patch.clientCodeText = cl.code;
     }
@@ -328,7 +330,10 @@ export async function updatePartyMaterial(
           )
           .limit(1);
         const itm = itemRows[0];
-        if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);
+        if (!itm)
+          throw new NotFoundError(
+            'Selected Item was not found. Please select the Item Code again.',
+          );
         patch.itemId = itm.id;
         patch.itemCodeText = itm.code;
       }
@@ -340,7 +345,7 @@ export async function updatePartyMaterial(
       .where(eq(partyMaterials.id, existing.id))
       .returning();
     const row = updated[0];
-    if (!row) throw new ValidationError('Failed to update party material');
+    if (!row) throw new ValidationError('Could not save Party Material. Try again.');
     return rowToPartyMaterial(row);
   });
 }
@@ -371,10 +376,11 @@ export async function softDeletePartyMaterial(id: string, user: AuthContext): Pr
       )
       .limit(1);
     const existing = rows[0];
-    if (!existing) throw new NotFoundError(`Party material ${id} not found`);
+    if (!existing)
+      throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
     if (existing.stockQty > 0) {
       throw new ConflictError(
-        `Cannot delete party material ${existing.code}: stock_qty is ${existing.stockQty}. Issue material first.`,
+        `Cannot delete ${existing.code}: ${existing.stockQty} still in stock. Issue it first.`,
       );
     }
     await tx

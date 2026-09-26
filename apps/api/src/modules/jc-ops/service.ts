@@ -260,7 +260,7 @@ export async function changeJcOpMachine(
       done: number;
     }>;
     const op = opRows[0];
-    if (!op) throw new NotFoundError(`JC operation ${jcOpId} not found`);
+    if (!op) throw new NotFoundError('Operation not found. Refresh the page.');
     const status = String(op.status);
     if (status === 'complete') {
       // Naming the op, the qty and the machine it stays on answers the three
@@ -268,8 +268,7 @@ export async function changeJcOpMachine(
       // does the production I can see actually live now.
       // display rule — see opSrNo in @innovic/shared
       throw new ConflictError(
-        `Op ${opSrNo(op.opSeq)} ${op.operation} on ${op.jcCode} is finished — all ` +
-          `${op.done} ${op.done === 1 ? 'pc is' : 'pcs are'} made, so there is nothing left ` +
+        `Op ${opSrNo(op.opSeq)} ${op.operation} on ${op.jcCode} is Completed — nothing is Pending ` +
           `to run on another machine. ` +
           (op.oldMachineCode
             ? `The ${op.done} stay recorded against ${op.oldMachineCode}.`
@@ -292,7 +291,7 @@ export async function changeJcOpMachine(
     `)) as unknown as Array<{ one: number }>;
     if (runningRows.length > 0) {
       throw new ConflictError(
-        'Stop the running machine session before changing the machine — the pieces already made are recorded against the current machine, then switch.',
+        'Stop Operation first, then change the machine. Pieces already made stay recorded on the current machine.',
       );
     }
 
@@ -304,7 +303,7 @@ export async function changeJcOpMachine(
         AND deleted_at IS NULL
       LIMIT 1
     `)) as unknown as Array<{ code: string }>;
-    if (!machineRows[0]) throw new NotFoundError(`Machine ${input.machineId} not found`);
+    if (!machineRows[0]) throw new NotFoundError('Machine not found. Pick it again from the list.');
 
     await tx.execute(sql`
       UPDATE public.jc_ops

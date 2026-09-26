@@ -28,6 +28,22 @@ import { oversizedFile, relatedNavPage } from '../lib/format';
 import { FormError, FormNote, Overlay } from './task-overlay';
 import { UserPicker } from './user-picker';
 
+// A contextual link's record type as the user reads it. The shared map covers
+// the Related To picker's types; the contextual Assign buttons add a few more.
+const EXTRA_LINKED_TYPE_LABELS: Record<string, string> = {
+  purchase_request: 'Purchase Request',
+  grn: 'GRN',
+  capa: 'CAPA',
+  design_issue: 'Design Issue',
+};
+function linkedTypeLabel(type: string): string {
+  return (
+    TASK_RELATED_TYPE_LABELS[type as TaskRelatedType] ??
+    EXTRA_LINKED_TYPE_LABELS[type] ??
+    type.replace(/_/g, ' ').replace(/\b[a-z]/g, (c) => c.toUpperCase())
+  );
+}
+
 export function AssignTaskModal({
   onClose,
   linkedRef,
@@ -255,11 +271,7 @@ export function AssignTaskModal({
           <>
             <div className="form-grp">
               <label className="form-label">Related To</label>
-              <input
-                className="innovic-input"
-                value={linkedRef.type.replaceAll('_', ' ')}
-                readOnly
-              />
+              <input className="innovic-input" value={linkedTypeLabel(linkedRef.type)} readOnly />
             </div>
             <div className="form-grp">
               <label className="form-label">Reference No.</label>
