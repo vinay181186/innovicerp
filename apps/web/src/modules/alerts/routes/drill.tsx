@@ -1,7 +1,8 @@
 // Alerts drill-down page (T-041d Phase A). Mirrors legacy `_alertDrillDown`
 // (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L22374):
-//   - modal title "🔔 <name> (<n> records)" (L22418) → the page `.section-hdr`
-//   - header block: name · "dept · code" · "<n> records" in amber (L22419-22422)
+//   - modal title "<name> (<n> records)" (L22418) → the page `.section-hdr`
+//   - legacy's header block (L22419-22422) dropped — it repeated the name and
+//     count already in the title (R5 SH-N19)
 //   - `.tbl-wrap > table` records table (L22423)
 //
 // Legacy rendered this as a `showModalLg` opened from the dashboard row; the
@@ -19,7 +20,6 @@ import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAlert } from '../api';
-import { DEPT_LABEL } from '../lib/dept';
 
 export const alertsDrillRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -47,7 +47,7 @@ function AlertDrillPage() {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔔 {data ? `${data.alert.name} (${data.alert.count} records)` : code}
+          {data ? `${data.alert.name} (${data.alert.count} records)` : 'Alert'}
         </div>
         <Link to="/alerts" className="btn btn-ghost" style={{ fontSize: 12 }}>
           ← Back to Alerts
@@ -66,34 +66,13 @@ function AlertDrillPage() {
           <div className="empty-state">
             <span style={{ color: 'var(--red2)' }}>
               {notFound
-                ? `No registered alert with code ${code}.`
+                ? 'Alert not found. Refresh the page.'
                 : (error?.message ?? 'Could not load alert. Try again.')}
             </span>
           </div>
         </div>
       ) : (
         <>
-          {/* Header block — legacy L22419-22422. Legacy sets `color:var(--text1)`
-              on the name span; `--text1` is undefined in legacy's own :root, so
-              the text inherits the default colour. Reproduced by omitting it. */}
-          <div
-            style={{
-              padding: '10px 14px',
-              background: 'var(--bg3)',
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              marginBottom: 14,
-            }}
-          >
-            <span style={{ fontWeight: 700 }}>{data.alert.name}</span>{' '}
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {DEPT_LABEL[data.alert.dept]} · {data.alert.code}
-            </span>{' '}
-            <span className="mono fw-700" style={{ color: 'var(--amber2)', marginLeft: 8 }}>
-              {data.alert.count} records
-            </span>
-          </div>
-
           <div className="panel">
             <div className="tbl-wrap">
               <table className="innovic-table">
@@ -113,7 +92,7 @@ function AlertDrillPage() {
                     // The route can be reached directly, so the state is kept.
                     <tr>
                       <td colSpan={data.columns.length} className="empty-state">
-                        ✅ No records — alert is currently clear.
+                        ✅ Nothing pending
                       </td>
                     </tr>
                   ) : (

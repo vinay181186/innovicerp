@@ -39,12 +39,27 @@ async function loadRow(
   return rows[0];
 }
 
+// Quick links are saved per user by PATH. Pages that were renamed since keep
+// their old path in saved configs; read them as the new one so the user's
+// chips do not silently vanish from the home page.
+const RENAMED_QUICK_LINKS: Readonly<Record<string, string>> = {
+  '/qc-dashboard': '/qc-call-register',
+  '/qc-documents': '/qc-docs',
+  '/bom-master': '/bom-masters',
+  '/shop-floor': '/production-dashboard',
+};
+
+export function currentQuickLinks(saved: string[] | null | undefined): string[] | null {
+  if (!saved) return null;
+  return [...new Set(saved.map((p) => RENAMED_QUICK_LINKS[p] ?? p))];
+}
+
 export function rowToConfig(
   row: typeof dashboardConfig.$inferSelect | undefined,
 ): DashboardConfig {
   return {
     widgets: row?.widgets ?? null,
-    quickLinks: row?.quickLinks ?? null,
+    quickLinks: currentQuickLinks(row?.quickLinks),
   };
 }
 

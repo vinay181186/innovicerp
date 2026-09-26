@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, Loader2, Lock, RotateCcw, Trash2 } from 'luc
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDateTime } from '@/lib/date';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -87,13 +88,16 @@ function TrashListPage(): React.JSX.Element {
   const empty = useEmptyTrash();
 
   const [actionError, setActionError] = useState<string | null>(null);
+  const [asking, setAsking] = useState<
+    { kind: 'one'; it: { type: TrashEntityType; id: string; label: string } } | { kind: 'all' } | null
+  >(null);
 
   if (!isAdmin) {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           <Lock size={14} style={{ display: 'inline', marginRight: 6 }} />
-          Admin access required for Trash.
+          You do not have permission to view Trash. Ask an admin.
         </div>
       </div>
     );
@@ -108,9 +112,9 @@ function TrashListPage(): React.JSX.Element {
   // and states that same unfiltered count in its confirm (L2191).
   const grandTotal = Object.values(data?.byType ?? {}).reduce((a, b) => a + b, 0);
 
+  // Restore is harmless and reversible — no confirm.
   async function onRestore(it: { type: TrashEntityType; id: string; label: string }): Promise<void> {
     setActionError(null);
-    if (!window.confirm(`Restore ${typeLabel(it.type)} "${it.label}"?`)) return;
     try {
       await restore.mutateAsync({ type: it.type, id: it.id });
     } catch (e) {
@@ -118,34 +122,26 @@ function TrashListPage(): React.JSX.Element {
     }
   }
 
+  // Both run from the app ConfirmDialog (never window.confirm); a thrown error
+  // is shown inside the dialog instead of closing it.
   async function onPermDelete(it: { type: TrashEntityType; id: string; label: string }): Promise<void> {
     setActionError(null);
-    if (
-      !window.confirm(
-        `Permanently delete ${typeLabel(it.type)} "${it.label}"?\n\nThis CANNOT be undone.`,
-      )
-    )
-      return;
     try {
       await permDel.mutateAsync({ type: it.type, id: it.id });
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Could not delete permanently. Try again.');
+      throw new Error(e instanceof Error ? e.message : 'Could not delete permanently. Try again.');
     }
+    setAsking(null);
   }
 
   async function onEmptyAll(): Promise<void> {
     setActionError(null);
-    // Count is grandTotal, not `total`: Empty All deletes every soft-deleted
-    // row of every type, ignoring the active type filter.
-    const confirmText = window.prompt(
-      `Permanently delete all ${grandTotal} items? This cannot be undone. Type DELETE to confirm.`,
-    );
-    if (confirmText !== 'DELETE') return;
     try {
       await empty.mutateAsync();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Could not empty Trash. Try again.');
+      throw new Error(e instanceof Error ? e.message : 'Could not empty Trash. Try again.');
     }
+    setAsking(null);
   }
 
   return (
@@ -177,7 +173,7 @@ function TrashListPage(): React.JSX.Element {
             }
             style={{ width: 160 }}
           >
-            <option value="">All Document Types ({grandTotal})</option>
+            <option value="">All Document Types</option>
             {TYPE_OPTIONS.map((t) => {
               const n = data?.byType[t] ?? 0;
               return (
@@ -191,7 +187,7 @@ function TrashListPage(): React.JSX.Element {
             <button
               type="button"
               className="btn btn-danger btn-sm"
-              onClick={() => void onEmptyAll()}
+              onClick={() => setAsking({ kind: 'all' })}
               disabled={empty.isPending}
             >
               {empty.isPending ? (
@@ -207,25 +203,17 @@ function TrashListPage(): React.JSX.Element {
       </div>
 
       {actionError ? (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: '8px 12px',
-            background: 'rgba(239,68,68,0.06)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            borderRadius: 6,
-            color: 'var(--red2)',
-            fontSize: 12,
-          }}
-        >
-          {actionError}
+        <div style={{ marginBottom: 12 }}>
+          <Banner tone="error" role="alert">
+            {actionError}
+          </Banner>
         </div>
       ) : null}
 
       {!isLoading && !isError && items.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 32 }}>
-            Trash is empty
+            {search.type ? 'No deleted records match.' : 'Trash is empty.'}
           </div>
         </div>
       ) : (
@@ -282,7 +270,7 @@ function TrashListPage(): React.JSX.Element {
                             type="button"
                             className="btn btn-danger btn-sm"
                             disabled={permDel.isPending}
-                            onClick={() => void onPermDelete(it)}
+                            onClick={() => setAsking({ kind: 'one', it })}
                           >
                             <Trash2 size={12} /> Delete
                           </button>
@@ -345,9 +333,30 @@ function TrashListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        Only admins can delete permanently.
-      </div>
+      {asking?.kind === 'one' ? (
+        <ConfirmDialog
+          title={`Delete ${typeLabel(asking.it.type)} ${asking.it.label} permanently?`}
+          message="This cannot be undone."
+          confirmLabel="Delete Permanently"
+          pendingLabel="Deleting…"
+          onConfirm={() => onPermDelete(asking.it)}
+          onCancel={() => setAsking(null)}
+          elevated={false}
+        />
+      ) : null}
+      {asking?.kind === 'all' ? (
+        <ConfirmDialog
+          // grandTotal, not `total`: Empty All deletes every type, ignoring the filter.
+          title={`Delete all ${grandTotal} items in Trash permanently?`}
+          message="This cannot be undone."
+          confirmLabel="Empty All"
+          pendingLabel="Emptying…"
+          requireTyped="DELETE"
+          onConfirm={() => onEmptyAll()}
+          onCancel={() => setAsking(null)}
+          elevated={false}
+        />
+      ) : null}
     </div>
   );
 }

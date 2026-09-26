@@ -10,7 +10,7 @@ export const al014PoOverdue: RegisteredAlert = {
   definition: {
     code: 'AL-014',
     dept: 'purchase',
-    name: 'Overdue PO delivery',
+    name: 'Overdue PO Delivery',
     description: 'POs that are Open or Partly Received with a Due Date in the past.',
     columns: [
       { key: 'po_code', label: 'PO No.', type: 'text' },

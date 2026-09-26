@@ -8,7 +8,7 @@ export const al005SoOverdue: RegisteredAlert = {
   definition: {
     code: 'AL-005',
     dept: 'sales',
-    name: 'Overdue SO delivery',
+    name: 'Overdue SO Delivery',
     description: 'Open SO lines whose Due Date has passed.',
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },

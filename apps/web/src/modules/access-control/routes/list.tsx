@@ -76,7 +76,7 @@ function AccessControlListPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           <Lock size={14} style={{ display: 'inline', marginRight: 6 }} />
-          Admin access required.
+          You do not have permission to view Access Control. Ask an admin.
         </div>
       </div>
     );
@@ -94,7 +94,7 @@ function AccessControlListPage(): React.JSX.Element {
       >
         <div>
           <div className="section-hdr" style={{ marginBottom: 0 }}>
-            🔒 Access Control
+            Access Control
           </div>
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
             Set each user's departments, levels and PO limit.
@@ -108,8 +108,8 @@ function AccessControlListPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>User</th>
-                <th style={{ width: 150 }}>Department</th>
-                <th>Tiers by department</th>
+                <th style={{ width: 150 }}>Home Dept</th>
+                <th>Tiers by Department</th>
                 <th className="td-ctr" style={{ width: 100 }}>
                   Departments
                 </th>
@@ -205,11 +205,11 @@ function UserAccessRow({
               </div>
             ) : null}
           </>
+        ) : u.role === 'admin' ? (
+          <span style={{ color: 'var(--green2)', fontWeight: 700 }}>Admin — full access</span>
         ) : (
           <span style={{ color: 'var(--red2)', fontWeight: 600 }}>
-            {u.role === 'admin'
-              ? 'No departments set — but they are an admin, so they bypass this entirely.'
-              : 'Not configured — this person can see nothing. Click Configure.'}
+            Not configured — this person can see nothing. Click Configure.
           </span>
         )}
       </td>

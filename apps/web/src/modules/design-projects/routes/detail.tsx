@@ -25,8 +25,10 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayIst, todayLocal } from '@/lib/date';
+import { ConfirmDialog } from '@/ui/feedback';
+import { fmtDate, todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useAddDesignIssueComment,
@@ -63,6 +65,29 @@ const CHECKLIST: Array<{ key: string; label: string; cat: string }> = [
   { key: 'leadApproval', label: 'Design lead sign-off', cat: 'Approval' },
 ];
 
+/** The rows the system can answer from data already on the page. They tick
+ *  themselves; the user cannot toggle them. "All tasks done" is only a system
+ *  row while the project HAS tasks — with none, it is the saved tick. */
+function isSystemCheck(detail: DesignProjectDetail, key: string): boolean {
+  if (key === 'allTasksDone') return detail.tasks.length > 0;
+  return key === 'allIssuesClosed';
+}
+
+function allTasksDoneOf(detail: DesignProjectDetail): boolean {
+  if (detail.tasks.length === 0) return !!detail.project.checklist['allTasksDone'];
+  return detail.tasks.every((t) => t.status === 'Completed');
+}
+function allIssuesClosedOf(detail: DesignProjectDetail): boolean {
+  return detail.issues.every((i) => i.status === 'Resolved' || i.status === 'Closed');
+}
+/** Whether one checklist row is ticked — computed for the system rows, stored
+ *  for the rest. */
+function isChecked(detail: DesignProjectDetail, key: string): boolean {
+  if (key === 'allTasksDone') return allTasksDoneOf(detail);
+  if (key === 'allIssuesClosed') return allIssuesClosedOf(detail);
+  return !!detail.project.checklist[key];
+}
+
 type TabKey = 'tasks' | 'issues' | 'checklist' | 'dcr';
 
 export const designProjectDetailRoute = createRoute({
@@ -83,7 +108,7 @@ function DesignProjectDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Design Projects. Ask an admin.
       </div>
     );
   }
@@ -114,12 +139,18 @@ function DesignProjectDetailPage(): React.JSX.Element {
   }
 
   const p = data.project;
-  const checkDone = CHECKLIST.filter((c) => p.checklist[c.key]).length;
+  const checkDone = CHECKLIST.filter((c) => isChecked(data, c.key)).length;
+  // The tab badges carry the counts (no separate tiles): Tasks completed/total,
+  // Issues open/total.
   const tabs: Array<{ k: TabKey; label: string; badge: string }> = [
-    { k: 'tasks', label: 'Tasks', badge: String(p.taskTotal) },
-    { k: 'issues', label: '⚠ Issues', badge: String(data.issues.length) },
-    { k: 'checklist', label: '✅ Checklist', badge: `${checkDone}/${CHECKLIST.length}` },
-    { k: 'dcr', label: '🔄 DCR/DCN', badge: `${data.dcrs.length}/${data.dcns.length}` },
+    { k: 'tasks', label: 'Tasks', badge: `${p.taskDone}/${p.taskTotal} completed` },
+    {
+      k: 'issues',
+      label: 'Issues',
+      badge: `${p.openIssuesCount}/${data.issues.length} open`,
+    },
+    { k: 'checklist', label: 'Checklist', badge: `${checkDone}/${CHECKLIST.length}` },
+    { k: 'dcr', label: 'DCR/DCN', badge: `${data.dcrs.length}/${data.dcns.length}` },
   ];
 
   return (
@@ -145,34 +176,13 @@ function DesignProjectDetailPage(): React.JSX.Element {
         <StatusBadge status={p.status} />
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile label="Completed" value={p.taskDone} color="var(--green)" />
-        <Tile
-          label="Open Issues"
-          value={p.openIssuesCount}
-          color={p.openIssuesCount > 0 ? 'var(--red)' : 'var(--green)'}
-        />
-      </div>
-
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
         {tabs.map((t) => (
           <button
             key={t.k}
             type="button"
-            className="btn btn-sm"
-            style={{
-              fontWeight: 700,
-              background: tab === t.k ? 'var(--blue)' : 'var(--bg4)',
-              color: tab === t.k ? '#fff' : 'var(--text2)',
-              border: `1px solid ${tab === t.k ? 'var(--blue)' : 'var(--border)'}`,
-            }}
+            className={`btn btn-sm ${tab === t.k ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontWeight: 700 }}
             onClick={() => setTab(t.k)}
           >
             {t.label} ({t.badge})
@@ -190,97 +200,49 @@ function DesignProjectDetailPage(): React.JSX.Element {
   );
 }
 
-function Tile({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number | string;
-  color: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ textAlign: 'center', padding: 12 }}>
-      <div className="text3" style={{ fontSize: 11 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
-    </div>
-  );
-}
-
+/** Design Active / In Review = under way (amber); Released = done (green);
+ *  On Hold = waiting (grey). Badge classes only. */
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
-  const v = status.toLowerCase().replace(/[\s/]/g, '');
-  const c: Record<string, string> = {
-    designactive: 'var(--blue)',
-    inreview: 'var(--purple)',
-    released: 'var(--green)',
-    onhold: 'var(--amber)',
+  const cls: Record<string, string> = {
+    'Design Active': 'b-amber',
+    'In Review': 'b-amber',
+    Released: 'b-green',
+    'On Hold': 'b-grey',
   };
-  const color = c[v] ?? 'var(--text3)';
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 9px',
-        borderRadius: 12,
-        fontSize: 11,
-        fontWeight: 700,
-        color,
-        background: `${color}12`,
-        border: `1px solid ${color}30`,
-      }}
-    >
-      {status}
-    </span>
-  );
+  return <span className={`badge ${cls[status] ?? 'b-grey'}`}>{status}</span>;
 }
 
-function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.Element {
+/** Status / severity / priority badge — house badge classes, one colour per
+ *  state (open blue, under way amber, done green, waiting grey, bad red). */
+function Badge({ value }: { value: string; kind?: 'status' }): React.JSX.Element {
   const v = value.toLowerCase().replace(/[\s/]/g, '');
-  const colors: Record<string, string> = {
-    critical: 'var(--red)',
-    high: 'var(--orange)',
-    major: 'var(--orange)',
-    medium: 'var(--amber)',
-    low: 'var(--green)',
-    minor: 'var(--green)',
-    open: 'var(--red)',
-    inprogress: 'var(--blue)',
-    inreview: 'var(--purple)',
-    resolved: 'var(--green)',
-    completed: 'var(--green)',
-    released: 'var(--green)',
-    closed: 'var(--text3)',
-    notstarted: 'var(--text3)',
-    designactive: 'var(--blue)',
-    onhold: 'var(--amber)',
-    submitted: 'var(--amber)',
-    underreview: 'var(--purple)',
-    accepted: 'var(--green)',
-    rejected: 'var(--red)',
-    draft: 'var(--text3)',
-    approved: 'var(--green)',
-    urgent: 'var(--red)',
-    normal: 'var(--blue)',
+  const cls: Record<string, string> = {
+    critical: 'b-red',
+    urgent: 'b-red',
+    rejected: 'b-red',
+    high: 'b-amber',
+    major: 'b-amber',
+    medium: 'b-amber',
+    low: 'b-grey',
+    minor: 'b-grey',
+    normal: 'b-blue',
+    open: 'b-blue',
+    inprogress: 'b-amber',
+    inreview: 'b-amber',
+    underreview: 'b-amber',
+    submitted: 'b-blue',
+    designactive: 'b-amber',
+    resolved: 'b-green',
+    completed: 'b-green',
+    released: 'b-green',
+    accepted: 'b-green',
+    approved: 'b-green',
+    closed: 'b-green',
+    notstarted: 'b-grey',
+    onhold: 'b-grey',
+    draft: 'b-grey',
   };
-  const c = colors[v] ?? 'var(--text3)';
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 9px',
-        borderRadius: kind === 'status' ? 4 : 12,
-        fontSize: 11,
-        fontWeight: 700,
-        color: c,
-        background: `${c}12`,
-        border: `1px solid ${c}30`,
-      }}
-    >
-      {value}
-    </span>
-  );
+  return <span className={`badge ${cls[v] ?? 'b-grey'}`}>{value}</span>;
 }
 
 // ─── Tasks tab ────────────────────────────────────────────────────────────
@@ -306,12 +268,14 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
           marginBottom: 12,
         }}
       >
-        <div className="section-hdr m-0">📝 Task Board</div>
+        <div className="section-hdr m-0">Task Board</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={view === 'table' ? { background: 'var(--blue)', color: '#fff' } : undefined}
+            style={
+              view === 'table' ? { background: 'var(--blue3)', color: 'var(--blue)' } : undefined
+            }
             onClick={() => setView('table')}
           >
             Table
@@ -319,7 +283,9 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={view === 'kanban' ? { background: 'var(--blue)', color: '#fff' } : undefined}
+            style={
+              view === 'kanban' ? { background: 'var(--blue3)', color: 'var(--blue)' } : undefined
+            }
             onClick={() => setView('kanban')}
           >
             Kanban
@@ -356,7 +322,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                 {detail.tasks.length === 0 ? (
                   <tr>
                     <td colSpan={canEdit ? 8 : 7} className="empty-state">
-                      No tasks yet
+                      No Tasks yet.
                     </td>
                   </tr>
                 ) : (
@@ -452,7 +418,6 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                     borderBottom: '1px solid var(--border)',
                     fontSize: 11,
                     fontWeight: 700,
-                    textTransform: 'uppercase',
                     color: colColor,
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -569,7 +534,7 @@ function TaskFormModal({
   const onSave = (): void => {
     setErr(null);
     if (!title.trim()) {
-      setErr('Enter title');
+      setErr('Title is required.');
       return;
     }
     const input: CreateDesignTaskInput = {
@@ -670,7 +635,7 @@ function TaskFormModal({
         onClose={onClose}
         onSave={onSave}
         saving={createMut.isPending || updateMut.isPending}
-        label="Save"
+        label={mode === 'add' ? 'Save Task' : 'Save Changes'}
       />
     </Modal>
   );
@@ -792,7 +757,7 @@ function ViewTaskModal({
                 width: 28,
                 height: 28,
                 borderRadius: '50%',
-                background: 'rgba(37,99,235,0.10)',
+                background: 'var(--blue3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -863,7 +828,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
           marginBottom: 12,
         }}
       >
-        <div className="section-hdr m-0">⚠ Design Issues</div>
+        <div className="section-hdr m-0">Design Issues</div>
         {canAdd ? (
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)}>
             <Plus size={12} /> Raise Issue
@@ -890,7 +855,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
               {detail.issues.length === 0 ? (
                 <tr>
                   <td colSpan={canEdit ? 9 : 8} className="empty-state">
-                    No issues 🎉
+                    No Issues yet.
                   </td>
                 </tr>
               ) : (
@@ -991,7 +956,7 @@ function IssueFormModal({
   const onSave = (): void => {
     setErr(null);
     if (!title.trim()) {
-      setErr('Enter title');
+      setErr('Title is required.');
       return;
     }
     if (mode === 'add') {
@@ -1035,7 +1000,7 @@ function IssueFormModal({
   };
 
   return (
-    <Modal onClose={onClose} title={mode === 'add' ? '⚠ Raise Issue' : '✏ Edit Issue'}>
+    <Modal onClose={onClose} title={mode === 'add' ? 'Raise Issue' : 'Edit Issue'}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Title ★">
@@ -1117,7 +1082,7 @@ function IssueFormModal({
         onClose={onClose}
         onSave={onSave}
         saving={createMut.isPending || updateMut.isPending}
-        label="Save"
+        label={mode === 'add' ? 'Save Issue' : 'Save Changes'}
       />
     </Modal>
   );
@@ -1149,7 +1114,7 @@ function ViewIssueModal({
   const ageDays = Math.max(0, Math.round(ageMs / 86400000));
 
   return (
-    <Modal onClose={onClose} title={`⚠ ${issue.title}`}>
+    <Modal onClose={onClose} title={issue.title}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
         <div>
           <div className="text3" style={{ fontSize: 11 }}>
@@ -1204,7 +1169,7 @@ function ViewIssueModal({
                 width: 28,
                 height: 28,
                 borderRadius: '50%',
-                background: 'rgba(37,99,235,0.10)',
+                background: 'var(--blue3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1268,11 +1233,9 @@ function ChecklistTab({
   const perms = effectiveFormPerms(eff, 'dsnproj_create');
   const canEdit = perms.edit;
   const canApprove = perms.approve;
-  const allTasksDone =
-    detail.tasks.length > 0 && detail.tasks.every((t) => t.status === 'Completed');
-  const allIssuesClosed = detail.issues.every(
-    (i) => i.status === 'Resolved' || i.status === 'Closed',
-  );
+  const allTasksDone = allTasksDoneOf(detail);
+  const allIssuesClosed = allIssuesClosedOf(detail);
+  const [askRelease, setAskRelease] = useState(false);
   const allChecked = checkDone === CHECKLIST.length;
 
   const cats: Record<string, typeof CHECKLIST> = {};
@@ -1286,12 +1249,12 @@ function ChecklistTab({
 
   return (
     <div>
-      <div className="section-hdr">✅ Design Release Checklist</div>
-      {!allTasksDone ? (
+      <div className="section-hdr">Design Release Checklist</div>
+      {!allTasksDone && detail.tasks.length > 0 ? (
         <div
           style={{
             background: 'var(--amber3)',
-            border: '1px solid rgba(196,122,0,0.3)',
+            border: '1px solid var(--amber)',
             borderRadius: 8,
             padding: '10px 14px',
             marginBottom: 12,
@@ -1306,7 +1269,7 @@ function ChecklistTab({
         <div
           style={{
             background: 'var(--red3)',
-            border: '1px solid rgba(220,38,38,0.3)',
+            border: '1px solid var(--red)',
             borderRadius: 8,
             padding: '10px 14px',
             marginBottom: 12,
@@ -1327,8 +1290,6 @@ function ChecklistTab({
               style={{
                 fontSize: 11,
                 fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
                 marginBottom: 8,
                 paddingBottom: 4,
                 borderBottom: '1px solid var(--border)',
@@ -1337,7 +1298,10 @@ function ChecklistTab({
               {cat}
             </div>
             {items.map((c) => {
-              const checked = !!detail.project.checklist[c.key];
+              const checked = isChecked(detail, c.key);
+              // System rows tick themselves from the tasks / issues on this page.
+              const system = isSystemCheck(detail, c.key);
+              const clickable = canEdit && !system;
               return (
                 <div
                   key={c.key}
@@ -1346,10 +1310,10 @@ function ChecklistTab({
                     alignItems: 'center',
                     gap: 10,
                     padding: '7px 0',
-                    cursor: canEdit ? 'pointer' : 'default',
+                    cursor: clickable ? 'pointer' : 'default',
                   }}
                   onClick={() =>
-                    canEdit &&
+                    clickable &&
                     toggleMut.mutate({
                       id: detail.project.id,
                       input: { key: c.key },
@@ -1369,7 +1333,7 @@ function ChecklistTab({
                       flexShrink: 0,
                     }}
                   >
-                    {checked ? <span style={{ color: '#fff', fontSize: 12 }}>✓</span> : null}
+                    {checked ? <span style={{ color: 'var(--bg)', fontSize: 12 }}>✓</span> : null}
                   </div>
                   <span
                     style={{
@@ -1380,6 +1344,11 @@ function ChecklistTab({
                   >
                     {c.label}
                   </span>
+                  {system ? (
+                    <span className="text3" style={{ fontSize: 11 }}>
+                      (checked by the system)
+                    </span>
+                  ) : null}
                 </div>
               );
             })}
@@ -1391,16 +1360,15 @@ function ChecklistTab({
         <div
           style={{
             background: 'var(--green3)',
-            border: '1px solid rgba(22,163,74,0.3)',
+            border: '1px solid var(--green)',
             borderRadius: 8,
             padding: 20,
             marginTop: 14,
             textAlign: 'center',
           }}
         >
-          <div style={{ fontSize: 24, marginBottom: 4 }}>✅</div>
           <div style={{ fontWeight: 700, color: 'var(--green2)', fontSize: 15 }}>
-            Ready for Release!
+            Ready for Release
           </div>
           {canApprove && detail.project.status !== 'Released' ? (
             <button
@@ -1408,17 +1376,25 @@ function ChecklistTab({
               className="btn btn-primary"
               style={{ marginTop: 12 }}
               disabled={releaseMut.isPending}
-              onClick={() => {
-                if (window.confirm(`Release design for ${detail.project.projectName}?`)) {
-                  releaseMut.mutate(detail.project.id);
-                }
-              }}
+              onClick={() => setAskRelease(true)}
             >
               Release Design Package
             </button>
           ) : null}
         </div>
       ) : null}
+      <ConfirmDialog
+        open={askRelease}
+        title={`Release ${detail.project.code}?`}
+        message={`Release the design package for ${detail.project.projectName}.`}
+        confirmLabel="Release Design Package"
+        tone="primary"
+        onCancel={() => setAskRelease(false)}
+        onConfirm={async () => {
+          await releaseMut.mutateAsync(detail.project.id);
+          setAskRelease(false);
+        }}
+      />
     </div>
   );
 }
@@ -1452,18 +1428,15 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile label="Total DCRs" value={dcrs.length} color="var(--amber)" />
-        <Tile label="Pending" value={pendingDcrs} color="var(--purple)" />
-        <Tile label="Accepted" value={acceptedDcrs} color="var(--green)" />
-        <Tile label="Active DCNs" value={activeDcns} color="var(--blue)" />
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            { key: 'dcrs', label: 'Total DCRs', count: dcrs.length },
+            { key: 'pending', label: 'Pending', count: pendingDcrs, color: 'var(--blue)' },
+            { key: 'accepted', label: 'Accepted', count: acceptedDcrs, color: 'var(--green2)' },
+            { key: 'dcns', label: 'Active DCNs', count: activeDcns, color: 'var(--amber2)' },
+          ]}
+        />
       </div>
 
       <div
@@ -1479,29 +1452,19 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
         <div style={{ display: 'flex', gap: 4 }}>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{
-              fontWeight: 700,
-              background: subTab === 'dcr' ? 'var(--blue)' : 'var(--bg4)',
-              color: subTab === 'dcr' ? '#fff' : 'var(--text2)',
-              border: `1px solid ${subTab === 'dcr' ? 'var(--blue)' : 'var(--border)'}`,
-            }}
+            className={`btn btn-sm ${subTab === 'dcr' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontWeight: 700 }}
             onClick={() => setSubTab('dcr')}
           >
-            📋 DCR Register ({dcrs.length})
+            DCR Register ({dcrs.length})
           </button>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{
-              fontWeight: 700,
-              background: subTab === 'dcn' ? 'var(--blue)' : 'var(--bg4)',
-              color: subTab === 'dcn' ? '#fff' : 'var(--text2)',
-              border: `1px solid ${subTab === 'dcn' ? 'var(--blue)' : 'var(--border)'}`,
-            }}
+            className={`btn btn-sm ${subTab === 'dcn' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontWeight: 700 }}
             onClick={() => setSubTab('dcn')}
           >
-            📝 DCN Register ({dcns.length})
+            DCN Register ({dcns.length})
           </button>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -1737,7 +1700,7 @@ function DcrFormModal({
   const [priority, setPriority] = useState(dcr?.priority ?? 'Normal');
   const [status, setStatus] = useState(dcr?.status ?? 'Submitted');
   const [requestedBy, setRequestedBy] = useState(dcr?.requestedByText ?? '');
-  const [requestDate, setRequestDate] = useState(dcr?.requestDate ?? todayLocal());
+  const [requestDate, setRequestDate] = useState(dcr?.requestDate ?? todayIst());
   const [description, setDescription] = useState(dcr?.description ?? '');
   const [err, setErr] = useState<string | null>(null);
 
@@ -1747,7 +1710,7 @@ function DcrFormModal({
   const onSave = (): void => {
     setErr(null);
     if (!title.trim()) {
-      setErr('Enter title');
+      setErr('Title is required.');
       return;
     }
     if (mode === 'add') {
@@ -1877,7 +1840,7 @@ function DcrFormModal({
         onClose={onClose}
         onSave={onSave}
         saving={createMut.isPending || updateMut.isPending}
-        label="Save"
+        label={mode === 'add' ? 'Save DCR' : 'Save Changes'}
       />
     </Modal>
   );
@@ -1908,7 +1871,7 @@ function DcnFormModal({
   const onSave = (): void => {
     setErr(null);
     if (!title.trim()) {
-      setErr('Enter title');
+      setErr('Title is required.');
       return;
     }
     if (mode === 'add') {
@@ -2000,7 +1963,7 @@ function DcnFormModal({
         onClose={onClose}
         onSave={onSave}
         saving={createMut.isPending || updateMut.isPending}
-        label="Save"
+        label={mode === 'add' ? 'Save DCN' : 'Save Changes'}
       />
     </Modal>
   );
@@ -2064,8 +2027,6 @@ function Field({
         className="text3"
         style={{
           fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
           marginBottom: 4,
         }}
       >
@@ -2111,7 +2072,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
       style={{
         marginTop: 12,
         padding: 8,
-        background: 'rgba(239,68,68,0.08)',
+        background: 'var(--red3)',
         color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,

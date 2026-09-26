@@ -1,9 +1,16 @@
-import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowRight, Eye, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+// Saved Reports list — composed like every other house list (SO Master is the
+// reference): ListHeader · Panel › DataTable · RowActions. It used to be a
+// shadcn Card stack with its own look; the data, routes and delete call are
+// unchanged. Row click runs the report (ERPNext list → open the record); Edit
+// and Delete stay as row actions.
+
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { useMemo } from 'react';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useSavedReportsList, useDeleteSavedReport } from '../api';
+import { Icon } from '@/ui/core';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { ListHeader, PageState, RowActions } from '@/ui/layout';
+import { useDeleteSavedReport, useSavedReportsList, useSourceCatalog } from '../api';
 
 export const savedReportsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -11,126 +18,121 @@ export const savedReportsListRoute = createRoute({
   component: SavedReportsListPage,
 });
 
-function SavedReportsListPage() {
+function SavedReportsListPage(): React.JSX.Element {
+  const navigate = useNavigate();
   const { data, isLoading, isError, error } = useSavedReportsList();
+  const { data: catalog } = useSourceCatalog();
   const deleteMutation = useDeleteSavedReport();
 
-  const onDelete = (id: string, name: string) => {
-    if (!confirm(`Delete "${name}"? An admin can recover it if needed.`)) return;
-    deleteMutation.mutate(id);
-  };
+  // Source label ("Sales Orders"), never the raw source key.
+  const sourceLabel = useMemo(
+    () => new Map((catalog?.sources ?? []).map((s) => [s.sourceKey, s.label])),
+    [catalog],
+  );
+
+  const rows = useMemo(() => data?.reports ?? [], [data?.reports]);
+
+  const columns = useMemo<DataTableColumn<(typeof rows)[number]>[]>(
+    () => [
+      {
+        header: 'Sr No',
+        width: '5%',
+        className: 'text3',
+        render: (_r, i) => i + 1,
+      },
+      {
+        header: 'Report Name',
+        width: '30%',
+        align: 'left',
+        ellipsis: true,
+        title: (r) => r.name,
+        render: (r) => <span className="fw-700">{r.name}</span>,
+      },
+      {
+        header: 'Description',
+        width: '27%',
+        align: 'left',
+        ellipsis: true,
+        className: 'text2',
+        title: (r) => r.description ?? '',
+        render: (r) => r.description || '—',
+      },
+      {
+        header: 'Source',
+        width: '14%',
+        nowrap: true,
+        render: (r) => sourceLabel.get(r.sourceKey) ?? '—',
+      },
+      {
+        header: 'Shared',
+        width: '9%',
+        nowrap: true,
+        render: (r) =>
+          r.isShared ? (
+            <span className="badge b-green">Shared</span>
+          ) : (
+            <span className="badge b-grey">Private</span>
+          ),
+      },
+      {
+        header: 'Owner',
+        width: '15%',
+        ellipsis: true,
+        className: 'text3',
+        title: (r) => r.ownerEmail ?? '',
+        render: (r) => r.ownerEmail ?? '—',
+      },
+    ],
+    [sourceLabel],
+  );
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <Sparkles className="mt-1 h-6 w-6 text-muted-foreground" />
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Saved reports</h1>
-              <p className="text-sm text-muted-foreground">Build and save your own reports.</p>
-            </div>
-          </div>
-          <Button asChild>
-            <Link to="/saved-reports/new">
-              <Plus />
-              New report
-            </Link>
-          </Button>
-        </div>
+    <div>
+      <ListHeader
+        title="Saved Reports"
+        count={rows.length}
+        noun="report"
+        primary={
+          <Link to="/saved-reports/new" className="btn btn-primary">
+            <Icon name="plus" size={14} /> New Report
+          </Link>
+        }
+      />
 
-        {isLoading ? (
-          <Card>
-            <CardContent className="py-6">
-              <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading…
-              </div>
-            </CardContent>
-          </Card>
-        ) : isError || !data ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Could not load saved reports. Try again.</CardTitle>
-              <CardDescription>
-                {error instanceof Error ? error.message : 'Unknown error'}
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : data.reports.length === 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>No saved reports yet</CardTitle>
-              <CardDescription>
-                Click <span className="font-medium">New report</span> to compose one.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          <div className="grid gap-3">
-            {data.reports.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-start justify-between gap-3 rounded-lg border bg-card p-4 text-card-foreground"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      to="/saved-reports/$id"
-                      params={{ id: r.id }}
-                      className="font-medium hover:underline"
-                    >
-                      {r.name}
-                    </Link>
-                    {r.isShared ? (
-                      <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                        shared
-                      </span>
-                    ) : (
-                      <span className="rounded-full border bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        private
-                      </span>
-                    )}
-                  </div>
-                  {r.description ? (
-                    <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>
-                  ) : null}
-                  <div className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {r.sourceKey} · {r.spec.columns.length} columns ·{' '}
-                    {r.spec.filters.length === 0
-                      ? 'no filters'
-                      : `${r.spec.filters.length} filter${r.spec.filters.length === 1 ? '' : 's'}`}
-                    {r.ownerEmail ? ` · ${r.ownerEmail}` : null}
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Button asChild variant="ghost" size="sm">
-                    <Link to="/saved-reports/$id" params={{ id: r.id }}>
-                      <Eye />
-                      Run
-                    </Link>
-                  </Button>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link to="/saved-reports/$id/edit" params={{ id: r.id }}>
-                      Edit
-                      <ArrowRight />
-                    </Link>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onDelete(r.id, r.name)}
-                    aria-label={`Delete ${r.name}`}
-                  >
-                    <Trash2 className="text-destructive" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </main>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load saved reports. Try again.'
+          }
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(r) => r.id}
+            loading={isLoading}
+            emptyText="No saved reports yet."
+            onRowClick={(r) => void navigate({ to: '/saved-reports/$id', params: { id: r.id } })}
+            rowActionsWidth="10%"
+            rowActions={(r) => (
+              <RowActions
+                editTo={`/saved-reports/${r.id}/edit`}
+                renderLink={(p) => <Link {...p} />}
+                onDelete={() => deleteMutation.mutateAsync(r.id)}
+                deleteDisabled={deleteMutation.isPending}
+                deleteConfirm={{
+                  title: `Delete saved report ${r.name}?`,
+                  message: r.isShared ? 'It is removed for everyone it is shared with.' : undefined,
+                  confirmLabel: 'Delete',
+                  pendingLabel: 'Deleting…',
+                }}
+              />
+            )}
+          />
+        </Panel>
+      )}
+    </div>
   );
 }

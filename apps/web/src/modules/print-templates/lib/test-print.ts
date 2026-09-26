@@ -385,6 +385,8 @@ function openPoTestPrint(
     title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
+    // Same foot as the real PO print (print-po.ts).
+    hidePreparedBy: true,
     blocks: templatesToBlocks(doc, templates),
     data,
     company: {

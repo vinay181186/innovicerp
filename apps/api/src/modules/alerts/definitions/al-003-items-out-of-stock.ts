@@ -11,7 +11,7 @@ export const al003ItemsOutOfStock: RegisteredAlert = {
   definition: {
     code: 'AL-003',
     dept: 'store',
-    name: 'Items out of stock',
+    name: 'Items Out of Stock',
     description: 'Items whose On Hand stock is zero or less.',
     columns: [
       { key: 'item_code', label: 'Item Code', type: 'text' },

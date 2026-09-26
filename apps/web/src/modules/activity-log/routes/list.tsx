@@ -212,7 +212,7 @@ function ActivityLogListPage() {
             type="search"
             className="innovic-input"
             style={{ width: 180 }}
-            placeholder="Search..."
+            placeholder="Search…"
             value={pendingSearch}
             onChange={(e) => setPendingSearch(e.target.value)}
           />
@@ -313,7 +313,13 @@ function ActivityLogListPage() {
               ) : !data || data.entries.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="empty-state" style={{ padding: 24 }}>
-                    No activity recorded yet
+                    {search.search ||
+                    search.action ||
+                    search.userId ||
+                    search.fromDate ||
+                    search.toDate
+                      ? 'No entries match.'
+                      : 'No activity yet.'}
                   </td>
                 </tr>
               ) : (

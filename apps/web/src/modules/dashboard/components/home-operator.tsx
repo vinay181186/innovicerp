@@ -216,7 +216,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                         className="btn btn-success btn-sm"
                         style={{ fontSize: 11 }}
                       >
-                        ▶ Start
+                        ▶ Start Operation
                       </Link>
                     </td>
                   </tr>

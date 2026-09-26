@@ -12,45 +12,54 @@ function sevColor(sev: string): string {
 
 function Row({ it }: { it: WorkListItem }): React.JSX.Element {
   const btnCls = it.severity === 'critical' ? 'btn-danger' : it.severity === 'warn' ? 'btn-primary' : 'btn-ghost';
+  // The whole row is the link (ERPNext list rows open the record). A plain
+  // "View"/"Open" chip only repeated that, so it is dropped; a real verb
+  // (Create PO, Inspect …) stays as a chip naming what the click leads to.
+  const verb = it.actionLabel === 'View' || it.actionLabel === 'Open' ? null : it.actionLabel;
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '8px 10px',
-        borderBottom: '1px solid var(--border)',
-        borderLeft: `3px solid ${sevColor(it.severity)}`,
-      }}
-    >
-      <span aria-hidden="true" style={{ fontSize: 14 }}>
-        {it.icon}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{it.title}</div>
-        <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {it.detail}
-        </div>
-      </div>
-      {/* "5d" is meaningless read aloud on its own, and the severity is conveyed
-          by colour alone — both fixed by naming it. */}
-      <span
-        title={it.age > 0 ? `${it.age} days old` : 'Today'}
+    <Link to={it.navPage} className="dash-link">
+      <div
+        className="dash-surface"
         style={{
-          fontSize: 11,
-          color: it.severity === 'critical' ? 'var(--sig-critical)' : 'var(--text3)',
-          fontWeight: 700,
-          width: 36,
-          textAlign: 'right',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '8px 10px',
+          borderBottom: '1px solid var(--border)',
+          borderLeft: `3px solid ${sevColor(it.severity)}`,
         }}
       >
-        <span className="sr-only">{it.severity}, </span>
-        {it.age > 0 ? `${it.age}d` : '·'}
-      </span>
-      <Link to={it.navPage} className={`btn ${btnCls} btn-sm`} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-        {it.actionLabel} →
-      </Link>
-    </div>
+        <span aria-hidden="true" style={{ fontSize: 14 }}>
+          {it.icon}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{it.title}</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {it.detail}
+          </div>
+        </div>
+        {/* "5d" is meaningless read aloud on its own, and the severity is conveyed
+            by colour alone — both fixed by naming it. */}
+        <span
+          title={it.age > 0 ? `${it.age} days old` : 'Today'}
+          style={{
+            fontSize: 11,
+            color: it.severity === 'critical' ? 'var(--sig-critical)' : 'var(--text3)',
+            fontWeight: 700,
+            width: 36,
+            textAlign: 'right',
+          }}
+        >
+          <span className="sr-only">{it.severity}, </span>
+          {it.age > 0 ? `${it.age}d` : '·'}
+        </span>
+        {verb ? (
+          <span className={`btn ${btnCls} btn-sm`} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+            {verb}
+          </span>
+        ) : null}
+      </div>
+    </Link>
   );
 }
 
@@ -81,7 +90,7 @@ export function MyWorkPanel({ mode = 'full' }: { mode?: 'full' | 'strip' }): Rea
   return (
     <div className="panel" style={{ marginBottom: 14, padding: 0 }}>
       <div className="panel-hdr">
-        <span className="panel-title">📋 {mode === 'strip' ? 'My Assigned' : 'My Work'}</span>
+        <span className="panel-title">📋 My Work</span>
         <span
           className="badge"
           style={critical > 0 ? { background: 'var(--sig-critical-bg)', color: 'var(--sig-critical)' } : undefined}

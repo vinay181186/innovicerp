@@ -54,7 +54,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📋 Daily Task Reports
+          Daily Task Reports
         </div>
         <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
           + New Report
@@ -93,12 +93,12 @@ function DailyTaskReportsPage(): React.JSX.Element {
               {data.reports.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="empty-state">
-                    No reports found
+                    {userFilter || dateFrom || dateTo ? 'No Daily Reports match.' : 'No Daily Reports yet.'}
                   </td>
                 </tr>
               ) : (
                 data.reports.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setModal({ kind: 'view', id: r.id })}>
                     <td style={{ fontWeight: 700 }}>{fmtDate(r.reportDate)}</td>
                     <td style={{ fontWeight: 600 }}>{r.userName ?? '—'}</td>
                     <td>{SHIFT_LABELS[r.shift]}</td>
@@ -107,10 +107,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
                       {r.totalHours.toFixed(1)}h
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 3 }}>
-                        <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setModal({ kind: 'view', id: r.id })}>
-                          👁 View
-                        </button>
+                      <div style={{ display: 'flex', gap: 3 }} onClick={(e) => e.stopPropagation()}>
                         {r.canEdit ? (
                           <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setModal({ kind: 'edit', id: r.id })}>
                             ✏ Edit

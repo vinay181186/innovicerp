@@ -17,6 +17,7 @@ import { useForm } from 'react-hook-form';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { useCreateUser } from '../api';
 
 export const userCreateRoute = createRoute({
@@ -56,7 +57,7 @@ function UserCreatePage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
-          ⛔ Admin access required.
+          You do not have permission to add users. Ask an admin.
         </div>
       </div>
     );
@@ -101,7 +102,7 @@ function UserCreatePage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">👤 Add New User</div>
+            <div className="panel-title">Add New User</div>
             {/* Legacy _unifiedUserForm (L13474) bundles department + form access and the
                 PO-approver flag into this one window. This port splits them: dept / form
                 permissions live on Access Control and the approver flag on Approval Config,
@@ -128,8 +129,8 @@ function UserCreatePage(): React.JSX.Element {
                   autoComplete="off"
                   placeholder="e.g. Rajesh K."
                   {...register('fullName', {
-                    required: 'Name is required',
-                    maxLength: { value: 255, message: 'Max 255 chars' },
+                    required: 'Name is required.',
+                    maxLength: { value: 255, message: 'Name cannot be more than 255 characters.' },
                   })}
                 />
                 {formState.errors.fullName ? (
@@ -148,32 +149,38 @@ function UserCreatePage(): React.JSX.Element {
                   placeholder="user@innovic.com"
                   style={{ color: 'var(--cyan)' }}
                   {...register('email', {
-                    required: 'Email is required',
-                    pattern: { value: /^[^@\s]+@[^@\s]+\.[^@\s]+$/, message: 'Invalid email' },
+                    required: 'Email is required.',
+                    pattern: {
+                      value: /^[^@\s]+@[^@\s]+\.[^@\s]+$/,
+                      message: 'Enter a valid email address.',
+                    },
                   })}
                 />
                 {formState.errors.email ? (
                   <div className="form-error">{formState.errors.email.message}</div>
                 ) : (
                   <div className="form-help">
-                    This is the login email — cannot be changed later here.
+                    Used to sign in. Cannot be changed later.
                   </div>
                 )}
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="password">
-                  Initial password<span className="req">★</span>
+                  Initial Password<span className="req">★</span>
                 </label>
                 <input
                   id="password"
                   type="text"
                   className="innovic-input mono"
                   autoComplete="new-password"
-                  placeholder="min 8 characters"
+                  placeholder="At least 8 characters"
                   {...register('password', {
-                    required: 'Password is required',
-                    minLength: { value: 8, message: 'At least 8 characters' },
-                    maxLength: { value: 72, message: 'Max 72 characters' },
+                    required: 'Initial Password is required.',
+                    minLength: { value: 8, message: 'Initial Password must be at least 8 characters.' },
+                    maxLength: {
+                      value: 72,
+                      message: 'Initial Password cannot be more than 72 characters.',
+                    },
                   })}
                 />
                 {formState.errors.password ? (
@@ -211,18 +218,10 @@ function UserCreatePage(): React.JSX.Element {
 
             <div style={{ marginTop: 16 }}>
               {submitError ? (
-                <div
-                  style={{
-                    color: 'var(--red2)',
-                    background: 'var(--red3)',
-                    border: '1px solid #fca5a5',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    fontSize: 12,
-                    marginBottom: 10,
-                  }}
-                >
-                  {submitError}
+                <div style={{ marginBottom: 10 }}>
+                  <Banner tone="error" role="alert">
+                    {submitError}
+                  </Banner>
                 </div>
               ) : null}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
@@ -241,7 +240,7 @@ function UserCreatePage(): React.JSX.Element {
                   {formState.isSubmitting || create.isPending ? (
                     <Loader2 size={13} className="animate-spin" />
                   ) : null}
-                  Create User
+                  Save User
                 </button>
               </div>
             </div>

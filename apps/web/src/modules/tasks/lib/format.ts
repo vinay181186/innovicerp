@@ -52,17 +52,28 @@ export function priorityColor(p: TaskPriority): string {
   return 'var(--text3)';
 }
 
+/** THE one status colour map (strip, badge, widget). To Do waits = grey,
+ *  In Progress under way = amber, Completed green, Cancelled grey, Overdue red.
+ *  `cls` is the badge class; `color` is the matching token for a strip tile. */
+export const TASK_STATUS_TONE: Record<TaskStatus | 'overdue', { cls: string; color: string }> = {
+  todo: { cls: 'badge b-grey', color: 'var(--text2)' },
+  in_progress: { cls: 'badge b-amber', color: 'var(--amber2)' },
+  completed: { cls: 'badge b-green', color: 'var(--green2)' },
+  cancelled: { cls: 'badge b-grey', color: 'var(--text2)' },
+  overdue: { cls: 'badge b-red', color: 'var(--red2)' },
+};
+
 /** Status pill — the badge class + label. Overdue is derived, never stored,
- *  so an open task past its date shows OVERDUE while its status stays. */
+ *  so an open task past its date shows Overdue while its status stays. */
 export function statusPill(t: Pick<TaskRow, 'status' | 'isOverdue'>): {
   cls: string;
   label: string;
 } {
-  if (t.status === 'completed') return { cls: 'badge b-green', label: 'Completed' };
-  if (t.status === 'cancelled') return { cls: 'badge b-grey', label: 'Cancelled' };
-  if (t.isOverdue) return { cls: 'badge b-red', label: 'Overdue' };
-  if (t.status === 'in_progress') return { cls: 'badge b-amber', label: 'In Progress' };
-  return { cls: 'badge b-blue', label: TASK_STATUS_LABELS[t.status as TaskStatus] };
+  if (t.status === 'completed') return { cls: TASK_STATUS_TONE.completed.cls, label: 'Completed' };
+  if (t.status === 'cancelled') return { cls: TASK_STATUS_TONE.cancelled.cls, label: 'Cancelled' };
+  if (t.isOverdue) return { cls: TASK_STATUS_TONE.overdue.cls, label: 'Overdue' };
+  const s = t.status as TaskStatus;
+  return { cls: TASK_STATUS_TONE[s].cls, label: TASK_STATUS_LABELS[s] };
 }
 
 export function isOpenTask(t: Pick<TaskRow, 'status'>): boolean {

@@ -1,5 +1,6 @@
 // "+ My To-Do" — the approved board's 500px personal to-do form (ADR-176).
-// Created By and Assigned To are both the caller, set server-side.
+// Created By and Assigned To are both the caller, set server-side (no note
+// on the form — the fields are not on it).
 
 import type { TaskPriority } from '@innovic/shared';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from '@innovic/shared';
@@ -20,7 +21,7 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!title.trim()) return setErr('To-Do Title is required');
+    if (!title.trim()) return setErr('Title is required.');
     try {
       await create.mutateAsync({
         title: title.trim(),
@@ -66,7 +67,7 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
             disabled={create.isPending}
             onClick={() => void submit()}
           >
-            {create.isPending ? 'Saving…' : 'Create To-Do'}
+            {create.isPending ? 'Saving…' : 'Save To-Do'}
           </button>
         </>
       }
@@ -74,7 +75,7 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="td-title">
-            To-Do Title<span className="req">*</span>
+            Title<span className="req">★</span>
           </label>
           <input
             id="td-title"

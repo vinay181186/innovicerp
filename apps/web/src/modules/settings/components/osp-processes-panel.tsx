@@ -8,9 +8,11 @@ import type { OspProcess, OspProcessInput } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, X } from 'lucide-react';
 import { useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { useVendorsList } from '@/modules/vendors/api';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 
 interface ListOspProcessesResponse {
   items: OspProcess[];
@@ -57,6 +59,8 @@ interface EditState {
   id: string | null;
   processName: string;
   vendorId: string;
+  /** "CODE — Name" of the picked vendor, so the picker shows it before a search. */
+  vendorLabel: string;
   autoPo: boolean;
   leadDays: number;
 }
@@ -65,6 +69,7 @@ const emptyEdit: EditState = {
   id: null,
   processName: '',
   vendorId: '',
+  vendorLabel: '',
   autoPo: false,
   leadDays: 5,
 };
@@ -73,8 +78,9 @@ export function OspProcessesPanel(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const { data, isLoading, isError, error } = useOspProcesses();
-  const { data: vendorsList } = useVendorsList(
-    { limit: 200, offset: 0 },
+  const [vendorSearch, setVendorSearch] = useState('');
+  const { data: vendorsList, isFetching: vendorsLoading } = useVendorsList(
+    { ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}), limit: 50, offset: 0 },
     { enabled: canWrite },
   );
   const createMut = useCreateOsp();
@@ -83,6 +89,7 @@ export function OspProcessesPanel(): React.JSX.Element {
 
   const [modal, setModal] = useState<EditState | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<OspProcess | null>(null);
 
   function openCreate(): void {
     setSubmitError(null);
@@ -95,6 +102,7 @@ export function OspProcessesPanel(): React.JSX.Element {
       id: p.id,
       processName: p.processName,
       vendorId: p.vendorId ?? '',
+      vendorLabel: p.vendorName ? `${p.vendorCode ? `${p.vendorCode} — ` : ''}${p.vendorName}` : '',
       autoPo: p.autoPo,
       leadDays: p.leadDays,
     });
@@ -104,7 +112,7 @@ export function OspProcessesPanel(): React.JSX.Element {
     if (!modal) return;
     setSubmitError(null);
     if (!modal.processName.trim()) {
-      setSubmitError('Process name is required');
+      setSubmitError('Process Name is required.');
       return;
     }
     const input: OspProcessInput = {
@@ -122,13 +130,14 @@ export function OspProcessesPanel(): React.JSX.Element {
     }
   }
 
+  // Runs from the ConfirmDialog; a thrown error is shown inside the dialog.
   async function remove(p: OspProcess): Promise<void> {
-    if (!window.confirm(`Remove OSP process "${p.processName}"?`)) return;
     try {
       await deleteMut.mutateAsync(p.id);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not delete OSP process. Try again.');
+      throw new Error(e instanceof Error ? e.message : 'Could not delete OSP process. Try again.');
     }
+    setRemoving(null);
   }
 
   const items = data?.items ?? [];
@@ -137,7 +146,7 @@ export function OspProcessesPanel(): React.JSX.Element {
     // Legacy `<div class="panel mt-16">` (L13399); .mt-16 (L268) is not in our theme.
     <div className="panel" style={{ marginTop: 16 }}>
       <div className="panel-hdr">
-        <span className="panel-title">🏭 OSP Process Configuration</span>
+        <span className="panel-title">OSP Process Configuration</span>
       </div>
       <div className="panel-body">
         <p className="text2" style={{ fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
@@ -154,7 +163,7 @@ export function OspProcessesPanel(): React.JSX.Element {
           </div>
         ) : items.length === 0 ? (
           <div className="text3" style={{ fontSize: 12, padding: '8px 0' }}>
-            No OSP processes configured yet.
+            No OSP processes yet.
           </div>
         ) : (
           <div className="tbl-wrap">
@@ -163,7 +172,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                 <tr>
                   <th>Process Name</th>
                   <th>Preferred Vendor</th>
-                  <th className="td-ctr">Auto PO?</th>
+                  <th className="td-ctr">Auto PO</th>
                   <th>Lead Time</th>
                   <th style={{ width: 110 }} />
                 </tr>
@@ -184,7 +193,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                     </td>
                     <td className="td-ctr">
                       {p.vendorName && p.autoPo ? (
-                        <span style={{ color: 'var(--green2)', fontWeight: 700 }}>✅ Yes</span>
+                        <span style={{ color: 'var(--green2)', fontWeight: 700 }}>Yes</span>
                       ) : (
                         <span className="text3">—</span>
                       )}
@@ -203,7 +212,9 @@ export function OspProcessesPanel(): React.JSX.Element {
                           <button
                             type="button"
                             className="btn btn-danger btn-sm"
-                            onClick={() => void remove(p)}
+                            onClick={() => setRemoving(p)}
+                            aria-label={`Delete ${p.processName}`}
+                            title="Delete"
                           >
                             ✕
                           </button>
@@ -260,7 +271,7 @@ export function OspProcessesPanel(): React.JSX.Element {
               }}
             >
               <div className="fw-700">
-                {modal.id ? '✎ Edit OSP Process' : '🏭 Add OSP Process'}
+                {modal.id ? 'Edit OSP Process' : 'Add OSP Process'}
               </div>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setModal(null)}>
                 <X size={14} />
@@ -279,19 +290,30 @@ export function OspProcessesPanel(): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label">Preferred Vendor (optional)</label>
-                <select
-                  className="innovic-select"
-                  value={modal.vendorId}
-                  onChange={(e) => setModal({ ...modal, vendorId: e.target.value })}
-                >
-                  <option value="">— Manual (no auto-PO)</option>
-                  {(vendorsList?.vendors ?? []).map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.code} — {v.name}
-                    </option>
-                  ))}
-                </select>
+                <label className="form-label" htmlFor="ospVendor">
+                  Preferred Vendor
+                </label>
+                <SearchableSelect
+                  id="ospVendor"
+                  value={modal.vendorId || null}
+                  onChange={(next) => {
+                    const v = (vendorsList?.vendors ?? []).find((x) => x.id === next);
+                    setModal({
+                      ...modal,
+                      vendorId: next ?? '',
+                      vendorLabel: v ? `${v.code} — ${v.name}` : '',
+                    });
+                  }}
+                  onSearch={setVendorSearch}
+                  loading={vendorsLoading}
+                  options={(vendorsList?.vendors ?? []).map((v) => ({
+                    id: v.id,
+                    code: v.code,
+                    name: v.name,
+                  }))}
+                  placeholder="🔍 Type vendor code or name… (blank = manual PO)"
+                  valueLabel={modal.vendorLabel || undefined}
+                />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="form-grp">
@@ -308,7 +330,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                   />
                 </div>
                 <div className="form-grp">
-                  <label className="form-label">Auto-create PO?</label>
+                  <label className="form-label">Auto PO</label>
                   <select
                     className="innovic-select"
                     value={modal.autoPo ? '1' : '0'}
@@ -323,18 +345,9 @@ export function OspProcessesPanel(): React.JSX.Element {
                 </div>
               </div>
               {submitError ? (
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    background: 'rgba(239,68,68,0.06)',
-                    border: '1px solid rgba(239,68,68,0.3)',
-                    borderRadius: 6,
-                    color: 'var(--red2)',
-                    fontSize: 12,
-                  }}
-                >
+                <Banner tone="error" role="alert" flush>
                   {submitError}
-                </div>
+                </Banner>
               ) : null}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
                 <button
@@ -355,13 +368,25 @@ export function OspProcessesPanel(): React.JSX.Element {
                       <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
                     </>
                   ) : (
-                    'Save'
+                    modal.id ? 'Save Changes' : 'Save OSP Process'
                   )}
                 </button>
               </div>
             </div>
           </div>
         </div>
+      ) : null}
+
+      {removing ? (
+        <ConfirmDialog
+          title={`Delete OSP process ${removing.processName}?`}
+          message="It is removed from the OSP process list."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={() => remove(removing)}
+          onCancel={() => setRemoving(null)}
+          elevated={false}
+        />
       ) : null}
     </div>
   );

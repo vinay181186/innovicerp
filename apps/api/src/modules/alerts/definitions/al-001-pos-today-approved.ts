@@ -8,7 +8,7 @@ export const al001PosTodayApproved: RegisteredAlert = {
   definition: {
     code: 'AL-001',
     dept: 'purchase',
-    name: "Today's approved POs",
+    name: "Today's Open POs",
     description: 'POs dated today with PO Status Open.',
     columns: [
       { key: 'po_code', label: 'PO No.', type: 'text' },

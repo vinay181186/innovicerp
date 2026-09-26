@@ -92,7 +92,7 @@ export function TaskBody({
       await addComment.mutateAsync({ text: remark.trim() });
       setRemark('');
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Could not add the remark');
+      setMsg(e instanceof Error ? e.message : 'Could not add the remark. Try again.');
     }
   }
 
@@ -101,9 +101,9 @@ export function TaskBody({
     const files = Array.from(list ?? []);
     if (files.length === 0) return;
     const big = oversizedFile(files);
-    if (big) return setMsg(`${big} is over 10 MB`);
+    if (big) return setMsg(`${big} cannot be more than 10 MB.`);
     const companyId = me?.companyId ?? null;
-    if (!companyId) return setMsg('No company in session — cannot upload');
+    if (!companyId) return setMsg('Could not upload files. Refresh the page and try again.');
     setUploading(true);
     try {
       for (const f of files) {

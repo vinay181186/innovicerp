@@ -25,7 +25,7 @@ import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
 import { useCreateTask, useNextTaskCode, useRelatedOptions, useTaskUserOptions } from '../api';
 import { oversizedFile, relatedNavPage } from '../lib/format';
-import { FormError, FormNote, Overlay } from './task-overlay';
+import { FormError, Overlay } from './task-overlay';
 import { UserPicker } from './user-picker';
 
 // A contextual link's record type as the user reads it. The shared map covers
@@ -97,16 +97,17 @@ export function AssignTaskModal({
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!title.trim()) return setErr('Task Title is required');
-    if (!assignedTo) return setErr('Select who the task is assigned to');
-    if (!dueDate) return setErr('Due Date is required');
-    if (startDate && startDate > dueDate) return setErr('Start Date cannot be after Due Date');
-    if (relatedType && !relatedId) return setErr('Pick the Reference No. for the Related To type');
+    if (!title.trim()) return setErr('Title is required.');
+    if (!assignedTo) return setErr('Assigned To is required.');
+    if (!dueDate) return setErr('Due Date is required.');
+    if (startDate && startDate > dueDate) return setErr('Start Date cannot be after Due Date.');
+    if (relatedType && !relatedId) return setErr('Reference No. is required.');
     const big = oversizedFile(files);
-    if (big) return setErr(`${big} is over 10 MB`);
-    if (files.length > 10) return setErr('Up to 10 files per task');
+    if (big) return setErr(`${big} cannot be more than 10 MB.`);
+    if (files.length > 10) return setErr('Attachment cannot be more than 10 files.');
     const companyId = me?.companyId ?? null;
-    if (files.length > 0 && !companyId) return setErr('No company in session — cannot upload');
+    if (files.length > 0 && !companyId)
+      return setErr('Could not upload files. Refresh the page and try again.');
 
     let ref: TaskLinkedRef | undefined;
     if (linkedRef) ref = linkedRef;
@@ -176,17 +177,15 @@ export function AssignTaskModal({
             disabled={busy}
             onClick={() => void submit()}
           >
-            {busy ? 'Saving…' : 'Assign Task'}
+            {busy ? 'Saving…' : 'Save Task'}
           </button>
         </>
       }
     >
-      <FormNote>Assigned By is automatically the logged-in user.</FormNote>
-
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="tk-title">
-            Task Title<span className="req">*</span>
+            Title<span className="req">★</span>
           </label>
           <input
             id="tk-title"
@@ -212,7 +211,7 @@ export function AssignTaskModal({
 
         <div className="form-grp">
           <label className="form-label">
-            Assigned To<span className="req">*</span>
+            Assigned To<span className="req">★</span>
           </label>
           <UserPicker
             users={users}
@@ -255,7 +254,7 @@ export function AssignTaskModal({
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="tk-due">
-            Due Date<span className="req">*</span>
+            Due Date<span className="req">★</span>
           </label>
           <input
             id="tk-due"

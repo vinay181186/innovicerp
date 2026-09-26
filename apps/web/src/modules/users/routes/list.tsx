@@ -168,7 +168,7 @@ function UsersListPage(): React.JSX.Element {
   // ListHeader prints "· … only" for anything it is given, including an empty
   // fragment.
   const filterParts = [
-    search.role,
+    search.role ? ROLE_LABEL[search.role] : undefined,
     search.isActive === undefined ? undefined : search.isActive ? 'Active' : 'Inactive',
   ].filter((p): p is string => p !== undefined);
   const filterNote = filterParts.length > 0 ? filterParts.join(' · ') : undefined;
@@ -247,7 +247,7 @@ function UsersListPage(): React.JSX.Element {
         render: (u) => u.phone ?? '—',
       },
       {
-        header: 'Active',
+        header: 'Status',
         width: '8%',
         nowrap: true,
         // `useractive`, not the generic `active` map: a deactivated login is
@@ -279,7 +279,13 @@ function UsersListPage(): React.JSX.Element {
   // sentence: this page is hidden by ROLE, not by an Access Control switch,
   // so "ask an admin for access" would be the wrong instruction.
   if (!isAdmin) {
-    return <PageState as="page" state="noaccess" message="⛔ Admin access required." />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to view User Management. Ask an admin."
+      />
+    );
   }
 
   return (
@@ -288,7 +294,6 @@ function UsersListPage(): React.JSX.Element {
           primary action stay put while the rows scroll underneath. */}
       <ListHeader
         title="User Management"
-        icon="👥"
         count={total}
         noun="user"
         filterNote={filterNote}
@@ -309,12 +314,12 @@ function UsersListPage(): React.JSX.Element {
                 });
               }}
               options={[
-                { value: '', label: 'All roles' },
+                { value: '', label: 'All Roles' },
                 ...USER_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r] })),
               ]}
             />
             <Select
-              aria-label="Filter by active"
+              aria-label="Filter by status"
               fieldWidth="sm"
               value={search.isActive === undefined ? '' : String(search.isActive)}
               onChange={(e) => {
@@ -329,7 +334,7 @@ function UsersListPage(): React.JSX.Element {
                 });
               }}
               options={[
-                { value: '', label: 'All' },
+                { value: '', label: 'All Status' },
                 { value: 'true', label: 'Active' },
                 { value: 'false', label: 'Inactive' },
               ]}
@@ -354,7 +359,11 @@ function UsersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No users match these filters."
+            emptyText={
+              search.search || search.role || search.isActive !== undefined
+                ? 'No users match.'
+                : 'No users yet.'
+            }
             // A user has no detail page — Edit is where the name link has
             // always gone, so the row opens the same place.
             onRowClick={(u) => void navigate({ to: '/users/$id/edit', params: { id: u.id } })}

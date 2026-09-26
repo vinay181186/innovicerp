@@ -1,4 +1,4 @@
-// Daily Work Log (Design slice E) — engineer timesheet feed.
+// Design Work Log (Design slice E) — engineer timesheet feed.
 // Mirrors legacy renderDesignWorkLog (HTML L7935) with 5 tabs.
 
 import {
@@ -10,10 +10,12 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
 import { useCreateDesignWorkLog, useDeleteDesignWorkLog, useDesignWorkLogList } from '../api';
 
@@ -44,10 +46,17 @@ function todayStr(): string {
   return todayIst();
 }
 
+/** A local Date → YYYY-MM-DD from its LOCAL parts. `toISOString()` is UTC, so
+ *  a local midnight in IST (UTC+5:30) came back as the previous day. */
+function localYmd(d: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function addDays(date: string, n: number): string {
   const d = new Date(date + 'T00:00:00');
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return localYmd(d);
 }
 
 function dayName(date: string): string {
@@ -62,34 +71,29 @@ function DesignWorkLogPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Design Work Log. Ask an admin.
       </div>
     );
   }
 
   const tabs: Array<{ k: TabKey; label: string }> = [
-    { k: 'entry', label: '📝 My Timesheet' },
-    { k: 'daily', label: '📅 Daily View' },
-    { k: 'weekly', label: '📊 Weekly View' },
-    { k: 'project', label: '🏭 Project Hours' },
-    { k: 'alerts', label: '🔔 Alerts' },
+    { k: 'entry', label: 'My Log' },
+    { k: 'daily', label: 'Daily View' },
+    { k: 'weekly', label: 'Weekly View' },
+    { k: 'project', label: 'Project Hours' },
+    { k: 'alerts', label: 'Alerts' },
   ];
 
   return (
     <div>
-      <div className="section-hdr">⏱ Daily Work Log</div>
+      <div className="section-hdr">Design Work Log</div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
         {tabs.map((t) => (
           <button
             key={t.k}
             type="button"
-            className="btn btn-sm"
-            style={{
-              fontWeight: 700,
-              background: tab === t.k ? 'var(--blue)' : 'var(--bg4)',
-              color: tab === t.k ? '#fff' : 'var(--text2)',
-              border: `1px solid ${tab === t.k ? 'var(--blue)' : 'var(--border)'}`,
-            }}
+            className={`btn btn-sm ${tab === t.k ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontWeight: 700 }}
             onClick={() => setTab(t.k)}
           >
             {t.label}
@@ -153,16 +157,17 @@ function EntryTab(): React.JSX.Element {
 
   const createMut = useCreateDesignWorkLog();
   const deleteMut = useDeleteDesignWorkLog();
+  const [askDelete, setAskDelete] = useState<string | null>(null);
 
   const onSave = (): void => {
     setErr(null);
     if (!projectId) {
-      setErr('Select project');
+      setErr('Project is required.');
       return;
     }
     const h = Number(hours);
     if (!Number.isFinite(h) || h <= 0) {
-      setErr('Enter hours');
+      setErr('Hours is required.');
       return;
     }
     const input: CreateDesignWorkLogInput = {
@@ -179,7 +184,7 @@ function EntryTab(): React.JSX.Element {
         setTask('');
         setDescription('');
       },
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save Entry. Try again.'),
     });
   };
 
@@ -195,17 +200,14 @@ function EntryTab(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile label="Today" value={`${todayHrs.toFixed(1)}h`} color="var(--blue)" />
-        <Tile label="Entries Today" value={todayLogs.length} color="var(--green)" />
-        <Tile label="Total Hours" value={`${totalHrs.toFixed(0)}h`} color="var(--cyan)" />
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            { key: 'today', label: 'Today', count: `${todayHrs.toFixed(1)}h` },
+            { key: 'entries', label: 'Entries Today', count: todayLogs.length },
+            { key: 'total', label: 'Total Hours', count: `${totalHrs.toFixed(0)}h` },
+          ]}
+        />
       </div>
 
       {canAdd ? (
@@ -213,7 +215,7 @@ function EntryTab(): React.JSX.Element {
           className="panel"
           style={{ padding: 16, marginBottom: 16, borderLeft: '3px solid var(--blue)' }}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📝 Log Work Entry</div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Log Work Entry</div>
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label">Log Date</label>
@@ -297,7 +299,7 @@ function EntryTab(): React.JSX.Element {
               style={{
                 marginTop: 12,
                 padding: 8,
-                background: 'rgba(239,68,68,0.08)',
+                background: 'var(--red3)',
                 color: 'var(--red2)',
                 fontSize: 12,
                 borderRadius: 4,
@@ -324,6 +326,17 @@ function EntryTab(): React.JSX.Element {
         </div>
       ) : null}
 
+      <ConfirmDialog
+        open={askDelete !== null}
+        title="Delete this work entry?"
+        message="The hours are removed from the log."
+        confirmLabel="Delete"
+        onCancel={() => setAskDelete(null)}
+        onConfirm={async () => {
+          if (askDelete) await deleteMut.mutateAsync(askDelete);
+          setAskDelete(null);
+        }}
+      />
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Recent Work Log</div>
       {dates.length === 0 ? (
         <div className="empty-state" style={{ padding: 30 }}>
@@ -338,8 +351,8 @@ function EntryTab(): React.JSX.Element {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <span
                 style={{
-                  background: 'rgba(37,99,235,0.08)',
-                  border: '1px solid rgba(37,99,235,0.3)',
+                  background: 'var(--blue3)',
+                  border: '1px solid var(--blue)',
                   color: 'var(--blue)',
                   padding: '3px 10px',
                   borderRadius: 6,
@@ -415,9 +428,8 @@ function EntryTab(): React.JSX.Element {
                       className="btn btn-ghost btn-sm"
                       style={{ fontSize: 11 }}
                       disabled={deleteMut.isPending}
-                      onClick={() => {
-                        if (window.confirm('Delete entry?')) deleteMut.mutate(l.id);
-                      }}
+                      title="Delete entry"
+                      onClick={() => setAskDelete(l.id)}
                     >
                       🗑
                     </button>
@@ -565,7 +577,7 @@ function DailyTab(): React.JSX.Element {
 
       {Object.keys(byEng).length === 0 ? (
         <div className="empty-state" style={{ padding: 30 }}>
-          📭 No entries
+          No entries yet.
         </div>
       ) : (
         Object.entries(byEng).map(([eng, entries]) => {
@@ -632,7 +644,7 @@ function WeeklyTab(): React.JSX.Element {
     for (let i = 0; i < 7; i++) {
       const dd = new Date(mon);
       dd.setDate(mon.getDate() + i);
-      out.push(dd.toISOString().slice(0, 10));
+      out.push(localYmd(dd));
     }
     return out;
   }, [refDate]);
@@ -865,7 +877,7 @@ function AlertsTab(): React.JSX.Element {
     const d = new Date(todayStr() + 'T00:00:00');
     while (out.length < 10) {
       const wd = d.getDay();
-      if (wd !== 0 && wd !== 6) out.push(d.toISOString().slice(0, 10));
+      if (wd !== 0 && wd !== 6) out.push(localYmd(d));
       d.setDate(d.getDate() - 1);
     }
     return out;
@@ -918,16 +930,18 @@ function AlertsTab(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile label="Unlogged Days" value={unlogged.length} color="var(--red)" />
-        <Tile label="Low Hours" value={lowHours.length} color="var(--amber)" />
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            {
+              key: 'unlogged',
+              label: 'Unlogged Days',
+              count: unlogged.length,
+              color: 'var(--red2)',
+            },
+            { key: 'low', label: 'Low Hours', count: lowHours.length, color: 'var(--amber2)' },
+          ]}
+        />
       </div>
 
       {unlogged.length > 0 ? (
@@ -935,13 +949,13 @@ function AlertsTab(): React.JSX.Element {
           <div
             style={{
               padding: '10px 14px',
-              background: 'rgba(239,68,68,0.06)',
+              background: 'var(--red3)',
               fontWeight: 700,
               fontSize: 12,
               color: 'var(--red2)',
             }}
           >
-            🔴 Unlogged Working Days
+            Unlogged Working Days
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -971,13 +985,13 @@ function AlertsTab(): React.JSX.Element {
           <div
             style={{
               padding: '10px 14px',
-              background: 'rgba(196,122,0,0.06)',
+              background: 'var(--amber3)',
               fontWeight: 700,
               fontSize: 12,
               color: 'var(--amber2)',
             }}
           >
-            ⚠ Low Hours (&lt;4h)
+            Low Hours (&lt;4h)
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -1015,7 +1029,7 @@ function AlertsTab(): React.JSX.Element {
             fontSize: 12,
           }}
         >
-          📊 Utilization (Last 10 Working Days)
+          Utilization (Last 10 Working Days)
         </div>
         <div className="tbl-wrap">
           <table className="innovic-table">
@@ -1058,27 +1072,6 @@ function AlertsTab(): React.JSX.Element {
           </table>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ─── Shared bits ──────────────────────────────────────────────────────────
-
-function Tile({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number | string;
-  color: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ textAlign: 'center', padding: 14 }}>
-      <div className="text3" style={{ fontSize: 11 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }

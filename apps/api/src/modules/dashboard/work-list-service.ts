@@ -157,7 +157,7 @@ async function ruleBomPending(
       detail: `${r['customer_name'] ?? ''} · Qty ${Number(r['qty']) || 0} · Due ${r['due_date'] ?? '—'}${dToDue < 0 ? ' (OVERDUE)' : dToDue <= 7 && dToDue >= 0 ? ` (in ${dToDue}d)` : ''}`,
       age,
       actionLabel: 'Create BOM',
-      navPage: '/bom-master',
+      navPage: '/bom-masters',
     };
   });
 }

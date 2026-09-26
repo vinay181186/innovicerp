@@ -109,10 +109,11 @@ export function CompleteModal({
   async function submit(): Promise<void> {
     setErr(null);
     const big = oversizedFile(files);
-    if (big) return setErr(`${big} is over 10 MB`);
-    if (files.length > 10) return setErr('Up to 10 files per task');
+    if (big) return setErr(`${big} cannot be more than 10 MB.`);
+    if (files.length > 10) return setErr('Attachment cannot be more than 10 files.');
     const companyId = me?.companyId ?? null;
-    if (files.length > 0 && !companyId) return setErr('No company in session — cannot upload');
+    if (files.length > 0 && !companyId)
+      return setErr('Could not upload files. Refresh the page and try again.');
     setBusy(true);
     try {
       const attachments: TaskAttachmentInput[] = [];
@@ -132,7 +133,7 @@ export function CompleteModal({
       });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not complete the task');
+      setErr(e instanceof Error ? e.message : 'Could not complete the task. Try again.');
     } finally {
       setBusy(false);
     }

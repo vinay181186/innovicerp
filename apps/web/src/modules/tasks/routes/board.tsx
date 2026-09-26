@@ -1,7 +1,7 @@
 // Task Board (ADR-176) — the approved Inbox / Outbox / My To-Do / All Tasks
 // board. Title row with "+ My To-Do" and "+ Assign Task" (any user), a tab
-// strip with open counts, the KPI strip (TO DO / IN PROGRESS / COMPLETED /
-// OVERDUE, each a filter), the five-box filter strip, the table, and a hint
+// strip with open counts, the KPI strip (To Do / In Progress / Completed /
+// Overdue / Cancelled — the only status filter), the filter strip, the table, and a hint
 // line that names the view. `?view=` keeps the tab across a refresh;
 // `?task=<uuid>` (Global Search deep link) opens that task's detail on
 // arrival; `?search=` keeps the typed term. Everything else is local state.
@@ -38,6 +38,7 @@ import { TaskDetailModal } from '../components/task-detail-modal';
 import { TaskFilters, TaskTabs } from '../components/board-filters';
 import { TaskTable, type RowAction } from '../components/task-table';
 import { TodoModal } from '../components/todo-modal';
+import { TASK_STATUS_TONE } from '../lib/format';
 
 const searchSchema = z.object({
   task: z.string().uuid().optional(),
@@ -184,7 +185,7 @@ function TaskBoardPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📋 Task Board
+          Task Board
           {data.unreadCount > 0 ? (
             <span className="badge b-red" style={{ marginLeft: 8 }}>
               🔔 {data.unreadCount} new
@@ -216,14 +217,14 @@ function TaskBoardPage(): React.JSX.Element {
 
       <TaskTabs tabs={tabs} view={view} countOf={tabCount} onChange={setView} />
 
-      {/* KPI strip — each tile is a filter */}
+      {/* KPI strip — each tile is a filter (the only status filter) */}
       <StatStrip
         items={[
           {
             key: 'todo',
             label: 'To Do',
             count: counts.todo,
-            color: 'var(--amber2)',
+            color: TASK_STATUS_TONE.todo.color,
             active: status === 'todo',
             onClick: () => toggleStatus('todo'),
           },
@@ -231,7 +232,7 @@ function TaskBoardPage(): React.JSX.Element {
             key: 'in_progress',
             label: 'In Progress',
             count: counts.in_progress,
-            color: 'var(--blue)',
+            color: TASK_STATUS_TONE.in_progress.color,
             active: status === 'in_progress',
             onClick: () => toggleStatus('in_progress'),
           },
@@ -239,7 +240,7 @@ function TaskBoardPage(): React.JSX.Element {
             key: 'completed',
             label: 'Completed',
             count: counts.completed,
-            color: 'var(--green2)',
+            color: TASK_STATUS_TONE.completed.color,
             active: status === 'completed',
             onClick: () => toggleStatus('completed'),
           },
@@ -247,9 +248,19 @@ function TaskBoardPage(): React.JSX.Element {
             key: 'overdue',
             label: 'Overdue',
             count: counts.overdue,
-            color: 'var(--red2)',
+            color: TASK_STATUS_TONE.overdue.color,
             active: due === 'overdue',
             onClick: toggleOverdue,
+          },
+          {
+            // No count is sent for cancelled tasks; the tile still filters so
+            // the Status dropdown it replaces is not needed.
+            key: 'cancelled',
+            label: 'Cancelled',
+            count: status === 'cancelled' ? data.tasks.length : '—',
+            color: TASK_STATUS_TONE.cancelled.color,
+            active: status === 'cancelled',
+            onClick: () => toggleStatus('cancelled'),
           },
         ]}
       />
@@ -258,9 +269,8 @@ function TaskBoardPage(): React.JSX.Element {
         view={view}
         users={users}
         departments={departments}
-        values={{ searchInput, status, priority, person, assignedBy, dept, due }}
+        values={{ searchInput, priority, person, assignedBy, dept, due }}
         onSearch={setSearchInput}
-        onStatus={setStatus}
         onPriority={setPriority}
         onPerson={setPerson}
         onAssignedBy={setAssignedBy}
@@ -276,7 +286,14 @@ function TaskBoardPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <TaskTable rows={data.tasks} view={view} onAction={onRowAction} />
+      <TaskTable
+        rows={data.tasks}
+        view={view}
+        filtered={Boolean(
+          routeSearch.search || status || priority || person || assignedBy || dept || due,
+        )}
+        onAction={onRowAction}
+      />
 
       {modal.kind === 'assign' ? <AssignTaskModal onClose={closeModal} /> : null}
       {modal.kind === 'todo' ? <TodoModal onClose={closeModal} /> : null}

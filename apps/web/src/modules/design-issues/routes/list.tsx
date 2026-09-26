@@ -1,9 +1,10 @@
 // All Design Issues (Design slice D) — cross-project view.
 // Mirrors legacy renderDesignIssuesPage (HTML L7890).
 
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -23,6 +24,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'dsnissue_create');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
+  const navigate = useNavigate();
 
   const { data, isLoading, isError, error } = useDesignIssuesAll({
     search: search.trim() || undefined,
@@ -37,44 +39,49 @@ function DesignIssuesAllPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Design Issues. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile
-          label="Total"
-          value={summary.total}
-          color="var(--blue)"
-          onClick={() => setFilter('all')}
-        />
-        <Tile
-          label="Open"
-          value={summary.open}
-          color="var(--red)"
-          onClick={() => setFilter('open')}
-        />
-        <Tile
-          label="Resolved"
-          value={summary.resolved}
-          color="var(--green)"
-          onClick={() => setFilter('resolved')}
-        />
-        <Tile
-          label="Critical"
-          value={summary.critical}
-          color="var(--red)"
-          onClick={() => setFilter('critical')}
+      {/* One strip; the tiles ARE the filter (no status dropdown). */}
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'Total',
+              count: summary.total,
+              active: filter === 'all',
+              onClick: () => setFilter('all'),
+            },
+            {
+              key: 'open',
+              label: 'Open',
+              count: summary.open,
+              color: 'var(--blue)',
+              active: filter === 'open',
+              onClick: () => setFilter('open'),
+            },
+            {
+              key: 'resolved',
+              label: 'Resolved',
+              count: summary.resolved,
+              color: 'var(--green2)',
+              active: filter === 'resolved',
+              onClick: () => setFilter('resolved'),
+            },
+            {
+              key: 'critical',
+              label: 'Critical',
+              count: summary.critical,
+              color: 'var(--red2)',
+              active: filter === 'critical',
+              onClick: () => setFilter('critical'),
+            },
+          ]}
         />
       </div>
 
@@ -89,7 +96,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ⚠ All Design Issues
+          All Design Issues
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
@@ -100,17 +107,6 @@ function DesignIssuesAllPage(): React.JSX.Element {
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: 220, fontSize: 12 }}
           />
-          <select
-            className="innovic-select"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterKey)}
-            style={{ fontSize: 12 }}
-          >
-            <option value="all">All</option>
-            <option value="open">Open</option>
-            <option value="resolved">Resolved</option>
-            <option value="critical">Critical</option>
-          </select>
         </div>
       </div>
 
@@ -146,7 +142,9 @@ function DesignIssuesAllPage(): React.JSX.Element {
                 {data.items.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="empty-state">
-                      No issues
+                      {search.trim() || filter !== 'all'
+                        ? 'No Design Issues match.'
+                        : 'No Design Issues yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -154,7 +152,16 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   const stale =
                     i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
                   return (
-                    <tr key={i.id}>
+                    <tr
+                      key={i.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() =>
+                        void navigate({
+                          to: '/design-projects/$id',
+                          params: { id: i.designProjectId },
+                        })
+                      }
+                    >
                       <td className="fw-700">
                         <Link
                           to="/design-projects/$id"
@@ -181,7 +188,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                       >
                         {i.ageDays}d
                       </td>
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         {i.status !== 'Closed' && i.status !== 'Resolved' ? (
                           <AssignTaskButton
                             linkedRef={{
@@ -206,57 +213,18 @@ function DesignIssuesAllPage(): React.JSX.Element {
   );
 }
 
-function Tile({
-  label,
-  value,
-  color,
-  onClick,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  onClick?: () => void;
-}): React.JSX.Element {
-  return (
-    <div
-      className="panel"
-      onClick={onClick}
-      style={{ textAlign: 'center', padding: 12, cursor: 'pointer' }}
-    >
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
-    </div>
-  );
-}
-
-function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.Element {
+/** Severity / status badge — house classes: Critical red, Major amber, Minor
+ *  grey; Open blue, In Progress amber, Resolved / Closed green. */
+function Badge({ value }: { value: string; kind?: 'status' }): React.JSX.Element {
   const v = value.toLowerCase().replace(/[\s/]/g, '');
-  // Colour map mirrors legacy _dpBadge (HTML L7555-7562) exactly — note Major
-  // is orange there, not amber.
-  const colors: Record<string, string> = {
-    critical: 'var(--red)',
-    major: 'var(--orange)',
-    minor: 'var(--green)',
-    open: 'var(--red)',
-    inprogress: 'var(--blue)',
-    resolved: 'var(--green)',
-    closed: 'var(--text3)',
+  const cls: Record<string, string> = {
+    critical: 'b-red',
+    major: 'b-amber',
+    minor: 'b-grey',
+    open: 'b-blue',
+    inprogress: 'b-amber',
+    resolved: 'b-green',
+    closed: 'b-green',
   };
-  const c = colors[v] ?? 'var(--text3)';
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 9px',
-        borderRadius: kind === 'status' ? 4 : 12,
-        fontSize: 11,
-        fontWeight: 700,
-        color: c,
-        background: `${c}12`,
-        border: `1px solid ${c}30`,
-      }}
-    >
-      {value}
-    </span>
-  );
+  return <span className={`badge ${cls[v] ?? 'b-grey'}`}>{value}</span>;
 }

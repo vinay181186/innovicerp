@@ -288,7 +288,7 @@ export function Builder(props: Props): JSX.Element {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" htmlFor="rb-name">
-                Name<span className="req">★</span>
+                Report Name<span className="req">★</span>
               </label>
               <input
                 id="rb-name"
@@ -308,7 +308,6 @@ export function Builder(props: Props): JSX.Element {
                 className="innovic-input"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="optional"
               />
             </div>
             <div className="form-grp form-full">
@@ -710,7 +709,7 @@ export function Builder(props: Props): JSX.Element {
                         >
                           {AGG_OPTIONS.map((fn) => (
                             <option key={fn} value={fn}>
-                              {fn}
+                              {fn.charAt(0) + fn.slice(1).toLowerCase()}
                             </option>
                           ))}
                         </select>
@@ -742,7 +741,8 @@ export function Builder(props: Props): JSX.Element {
                 className="btn btn-primary"
                 disabled={saving || columns.length === 0 || !name.trim()}
               >
-                {saving ? <Loader2 className="animate-spin" /> : null}💾 {saveLabel}
+                {saving ? <Loader2 className="animate-spin" /> : null}
+                {saveLabel}
               </button>
               {onExcel ? (
                 <button

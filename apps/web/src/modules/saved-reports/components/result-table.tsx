@@ -1,21 +1,10 @@
-// Renders the result of a run / preview: header card, optional summary
-// table, then the row table with CSV export. Shared by the run route and
-// the builder live preview.
+// Renders the result of a run / preview: optional summary table, then the row
+// table with CSV / Excel export. Shared by the run route and the builder live
+// preview. House panel + innovic-table look (was shadcn Card + Table).
 
 import type { AdHocColumn, RunAdHocResponse } from '@innovic/shared';
 import { Download, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { fmtDate, fmtDateTime } from '@/lib/date';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { downloadCsv, rowsToCsv } from '../lib/csv';
 
 interface Props {
@@ -29,6 +18,11 @@ interface Props {
    *  (saved-report id vs preview spec) and the loading state. */
   onExcel?: (() => void) | undefined;
   excelLoading?: boolean | undefined;
+}
+
+/** SUM → Sum. The function code stays what the API sends. */
+function fnLabel(fn: string | null): string {
+  return fn ? fn.charAt(0) + fn.slice(1).toLowerCase() : '';
 }
 
 export function ResultTable({
@@ -47,151 +41,151 @@ export function ResultTable({
     downloadCsv(`${filenamePrefix}-${stamp}.csv`, csv);
   };
 
+  // The summary column is a field key; show its label when the run carries it.
+  const summaryColLabel = data?.summaryColumn
+    ? (data.columns.find((c) => c.key === data.summaryColumn)?.label ?? data.summaryColumn)
+    : null;
+  const colSpan = Math.max(1, data?.columns.length ?? 1);
+
   return (
-    <div className="space-y-6">
+    <div>
       {data && data.summary.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Summary</CardTitle>
-            <CardDescription>
-              Grouped count
-              {data.summaryColumn ? ` + ${data.summaryFunction} of ${data.summaryColumn}` : ''}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Group</TableHead>
-                    <TableHead className="text-right">Count</TableHead>
-                    {data.summaryColumn ? (
-                      <TableHead className="text-right">
-                        {data.summaryFunction} ({data.summaryColumn})
-                      </TableHead>
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div className="panel-hdr">
+            <span className="panel-title">
+              Summary
+              <span className="text3" style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>
+                Count per group
+                {summaryColLabel ? ` + ${fnLabel(data.summaryFunction)} of ${summaryColLabel}` : ''}
+              </span>
+            </span>
+          </div>
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>Group</th>
+                  <th className="td-right">Count</th>
+                  {summaryColLabel ? (
+                    <th className="td-right">
+                      {fnLabel(data.summaryFunction)} of {summaryColLabel}
+                    </th>
+                  ) : null}
+                </tr>
+              </thead>
+              <tbody>
+                {data.summary.map((row, i) => (
+                  <tr key={`${row.group}-${i}`}>
+                    <td className="fw-700">{row.group}</td>
+                    <td className="td-right mono">{row.count.toLocaleString('en-IN')}</td>
+                    {summaryColLabel ? (
+                      <td className="td-right mono">
+                        {row.aggregate ? Number(row.aggregate).toLocaleString('en-IN') : '—'}
+                      </td>
                     ) : null}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.summary.map((row, i) => (
-                    <TableRow key={`${row.group}-${i}`}>
-                      <TableCell className="font-medium">{row.group}</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {row.count.toLocaleString()}
-                      </TableCell>
-                      {data.summaryColumn ? (
-                        <TableCell className="text-right font-mono">
-                          {row.aggregate ? Number(row.aggregate).toLocaleString() : '—'}
-                        </TableCell>
-                      ) : null}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-baseline justify-between gap-4">
-            <div>
-              <CardTitle className="text-base">Results</CardTitle>
-              <CardDescription>
-                {data
-                  ? `${data.rowCount} rows · refreshed ${fmtDateTime(data.generatedAt)}`
-                  : 'No results yet.'}
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
+      <div className="panel">
+        <div className="panel-hdr">
+          <span className="panel-title">
+            Results
+            <span className="text3" style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>
+              {data
+                ? `${data.rowCount} rows · refreshed ${fmtDateTime(data.generatedAt)}`
+                : 'No results yet.'}
+            </span>
+          </span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onCsv}
+              disabled={!data || data.rowCount === 0}
+            >
+              <Download size={13} /> Export CSV
+            </button>
+            {onExcel ? (
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                onClick={onCsv}
-                disabled={!data || data.rowCount === 0}
+                className="btn btn-ghost btn-sm"
+                onClick={onExcel}
+                disabled={!data || data.rowCount === 0 || excelLoading}
               >
-                <Download />
-                Export CSV
-              </Button>
-              {onExcel ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={onExcel}
-                  disabled={!data || data.rowCount === 0 || excelLoading}
-                >
-                  {excelLoading ? <Loader2 className="animate-spin" /> : <Download />}
-                  Export Excel
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {(data?.columns ?? []).map((col) => (
-                    <TableHead key={col.key} className={col.type === 'number' ? 'text-right' : ''}>
-                      {col.label}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableEmpty colSpan={Math.max(1, data?.columns.length ?? 1)}>
-                    <span className="inline-flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Running…
-                    </span>
-                  </TableEmpty>
-                ) : isError ? (
-                  <TableEmpty colSpan={Math.max(1, data?.columns.length ?? 1)}>
-                    <span className="text-destructive">
-                      {errorMessage ?? 'Could not run report. Try again.'}
-                    </span>
-                  </TableEmpty>
-                ) : !data || data.rows.length === 0 ? (
-                  <TableEmpty colSpan={Math.max(1, data?.columns.length ?? 1)}>
-                    No rows match this spec.
-                  </TableEmpty>
+                {excelLoading ? (
+                  <Loader2 size={13} className="animate-spin" />
                 ) : (
-                  data.rows.map((row, i) => (
-                    <TableRow key={i}>
-                      {data.columns.map((col) => (
-                        <TableCell
-                          key={col.key}
-                          className={col.type === 'number' ? 'text-right font-mono' : ''}
-                        >
-                          {renderCell(col, row[col.key])}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  <Download size={13} />
+                )}{' '}
+                Export Excel
+              </button>
+            ) : null}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                {(data?.columns ?? []).map((col) => (
+                  <th key={col.key} className={col.type === 'number' ? 'td-right' : ''}>
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={colSpan} className="empty-state">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Running…
+                  </td>
+                </tr>
+              ) : isError ? (
+                <tr>
+                  <td colSpan={colSpan} className="empty-state" style={{ color: 'var(--red2)' }}>
+                    {errorMessage ?? 'Could not run report. Try again.'}
+                  </td>
+                </tr>
+              ) : !data || data.rows.length === 0 ? (
+                <tr>
+                  <td colSpan={colSpan} className="empty-state">
+                    No rows match.
+                  </td>
+                </tr>
+              ) : (
+                data.rows.map((row, i) => (
+                  <tr key={i}>
+                    {data.columns.map((col) => (
+                      <td key={col.key} className={col.type === 'number' ? 'td-right mono' : ''}>
+                        {renderCell(col, row[col.key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
 
 function renderCell(col: AdHocColumn, raw: unknown): JSX.Element {
   if (raw === null || raw === undefined) {
-    return <span className="text-xs text-muted-foreground">—</span>;
+    return <span className="text3">—</span>;
   }
   if (col.type === 'number') {
-    return <span>{Number(raw).toLocaleString()}</span>;
+    return <span>{Number(raw).toLocaleString('en-IN')}</span>;
   }
   if ((col.type === 'date' || col.type === 'datetime') && typeof raw === 'string') {
-    return <span className="text-sm">{col.type === 'date' ? fmtDate(raw) : fmtDateTime(raw)}</span>;
+    return <span>{col.type === 'date' ? fmtDate(raw) : fmtDateTime(raw)}</span>;
   }
-  return <span className="text-sm">{String(raw)}</span>;
+  return <span>{String(raw)}</span>;
 }

@@ -10,7 +10,7 @@ export const al004SoDue7Days: RegisteredAlert = {
   definition: {
     code: 'AL-004',
     dept: 'sales',
-    name: 'Upcoming SO delivery (7 days)',
+    name: 'SO Delivery Due in 7 Days',
     description: 'Open SO lines with a Due Date between today and 7 days from now.',
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },

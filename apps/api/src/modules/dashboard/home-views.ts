@@ -12,6 +12,7 @@ import type {
 import { shortName } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
+import { fmtDate } from '../../lib/format-date';
 
 type Row = Record<string, string | number | null>;
 async function q(tx: DbTransaction, text: string): Promise<Row[]> {
@@ -191,9 +192,9 @@ export async function buildSpecialist(
       `SELECT COUNT(*)::int AS c FROM capa_records WHERE company_id='${cid}'::uuid AND lower(status) NOT IN ('closed','verified') AND deleted_at IS NULL`,
     );
     kpis.push(
-      { label: 'Pending Incoming QC', value: pendingQC, sub: 'GRNs awaiting inspection', color: 'var(--dept-qc)', navPage: '/incoming-qc' },
+      { label: 'GRN QC Pending', value: pendingQC, sub: 'To inspect', color: 'var(--dept-qc)', navPage: '/incoming-qc' },
       { label: 'Open NCs', value: openNCs, sub: 'Need disposition', color: 'var(--sig-critical)', navPage: '/nc-register' },
-      { label: 'Active CAPAs', value: activeCAPAs, sub: 'Corrective & Preventive', color: 'var(--sig-warn)', navPage: '/capa' },
+      { label: 'Active CAPAs', value: activeCAPAs, sub: '', color: 'var(--sig-warn)', navPage: '/capa' },
     );
     const grnRows = await q(
       tx,
@@ -206,11 +207,11 @@ export async function buildSpecialist(
        ORDER BY g.grn_date DESC LIMIT 10`,
     );
     panels.push({
-      title: 'Pending Incoming QC',
+      title: 'GRN QC Pending',
       titleColor: null,
       headers: ['GRN No.', 'GRN Date', 'Vendor', 'Received'],
-      rows: grnRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['grn_date'] ?? ''), String(r['vendor_code_text'] ?? ''), String(num(r['qty']))], navPage: '/incoming-qc' })),
-      emptyText: '✅ No pending inspections.',
+      rows: grnRows.map((r) => ({ cells: [String(r['code'] ?? ''), fmtDate(r['grn_date'] as string | null), String(r['vendor_code_text'] ?? ''), String(num(r['qty']))], navPage: '/incoming-qc' })),
+      emptyText: '✅ Nothing pending',
     });
   } else if (dept === 'purchase') {
     const pendingPRs = await count(tx, `SELECT COUNT(*)::int AS c FROM purchase_requests WHERE company_id='${cid}'::uuid AND status='open' AND deleted_at IS NULL`);
@@ -228,15 +229,15 @@ export async function buildSpecialist(
       title: 'Pending PRs',
       titleColor: null,
       headers: ['PR No.', 'PR Date', 'Item Code', 'Qty'],
-      rows: prRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['pr_date'] ?? ''), String(r['item_code_text'] ?? ''), String(num(r['qty']))], navPage: '/purchase-requests' })),
-      emptyText: '✅ None',
+      rows: prRows.map((r) => ({ cells: [String(r['code'] ?? ''), fmtDate(r['pr_date'] as string | null), String(r['item_code_text'] ?? ''), String(num(r['qty']))], navPage: '/purchase-requests' })),
+      emptyText: '✅ Nothing pending',
     });
     const poRows = await q(tx, `SELECT code, vendor_code_text, due_date FROM purchase_orders WHERE company_id='${cid}'::uuid AND status IN ('open','partial') AND due_date < '${today}' AND deleted_at IS NULL ORDER BY due_date ASC LIMIT 8`);
     panels.push({
       title: 'Overdue POs',
       titleColor: 'var(--sig-critical)',
       headers: ['PO No.', 'Vendor', 'Due Date'],
-      rows: poRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['vendor_code_text'] ?? ''), String(r['due_date'] ?? '')], navPage: '/purchase-orders' })),
+      rows: poRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['vendor_code_text'] ?? ''), fmtDate(r['due_date'] as string | null)], navPage: '/purchase-orders' })),
       emptyText: '✅ All on time',
     });
   } else {
@@ -247,14 +248,14 @@ export async function buildSpecialist(
     kpis.push(
       { label: 'Active Projects', value: activeProjects, sub: 'In progress', color: 'var(--dept-design)', navPage: '/design-projects' },
       { label: 'Open Issues', value: openIssues, sub: 'Need resolution', color: 'var(--sig-warn)', navPage: '/design-issues' },
-      { label: 'BOMs Pending', value: bomsPending, sub: 'Equipment SOs awaiting BOM', color: 'var(--sig-critical)', navPage: '/bom-master' },
+      { label: 'BOMs Pending', value: bomsPending, sub: 'Equipment SOs awaiting BOM', color: 'var(--sig-critical)', navPage: '/bom-masters' },
     );
     const soRows = await q(tx, `SELECT so.code, so.so_date, so.customer_name, MIN(sol.due_date) AS due_date FROM sales_orders so LEFT JOIN sales_order_lines sol ON sol.sales_order_id=so.id AND sol.deleted_at IS NULL WHERE so.company_id='${cid}'::uuid AND so.type='equipment' AND so.status NOT IN ('closed','cancelled') AND (so.bom_master_id IS NULL OR so.bom_status='BOM Pending') AND so.deleted_at IS NULL GROUP BY so.id, so.code, so.so_date, so.customer_name ORDER BY so.so_date DESC LIMIT 10`);
     panels.push({
       title: 'Equipment SOs Awaiting BOM',
       titleColor: null,
       headers: ['SO No.', 'SO Date', 'Customer', 'Due Date'],
-      rows: soRows.map((r) => ({ cells: [String(r['code'] ?? ''), String(r['so_date'] ?? ''), String(r['customer_name'] ?? ''), String(r['due_date'] ?? '—')], navPage: '/bom-master' })),
+      rows: soRows.map((r) => ({ cells: [String(r['code'] ?? ''), fmtDate(r['so_date'] as string | null), String(r['customer_name'] ?? ''), fmtDate(r['due_date'] as string | null) || '—'], navPage: '/bom-masters' })),
       emptyText: '✅ All Equipment SOs have BOMs.',
     });
   }

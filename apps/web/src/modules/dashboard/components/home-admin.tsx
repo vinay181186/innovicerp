@@ -85,7 +85,7 @@ export function HomeAdmin({ home }: { home: HomeResponse }): React.JSX.Element {
                   {k.overdueJCs} overdue
                 </span>
               ) : (
-                'Healthy'
+                'All on track'
               ),
           },
           {
@@ -136,7 +136,7 @@ export function HomeAdmin({ home }: { home: HomeResponse }): React.JSX.Element {
           >
             <StatRow
               icon="📥"
-              label="GRNs received"
+              label="GRNs Received"
               value={t.grnReceived}
               navPage="/goods-receipt-notes"
             />
@@ -148,11 +148,11 @@ export function HomeAdmin({ home }: { home: HomeResponse }): React.JSX.Element {
             />
             <StatRow
               icon="▶"
-              label="Ops running"
+              label="Ops Running"
               value={t.opsRunning}
               navPage="/production-dashboard"
             />
-            <StatRow icon="✅" label="Ops completed" value={t.opsCompleted} navPage="/op-entry" />
+            <StatRow icon="✅" label="Ops Completed" value={t.opsCompleted} navPage="/op-entry" />
           </div>
         </div>
 

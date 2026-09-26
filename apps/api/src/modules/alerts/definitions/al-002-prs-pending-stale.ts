@@ -8,7 +8,7 @@ export const al002PrsPendingStale: RegisteredAlert = {
   definition: {
     code: 'AL-002',
     dept: 'purchase',
-    name: 'Pending PRs > 2 days',
+    name: 'Pending PRs Over 2 Days',
     description: 'PRs still Open more than 2 days after they were raised.',
     columns: [
       { key: 'pr_code', label: 'PR No.', type: 'text' },

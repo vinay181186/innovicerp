@@ -9,7 +9,7 @@ export const al009NcRecent: RegisteredAlert = {
   definition: {
     code: 'AL-009',
     dept: 'qc',
-    name: 'QC rejections (last 3 days)',
+    name: 'NCs Raised (Last 3 Days)',
     description: 'NCs filed within the last 3 days.',
     columns: [
       { key: 'nc_code', label: 'NC No.', type: 'text' },

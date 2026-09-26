@@ -5,8 +5,10 @@ import { type CreateDesignProjectInput, type DesignProjectListItem } from '@inno
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayIst, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import { useCreateDesignProject, useDesignProjectsList, useNextDesignProjectCode } from '../api';
@@ -49,48 +51,61 @@ function DesignProjectsListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Design Projects. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile
-          label="Total"
-          value={summary.total}
-          color="var(--blue)"
-          onClick={() => setFilter('all')}
-        />
-        <Tile
-          label="Active"
-          value={summary.active}
-          color="var(--cyan)"
-          onClick={() => setFilter('active')}
-        />
-        <Tile
-          label="Released"
-          value={summary.released}
-          color="var(--green)"
-          onClick={() => setFilter('released')}
-        />
-        <Tile
-          label="Tasks Completed"
-          value={`${summary.doneTasks}/${summary.totalTasks}`}
-          color="var(--purple)"
-        />
-        <Tile
-          label="Open Issues"
-          value={summary.openIssues}
-          color={summary.openIssues > 0 ? 'var(--red)' : 'var(--green)'}
+      {/* One strip; the status tiles ARE the filter (no status dropdown). */}
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'Total',
+              count: summary.total,
+              color: 'var(--blue)',
+              active: filter === 'all',
+              onClick: () => setFilter('all'),
+            },
+            {
+              key: 'active',
+              label: 'Active',
+              count: summary.active,
+              color: 'var(--amber2)',
+              active: filter === 'active',
+              onClick: () => setFilter('active'),
+            },
+            {
+              key: 'released',
+              label: 'Released',
+              count: summary.released,
+              color: 'var(--green2)',
+              active: filter === 'released',
+              onClick: () => setFilter('released'),
+            },
+            {
+              key: 'hold',
+              label: 'On Hold',
+              count: summary.onHold,
+              color: 'var(--text2)',
+              active: filter === 'hold',
+              onClick: () => setFilter('hold'),
+            },
+            {
+              key: 'tasks',
+              label: 'Tasks Completed',
+              count: `${summary.doneTasks}/${summary.totalTasks}`,
+            },
+            {
+              key: 'issues',
+              label: 'Open Issues',
+              count: summary.openIssues,
+              color: summary.openIssues > 0 ? 'var(--red2)' : undefined,
+            },
+          ]}
         />
       </div>
 
@@ -105,7 +120,7 @@ function DesignProjectsListPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📋 Design Projects
+          Design Projects
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
@@ -116,17 +131,6 @@ function DesignProjectsListPage(): React.JSX.Element {
             onChange={(e) => setSearch(e.target.value)}
             style={{ minWidth: 160, fontSize: 12 }}
           />
-          <select
-            className="innovic-select"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterKey)}
-            style={{ fontSize: 12 }}
-          >
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="released">Released</option>
-            <option value="hold">On Hold</option>
-          </select>
           {perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               + New Project
@@ -168,40 +172,15 @@ function DesignProjectsListPage(): React.JSX.Element {
           </div>
           {data.items.length === 0 ? (
             <div className="empty-state" style={{ padding: 50 }}>
-              📐 No design projects found.
+              {search.trim() || filter !== 'all'
+                ? 'No Design Projects match.'
+                : 'No Design Projects yet.'}
             </div>
           ) : null}
         </>
       ) : null}
 
       {showAdd ? <AddProjectModal onClose={() => setShowAdd(false)} /> : null}
-    </div>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  color,
-  onClick,
-}: {
-  label: string;
-  value: number | string;
-  color: string;
-  onClick?: () => void;
-}): React.JSX.Element {
-  return (
-    <div
-      className="panel"
-      onClick={onClick}
-      style={{
-        textAlign: 'center',
-        padding: 14,
-        ...(onClick ? { cursor: 'pointer' } : {}),
-      }}
-    >
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }
@@ -298,31 +277,16 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
   );
 }
 
+/** Design Active / In Review = under way (amber); Released = done (green);
+ *  On Hold = waiting (grey). Badge classes only — no hand-mixed colours. */
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
-  const v = status.toLowerCase().replace(/[\s/]/g, '');
-  const colors: Record<string, string> = {
-    designactive: 'var(--blue)',
-    inreview: 'var(--purple)',
-    released: 'var(--green)',
-    onhold: 'var(--amber)',
+  const cls: Record<string, string> = {
+    'Design Active': 'b-amber',
+    'In Review': 'b-amber',
+    Released: 'b-green',
+    'On Hold': 'b-grey',
   };
-  const c = colors[v] ?? 'var(--text3)';
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 9px',
-        borderRadius: 12,
-        fontSize: 11,
-        fontWeight: 700,
-        color: c,
-        background: `${c}12`,
-        border: `1px solid ${c}30`,
-      }}
-    >
-      {status}
-    </span>
-  );
+  return <span className={`badge ${cls[status] ?? 'b-grey'}`}>{status}</span>;
 }
 
 // ─── Add modal ────────────────────────────────────────────────────────────
@@ -335,7 +299,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const [lead, setLead] = useState('');
   const [status, setStatus] = useState<CreateDesignProjectInput['status']>('Design Active');
   const [engineersStr, setEngineersStr] = useState('');
-  const [startDate, setStartDate] = useState(todayLocal());
+  const [startDate, setStartDate] = useState(todayIst());
   const [targetDate, setTargetDate] = useState('');
   const [description, setDescription] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -355,11 +319,11 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const onSave = (): void => {
     setErr(null);
     if (!name.trim()) {
-      setErr('Enter project name');
+      setErr('Project Name is required.');
       return;
     }
     if (!targetDate) {
-      setErr('Set target date');
+      setErr('Target Date is required.');
       return;
     }
     const input: CreateDesignProjectInput = {
@@ -378,15 +342,23 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
     if (description.trim()) input.description = description.trim();
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
+      onError: (e) =>
+        setErr(e instanceof Error ? e.message : 'Could not save Design Project. Try again.'),
     });
   };
 
   return (
     <Modal
       onClose={onClose}
-      title="📋 New Design Project"
-      footer={<Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save" />}
+      title="New Design Project"
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={mut.isPending}
+          label="Save Design Project"
+        />
+      }
     >
       <div className="form-grid">
         <div className="form-grp">
@@ -400,33 +372,26 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
           <input className="innovic-input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="form-grp">
-          <label className="form-label">Sales Order</label>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Type SO code or customer…"
-            value={selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : soSearch}
-            onChange={(e) => {
-              setSoId(null);
-              setSoSearch(e.target.value);
-              // Auto-fill client from SO when an SO is picked
+          <label className="form-label">SO No.</label>
+          <SearchableSelect
+            value={soId}
+            valueLabel={
+              selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : undefined
+            }
+            options={(soData?.items ?? []).map((so) => ({
+              id: so.id,
+              code: so.code,
+              name: so.customerName ?? '',
+            }))}
+            onSearch={setSoSearch}
+            placeholder="Type SO No. or customer…"
+            onChange={(id) => {
+              setSoId(id);
+              // Fetch-from: the picked SO fills Customer when it is still blank.
+              const pickedSo = soData?.items.find((x) => x.id === id);
+              if (pickedSo?.customerName && !client) setClient(pickedSo.customerName);
             }}
           />
-          {!soId && soSearch && soData ? (
-            <Picklist
-              items={soData.items.slice(0, 20).map((s) => ({
-                id: s.id,
-                label: `${s.code} — ${s.customerName ?? ''}`,
-                sub: null,
-              }))}
-              onPick={(id) => {
-                setSoId(id);
-                setSoSearch('');
-                const pickedSo = soData.items.find((x) => x.id === id);
-                if (pickedSo?.customerName && !client) setClient(pickedSo.customerName);
-              }}
-            />
-          ) : null}
         </div>
         <div className="form-grp">
           <label className="form-label">Customer</label>
@@ -532,43 +497,6 @@ function Modal({
   );
 }
 
-function Picklist({
-  items,
-  onPick,
-}: {
-  items: Array<{ id: string; label: string; sub: string | null }>;
-  onPick: (id: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 4,
-        background: 'var(--bg2)',
-        marginTop: 4,
-        maxHeight: 180,
-        overflowY: 'auto',
-      }}
-    >
-      {items.map((it) => (
-        <div
-          key={it.id}
-          onClick={() => onPick(it.id)}
-          style={{
-            padding: '6px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Actions({
   onClose,
   onSave,
@@ -604,7 +532,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
       style={{
         marginTop: 12,
         padding: 8,
-        background: 'rgba(239,68,68,0.08)',
+        background: 'var(--red3)',
         color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,

@@ -27,6 +27,8 @@ function toneColor(t: string | null): string {
       return 'var(--blue)';
     case 'purple':
       return 'var(--purple)';
+    case 'grey':
+      return 'var(--text2)';
     default:
       return 'var(--text)';
   }
@@ -93,7 +95,7 @@ function AlertsWidget(): React.JSX.Element {
         🔔 Alerts {total > 0 ? <span className="mono" style={{ fontSize: 16, marginLeft: 6 }}>{total}</span> : null}
       </div>
       {visible.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--green2)' }}>✅ All clear! No pending alerts.</div>
+        <div style={{ fontSize: 12, color: 'var(--green2)' }}>✅ Nothing pending</div>
       ) : (
         visible.slice(0, 8).map((a) => (
           <div key={a.code} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 11, borderBottom: '1px solid var(--border)' }}>

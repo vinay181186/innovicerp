@@ -15,7 +15,7 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
   definition: {
     code: 'AL-015',
     dept: 'purchase',
-    name: 'OSP PRs pending PO',
+    name: 'OSP PRs Pending PO',
     description: 'OSP PRs (raised from a JC operation) that are Open or Approved with no PO yet.',
     columns: [
       { key: 'pr_code', label: 'PR No.', type: 'text' },

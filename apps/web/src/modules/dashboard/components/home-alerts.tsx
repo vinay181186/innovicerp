@@ -4,6 +4,7 @@
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useAlerts } from '@/modules/alerts/api';
+import { DEPT_LABEL } from '@/modules/alerts/lib/dept';
 import { QuickLinks } from './quick-links';
 
 // Map alert dept → the landing route for the row click.
@@ -11,7 +12,7 @@ const DEPT_NAV: Record<string, string> = {
   planning: '/planning',
   sales: '/sales-orders',
   store: '/store-inventory',
-  design: '/bom-master',
+  design: '/bom-masters',
   production: '/production-dashboard',
   qc: '/qc-command',
   purchase: '/purchase-requests',
@@ -69,7 +70,6 @@ export function HomeAlerts({ quickLinkPages }: { quickLinkPages: string[] }): Re
             <thead>
               <tr>
                 <th>Department</th>
-                <th>Code</th>
                 <th>Alert Name</th>
                 <th className="th-num">Records</th>
               </tr>
@@ -78,11 +78,11 @@ export function HomeAlerts({ quickLinkPages }: { quickLinkPages: string[] }): Re
               {visible.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={3}
                     className="empty-state"
                     style={{ color: 'var(--sig-ok)', fontWeight: 700 }}
                   >
-                    ✅ All clear! No pending actions.
+                    ✅ Nothing pending
                   </td>
                 </tr>
               ) : (
@@ -100,11 +100,8 @@ export function HomeAlerts({ quickLinkPages }: { quickLinkPages: string[] }): Re
                             textDecoration: 'none',
                           }}
                         >
-                          {a.dept}
+                          {DEPT_LABEL[a.dept]}
                         </Link>
-                      </td>
-                      <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                        {a.code}
                       </td>
                       <td style={{ fontWeight: 600 }}>{a.name}</td>
                       <td className="td-num">

@@ -59,7 +59,7 @@ function SavedReportEditPage() {
       ? sourcesQ.error.message
       : reportQ.error instanceof Error
         ? reportQ.error.message
-        : 'Unknown error';
+        : 'Try again.';
 
   return (
     <div>
@@ -67,14 +67,14 @@ function SavedReportEditPage() {
       {/* Legacy header — renderReportBuilder L17554-59. Legacy serves both new and edit
           from the one renderReportBuilder, so this matches routes/new.tsx exactly. */}
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📄 Excel Report Builder</div>
+        <div className="section-hdr m-0">Edit Saved Report</div>
         <div className="flex items-center gap-2">
           <Link
             to="/saved-reports/$id"
             params={{ id }}
             className="btn btn-sm btn-ghost"
           >
-            ← Back to report
+            ← Back to Report
           </Link>
         </div>
       </div>
@@ -114,7 +114,7 @@ function SavedReportEditPage() {
           excelLoading={excelLoading}
           saving={updateMutation.isPending}
           saveError={saveError}
-          saveLabel="Save changes"
+          saveLabel="Save Changes"
         />
       )}
     </div>

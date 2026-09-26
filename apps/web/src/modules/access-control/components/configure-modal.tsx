@@ -44,17 +44,18 @@ import {
   emptyFormPerms,
   priceStartTier,
   roleForAccess,
-  saveUserAccessInputSchema,
   tierPermsForDept,
   type AccessDeptKey,
   type AccessFormPerms,
   type AccessTierKey,
 } from '@innovic/shared';
-import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useUpdateUser, useUser } from '@/modules/users/api';
-import { useSaveUserAccess, useUserAccess } from '../api';
+import { useSaveUserAccess, useUserAccess, useUserAccessList } from '../api';
 import { roleLabel } from '@/lib/role-label';
+import { Banner } from '@/ui/feedback';
 
 interface Props {
   userId: string;
@@ -116,11 +117,11 @@ const OFF_SWITCH_DEPTS: readonly string[] = [
 // The full labels ("Editor / Executor", "Department Admin") are too long for a
 // single legend line; the fuller wording still shows on each segment's tooltip.
 const TIER_SHORT: Record<string, string> = {
-  L1: 'VIEWER',
-  L2: 'ENTRY',
-  L3: 'EDITOR',
-  L4: 'APPROVER',
-  L5: 'ADMIN',
+  L1: 'Viewer',
+  L2: 'Entry',
+  L3: 'Editor',
+  L4: 'Approver',
+  L5: 'Admin',
 };
 
 // Column template shared by the form checklist head and its rows so the
@@ -144,14 +145,14 @@ const ACTION_COLOR: Record<Action, string> = {
   price: 'var(--orange)',
 };
 
-// Short column captions. `price` shows as "SEE ₹" so the money column reads at
+// Short column captions. `price` shows as "See ₹" so the money column reads at
 // a glance without widening the table.
 const ACTION_LABEL: Record<Action, string> = {
-  view: 'VIEW',
-  entry: 'ENTRY',
-  edit: 'EDIT',
-  approve: 'APPROVE',
-  price: 'SEE ₹',
+  view: 'View',
+  entry: 'Entry',
+  edit: 'Edit',
+  approve: 'Approve',
+  price: 'See ₹',
 };
 
 const ACTION_HINT: Record<Action, string> = {
@@ -193,13 +194,26 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // Set when the server refuses because this save would drop an admin. The
   // box asks, then resends with the flag; it is never sent speculatively.
   const [adminWarning, setAdminWarning] = useState<string | null>(null);
-  // JSON matrix clone (AC-1 follow-up): export the current matrix / paste one
-  // copied from another user. Replaces the legacy CSV user-import, which does
-  // not fit the multi-tenant Supabase Auth model (see docs/PARITY/access-control.md).
-  const [showImport, setShowImport] = useState(false);
-  const [importText, setImportText] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
-  const [copyFlash, setCopyFlash] = useState(false);
+  // "Copy Access From": pick another user and load THEIR saved matrix into
+  // this editor (not saved until Save Access). Replaces the old Copy JSON /
+  // Paste JSON clipboard round-trip — same result, one pick instead of three
+  // manual steps. Reads the existing per-user access endpoint; nothing new.
+  const { data: accessList } = useUserAccessList();
+  const [copyFromId, setCopyFromId] = useState<string | null>(null);
+  const [copyTerm, setCopyTerm] = useState('');
+  const {
+    data: copyFrom,
+    isFetching: copyLoading,
+    isError: copyIsError,
+  } = useUserAccess(copyFromId);
+  const copyOptions = useMemo(() => {
+    const t = copyTerm.trim().toLowerCase();
+    return (accessList?.items ?? [])
+      .filter((u) => u.userId !== userId)
+      .map((u) => ({ id: u.userId, name: u.userName ?? u.userEmail }))
+      .filter((o) => !t || o.name.toLowerCase().includes(t));
+  }, [accessList, copyTerm, userId]);
+  const copyFromUser = (accessList?.items ?? []).find((u) => u.userId === copyFromId);
 
   // Only the approval limit comes from the user record now — the role is
   // derived on save, never read back into an input.
@@ -405,65 +419,22 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     });
   }
 
-  // Export the current matrix as a pretty JSON string + copy to clipboard.
-  function handleCopyJson(): void {
-    const payload = {
-      fullAccess,
-      auditor,
-      drawingDownload,
-      mainDept: mainDept || null,
-      departments,
-      forms,
-    };
-    // confirmAdminChange is an action, not part of a matrix — never cloned.
-    const text = JSON.stringify(payload, null, 2);
-    void navigator.clipboard?.writeText(text).then(
-      () => {
-        setCopyFlash(true);
-        window.setTimeout(() => setCopyFlash(false), 1800);
-      },
-      () => {
-        // Clipboard blocked — fall back to opening the paste box pre-filled so
-        // the admin can copy manually.
-        setImportText(text);
-        setShowImport(true);
-      },
-    );
-  }
-
-  // Parse + validate a pasted matrix and load it into the editor (not saved
-  // until the admin clicks Save Access). Unknown form keys are ignored; every
-  // known key is filled so the table renders fully. A matrix copied before
-  // 0100 still parses — `auditor` and `approve` default to false, and boolean
-  // dept values are read as L1.
-  function handleApplyJson(): void {
-    setImportError(null);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(importText);
-    } catch {
-      setImportError('Not valid JSON.');
-      return;
-    }
-    const result = saveUserAccessInputSchema.safeParse(parsed);
-    if (!result.success) {
-      setImportError(
-        'JSON does not match the access-matrix shape (fullAccess / auditor / departments / forms).',
-      );
-      return;
-    }
-    const m = result.data;
-    setFullAccess(m.fullAccess);
-    setAuditor(m.auditor);
-    setDrawingDownload(m.drawingDownload);
-    setMainDept(m.mainDept ?? '');
-    const tiers = loadDeptTiers(m.departments);
+  // Load the picked user's saved matrix into the editor once it arrives (the
+  // same fields the old JSON clone carried; the admin still presses Save Access).
+  useEffect(() => {
+    if (!copyFromId || !copyFrom || copyFrom.userId !== copyFromId) return;
+    setFullAccess(copyFrom.fullAccess);
+    setAuditor(copyFrom.auditor);
+    setDrawingDownload(copyFrom.drawingDownload);
+    setMainDept(copyFrom.mainDept ?? '');
+    const tiers = loadDeptTiers(copyFrom.departments);
     setDepartments(tiers);
-    setForms(fillForms(m.forms));
-    setExpanded(defaultExpanded(tiers, m.mainDept ?? ''));
-    setShowImport(false);
-    setImportText('');
-  }
+    setForms(fillForms(copyFrom.forms));
+    setExpanded(defaultExpanded(tiers, copyFrom.mainDept ?? ''));
+    // Applied — clear the pick so the same user can be copied again later.
+    setCopyFromId(null);
+  }, [copyFromId, copyFrom]);
+
 
   async function onSave(confirmAdminChange = false): Promise<void> {
     setSubmitError(null);
@@ -531,7 +502,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         onClick={(e) => e.stopPropagation()}
         style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto', marginBottom: 0 }}
       >
-        {/* ── Header strip: user · role · home dept · PO limit · JSON clone ── */}
+        {/* ── Header strip: user · role · home dept · PO limit · copy access ── */}
         <div
           style={{
             display: 'flex',
@@ -548,7 +519,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="fw-700" style={{ fontSize: 14 }}>
-              🔒 Access Control
+              Access Control
             </span>
             <span className="fw-700" style={{ fontSize: 13 }}>
               {userName}
@@ -564,7 +535,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto', flexWrap: 'wrap' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>
-                Home dept
+                Home Dept
               </span>
               <select
                 className="innovic-select"
@@ -589,7 +560,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 approval right, and approval is an Access Control action now. */}
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>
-                PO limit ₹
+                PO Limit ₹
               </span>
               <input
                 className="innovic-input"
@@ -610,21 +581,30 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               />
             </label>
 
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopyJson}>
-                <Copy size={13} /> {copyFlash ? 'Copied ✓' : 'Copy Access'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  setShowImport((v) => !v);
-                  setImportError(null);
-                }}
-              >
-                <ClipboardPaste size={13} /> Paste Access
-              </button>
-            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>
+                Copy Access From
+              </span>
+              <div style={{ width: 190 }}>
+                <SearchableSelect
+                  value={copyFromId}
+                  valueLabel={
+                    copyFromUser ? (copyFromUser.userName ?? copyFromUser.userEmail) : undefined
+                  }
+                  options={copyOptions}
+                  onSearch={setCopyTerm}
+                  loading={copyLoading}
+                  placeholder="Pick a user…"
+                  disabled={isLoading}
+                  onChange={setCopyFromId}
+                />
+              </div>
+              {copyFromId && copyIsError ? (
+                <span className="form-error" style={{ margin: 0 }}>
+                  Could not load that user&apos;s access. Try again.
+                </span>
+              ) : null}
+            </label>
           </div>
         </div>
 
@@ -638,54 +618,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           </div>
         ) : (
           <div style={{ padding: 14 }}>
-            {showImport ? (
-              <div
-                style={{
-                  marginBottom: 14,
-                  padding: 12,
-                  background: 'var(--bg3)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                }}
-              >
-                <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
-                  Clone permissions from another user — copy there, paste here, then Save.
-                </div>
-                <textarea
-                  className="innovic-input"
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                  placeholder='{"fullAccess":false,"auditor":false,"mainDept":"design","departments":{"design":"L3"},"forms":{...}}'
-                  rows={5}
-                  style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}
-                />
-                {importError ? (
-                  <div style={{ marginTop: 6, color: 'var(--red2)', fontSize: 11 }}>
-                    {importError}
-                  </div>
-                ) : null}
-                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => {
-                      setShowImport(false);
-                      setImportError(null);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={handleApplyJson}
-                    disabled={!importText.trim()}
-                  >
-                    Apply to editor
-                  </button>
-                </div>
-              </div>
-            ) : null}
 
             {/* ── Access level: Standard / L6 / L7 ── */}
             <div
@@ -698,27 +630,16 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               }}
             >
               <span className="form-label" style={{ margin: 0 }}>
-                Access level
+                Access Level
               </span>
               <Seg
                 value={standard ? 'standard' : fullAccess ? 'full' : 'auditor'}
                 onChange={(v) => setLevel(v as 'standard' | 'full' | 'auditor')}
                 options={[
-                  {
-                    value: 'standard',
-                    label: 'Standard',
-                    title: 'Set a tier per department below.',
-                  },
-                  {
-                    value: 'full',
-                    label: 'L6 Super Admin',
-                    title: 'Everything, everywhere — ignores everything below.',
-                  },
-                  {
-                    value: 'auditor',
-                    label: 'L7 Auditor',
-                    title: 'Reads every department. Saves nothing, anywhere.',
-                  },
+                  // No tooltips: the side text below already says what each level does.
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'full', label: 'L6 Super Admin' },
+                  { value: 'auditor', label: 'L7 Auditor' },
                 ]}
               />
               <span className="text3" style={{ fontSize: 11 }}>
@@ -803,19 +724,19 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                     minWidth: 190,
                   }}
                 >
-                  DEPARTMENT
+                  Department
                 </span>
                 <span
                   className="mono"
                   style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--text3)', flex: 1 }}
                 >
-                  TIER — {tierLegend}
+                  Tier — {tierLegend}
                 </span>
                 <span
                   className="mono"
                   style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text3)' }}
                 >
-                  EXTRA
+                  Extra
                 </span>
               </div>
 
@@ -864,7 +785,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         </span>
                         {isMain ? (
                           <span className="tag" style={{ color: 'var(--amber2)', background: 'var(--amber3)' }}>
-                            HOME
+                            Home
                           </span>
                         ) : null}
                       </button>
@@ -950,7 +871,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             className="mono"
                             style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text3)' }}
                           >
-                            FORM / FEATURE
+                            Form / Feature
                           </span>
                           {ACTIONS.map((a) => (
                             <span
@@ -967,7 +888,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             >
                               {a === 'price' ? (
                                 <>
-                                  SEE{' '}
+                                  See{' '}
                                   <span
                                     style={{
                                       fontSize: 14,
@@ -1159,18 +1080,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             ) : null}
 
             {submitError ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: '8px 12px',
-                  background: 'var(--red3)',
-                  border: '1px solid var(--red)',
-                  borderRadius: 6,
-                  color: 'var(--red2)',
-                  fontSize: 12,
-                }}
-              >
-                {submitError}
+              <div style={{ marginTop: 12 }}>
+                <Banner tone="error" role="alert">
+                  {submitError}
+                </Banner>
               </div>
             ) : null}
 

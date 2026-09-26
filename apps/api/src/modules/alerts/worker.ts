@@ -222,7 +222,7 @@ export function renderDigestHtml(payload: {
 
   return `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#222;">
 <h2 style="margin-bottom:4px;">${escapeHtml(alertName)}</h2>
-<p style="margin-top:0;color:#666;">Hi ${escapeHtml(userName)} — your alert digest just refreshed. ${countText}</p>
+<p style="margin-top:0;color:#666;">Hi ${escapeHtml(userName)}, ${countText}</p>
 <table style="border-collapse:collapse;width:100%;font-size:14px;"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
 ${overflow > 0 ? `<p style="color:#888;font-size:12px;">… and ${overflow} more. Open the ${pageLink} for the full list.</p>` : `<p style="color:#888;font-size:12px;">Open the ${pageLink} to see all alerts.</p>`}
 </body></html>`;

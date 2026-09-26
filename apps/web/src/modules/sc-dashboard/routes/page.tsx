@@ -1,6 +1,6 @@
 // Supply Chain Dashboard — mirror of legacy renderSCDashboard L16790.
 //
-// Cards (PO counts + value totals + GRN today/total) + vendor summary +
+// Summary strip (PO counts + value totals + GRN today/total) + vendor summary +
 // SO summary + complete PO summary (tax-included) + recent GRN + pending
 // PO lines. Read-only.
 
@@ -9,6 +9,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { apiFetch } from '@/lib/api';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -130,7 +131,7 @@ function ScDashboardPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📊 Supply Chain Dashboard
+          Supply Chain Dashboard
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Link to="/purchase-orders" className="btn btn-ghost btn-sm">
@@ -148,25 +149,50 @@ function ScDashboardPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Summary Cards — legacy's .stat-grid (L17011). Legacy shows 4 tiles
-          derived by browser-side reduce over its full in-memory PO array;
-          ours are 9 server-computed, uncapped figures off `summary`. Tiles
-          kept as-is (they are correct and legacy's are not reproducible from
-          the payload — see report), rendered in legacy's tile vocabulary. */}
-      <div className="stat-grid">
-        <Card label="Open POs" value={data.summary.openPos} accent="" />
-        <Card label="Partly Received POs" value={data.summary.partialPos} accent="amber" />
-        <Card label="Closed POs" value={data.summary.closedPos} accent="green" />
-        <Card label="Cancelled POs" value={data.summary.cancelledPos} accent="red" />
-        {priceHidden ? null : (
-          <>
-            <Card label="Order Value" value={`₹${inr(data.summary.totalOrderVal)}`} accent="cyan" />
-            <Card label="Received Value" value={`₹${inr(data.summary.totalRecvVal)}`} accent="green" />
-            <Card label="Pending Value" value={`₹${inr(data.summary.pendingVal)}`} accent="amber" />
-          </>
-        )}
-        <Card label="Total GRNs" value={data.summary.grnCount} accent="cyan" />
-        <Card label="GRNs Today" value={data.summary.todayGrn} accent="green" />
+      {/* Summary — ONE StatStrip (styling Rule 3), not 9 separate cards. Figures
+          are server-computed off `summary`; money tiles hidden for L1 Viewers. */}
+      <div style={{ marginBottom: 16 }}>
+        <StatStrip
+          items={[
+            { key: 'open', label: 'Open POs', count: data.summary.openPos, color: 'var(--blue)' },
+            {
+              key: 'partial',
+              label: 'Partly Received POs',
+              count: data.summary.partialPos,
+              color: 'var(--amber)',
+            },
+            { key: 'closed', label: 'Closed POs', count: data.summary.closedPos, color: 'var(--green)' },
+            {
+              key: 'cancelled',
+              label: 'Cancelled POs',
+              count: data.summary.cancelledPos,
+              color: 'var(--text3)',
+            },
+            ...(priceHidden
+              ? []
+              : [
+                  {
+                    key: 'orderVal',
+                    label: 'Order Value',
+                    count: `₹${inr(data.summary.totalOrderVal)}`,
+                  },
+                  {
+                    key: 'recvVal',
+                    label: 'Received Value',
+                    count: `₹${inr(data.summary.totalRecvVal)}`,
+                    color: 'var(--green)',
+                  },
+                  {
+                    key: 'pendVal',
+                    label: 'Pending Value',
+                    count: `₹${inr(data.summary.pendingVal)}`,
+                    color: 'var(--amber)',
+                  },
+                ]),
+            { key: 'grns', label: 'Total GRNs', count: data.summary.grnCount },
+            { key: 'grnToday', label: 'GRNs Today', count: data.summary.todayGrn, color: 'var(--green)' },
+          ]}
+        />
       </div>
 
       {/* ═══ PENDING PO TRACKER with Filters (legacy L17030 — first panel
@@ -228,7 +254,7 @@ function ScDashboardPage(): React.JSX.Element {
             <span style={{ color: 'var(--red2)' }}>{fltPendQty}</span>
             {priceHidden ? null : (
               <>
-                {' '}· Pend Value: <span style={{ color: 'var(--amber2)' }}>₹{inr(fltPendVal)}</span>
+                {' '}· Pending Value: <span style={{ color: 'var(--amber2)' }}>₹{inr(fltPendVal)}</span>
               </>
             )}
           </div>
@@ -260,7 +286,7 @@ function ScDashboardPage(): React.JSX.Element {
               {filteredPending.length === 0 ? (
                 <tr>
                   <td colSpan={priceHidden ? 11 : 13} className="empty-state">
-                    No pending PO lines{isFiltered ? ' (try clearing filters)' : ''}
+                    {isFiltered ? 'No pending PO lines match.' : 'No pending PO lines.'}
                   </td>
                 </tr>
               ) : (
@@ -288,7 +314,7 @@ function ScDashboardPage(): React.JSX.Element {
                       <td className="text2" style={{ fontSize: 11 }}>
                         {p.soCode ?? '—'}
                       </td>
-                      <td className="td-code" style={{ color: 'var(--purple)' }}>
+                      <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                         {itemCodeWithRev(p.itemCode, p.itemRevision)}
                       </td>
                       <td style={{ fontSize: 12 }}>{p.itemName ?? '—'}</td>
@@ -337,7 +363,7 @@ function ScDashboardPage(): React.JSX.Element {
           <thead>
             <tr>
               <th>Vendor Name</th>
-              <th>Code</th>
+              <th>Vendor Code</th>
               <th className="td-ctr">PO Lines</th>
               <th className="td-ctr">Items</th>
               <th className="td-ctr">Order Qty</th>
@@ -424,7 +450,7 @@ function ScDashboardPage(): React.JSX.Element {
                 const pendQty = s.totalQty - s.receivedQty;
                 return (
                   <tr key={s.soRefId ?? '_unlinked_'}>
-                    <td>{s.soCode ?? <span className="text3">No SO/JW linked</span>}</td>
+                    <td>{s.soCode ?? <span className="text3">No SO / JWSO linked</span>}</td>
                     <td className="td-ctr mono">{s.lines}</td>
                     <td className="td-ctr" style={{ fontSize: 11 }}>{s.uniqueVendors}</td>
                     <td className="td-ctr mono fw-700">{s.totalQty}</td>
@@ -484,7 +510,7 @@ function ScDashboardPage(): React.JSX.Element {
           <tbody>
             {data.poSummary.length === 0 ? (
               <tr>
-                <td colSpan={priceHidden ? 10 : 13} className="empty-state">No purchase orders</td>
+                <td colSpan={priceHidden ? 10 : 13} className="empty-state">No POs yet.</td>
               </tr>
             ) : (
               data.poSummary.map((g) => {
@@ -562,7 +588,7 @@ function ScDashboardPage(): React.JSX.Element {
           <tbody>
             {data.recentGrn.length === 0 ? (
               <tr>
-                <td colSpan={4} className="empty-state">No GRN entries yet</td>
+                <td colSpan={4} className="empty-state">No GRNs yet.</td>
               </tr>
             ) : (
               data.recentGrn.map((g) => (
@@ -579,26 +605,6 @@ function ScDashboardPage(): React.JSX.Element {
           </tbody>
         </table>
       </Section>
-    </div>
-  );
-}
-
-// Legacy's stat-card (L17012) — the accent is the 2px top bar from the
-// variant class, not the value colour. `accent=''` is legacy's un-accented
-// tile: it defines only cyan/amber/green/red, so a "blue" tile renders bare.
-function Card({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  accent: '' | 'cyan' | 'amber' | 'green' | 'red';
-}): React.JSX.Element {
-  return (
-    <div className={accent ? `stat-card ${accent}` : 'stat-card'}>
-      <div className="stat-label">{label}</div>
-      <div className="stat-val">{value}</div>
     </div>
   );
 }

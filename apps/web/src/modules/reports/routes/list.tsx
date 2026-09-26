@@ -65,7 +65,7 @@ function ReportsListPage() {
     const dept = search.group!;
     return (
       <div>
-        <PageHeader title={`${dept} Reports`} icon="📊" />
+        <PageHeader title={`${dept} Reports`} />
 
         {isLoading ? (
           <div className="panel">
@@ -94,7 +94,6 @@ function ReportsListPage() {
     <div>
       <PageHeader
         title="Reports"
-        icon="📊"
         actions={
           <Link to="/saved-reports" className="btn btn-ghost">
             ✨ Saved Reports
@@ -129,17 +128,14 @@ function ReportsListPage() {
                     to="/reports/$slug"
                     params={{ slug: report.slug }}
                     className="btn btn-sm"
+                    // Department colour on the text and outline — tokens only.
                     style={{
                       fontWeight: 700,
-                      background: color,
-                      color: '#fff',
+                      background: 'var(--bg2)',
+                      color,
                       border: `1px solid ${color}`,
                     }}
-                    title={`${report.description} — ${report.columns.length} columns · ${
-                      report.filters.length === 0
-                        ? 'no filters'
-                        : `${report.filters.length} filter${report.filters.length === 1 ? '' : 's'}`
-                    }`}
+                    title={report.description}
                   >
                     {report.title}
                   </Link>
@@ -230,7 +226,13 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
                   {error instanceof Error ? error.message : 'Could not run report. Try again.'}
                 </td>
               </tr>
-            ) : !data || data.rows.length === 0 ? null : (
+            ) : !data || data.rows.length === 0 ? (
+              <tr>
+                <td colSpan={report.columns.length} className="empty-state">
+                  No records yet.
+                </td>
+              </tr>
+            ) : (
               data.rows.map((row, i) => (
                 <tr key={i}>
                   {report.columns.map((c, ci) => (
@@ -299,9 +301,11 @@ function cellStyle(col: ReportColumn, raw: unknown, ci: number): React.CSSProper
 
 /** Conditional colours for known status keywords — matches legacy `_rptTbl` (HTML L20096–20100). */
 function statusColor(raw: string): string | undefined {
-  if (['DELAYED', 'ZERO', 'Pending', 'Cancelled', 'NO GRN', 'Not Planned', 'Open'].includes(raw)) {
-    return 'var(--red)';
-  }
+  // One colour per state, app-wide: open / pending blue, under way amber,
+  // finished green, stopped / not started grey, faults red.
+  if (['DELAYED', 'ZERO', 'NO GRN'].includes(raw)) return 'var(--red)';
+  if (['Cancelled', 'Not Planned'].includes(raw)) return 'var(--text3)';
+  if (['Pending', 'PENDING', 'Open'].includes(raw)) return 'var(--blue)';
   if (
     [
       'ON TIME',
@@ -320,12 +324,10 @@ function statusColor(raw: string): string | undefined {
   ) {
     return 'var(--green)';
   }
-  if (
-    ['Approved', 'PARTIAL', 'In Planning', 'Planned', 'Design Active', 'In Progress'].includes(raw)
-  ) {
+  if (['Approved', 'In Planning', 'Planned', 'Design Active'].includes(raw)) {
     return 'var(--blue)';
   }
-  if (['PENDING', 'AT VENDOR', 'On Hold', 'In Review', 'Submitted'].includes(raw)) {
+  if (['PARTIAL', 'In Progress', 'AT VENDOR', 'On Hold', 'In Review', 'Submitted'].includes(raw)) {
     return 'var(--amber)';
   }
   if (['Critical', 'Major'].includes(raw)) return 'var(--red)';

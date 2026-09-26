@@ -10,12 +10,16 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SearchableSelect } from '@/components/shared/searchable-select';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayIst, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useSalesOrdersList } from '../../sales-orders/api';
+import { soTypeLabel } from '../../sales-orders/lib/so-status-label';
 import {
   useApproveDesign,
   useCreateDesignTracker,
@@ -75,17 +79,17 @@ function DesignTrackerListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Design Tracker. Ask an admin.
       </div>
     );
   }
 
   return (
     <div>
-      <KpiStrip summary={summary} onChange={setFilter} />
+      <KpiStrip summary={summary} filter={filter} onChange={setFilter} />
 
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">🎨 Design Tracker</div>
+        <div className="section-hdr m-0">Design Tracker</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             type="text"
@@ -95,19 +99,6 @@ function DesignTrackerListPage(): React.JSX.Element {
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: 'auto', minWidth: 160, fontSize: 12 }}
           />
-          <select
-            className="innovic-select"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterKey)}
-            style={{ width: 'auto', fontSize: 12 }}
-          >
-            <option value="all">All</option>
-            <option value="pending">Pending</option>
-            <option value="progress">In Progress</option>
-            <option value="review">Review</option>
-            <option value="approved">Approved</option>
-            <option value="overdue">Overdue</option>
-          </select>
           {perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               + Assign Design
@@ -154,7 +145,7 @@ function DesignTrackerListPage(): React.JSX.Element {
                 {data.items.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="empty-state">
-                      No designs assigned yet
+                      {search.trim() || filter !== 'all' ? 'No Designs match.' : 'No Designs yet.'}
                     </td>
                   </tr>
                 ) : (
@@ -176,8 +167,7 @@ function DesignTrackerListPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-        🎨 Design Tracker manages engineering design lifecycle. BOM creation is blocked until design
-        is Approved for Equipment SOs.
+        BOM creation for an Equipment SO is blocked until its design is Approved.
       </div>
 
       {showAdd ? <AddDesignModal onClose={() => setShowAdd(false)} /> : null}
@@ -189,6 +179,7 @@ function DesignTrackerListPage(): React.JSX.Element {
 
 function KpiStrip({
   summary,
+  filter,
   onChange,
 }: {
   summary: {
@@ -199,110 +190,30 @@ function KpiStrip({
     approved: number;
     overdue: number;
   };
+  filter: FilterKey;
   onChange: (k: FilterKey) => void;
 }): React.JSX.Element {
-  // Legacy L7307–7314: plain --bg2 tiles, 1px --border, radius 10, no top accent
-  // and no active-tile styling. The Overdue tile is the only tinted one and is
-  // rendered only when overdue > 0.
-  const tiles: Array<{
-    k: FilterKey;
-    label: string;
-    value: number;
-    color: string;
-    labelColor: string;
-    background: string;
-    border: string;
-    show: boolean;
-  }> = [
-    {
-      k: 'all',
-      label: 'Total',
-      value: summary.total,
-      color: 'var(--blue)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'pending',
-      label: 'Pending',
-      value: summary.pending,
-      color: 'var(--text3)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'progress',
-      label: 'In Progress',
-      value: summary.inProgress,
-      color: 'var(--amber2)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'review',
-      label: 'Review',
-      value: summary.review,
-      color: 'var(--blue)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'approved',
-      label: 'Approved',
-      value: summary.approved,
-      color: 'var(--green2)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'overdue',
-      label: 'Overdue',
-      value: summary.overdue,
-      color: 'var(--red2)',
-      labelColor: 'var(--red)',
-      background: 'rgba(239,68,68,0.06)',
-      border: '1px solid rgba(239,68,68,0.3)',
-      show: summary.overdue > 0,
-    },
+  // One strip; each tile is the filter (the old status dropdown is gone).
+  const tiles: Array<{ k: FilterKey; label: string; value: number; color?: string }> = [
+    { k: 'all', label: 'Total', value: summary.total },
+    { k: 'pending', label: 'Pending', value: summary.pending, color: 'var(--blue)' },
+    { k: 'progress', label: 'In Progress', value: summary.inProgress, color: 'var(--amber2)' },
+    { k: 'review', label: 'Review', value: summary.review, color: 'var(--amber2)' },
+    { k: 'approved', label: 'Approved', value: summary.approved, color: 'var(--green2)' },
+    { k: 'overdue', label: 'Overdue', value: summary.overdue, color: 'var(--red2)' },
   ];
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-        gap: 10,
-        marginBottom: 16,
-      }}
-    >
-      {tiles
-        .filter((t) => t.show)
-        .map((t) => (
-          <div
-            key={t.k}
-            onClick={() => onChange(t.k)}
-            style={{
-              cursor: 'pointer',
-              textAlign: 'center',
-              padding: 12,
-              borderRadius: 10,
-              background: t.background,
-              border: t.border,
-            }}
-          >
-            <div style={{ fontSize: 11, color: t.labelColor }}>{t.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
-          </div>
-        ))}
+    <div style={{ marginBottom: 16 }}>
+      <StatStrip
+        items={tiles.map((t) => ({
+          key: t.k,
+          label: t.label,
+          count: t.value,
+          color: t.color,
+          active: filter === t.k,
+          onClick: () => onChange(t.k),
+        }))}
+      />
     </div>
   );
 }
@@ -322,26 +233,11 @@ function Row({
 }): React.JSX.Element {
   const today = todayIst();
   const isOverdue = row.targetDate < today && row.status !== 'Approved';
-  const stColor =
-    row.status === 'Pending'
-      ? 'var(--text3)'
-      : row.status === 'In Progress'
-        ? 'var(--amber)'
-        : row.status === 'Review'
-          ? 'var(--blue)'
-          : row.status === 'Approved'
-            ? 'var(--green)'
-            : 'var(--purple)';
-  const stBg =
-    row.status === 'Pending'
-      ? 'rgba(100,116,139,0.10)'
-      : row.status === 'In Progress'
-        ? 'rgba(245,158,11,0.10)'
-        : row.status === 'Review'
-          ? 'rgba(37,99,235,0.10)'
-          : row.status === 'Approved'
-            ? 'rgba(34,197,94,0.10)'
-            : 'rgba(139,92,246,0.10)';
+  // Pending = waiting to start (blue); In Progress / Review / Revision = under
+  // way (amber); Approved = done (green).
+  const stCls =
+    row.status === 'Approved' ? 'b-green' : row.status === 'Pending' ? 'b-blue' : 'b-amber';
+  const [ask, setAsk] = useState<'submit' | 'approve' | null>(null);
 
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'design_create');
@@ -351,7 +247,7 @@ function Row({
 
   const hrsOver = row.totalHours > row.estimatedHours;
   return (
-    <tr style={{ background: isOverdue ? 'rgba(239,68,68,0.03)' : 'var(--bg)' }}>
+    <tr style={{ background: isOverdue ? 'var(--red3)' : 'var(--bg)' }}>
       {/* `td-code` stays on the span: our `.innovic-table td` (0,1,1) outranks the
           bare `.td-code` (0,1,0) and would force its font-size back to 13px, where
           legacy's bare `td` (0,0,1) loses to `.td-code` and renders 12px. See ISSUE-060. */}
@@ -383,18 +279,7 @@ function Row({
         {fmtDate(row.targetDate)}
       </td>
       <td>
-        <span
-          style={{
-            background: stBg,
-            color: stColor,
-            padding: '2px 10px',
-            borderRadius: 10,
-            fontSize: 11,
-            fontWeight: 700,
-          }}
-        >
-          {row.status}
-        </span>
+        <span className={`badge ${stCls}`}>{row.status}</span>
       </td>
       <td className="td-ctr mono fw-700">Design Rev {row.revision}</td>
       <td className="td-ctr">
@@ -429,10 +314,7 @@ function Row({
               className="btn btn-ghost btn-sm"
               style={{ fontSize: 11, color: 'var(--blue)' }}
               disabled={submitMut.isPending}
-              onClick={() => {
-                if (window.confirm(`Submit ${row.code} for design review?`))
-                  submitMut.mutate(row.id);
-              }}
+              onClick={() => setAsk('submit')}
             >
               ✔ Submit
             </button>
@@ -444,14 +326,7 @@ function Row({
                 className="btn btn-ghost btn-sm"
                 style={{ fontSize: 11, color: 'var(--green2)' }}
                 disabled={approveMut.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Approve design ${row.code}?\nThis will unlock BOM creation for SO: ${row.soCodeText ?? ''}`,
-                    )
-                  )
-                    approveMut.mutate(row.id);
-                }}
+                onClick={() => setAsk('approve')}
               >
                 ✅ Approve
               </button>
@@ -472,6 +347,30 @@ function Row({
             </>
           ) : null}
         </div>
+        <ConfirmDialog
+          open={ask === 'submit'}
+          title={`Submit ${row.code} for review?`}
+          message="The design moves to Review for approval."
+          confirmLabel="Submit"
+          tone="primary"
+          onCancel={() => setAsk(null)}
+          onConfirm={async () => {
+            await submitMut.mutateAsync(row.id);
+            setAsk(null);
+          }}
+        />
+        <ConfirmDialog
+          open={ask === 'approve'}
+          title={`Approve design ${row.code}?`}
+          message={`This unlocks BOM creation for ${row.soCodeText ?? 'the SO'}.`}
+          confirmLabel="Approve"
+          tone="primary"
+          onCancel={() => setAsk(null)}
+          onConfirm={async () => {
+            await approveMut.mutateAsync(row.id);
+            setAsk(null);
+          }}
+        />
       </td>
     </tr>
   );
@@ -480,7 +379,7 @@ function Row({
 // ─── Add modal ────────────────────────────────────────────────────────────
 
 function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date] = useState(todayLocal());
+  const [date] = useState(todayIst());
   const [soSearch, setSoSearch] = useState('');
   const [soId, setSoId] = useState<string | null>(null);
   const [designer, setDesigner] = useState('');
@@ -507,15 +406,15 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
   const onSave = (): void => {
     setErr(null);
     if (!soId) {
-      setErr('Select an SO');
+      setErr('SO No. is required.');
       return;
     }
     if (!designer.trim()) {
-      setErr('Enter designer name');
+      setErr('Design Engineer is required.');
       return;
     }
     if (!targetDate) {
-      setErr('Set target date');
+      setErr('Target Date is required.');
       return;
     }
     const input: CreateDesignTrackerInput = {
@@ -528,12 +427,12 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
     if (remarks.trim()) input.remarks = remarks.trim();
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save Design. Try again.'),
     });
   };
 
   return (
-    <ModalShell onClose={onClose} title="🎨 Assign Design">
+    <ModalShell onClose={onClose} title="Assign Design">
       <div className="form-grid">
         <Field label="Design No.">
           <input
@@ -544,30 +443,25 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             style={{ color: 'var(--purple)', fontWeight: 700 }}
           />
         </Field>
-        <Field label="Sales Order" req full>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Type SO code or customer…"
-            value={selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : soSearch}
-            onChange={(e) => {
-              setSoId(null);
-              setSoSearch(e.target.value);
-            }}
+        <Field label="SO No." req full>
+          <SearchableSelect
+            value={soId}
+            valueLabel={
+              selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : undefined
+            }
+            // SO type beside the customer (e.g. "· Equipment") — design work
+            // is mostly on Equipment SOs, so the type tells them apart.
+            options={(soData?.items ?? []).map((so) => ({
+              id: so.id,
+              code: so.code,
+              name: [so.customerName, so.type ? soTypeLabel(so.type) : null]
+                .filter(Boolean)
+                .join(' · '),
+            }))}
+            onSearch={setSoSearch}
+            placeholder="Type SO No. or customer…"
+            onChange={setSoId}
           />
-          {!soId && soSearch && soData ? (
-            <Picklist
-              items={soData.items.slice(0, 20).map((s) => ({
-                id: s.id,
-                label: `${s.code} — ${s.customerName ?? ''}`,
-                sub: s.type ?? null,
-              }))}
-              onPick={(id) => {
-                setSoId(id);
-                setSoSearch('');
-              }}
-            />
-          ) : null}
         </Field>
         <Field label="Design Engineer" req>
           <input
@@ -604,7 +498,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             onChange={(e) => setTargetDate(e.target.value)}
           />
         </Field>
-        <Field label="Design Scope / Remarks" full>
+        <Field label="Remarks" full>
           <input
             type="text"
             className="innovic-input"
@@ -615,7 +509,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
         </Field>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save" />
+      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save Design" />
     </ModalShell>
   );
 }
@@ -652,13 +546,14 @@ function EditDesignModal({
       },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
+        onError: (e) =>
+          setErr(e instanceof Error ? e.message : 'Could not save Design. Try again.'),
       },
     );
   };
 
   return (
-    <ModalShell onClose={onClose} title={`✏ Edit Design — ${row.code}`}>
+    <ModalShell onClose={onClose} title={`Edit Design — ${row.code}`}>
       <div className="form-grid">
         <Field label="SO No.">
           <input
@@ -706,7 +601,9 @@ function EditDesignModal({
             <option>In Progress</option>
             <option>Review</option>
             <option>Approved</option>
-            <option>Revision</option>
+            {/* Revision is set only by the Revise action; listed here only so a
+                design already in Revision keeps its value. */}
+            {row.status === 'Revision' ? <option>Revision</option> : null}
           </select>
         </Field>
         <Field label="Estimated Hours">
@@ -736,7 +633,7 @@ function EditDesignModal({
         </Field>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save" />
+      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save Changes" />
     </ModalShell>
   );
 }
@@ -750,7 +647,7 @@ function LogTimeModal({
   row: DesignTrackerListItem;
   onClose: () => void;
 }): React.JSX.Element {
-  const [logDate, setLogDate] = useState(todayLocal());
+  const [logDate, setLogDate] = useState(todayIst());
   const [hours, setHours] = useState('');
   const [worker, setWorker] = useState(row.designer);
   const [description, setDescription] = useState('');
@@ -764,11 +661,11 @@ function LogTimeModal({
     setErr(null);
     const h = Number(hours);
     if (!Number.isFinite(h) || h <= 0) {
-      setErr('Enter hours');
+      setErr('Hours Worked is required.');
       return;
     }
     if (!worker.trim()) {
-      setErr('Enter worker');
+      setErr('Design Engineer is required.');
       return;
     }
     const input: LogDesignTimeInput = {
@@ -781,7 +678,7 @@ function LogTimeModal({
       { id: row.id, input },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not log time. Try again.'),
       },
     );
   };
@@ -789,7 +686,7 @@ function LogTimeModal({
   return (
     <ModalShell
       onClose={onClose}
-      title={`⏱ Time Log — ${row.code} (${row.totalHours}h / ${row.estimatedHours}h)`}
+      title={`Time Log — ${row.code} (${row.totalHours}h / ${row.estimatedHours}h)`}
     >
       <div
         style={{
@@ -981,50 +878,13 @@ function Field({
   );
 }
 
-function Picklist({
-  items,
-  onPick,
-}: {
-  items: Array<{ id: string; label: string; sub: string | null }>;
-  onPick: (id: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 4,
-        background: 'var(--bg2)',
-        marginTop: 4,
-        maxHeight: 180,
-        overflowY: 'auto',
-      }}
-    >
-      {items.map((it) => (
-        <div
-          key={it.id}
-          onClick={() => onPick(it.id)}
-          style={{
-            padding: '6px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function ErrorBox({ message }: { message: string }): React.JSX.Element {
   return (
     <div
       style={{
         marginTop: 12,
         padding: 8,
-        background: 'rgba(239,68,68,0.08)',
+        background: 'var(--red3)',
         color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,

@@ -38,7 +38,7 @@ export function TaskDetailModal({
     try {
       await startTask.mutateAsync({ status: 'in_progress' });
     } catch (e) {
-      setActionErr(e instanceof Error ? e.message : 'Could not start the task');
+      setActionErr(e instanceof Error ? e.message : 'Could not start the task. Try again.');
     }
   }
 
@@ -102,7 +102,7 @@ export function TaskDetailModal({
   return (
     <>
       <Overlay
-        title={t ? `📋 ${t.code}` : '📋 Task Detail'}
+        title={t ? t.code : 'Task Detail'}
         size="lg"
         onClose={onClose}
         escLocked={child.kind !== 'none'}
@@ -112,7 +112,7 @@ export function TaskDetailModal({
           <div className="empty-state">Loading…</div>
         ) : isError || !t ? (
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Task not found'}
+            {error instanceof Error ? error.message : 'Task not found. Refresh the page.'}
           </div>
         ) : (
           <TaskBody

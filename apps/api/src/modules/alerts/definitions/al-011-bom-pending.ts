@@ -12,7 +12,7 @@ export const al011BomPending: RegisteredAlert = {
   definition: {
     code: 'AL-011',
     dept: 'design',
-    name: 'BOM not prepared',
+    name: 'BOM Not Prepared',
     description: 'Equipment SOs whose BOM Status shows the BOM is not ready yet.',
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },

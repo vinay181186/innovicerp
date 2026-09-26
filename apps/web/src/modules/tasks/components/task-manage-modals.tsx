@@ -27,7 +27,7 @@ export function ReassignModal({
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!assignedTo) return setErr('Pick the new assignee');
+    if (!assignedTo) return setErr('Assigned To is required.');
     try {
       await reassign.mutateAsync({ assignedTo, note: note.trim() || undefined });
       onClose();
@@ -58,7 +58,7 @@ export function ReassignModal({
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label">
-            New Assignee<span className="req">*</span>
+            Assigned To<span className="req">★</span>
           </label>
           <UserPicker
             users={userOpts?.options ?? []}
@@ -167,10 +167,10 @@ export function EditTaskModal({
 
   async function submit(): Promise<void> {
     setErr(null);
-    if (!title.trim()) return setErr('Title is required');
-    if (!personal && !dueDate) return setErr('Due Date is required');
+    if (!title.trim()) return setErr('Title is required.');
+    if (!personal && !dueDate) return setErr('Due Date is required.');
     if (startDate && dueDate && startDate > dueDate)
-      return setErr('Start Date cannot be after Due Date');
+      return setErr('Start Date cannot be after Due Date.');
     try {
       await update.mutateAsync({
         title: title.trim(),
@@ -197,14 +197,14 @@ export function EditTaskModal({
           onClose={onClose}
           onSubmit={() => void submit()}
           busy={update.isPending}
-          label="Save"
+          label="Save Changes"
         />
       }
     >
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="ed-title">
-            Title<span className="req">*</span>
+            Title<span className="req">★</span>
           </label>
           <input
             id="ed-title"
@@ -260,7 +260,7 @@ export function EditTaskModal({
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="ed-due">
-            Due Date{personal ? null : <span className="req">*</span>}
+            Due Date{personal ? null : <span className="req">★</span>}
           </label>
           <input
             id="ed-due"

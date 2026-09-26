@@ -16,7 +16,7 @@ export const al013MachinesIdle: RegisteredAlert = {
   definition: {
     code: 'AL-013',
     dept: 'production',
-    name: 'Machines idle',
+    name: 'Idle Machines',
     description:
       'Machines marked Running with no operation running on them — probably a forgotten stop.',
     columns: [

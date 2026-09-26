@@ -79,17 +79,14 @@ function ReportRunPage() {
 
   if (listLoading || !definition) {
     return (
-      <ReportShell title="Reports" icon="📊" backLabel="Back to Reports" onBack={onBack}>
+      <ReportShell title="Reports" backLabel="Back to Reports" onBack={onBack}>
         <div className="panel">
           {listLoading ? (
             <div className="panel-body text3">
               <Loader2 size={14} className="inline animate-spin" /> Loading report…
             </div>
           ) : (
-            <div className="panel-body empty-state">
-              <div className="empty-icon">📊</div>
-              There is no registered report with slug <span className="mono">{slug}</span>.
-            </div>
+            <div className="panel-body empty-state">Report not found. Refresh the page.</div>
           )}
         </div>
       </ReportShell>
@@ -104,7 +101,6 @@ function ReportRunPage() {
   return (
     <ReportShell
       title={definition.title}
-      icon="📊"
       subtitle={definition.description}
       backLabel="Back to Reports"
       onBack={onBack}
@@ -255,7 +251,7 @@ function ResultsTable(props: {
             ) : !hasData || rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="empty-state">
-                  No rows match these filters.
+                  No rows match.
                 </td>
               </tr>
             ) : (
@@ -397,9 +393,11 @@ function cellStyle(
  *  (HTML L20097–20100) — same keywords, same order, no additions. Legacy
  *  coloured the text; it is now a tinted badge so it reads at full contrast. */
 function statusBadge(raw: string): string | undefined {
-  if (['DELAYED', 'ZERO', 'Pending', 'Cancelled', 'NO GRN', 'Not Planned'].includes(raw)) {
-    return 'b-red';
-  }
+  // One colour per state, app-wide: open / pending blue, under way amber,
+  // finished green, stopped / not started grey, faults red.
+  if (['DELAYED', 'ZERO', 'NO GRN'].includes(raw)) return 'b-red';
+  if (['Cancelled', 'Not Planned'].includes(raw)) return 'b-grey';
+  if (['Pending', 'PENDING'].includes(raw)) return 'b-blue';
   if (
     [
       'ON TIME',
@@ -415,8 +413,8 @@ function statusBadge(raw: string): string | undefined {
   ) {
     return 'b-green';
   }
-  if (['Approved', 'PARTIAL', 'In Planning', 'Planned'].includes(raw)) return 'b-blue';
-  if (['PENDING', 'AT VENDOR'].includes(raw)) return 'b-amber';
+  if (['Approved', 'In Planning', 'Planned'].includes(raw)) return 'b-blue';
+  if (['PARTIAL', 'AT VENDOR'].includes(raw)) return 'b-amber';
   return undefined;
 }
 

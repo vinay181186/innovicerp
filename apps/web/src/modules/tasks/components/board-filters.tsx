@@ -1,25 +1,11 @@
 // Task Board chrome above the table (ADR-176): the tab strip (Inbox / Outbox /
-// My To-Do / All Tasks) and the filter strip (search 2fr + Status + Priority +
+// My To-Do / All Tasks) and the filter strip (search 2fr + Priority +
 // Person + Due Date; All Tasks adds Assigned By + Department). Presentational —
 // the board route owns every value and hands the setters down.
 
-import type {
-  TaskDueFilter,
-  TaskPriority,
-  TaskStatus,
-  TaskUserOption,
-  TaskView,
-} from '@innovic/shared';
+import type { TaskDueFilter, TaskPriority, TaskUserOption, TaskView } from '@innovic/shared';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_VIEW_LABELS } from '@innovic/shared';
 import { PERSON_LABEL } from './task-table';
-
-const STATUS_OPTIONS: { value: TaskStatus | ''; label: string }[] = [
-  { value: '', label: 'All Status' },
-  { value: 'todo', label: 'To Do' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
 
 const DUE_OPTIONS: { value: TaskDueFilter | ''; label: string }[] = [
   { value: '', label: 'Due Date: All' },
@@ -98,7 +84,6 @@ export function TaskTabs({
 
 export interface BoardFilterValues {
   searchInput: string;
-  status: TaskStatus | '';
   priority: TaskPriority | '';
   person: string;
   assignedBy: string;
@@ -112,7 +97,6 @@ export function TaskFilters({
   departments,
   values,
   onSearch,
-  onStatus,
   onPriority,
   onPerson,
   onAssignedBy,
@@ -124,7 +108,6 @@ export function TaskFilters({
   departments: string[];
   values: BoardFilterValues;
   onSearch: (v: string) => void;
-  onStatus: (v: TaskStatus | '') => void;
   onPriority: (v: TaskPriority | '') => void;
   onPerson: (v: string) => void;
   onAssignedBy: (v: string) => void;
@@ -154,18 +137,6 @@ export function TaskFilters({
         onChange={(e) => onSearch(e.target.value)}
         style={{ fontSize: 12 }}
       />
-      <select
-        className="innovic-select"
-        value={values.status}
-        onChange={(e) => onStatus(e.target.value as TaskStatus | '')}
-        style={selectStyle}
-      >
-        {STATUS_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
       <select
         className="innovic-select"
         value={values.priority}

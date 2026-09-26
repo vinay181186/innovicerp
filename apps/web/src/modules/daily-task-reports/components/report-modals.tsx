@@ -12,11 +12,11 @@ import {
 } from '@innovic/shared';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { useCreateDailyReport, useDailyReportDetail, useUpdateDailyReport } from '../api';
 
 function todayStr(): string {
-  return todayLocal();
+  return todayIst();
 }
 
 export function Overlay(props: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }): React.JSX.Element {
@@ -59,6 +59,7 @@ function ReportEditor({
   initialShift,
   initialLines,
   pending,
+  saveLabel,
   onCancel,
   onSubmit,
 }: {
@@ -66,6 +67,8 @@ function ReportEditor({
   initialShift: Shift;
   initialLines: EditLine[];
   pending: boolean;
+  /** "Save Report" on create, "Save Changes" on edit. */
+  saveLabel: string;
   onCancel: () => void;
   onSubmit: (input: UpsertDailyTaskReportInput) => Promise<void>;
 }): React.JSX.Element {
@@ -83,7 +86,7 @@ function ReportEditor({
   async function submit(): Promise<void> {
     setErr(null);
     const valid = lines.filter((l) => l.description.trim());
-    if (valid.length === 0) return setErr('Add at least one task');
+    if (valid.length === 0) return setErr('Task Description is required.');
     try {
       await onSubmit({
         reportDate,
@@ -187,7 +190,7 @@ function ReportEditor({
           Cancel
         </button>
         <button type="button" className="btn btn-primary" disabled={pending} onClick={() => void submit()}>
-          {pending ? 'Saving…' : 'Save Report'}
+          {pending ? 'Saving…' : saveLabel}
         </button>
       </div>
     </div>
@@ -197,12 +200,13 @@ function ReportEditor({
 export function NewReportModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const create = useCreateDailyReport();
   return (
-    <Overlay title="📋 New Daily Report" onClose={onClose} wide>
+    <Overlay title="New Daily Report" onClose={onClose} wide>
       <ReportEditor
         initialDate={todayStr()}
         initialShift="day"
         initialLines={[emptyLine()]}
         pending={create.isPending}
+        saveLabel="Save Report"
         onCancel={onClose}
         onSubmit={async (input) => {
           await create.mutateAsync(input);
@@ -217,7 +221,7 @@ export function EditReportModal({ id, onClose }: { id: string; onClose: () => vo
   const { data, isLoading } = useDailyReportDetail(id);
   const update = useUpdateDailyReport(id);
   return (
-    <Overlay title="✏ Edit Daily Report" onClose={onClose} wide>
+    <Overlay title="Edit Daily Report" onClose={onClose} wide>
       {isLoading || !data ? (
         <div className="empty-state">Loading…</div>
       ) : (
@@ -232,6 +236,7 @@ export function EditReportModal({ id, onClose }: { id: string; onClose: () => vo
             remarks: l.remarks ?? '',
           }))}
           pending={update.isPending}
+          saveLabel="Save Changes"
           onCancel={onClose}
           onSubmit={async (input) => {
             await update.mutateAsync(input);
@@ -244,35 +249,36 @@ export function EditReportModal({ id, onClose }: { id: string; onClose: () => vo
 }
 
 function lineStatusColor(s: DailyReportLineStatus): string {
-  return s === 'completed' ? 'var(--green)' : s === 'in_progress' ? 'var(--cyan)' : s === 'blocked' ? 'var(--red)' : 'var(--amber)';
+  // Done green, under way amber, blocked red, pending blue.
+  return s === 'completed' ? 'var(--green2)' : s === 'in_progress' ? 'var(--amber2)' : s === 'blocked' ? 'var(--red2)' : 'var(--blue)';
 }
 
 export function ViewReportModal({ id, onClose }: { id: string; onClose: () => void }): React.JSX.Element {
   const { data: r, isLoading } = useDailyReportDetail(id);
   return (
-    <Overlay title="📋 Daily Report" onClose={onClose} wide>
+    <Overlay title="Daily Report" onClose={onClose} wide>
       {isLoading || !r ? (
         <div className="empty-state">Loading…</div>
       ) : (
         <div>
           <div style={{ padding: '10px 14px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             <div>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>USER</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>User</span>
               <br />
               <b>{r.userName ?? '—'}</b>
             </div>
             <div>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>REPORT DATE</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>Report Date</span>
               <br />
               <b>{fmtDate(r.reportDate)}</b>
             </div>
             <div>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>SHIFT</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>Shift</span>
               <br />
               <b>{SHIFT_LABELS[r.shift]}</b>
             </div>
             <div>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>TOTAL HOURS</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>Total Hours</span>
               <br />
               <b style={{ color: 'var(--cyan)' }}>{r.totalHours.toFixed(1)}h</b>
             </div>

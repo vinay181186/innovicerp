@@ -73,7 +73,7 @@ async function computeWidget(
             WHERE jc.company_id='${cid}'::uuid AND jc.deleted_at IS NULL GROUP BY jc.id) y`))[0];
       w.stats = [
         { label: 'Open', value: num(r?.['open_jcs']), tone: 'amber' },
-        { label: 'Complete', value: num(r?.['done_jcs']), tone: 'green' },
+        { label: 'Completed', value: num(r?.['done_jcs']), tone: 'green' },
         { label: 'Total', value: num(r?.['total']), tone: null },
       ];
       break;
@@ -97,7 +97,7 @@ async function computeWidget(
       const grnPend = num((await q(tx, `SELECT COUNT(DISTINCT g.id)::int AS c FROM goods_receipt_notes g JOIN goods_receipt_note_lines gl ON gl.goods_receipt_note_id=g.id AND gl.qc_status='pending' AND gl.deleted_at IS NULL WHERE g.company_id='${cid}'::uuid AND g.deleted_at IS NULL`))[0]?.['c']);
       w.stats = [
         { label: 'QC Ops Pending', value: opPend, tone: 'amber' },
-        { label: 'GRN Pending QC', value: grnPend, tone: 'amber' },
+        { label: 'GRN QC Pending', value: grnPend, tone: 'amber' },
       ];
       break;
     }
@@ -157,8 +157,10 @@ async function computeWidget(
           COUNT(*) FILTER (WHERE status<>'completed' AND due_date IS NOT NULL AND due_date < '${today}')::int AS overdue
           FROM tasks WHERE company_id='${cid}'::uuid AND assigned_to='${userId}'::uuid AND deleted_at IS NULL`))[0];
       w.stats = [
-        { label: 'To Do', value: num(r?.['todo']), tone: 'amber' },
-        { label: 'In Progress', value: num(r?.['inprog']), tone: 'cyan' },
+        // Same colours as the Task Board strip and badge (tasks/lib/format.ts
+        // TASK_STATUS_TONE): To Do grey, In Progress amber.
+        { label: 'To Do', value: num(r?.['todo']), tone: 'grey' },
+        { label: 'In Progress', value: num(r?.['inprog']), tone: 'amber' },
         { label: 'Overdue', value: num(r?.['overdue']), tone: 'red' },
       ];
       break;
@@ -192,7 +194,7 @@ async function computeWidget(
           JOIN goods_receipt_note_lines gl ON gl.goods_receipt_note_id=g.id AND gl.qc_status='pending' AND gl.deleted_at IS NULL
           WHERE g.company_id='${cid}'::uuid AND g.deleted_at IS NULL GROUP BY g.id, g.code LIMIT 5`);
       w.rows = rows.map((r) => ({ left: String(r['code'] ?? ''), mid: '', right: String(num(r['qty'])) }));
-      w.emptyText = 'All clear';
+      w.emptyText = '✅ Nothing pending';
       break;
     }
     case 'daily_quick': {

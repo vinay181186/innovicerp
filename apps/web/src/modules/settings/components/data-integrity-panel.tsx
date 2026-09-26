@@ -11,6 +11,7 @@ import { Loader2, Search } from 'lucide-react';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtDateTime } from '@/lib/date';
+import { Banner } from '@/ui/feedback';
 
 function severityColor(s: 'ok' | 'warn' | 'error'): string {
   if (s === 'ok') return 'var(--green)';
@@ -35,12 +36,11 @@ export function DataIntegrityPanel(): React.JSX.Element {
     // Legacy `<div class="panel mt-16">` (L13420); .mt-16 (L268) is not in our theme.
     <div className="panel" style={{ marginTop: 16 }}>
       <div className="panel-hdr">
-        <span className="panel-title">🔗 Data Integrity Check</span>
+        <span className="panel-title">Data Integrity Check</span>
       </div>
       <div className="panel-body">
         <p className="text2" style={{ fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
-          Scans all modules for broken linkages, orphan records, over-allocations, negative stock,
-          and mismatched references across SO, JW, JC, PO, GRN, NC, Store.
+          Finds broken links and negative stock.
         </p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
@@ -67,20 +67,12 @@ export function DataIntegrityPanel(): React.JSX.Element {
         </div>
 
         {run.isError ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: '8px 12px',
-              background: 'rgba(239,68,68,0.06)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: 6,
-              color: 'var(--red2)',
-              fontSize: 12,
-            }}
-          >
-            {run.error instanceof Error
-              ? run.error.message
-              : 'Could not run the data check. Try again.'}
+          <div style={{ marginTop: 12 }}>
+            <Banner tone="error" role="alert">
+              {run.error instanceof Error
+                ? run.error.message
+                : 'Could not run the data check. Try again.'}
+            </Banner>
           </div>
         ) : null}
 
@@ -95,10 +87,10 @@ export function DataIntegrityPanel(): React.JSX.Element {
                   border: `1px solid ${severityColor(r.severity)}`,
                   background:
                     r.severity === 'ok'
-                      ? 'rgba(34,197,94,0.04)'
+                      ? 'var(--green3)'
                       : r.severity === 'warn'
-                        ? 'rgba(245,158,11,0.04)'
-                        : 'rgba(239,68,68,0.04)',
+                        ? 'var(--amber3)'
+                        : 'var(--red3)',
                 }}
               >
                 <div
@@ -112,9 +104,6 @@ export function DataIntegrityPanel(): React.JSX.Element {
                     <span style={{ marginRight: 6 }}>{severityIcon(r.severity)}</span>
                     <span style={{ fontWeight: 700, color: severityColor(r.severity) }}>
                       {r.label}
-                    </span>
-                    <span className="text3" style={{ fontSize: 11, marginLeft: 8 }}>
-                      ({r.code})
                     </span>
                   </div>
                   <span

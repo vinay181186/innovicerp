@@ -2,7 +2,7 @@
 // <Person> | Related To | Priority | Due Date | Status | Last Update | Actions.
 // The person column is the OTHER party of the current view — who assigned it
 // (Inbox), who it went to (Outbox / All), "Me" on My To-Do. Rows open the
-// detail; the small action buttons appear only when the server says the
+// detail (no separate View button); the small action buttons appear only when the server says the
 // caller may take that action on that row.
 
 import type { TaskRow, TaskView } from '@innovic/shared';
@@ -131,13 +131,6 @@ export function TaskTableRow({
           style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => onAction('view', t)}
-          >
-            View
-          </button>
           {p.canUpdateStatus && open ? (
             <IconBtn title="Update status" onClick={() => onAction('status', t)}>
               ✏
@@ -167,10 +160,13 @@ export function TaskTableRow({
 export function TaskTable({
   rows,
   view,
+  filtered,
   onAction,
 }: {
   rows: TaskRow[];
   view: TaskView;
+  /** True when a search / filter is on — picks the empty-state wording. */
+  filtered: boolean;
   onAction: (action: RowAction, task: TaskRow) => void;
 }): React.JSX.Element {
   return (
@@ -194,7 +190,7 @@ export function TaskTable({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={9} className="empty-state">
-                  No tasks found
+                  {filtered ? 'No Tasks match.' : 'No Tasks yet.'}
                 </td>
               </tr>
             ) : (
