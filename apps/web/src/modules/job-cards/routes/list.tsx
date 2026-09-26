@@ -940,6 +940,14 @@ function JobCardsListPage(): React.JSX.Element {
           shown={rows.length}
           noun="job card"
           limit={LIST_LIMIT}
+          // Overdue is picked from the loaded set; when the server matched
+          // more than LIST_LIMIT cards, say so — otherwise the filtered count
+          // (always ≤ the cap) would hide that later overdue cards are missing.
+          {...(search.overdue && (data?.total ?? 0) > LIST_LIMIT
+            ? {
+                hint: `Overdue is checked in the first ${LIST_LIMIT} of ${data?.total ?? 0} job cards loaded — narrow with search, machine, operator or dates to see all of them.`,
+              }
+            : {})}
           {...(totalPages > 1 && view === 'list'
             ? { page: currentPage, pageSize: PAGE_SIZE, onPage: gotoPage }
             : {})}
