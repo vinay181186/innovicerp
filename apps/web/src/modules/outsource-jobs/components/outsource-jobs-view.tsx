@@ -60,6 +60,7 @@ import {
 } from '@/modules/purchase-requests/lib/pr-balance';
 import { PR_STATUS_LABELS } from '@/modules/purchase-requests/lib/pr-labels';
 import { useVendorsList } from '@/modules/vendors/api';
+import { ListFooter, ListHeader } from '@/ui/layout';
 
 const PAGE_SIZE = 100;
 
@@ -290,32 +291,56 @@ export function OutsourceJobsView(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📦 Outsource Jobs (OSP)
-        </div>
-        {canEdit && selectedIds.size > 0 ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={openModal}
-            disabled={createBatchMut.isPending}
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          JC filter · Create PO from Selected, with the counts (which double as
+          the status filter) pinned inside the same band. */}
+      <ListHeader
+        title="Outsource Jobs (OSP)"
+        icon="📦"
+        count={filtered.length}
+        noun="OSP request"
+        filterNote={
+          [
+            statusBand === 'open' ? 'Open' : statusBand === 'po_created' ? 'PO Created' : null,
+            soNo ?? null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || undefined
+        }
+        search={searchText}
+        onSearch={setSearchText}
+        searchPlaceholder="Search PR no, JC, item, process, vendor, qty, due, status…"
+        tools={
+          <select
+            className="innovic-select"
+            aria-label="JC No."
+            value={soNo ?? ''}
+            onChange={(e) => setSoNo(e.target.value || undefined)}
+            style={{ width: 200 }}
           >
-            🛒 Create PO from Selected
-          </button>
-        ) : null}
-      </div>
-
-      {/* Counts — ONE strip (styling rule 3). No qty total: it would add
-          different items' quantities together. */}
-      <div style={{ marginBottom: 16 }}>
+            <option value="">All JC Nos.</option>
+            {soNos.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        }
+        primary={
+          canEdit && selectedIds.size > 0 ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={openModal}
+              disabled={createBatchMut.isPending}
+            >
+              🛒 Create PO from Selected
+            </button>
+          ) : null
+        }
+      >
+        {/* Counts — ONE strip (styling rule 3). No qty total: it would add
+            different items' quantities together. */}
         <StatStrip
           items={[
             {
@@ -345,43 +370,11 @@ export function OutsourceJobsView(): React.JSX.Element {
             },
           ]}
         />
-      </div>
-
-      {/* Search + JC-source filter (legacy L27103-27106) */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-      >
-        <input
-          className="innovic-input"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          placeholder="🔍 Search PR no, JC, item, process, vendor, qty, due, status…"
-          style={{ width: 220, fontSize: 12 }}
-        />
-        <select
-          className="innovic-select"
-          value={soNo ?? ''}
-          onChange={(e) => setSoNo(e.target.value || undefined)}
-          style={{ width: 200, fontSize: 12 }}
-        >
-          <option value="">All JC Nos.</option>
-          {soNos.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
+      </ListHeader>
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th style={{ width: 30 }}>
@@ -397,9 +390,11 @@ export function OutsourceJobsView(): React.JSX.Element {
                 <th>JC No.</th>
                 <th>Item Code</th>
                 <th style={{ color: 'var(--purple)' }}>Process</th>
-                <th>Qty</th>
+                <th className="th-num">Qty</th>
                 <th>Suggested Vendor</th>
-                <th style={{ color: 'var(--green2)' }}>Est. Rate (₹/pc)</th>
+                <th className="th-num" style={{ color: 'var(--green2)' }}>
+                  Est. Rate (₹/pc)
+                </th>
                 <th>Due Date</th>
                 <th>PR Status</th>
               </tr>
@@ -441,9 +436,13 @@ export function OutsourceJobsView(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        Tick PRs → Create PO from Selected.
-      </div>
+      <ListFooter
+        total={data?.total ?? allPrs.length}
+        shown={filtered.length}
+        limit={PAGE_SIZE}
+        noun="OSP request"
+        hint="Tick PRs → Create PO from Selected."
+      />
 
       {/* Batch-create modal */}
       {modalOpen ? (
@@ -696,10 +695,10 @@ function OspRow({
           />
         ) : null}
       </td>
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+      <td className="mono fw-700" style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}>
         {pr.code}
       </td>
-      <td className="mono" style={{ color: 'var(--cyan)', fontSize: 11 }}>
+      <td className="mono" style={{ color: 'var(--cyan)', fontSize: 11, whiteSpace: 'nowrap' }}>
         {pr.sourceJcCode
           ? `${pr.sourceJcCode}${pr.sourceJcOpSeq ? ' op' + opSrNo(pr.sourceJcOpSeq) : ''}`
           : '—'}
@@ -712,17 +711,17 @@ function OspRow({
       <td style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
         {pr.operation ?? '—'}
       </td>
-      <td className="mono fw-700">{pr.qty}</td>
+      <td className="mono fw-700 td-num">{pr.qty}</td>
       <td style={{ fontSize: 11 }}>
         {pr.vendorName ?? <span style={{ color: 'var(--amber2)' }}>TBD</span>}
         {pr.vendorCodeText && pr.vendorCodeText !== pr.vendorName ? (
           <span style={{ color: 'var(--text3)', fontSize: 11 }}> [{pr.vendorCodeText}]</span>
         ) : null}
       </td>
-      <td className="mono" style={{ color: 'var(--green2)' }}>
+      <td className="mono td-num" style={{ color: 'var(--green2)', whiteSpace: 'nowrap' }}>
         {Number(pr.estCost) > 0 ? `₹${Number(pr.estCost).toFixed(2)}` : '—'}
       </td>
-      <td style={{ fontSize: 11 }}>{fmtDate(pr.requiredDate)}</td>
+      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{fmtDate(pr.requiredDate)}</td>
       <td>
         <span style={{ fontWeight: 700, color: statusColor(pr.status) }}>
           {PR_STATUS_LABELS[pr.status]}

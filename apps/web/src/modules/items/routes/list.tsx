@@ -368,6 +368,7 @@ function ItemsListPage(): React.JSX.Element {
         filterNote={search.itemType}
         search={searchInput}
         onSearch={setSearchInput}
+        searchPlaceholder="Search code, name, description, drawing, rev, material, UOM…"
         updating={isFetching && !isLoading}
         tools={
           <Select

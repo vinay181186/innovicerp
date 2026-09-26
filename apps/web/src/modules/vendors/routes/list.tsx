@@ -288,12 +288,13 @@ function VendorsListPage(): React.JSX.Element {
           StatStrip stay put while the rows scroll underneath. */}
       <ListHeader
         title="Vendor Master"
-        icon="🏭"
+        icon="🚚"
         count={total}
         noun="vendor"
         filterNote={search.status}
         search={searchInput}
         onSearch={setSearchInput}
+        searchPlaceholder="Search code, vendor, contact, phone, email, GST, address…"
         updating={isFetching && !isLoading}
         primary={
           canAdd ? (

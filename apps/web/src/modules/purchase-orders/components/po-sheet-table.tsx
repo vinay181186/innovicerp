@@ -35,10 +35,10 @@ export function PoSheetTable({
   return (
     <>
       {/* The sheet look (tbl-grid): bold blue column names, gridlines, cream /
-          white rows, fixed widths that add up to 100% so nothing scrolls
-          sideways. The sheet centres every column; only Vendor is left-aligned
-          so the names share one edge. */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+          white rows. Column widths are minimum hints (the sheet is auto
+          layout); codes / dates / qty stay on one line, Vendor may wrap. The
+          💡 hint lives in the page's ListFooter. */}
+      <div className="tbl-wrap">
         <table className="innovic-table tbl-grid">
           <colgroup>
             <col style={{ width: '4%' }} />
@@ -79,7 +79,7 @@ export function PoSheetTable({
               return (
                 <tr key={po.id} onClick={() => onOpen(po.id)} style={{ cursor: 'pointer' }}>
                   <td className="td-num text3">{i + 1}</td>
-                  <td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
                     <Link
                       to="/purchase-orders/$id"
                       params={{ id: po.id }}
@@ -101,16 +101,8 @@ export function PoSheetTable({
                     </span>
                   </td>
                   <td>
-                    <span
-                      className="fw-700"
-                      style={{
-                        display: 'block',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={vendor}
-                    >
+                    {/* A name — allowed to wrap (list-page standard). */}
+                    <span className="fw-700" title={vendor}>
                       {vendor}
                     </span>
                   </td>
@@ -209,10 +201,6 @@ export function PoSheetTable({
             })}
           </tbody>
         </table>
-      </div>
-
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-        💡 Click a row to open the purchase order.
       </div>
     </>
   );

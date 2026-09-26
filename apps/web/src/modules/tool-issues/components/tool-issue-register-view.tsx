@@ -18,6 +18,8 @@ import { useMemo, useState } from 'react';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useItemsList } from '../../items/api';
+import { StatStrip } from '@/ui/data';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   useCreateToolIssue,
   useNextToolIssueCode,
@@ -26,6 +28,12 @@ import {
 } from '../api';
 
 type FilterKey = 'all' | 'out' | 'overdue' | 'returned';
+const FILTER_LABELS: Record<FilterKey, string> = {
+  all: 'All',
+  out: 'Currently Out',
+  overdue: 'Overdue',
+  returned: 'Returned',
+};
 const PAGE_SIZE = 25;
 
 // `initialSearch` — one-time seed for the search box from the host route's
@@ -72,38 +80,40 @@ export function ToolIssueRegisterView({
 
   return (
     <div>
-      {/* Legacy renders the stat cards ABOVE the header row — renderToolIssue L24018. */}
-      {data?.summary ? (
-        <KpiStrip
-          summary={data.summary}
-          filter={filter}
-          setFilter={(k) => {
-            setFilter(k);
-            setPage(1);
-          }}
-        />
-      ) : null}
-
-      <div className="mb-3 flex items-center justify-between gap-3" style={{ flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            style={{ minWidth: 160, fontSize: 12 }}
-          />
-          {canIssue ? (
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + Issue Tool, with the status counts (which double as the filter)
+          pinned inside the same band. */}
+      <ListHeader
+        title="Tool Issue Register"
+        icon="🔧"
+        count={data?.total}
+        noun="tool issue"
+        filterNote={filter === 'all' ? undefined : FILTER_LABELS[filter]}
+        search={search}
+        onSearch={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        searchPlaceholder="Search issue no, item, issued to, reference…"
+        primary={
+          canIssue ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
               + Issue Tool
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      >
+        {data?.summary ? (
+          <KpiStrip
+            summary={data.summary}
+            filter={filter}
+            setFilter={(k) => {
+              setFilter(k);
+              setPage(1);
+            }}
+          />
+        ) : null}
+      </ListHeader>
 
       <div className="panel">
         {isLoading ? (
@@ -120,27 +130,27 @@ export function ToolIssueRegisterView({
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Issue No.</th>
                   <th>Issue Date</th>
                   <th>Item Code · Name</th>
-                  <th className="td-ctr">Issue Qty</th>
+                  <th className="th-num">Issue Qty</th>
                   <th>Issued To</th>
                   <th>Reference No.</th>
                   <th>Expected Return Date</th>
                   <th>Issue Status</th>
-                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Good
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--red2)' }}>
+                  <th className="th-num" style={{ color: 'var(--red2)' }}>
                     Damaged
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--amber2)' }}>
+                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
                     Consumed
                   </th>
-                  <th className="td-ctr">Action</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -154,16 +164,16 @@ export function ToolIssueRegisterView({
                 {data.items.map((ti) => (
                   <tr
                     key={ti.id}
-                    style={{
-                      background: ti.isOverdue ? 'rgba(239,68,68,0.03)' : 'var(--bg)',
-                    }}
+                    // Overdue is carried by the red "Overdue" status badge; the
+                    // sheet's own cream / white rows stay as they are.
+                    title={ti.isOverdue ? 'Overdue' : undefined}
                   >
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span className="td-code" style={{ color: 'var(--cyan)' }}>
                         {ti.code}
                       </span>
                     </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
+                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDate(ti.issueDate)}
                     </td>
                     <td>
@@ -173,21 +183,24 @@ export function ToolIssueRegisterView({
                       <br />
                       <span style={{ fontSize: 11 }}>{ti.itemName}</span>
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>
+                    <td className="td-num mono fw-700" style={{ fontSize: 14 }}>
                       {ti.qty}
                     </td>
                     <td style={{ fontSize: 12 }}>{ti.issuedTo}</td>
-                    <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                    <td
+                      className="mono"
+                      style={{ fontSize: 11, color: 'var(--purple)', whiteSpace: 'nowrap' }}
+                    >
                       {ti.refNo ?? '—'}
                     </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
+                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDate(ti.expectedReturnDate)}
                     </td>
                     <td>
                       <StatusBadge issue={ti} />
                     </td>
                     <td
-                      className="td-ctr mono"
+                      className="td-num mono"
                       style={{
                         color: ti.returnGoodQty > 0 ? 'var(--green)' : 'var(--text3)',
                       }}
@@ -195,7 +208,7 @@ export function ToolIssueRegisterView({
                       {ti.returnGoodQty}
                     </td>
                     <td
-                      className="td-ctr mono"
+                      className="td-num mono"
                       style={{
                         color: ti.returnDamagedQty > 0 ? 'var(--red)' : 'var(--text3)',
                       }}
@@ -203,23 +216,23 @@ export function ToolIssueRegisterView({
                       {ti.returnDamagedQty}
                     </td>
                     <td
-                      className="td-ctr mono"
+                      className="td-num mono"
                       style={{
                         color: ti.returnConsumedQty > 0 ? 'var(--amber)' : 'var(--text3)',
                       }}
                     >
                       {ti.returnConsumedQty}
                     </td>
-                    <td className="td-ctr">
+                    <td>
                       {ti.returnStatus !== 'returned' && canReturn ? (
                         <button
                           type="button"
                           className="btn btn-sm"
                           onClick={() => setReturnTarget(ti)}
                           style={{
-                            background: 'rgba(20,184,166,0.08)',
-                            color: '#14b8a6',
-                            border: '1px solid rgba(20,184,166,0.3)',
+                            background: 'var(--teal3)',
+                            color: 'var(--teal2)',
+                            border: '1px solid var(--teal)',
                             fontSize: 11,
                             fontWeight: 700,
                           }}
@@ -237,42 +250,13 @@ export function ToolIssueRegisterView({
       </div>
 
       {data ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--text3)',
-          }}
-        >
-          <span>
-            {data.total === 0
-              ? 'No tool issues'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <ListFooter
+          total={data.total}
+          noun="tool issue"
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+        />
       ) : null}
       {showNew ? <NewToolIssueModal onClose={() => setShowNew(false)} /> : null}
       {returnTarget ? (
@@ -287,7 +271,7 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
     return (
       <span
         style={{
-          background: 'rgba(34,197,94,0.12)',
+          background: 'var(--green3)',
           color: 'var(--green2)',
           padding: '2px 8px',
           borderRadius: 10,
@@ -305,7 +289,7 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
     return (
       <span
         style={{
-          background: 'rgba(34,211,238,0.12)',
+          background: 'var(--cyan3)',
           color: 'var(--cyan)',
           padding: '2px 8px',
           borderRadius: 10,
@@ -321,7 +305,7 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
     return (
       <span
         style={{
-          background: 'rgba(239,68,68,0.12)',
+          background: 'var(--red3)',
           color: 'var(--red2)',
           padding: '2px 8px',
           borderRadius: 10,
@@ -336,7 +320,7 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
   return (
     <span
       style={{
-        background: 'rgba(245,158,11,0.12)',
+        background: 'var(--amber3)',
         color: 'var(--amber2)',
         padding: '2px 8px',
         borderRadius: 10,
@@ -358,45 +342,50 @@ function KpiStrip({
   filter: FilterKey;
   setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
-  const tiles: Array<{ key: FilterKey; label: string; value: number; color: string }> = [
-    { key: 'all', label: 'Total', value: summary.total, color: 'var(--blue)' },
-    { key: 'out', label: 'Currently Out', value: summary.out, color: 'var(--red2)' },
-    { key: 'returned', label: 'Returned', value: summary.returned, color: 'var(--green2)' },
-  ];
-  // Legacy only emits the Overdue card when the count is non-zero (L24016).
-  if (summary.overdue > 0) {
-    tiles.push({ key: 'overdue', label: 'Overdue', value: summary.overdue, color: 'var(--red2)' });
-  }
+  // Clicking the active tile again clears it back to All (as before).
+  const pick = (k: FilterKey) => () => setFilter(k === filter && k !== 'all' ? 'all' : k);
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-        gap: 10,
-        marginBottom: 16,
-      }}
-    >
-      {tiles.map((t) => (
-        <div
-          key={t.key}
-          onClick={() => setFilter(t.key === filter && t.key !== 'all' ? 'all' : t.key)}
-          style={{
-            cursor: 'pointer',
-            textAlign: 'center',
-            padding: 12,
-            borderRadius: 10,
-            background: t.key === 'overdue' ? 'rgba(239,68,68,0.06)' : 'var(--bg2)',
-            border:
-              t.key === 'overdue' ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)',
-          }}
-        >
-          <div style={{ fontSize: 11, color: t.key === 'overdue' ? 'var(--red)' : 'var(--text3)' }}>
-            {t.label}
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
-        </div>
-      ))}
-    </div>
+    <StatStrip
+      items={[
+        {
+          key: 'all',
+          label: 'Total',
+          count: summary.total,
+          color: 'var(--blue)',
+          active: filter === 'all',
+          onClick: pick('all'),
+        },
+        {
+          key: 'out',
+          label: 'Currently Out',
+          count: summary.out,
+          color: 'var(--red2)',
+          active: filter === 'out',
+          onClick: pick('out'),
+        },
+        {
+          key: 'returned',
+          label: 'Returned',
+          count: summary.returned,
+          color: 'var(--green2)',
+          active: filter === 'returned',
+          onClick: pick('returned'),
+        },
+        // Legacy only emits the Overdue tile when the count is non-zero (L24016).
+        ...(summary.overdue > 0
+          ? [
+              {
+                key: 'overdue',
+                label: 'Overdue',
+                count: summary.overdue,
+                color: 'var(--red2)',
+                active: filter === 'overdue',
+                onClick: pick('overdue'),
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 }
 

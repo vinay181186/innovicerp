@@ -17,7 +17,7 @@ import {
   type ListGoodsReceiptNotesQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
@@ -27,6 +27,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useGoodsReceiptNote, useGoodsReceiptNotesList } from '../api';
 import { QcStatusBadge } from '../components/qc-status-badge';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
@@ -168,128 +169,79 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* Frozen header band — the title, the search toolbar and the status
-          pills stay put while the GRN cards scroll underneath. `#content` is
-          the app's scroll container, so `top:0` pins this band to its padding
-          box; the background must be opaque and match #content's own (`--bg`)
-          or the cards show through as they pass under it. Not bled to the
-          edges with negative margins — see the SO list for why (a mismatch
-          gives the whole app a horizontal scrollbar). */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 10,
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              Goods Receipt Notes
-            </div>
-            {/* Count comes from the list response's `total` — the whole book,
-                not just the page on screen. */}
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} GRN{total === 1 ? '' : 's'}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="Search GRN no., PO, vendor, DC, invoice…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {perms.entry ? (
-              <Link to="/goods-receipt-notes/new" className="btn btn-primary">
-                <Plus size={14} /> New GRN
-              </Link>
-            ) : null}
-          </div>
-        </div>
-
-        {/* QC-status filter as pills. Replaces the <select> it used to sit
-            beside — every GRN_QC_STATUSES value gets a pill, so nothing that
-            could be filtered before is unreachable now. Same `qcStatus` search
-            param, same query; only the control changed. */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 10,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {([null, ...GRN_QC_STATUSES] as (GrnQcStatus | null)[]).map((s) => {
-              const active = (search.qcStatus ?? null) === s;
-              return (
-                <button
-                  key={s ?? 'all'}
-                  type="button"
-                  className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{
-                    fontSize: 11,
-                    textTransform: 'capitalize',
-                    borderRadius: 999,
-                    padding: '3px 12px',
-                  }}
-                  onClick={() =>
-                    void navigate({
-                      search: (prev) => ({ ...prev, qcStatus: s ?? undefined, page: 1 }),
-                      replace: true,
-                    })
-                  }
-                >
-                  {s ? GRN_QC_STATUS_LABELS[s] : 'All'}
-                </button>
-              );
-            })}
-          </div>
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          Expand all · + New GRN, with the QC-status pills and the count strip
+          pinned inside the same band. */}
+      <ListHeader
+        title="GRN"
+        icon="📥"
+        count={total}
+        noun="GRN"
+        filterNote={search.qcStatus ? GRN_QC_STATUS_LABELS[search.qcStatus] : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search GRN no., PO, vendor, DC, invoice…"
+        updating={isFetching && !isLoading}
+        tools={
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="btn btn-ghost"
             onClick={() => setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))}
             disabled={rows.length === 0}
             title={allExpanded ? 'Hide every card’s lines' : 'Show every card’s lines'}
           >
             {allExpanded ? 'Collapse all' : 'Expand all'}
           </button>
+        }
+        primary={
+          perms.entry ? (
+            <Link to="/goods-receipt-notes/new" className="btn btn-primary">
+              <Plus size={14} /> New GRN
+            </Link>
+          ) : null
+        }
+      >
+        {/* QC-status filter as pills — every GRN_QC_STATUSES value gets one.
+            Same `qcStatus` search param, same query. */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {([null, ...GRN_QC_STATUSES] as (GrnQcStatus | null)[]).map((s) => {
+            const active = (search.qcStatus ?? null) === s;
+            return (
+              <button
+                key={s ?? 'all'}
+                type="button"
+                className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+                style={{
+                  fontSize: 11,
+                  textTransform: 'capitalize',
+                  borderRadius: 999,
+                  padding: '3px 12px',
+                }}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, qcStatus: s ?? undefined, page: 1 }),
+                    replace: true,
+                  })
+                }
+              >
+                {s ? GRN_QC_STATUS_LABELS[s] : 'All'}
+              </button>
+            );
+          })}
         </div>
-      </div>
-
-      {data?.summary ? (
-        <GrnKpiStrip
-          summary={data.summary}
-          activeStatus={search.qcStatus ?? null}
-          onSelectStatus={(s) => {
-            void navigate({
-              search: (prev) => ({ ...prev, qcStatus: s, page: 1 }),
-              replace: true,
-            });
-          }}
-        />
-      ) : null}
+        {data?.summary ? (
+          <GrnKpiStrip
+            summary={data.summary}
+            activeStatus={search.qcStatus ?? null}
+            onSelectStatus={(s) => {
+              void navigate({
+                search: (prev) => ({ ...prev, qcStatus: s, page: 1 }),
+                replace: true,
+              });
+            }}
+          />
+        ) : null}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
@@ -481,58 +433,20 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         })
       )}
 
-      {/* Legacy L26502-26503 — plain tip line under the register. */}
-      <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        Only QC-accepted qty goes into stock.
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No goods receipt notes'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      {/* Legacy L26502-26503 — the tip line under the register. */}
+      <ListFooter
+        total={total}
+        noun="goods receipt note"
+        page={currentPage}
+        pageSize={PAGE_SIZE}
+        onPage={(p) =>
+          void navigate({
+            search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+            replace: true,
+          })
+        }
+        hint="Only QC-accepted qty goes into stock."
+      />
     </div>
   );
 }
@@ -586,84 +500,81 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
           Open full detail →
         </Link>
       </div>
-      {/* tbl-ctr — the table-alignment standard: header and data share one
-          centre line; no per-cell textAlign / td-ctr. */}
-      <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
-        <thead>
-          <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Ln</th>
-            {/* POL = the CUSTOMER's own PO line number off the SO line behind
-                this receipt line. Not our SO line number. */}
-            <th style={{ color: 'var(--purple)' }}>POL</th>
-            <th>Item Code</th>
-            <th>Item Name</th>
-            <th className="th-num">Received</th>
-            <th className="th-num" style={{ color: 'var(--green2)' }}>
-              Accepted
-            </th>
-            <th className="th-num" style={{ color: 'var(--red2)' }}>
-              Rejected
-            </th>
-            <th>QC</th>
-            <th>QC Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.lines.length === 0 ? (
+      {/* The sheet (tbl-grid), compact because it sits inside an expanded
+          card. Codes / qty / dates one line; Item Name may wrap. */}
+      <div className="tbl-wrap">
+        <table className="innovic-table tbl-grid tbl-compact">
+          <thead>
             <tr>
-              <td colSpan={9} className="empty-state">
-                No lines
-              </td>
+              <th style={{ width: 36 }}>Ln</th>
+              {/* POL = the CUSTOMER's own PO line number off the SO line behind
+                this receipt line. Not our SO line number. */}
+              <th style={{ color: 'var(--purple)' }}>POL</th>
+              <th>Item Code</th>
+              <th className="th-left">Item Name</th>
+              <th className="th-num">Received</th>
+              <th className="th-num" style={{ color: 'var(--green2)' }}>
+                Accepted
+              </th>
+              <th className="th-num" style={{ color: 'var(--red2)' }}>
+                Rejected
+              </th>
+              <th>QC</th>
+              <th>QC Date</th>
             </tr>
-          ) : (
-            data.lines.map((l) => (
-              <tr key={l.id} style={{ background: 'var(--bg)' }}>
-                <td className="mono fw-700">{l.lineNo}</td>
-                {/* POL — the CUSTOMER's PO line number off the SO line behind
-                    this row; '—' when there is no sales order behind it. */}
-                <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                  {l.clientPoLineNo ?? '—'}
-                </td>
-                {/* Item code is THE main thing — strong, never the faint text3.
-                    CODE/REV (ADR-177); bare code when the line has no revision. */}
-                <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                  {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
-                </td>
-                <td
-                  style={{
-                    maxWidth: 320,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={l.itemName}
-                >
-                  {l.itemName}
-                </td>
-                <td className="mono fw-700 td-num">{l.receivedQty}</td>
-                <td
-                  className="mono fw-700 td-num"
-                  style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}
-                >
-                  {l.qcAcceptedQty}
-                </td>
-                <td
-                  className="mono td-num"
-                  style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}
-                >
-                  {l.qcRejectedQty}
-                </td>
-                <td>
-                  <QcStatusBadge status={l.qcStatus} />
-                </td>
-                <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                  {fmtDate(l.qcDate)}
+          </thead>
+          <tbody>
+            {data.lines.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="empty-state">
+                  No lines
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              data.lines.map((l) => (
+                <tr key={l.id}>
+                  <td className="mono fw-700">{l.lineNo}</td>
+                  {/* POL — the CUSTOMER's PO line number off the SO line behind
+                    this row; '—' when there is no sales order behind it. */}
+                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    {l.clientPoLineNo ?? '—'}
+                  </td>
+                  {/* Item code is THE main thing — strong, never the faint text3.
+                    CODE/REV (ADR-177); bare code when the line has no revision. */}
+                  <td
+                    className="mono fw-700"
+                    style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+                  >
+                    {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
+                  </td>
+                  <td className="td-left" title={l.itemName}>
+                    {l.itemName}
+                  </td>
+                  <td className="mono fw-700 td-num">{l.receivedQty}</td>
+                  <td
+                    className="mono fw-700 td-num"
+                    style={{ color: l.qcAcceptedQty > 0 ? 'var(--green)' : undefined }}
+                  >
+                    {l.qcAcceptedQty}
+                  </td>
+                  <td
+                    className="mono td-num"
+                    style={{ color: l.qcRejectedQty > 0 ? 'var(--red)' : undefined }}
+                  >
+                    {l.qcRejectedQty}
+                  </td>
+                  <td>
+                    <QcStatusBadge status={l.qcStatus} />
+                  </td>
+                  <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                    {fmtDate(l.qcDate)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -682,7 +593,7 @@ function GrnKpiStrip({
   onSelectStatus: (next: GrnQcStatus | undefined) => void;
 }): React.JSX.Element {
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div>
       <StatStrip
         items={[
           {

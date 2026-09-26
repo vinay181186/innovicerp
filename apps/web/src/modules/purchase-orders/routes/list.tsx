@@ -54,6 +54,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader, ViewToggle } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
 import { PoSheetTable } from '../components/po-sheet-table';
 import { PoStatusBadge } from '../components/po-status-badge';
@@ -202,43 +203,30 @@ function PurchaseOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + search + filters + New button stay pinned while the PO cards
-          scroll underneath. Background must be opaque var(--bg) or cards show
-          through as they pass under. Not bled edge-to-edge — that would give the
-          app a horizontal scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Purchase Orders
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              className="innovic-input"
-              placeholder="🔍 Search this list…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 240, fontSize: 12 }}
-            />
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          status / type filters · view toggle · + New PO. */}
+      <ListHeader
+        title="Purchase Orders"
+        icon="📋"
+        count={total}
+        noun="purchase order"
+        filterNote={
+          [
+            search.status ? PO_STATUS_LABELS[search.status] : null,
+            search.poType ? PO_TYPE_LABELS[search.poType] : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || undefined
+        }
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search PO no, vendor, PR, item, status, type, date…"
+        updating={isFetching && !isLoading}
+        tools={
+          <>
             <select
               className="innovic-select"
+              aria-label="PO status"
               value={search.status ?? ''}
               onChange={(e) => {
                 const v = e.target.value as PoStatus | '';
@@ -247,7 +235,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 140, fontSize: 12 }}
+              style={{ width: 140 }}
             >
               <option value="">All statuses</option>
               {PO_STATUSES.map((s) => (
@@ -258,6 +246,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             </select>
             <select
               className="innovic-select"
+              aria-label="PO type"
               value={search.poType ?? ''}
               onChange={(e) => {
                 const v = e.target.value as PoType | '';
@@ -266,7 +255,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   replace: true,
                 });
               }}
-              style={{ width: 140, fontSize: 12 }}
+              style={{ width: 140 }}
             >
               <option value="">All types</option>
               {PO_TYPES.map((t) => (
@@ -275,38 +264,17 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                 </option>
               ))}
             </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canAdd ? (
-              <Link to="/purchase-orders/from-pr" className="btn btn-primary">
-                <Plus size={14} /> New PO
-              </Link>
-            ) : null}
-            {/* List / Card view toggle */}
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => changeView('list')}
-                aria-pressed={view === 'list'}
-              >
-                List View
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${view === 'card' ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => changeView('card')}
-                aria-pressed={view === 'card'}
-              >
-                Card View
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+            <ViewToggle value={view} onChange={changeView} />
+          </>
+        }
+        primary={
+          canAdd ? (
+            <Link to="/purchase-orders/from-pr" className="btn btn-primary">
+              <Plus size={14} /> New PO
+            </Link>
+          ) : null
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -494,24 +462,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         })
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No purchase orders'
-            : total > LIST_LIMIT
-              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : `Showing all ${total} purchase order${total === 1 ? '' : 's'}`}
-        </span>
-      </div>
+      <ListFooter
+        total={total}
+        noun="purchase order"
+        limit={LIST_LIMIT}
+        hint={
+          view === 'list' && rows.length > 0 ? 'Click a row to open the purchase order.' : undefined
+        }
+      />
     </div>
   );
 }

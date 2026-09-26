@@ -17,6 +17,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useClientsList } from '../../clients/api';
 import { useItem } from '../../items/api';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
@@ -92,27 +93,27 @@ function PartyMaterialsListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🏭 Party Material Master</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search material, customer…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          {canAdd ? (
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + Add Material. */}
+      <ListHeader
+        title="Party Material Master"
+        icon="🏭"
+        count={data?.total}
+        noun="material"
+        search={search}
+        onSearch={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        searchPlaceholder="Search material, customer…"
+        primary={
+          canAdd ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               <Plus size={14} /> Add Material
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -131,14 +132,14 @@ function PartyMaterialsListPage(): React.JSX.Element {
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Code</th>
                   <th>Material Name</th>
                   <th>Description</th>
                   <th>Material</th>
-                  <th className="td-ctr">UOM</th>
+                  <th>UOM</th>
                   <th>Customer</th>
                   <th className="th-num" style={{ color: 'var(--green2)' }}>
                     In Stock
@@ -162,7 +163,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                 ) : null}
                 {data.items.map((pm) => (
                   <tr key={pm.id}>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span className="td-code" style={{ color: 'var(--purple)' }}>
                         {pm.code}
                       </span>
@@ -172,7 +173,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                       {pm.description ?? '—'}
                     </td>
                     <td>{pm.material ?? '—'}</td>
-                    <td className="td-ctr">
+                    <td>
                       <span
                         className="tag"
                         style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
@@ -229,42 +230,13 @@ function PartyMaterialsListPage(): React.JSX.Element {
       </div>
 
       {data ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--text3)',
-          }}
-        >
-          <span>
-            {data.total === 0
-              ? 'No materials'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <ListFooter
+          total={data.total}
+          noun="material"
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+        />
       ) : null}
 
       {showAdd ? <AddPartyMaterialModal onClose={() => setShowAdd(false)} /> : null}
