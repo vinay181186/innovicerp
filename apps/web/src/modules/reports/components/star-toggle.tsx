@@ -1,6 +1,7 @@
-// ★ toggle for one report — used by the catalogue chips, the department card
-// grid and the report page header. Starred reports show in the catalogue's
-// "★ My Reports" row (per user, this browser — see lib/report-prefs.ts).
+// ★ toggle for one report. It lives in exactly two places: right after the
+// title on a report page, and in the fixed 28px last slot of a report row /
+// tile in the catalogue. Starred reports show in the catalogue's "★ My
+// Reports" section (per user, this browser — see lib/report-prefs.ts).
 import { useReportPrefs } from '../lib/report-prefs';
 
 export function StarToggle({ slug, title }: { slug: string; title: string }): React.JSX.Element {
@@ -9,7 +10,7 @@ export function StarToggle({ slug, title }: { slug: string; title: string }): Re
   return (
     <button
       type="button"
-      className="btn btn-ghost btn-sm"
+      className={on ? 'rpt-star is-on' : 'rpt-star'}
       aria-pressed={on}
       aria-label={on ? `Remove ${title} from My Reports` : `Add ${title} to My Reports`}
       title={on ? 'Remove from My Reports' : 'Add to My Reports'}
@@ -18,7 +19,6 @@ export function StarToggle({ slug, title }: { slug: string; title: string }): Re
         e.stopPropagation();
         toggleStar(slug);
       }}
-      style={{ color: on ? 'var(--amber)' : 'var(--text3)', padding: '0 6px' }}
     >
       {on ? '★' : '☆'}
     </button>
