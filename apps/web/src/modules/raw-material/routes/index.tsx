@@ -45,7 +45,11 @@ function RawMaterialPage(): React.JSX.Element {
   // Debounce the search box into the URL once, here, so both tabs share it.
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already trims to it.
+    setSearchInput((prev) =>
+      prev.trim() === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {

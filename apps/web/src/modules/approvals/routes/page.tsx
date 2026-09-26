@@ -126,10 +126,10 @@ function InboxSection({
   const navigate = useNavigate();
   const [term, setTerm] = useState('');
   const shown = rows.filter((r) =>
-    matchesSearchTerm([r.code, r.vendorName, r.itemCode, r.itemName, r.createdByName], term),
+    matchesSearchTerm([r.docCode, r.vendorName, r.itemCode, r.itemName, r.createdByName], term),
   );
   // Amount is null when the caller's access hides prices — then the column goes.
-  const showAmount = rows.some((r) => r.amount != null);
+  const showAmount = rows.some((r) => r.docAmount != null);
   const colSpan = showAmount ? 7 : 6;
 
   return (
@@ -155,7 +155,7 @@ function InboxSection({
                 <th>{section === 'pr' ? 'PR No.' : 'PO No.'}</th>
                 <th>Vendor</th>
                 <th>Item</th>
-                <th className="th-num">{section === 'pr' ? 'PR Qty' : 'Order Qty'}</th>
+                <th className="th-num">{section === 'pr' ? 'PR Qty' : 'PO Qty'}</th>
                 {showAmount ? (
                   <th className="th-num">{section === 'pr' ? 'Est. Amount' : 'Subtotal'}</th>
                 ) : null}
@@ -180,11 +180,11 @@ function InboxSection({
                   <tr
                     key={r.id}
                     style={{ cursor: 'pointer' }}
-                    title={`Open ${r.code}`}
+                    title={`Open ${r.docCode}`}
                     onClick={() => void navigate({ to: r.navPage })}
                   >
                     <td className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
-                      {r.code}
+                      {r.docCode}
                     </td>
                     <td>{r.vendorName ?? '—'}</td>
                     <td>
@@ -200,10 +200,10 @@ function InboxSection({
                       ) : null}
                       {!r.itemCode && !r.itemName ? '—' : null}
                     </td>
-                    <td className="td-num">{fmtQty(r.qty)}</td>
+                    <td className="td-num">{fmtQty(r.docQty)}</td>
                     {showAmount ? (
                       <td className="td-num" style={{ whiteSpace: 'nowrap' }}>
-                        {r.amount != null ? fmtAmount(r.amount) : '—'}
+                        {r.docAmount != null ? fmtAmount(r.docAmount) : '—'}
                       </td>
                     ) : null}
                     <td>{r.createdByName ?? '—'}</td>

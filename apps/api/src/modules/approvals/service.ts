@@ -16,8 +16,8 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { isWriteRole } from '../../lib/auth';
 import { AuthorizationError } from '../../lib/errors';
 import { listOpLogTimeChangeRequests } from '../op-entry/service';
-import { listPoApprovalInbox } from '../purchase-orders/approval-inbox';
-import { listPrApprovalInbox } from '../purchase-requests/approval-inbox';
+import { listPoApprovalInbox, loadPoInboxAccess } from '../purchase-orders/approval-inbox';
+import { listPrApprovalInbox, loadPrInboxAccess } from '../purchase-requests/approval-inbox';
 
 /** The most log-entry requests the list endpoint will return in one read. */
 const LOG_ENTRY_LIMIT = 200;
@@ -26,9 +26,13 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   const companyId = user.companyId;
   if (!companyId) throw new AuthorizationError('User is not assigned to a company');
 
+  // Access checks each open their own transaction, so they run first — never
+  // inside the inbox transaction below (see clients/related.ts).
+  const prAccess = await loadPrInboxAccess(user);
+  const poAccess = await loadPoInboxAccess(user);
   const { pr, po } = await withUserContext(user, async (tx) => ({
-    pr: await listPrApprovalInbox(tx, companyId, user),
-    po: await listPoApprovalInbox(tx, companyId, user),
+    pr: await listPrApprovalInbox(tx, companyId, user, prAccess),
+    po: await listPoApprovalInbox(tx, companyId, user, poAccess),
   }));
 
   let logEntry: ApprovalInboxRow[] = [];
@@ -39,12 +43,12 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
     );
     logEntry = requests.map((r) => ({
       id: r.id,
-      code: `${r.jobCardCode} · Op #${opSrNo(r.opSeq)}`,
+      docCode: `${r.jobCardCode} · Op #${opSrNo(r.opSeq)}`,
       vendorName: null,
       itemCode: r.itemCode,
       itemName: r.itemName,
-      qty: r.qty,
-      amount: null,
+      docQty: r.qty,
+      docAmount: null,
       createdByName: r.requestedByName,
       createdAt: r.requestedAt,
       navPage: '/approvals',

@@ -15,6 +15,7 @@
 // _hasOpStarted L6151.
 
 import type {
+  DefaultRouteOpsResponse,
   JobCardEditModel,
   JobCardSourceOption,
   ListVendorsQuery,
@@ -90,6 +91,63 @@ interface FormOp {
   completedQty: number;
   qcAcceptedQty: number;
   computedStatus: string;
+}
+
+type RouteOp = DefaultRouteOpsResponse['ops'][number];
+
+/** A Route Card's ops as fresh (never-started) Job Card form rows. Only a
+ *  process op carries a machine: OSP has none (T32b) and a QC op parks on the
+ *  QC lane, exactly as + Add QC Op / + Add OSP Op do. */
+function routeOpsToFormOps(
+  routeOps: readonly RouteOp[],
+  machines: ReadonlyArray<{ id: string; code: string }>,
+): FormOp[] {
+  return routeOps.map((op) => {
+    const machineCode =
+      op.machineCodeText ??
+      (op.machineId ? (machines.find((m) => m.id === op.machineId)?.code ?? '') : '');
+    const opType = op.opType ?? 'process';
+    return {
+      machineGroupId: null,
+      machineCode: opType === 'process' ? machineCode : '',
+      operation: op.operation,
+      opType,
+      cycleTimeMin: op.cycleTimeMin ?? 0,
+      program: op.program ?? '',
+      toolNo: op.toolNo ?? '',
+      toolDetails: op.toolDetails ?? '',
+      qcRequired: op.qcRequired ?? opType === 'qc',
+      outsourceVendorCode: op.outsourceVendorText ?? '',
+      outsourceCost: op.outsourceCost ?? 0,
+      hasStarted: false,
+      available: 0,
+      inputAvail: 0,
+      completedQty: 0,
+      qcAcceptedQty: 0,
+      computedStatus: 'waiting',
+    };
+  });
+}
+
+/** True when the rows are still the seeded ones, field for field. The machine
+ *  group is ignored — it is display-only and back-filled after seeding. */
+function sameSeedOps(a: readonly FormOp[], b: readonly FormOp[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((x, i) => {
+    const y = b[i]!;
+    return (
+      x.machineCode === y.machineCode &&
+      x.operation === y.operation &&
+      x.opType === y.opType &&
+      x.cycleTimeMin === y.cycleTimeMin &&
+      x.program === y.program &&
+      x.toolNo === y.toolNo &&
+      x.toolDetails === y.toolDetails &&
+      x.qcRequired === y.qcRequired &&
+      x.outsourceVendorCode === y.outsourceVendorCode &&
+      x.outsourceCost === y.outsourceCost
+    );
+  });
 }
 
 interface FormDoc {
@@ -524,56 +582,57 @@ export function JobCardForm({
   // Downstream inheritance (CLAUDE.md §17), the OPERATIONS half: a hand-raised
   // JWSO Job Card seeds its routing from the item's active Route Card, exactly
   // as a Plan loads it (plans/components/plan-form.tsx handleLoadDefaultOps).
-  // Create mode only, only while the list is still EMPTY, and once per item —
-  // so a routing the user has started typing is never replaced, and deleting
+  // Create mode only, and once per item. The list is seeded while it is EMPTY;
+  // when the item changes it is re-seeded only if the rows are still exactly
+  // the ones seeded (untouched). A routing the user has edited is never
+  // replaced silently — a warning offers the new item's ops instead. Deleting
   // every seeded row does not bring them back. The rows stay fully editable.
   const [seededFrom, setSeededFrom] = useState<{
     itemId: string;
     code: string | null;
     revision: number | null;
+    /** The rows exactly as seeded — to tell "untouched" from "edited". */
+    ops: FormOp[];
   } | null>(null);
-  useEffect(() => {
-    if (isEdit || !pickedItemId || !itemRouteDefaults) return;
-    if (seededFrom?.itemId === pickedItemId) return;
-    if (ops.length > 0 || itemRouteDefaults.ops.length === 0) return;
-    setOps(
-      itemRouteDefaults.ops.map((op) => {
-        const machineCode =
-          op.machineCodeText ??
-          (op.machineId ? (machines.find((m) => m.id === op.machineId)?.code ?? '') : '');
-        const opType = op.opType ?? 'process';
-        return {
-          machineGroupId: null,
-          // Only a process op carries a machine: OSP has none (T32b) and a QC
-          // op parks on the QC lane, exactly as + Add QC Op / + Add OSP Op do.
-          machineCode: opType === 'process' ? machineCode : '',
-          operation: op.operation,
-          opType,
-          cycleTimeMin: op.cycleTimeMin ?? 0,
-          program: op.program ?? '',
-          toolNo: op.toolNo ?? '',
-          toolDetails: op.toolDetails ?? '',
-          qcRequired: op.qcRequired ?? opType === 'qc',
-          outsourceVendorCode: op.outsourceVendorText ?? '',
-          outsourceCost: op.outsourceCost ?? 0,
-          hasStarted: false,
-          available: 0,
-          inputAvail: 0,
-          completedQty: 0,
-          qcAcceptedQty: 0,
-          computedStatus: 'waiting',
-        };
-      }),
-    );
+  const seedFromRouteCard = useCallback((): void => {
+    if (!pickedItemId || !itemRouteDefaults) return;
+    const seeded = routeOpsToFormOps(itemRouteDefaults.ops, machines);
+    setOps(seeded);
     setSeededFrom({
       itemId: pickedItemId,
       code: itemRouteDefaults.routeCardCode,
       revision: itemRouteDefaults.routeCardRevision,
+      ops: seeded,
     });
-  }, [isEdit, pickedItemId, itemRouteDefaults, seededFrom, ops.length, machines]);
+  }, [pickedItemId, itemRouteDefaults, machines]);
+  useEffect(() => {
+    if (isEdit || !pickedItemId || !itemRouteDefaults) return;
+    if (seededFrom?.itemId === pickedItemId) return;
+    if (ops.length === 0) {
+      if (itemRouteDefaults.ops.length > 0) seedFromRouteCard();
+      return;
+    }
+    // The item changed under rows seeded for the previous item: swap them
+    // only while nobody has touched them (the new item may have no Route
+    // Card — the old item's ops still do not belong to it).
+    if (seededFrom && sameSeedOps(ops, seededFrom.ops)) {
+      if (itemRouteDefaults.ops.length > 0) {
+        seedFromRouteCard();
+      } else {
+        setOps([]);
+        setSeededFrom(null);
+      }
+    }
+  }, [isEdit, pickedItemId, itemRouteDefaults, seededFrom, ops, seedFromRouteCard]);
   // The "from Route Card" note belongs to the item it was loaded for.
   const seededNote =
     seededFrom && seededFrom.itemId === pickedItemId && ops.length > 0 ? seededFrom : null;
+  // Edited rows seeded for a DIFFERENT item than the one now picked.
+  const staleSeed =
+    !isEdit && seededFrom && pickedItemId && seededFrom.itemId !== pickedItemId && ops.length > 0
+      ? seededFrom
+      : null;
+  const canReplaceStaleSeed = !!staleSeed && (itemRouteDefaults?.ops.length ?? 0) > 0;
 
   const moveOp = (i: number, dir: -1 | 1): void => {
     setOps((prev) => {
@@ -962,6 +1021,24 @@ export function JobCardForm({
         </div>
       </div>
 
+      {staleSeed ? (
+        <Banner tone="warn" role="status">
+          <span>
+            Operations are from Route Card{' '}
+            <span className="mono fw-700">{staleSeed.code ?? '—'}</span> — item changed
+          </span>
+          {canReplaceStaleSeed ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 'var(--sp-2)' }}
+              onClick={seedFromRouteCard}
+            >
+              Replace with {itemCode.trim()}&apos;s Route Card ops
+            </button>
+          ) : null}
+        </Banner>
+      ) : null}
       {/* ── OPERATION ROUTING (legacy jcModalBody L6007-6013 + jcModalOpsHtml L5868) ── */}
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-hdr">

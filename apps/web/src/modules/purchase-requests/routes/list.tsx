@@ -65,12 +65,17 @@ interface SelectedPr {
 /** Vendor text that means "not chosen yet" (Planning / BOM cascade / OSP). */
 const VENDOR_TBD = new Set(['', 'TBD', '(VENDOR TBD)']);
 
-/** Which vendor a PR belongs to, for the one-vendor-per-PO tick rule. FK first,
- *  code text second (ADR-015 pair); null when the vendor is still TBD. */
+/** Which vendor a PR belongs to, for the one-vendor-per-PO tick rule — ONE key,
+ *  the vendor code: the master's code (vendorCode, resolved by the server from
+ *  vendorId or a matching code text) first, the typed code text second
+ *  (ADR-015 pair). A linked PR and a text-only PR for the same vendor so get
+ *  the same key. Null when the vendor is still TBD. */
 function prVendorKey(pr: PurchaseRequestListItem): string | null {
-  if (pr.vendorId) return `id:${pr.vendorId}`;
-  const t = (pr.vendorCodeText ?? '').trim().toUpperCase();
-  return VENDOR_TBD.has(t) ? null : `code:${t}`;
+  const t = (pr.vendorCode ?? pr.vendorCodeText ?? '').trim().toUpperCase();
+  if (!VENDOR_TBD.has(t)) return t;
+  // Linked to a master row whose code did not resolve (deleted vendor): the
+  // id is still one vendor.
+  return pr.vendorId ? `id:${pr.vendorId}` : null;
 }
 
 /** Same gate as the card's own "Create PO" button: not cancelled and still has
@@ -113,7 +118,11 @@ function PurchaseRequestsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {

@@ -15,13 +15,27 @@ import { canSeeFormPrice, hasFormAccess } from '../../lib/access';
 import { isWriteRole } from '../../lib/auth';
 import { loadApprovalContext } from './service';
 
+/** The caller's Access Control answers for the PO inbox. Read BEFORE opening
+ *  the inbox transaction — each check opens its own, and nesting them inside
+ *  an open one holds two pool connections per request. */
+export interface PoInboxAccess {
+  canApprove: boolean;
+  showMoney: boolean;
+}
+
+export async function loadPoInboxAccess(user: AuthContext): Promise<PoInboxAccess> {
+  const canApprove = isWriteRole(user) && (await hasFormAccess(user, 'po_create', 'approve'));
+  const showMoney = canApprove ? await canSeeFormPrice(user, 'po_create') : false;
+  return { canApprove, showMoney };
+}
+
 export async function listPoApprovalInbox(
   tx: DbTransaction,
   companyId: string,
   user: AuthContext,
+  access: PoInboxAccess,
 ): Promise<ApprovalInboxRow[]> {
-  if (!isWriteRole(user)) return [];
-  if (!(await hasFormAccess(user, 'po_create', 'approve'))) return [];
+  if (!access.canApprove) return [];
   const { isApprover, isAdmin, approvalCeiling } = await loadApprovalContext(
     tx,
     companyId,
@@ -29,7 +43,7 @@ export async function listPoApprovalInbox(
     user.role,
   );
   if (!isApprover) return [];
-  const showMoney = await canSeeFormPrice(user, 'po_create');
+  const { showMoney } = access;
 
   const rows = await tx
     .select({
@@ -67,12 +81,12 @@ export async function listPoApprovalInbox(
     .filter((r) => isAdmin || Number(r.poValue) <= approvalCeiling)
     .map((r) => ({
       id: r.id,
-      code: r.code,
+      docCode: r.code,
       vendorName: r.vendorName ?? r.vendorCodeText ?? null,
       itemCode: null,
       itemName: null,
-      qty: Number(r.qty),
-      amount: showMoney ? Number(r.poValue) : null,
+      docQty: Number(r.qty),
+      docAmount: showMoney ? Number(r.poValue) : null,
       createdByName: r.createdByName ?? null,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
       navPage: `/purchase-orders/${r.id}`,

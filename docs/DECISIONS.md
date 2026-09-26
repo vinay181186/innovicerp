@@ -10176,10 +10176,17 @@ grandTotal }` — Σ Order Qty × Rate over every line, GST at the SO's GST %, r
 - **No auto-close on PO approval.** Every task linked to a PO is raised by hand from the PO
   screens with the suggested title "Follow up on PO …" — a delivery chase, not an approval
   request — and nothing on the task (no kind, no system-set title) tells an approval task apart.
-  Approving a PO therefore no longer closes any task. The QC call, GRN and NC hooks stay.
+  Approving a PO therefore no longer closes any task. The QC call and NC hooks stay.
 - **`GET /purchase-orders?jobWorkOrderId=`** returns only job-work / service POs with a line
   that traces to that JWSO: PO line → JC op (`source_jc_op_id`, or its source PR's
   `source_jc_op_id`) → job card → `source_jw_line_id` → JWSO line. Used by the JW DC `?jw=`
   landing to pre-pick the PO.
 - **Op Log rows carry `jobCardId`** beside `jcNo`, so Log No. / JC No. open the job card
   directly.
+- **No auto-close on GRN inspection either.** A GRN-linked task comes from the GRN list
+  ("Inspect …") or the GRN detail ("Follow up on GRN …"); both write the same link and the title
+  is editable, so an inspection task cannot be told from a follow-up. Finishing Incoming QC no
+  longer closes any task. The QC call hook stays: a `qc_call` link points at one JC op with QC
+  pending (picked from the open-QC-call list), so the only work it can mean is that inspection.
+- **NC disposition closes the NC's task only when the whole NC is disposed.** A partial
+  disposition splits the remainder onto a new pending NC; the task stays open.

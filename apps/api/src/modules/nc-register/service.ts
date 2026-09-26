@@ -1418,14 +1418,17 @@ export async function disposeNcRegister(
         user,
       );
     }
-    // ADR-189 — the "Dispose NC-…" task raised against this NC closes itself.
-    // A partial disposition splits the rest onto a NEW sibling NC; tasks stay
-    // on the id they were raised for, which is now disposed.
-    await autoCloseLinkedTasks(
-      tx,
-      { companyId, refTypes: ['nc'], refId: id, doneLabel: `NC ${nc.code} disposed` },
-      user,
-    );
+    // ADR-189 — the "Dispose NC-…" task raised against this NC closes itself,
+    // but only when the WHOLE NC was disposed. A partial disposition splits
+    // the rest onto a NEW pending NC; the job is not done, so the task stays
+    // open (it still points at this NC, whose detail links the remainder).
+    if (!result.remainderNcId) {
+      await autoCloseLinkedTasks(
+        tx,
+        { companyId, refTypes: ['nc'], refId: id, doneLabel: `NC ${nc.code} disposed` },
+        user,
+      );
+    }
     const remainderNc = result.remainderNcId
       ? await readNc(tx, result.remainderNcId, companyId)
       : null;

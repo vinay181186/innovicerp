@@ -407,14 +407,18 @@ function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-/** Σ Order Qty × Rate over the lines, GST at the SO's GST % (ADR-189). The
- *  SO form sums every line the same way while it is being typed. */
+/** Σ Order Qty × Rate over the lines, GST at the SO's GST % (ADR-189). A
+ *  cancelled line is no longer part of the order (the line editor treats it as
+ *  removed), so it adds nothing. Closed / dispatched lines were ordered and
+ *  still count. */
 function computeSoTotals(
-  lines: ReadonlyArray<{ orderQty: number; rate: string | null }>,
+  lines: ReadonlyArray<{ orderQty: number; rate: string | null; status: string }>,
   gstPercentRaw: string | null,
 ): SoTotals {
   const subtotal = round2(
-    lines.reduce((sum, l) => sum + Number(l.orderQty) * Number(l.rate ?? 0), 0),
+    lines
+      .filter((l) => l.status !== 'cancelled')
+      .reduce((sum, l) => sum + Number(l.orderQty) * Number(l.rate ?? 0), 0),
   );
   const gstPercent = Number(gstPercentRaw ?? 0);
   const gstAmount = round2((subtotal * gstPercent) / 100);

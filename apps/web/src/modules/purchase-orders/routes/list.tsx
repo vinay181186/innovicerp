@@ -130,7 +130,11 @@ function PurchaseOrdersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   // List View (the sheet) vs Card View (the original cards). List is the

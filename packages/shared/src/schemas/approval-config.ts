@@ -60,17 +60,19 @@ export type ApprovalHistoryResponse = z.infer<typeof approvalHistoryResponseSche
 
 export const approvalInboxRowSchema = z.object({
   id: z.string().uuid(),
-  /** The document number (PR / PO), or `JC No. · Op` for a log-entry change. */
-  code: z.string(),
+  /** The waiting document's number: PR No. (PR), PO No. (PO), or
+   *  `JC No. · Op` for a log-entry change. */
+  docCode: z.string(),
   vendorName: z.string().nullable(),
   itemCode: z.string().nullable(),
   itemName: z.string().nullable(),
-  /** PR Qty (PR), Σ line qty (PO), the entry's qty (log entry). */
-  qty: z.number().nullable(),
-  /** ₹, before GST: PR Qty × Est. Rate, or the PO value the approval limit is
-   *  checked against. Null for a log entry, and when the caller's access hides
-   *  prices. */
-  amount: z.number().nullable(),
+  /** The waiting document's qty: PR Qty (PR), Σ PO line qty (PO), the log
+   *  entry's own qty (log entry — shown, not part of the ask). */
+  docQty: z.number().nullable(),
+  /** The waiting document's ₹ before GST: PR Qty × Est. Rate (PR), or the PO
+   *  value the approval limit is checked against (PO). Null for a log entry,
+   *  and when the caller's access hides prices. */
+  docAmount: z.number().nullable(),
   createdByName: z.string().nullable(),
   /** When it was raised — ISO timestamp. */
   createdAt: z.string(),

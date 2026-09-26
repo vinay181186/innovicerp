@@ -136,7 +136,11 @@ function ActivityLogListPage() {
   // Master shape. (It used to wait for an Apply button.)
   const [pendingSearch, setPendingSearch] = useState(search.search ?? '');
   useEffect(() => {
-    setPendingSearch(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setPendingSearch((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
   useEffect(() => {
     const trimmed = normalizeSearchTerm(pendingSearch);

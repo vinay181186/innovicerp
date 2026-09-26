@@ -35,10 +35,10 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
-import { useNextRouteCardCode, useRouteCard, useRouteCardsList } from '../api';
+import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../api';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
 
@@ -123,6 +123,24 @@ export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpD
     ospVendorCodeText: op.ospVendorCode ?? op.ospVendorCodeText ?? '',
     ospLeadDays: op.ospLeadDays != null ? String(op.ospLeadDays) : '',
   }));
+}
+
+/** A row counts as typed when ANY field the user fills is filled — not just
+ *  the operation name — so a copy never silently drops a picked machine, a
+ *  cycle time, a vendor, a program or a tool. */
+function isOpRowTyped(o: RouteCardFormOpDraft): boolean {
+  return [
+    o.operation,
+    o.machineId,
+    o.machineCodeText,
+    o.cycleTimeMin,
+    o.program,
+    o.toolNo,
+    o.toolDetails,
+    o.ospVendorId,
+    o.ospVendorCodeText,
+    o.ospLeadDays,
+  ].some((v) => v.trim() !== '');
 }
 
 export function emptyProcessOp(): RouteCardFormOpDraft {
@@ -261,28 +279,43 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     { ...(copySearch.trim() ? { search: copySearch.trim() } : {}), limit: 20, offset: 0 },
     { enabled: mode === 'create' },
   );
-  const { data: copyDetail } = useRouteCard(copyFromId ?? undefined);
-  useEffect(() => {
-    if (!copyFromId || copyDetail?.id !== copyFromId) return;
-    if (copiedFrom?.id === copyFromId) return;
-    const typed = ops.some((o) => o.operation.trim() !== '');
-    if (
-      typed &&
-      !window.confirm(
-        `Replace the ${ops.length} operation(s) on this form with the ${copyDetail.ops.length} from ${copyDetail.code}?`,
-      )
-    ) {
+  const fetchRouteCard = useFetchRouteCard();
+  // The picker's choice waiting on "replace what you typed?" — set only when
+  // the form already holds typed rows.
+  const [pendingCopy, setPendingCopy] = useState<RouteCardDetail | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  // The latest pick, so a slow fetch for an earlier pick is dropped.
+  const copyPickRef = useRef<string | null>(null);
+  // Read inside the async handler after the fetch, so it sees the rows as
+  // they are THEN, not as they were when the pick was made.
+  const opsRef = useRef(ops);
+  opsRef.current = ops;
+  const applyCopy = (detail: RouteCardDetail): void => {
+    setOps(detailOpsToDrafts(detail.ops));
+    setCopiedFrom({ id: detail.id, label: `${detail.code} Rev ${detail.currentRevision}` });
+    setCopyFromId(detail.id);
+  };
+  const onPickCopySource = async (id: string | null): Promise<void> => {
+    copyPickRef.current = id;
+    setCopyError(null);
+    setCopyFromId(id);
+    if (!id || id === copiedFrom?.id) return;
+    let detail: RouteCardDetail;
+    try {
+      detail = await fetchRouteCard(id);
+    } catch (e) {
+      if (copyPickRef.current !== id) return;
+      setCopyError(e instanceof Error ? e.message : 'Could not load that route card.');
       setCopyFromId(copiedFrom?.id ?? null);
       return;
     }
-    setOps(detailOpsToDrafts(copyDetail.ops));
-    setCopiedFrom({
-      id: copyFromId,
-      label: `${copyDetail.code} Rev ${copyDetail.currentRevision}`,
-    });
-    // `ops` is read for the "anything typed?" question only — a keystroke in
-    // a row must not re-run the copy.
-  }, [copyFromId, copyDetail, copiedFrom]);
+    if (copyPickRef.current !== id) return;
+    if (opsRef.current.some(isOpRowTyped)) {
+      setPendingCopy(detail);
+      return;
+    }
+    applyCopy(detail);
+  };
   const showDupBanner = existingCards.length > 0 && !dupDismissed;
 
   // Raw material prefilled from the item's latest PLAN, on create only.
@@ -731,7 +764,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 <SearchableSelect
                   id="rc-copy-from"
                   value={copyFromId}
-                  onChange={setCopyFromId}
+                  onChange={(id) => void onPickCopySource(id)}
                   onSearch={setCopySearch}
                   loading={copyListFetching}
                   options={(copyList?.items ?? []).map((rc) => ({
@@ -744,6 +777,11 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                   selectedLabel={(o) => o.code ?? o.name}
                 />
               </div>
+            ) : null}
+            {copyError ? (
+              <span className="text2" role="alert" style={{ fontSize: 11, color: 'var(--red2)' }}>
+                {copyError}
+              </span>
             ) : null}
             {copiedFrom && mode === 'create' ? (
               <span className="text2" style={{ fontSize: 11 }}>
@@ -843,6 +881,24 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             placeholder="Auto-generated diff note will be used if blank. Override here for ECO numbers etc."
           />
         </Panel>
+      ) : null}
+
+      {pendingCopy ? (
+        <ConfirmDialog
+          title={`Copy operations from ${pendingCopy.code}?`}
+          message={`Replace the ${ops.length} operation(s) on this form with the ${pendingCopy.ops.length} from ${pendingCopy.code} Rev ${pendingCopy.currentRevision}?`}
+          confirmLabel="Replace operations"
+          tone="primary"
+          onConfirm={() => {
+            applyCopy(pendingCopy);
+            setPendingCopy(null);
+          }}
+          onCancel={() => {
+            setPendingCopy(null);
+            copyPickRef.current = copiedFrom?.id ?? null;
+            setCopyFromId(copiedFrom?.id ?? null);
+          }}
+        />
       ) : null}
     </form>
   );
