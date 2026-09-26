@@ -917,7 +917,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 }}
                 onClick={() => addOp('outsource')}
               >
-                + Add OSP Op
+                + Add Outsource Op
               </button>
               <button
                 type="button"

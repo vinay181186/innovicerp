@@ -4,7 +4,7 @@
 // optional notes, revision indicator.
 //
 // Op editor: per-row Machine / Operation / Cycle (min per piece) / Program /
-// Tool fields + Add Op / Add OSP Op / Add QC Op buttons. Mirrors legacy
+// Tool fields + Add Op / Add Outsource Op / Add QC Op buttons. Mirrors legacy
 // rcOpsHtml (L10208), which is the single op renderer shared by BOTH
 // legacy entry points — addRouteCard() (L6939, via _rcCheckExisting
 // L6994) and editRouteCard() (L10169, direct call at L10198). That
@@ -681,7 +681,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               }}
               onClick={() => addOp('outsource')}
             >
-              <Plus size={13} /> Add OSP Op
+              <Plus size={13} /> Add Outsource Op
             </button>
             <button
               type="button"
