@@ -1,5 +1,5 @@
 -- ============================================================
--- 0147_o2c_accountability_links.sql  (ADR-185)
+-- 0149_o2c_accountability_links.sql  (ADR-185)
 --
 -- Three accountability gaps from the order-to-cash re-audit (2026-09-26):
 --
