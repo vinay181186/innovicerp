@@ -439,7 +439,7 @@ export function JcViewSummary({
                 </Link>
                 {jc.routeCardRevision != null ? (
                   <span className="badge b-grey" style={{ fontSize: 9, padding: '1px 7px' }}>
-                    Rev {jc.routeCardRevision}
+                    Route Card Rev {jc.routeCardRevision}
                   </span>
                 ) : null}
               </span>
@@ -542,7 +542,7 @@ export function JcViewSummary({
               label="In Process"
               value={wip ?? '—'}
               tone="blue"
-              title="Pieces released by the first operation and not yet through the last one (first-op done − completed)"
+              title="Pieces released by the first operation and not yet through the last one (Completed at first op − Completed at last op)"
             />
             <KpiTile
               label="Rejected"
@@ -559,7 +559,7 @@ export function JcViewSummary({
               label="Pending"
               value={pending}
               tone={pending > 0 ? 'amber' : 'green'}
-              title="Order qty − completed"
+              title="Order Qty − Completed"
             />
           </div>
           {/* ADR-103 — client material still workable on this job card. */}
@@ -576,7 +576,7 @@ export function JcViewSummary({
                 `Already produced on the first operation: ${rmAvailable.consumedQty}. ` +
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`
-                  : 'Issue more client material from Party Material Issue to continue.')
+                  : 'Issue more customer material from Party Material Issue to continue.')
               }
             >
               RM avail{' '}

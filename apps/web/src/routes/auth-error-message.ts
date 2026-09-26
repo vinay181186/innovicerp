@@ -97,7 +97,7 @@ export function authErrorMessage(err: AuthErrorLike | null | undefined, action: 
   if (raw) return raw;
 
   return action === 'sign-in'
-    ? 'Sign-in failed. Please try again, or contact your administrator.'
+    ? 'Could not sign in. Try again, or contact your administrator.'
     : 'That request could not be completed. Please try again, or contact your administrator.';
 }
 

@@ -29,7 +29,7 @@ function inr(n: number | null): string {
 // column is a lower-snake enum, so map it back to legacy's labels.
 function statusBadge(s: string): { cls: string; label: string } {
   if (s === 'closed') return { cls: 'b-green', label: 'Closed' };
-  if (s === 'partial') return { cls: 'b-amber', label: 'Partial' };
+  if (s === 'partial') return { cls: 'b-amber', label: 'Partly Received' };
   if (s === 'qc_pending') return { cls: 'b-amber', label: 'QC Pending' };
   if (s === 'cancelled') return { cls: 'b-grey', label: 'Cancelled' };
   return { cls: 'b-blue', label: 'Open' };

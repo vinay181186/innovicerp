@@ -178,7 +178,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   if (isError || !jc) {
     return (
       <div className="empty-state" style={{ color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Job card not found'}
+        {error instanceof Error ? error.message : 'Job Card not found.'}
       </div>
     );
   }
@@ -242,7 +242,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
             to="/job-cards/$id/edit"
             params={{ id }}
             className="btn btn-ghost btn-sm"
-            title="Edit this Job Card — add/route ops, or outsource an operation's balance"
+            title="Edit this Job Card — add/route ops, or outsource an operation's pending qty"
           >
             <Pencil size={14} /> Edit Job Card
           </Link>

@@ -84,7 +84,7 @@ function MachineDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Machine not found'}
+          message={error instanceof Error ? error.message : 'Machine not found.'}
         />
       </div>
     );
@@ -119,7 +119,7 @@ function MachineDetailPage(): React.JSX.Element {
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
-      : 'Failed to delete machine.'
+      : 'Could not delete Machine. Try again.'
     : null;
 
   return (
@@ -186,17 +186,17 @@ function MachineFacts(props: { machine: Machine }): React.JSX.Element {
       {/* Group first: it is the master-backed field. Type stays exactly as it
           was — free text, alongside the group, not replaced by it. A machine
           with no group (every row created before this change) reads an em dash. */}
-      <ReadField label="Machine group" size="md" mono value={groupCode} />
-      <ReadField label="Machine type" size="md" value={machine.machineType} />
-      <ReadField label="Product code" size="md" mono value={machine.productCode} />
+      <ReadField label="Machine Group" size="md" mono value={groupCode} />
+      <ReadField label="Machine Type" size="md" value={machine.machineType} />
+      <ReadField label="Product Code" size="md" mono value={machine.productCode} />
 
       <ReadField
-        label="Capacity / shift"
+        label="Capacity / Shift"
         size="lg"
         mono
         value={machine.capacityPerShift !== null ? `${machine.capacityPerShift} h` : null}
       />
-      <ReadField label="Shifts / day" size="lg" mono value={String(machine.shiftsPerDay)} />
+      <ReadField label="Shifts / Day" size="lg" mono value={String(machine.shiftsPerDay)} />
     </ReadGrid>
   );
 }

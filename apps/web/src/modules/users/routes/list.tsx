@@ -58,6 +58,7 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { useUserAccessList } from '@/modules/access-control/api';
 import { useUsersList } from '../api';
+import { ROLE_LABEL } from '@/lib/role-label';
 
 const PAGE_SIZE = 25;
 
@@ -309,7 +310,7 @@ function UsersListPage(): React.JSX.Element {
               }}
               options={[
                 { value: '', label: 'All roles' },
-                ...USER_ROLES.map((r) => ({ value: r, label: r })),
+                ...USER_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r] })),
               ]}
             />
             <Select

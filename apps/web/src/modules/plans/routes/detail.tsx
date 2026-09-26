@@ -39,7 +39,7 @@ const TYPE_LABEL: Record<PlanType, string> = {
 };
 
 const OP_TYPE_LABEL: Record<string, string> = {
-  process: 'Process',
+  process: 'In-house',
   outsource: 'Outsource',
   qc: 'QC',
 };
@@ -71,7 +71,7 @@ function PlanDetailPage(): React.JSX.Element {
             <ArrowLeft size={14} /> Back
           </Link>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Plan not found'}
+            {error instanceof Error ? error.message : 'Plan not found.'}
           </div>
         </div>
       </div>

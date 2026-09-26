@@ -16,6 +16,9 @@ import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests } from '@/modules/op-entry/api';
 
+// The op-log entry type as the user reads it (codes stay as stored).
+const LOG_TYPE_LABEL: Record<string, string> = { start: 'Start', complete: 'Completed', qc: 'QC' };
+
 const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '');
 const when = (date: string, time: string | null): string => (time ? `${date} ${hhmm(time)}` : date);
 
@@ -78,7 +81,7 @@ export function LogEntryApprovals(): React.JSX.Element {
         </div>
       ) : list.isError ? (
         <div className="empty-state" style={{ color: 'var(--red)' }}>
-          {list.error instanceof Error ? list.error.message : 'Failed to load requests'}
+          {list.error instanceof Error ? list.error.message : 'Could not load requests. Try again.'}
         </div>
       ) : ordered.length === 0 ? (
         <div className="empty-state">
@@ -203,7 +206,7 @@ function RequestCard({
           <span className="mono">Op{opSrNo(req.opSeq)}</span>
           <span>{req.operation}</span>
           <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-            {req.logType}
+            {LOG_TYPE_LABEL[req.logType] ?? req.logType}
           </span>
           {req.machineCode ? <span className="mono">{req.machineCode}</span> : null}
           <span className="mono">{req.qty} pcs</span>

@@ -413,7 +413,9 @@ function OpEntryPage() {
                 </div>
                 {ops.isError ? (
                   <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
-                    {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
+                    {ops.error instanceof Error
+                      ? ops.error.message
+                      : 'Could not load operations. Try again.'}
                   </div>
                 ) : ops.isLoading ? (
                   <div className="empty-state">

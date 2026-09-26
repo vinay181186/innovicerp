@@ -7,6 +7,7 @@ import { apiDownload } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useReportList, useReportRun } from '../api';
 import { downloadCsv, rowsToCsv } from '../lib/csv';
+import { statusText } from '@/lib/status-text';
 
 const runSearchSchema = z.record(z.string()).default({});
 
@@ -194,7 +195,7 @@ function FilterInput(props: {
           <option value="">All</option>
           {(filter.options ?? []).map((opt) => (
             <option key={opt} value={opt}>
-              {opt.replaceAll('_', ' ')}
+              {statusText(opt)}
             </option>
           ))}
         </select>
@@ -328,6 +329,12 @@ function formatCell(col: ReportColumn, raw: unknown): string {
     const num = Number(raw);
     if (!Number.isFinite(num)) return String(raw);
     return num % 1 === 0 ? String(num) : num.toFixed(2);
+  }
+  // A status column carries the stored code (qc_pending); show its label.
+  // The colour rule below still reads the raw value.
+  if (typeof raw === 'string' && /status$/i.test(col.key)) {
+    if (/^NC\b/.test(col.label) && raw === 'pending') return 'NC Raised';
+    return statusText(raw, col.label.toLowerCase());
   }
   return String(raw);
 }

@@ -330,7 +330,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load machines'}
+          message={error instanceof Error ? error.message : 'Could not load machines. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">

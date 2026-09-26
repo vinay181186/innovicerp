@@ -378,7 +378,7 @@ export function IncomingQcInspectFormView(props: {
           disabled={form.submitting}
           onClick={() => void form.doSubmit()}
         >
-          {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit Inspection
+          {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Submit Inspection
         </button>
       </div>
     </div>

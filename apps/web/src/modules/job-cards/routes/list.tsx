@@ -366,7 +366,7 @@ function JobCardsListPage(): React.JSX.Element {
             </Link>
             {jc.itemRevision ? (
               <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                Rev. {jc.itemRevision}
+                Drawing Rev {jc.itemRevision}
               </div>
             ) : null}
           </>
@@ -469,7 +469,7 @@ function JobCardsListPage(): React.JSX.Element {
               <ProgressBar
                 value={pct}
                 color="var(--green)"
-                label={`${done} of ${jc.orderQty} complete`}
+                label={`${done} of ${jc.orderQty} Completed`}
               />
               <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {done} / {jc.orderQty} · {pct}%
@@ -820,7 +820,7 @@ function JobCardsListPage(): React.JSX.Element {
                     ]}
                   />
                   <div style={{ minWidth: 90 }}>
-                    <ProgressBar value={pct} color="var(--green)" label="Complete" />
+                    <ProgressBar value={pct} color="var(--green)" label="Completed" />
                     <div
                       className="mono text3"
                       style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}

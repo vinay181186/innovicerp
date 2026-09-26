@@ -61,7 +61,7 @@ function AssemblyDetailPage(): React.JSX.Element {
             <ArrowLeft size={14} /> Back
           </Link>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Assembly tracker not found'}
+            {error instanceof Error ? error.message : 'Assembly Tracker not found.'}
           </div>
         </div>
       </div>
@@ -447,7 +447,7 @@ function RollupPanel({
           </div>
           <div>
             <span className="text3" style={{ fontSize: 10 }}>
-              BALANCE
+              PENDING
             </span>
             <br />
             <b
@@ -610,7 +610,7 @@ function ComponentStatusBadge({
   // have no server source for.
   const map: Record<AssemblyComponentRow['status'], { cls: string; label: string }> = {
     ready: { cls: 'b-green', label: 'Ready ✓' },
-    enough_for_some: { cls: 'b-amber', label: 'Partial' },
+    enough_for_some: { cls: 'b-amber', label: 'Partly Available' },
     shortage: { cls: 'b-red', label: 'Shortage' },
   };
   const m = map[status];

@@ -214,7 +214,7 @@ function MachineLoadingPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load machine loading'}
+            {error instanceof Error ? error.message : 'Could not load machine loading. Try again.'}
           </div>
         </div>
       ) : (

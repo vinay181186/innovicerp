@@ -621,7 +621,7 @@ export function OpEntryForm({
     } catch (err) {
       setOspMsg({
         kind: 'err',
-        text: err instanceof Error ? err.message : 'Failed to generate OSP PR',
+        text: err instanceof Error ? err.message : 'Could not raise OSP PR. Try again.',
       });
     }
   }

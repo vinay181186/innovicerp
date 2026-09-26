@@ -446,7 +446,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
                   <td colSpan={columns.length} className="empty-state">
                     {search.search || search.status
                       ? 'No production orders match.'
-                      : 'No production orders yet — Production → Entry → Create Production Order.'}
+                      : 'No production orders yet — Production → Entry → New Production Order.'}
                   </td>
                 </tr>
               ) : (

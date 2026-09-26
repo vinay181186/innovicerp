@@ -441,7 +441,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
           ) : dc.poCode ? (
             <span className="badge b-green">{dc.poCode}</span>
           ) : dc.poCodeText ? (
-            <span className="badge b-amber" title="Snapshot text — no live PO linked">
+            <span className="badge b-amber" title="PO No. typed by hand — not linked to a PO">
               {dc.poCodeText}*
             </span>
           ) : (

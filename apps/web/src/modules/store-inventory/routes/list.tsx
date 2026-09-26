@@ -128,7 +128,7 @@ function StoreInventoryPage(): React.JSX.Element {
             <div className="panel">
               <div className="panel-body">
                 <div className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load inventory'}
+                  {error instanceof Error ? error.message : 'Could not load inventory. Try again.'}
                 </div>
               </div>
             </div>
@@ -238,7 +238,7 @@ function StoreInventoryPage(): React.JSX.Element {
                               </span>
                               {row.lowStock ? (
                                 <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 700 }}>
-                                  ⚠ LOW
+                                  ⚠ Low Stock
                                 </div>
                               ) : null}
                             </td>
@@ -475,7 +475,7 @@ function AdjustModal({
     };
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Adjust failed'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not adjust stock. Try again.'),
     });
   };
 
@@ -604,8 +604,8 @@ function SetMinModal({
   return (
     <ModalShell onClose={onClose} title={`Min Stock — ${row.itemCode} (${row.itemName})`}>
       <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
-        Sets the low-stock alert threshold for <b>{row.itemName}</b>. Items show a ⚠ LOW tag when
-        current stock ≤ this value. Use 0 to disable.
+        Sets the low-stock alert threshold for <b>{row.itemName}</b>. Items show a ⚠ Low Stock tag
+        when current stock ≤ this value. Use 0 to disable.
       </div>
       <div className="form-grid">
         <div className="form-grp form-full">
@@ -713,7 +713,7 @@ function ManualReceiveModal({
     };
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to record receipt'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save receipt. Try again.'),
     });
   };
 

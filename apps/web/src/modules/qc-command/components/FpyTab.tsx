@@ -139,7 +139,7 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 FPY = items that passed QC on first attempt with zero rejections. Below 85% indicates
+        💡 FPY = items accepted at QC on first attempt with zero rejections. Below 85% indicates
         quality issues. Green ≥ 95%, Amber 85-94%, Red &lt; 85%.
       </div>
     </>

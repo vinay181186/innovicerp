@@ -49,7 +49,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load OSP register'}
+              {error instanceof Error ? error.message : 'Could not load OSP register. Try again.'}
             </div>
           </div>
         </div>

@@ -192,7 +192,9 @@ export function BomPlanningModal({
           await createPlan.mutateAsync(input);
           plansCreated++;
         } catch (e) {
-          failures.push(`${c.childItemCode}: ${e instanceof Error ? e.message : 'failed'}`);
+          failures.push(
+            `${c.childItemCode}: ${e instanceof Error ? e.message : 'could not create plan'}`,
+          );
         }
       }
       if (data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly) {
@@ -213,14 +215,14 @@ export function BomPlanningModal({
           await createPlan.mutateAsync(input);
           plansCreated++;
         } catch (e) {
-          failures.push(`assembly: ${e instanceof Error ? e.message : 'failed'}`);
+          failures.push(`assembly: ${e instanceof Error ? e.message : 'could not create plan'}`);
         }
       }
       if (failures.length > 0) {
         // Say what DID land as well as what did not — the planner has to know
         // the partial state before deciding what to do next.
         setSubmitErr(
-          `${plansCreated} plan(s) created. ${failures.length} failed — ${failures.join('; ')}`,
+          `${plansCreated} plan(s) created. ${failures.length} could not be created — ${failures.join('; ')}`,
         );
         if (plansCreated > 0) onSaved();
         return;
@@ -231,7 +233,7 @@ export function BomPlanningModal({
       }
       onSaved();
     } catch (e) {
-      setSubmitErr(e instanceof Error ? e.message : 'Failed');
+      setSubmitErr(e instanceof Error ? e.message : 'Could not create plans. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -388,7 +390,7 @@ function BomBody({
                 <span style={{ fontSize: 10, color: 'var(--text3)' }}>BOM</span>
                 <br />
                 <b style={{ color: 'var(--green)' }}>
-                  {data.bomNo} Rev {data.bomRev}
+                  {data.bomNo} BOM Rev {data.bomRev}
                 </b>
               </div>
               <div>

@@ -396,7 +396,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
           className="form-label"
           style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}
         >
-          Line items
+          Line Items
         </div>
         <button
           type="button"

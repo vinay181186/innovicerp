@@ -62,10 +62,10 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'Accepted',
       'Rejected',
       'Call Date',
-      'Attended',
+      'Attended Date',
       'Response',
-      'Inspector',
-      'Organization',
+      'Inspector Name',
+      'Organisation',
       'TPI Certificate No.',
     ],
     ...rows.map((l) => [
@@ -229,7 +229,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                     <th>Attended</th>
                     <th>Response</th>
                     <th>Inspector</th>
-                    <th>Organization</th>
+                    <th>Organisation</th>
                     <th>TPI Certificate No.</th>
                     <th>Report</th>
                   </tr>
@@ -410,7 +410,7 @@ function PendingTpi(props: {
       return;
     }
     if (!inspector.trim() || !organization.trim()) {
-      setErr('Inspector Name and Organization are required.');
+      setErr('Inspector Name and Organisation are required.');
       return;
     }
     const input: SubmitQcLogInput = {
@@ -656,7 +656,7 @@ function PendingTpi(props: {
               </div>
               <div className="form-grp">
                 <label className="form-label" style={{ fontSize: 10 }}>
-                  Organization ★
+                  Organisation ★
                 </label>
                 <input
                   className="innovic-input"
@@ -730,7 +730,7 @@ function PendingTpi(props: {
               disabled={submit.isPending}
               onClick={() => void send()}
             >
-              {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit TPI
+              {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Submit TPI
             </button>
           </div>
         </div>

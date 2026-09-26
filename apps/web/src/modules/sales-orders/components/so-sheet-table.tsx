@@ -17,6 +17,7 @@ import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Eye, Pencil, Trash2 } from 'lucide-react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { SoStatusBadge } from './so-status-badge';
+import { soTypeLabel } from '../lib/so-status-label';
 
 /** Column count — the expanded row's <td colSpan> must always match the
  *  <colgroup> below, so it is named once here. */
@@ -166,7 +167,9 @@ export function SoSheetTable({
                         grey — same chip as the card. */}
                     {/* One word per type: the full "component manufacturing"
                         is wider than this column and ran into Customer. */}
-                    <span className="badge b-grey">{TYPE_SHORT[so.type] ?? so.type.replaceAll('_', ' ')}</span>
+                    <span className="badge b-grey">
+                      {TYPE_SHORT[so.type] ?? soTypeLabel(so.type)}
+                    </span>
                     {so.type === 'equipment' && so.bomStatus ? (
                       <div style={{ marginTop: 3 }}>
                         <span

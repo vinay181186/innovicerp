@@ -1,7 +1,7 @@
 // Daily Production Report — mirrors legacy renderDailyReport (HTML L10823).
 
 import type { DailyReportResponse } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
@@ -186,7 +186,7 @@ function DailyReportPage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+              {error instanceof Error ? error.message : 'Could not load daily report. Try again.'}
             </div>
           </div>
         </div>
@@ -290,7 +290,7 @@ function DailyReportPage(): React.JSX.Element {
                             color: 'var(--text2)',
                           }}
                         >
-                          {r.shift}
+                          {SHIFT_LABELS[r.shift as Shift] ?? r.shift}
                         </span>
                       </td>
                       <td

@@ -78,7 +78,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Production Order not found'}
+            {error instanceof Error ? error.message : 'Production Order not found.'}
           </div>
         </div>
       </div>
@@ -205,16 +205,16 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 {data.itemNameText ?? '—'}
               </div>
             </div>
-            <Fact label="Order Qty" mono>
+            <Fact label="Plan Qty" mono>
               {data.orderQty}
             </Fact>
             {/* Raw material the order is cut from — read off its plan (same
                 labels as Plan detail). */}
-            <Fact label="RM grade">{data.rawMaterialGradeText ?? '—'}</Fact>
-            <Fact label="RM size">{data.rawMaterialSizeText ?? '—'}</Fact>
+            <Fact label="RM Grade">{data.rawMaterialGradeText ?? '—'}</Fact>
+            <Fact label="RM Size">{data.rawMaterialSizeText ?? '—'}</Fact>
             {/* ADR-182 — the shop floor's confirmation at Create, and the size
                 the store really cut (RM size above is the planned one). */}
-            <Fact label="Raw material available">
+            <Fact label="Raw Material Available">
               {data.rawMaterialAvailable ? (
                 <span style={{ color: 'var(--green)' }}>✓ Yes</span>
               ) : (
@@ -225,7 +225,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               {data.actualSize ?? '—'}
             </Fact>
 
-            <Fact label="Route card">
+            <Fact label="Route Card">
               <Link
                 to="/route-cards/$id"
                 params={{ id: data.routeCardId }}
@@ -236,7 +236,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               </Link>
               <span className="text3" style={{ fontSize: 11 }}>
                 {' '}
-                · Rev {data.routeCardRevision}
+                · Route Card Rev {data.routeCardRevision}
               </span>
             </Fact>
             <Fact label="JC No.">
@@ -277,7 +277,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <span className="mono fw-700">{data.jcCodeText}</span> — production entry, QC, NC,
               outsourcing, dispatch and edits are all refused. The {data.creditedQty ?? 0} piece
               {(data.creditedQty ?? 0) === 1 ? '' : 's'} already credited to stock stay credited;
-              the remaining {Math.max(0, data.orderQty - (data.creditedQty ?? 0))} went back to plan{' '}
+              the pending {Math.max(0, data.orderQty - (data.creditedQty ?? 0))} went back to plan{' '}
               <span className="mono fw-700">{data.planCodeText}</span>, which can be ordered again.
             </div>
           </div>
@@ -307,7 +307,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               borderRadius: 4,
               overflow: 'hidden',
             }}
-            title={`${pct}% finished`}
+            title={`${pct}% completed`}
           >
             <div
               style={{
@@ -365,10 +365,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           </div>
           <div className="panel-body">
             <div className="form-grid form-grid-3">
-              <Fact label="Credited qty" mono>
+              <Fact label="Credited Qty" mono>
                 {data.creditedQty ?? '—'}
               </Fact>
-              <Fact label="Lost qty" mono>
+              <Fact label="Lost Qty" mono>
                 {data.lostQty ?? '—'}
               </Fact>
               <Fact label="Close Date" mono>

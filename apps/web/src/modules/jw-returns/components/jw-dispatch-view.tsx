@@ -14,6 +14,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { statusText } from '@/lib/status-text';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCancelJwReturn, useCreateJwReturnChallan, useJwReturnsList } from '../api';
 
@@ -179,7 +180,7 @@ export function JwDispatchView({
                               : 'rgba(34,197,94,0.10)',
                         }}
                       >
-                        {r.status}
+                        {statusText(r.status)}
                       </span>
                     </td>
                     {canWrite ? (

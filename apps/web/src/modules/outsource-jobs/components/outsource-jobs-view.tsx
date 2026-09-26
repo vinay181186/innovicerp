@@ -438,7 +438,9 @@ export function OutsourceJobsView(): React.JSX.Element {
               ) : isError ? (
                 <tr>
                   <td colSpan={10} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load'}
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load outsource jobs. Try again.'}
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
@@ -523,7 +525,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                   color: 'var(--text3)',
                 }}
               >
-                Creating PO for <b>{selectedIds.size} line(s)</b> · Qty to order:{' '}
+                Creating PO for <b>{selectedIds.size} line(s)</b> · Qty to Order:{' '}
                 <b>{totalSelectedQty}</b> · Est. value:{' '}
                 <b style={{ color: 'var(--green)' }}>₹{inr(totalSelectedValue)}</b>
               </div>
@@ -580,8 +582,8 @@ export function OutsourceJobsView(): React.JSX.Element {
                       <th>JC No.</th>
                       <th>Item Code</th>
                       <th>Process</th>
-                      <th>Qty to order</th>
-                      <th style={{ color: 'var(--green)' }}>Rate ₹/pc</th>
+                      <th>Qty to Order</th>
+                      <th style={{ color: 'var(--green)' }}>Rate (₹)</th>
                       <th>Amount</th>
                     </tr>
                   </thead>
@@ -682,10 +684,10 @@ export function OutsourceJobsView(): React.JSX.Element {
                 >
                   {createBatchMut.isPending ? (
                     <>
-                      <Loader2 className="inline h-3 w-3 animate-spin" /> Creating…
+                      <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
                     </>
                   ) : (
-                    'Create JW PO'
+                    'Save PO'
                   )}
                 </button>
               </div>

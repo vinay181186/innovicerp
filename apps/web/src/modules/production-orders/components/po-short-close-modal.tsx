@@ -102,7 +102,7 @@ export function PoShortCloseModal({
         is frozen — no production entry, QC, NC, outsourcing or edit is allowed on it afterwards.
         <div style={{ marginTop: 8 }}>
           {creditedQty} of {orderQty} pieces are already credited to stock and{' '}
-          <span className="fw-700">stay credited</span>. The remaining{' '}
+          <span className="fw-700">stay credited</span>. The pending{' '}
           <span className="fw-700" style={{ color: 'var(--amber)' }}>
             {stopping}
           </span>{' '}

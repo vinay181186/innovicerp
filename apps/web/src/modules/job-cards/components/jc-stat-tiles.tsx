@@ -157,7 +157,7 @@ export function JcStatTiles({
                 </span>
                 {jc.routeCardRevision != null ? (
                   <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>
-                    Rev {jc.routeCardRevision}
+                    Route Card Rev {jc.routeCardRevision}
                   </span>
                 ) : null}
               </>
@@ -245,7 +245,7 @@ export function JcStatTiles({
                 `Already produced on the first operation: ${rmAvailable.consumedQty}. ` +
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`
-                  : 'Issue more client material from Party Material Issue to continue.')
+                  : 'Issue more customer material from Party Material Issue to continue.')
               }
             >
               RM avail <span className="mono fw-700">{rmAvailable.availableQty}</span>

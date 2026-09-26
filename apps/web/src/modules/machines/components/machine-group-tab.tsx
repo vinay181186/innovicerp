@@ -151,7 +151,7 @@ export function MachineGroupTab(): React.JSX.Element {
           >
             {softDelete.error instanceof Error
               ? softDelete.error.message
-              : 'Failed to delete machine group.'}
+              : 'Could not delete Machine Group. Try again.'}
           </div>
         </div>
       ) : null}
@@ -179,7 +179,7 @@ export function MachineGroupTab(): React.JSX.Element {
                   <td colSpan={4} className="empty-state" style={{ color: 'var(--red)' }}>
                     {list.error instanceof Error
                       ? list.error.message
-                      : 'Failed to load machine groups'}
+                      : 'Could not load machine groups. Try again.'}
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
@@ -359,7 +359,7 @@ function MachineGroupModal({
       );
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : 'Could not save Machine Group. Try again.');
     }
   }
 

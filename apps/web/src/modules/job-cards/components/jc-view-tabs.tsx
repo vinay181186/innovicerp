@@ -18,7 +18,12 @@ import type {
   JobCardListItem,
   JobCardStatusExtras,
 } from '@innovic/shared';
-import { fmtOpSrNo } from '@innovic/shared';
+import {
+  fmtOpSrNo,
+  NC_DISPOSITION_LABELS,
+  NC_REASON_CATEGORY_LABELS,
+  SHIFT_LABELS,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
@@ -39,6 +44,12 @@ const DISPOSITION_ICON: Record<string, { icon: string; color: string }> = {
   return_to_vendor: { icon: '📦', color: 'var(--purple)' },
   make_fresh: { icon: '📦', color: 'var(--purple)' },
 };
+
+// Codes on the feed (shift, disposition, NC reason) read through the shared
+// label maps; an unknown code falls back to itself.
+function labelOf(map: Record<string, string>, code: string): string {
+  return map[code] ?? code;
+}
 
 // One rendered feed row. Kept presentation-only: the server owns the merge,
 // order and total; this maps a structured event → legacy's icon/colour/title.
@@ -81,7 +92,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       icon: e.logType === 'start' ? '▶' : e.logType === 'qc' ? '🔬' : '✔',
       color: e.logType === 'start' ? 'var(--amber)' : 'var(--green)',
       title: `Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}: ${e.operation ?? '?'} — ${label}`,
-      detail: `${detail}${e.shift ? ` • ${e.shift}` : ''}`,
+      detail: `${detail}${e.shift ? ` • ${labelOf(SHIFT_LABELS, e.shift)}` : ''}`,
       remarks: e.remarks ?? '',
       qtyKind: e.logType === 'start' ? 'none' : e.logType === 'qc' ? 'qc' : 'complete',
       qty: e.qty ?? 0,
@@ -90,7 +101,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
   if (e.kind === 'nc') {
     const detail =
       `${e.rejectedQty ?? 0} pcs rejected — ${e.reason ?? ''}` +
-      (e.disposition ? ` • Disposition: ${e.disposition}` : '') +
+      (e.disposition ? ` • Disposition: ${labelOf(NC_DISPOSITION_LABELS, e.disposition)}` : '') +
       (e.operatorText ? ` • Operator: ${e.operatorText}` : '');
     return {
       id: e.id,
@@ -98,7 +109,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       time: e.time,
       icon: '❌',
       color: 'var(--red)',
-      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ?? 'NC'} at Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}`,
+      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ? labelOf(NC_REASON_CATEGORY_LABELS, e.reasonCategory) : 'NC'} at Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}`,
       detail,
       remarks: '',
       qtyKind: 'nc',
@@ -119,7 +130,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       time: e.time,
       icon: d.icon,
       color: d.color,
-      title: `${e.ncNo ?? 'NC'} Disposed: ${e.disposition ?? ''}`,
+      title: `${e.ncNo ?? 'NC'} Disposed: ${e.disposition ? labelOf(NC_DISPOSITION_LABELS, e.disposition) : ''}`,
       detail,
       remarks: '',
       qtyKind: 'none',

@@ -40,7 +40,7 @@ import {
 } from '../api';
 import { SoSheetTable } from '../components/so-sheet-table';
 import { SoStatusBadge } from '../components/so-status-badge';
-import { SO_STATUS_LABEL } from '../lib/so-status-label';
+import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
 import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 
@@ -245,7 +245,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       }
       await exportSoListExcel(res.items);
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Export failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not export. Try again.');
     } finally {
       setExporting(false);
     }
@@ -337,7 +337,7 @@ function SalesOrdersListPage(): React.JSX.Element {
             <input className="innovic-input" placeholder="Search this list…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
             <select className="innovic-select" value={search.type ?? ''} onChange={(e) => { const v = e.target.value as SoType | ''; void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 160, fontSize: 12 }}>
               <option value="">All types</option>
-              {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
+              {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{SO_TYPE_LABEL[t]}</option>)}
             </select>
             <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={exporting} title="Export the current (filtered) list to Excel" onClick={() => void onExport()}>
               {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Download className="inline h-3 w-3" />} Export
@@ -365,7 +365,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                   style={{ fontSize: 11, textTransform: 'capitalize', borderRadius: 999, padding: '3px 12px' }}
                   onClick={() => void navigate({ search: (prev) => ({ ...prev, status: s ?? undefined, page: 1 }), replace: true })}
                 >
-                  {s ?? 'All'}
+                  {s ? SO_STATUS_LABEL[s] : 'All'}
                 </button>
               );
             })}
@@ -492,7 +492,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                   <span className="fw-700" style={{ fontSize: 13 }}>{so.customerName ?? '—'}</span>
                   {/* Legacy renders the type through badge() (L11870), which has
                       no map entry for either SO type and falls through to grey. */}
-                  <span className="badge b-grey">{so.type.replaceAll('_', ' ')}</span>
+                  <span className="badge b-grey">{SO_TYPE_LABEL[so.type]}</span>
                   <SoStatusBadge status={so.status} />
                   {so.type === 'equipment' && so.bomStatus ? (
                     <span
@@ -683,7 +683,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
       <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Sr No</th><th>Item Code</th><th>Item Name</th><th className="td-ctr">Qty/Set</th>
+            <th style={{ width: 36 }}>Sr No</th><th>Item Code</th><th>Item Name</th><th className="td-ctr">Qty / Set</th>
             <th className="td-ctr" style={{ color: 'var(--cyan)' }}>Total Need</th><th>BOM Type</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Stock</th><th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
           </tr>
@@ -782,7 +782,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
                     <span className="text3" style={{ fontSize: 10 }}> /{l.orderQty}</span>
                   </td>
                   <td className="td-ctr mono fw-700" style={{ color: l.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{l.dispatchedQty}</td>
-                  <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance <= 0 ? '✅ Done' : balance}</td>
+                  <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance <= 0 ? '✅ Dispatched' : balance}</td>
                   <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
                   <td><SoStatusBadge status={l.status} /></td>
                   {canEdit ? (

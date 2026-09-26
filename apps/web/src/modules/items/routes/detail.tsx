@@ -270,7 +270,7 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
               <th>Source</th>
               <th>Ref No.</th>
               <th>Movement Qty</th>
-              <th>Stock before → after</th>
+              <th>Stock Before → After</th>
               <th>Remarks</th>
             </tr>
           </thead>

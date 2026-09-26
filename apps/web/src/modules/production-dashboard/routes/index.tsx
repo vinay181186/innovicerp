@@ -95,7 +95,7 @@ function ProductionDashboardPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load dashboard'}
+            {error instanceof Error ? error.message : 'Could not load dashboard. Try again.'}
           </div>
         </div>
       ) : (

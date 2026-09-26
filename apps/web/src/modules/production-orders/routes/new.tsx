@@ -278,7 +278,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                   </option>
                   {rcItems.map((rc) => (
                     <option key={rc.id} value={rc.id}>
-                      {rc.code} — Rev {rc.currentRevision} — {rc.opCount} op
+                      {rc.code} — Route Card Rev {rc.currentRevision} — {rc.opCount} op
                       {rc.opCount === 1 ? '' : 's'}
                     </option>
                   ))}
@@ -288,7 +288,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                     <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {routeCard.code}
                     </span>{' '}
-                    · Rev {routeCard.currentRevision} · {routeCard.opCount} operation
+                    · Route Card Rev {routeCard.currentRevision} · {routeCard.opCount} operation
                     {routeCard.opCount === 1 ? '' : 's'}{' '}
                     <PlanTypeChip planType={routeCard.planType} />
                     {routeCard.opCount === 0 ? (
@@ -581,21 +581,21 @@ function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
           value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
           mono
         />
-        <Fact label="Item name" value={plan.itemName ?? plan.itemNameText ?? '—'} />
+        <Fact label="Item Name" value={plan.itemName ?? plan.itemNameText ?? '—'} />
         {/* ADR-182 — Plan Qty and how much of it earlier Production Orders
             already cover. `Pending` is what this order may still be for
             (NAMING.md: never "Remaining" or "Balance"). */}
         <Fact label="Plan Qty" value={String(plan.planQty)} mono />
         <Fact label="Covered" value={String(plan.coveredQty)} mono />
         <Fact label="Pending" value={String(plan.pendingQty)} mono />
-        <Fact label="SO / JWSO" value={so} mono />
-        <Fact label="Planned start" value={plan.plannedStartDate ?? '—'} mono />
-        <Fact label="Planned end" value={plan.plannedEndDate ?? '—'} mono />
-        <Fact label="RM grade" value={plan.rawMaterialGradeText ?? '—'} />
-        <Fact label="RM size" value={plan.rawMaterialSizeText ?? '—'} />
+        <Fact label="SO / JWSO No." value={so} mono />
+        <Fact label="Planned Start" value={plan.plannedStartDate ?? '—'} mono />
+        <Fact label="Planned End" value={plan.plannedEndDate ?? '—'} mono />
+        <Fact label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
+        <Fact label="RM Size" value={plan.rawMaterialSizeText ?? '—'} />
         {plan.remarks ? (
           <div className="form-full">
-            <Fact label="Plan remark" value={plan.remarks} />
+            <Fact label="Plan Remark" value={plan.remarks} />
           </div>
         ) : null}
       </div>

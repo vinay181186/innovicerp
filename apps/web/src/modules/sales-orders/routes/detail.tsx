@@ -35,7 +35,7 @@ import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
-import { SO_STATUS_LABEL } from '../lib/so-status-label';
+import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 
 /** The file the user asked to look at, or null when nothing is open.
  *
@@ -181,7 +181,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
       />
 
       <Panel
-        title={`Line items (${detail.lines.length})`}
+        title={`Line Items (${detail.lines.length})`}
         bodyPadding="none"
         actions={
           <QtyStrip
@@ -415,7 +415,7 @@ function lineColumns(opts: {
 type Milestone = SalesOrderDetail['milestones'][number];
 
 const MILESTONE_COLUMNS: DataTableColumn<Milestone>[] = [
-  { header: 'Lot #', key: 'lotNo', width: '18%', className: 'mono fw-700', nowrap: true },
+  { header: 'Lot No.', key: 'lotNo', width: '18%', className: 'mono fw-700', nowrap: true },
   { header: 'Qty', key: 'qty', width: '14%', className: 'mono', nowrap: true },
   {
     header: 'Due Date',
@@ -484,7 +484,7 @@ function SoFilesPanel({
       });
       await qc.invalidateQueries({ queryKey: salesOrdersKeys.detail(detail.id) });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed');
+      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -507,7 +507,7 @@ function SoFilesPanel({
             variant="ghost"
             size="sm"
             icon={<Icon name="eye" size={13} />}
-            title="Preview the client PO document"
+            title="Preview Client PO Document"
             // Only the path is on the SO record; the modal derives a display
             // name from it.
             onClick={() => onPreview({ storagePath: clientPoPath })}
@@ -622,7 +622,7 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
 
   return (
     <ReadGrid>
-      <ReadField label="SO Type" size="md" value={detail.type.replaceAll('_', ' ')} />
+      <ReadField label="SO Type" size="md" value={SO_TYPE_LABEL[detail.type]} />
       <ReadField label="SO Date" size="sm" mono value={detail.soDate} />
       <ReadField
         label="Client PO No."

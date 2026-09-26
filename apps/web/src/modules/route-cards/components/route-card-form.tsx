@@ -354,12 +354,12 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       }
       const cycle = Number(o.cycleTimeMin);
       if (!Number.isFinite(cycle) || cycle < 0) {
-        return `Op ${sr}: cycle time must be a non-negative number`;
+        return `Op ${sr}: Cycle Time cannot be less than 0`;
       }
       if (o.ospLeadDays.trim()) {
         const lead = Number(o.ospLeadDays);
         if (!Number.isInteger(lead) || lead < 0) {
-          return `Op ${sr}: lead days must be a non-negative integer`;
+          return `Op ${sr}: Lead Time must be a whole number of days, 0 or more`;
         }
       }
     }
@@ -629,7 +629,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                   style={{ color: 'var(--amber)', paddingTop: 7, fontSize: 14 }}
                 >
                   Route Card Rev {routeCard.currentRevision} →{' '}
-                  <span style={{ color: 'var(--green)' }}>Rev {routeCard.currentRevision + 1}</span>
+                  <span style={{ color: 'var(--green)' }}>{routeCard.currentRevision + 1}</span>
                 </div>
               </div>
             ) : null}

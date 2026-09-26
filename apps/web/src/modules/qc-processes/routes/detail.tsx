@@ -95,7 +95,7 @@ function QcProcessDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'QC process not found'}
+          message={error instanceof Error ? error.message : 'QC Process not found.'}
         />
       </div>
     );

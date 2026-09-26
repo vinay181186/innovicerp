@@ -12,6 +12,7 @@
 
 import { GLOBAL_SEARCH_KIND_META } from '@innovic/shared';
 import type { GlobalSearchResult } from '@innovic/shared';
+import { statusText } from '@/lib/status-text';
 import { GLOBAL_SEARCH_LANDING_KIND } from '../api';
 
 export const RESULT_COLUMNS = 7;
@@ -91,7 +92,7 @@ export function ResultsTable({
                     <td className="mono">{r.qty ?? '—'}</td>
                     <td>
                       {r.status ? (
-                        <span className="badge b-grey">{r.status.replaceAll('_', ' ')}</span>
+                        <span className="badge b-grey">{statusText(r.status, r.kind)}</span>
                       ) : (
                         '—'
                       )}

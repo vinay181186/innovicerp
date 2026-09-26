@@ -157,7 +157,7 @@ function StoreIssuesListPage(): React.JSX.Element {
             ) : isError ? (
               <div className="panel-body">
                 <div className="empty-state" style={{ color: 'var(--red)' }}>
-                  {error instanceof Error ? error.message : 'Failed to load issues'}
+                  {error instanceof Error ? error.message : 'Could not load issues. Try again.'}
                 </div>
               </div>
             ) : data ? (
@@ -352,7 +352,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
     if (remarks.trim()) input.remarks = remarks.trim();
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create issue'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save issue. Try again.'),
     });
   };
 

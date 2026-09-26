@@ -150,7 +150,7 @@ function DesignProjectDetailPage(): React.JSX.Element {
         }}
       >
         <Tile label="Tasks" value={p.taskTotal} color="var(--blue)" />
-        <Tile label="Done" value={p.taskDone} color="var(--green)" />
+        <Tile label="Completed" value={p.taskDone} color="var(--green)" />
         <Tile
           label="Open Issues"
           value={p.openIssuesCount}
@@ -587,7 +587,7 @@ function TaskFormModal({
         { projectId, input },
         {
           onSuccess: () => onClose(),
-          onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+          onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
     } else if (task) {
@@ -595,7 +595,7 @@ function TaskFormModal({
         { id: task.id, input },
         {
           onSuccess: () => onClose(),
-          onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+          onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
     }
@@ -1010,7 +1010,7 @@ function IssueFormModal({
         { projectId, input },
         {
           onSuccess: () => onClose(),
-          onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+          onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
     } else if (issue) {
@@ -1029,7 +1029,7 @@ function IssueFormModal({
         },
         {
           onSuccess: () => onClose(),
-          onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+          onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
     }
@@ -1776,7 +1776,7 @@ function DcrFormModal({
         { projectId, input },
         {
           onSuccess: () => onClose(),
-          onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+          onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
     } else if (dcr) {
@@ -1795,7 +1795,7 @@ function DcrFormModal({
         },
         {
           onSuccess: () => onClose(),
-          onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+          onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
     }
@@ -1930,7 +1930,7 @@ function DcnFormModal({
         { projectId, input },
         {
           onSuccess: () => onClose(),
-          onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+          onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
     } else if (dcn) {
@@ -1945,7 +1945,7 @@ function DcnFormModal({
         },
         {
           onSuccess: () => onClose(),
-          onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+          onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
     }

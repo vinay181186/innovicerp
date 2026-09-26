@@ -877,7 +877,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       </span>
                       {defaultOpsQuery.data.routeCardRevision != null ? (
                         <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>
-                          Rev {defaultOpsQuery.data.routeCardRevision}
+                          Route Card Rev {defaultOpsQuery.data.routeCardRevision}
                         </span>
                       ) : null}
                       {autoLoadedCount != null ? (
@@ -958,7 +958,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <table className="ops-routing" style={{ minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 40, textAlign: 'center' }}>Sr No</th>
+                    <th style={{ width: 40, textAlign: 'center' }}>Op</th>
                     {/* The Group column leads because it is the first thing the
                         planner decides — what KIND of step this is (a machine
                         family, an OSP hand-off, or a QC check). Everything to the

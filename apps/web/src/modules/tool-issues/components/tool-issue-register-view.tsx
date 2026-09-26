@@ -128,7 +128,7 @@ export function ToolIssueRegisterView({
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load tool issues'}
+              {error instanceof Error ? error.message : 'Could not load tool issues. Try again.'}
             </div>
           </div>
         ) : data ? (
@@ -332,7 +332,7 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
           fontWeight: 700,
         }}
       >
-        Partial ({out} out)
+        Partly Returned ({out} out)
       </span>
     );
   }
@@ -476,7 +476,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
     if (remarks.trim()) input.remarks = remarks.trim();
     createMut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to issue tool'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not issue tool. Try again.'),
     });
   };
 
@@ -671,7 +671,7 @@ function ReturnModal({
     if (remarks.trim()) input.remarks = remarks.trim();
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Return failed'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not return tool. Try again.'),
     });
   };
 

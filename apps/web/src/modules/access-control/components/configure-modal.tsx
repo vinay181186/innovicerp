@@ -54,6 +54,7 @@ import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide
 import { useEffect, useState } from 'react';
 import { useUpdateUser, useUser } from '@/modules/users/api';
 import { useSaveUserAccess, useUserAccess } from '../api';
+import { roleLabel } from '@/lib/role-label';
 
 interface Props {
   userId: string;
@@ -554,9 +555,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             </span>
             <span
               className={`badge ${roleBadgeClass(derivedRole)}`}
-              title="System role — worked out from the departments below, not chosen. This is the word the server checks on every save."
+              title="System role — worked out from the departments below, not chosen. This role decides what the user may do."
             >
-              {derivedRole}
+              {roleLabel(derivedRole)}
             </span>
           </div>
 

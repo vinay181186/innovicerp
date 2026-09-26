@@ -33,7 +33,7 @@ export function JwMaterialStatusBadge({ receivedQty, expectedQty }: Props) {
         <span aria-hidden style={{ marginRight: 4 }}>
           ◑
         </span>
-        Partial ({safeReceived})
+        Partly Received ({safeReceived})
       </span>
     );
   }

@@ -261,7 +261,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Line items ({detail.lines.length})</div>
+          <div className="panel-title">Line Items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             received <b style={{ color: 'var(--text)' }}>{totalReceived}</b> · accepted{' '}
             <b style={{ color: 'var(--green2)' }}>{totalAccepted}</b> · rejected{' '}

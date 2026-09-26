@@ -340,7 +340,7 @@ export function PoFormLine({
             list={PO_FORM_ITEM_DATALIST_ID}
             autoComplete="off"
             placeholder="Item code…"
-            aria-label={`Item code, line ${idx + 1}`}
+            aria-label={`Item Code, line ${idx + 1}`}
             {...register(`lines.${idx}.itemCodeText` as const)}
           />
         </td>
@@ -349,7 +349,7 @@ export function PoFormLine({
             className="pof-in pof-in-sm"
             autoComplete="off"
             placeholder="Name…"
-            aria-label={`Item name, line ${idx + 1}`}
+            aria-label={`Item Name, line ${idx + 1}`}
             {...register(`lines.${idx}.itemName` as const)}
           />
         </td>
@@ -385,7 +385,7 @@ export function PoFormLine({
           <input
             type="date"
             className="pof-in pof-in-sm pof-num"
-            aria-label={`Due date, line ${idx + 1}`}
+            aria-label={`Due Date, line ${idx + 1}`}
             {...register(`lines.${idx}.dueDate` as const)}
           />
         </td>

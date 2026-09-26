@@ -93,7 +93,7 @@ function TpiMasterDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Inspector not found'}
+          message={error instanceof Error ? error.message : 'Inspector not found.'}
         />
       </div>
     );

@@ -53,7 +53,7 @@ function MaterialCell({ received, expected }: { received: number; expected: numb
     return <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ Full</span>;
   }
   if (received > 0) {
-    return <span style={{ color: 'var(--amber)', fontWeight: 700 }}>◑ Partial ({received})</span>;
+    return <span style={{ color: 'var(--amber)', fontWeight: 700 }}>◑ Partly Received ({received})</span>;
   }
   return <span style={{ color: 'var(--red)', fontWeight: 700 }}>✕ Not Received</span>;
 }
@@ -345,7 +345,7 @@ function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolea
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Ln</th><ItemThumbnailHeader /><th>Item</th><th>Material</th><th>Drawing No</th>
+            <th style={{ width: 36 }}>Ln</th><ItemThumbnailHeader /><th>Item</th><th>Material</th><th>Drawing No.</th>
             <th className="td-ctr">Order Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
             <th className="td-ctr">Pending</th>

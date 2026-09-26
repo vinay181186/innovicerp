@@ -55,6 +55,12 @@ const CHILD_GRID = '40px minmax(140px,1.1fr) minmax(150px,2fr) 90px minmax(120px
 // is exactly one).
 const PARENT_GRID = 'minmax(140px,1.1fr) minmax(150px,2fr) 110px';
 
+const STATUS_LABEL: Record<BomFormHeaderDraft['status'], string> = {
+  active: 'Active',
+  draft: 'Draft',
+  obsolete: 'Obsolete',
+};
+
 const STATUS_PILL: Record<BomFormHeaderDraft['status'], string> = {
   active: 'bomx-pill-green',
   draft: 'bomx-pill-amber',
@@ -261,9 +267,9 @@ const CODE_ALIASES = ['item_code', 'Item Code', 'code'];
 const QTY_ALIASES = ['qty_per_set', 'Qty Per Set', 'qty', 'qty/set'];
 const TYPE_ALIASES = ['bom_type', 'BOM Type', 'Type'];
 const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
-  { label: 'item_code', aliases: CODE_ALIASES },
-  { label: 'qty_per_set', aliases: QTY_ALIASES },
-  { label: 'bom_type', aliases: TYPE_ALIASES },
+  { label: 'Item Code', aliases: CODE_ALIASES },
+  { label: 'Qty Per Set', aliases: QTY_ALIASES },
+  { label: 'BOM Type', aliases: TYPE_ALIASES },
 ];
 
 // listItemsQuerySchema (packages/shared/src/schemas/item.ts) caps `limit` at
@@ -493,7 +499,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     const { utils: xlsxUtils, write: xlsxWrite } = await loadXlsx();
     // 3 columns + a sample row so users know the shape.
     const aoa = [
-      ['item_code', 'qty_per_set', 'bom_type'],
+      // Title Case headers; the importer's aliases still read item_code / qty_per_set / bom_type.
+      ['Item Code', 'Qty Per Set', 'BOM Type'],
       ['EXAMPLE-001', 2, 'manufacture'],
       ['EXAMPLE-002', 3, 'purchase'],
     ];
@@ -505,7 +512,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'bom-import-template.xlsx';
+    a.download = 'BOM Import Template.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -772,7 +779,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     const aoa: (string | number)[][] = [
       [
         'Item Code*',
-        'Name*',
+        'Item Name*',
         'Description',
         'Drawing No.',
         'Revision',
@@ -780,7 +787,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         'UOM',
         'Item Type',
       ],
-      // Name is REQUIRED by the Item Master importer, so it is pre-filled with
+      // Item Name is REQUIRED by the Item Master importer, so it is pre-filled with
       // the code — the sheet imports as-is, and the names can be corrected in
       // the sheet before importing or in Item Master afterwards.
       ...missingCodes.map((code) => [code, code, '', '', 'A', '', 'NOS', 'component']),
@@ -792,7 +799,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     const buf = xlsxWrite(wb, { type: 'array', bookType: 'xlsx' });
     saveFile(
       new Blob([buf], { type: 'application/octet-stream' }),
-      'missing-items-for-item-master.xlsx',
+      'Missing Items Import Template.xlsx',
     );
   };
 
@@ -869,7 +876,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               {mode === 'create' ? 'New BOM' : `Edit BOM — ${bom?.bomNo ?? ''}`}
             </span>
             <span className={`bomx-pill ${STATUS_PILL[header.status]}`}>
-              {header.status.toUpperCase()}
+              {STATUS_LABEL[header.status]}
             </span>
             {mode === 'edit' ? (
               <span className="bomx-pill">

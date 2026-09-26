@@ -225,7 +225,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
     setFormError(null);
     setSubmitError(null);
     if (!jwpoId) {
-      setFormError('Pick a JWPO.');
+      setFormError('Pick a JW PO.');
       return;
     }
     if (!dc) {
@@ -298,7 +298,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
       <div className="form-grid-4" style={{ marginBottom: 12 }}>
         <div className="form-grp">
           <label className="form-label" htmlFor="jwpoId">
-            JWPO<span className="req">★</span>
+            JW PO<span className="req">★</span>
           </label>
           <SearchableSelect
             id="jwpoId"
@@ -307,7 +307,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
             options={jwpoOptions}
             onSearch={setJwpoSearch}
             loading={dcList.isFetching}
-            placeholder="🔍 Type JWPO number or vendor…"
+            placeholder="🔍 Type JW PO number or vendor…"
             valueLabel={jwpoValueLabel}
             emptyText="No job-work POs have a challan awaiting receipt"
           />
@@ -328,11 +328,11 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
             options={dcOptions}
             onSearch={setDcSearch}
             loading={dcList.isFetching}
-            placeholder={jwpoId ? '🔍 Pick a challan…' : '🔍 Pick a challan (or a JWPO first)…'}
+            placeholder={jwpoId ? '🔍 Pick a challan…' : '🔍 Pick a challan (or a JW PO first)…'}
             valueLabel={dcValueLabel}
             emptyText={
               jwpoId
-                ? 'No challan on this JWPO is awaiting receipt'
+                ? 'No challan on this JW PO is awaiting receipt'
                 : 'No OSP challan is awaiting receipt'
             }
           />
@@ -399,7 +399,7 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
         className="form-label"
         style={{ fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}
       >
-        Line items — still out on this challan
+        Line Items — still out on this challan
       </div>
 
       <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
@@ -426,12 +426,12 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
               <tr>
                 <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
                   {!jwpoId && !dcId
-                    ? 'Pick a delivery challan (or a JWPO, then one of its challans) to load the lines still out.'
+                    ? 'Pick a delivery challan (or a JW PO, then one of its challans) to load the lines still out.'
                     : !dcId
                       ? 'Pick a delivery challan to load its lines.'
                       : !dc
                         ? 'Loading challan lines…'
-                        : 'Every line on this challan is already received — nothing left to book in.'}
+                        : 'Every line on this challan is already received — nothing pending to receive.'}
                 </td>
               </tr>
             ) : (

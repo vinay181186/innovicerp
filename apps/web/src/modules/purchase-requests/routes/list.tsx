@@ -125,7 +125,8 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       setActionError(null);
       if (!window.confirm(`Approve PR ${pr.code}? A PO can then be made.`)) return;
       approveMut.mutate(pr.id, {
-        onError: (e) => setActionError(e instanceof Error ? e.message : 'Approve failed'),
+        onError: (e) =>
+          setActionError(e instanceof Error ? e.message : 'Could not approve PR. Try again.'),
       });
     },
     [approveMut],
@@ -142,7 +143,10 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       }
       rejectMut.mutate(
         { id: pr.id, reason: reason.trim() },
-        { onError: (e) => setActionError(e instanceof Error ? e.message : 'Reject failed') },
+        {
+          onError: (e) =>
+            setActionError(e instanceof Error ? e.message : 'Could not reject PR. Try again.'),
+        },
       );
     },
     [rejectMut],

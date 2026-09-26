@@ -36,7 +36,7 @@ function MachineNewPage(): React.JSX.Element {
         () => void navigate({ to: '/machines/$id', params: { id: created.id }, replace: true }),
       );
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create machine');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Machine. Try again.');
     }
   };
 
@@ -85,7 +85,7 @@ function MachineEditPage(): React.JSX.Element {
       await update.mutateAsync(values);
       exit.leave(() => void navigate({ to: '/machines/$id', params: { id }, replace: true }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update machine');
+      setSubmitError(err instanceof Error ? err.message : 'Could not save Machine. Try again.');
     }
   };
 
@@ -107,7 +107,7 @@ function MachineEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Machine not found'}
+            {error instanceof Error ? error.message : 'Machine not found.'}
           </div>
         </div>
       </div>

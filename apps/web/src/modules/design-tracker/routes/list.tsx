@@ -396,7 +396,7 @@ function Row({
           {row.status}
         </span>
       </td>
-      <td className="td-ctr mono fw-700">Rev {row.revision}</td>
+      <td className="td-ctr mono fw-700">Design Rev {row.revision}</td>
       <td className="td-ctr">
         <span
           className="mono fw-700"
@@ -530,7 +530,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
     if (remarks.trim()) input.remarks = remarks.trim();
     mut.mutate(input, {
       onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
     });
   };
 
@@ -658,7 +658,7 @@ function EditDesignModal({
       },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
       },
     );
   };
@@ -789,7 +789,7 @@ function LogTimeModal({
       { id: row.id, input },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
       },
     );
   };

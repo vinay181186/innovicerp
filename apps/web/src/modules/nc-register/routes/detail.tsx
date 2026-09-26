@@ -107,7 +107,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'NC not found'}
+            {error instanceof Error ? error.message : 'NC not found.'}
           </div>
         </div>
       </div>
@@ -187,7 +187,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
         ...(detail.soCodeText ? { soNo: detail.soCodeText } : {}),
         ...(detail.itemCodeText ? { itemCode: detail.itemCodeText } : {}),
         ...(operation ? { operation } : {}),
-        problem: detail.reason ?? detail.reasonCategory.replaceAll('_', ' '),
+        problem: detail.reason ?? NC_REASON_CATEGORY_LABELS[detail.reasonCategory],
         department: 'QC',
       });
       void navigate({ to: '/nc-register' });

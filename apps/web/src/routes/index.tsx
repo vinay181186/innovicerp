@@ -16,6 +16,7 @@ import { HomeSpecialist } from '@/modules/dashboard/components/home-specialist';
 import { HomeWidgets } from '@/modules/dashboard/components/home-widgets';
 import { MyWorkPanel } from '@/modules/dashboard/components/my-work-panel';
 import { authenticatedRoute } from './_authenticated';
+import { roleLabel } from '@/lib/role-label';
 
 export const indexRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -44,7 +45,7 @@ function IndexPage(): React.JSX.Element {
     return <div className="empty-state" style={{ padding: 40 }}><Loader2 className="inline h-4 w-4 animate-spin" /> Loading dashboard…</div>;
   }
   if (isError || !home) {
-    return <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load'}</div>;
+    return <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Could not load dashboard. Try again.'}</div>;
   }
 
   const greetCap = home.greetingPart.charAt(0).toUpperCase() + home.greetingPart.slice(1);
@@ -61,7 +62,7 @@ function IndexPage(): React.JSX.Element {
             Good {greetCap}, {home.userName}
           </h1>
           <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-            {home.dateLabel} · <b style={{ color: 'var(--text2)' }}>{home.role}</b>
+            {home.dateLabel} · <b style={{ color: 'var(--text2)' }}>{roleLabel(home.role)}</b>
           </div>
         </div>
         {/* These four switch the page's whole content, so they are a tab set in

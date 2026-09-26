@@ -610,7 +610,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
             <br />
             <b style={{ color: 'var(--green)' }}>
               {bomNo}
-              {bomRev !== null ? ` Rev ${bomRev}` : ''}
+              {bomRev !== null ? ` BOM Rev ${bomRev}` : ''}
             </b>
           </div>
         ) : null}

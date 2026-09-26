@@ -170,7 +170,7 @@ export function PoLineRow({
               type="number"
               className="innovic-input"
               readOnly
-              title="Received qty is mutated only by GRN cascade (T-036c)"
+              title="Received changes only when a GRN is saved"
               value={receivedQty ?? 0}
             />
           </td>

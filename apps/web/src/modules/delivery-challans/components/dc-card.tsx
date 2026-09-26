@@ -97,7 +97,7 @@ function PoChip({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Element {
     return (
       <span
         className="badge b-amber"
-        title="Snapshot text — no PO linked. Will mismatch if the PO is renumbered."
+        title="PO No. typed by hand — not linked to a PO"
         style={{ fontSize: 11 }}
       >
         {dc.poCodeText}*
@@ -241,7 +241,7 @@ export function DcCard({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Eleme
               <>
                 <span>·</span>
                 <span>
-                  Rev <span className="text2">{dc.soLineRevision}</span>
+                  Drawing Rev <span className="text2">{dc.soLineRevision}</span>
                 </span>
               </>
             ) : null}

@@ -572,8 +572,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         err instanceof Error
           ? err.message
           : isEdit
-            ? 'Failed to save the purchase order'
-            : 'Failed to create the purchase order',
+            ? 'Could not save PO. Try again.'
+            : 'Could not save PO. Try again.',
       );
     }
   };
@@ -609,7 +609,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         <div className="pof-hdr">
           <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8 }}>
             <span className="pof-title">
-              {isEdit ? 'Edit Purchase Order' : 'Create Purchase Order'}
+              {isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}
             </span>
             {props.mode === 'edit' ? <span className="pof-chip">{props.detail.code}</span> : null}
           </span>
@@ -811,7 +811,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 <th className="pof-th-r">
                   Qty<span className="pof-req">★</span>
                 </th>
-                <th className="pof-th-r">Rate ₹</th>
+                <th className="pof-th-r">Rate (₹)</th>
                 <th className="pof-th-r">Amount</th>
                 <th>Due Date</th>
                 {isEdit ? <th className="pof-th-r">Received</th> : null}

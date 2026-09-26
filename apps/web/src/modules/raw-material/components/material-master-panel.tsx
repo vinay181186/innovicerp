@@ -115,7 +115,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
     try {
       setImportMsg(await onImportFile(file));
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportMsg(e instanceof Error ? e.message : 'Could not import the file. Try again.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -228,7 +228,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                   <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error
                       ? error.message
-                      : `Failed to load material ${noun.toLowerCase()}s`}
+                      : `Could not load material ${noun.toLowerCase()}s. Try again.`}
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
@@ -432,7 +432,7 @@ function MaterialRowModal({
       );
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : `Could not save ${noun}. Try again.`);
     }
   }
 

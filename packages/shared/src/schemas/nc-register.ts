@@ -304,7 +304,7 @@ export const NC_STATUS_LABELS: Record<NcStatus, string> = {
   under_repair: 'Under Repair',
   sent_to_vendor: 'Sent to Vendor',
   received_qc_pending: 'Received – QC Pending',
-  rework_done: 'Rework Complete',
+  rework_done: 'Rework Completed',
   closed: 'Closed',
 };
 
