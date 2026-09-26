@@ -22,7 +22,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import {
   useDeliveryChallan,
   useDeliveryChallansList,
@@ -66,8 +66,8 @@ function lineQtyError(raw: string, balance: number): string | null {
   if (t === '') return null; // blank = 0 = skipped on submit
   const n = Number(t);
   if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Whole number only.';
-  if (n < 0) return 'Min 0.';
-  if (n > balance) return `Cannot receive more than Pending (${balance}).`;
+  if (n < 0) return 'Receive Now cannot be less than 0.';
+  if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
   return null;
 }
 
@@ -82,7 +82,7 @@ export function GrnAgainstNcForm({
 
   const [ncId, setNcId] = useState<string | null>(null);
   const [ncSearch, setNcSearch] = useState('');
-  const [receiptDate, setReceiptDate] = useState(todayLocal());
+  const [receiptDate, setReceiptDate] = useState(todayIst());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
@@ -191,15 +191,15 @@ export function GrnAgainstNcForm({
     setFormError(null);
     setSubmitError(null);
     if (!ncId) {
-      setFormError('Pick an NC.');
+      setFormError('NC No. is required.');
       return;
     }
     if (!dc) {
-      setFormError('The return challan for this NC is still loading — try again in a moment.');
+      setFormError('The return challan is still loading. Try again.');
       return;
     }
     if (!receiptDate) {
-      setFormError('Receipt date is required.');
+      setFormError('GRN Date is required.');
       return;
     }
     const checked = lines.map((l) => ({ ...l, error: lineQtyError(l.receiveNow, l.balance) }));
@@ -270,8 +270,19 @@ export function GrnAgainstNcForm({
 
       <Panel title="GRN Details">
         <FormGrid>
-          {/* Row 1 — GRN Type · NC No. · GRN Date (3 + 6 + 3). */}
+          {/* Row 1 — GRN Type · GRN Date · NC No. (3 + 3 + 6); GRN Date sits second
+              on all three GRN types. */}
           {typeField}
+          <FormField label="GRN Date" required size="sm" htmlFor="ncReceiptDate">
+            <input
+              id="ncReceiptDate"
+              type="date"
+              className="innovic-input"
+              value={receiptDate}
+              onChange={(e) => setReceiptDate(e.target.value)}
+              required
+            />
+          </FormField>
           <FormField
             label="NC No."
             required
@@ -288,17 +299,7 @@ export function GrnAgainstNcForm({
               loading={dcList.isFetching}
               placeholder="🔍 Type NC number, job card or vendor…"
               valueLabel={ncValueLabel}
-              emptyText="No NC has a return challan awaiting receipt"
-            />
-          </FormField>
-          <FormField label="GRN Date" required size="sm" htmlFor="ncReceiptDate">
-            <input
-              id="ncReceiptDate"
-              type="date"
-              className="innovic-input"
-              value={receiptDate}
-              onChange={(e) => setReceiptDate(e.target.value)}
-              required
+              emptyText="No NC has a return challan awaiting receipt."
             />
           </FormField>
 
@@ -340,7 +341,6 @@ export function GrnAgainstNcForm({
               id="ncVendorInvoice"
               className="innovic-input"
               autoComplete="off"
-              placeholder="optional"
               value={vendorInvoiceText}
               onChange={(e) => setVendorInvoiceText(e.target.value)}
             />
@@ -352,7 +352,6 @@ export function GrnAgainstNcForm({
               id="ncRemarks"
               className="innovic-textarea"
               rows={2}
-              placeholder="Notes"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
             />
@@ -360,7 +359,7 @@ export function GrnAgainstNcForm({
         </FormGrid>
       </Panel>
 
-      <Panel title="Line Items — still out on this return challan" bodyPadding="none">
+      <Panel title="Line Items" bodyPadding="none">
         <GrnLinesTable
           rows={lines.map((l) => ({
             key: l.deliveryChallanLineId,
@@ -381,7 +380,7 @@ export function GrnAgainstNcForm({
               ? 'Pick an NC to load its return challan.'
               : !dc
                 ? 'Loading return challan lines…'
-                : 'Every line on this return challan is already received — nothing pending to receive.'
+                : 'Every line on this return challan is already received.'
           }
           onReceiveNow={(idx, v) => {
             const l = lines[idx];

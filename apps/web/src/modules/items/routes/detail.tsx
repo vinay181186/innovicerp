@@ -43,6 +43,7 @@ import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transa
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { STORE_TXN_SOURCE_LABELS } from '@/modules/store-transactions/lib/txn-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useItem, useSoftDeleteItem } from '../api';
 import { printItemDrawing } from '../lib/print-drawing';
 
@@ -73,7 +74,7 @@ function ItemDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Items. Ask an admin.
       </div>
     );
   }
@@ -96,19 +97,19 @@ function ItemDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Item not found'}
+            {error instanceof Error ? error.message : 'Item not found. Refresh the page.'}
           </div>
         </div>
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(item.id, {
-      onSuccess: () => {
-        void navigate({ to: '/items', replace: true });
-      },
-    });
+  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
+  // shows a rejection in the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(item.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/items', replace: true });
   };
 
   // Tier-driven, per department (Store). Was admin/manager for Edit and
@@ -147,68 +148,34 @@ function ItemDetailPage(): React.JSX.Element {
               </Link>
             ) : null}
             {canDelete ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    Move Item {item.code} to Trash? You can restore it from Trash.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Move to Trash
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={13} /> Delete
+              </button>
             ) : null}
           </div>
         </div>
         <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Could not delete Item. Try again.'}
-            </div>
-          ) : null}
           <DetailGrid item={item} company={company} />
         </div>
       </div>
 
       <StockHistoryCard itemId={item.id} />
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Move Item ${item.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          tone="danger"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -267,10 +234,10 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
           <thead>
             <tr>
               <th>Movement Date</th>
-              <th>Movement Type</th>
+              <th>Type</th>
               <th>Source</th>
               <th>Ref No.</th>
-              <th className="th-num">Movement Qty</th>
+              <th className="th-num">Qty</th>
               <th className="th-num">Stock Before → After</th>
               <th>Remarks</th>
             </tr>
@@ -291,7 +258,7 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
             ) : (data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={7} className="empty-state">
-                  No stock movements recorded
+                  No stock movements yet.
                 </td>
               </tr>
             ) : (
@@ -303,13 +270,26 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
                   <td>
                     <TxnTypeBadge type={r.txnType} />
                   </td>
-                  <td className="text2" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+                  <td className="text2" style={{ fontSize: 11 }}>
                     {STORE_TXN_SOURCE_LABELS[r.sourceType]}
                   </td>
                   <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                     {r.sourceRef}
                   </td>
-                  <td className="mono fw-700 td-num">{r.qty}</td>
+                  {/* Same +/− colours as the Stock Ledger tab. */}
+                  <td
+                    className="mono fw-700 td-num"
+                    style={
+                      r.txnType === 'in'
+                        ? { color: 'var(--green2)' }
+                        : r.txnType === 'out'
+                          ? { color: 'var(--red2)' }
+                          : undefined
+                    }
+                  >
+                    {r.txnType === 'in' ? '+' : r.txnType === 'out' ? '-' : ''}
+                    {r.qty}
+                  </td>
                   <td className="mono td-num" style={{ fontSize: 11 }}>
                     {r.stockBefore} → <b>{r.stockAfter}</b>
                   </td>
@@ -330,7 +310,7 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
   const { item, company } = props;
   return (
     <div className="form-grid">
-      <Pair label="Item Type" value={item.itemType} />
+      <Pair label="Item Type" value={ITEM_TYPE_LABEL[item.itemType]} />
       <div className="form-grp">
         <span className="form-label">Make / Buy</span>
         <div>
@@ -352,6 +332,12 @@ function DetailGrid(props: { item: Item; company: Company | undefined }): React.
     </div>
   );
 }
+
+/** Screen words for the stored item-type codes (display only). */
+const ITEM_TYPE_LABEL: Record<Item['itemType'], string> = {
+  component: 'Component',
+  assembly: 'Assembly',
+};
 
 function Pair(props: { label: string; value: string }): React.JSX.Element {
   return (
@@ -382,7 +368,7 @@ function DrawingFilePair({
       const ok = await printItemDrawing({ item, company });
       if (!ok) window.alert('Allow popups to print.');
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not open drawing for printing');
+      window.alert(e instanceof Error ? e.message : 'Could not open drawing. Try again.');
     }
   }
   return (

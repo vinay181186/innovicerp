@@ -12,6 +12,6 @@ export const PR_STATUS_LABELS: Record<PrStatus, string> = {
 
 export const PR_TYPE_LABELS: Record<PrType, string> = {
   standard: 'Standard',
-  jw_osp: 'JW OSP',
+  jw_osp: 'Outsource',
   service: 'Service',
 };

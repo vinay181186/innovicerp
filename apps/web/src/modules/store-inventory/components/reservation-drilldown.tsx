@@ -14,7 +14,6 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { useStockReservations } from '@/modules/plans/api';
 import { ModalShell } from './modal-shell';
 
@@ -65,6 +64,7 @@ export function ReservationDrilldown({
   const { data, isLoading, isError, error } = useStockReservations({ itemId });
 
   return (
+    // The item is named once, in the title — every row is the same item.
     <ModalShell onClose={onClose} title={`Reserved Stock — ${itemCode} (${itemName})`}>
       {isLoading ? (
         <div className="text3" style={{ fontSize: 12 }}>
@@ -91,8 +91,9 @@ export function ReservationDrilldown({
                   {/* POL — the CUSTOMER's own purchase-order line number, an
                       extra value beside our SO line number. */}
                   <th style={{ color: 'var(--purple)' }}>POL</th>
+                  {/* REV — the drawing revision on that SO line. */}
+                  <th>REV</th>
                   <th>Customer</th>
-                  <th>Item Code</th>
                   <th className="th-num" style={{ color: 'var(--purple)' }}>
                     Reserved
                   </th>
@@ -136,6 +137,7 @@ export function ReservationDrilldown({
                       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                         {row.clientPoLineNo ?? '—'}
                       </td>
+                      <td className="mono fw-700">{row.itemRevision ?? '—'}</td>
                       <td
                         style={{
                           maxWidth: 160,
@@ -145,10 +147,6 @@ export function ReservationDrilldown({
                         title={row.customerName ?? ''}
                       >
                         {row.customerName ?? '—'}
-                      </td>
-                      {/* Item code is the main thing: strong mono, darkest text. */}
-                      <td className="mono fw-700" style={{ color: 'var(--text)' }}>
-                        {itemCodeWithRev(row.itemCode, row.itemRevision)}
                       </td>
                       <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
                         {row.qty}

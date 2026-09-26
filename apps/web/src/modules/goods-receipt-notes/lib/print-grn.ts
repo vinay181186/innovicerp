@@ -47,6 +47,7 @@ import type {
 } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import { todayIst } from '@/lib/date';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 import {
   type SheetField,
@@ -225,7 +226,7 @@ export function printGrn(args: {
     companyGSTIN: company?.gstNumber ?? '',
     companyPhone: company?.phone ?? '',
     companyEmail: company?.email ?? '',
-    date: fmtDate(new Date().toISOString().slice(0, 10)),
+    date: fmtDate(todayIst()),
     currentUser: args.currentUser ?? '',
     grnNo: grn.code,
     grnDate: fmtDate(grn.grnDate),

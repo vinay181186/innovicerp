@@ -27,10 +27,6 @@ export const approvalConfigRoute = createRoute({
   component: ApprovalConfigPage,
 });
 
-function inr(n: number): string {
-  return Math.round(n).toLocaleString('en-IN');
-}
-
 // Screen word for the logged action code (APPROVE / REJECT / PAYMENT).
 function actionLabel(action: string): string {
   if (action === 'APPROVE') return 'Approved';
@@ -80,7 +76,7 @@ function ApprovalConfigPage(): React.JSX.Element {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)' }}>
         <div style={{ fontSize: 28, marginBottom: 10 }}>🔒</div>
-        Admin access required for Approval Configuration.
+        You do not have permission to open Approval Rules. Ask an admin.
       </div>
     );
   }
@@ -148,7 +144,7 @@ function ApprovalConfigPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ⚖ Approval Configuration
+          Approval Rules
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {submitOk ? (
@@ -195,7 +191,7 @@ function ApprovalConfigPage(): React.JSX.Element {
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}
         >
           <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>🛒 Purchase Order Approval</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Purchase Order Approval</span>
             <div className="text3" style={{ fontSize: 11 }}>
               PO approval is off. New POs open straight away.
             </div>
@@ -210,13 +206,10 @@ function ApprovalConfigPage(): React.JSX.Element {
             border: '1px solid var(--border)',
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber2)', marginBottom: 10 }}>
-            ₹ Amount Limits
-          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-                Manager can approve PO up to (₹)
+                Manager PO Limit (₹)
               </label>
               <input
                 type="number"
@@ -254,10 +247,7 @@ function ApprovalConfigPage(): React.JSX.Element {
           }}
         >
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)', marginBottom: 8 }}>
-            👤 PO Approvers (select users who can approve)
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-            Only selected users can approve/reject POs.
+            PO Approvers
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {(users?.items ?? []).map((u) => {
@@ -271,7 +261,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                     alignItems: 'center',
                     gap: 5,
                     padding: '6px 10px',
-                    background: checked ? 'rgba(34,197,94,0.10)' : 'var(--bg)',
+                    background: checked ? 'var(--green3)' : 'var(--bg)',
                     border: `1px solid ${checked ? 'var(--green)' : 'var(--border)'}`,
                     borderRadius: 6,
                     cursor: isAdm ? 'default' : 'pointer',
@@ -304,9 +294,6 @@ function ApprovalConfigPage(): React.JSX.Element {
                   >
                     {roleLabel(u.role)}
                   </span>
-                  {isAdm ? (
-                    <span style={{ fontSize: 11, color: 'var(--green2)' }}>(always)</span>
-                  ) : null}
                 </label>
               );
             })}
@@ -321,9 +308,9 @@ function ApprovalConfigPage(): React.JSX.Element {
       <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>⏱ Op Entry date/time changes</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Op Entry Date/Time Changes</span>
             <div className="text3" style={{ fontSize: 11 }}>
-              Manager approves date/time corrections on Log Entry.
+              Manager approves date/time corrections on Op Entry.
             </div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -339,7 +326,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                 color: draft.opEntryEditApproval ? 'var(--green)' : 'var(--text3)',
               }}
             >
-              {draft.opEntryEditApproval ? 'ENABLED' : 'DISABLED'}
+              {draft.opEntryEditApproval ? 'On' : 'Off'}
             </span>
           </label>
         </div>
@@ -348,7 +335,7 @@ function ApprovalConfigPage(): React.JSX.Element {
       {/* Approval History */}
       <div className="panel" style={{ padding: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
-          📜 Recent Approval Activity
+          Recent Approval Activity
         </div>
         {(history?.items ?? []).length === 0 ? (
           <div className="text3" style={{ fontSize: 11, padding: 10 }}>
@@ -386,9 +373,6 @@ function ApprovalConfigPage(): React.JSX.Element {
         )}
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 {inr(draft.poManagerLimit)} ₹ — managers approve up to this amount; admins always have full approval rights.
-      </div>
     </div>
   );
 }

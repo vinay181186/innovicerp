@@ -7,6 +7,7 @@ import {
   type ListStoreTransactionsQuery,
   STORE_TXN_SOURCE_TYPES,
   STORE_TXN_TYPES,
+  type StockLedgerSummary,
   type StoreTransactionListItem,
   type StoreTxnSourceType,
   type StoreTxnType,
@@ -21,6 +22,7 @@ import {
 } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { fmtDate } from '@/lib/date';
 import { useStoreTransactionsList } from '../api';
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
@@ -28,23 +30,26 @@ import { TxnTypeBadge } from './txn-type-badge';
 
 const PAGE_SIZE = 50;
 
-function KpiTile({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number | string;
-  color?: string;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
-      <div className="mono fw-700" style={{ fontSize: 22, ...(color ? { color } : {}) }}>
-        {value}
-      </div>
-    </div>
-  );
+// One shared <StatStrip> (not loose cards). In / Out / Net only mean something
+// for ONE item — across items they would add kg, Nos and m together.
+function ledgerStats(sm: StockLedgerSummary): StatStripItem[] {
+  const items: StatStripItem[] = [
+    { key: 'movements', label: 'Movements', count: sm.txnCount, color: 'var(--cyan)' },
+  ];
+  if (sm.itemCount === 1) {
+    items.push(
+      { key: 'in', label: 'Total In', count: `+${sm.totalIn}`, color: 'var(--green2)' },
+      { key: 'out', label: 'Total Out', count: `-${sm.totalOut}`, color: 'var(--red2)' },
+      {
+        key: 'net',
+        label: 'Net',
+        count: `${sm.net >= 0 ? '+' : ''}${sm.net}`,
+        color: sm.net >= 0 ? 'var(--green2)' : 'var(--red2)',
+      },
+    );
+  }
+  items.push({ key: 'items', label: 'Items', count: sm.itemCount });
+  return items;
 }
 
 export function StockLedger(): React.JSX.Element {
@@ -91,7 +96,7 @@ export function StockLedger(): React.JSX.Element {
         id: 'item',
         accessorFn: (r) => r.itemCode ?? r.itemCodeText ?? '',
         cell: ({ row }) => (
-          <span style={{ fontWeight: 700, color: 'var(--purple)', fontSize: 12 }}>
+          <span className="mono fw-700" style={{ color: 'var(--text)', fontSize: 12 }}>
             {row.original.itemCode ?? row.original.itemCodeText ?? ''}
           </span>
         ),
@@ -196,22 +201,8 @@ export function StockLedger(): React.JSX.Element {
   return (
     <div>
       {data?.summary ? (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-          <KpiTile label="Movements" value={data.summary.txnCount} color="var(--cyan)" />
-          {/* In / Out / Net only mean something for ONE item — across items they
-              would add kg, Nos and m together. */}
-          {data.summary.itemCount === 1 ? (
-            <>
-              <KpiTile label="Total In" value={`+${data.summary.totalIn}`} color="var(--green)" />
-              <KpiTile label="Total Out" value={`-${data.summary.totalOut}`} color="var(--red)" />
-              <KpiTile
-                label="Net"
-                value={`${data.summary.net >= 0 ? '+' : ''}${data.summary.net}`}
-                color={data.summary.net >= 0 ? 'var(--green)' : 'var(--red)'}
-              />
-            </>
-          ) : null}
-          <KpiTile label="Items" value={data.summary.itemCount} />
+        <div style={{ marginBottom: 16 }}>
+          <StatStrip items={ledgerStats(data.summary)} />
         </div>
       ) : null}
 
@@ -349,7 +340,7 @@ export function StockLedger(): React.JSX.Element {
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading store transactions…
+                    Loading stock movements…
                   </td>
                 </tr>
               ) : isError ? (
@@ -358,14 +349,16 @@ export function StockLedger(): React.JSX.Element {
                     <span style={{ color: 'var(--red2)' }}>
                       {error instanceof Error
                         ? error.message
-                        : 'Could not load store transactions. Try again.'}
+                        : 'Could not load stock movements. Try again.'}
                     </span>
                   </td>
                 </tr>
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    No stock movements found.
+                    {search || txnType || sourceType
+                      ? 'No stock movements match.'
+                      : 'No stock movements yet.'}
                   </td>
                 </tr>
               ) : (
@@ -396,7 +389,7 @@ export function StockLedger(): React.JSX.Element {
       >
         <span>
           {total === 0
-            ? 'No store transactions'
+            ? 'No stock movements'
             : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

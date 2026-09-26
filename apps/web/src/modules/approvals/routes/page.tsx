@@ -4,7 +4,7 @@
 // rules (which approvals are on, who may approve, the PO limit). This screen
 // holds the queue.
 //
-// Only Log Entry approvals queue here: PO and PR approvals live on their own
+// Only Op Entry approvals queue here: PO and PR approvals live on their own
 // detail screens, so the old always-disabled PO / PR tabs were removed.
 
 import { createRoute } from '@tanstack/react-router';
@@ -27,11 +27,10 @@ function ApprovalsPage(): React.JSX.Element {
   if (!canApprove) {
     return (
       <div>
-        <div className="section-hdr">✅ Log Entry Approvals</div>
+        <div className="section-hdr">Op Entry Approvals</div>
         <div className="panel">
           <div className="empty-state">
-            Approving is limited to managers and admins. Your changes are sent here for one of them
-            to decide.
+            You do not have permission to approve Op Entry changes. Ask an admin.
           </div>
         </div>
       </div>
@@ -41,7 +40,7 @@ function ApprovalsPage(): React.JSX.Element {
   return (
     <div>
       <div className="section-hdr">
-        ✅ Log Entry Approvals
+        Op Entry Approvals
         {pendingLogEntry ? (
           <span className="badge b-amber" style={{ marginLeft: 6 }}>
             {pendingLogEntry}

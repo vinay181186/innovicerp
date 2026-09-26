@@ -53,7 +53,7 @@ function PurchaseOrderCreatePage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
-          ⛔ Data entry access required to create a purchase order.
+          You do not have permission to create POs. Ask an admin.
         </div>
       </div>
     );

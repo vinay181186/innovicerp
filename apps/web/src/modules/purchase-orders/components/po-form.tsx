@@ -38,7 +38,7 @@ import { Check, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
-import { addDaysLocal, daysBetweenLocal, todayLocal } from '@/lib/date';
+import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useDocNumber } from '@/lib/use-doc-number';
@@ -49,7 +49,7 @@ import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
-import { PO_TYPE_LABELS, poStatusLabel } from '../lib/po-labels';
+import { PO_TYPE_LABELS } from '../lib/po-labels';
 import { PoFormLine, type PoItemMasterRow } from './po-form-line';
 import {
   NEW_PO_LINE,
@@ -113,7 +113,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         : {
             header: {
               code: '',
-              poDate: todayLocal(),
+              poDate: todayIst(),
               poType: 'job_work',
               sgstPct: 0,
               cgstPct: 0,
@@ -580,13 +580,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         );
       }
     } catch (err) {
-      setSubmitError(
-        err instanceof Error
-          ? err.message
-          : isEdit
-            ? 'Could not save PO. Try again.'
-            : 'Could not save PO. Try again.',
-      );
+      setSubmitError(err instanceof Error ? err.message : 'Could not save PO. Try again.');
     }
   };
 
@@ -780,27 +774,11 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             />
           </FormField>
 
-          {/* Status is read-only: it moves through Approve / Reject / Cancel and
-              the GRN cascade, never a plain edit. Absent on create — a new PO's
-              status is stamped by the server. */}
-          {props.mode === 'edit' ? (
-            <FormField label="PO Status" size="sm" htmlFor="pof-status">
-              <input
-                id="pof-status"
-                className="innovic-input is-derived"
-                readOnly
-                title="Status changes via Approve / Reject / Cancel, not a plain edit"
-                value={poStatusLabel(props.detail.status)}
-              />
-            </FormField>
-          ) : null}
-
           <FormField label="PO Remarks" size="full" htmlFor="pof-remarks">
             <input
               id="pof-remarks"
               className="innovic-input"
               autoComplete="off"
-              placeholder="Notes for this purchase order"
               {...register('header.remarks')}
             />
           </FormField>

@@ -20,7 +20,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import {
   useDeliveryChallan,
@@ -66,8 +66,8 @@ function lineQtyError(raw: string, balance: number): string | null {
   if (t === '') return null; // blank = 0 = skipped on submit
   const n = Number(t);
   if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Whole number only.';
-  if (n < 0) return 'Min 0.';
-  if (n > balance) return `Cannot receive more than Pending (${balance}).`;
+  if (n < 0) return 'Receive Now cannot be less than 0.';
+  if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
   return null;
 }
 
@@ -88,7 +88,7 @@ export function GrnAgainstDcForm({
   // so the picker's own text resets then — and never when a DC pick auto-fills
   // the JWPO, which must not wipe the challan just picked.
   const [dcPickerKey, setDcPickerKey] = useState(0);
-  const [receiptDate, setReceiptDate] = useState(todayLocal());
+  const [receiptDate, setReceiptDate] = useState(todayIst());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
@@ -232,11 +232,11 @@ export function GrnAgainstDcForm({
     setFormError(null);
     setSubmitError(null);
     if (!jwpoId) {
-      setFormError('Pick a JW PO.');
+      setFormError('JW PO is required.');
       return;
     }
     if (!dc) {
-      setFormError('Pick a delivery challan.');
+      setFormError('DC No. is required.');
       return;
     }
     if (!receiptDate) {
@@ -321,8 +321,19 @@ export function GrnAgainstDcForm({
 
       <Panel title="GRN Details">
         <FormGrid>
-          {/* Row 1 — GRN Type · JW PO · GRN Date (3 + 6 + 3). */}
+          {/* Row 1 — GRN Type · GRN Date · JW PO (3 + 3 + 6); GRN Date sits second
+              on all three GRN types. */}
           {typeField}
+          <FormField label="GRN Date" required size="sm" htmlFor="receiptDate">
+            <input
+              id="receiptDate"
+              type="date"
+              className="innovic-input"
+              value={receiptDate}
+              onChange={(e) => setReceiptDate(e.target.value)}
+              required
+            />
+          </FormField>
           <FormField label="JW PO" required size="lg" htmlFor="jwpoId">
             <SearchableSelect
               id="jwpoId"
@@ -333,17 +344,7 @@ export function GrnAgainstDcForm({
               loading={dcList.isFetching}
               placeholder="🔍 Type JW PO number or vendor…"
               valueLabel={jwpoValueLabel}
-              emptyText="No job-work POs have a challan awaiting receipt"
-            />
-          </FormField>
-          <FormField label="GRN Date" required size="sm" htmlFor="receiptDate">
-            <input
-              id="receiptDate"
-              type="date"
-              className="innovic-input"
-              value={receiptDate}
-              onChange={(e) => setReceiptDate(e.target.value)}
-              required
+              emptyText="No JW PO has a challan awaiting receipt."
             />
           </FormField>
 
@@ -361,12 +362,12 @@ export function GrnAgainstDcForm({
               options={dcOptions}
               onSearch={setDcSearch}
               loading={dcList.isFetching}
-              placeholder={jwpoId ? '🔍 Pick a challan…' : '🔍 Pick a challan (or a JW PO first)…'}
+              placeholder={jwpoId ? '🔍 Pick a DC…' : '🔍 Pick a DC (or a JW PO first)…'}
               valueLabel={dcValueLabel}
               emptyText={
                 jwpoId
-                  ? 'No challan on this JW PO is awaiting receipt'
-                  : 'No OSP challan is awaiting receipt'
+                  ? 'No challan on this JW PO is awaiting receipt.'
+                  : 'No JW PO has a challan awaiting receipt.'
               }
             />
           </FormField>
@@ -421,12 +422,12 @@ export function GrnAgainstDcForm({
           qtyLabel="Sent Qty"
           emptyText={
             !jwpoId && !dcId
-              ? 'Pick a delivery challan (or a JW PO, then one of its challans) to load the lines still out.'
+              ? 'Pick a DC (or a JW PO, then one of its DCs) to load its lines.'
               : !dcId
-                ? 'Pick a delivery challan to load its lines.'
+                ? 'Pick a DC to load its lines.'
                 : !dc
                   ? 'Loading challan lines…'
-                  : 'Every line on this challan is already received — nothing pending to receive.'
+                  : 'Every line on this DC is already received.'
           }
           onReceiveNow={(idx, v) => {
             const l = lines[idx];

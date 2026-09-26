@@ -71,7 +71,7 @@ export function UnifiedGrnForm({
   // A `?poId=` preselect is always a buying PO, so the type starts (and stays
   // unless the user changes it) on Against PO.
   const [inwardType, setInwardType] = useState<GrnInwardType>('purchase');
-  // What the active type form last reported: drives the header's Create
+  // What the active type form last reported: drives the header's Save
   // button (disabled while saving / blocked) and the "Not saved" pill.
   const [status, setStatus] = useState<GrnFormStatus>(IDLE);
   // ONE exit guard for the whole inward screen, every type. Where Cancel goes
@@ -143,7 +143,6 @@ export function UnifiedGrnForm({
       {exit.dialog}
       <PageHeader
         sticky
-        icon="📥"
         title="New GRN"
         backLabel="Back to GRN list"
         onBack={goBack}
@@ -164,7 +163,7 @@ export function UnifiedGrnForm({
                   <Loader2 size={13} className="animate-spin" /> Saving…
                 </>
               ) : (
-                'Create GRN'
+                'Save GRN'
               )}
             </button>
           </>

@@ -66,8 +66,8 @@ const LIST_LIMIT = 200;
 // Where the List / Card choice is remembered (per browser).
 const VIEW_STORAGE_KEY = 'po-list-view';
 
-/** One cell of the card's metric strip — big mono number over a tiny uppercase
- *  label, mirroring the SO/WO list (TOTAL QTY / RECEIVED / PENDING / LINES). */
+/** One cell of the card's metric strip — big mono number over a small label,
+ *  mirroring the SO/WO list (Qty / Received / Pending / Lines). */
 function QtyBox({
   label,
   value,
@@ -99,8 +99,6 @@ function QtyBox({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -195,7 +193,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view POs. Ask an admin.
       </div>
     );
   }
@@ -249,7 +247,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               }}
               style={{ width: 140, fontSize: 12 }}
             >
-              <option value="">All statuses</option>
+              <option value="">All Statuses</option>
               {PO_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {PO_STATUS_LABELS[s]}
@@ -268,7 +266,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               }}
               style={{ width: 140, fontSize: 12 }}
             >
-              <option value="">All types</option>
+              <option value="">All Types</option>
               {PO_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {PO_TYPE_LABELS[t]}
@@ -324,7 +322,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       ) : rows.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 20 }}>
-            No purchase orders yet
+            {search.search || search.status || search.poType ? 'No POs match.' : 'No POs yet.'}
           </div>
         </div>
       ) : view === 'list' ? (
@@ -344,7 +342,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             po.status === 'closed'
               ? 'var(--green)'
               : po.status === 'cancelled'
-                ? 'var(--red)'
+                ? 'var(--text3)'
                 : 'var(--blue)';
           return (
             <div
@@ -352,7 +350,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               className="panel"
               style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
             >
-              {/* Accent bar — green closed, red cancelled, blue otherwise. */}
+              {/* Accent bar — green closed, grey cancelled, blue otherwise. */}
               <div style={{ width: 4, flexShrink: 0, background: accent }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 {/* Band 1: identity + type + status + actions */}
@@ -380,7 +378,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                     {po.code}
                   </Link>
                   <span className={`badge ${isJW ? 'b-amber' : isSvc ? 'b-teal' : 'b-blue'}`}>
-                    {isJW ? 'JW' : isSvc ? 'SVC' : 'MAT'}
+                    {PO_TYPE_LABELS[po.poType]}
                   </span>
                   <span className="fw-700" style={{ fontSize: 13 }}>
                     {po.vendorName ?? po.vendorCodeText ?? '—'}
@@ -391,15 +389,6 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                     style={{ display: 'flex', gap: 4, alignItems: 'center' }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Link
-                      to="/purchase-orders/$id"
-                      params={{ id: po.id }}
-                      className="btn btn-ghost btn-sm"
-                      style={{ fontSize: 11 }}
-                      title="View"
-                    >
-                      👁 View
-                    </Link>
                     {canEdit && po.status !== 'closed' ? (
                       <Link
                         to="/purchase-orders/$id/edit"
@@ -418,7 +407,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                         className="btn btn-ghost btn-sm"
                         style={{ fontSize: 11 }}
                       >
-                        📦 Create DC
+                        Create DC
                       </Link>
                     ) : null}
                     {po.status !== 'closed' && po.status !== 'cancelled' ? (
@@ -452,7 +441,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   <div
                     style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
                   >
-                    <QtyBox label="Total Qty" value={po.totalQty} />
+                    <QtyBox label="Qty" value={po.totalQty} />
                     <QtyBox
                       label="Received"
                       value={po.receivedQty}
@@ -462,7 +451,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                     <QtyBox
                       label="Pending"
                       value={pending}
-                      color={pending > 0 ? 'var(--red)' : 'var(--green)'}
+                      color={pending > 0 ? 'var(--blue)' : 'var(--green)'}
                       bordered
                     />
                     <QtyBox label="Lines" value={po.lineCount} bordered />
@@ -506,10 +495,10 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       >
         <span>
           {total === 0
-            ? 'No purchase orders'
+            ? ''
             : total > LIST_LIMIT
-              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : `Showing all ${total} purchase order${total === 1 ? '' : 's'}`}
+              ? `Showing first ${LIST_LIMIT} of ${total}. Search to narrow the list.`
+              : `${total} PO${total === 1 ? '' : 's'}`}
         </span>
       </div>
     </div>

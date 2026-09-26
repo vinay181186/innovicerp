@@ -22,10 +22,11 @@
 
 import { type PurchaseRequestDetail, opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, FileText, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
+import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
@@ -39,7 +40,7 @@ import {
 import { CloseBalanceModal } from '../components/close-balance-modal';
 import { PrStatusBadge } from '../components/pr-status-badge';
 import { prBalanceClosedText, prBalanceColor, prOrderBalance } from '../lib/pr-balance';
-import { PR_STATUS_LABELS, PR_TYPE_LABELS } from '../lib/pr-labels';
+import { PR_TYPE_LABELS } from '../lib/pr-labels';
 
 export const purchaseRequestDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -88,7 +89,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Purchase request not found'}
+            {error instanceof Error ? error.message : 'PR not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -102,17 +103,16 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Purchase Requests. Ask an admin.
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(detail.id, {
-      onSuccess: () => {
-        void navigate({ to: '/purchase-requests', replace: true });
-      },
-    });
+  // Returns the promise so the ConfirmDialog shows its pending state and keeps
+  // a failure inside the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(detail.id);
+    void navigate({ to: '/purchase-requests', replace: true });
   };
 
   // Tier-driven, per department (Purchase). Raising the PO off this PR is an
@@ -258,41 +258,15 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
           </div>
         </div>
         {canDelete && confirmDelete && !linkedToPo ? (
-          <div
-            style={{
-              display: 'flex',
-              gap: 6,
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              flexWrap: 'wrap',
-              margin: '10px 14px 0',
-            }}
-          >
-            <span className="text3" style={{ fontSize: 12 }}>
-              Move PR {detail.code} to Trash? You can restore it from Trash.
-            </span>
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={onDelete}
-              disabled={softDelete.isPending}
-            >
-              {softDelete.isPending ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Trash2 size={13} />
-              )}
-              Move to Trash
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setConfirmDelete(false)}
-              disabled={softDelete.isPending}
-            >
-              Cancel
-            </button>
-          </div>
+          <ConfirmDialog
+            title={`Move PR ${detail.code} to Trash?`}
+            message="You can restore it from Trash."
+            confirmLabel="Move to Trash"
+            pendingLabel="Moving…"
+            tone="danger"
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={onDelete}
+          />
         ) : null}
         {assignOpen ? (
           <AssignTaskModal
@@ -341,7 +315,11 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             <Fact
               label="Item Code"
               title={itemCode}
-              value={<span className="mono">{itemCode}</span>}
+              value={
+                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                  {itemCode}
+                </span>
+              }
             />
             <Fact label="Item Name" title={detail.itemName ?? '—'} value={detail.itemName ?? '—'} />
             <Fact
@@ -474,7 +452,7 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
       <div style={STRIP}>
         <Fact label="PR Qty" value={<span className="mono">{String(detail.qty)}</span>} />
         <Fact
-          label="On PO Qty"
+          label="On PO"
           title="On live purchase orders (cancelled POs not counted)"
           value={<span className="mono">{String(bal.ordered)}</span>}
         />
@@ -504,7 +482,7 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
         {priceHidden ? null : (
           <>
             <Fact
-              label="Est. Rate (₹/pc)"
+              label="Est. Rate (₹)"
               value={<span className="mono">{estCostNum > 0 ? inr(estCostNum) : '—'}</span>}
             />
             <Fact
@@ -520,7 +498,6 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
         <Fact label="Operation" value={detail.operation ?? '—'} />
         <Fact label="PR Type" value={detail.prType ? PR_TYPE_LABELS[detail.prType] : '—'} />
         <Fact label="PO No." value={<span className="mono">{detail.poCode ?? '—'}</span>} />
-        <Fact label="PR Status" value={PR_STATUS_LABELS[detail.status]} />
         <Fact
           label="Approved At"
           value={<span className="mono">{fmtDateTime(detail.approvedAt)}</span>}

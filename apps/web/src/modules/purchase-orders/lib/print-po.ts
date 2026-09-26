@@ -21,6 +21,7 @@ import type {
 } from '@innovic/shared';
 import { COMPANY_CARD_ADDRESS_LINES, buildDocCompany } from '@/lib/print/company';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
+import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import {
   type SheetField,
@@ -123,7 +124,7 @@ export function printPurchaseOrder(args: {
     companyGSTIN: company?.gstNumber ?? '',
     companyPhone: company?.phone ?? '',
     companyEmail: company?.email ?? '',
-    date: fmtDate(new Date().toISOString()),
+    date: fmtDate(todayIst()),
     currentUser: args.currentUser ?? '',
     poNo: po.code,
     poDate: fmtDate(po.poDate),
@@ -195,6 +196,8 @@ export function printPurchaseOrder(args: {
     title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
+    // "Our Contact Person" already names who raised it.
+    hidePreparedBy: true,
     blocks: templatesToBlocks(doc, templates),
     data,
     // Letterhead address comes from the business card rather than the

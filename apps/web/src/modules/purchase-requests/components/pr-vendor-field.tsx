@@ -52,8 +52,7 @@ export function PrVendorField({
       <input
         type="hidden"
         {...register('vendorId', {
-          validate: (v) =>
-            Boolean(v) || Boolean(carriedVendorText) || 'Pick a vendor from the master',
+          validate: (v) => Boolean(v) || Boolean(carriedVendorText) || 'Vendor is required.',
         })}
       />
     </VendorPicker>

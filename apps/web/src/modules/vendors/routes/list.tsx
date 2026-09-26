@@ -204,7 +204,7 @@ function VendorsListPage(): React.JSX.Element {
     () => [
       { header: 'Sr No', width: '4%', className: 'text3', render: (_v, i) => i + 1 },
       {
-        header: 'Code',
+        header: 'Vendor Code',
         width: '8%',
         nowrap: true,
         // A real link, so the code can be ctrl/middle-clicked into a new tab.
@@ -288,10 +288,8 @@ function VendorsListPage(): React.JSX.Element {
           StatStrip stay put while the rows scroll underneath. */}
       <ListHeader
         title="Vendor Master"
-        icon="🏭"
         count={total}
         noun="vendor"
-        filterNote={search.status}
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
@@ -352,18 +350,13 @@ function VendorsListPage(): React.JSX.Element {
             columns={columns}
             rows={visibleRows}
             loading={isLoading}
-            emptyText={
-              search.status
-                ? `No ${search.status} vendors`
-                : 'No vendors. Add vendors to create Purchase Orders.'
-            }
+            emptyText={search.status || search.search ? 'No vendors match.' : 'No vendors yet.'}
             onRowClick={(v) => void navigate({ to: '/vendors/$id', params: { id: v.id } })}
             rowActionsWidth="11%"
             rowActions={(v) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/vendors/${v.id}`}
+                // Row click opens the vendor (no separate View). Edit is a
+                // ROUTE, so it stays a real link — ctrl/middle-click work.
                 editTo={canEdit ? `/vendors/${v.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed. The confirm
@@ -377,8 +370,8 @@ function VendorsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move vendor ${v.name} to Trash?`,
-                  message: `${v.code} — ${v.name} stops appearing in the Vendor Master and in every vendor picker.`,
+                  title: `Move Vendor ${v.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}

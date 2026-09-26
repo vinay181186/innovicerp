@@ -41,12 +41,13 @@ import {
   type PurchaseRequestListItem,
   opSrNo,
 } from '@innovic/shared';
+import { useIsFetching, useQueryClient } from '@tanstack/react-query';
 import { Loader2, X } from 'lucide-react';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useEffect, useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useCreatePurchaseOrderFromPrBatch } from '@/modules/purchase-orders/api';
@@ -59,7 +60,7 @@ import {
   prOrderBalance,
 } from '@/modules/purchase-requests/lib/pr-balance';
 import { PR_STATUS_LABELS } from '@/modules/purchase-requests/lib/pr-labels';
-import { useVendorsList } from '@/modules/vendors/api';
+import { VendorPicker } from '@/components/shared/vendor-picker';
 
 const PAGE_SIZE = 100;
 
@@ -70,7 +71,7 @@ function inr(n: number): string {
 function statusColor(s: string): string {
   if (s === 'po_created') return 'var(--green)';
   if (s === 'approved') return 'var(--blue)';
-  if (s === 'open') return 'var(--amber)';
+  if (s === 'open') return 'var(--blue)';
   return 'var(--text3)';
 }
 
@@ -122,26 +123,36 @@ export function OutsourceJobsView(): React.JSX.Element {
   );
 
   const { data, isLoading, isError, error } = usePurchaseRequestsList(query);
-  const { data: vendorsList } = useVendorsList({ limit: 200, offset: 0 }, { enabled: canEdit });
   const createBatchMut = useCreatePurchaseOrderFromPrBatch();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
   const [vendorId, setVendorId] = useState('');
-  const [poDate, setPoDate] = useState<string>(() => todayLocal());
+  // Label for the picker's first paint, so the vendor suggested from the first
+  // selected PR reads "CODE — Name" before the picker's search page loads.
+  const [vendorLabel, setVendorLabel] = useState('');
+  // IST "today" (todayLocal read the browser clock's own zone).
+  const [poDate, setPoDate] = useState<string>(() => todayIst());
   const [poCode, setPoCode] = useState('');
   // Every PO this screen raises is a JOB WORK po, so the number comes from the
   // IN-JWPO- series (2026-09-11). The box used to be blank with the series only
   // hinted in grey placeholder text, which left the buyer to type the whole
   // number — and nothing stopped them typing one from another series.
   const jwpoNumber = useDocNumber('purchase_order', poCode, 'job_work');
-  // Suggest it ONCE, into an empty box. Whatever the buyer types afterwards is
-  // theirs; this never overwrites it. (The modal opens and closes without
-  // unmounting, so the guard is the empty box, not a mount effect.)
+  // The next IN-JWPO- code is prefilled into the empty box; the buyer may edit
+  // it (the batch endpoint needs a code). The suggestion is re-fetched when the
+  // popup opens and after each save, and the box is cleared after a save, so
+  // the next PO picks up a fresh number — never one already used.
+  const queryClient = useQueryClient();
+  const nextPoKey = ['doc-number', 'purchase_order', 'job_work', '__next__'];
+  const nextPoFetching = useIsFetching({ queryKey: nextPoKey }) > 0;
+  const refreshNextPoNo = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['doc-number', 'purchase_order'] });
+  };
   const suggested = jwpoNumber.nextCode;
   useEffect(() => {
-    if (modalOpen && suggested && poCode === '') setPoCode(suggested);
-  }, [modalOpen, suggested, poCode]);
+    if (modalOpen && suggested && !nextPoFetching && poCode === '') setPoCode(suggested);
+  }, [modalOpen, suggested, nextPoFetching, poCode]);
   const [rateOverrides, setRateOverrides] = useState<Record<string, number>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Legacy `searchBox('ospSearch','ospTable',…)` (L27104) filters the rendered
@@ -240,21 +251,29 @@ export function OutsourceJobsView(): React.JSX.Element {
     const selected = selectablePrs.filter((pr) => selectedIds.has(pr.id));
     // Suggest vendor from first selected PR
     setVendorId(selected[0]?.vendorId ?? '');
+    setVendorLabel(
+      selected[0]?.vendorId
+        ? (selected[0].vendorCodeText ?? '') +
+            (selected[0].vendorName ? ` — ${selected[0].vendorName}` : '')
+        : '',
+    );
     // Seed rate overrides with each PR's estCost
     const overrides: Record<string, number> = {};
     for (const pr of selected) overrides[pr.id] = Number(pr.estCost) || 0;
     setRateOverrides(overrides);
+    setPoCode('');
+    refreshNextPoNo();
     setModalOpen(true);
   }
 
   async function submitBatch(): Promise<void> {
     setSubmitError(null);
     if (!vendorId) {
-      setSubmitError('Vendor is required');
+      setSubmitError('Vendor is required.');
       return;
     }
     if (!poCode.trim()) {
-      setSubmitError('PO No. is required');
+      setSubmitError('PO No. is required.');
       return;
     }
     try {
@@ -274,6 +293,7 @@ export function OutsourceJobsView(): React.JSX.Element {
       setModalOpen(false);
       setSelectedIds(new Set());
       setPoCode('');
+      refreshNextPoNo();
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save PO. Try again.');
     }
@@ -299,7 +319,7 @@ export function OutsourceJobsView(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📦 Outsource Jobs (OSP)
+          Outsource Jobs
         </div>
         {canEdit && selectedIds.size > 0 ? (
           <button
@@ -330,7 +350,7 @@ export function OutsourceJobsView(): React.JSX.Element {
               key: 'open',
               label: 'Open',
               count: openPR,
-              color: 'var(--amber2)',
+              color: 'var(--blue)',
               active: statusBand === 'open',
               onClick: () => setStatusBand((prev) => (prev === 'open' ? undefined : 'open')),
             },
@@ -361,7 +381,7 @@ export function OutsourceJobsView(): React.JSX.Element {
           className="innovic-input"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          placeholder="🔍 Search PR no, JC, item, process, vendor, qty, due, status…"
+          placeholder="🔍 Search PR No., JC, item, process, vendor, qty, due, status…"
           style={{ width: 220, fontSize: 12 }}
         />
         <select
@@ -399,7 +419,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                 <th style={{ color: 'var(--purple)' }}>Process</th>
                 <th>Qty</th>
                 <th>Suggested Vendor</th>
-                <th style={{ color: 'var(--green2)' }}>Est. Rate (₹/pc)</th>
+                <th style={{ color: 'var(--green2)' }}>Est. Rate (₹)</th>
                 <th>Due Date</th>
                 <th>PR Status</th>
               </tr>
@@ -422,7 +442,9 @@ export function OutsourceJobsView(): React.JSX.Element {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="empty-state">
-                    No OSP requests. Create Full Outsource plans in SO/JW Planning.
+                    {searchText || soNo || statusBand
+                      ? 'No Outsource Jobs match.'
+                      : 'No Outsource Jobs yet.'}
                   </td>
                 </tr>
               ) : (
@@ -477,7 +499,7 @@ export function OutsourceJobsView(): React.JSX.Element {
               }}
             >
               <div className="fw-700" style={{ color: 'var(--purple)' }}>
-                🛒 Create JW PO from {selectedIds.size} OSP PR(s)
+                Create JW PO
               </div>
               <button
                 type="button"
@@ -498,41 +520,41 @@ export function OutsourceJobsView(): React.JSX.Element {
                   color: 'var(--text3)',
                 }}
               >
-                Creating PO for <b>{selectedIds.size} line(s)</b> · Qty to Order:{' '}
+                Creating PO for{' '}
+                <b>
+                  {selectedIds.size} line{selectedIds.size === 1 ? '' : 's'}
+                </b>{' '}
+                · Qty to Order:
                 <b>{totalSelectedQty}</b> · Est. value:{' '}
                 <b style={{ color: 'var(--green2)' }}>₹{inr(totalSelectedValue)}</b>
               </div>
               <div className="form-grid-3">
                 <div className="form-grp">
-                  <label className="form-label">
-                    PO No. <span className="req">★</span>
+                  <label className="form-label" htmlFor="osp-po-code">
+                    PO No.<span className="req">★</span>
                   </label>
                   <input
+                    id="osp-po-code"
                     className="innovic-input"
+                    autoComplete="off"
                     value={poCode}
                     onChange={(e) => setPoCode(e.target.value)}
-                    placeholder="IN-JWPO-00001/R1"
+                    placeholder={
+                      jwpoNumber.defaultLoading || nextPoFetching ? 'Loading…' : 'IN-JWPO-00001/R1'
+                    }
                   />
+                  {jwpoNumber.error ? <div className="form-error">{jwpoNumber.error}</div> : null}
                 </div>
+                <VendorPicker
+                  id="osp-po-vendor"
+                  value={vendorId || null}
+                  initialLabel={vendorLabel}
+                  onChange={(id) => setVendorId(id ?? '')}
+                />
                 <div className="form-grp">
-                  <label className="form-label" style={{ color: 'var(--purple)' }}>
-                    Vendor <span className="req">★</span>
+                  <label className="form-label">
+                    PO Date <span className="req">★</span>
                   </label>
-                  <select
-                    className="innovic-select"
-                    value={vendorId}
-                    onChange={(e) => setVendorId(e.target.value)}
-                  >
-                    <option value="">— Select vendor —</option>
-                    {(vendorsList?.vendors ?? []).map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.code} — {v.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">PO Date</label>
                   <input
                     type="date"
                     className="innovic-input"
@@ -542,9 +564,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                 </div>
               </div>
 
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)' }}>
-                PO Lines (rate is editable per line)
-              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)' }}>PO Lines</div>
               <div
                 style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}
               >
@@ -576,8 +596,10 @@ export function OutsourceJobsView(): React.JSX.Element {
                             {/* CODE/REV — the drawing revision off the SO line
                                 behind this request; blank-free bare code when
                                 the request has no SO behind it. */}
-                            {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)} —{' '}
-                            {pr.itemName ?? '—'}
+                            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                              {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)}
+                            </span>{' '}
+                            — {pr.itemName ?? '—'}
                           </td>
                           <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                             {pr.operation ?? '—'}
@@ -652,7 +674,7 @@ export function OutsourceJobsView(): React.JSX.Element {
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  disabled={createBatchMut.isPending}
+                  disabled={createBatchMut.isPending || !poCode.trim()}
                   onClick={() => void submitBatch()}
                 >
                   {createBatchMut.isPending ? (
@@ -701,12 +723,14 @@ function OspRow({
       </td>
       <td className="mono" style={{ color: 'var(--cyan)', fontSize: 11 }}>
         {pr.sourceJcCode
-          ? `${pr.sourceJcCode}${pr.sourceJcOpSeq ? ' op' + opSrNo(pr.sourceJcOpSeq) : ''}`
+          ? `${pr.sourceJcCode}${pr.sourceJcOpSeq ? ` · Op ${opSrNo(pr.sourceJcOpSeq)}` : ''}`
           : '—'}
       </td>
       <td style={{ fontSize: 11 }}>
         {/* CODE/REV — same rule as the review table above. */}
-        {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)}{' '}
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)}
+        </span>{' '}
         <span className="text3">{pr.itemName ?? ''}</span>
       </td>
       <td style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
@@ -714,7 +738,7 @@ function OspRow({
       </td>
       <td className="mono fw-700">{pr.qty}</td>
       <td style={{ fontSize: 11 }}>
-        {pr.vendorName ?? <span style={{ color: 'var(--amber2)' }}>TBD</span>}
+        {pr.vendorName ?? <span className="text3">—</span>}
         {pr.vendorCodeText && pr.vendorCodeText !== pr.vendorName ? (
           <span style={{ color: 'var(--text3)', fontSize: 11 }}> [{pr.vendorCodeText}]</span>
         ) : null}

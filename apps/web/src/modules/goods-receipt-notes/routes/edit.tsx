@@ -59,8 +59,7 @@ function GoodsReceiptNoteNewPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have create access to GRN. Ask an admin for L2 Data Entry or above in
-            Store.
+            You do not have permission to create GRNs. Ask an admin.
           </div>
         </div>
       </div>
@@ -132,7 +131,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have edit access to GRN. Ask an admin for L3 Editor or above in Store.
+            You do not have permission to edit GRNs. Ask an admin.
           </div>
         </div>
       </div>
@@ -149,7 +148,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'GRN not found'}
+            {error instanceof Error ? error.message : 'GRN not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -161,7 +160,6 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
       {exit.dialog}
       <PageHeader
         sticky
-        icon="📥"
         title="Edit GRN"
         subtitle={<span className="td-code">{detail.code}</span>}
         backLabel="Back to GRN"

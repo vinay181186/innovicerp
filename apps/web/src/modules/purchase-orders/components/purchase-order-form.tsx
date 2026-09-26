@@ -6,7 +6,7 @@ import {
   type PurchaseOrderDetail,
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
@@ -28,7 +28,7 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   // today in UTC, so between 00:00 and 05:29 IST it defaults the PO to YESTERDAY.
   // Legacy `today()` L1485-87 builds the string from LOCAL date components and is
   // correct; this is a port regression.
-  poDate: todayLocal(),
+  poDate: todayIst(),
   poType: 'standard',
   status: 'draft',
   sgstPct: 0,

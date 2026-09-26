@@ -73,8 +73,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have create access to Purchase Requests. Ask an admin for L2 Data Entry or
-            above in Purchase.
+            You do not have permission to create a PR. Ask an admin.
           </div>
         </div>
       </div>
@@ -86,8 +85,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
       {exit.dialog}
       <PurchaseRequestForm
         mode="create"
-        title="📝 New Purchase Request"
-        subtitle="Procurement intent — pick a vendor + item, set qty + cost."
+        title="New Purchase Request"
         backLabel="Back to Purchase Requests"
         onBack={goBack}
         onSubmit={onSubmit}
@@ -146,8 +144,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have edit access to Purchase Requests. Ask an admin for L3 Editor or above
-            in Purchase.
+            You do not have permission to edit a PR. Ask an admin.
           </div>
         </div>
       </div>
@@ -164,7 +161,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Purchase request not found'}
+            {error instanceof Error ? error.message : 'PR not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -182,7 +179,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            This purchase request is linked to a PO and can no longer be edited.
+            This PR is on a PO and can no longer be edited.
             {detail.poId ? (
               <>
                 {' '}

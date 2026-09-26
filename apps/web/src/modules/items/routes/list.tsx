@@ -290,7 +290,7 @@ function ItemsListPage(): React.JSX.Element {
             code={it.code}
             name={it.name}
             imagePath={it.imagePath}
-            codeColor="var(--purple)"
+            codeColor="var(--text)"
             nameMaxWidth="none"
             renderCode={(text) => (
               // A real link, so the code can be ctrl/middle-clicked into a new
@@ -299,8 +299,8 @@ function ItemsListPage(): React.JSX.Element {
               <Link
                 to="/items/$id"
                 params={{ id: it.id }}
-                className="td-code"
-                style={{ color: 'var(--purple)', textDecoration: 'none' }}
+                className="td-code fw-700"
+                style={{ color: 'var(--text)', textDecoration: 'none' }}
                 onClick={(e) => e.stopPropagation()}
               >
                 {text}
@@ -365,7 +365,6 @@ function ItemsListPage(): React.JSX.Element {
         icon="◉"
         count={total}
         noun="item"
-        filterNote={search.itemType}
         search={searchInput}
         onSearch={setSearchInput}
         updating={isFetching && !isLoading}
@@ -449,14 +448,17 @@ function ItemsListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No items"
+            emptyText={
+              search.search || search.itemType || search.procurementType
+                ? 'No items match.'
+                : 'No items yet.'
+            }
             onRowClick={(it) => void navigate({ to: '/items/$id', params: { id: it.id } })}
             rowActionsWidth="11%"
             rowActions={(it) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/items/${it.id}`}
+                // Row click opens the item (no separate View). Edit is a
+                // ROUTE, so it stays a real link — ctrl/middle-click work.
                 editTo={canEdit ? `/items/${it.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed: the confirm
@@ -471,8 +473,8 @@ function ItemsListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Move item ${it.code} — ${it.name} to Trash?`,
-                  message: `${it.code} — ${it.name} stops appearing in Item Master and in every item picker.`,
+                  title: `Move Item ${it.code} to Trash?`,
+                  message: 'You can restore it from Trash.',
                   confirmLabel: 'Move to Trash',
                   pendingLabel: 'Moving to Trash…',
                 }}
@@ -598,9 +600,6 @@ function ImportResultBanner(props: {
                 >
                   ✕ Rows not imported ({failures.length})
                 </div>
-                <div className="text3" style={{ marginBottom: 'var(--sp-1)' }}>
-                  Not imported — fix and re-import:
-                </div>
                 {chips(failures)}
               </div>
             ) : null}
@@ -635,9 +634,6 @@ function ImportResultBanner(props: {
             </>
           }
         >
-          <div className="text3" style={{ marginBottom: 'var(--sp-1)' }}>
-            Already exist — skipped:
-          </div>
           {chips(duplicates)}
         </Banner>
       ) : null}

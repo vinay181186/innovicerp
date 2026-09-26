@@ -1,12 +1,12 @@
 // GRN QC status → legacy .badge .b-* class (UI-002).
-// pending=amber (needs QC) → in_progress=blue (active) → completed=green.
+// pending=amber (needs QC) → in_progress=amber (under way) → completed=green.
 
 import type { GrnQcStatus } from '@innovic/shared';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 const CLASSES: Record<GrnQcStatus, string> = {
   pending: 'b-amber',
-  in_progress: 'b-blue',
+  in_progress: 'b-amber',
   completed: 'b-green',
 };
 

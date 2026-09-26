@@ -15,7 +15,8 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
+import { fmtDate, todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useItemsList } from '../../items/api';
 import {
@@ -65,7 +66,7 @@ export function ToolIssueRegisterView({
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Tool Issues. Ask an admin.
       </div>
     );
   }
@@ -125,7 +126,8 @@ export function ToolIssueRegisterView({
                 <tr>
                   <th>Issue No.</th>
                   <th>Issue Date</th>
-                  <th>Item Code · Name</th>
+                  <th>Item Code</th>
+                  <th>Item Name</th>
                   <th className="td-ctr">Issue Qty</th>
                   <th>Issued To</th>
                   <th>Reference No.</th>
@@ -146,8 +148,10 @@ export function ToolIssueRegisterView({
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="empty-state">
-                      No tool issues — click + Issue Tool
+                    <td colSpan={13} className="empty-state">
+                      {search.trim() || filter !== 'all'
+                        ? 'No tool issues match.'
+                        : 'No tool issues yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -155,7 +159,7 @@ export function ToolIssueRegisterView({
                   <tr
                     key={ti.id}
                     style={{
-                      background: ti.isOverdue ? 'rgba(239,68,68,0.03)' : 'var(--bg)',
+                      background: ti.isOverdue ? 'var(--red3)' : 'var(--bg)',
                     }}
                   >
                     <td>
@@ -167,12 +171,11 @@ export function ToolIssueRegisterView({
                       {fmtDate(ti.issueDate)}
                     </td>
                     <td>
-                      <span style={{ color: 'var(--purple)', fontWeight: 600, fontSize: 11 }}>
+                      <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
                         {ti.itemCode ?? ti.itemCodeText ?? '—'}
                       </span>
-                      <br />
-                      <span style={{ fontSize: 11 }}>{ti.itemName}</span>
                     </td>
+                    <td style={{ fontSize: 12 }}>{ti.itemName}</td>
                     <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>
                       {ti.qty}
                     </td>
@@ -214,15 +217,9 @@ export function ToolIssueRegisterView({
                       {ti.returnStatus !== 'returned' && canReturn ? (
                         <button
                           type="button"
-                          className="btn btn-sm"
+                          className="btn btn-ghost btn-sm"
                           onClick={() => setReturnTarget(ti)}
-                          style={{
-                            background: 'rgba(20,184,166,0.08)',
-                            color: '#14b8a6',
-                            border: '1px solid rgba(20,184,166,0.3)',
-                            fontSize: 11,
-                            fontWeight: 700,
-                          }}
+                          style={{ fontSize: 11, fontWeight: 700 }}
                         >
                           ↩ Return
                         </button>
@@ -282,73 +279,24 @@ export function ToolIssueRegisterView({
   );
 }
 
+// Badge classes only (no hand-painted colours): Returned green; out with the
+// user (Issued / Partly Returned) amber; Overdue red.
 function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element {
   if (issue.returnStatus === 'returned') {
-    return (
-      <span
-        style={{
-          background: 'rgba(34,197,94,0.12)',
-          color: 'var(--green2)',
-          padding: '2px 8px',
-          borderRadius: 10,
-          fontSize: 11,
-          fontWeight: 700,
-        }}
-      >
-        Returned ✓
-      </span>
-    );
+    return <span className="badge b-green">Returned</span>;
   }
   if (issue.returnStatus === 'partial') {
     const out =
       issue.qty - (issue.returnGoodQty + issue.returnDamagedQty + issue.returnConsumedQty);
-    return (
-      <span
-        style={{
-          background: 'rgba(34,211,238,0.12)',
-          color: 'var(--cyan)',
-          padding: '2px 8px',
-          borderRadius: 10,
-          fontSize: 11,
-          fontWeight: 700,
-        }}
-      >
-        Partly Returned ({out} out)
-      </span>
-    );
+    return <span className="badge b-amber">Partly Returned ({out} out)</span>;
   }
   if (issue.isOverdue) {
-    return (
-      <span
-        style={{
-          background: 'rgba(239,68,68,0.12)',
-          color: 'var(--red2)',
-          padding: '2px 8px',
-          borderRadius: 10,
-          fontSize: 11,
-          fontWeight: 700,
-        }}
-      >
-        Overdue
-      </span>
-    );
+    return <span className="badge b-red">Overdue</span>;
   }
-  return (
-    <span
-      style={{
-        background: 'rgba(245,158,11,0.12)',
-        color: 'var(--amber2)',
-        padding: '2px 8px',
-        borderRadius: 10,
-        fontSize: 11,
-        fontWeight: 700,
-      }}
-    >
-      Issued
-    </span>
-  );
+  return <span className="badge b-amber">Issued</span>;
 }
 
+// One shared <StatStrip>. "All" first; Out amber (under way), Overdue red.
 function KpiStrip({
   summary,
   filter,
@@ -358,50 +306,30 @@ function KpiStrip({
   filter: FilterKey;
   setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
-  const tiles: Array<{ key: FilterKey; label: string; value: number; color: string }> = [
-    { key: 'all', label: 'Total', value: summary.total, color: 'var(--blue)' },
-    { key: 'out', label: 'Currently Out', value: summary.out, color: 'var(--red2)' },
-    { key: 'returned', label: 'Returned', value: summary.returned, color: 'var(--green2)' },
+  const tile = (key: FilterKey, label: string, count: number, color: string): StatStripItem => ({
+    key,
+    label,
+    count,
+    color,
+    active: filter === key,
+    onClick: () => setFilter(key === filter && key !== 'all' ? 'all' : key),
+  });
+  const items: StatStripItem[] = [
+    tile('all', 'All Tool Issues', summary.total, 'var(--cyan)'),
+    tile('out', 'Currently Out', summary.out, 'var(--amber2)'),
+    tile('returned', 'Returned', summary.returned, 'var(--green2)'),
   ];
   // Legacy only emits the Overdue card when the count is non-zero (L24016).
-  if (summary.overdue > 0) {
-    tiles.push({ key: 'overdue', label: 'Overdue', value: summary.overdue, color: 'var(--red2)' });
-  }
+  if (summary.overdue > 0) items.push(tile('overdue', 'Overdue', summary.overdue, 'var(--red2)'));
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-        gap: 10,
-        marginBottom: 16,
-      }}
-    >
-      {tiles.map((t) => (
-        <div
-          key={t.key}
-          onClick={() => setFilter(t.key === filter && t.key !== 'all' ? 'all' : t.key)}
-          style={{
-            cursor: 'pointer',
-            textAlign: 'center',
-            padding: 12,
-            borderRadius: 10,
-            background: t.key === 'overdue' ? 'rgba(239,68,68,0.06)' : 'var(--bg2)',
-            border:
-              t.key === 'overdue' ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)',
-          }}
-        >
-          <div style={{ fontSize: 11, color: t.key === 'overdue' ? 'var(--red)' : 'var(--text3)' }}>
-            {t.label}
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
-        </div>
-      ))}
+    <div style={{ marginBottom: 16 }}>
+      <StatStrip items={items} />
     </div>
   );
 }
 
 function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(todayLocal());
+  const [date, setDate] = useState(todayIst());
   const [expRet, setExpRet] = useState('');
   const [itemId, setItemId] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState('');
@@ -427,21 +355,25 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
 
   const onSave = (): void => {
     setErr(null);
+    if (!date) {
+      setErr('Issue Date is required.');
+      return;
+    }
     if (!itemId) {
-      setErr('Select an item');
+      setErr('Tool is required.');
       return;
     }
     const q = Number(qty);
     if (!Number.isFinite(q) || q <= 0) {
-      setErr('Qty must be ≥ 1');
+      setErr('Qty to Issue must be more than 0.');
       return;
     }
     if (!issuedTo.trim()) {
-      setErr('Enter who this is issued to');
+      setErr('Issued To is required.');
       return;
     }
     if (!expRet) {
-      setErr('Expected return date is required');
+      setErr('Expected Return Date is required.');
       return;
     }
     const input: CreateToolIssueInput = {
@@ -463,9 +395,16 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
 
   return (
     <ModalShell
-      title="🔧 Issue Tool"
+      title="Issue Tool"
       onClose={onClose}
-      footer={<ModalFooter onClose={onClose} onSave={onSave} saving={createMut.isPending} />}
+      footer={
+        <ModalFooter
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending}
+          saveLabel="Save Tool Issue"
+        />
+      }
     >
       <div className="form-grid">
         <Field label="Issue No.">
@@ -476,7 +415,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             readOnly
           />
         </Field>
-        <Field label="Issue Date">
+        <Field label="Issue Date" required>
           <input
             type="date"
             className="innovic-input"
@@ -484,7 +423,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             onChange={(e) => setDate(e.target.value)}
           />
         </Field>
-        <Field label="Tool ★" full>
+        <Field label="Tool" required full>
           <input
             type="text"
             className="innovic-input"
@@ -521,20 +460,24 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
                     borderBottom: '1px solid var(--border)',
                   }}
                 >
-                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.code}</span> —{' '}
-                  {it.name}
+                  <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
+                    {it.code}
+                  </span>{' '}
+                  — {it.name}
                 </div>
               ))}
             </div>
           ) : null}
           {selectedItem ? (
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-              <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{selectedItem.code}</span> —{' '}
-              {selectedItem.name} | {selectedItem.uom}
+              <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
+                {selectedItem.code}
+              </span>{' '}
+              — {selectedItem.name} | {selectedItem.uom}
             </div>
           ) : null}
         </Field>
-        <Field label="Qty to Issue ★">
+        <Field label="Qty to Issue" required>
           <input
             type="number"
             min={1}
@@ -545,7 +488,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             style={{ fontSize: 16, fontWeight: 700 }}
           />
         </Field>
-        <Field label="Issued To ★">
+        <Field label="Issued To" required>
           <input
             type="text"
             className="innovic-input"
@@ -554,7 +497,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             onChange={(e) => setIssuedTo(e.target.value)}
           />
         </Field>
-        <Field label="Expected Return Date ★">
+        <Field label="Expected Return Date" required>
           <input
             type="date"
             className="innovic-input"
@@ -579,7 +522,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
           <input
             type="text"
             className="innovic-input"
-            placeholder="e.g. JC-00001"
+            placeholder="e.g. IN-JC-26-00001"
             value={refNo}
             onChange={(e) => setRefNo(e.target.value)}
           />
@@ -618,7 +561,7 @@ function ReturnModal({
   const alreadyTotal = issue.returnGoodQty + issue.returnDamagedQty + issue.returnConsumedQty;
   const remaining = issue.qty - alreadyTotal;
 
-  const [returnDate, setReturnDate] = useState(todayLocal());
+  const [returnDate, setReturnDate] = useState(todayIst());
   const [returnedBy, setReturnedBy] = useState(issue.issuedTo);
   const [good, setGood] = useState('0');
   const [damaged, setDamaged] = useState('0');
@@ -633,13 +576,11 @@ function ReturnModal({
     const d = Number(damaged) || 0;
     const c = Number(consumed) || 0;
     if (g === 0 && d === 0 && c === 0) {
-      setErr('Enter at least one return qty');
+      setErr('Enter a Good, Damaged or Consumed qty.');
       return;
     }
     if (g + d + c > remaining) {
-      setErr(
-        `Return total (${g + d + c}) cannot be more than Pending (${remaining}). Issued ${issue.qty}, already returned ${alreadyTotal}.`,
-      );
+      setErr(`Return total (${g + d + c}) cannot be more than Pending (${remaining}).`);
       return;
     }
     const input: RecordToolReturnInput = {
@@ -658,9 +599,16 @@ function ReturnModal({
 
   return (
     <ModalShell
-      title={`↩ Return — ${issue.code}`}
+      title={`Return Tool — ${issue.code}`}
       onClose={onClose}
-      footer={<ModalFooter onClose={onClose} onSave={onSave} saving={mut.isPending} />}
+      footer={
+        <ModalFooter
+          onClose={onClose}
+          onSave={onSave}
+          saving={mut.isPending}
+          saveLabel="Save Return"
+        />
+      }
     >
       <div
         style={{
@@ -675,17 +623,19 @@ function ReturnModal({
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <span className="text3">Item:</span>{' '}
-            <b style={{ color: 'var(--purple)' }}>{issue.itemCode ?? issue.itemCodeText ?? '—'}</b>{' '}
+            <b className="mono" style={{ color: 'var(--text)' }}>
+              {issue.itemCode ?? issue.itemCodeText ?? '—'}
+            </b>{' '}
             {issue.itemName}
           </div>
           <div>
-            <span className="text3">Issued:</span> <b>{issue.qty}</b>
+            <span className="text3">Issue Qty:</span> <b>{issue.qty}</b>
           </div>
           <div>
-            <span className="text3">To:</span> {issue.issuedTo}
+            <span className="text3">Issued To:</span> {issue.issuedTo}
           </div>
           <div>
-            <span className="text3">Date:</span> {fmtDate(issue.issueDate)}
+            <span className="text3">Issue Date:</span> {fmtDate(issue.issueDate)}
           </div>
         </div>
         {alreadyTotal > 0 ? (
@@ -762,7 +712,7 @@ function ReturnModal({
               }}
             />
           </Field>
-          <Field label="Consumed / Used Up" labelColor="var(--amber)">
+          <Field label="Consumed" labelColor="var(--amber)">
             <input
               type="number"
               min={0}
@@ -836,11 +786,13 @@ function ModalShell({
 function Field({
   label,
   labelColor,
+  required,
   full,
   children,
 }: {
   label: string;
   labelColor?: string;
+  required?: boolean;
   full?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
@@ -848,6 +800,7 @@ function Field({
     <div className={full ? 'form-grp form-full' : 'form-grp'}>
       <label className="form-label" style={labelColor ? { color: labelColor } : undefined}>
         {label}
+        {required ? <span className="req">★</span> : null}
       </label>
       {children}
     </div>
@@ -871,16 +824,17 @@ function ErrorBanner({ msg }: { msg: string }): React.JSX.Element {
   );
 }
 
-// showModal hard-codes Cancel / Save (L28026-27). _toolReturn passes a 4th 'Save Return'
-// arg (L24125) but showModal takes only three, so that label is dead in legacy.
+// Cancel / Save <Doc> — the save button names what it saves.
 function ModalFooter({
   onClose,
   onSave,
   saving,
+  saveLabel,
 }: {
   onClose: () => void;
   onSave: () => void;
   saving: boolean;
+  saveLabel: string;
 }): React.JSX.Element {
   return (
     <div className="modal-footer">
@@ -893,7 +847,7 @@ function ModalFooter({
             <Loader2 size={14} className="inline animate-spin" /> Saving…
           </>
         ) : (
-          'Save'
+          saveLabel
         )}
       </button>
     </div>

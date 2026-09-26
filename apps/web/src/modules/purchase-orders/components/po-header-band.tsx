@@ -11,7 +11,7 @@
 // PRESENTATION ONLY. Same fields, same values, same sources — nothing is
 // computed, fetched or formatted differently here; the blocks were merged and
 // restyled. Every colour is a token (no hard-coded hex), and the type scale is
-// the app's: 10px uppercase captions, 11px muted labels, 12–13px values, mono
+// the app's: 11px Title Case captions, 11px muted labels, 12–13px values, mono
 // for codes and money.
 
 import type { PurchaseOrderDetail, Vendor } from '@innovic/shared';
@@ -19,10 +19,10 @@ import { fmtDate, fmtDateTime } from '@/lib/date';
 import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
 
 /** Accent bar — the same reading the status badge already gives: green closed,
- *  red cancelled, amber part-received / awaiting QC, grey draft, blue open. */
+ *  grey cancelled, amber part-received / awaiting QC, grey draft, blue open. */
 function accentFor(status: PurchaseOrderDetail['status']): string {
   if (status === 'closed') return 'var(--green)';
-  if (status === 'cancelled') return 'var(--red)';
+  if (status === 'cancelled') return 'var(--text3)';
   if (status === 'partial' || status === 'qc_pending') return 'var(--amber)';
   if (status === 'draft') return 'var(--text3)';
   return 'var(--blue)';
@@ -31,8 +31,6 @@ function accentFor(status: PurchaseOrderDetail['status']): string {
 const CAPTION: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.08em',
   color: 'var(--text3)',
   marginBottom: 8,
 };
@@ -172,7 +170,7 @@ export function PoHeaderBand({
           <Row label="PO Type" value={PO_TYPE_LABELS[detail.poType]} />
           <Row label="PO Date" value={<span className="mono">{fmtDate(detail.poDate)}</span>} />
           <Row
-            label="PR"
+            label="PR No."
             value={
               detail.prCodeText ? (
                 <span className="mono" style={{ color: 'var(--purple)' }}>
@@ -206,7 +204,7 @@ export function PoHeaderBand({
         {/* ── Totals ── */}
         <Col caption="Totals">
           <Row label="Lines" value={<span className="mono">{detail.lines.length}</span>} align="right" />
-          <Row label="Total qty" value={<span className="mono">{totalQty}</span>} align="right" />
+          <Row label="Total Qty" value={<span className="mono">{totalQty}</span>} align="right" />
           <Row
             label="Received"
             value={
@@ -274,17 +272,17 @@ export function PoHeaderBand({
           )}
           {detail.approvedAt ? (
             <Row
-              label="Approved at"
+              label="Approved At"
               value={<span className="mono">{fmtDateTime(detail.approvedAt)}</span>}
             />
           ) : null}
           {detail.approvalRemarks ? (
-            <Row label="Approval note" value={detail.approvalRemarks} />
+            <Row label="Approval Remarks" value={detail.approvalRemarks} />
           ) : null}
           {rejected ? (
             <>
               <Row
-                label="Rejected at"
+                label="Rejected At"
                 value={
                   <span className="mono" style={{ color: 'var(--red2)' }}>
                     {fmtDateTime(detail.rejectedAt)}
@@ -293,7 +291,7 @@ export function PoHeaderBand({
               />
               {detail.rejectionReason ? (
                 <Row
-                  label="Reason"
+                  label="Rejection Reason"
                   value={<span style={{ color: 'var(--red2)' }}>{detail.rejectionReason}</span>}
                 />
               ) : null}

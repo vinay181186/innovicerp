@@ -11,7 +11,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItemsList } from '../../items/api';
@@ -69,7 +69,7 @@ function StoreIssuesListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Issues. Ask an admin.
       </div>
     );
   }
@@ -101,7 +101,7 @@ function StoreIssuesListPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'items' ? '📋 Item Issues' : '🔧 Tool Issues'}
+            {t === 'items' ? 'Item Issues' : 'Tool Issues'}
           </button>
         ))}
       </div>
@@ -186,7 +186,7 @@ function StoreIssuesListPage(): React.JSX.Element {
                           {fmtDate(iss.issueDate)}
                         </td>
                         <td>
-                          <span className="td-code" style={{ color: 'var(--purple)' }}>
+                          <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
                             {iss.itemCode ?? iss.itemCodeText ?? '—'}
                           </span>
                         </td>
@@ -196,7 +196,7 @@ function StoreIssuesListPage(): React.JSX.Element {
                         </td>
                         <td>{iss.issuedTo || '—'}</td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
-                          {`${iss.refType ?? ''} ${iss.refNo || '—'}`}
+                          {iss.refNo ? `${iss.refType ?? ''} ${iss.refNo}` : '—'}
                         </td>
                         <td className="text3" style={{ fontSize: 11 }}>
                           {iss.purpose || '—'}
@@ -220,7 +220,7 @@ function StoreIssuesListPage(): React.JSX.Element {
                     {data.items.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="empty-state">
-                          No issues recorded — click + New Issue
+                          {search.trim() ? 'No issues match.' : 'No issues yet.'}
                         </td>
                       </tr>
                     ) : null}
@@ -277,7 +277,7 @@ function StoreIssuesListPage(): React.JSX.Element {
 }
 
 function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(todayLocal());
+  const [date, setDate] = useState(todayIst());
   const [itemId, setItemId] = useState<string | null>(null);
   const [qty, setQty] = useState('');
   const [issuedTo, setIssuedTo] = useState('');
@@ -303,17 +303,21 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
 
   const onSave = (): void => {
     setErr(null);
+    if (!date) {
+      setErr('Issue Date is required.');
+      return;
+    }
     if (!itemId) {
-      setErr('Select an item');
+      setErr('Item is required.');
       return;
     }
     const q = Number(qty);
     if (!Number.isFinite(q) || q <= 0) {
-      setErr('Qty must be ≥ 1');
+      setErr('Qty to Issue must be more than 0.');
       return;
     }
     if (!issuedTo.trim()) {
-      setErr('Enter who this is issued to');
+      setErr('Issued To is required.');
       return;
     }
     const input: CreateStoreIssueInput = {
@@ -341,7 +345,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
     >
       <div className="modal">
         <div className="modal-hdr">
-          <span className="modal-title">📋 New Item Issue</span>
+          <span className="modal-title">New Item Issue</span>
           <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
             ✕
           </button>
@@ -360,7 +364,9 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
 
             <div className="form-grp">
-              <label className="form-label">Issue Date</label>
+              <label className="form-label">
+                Issue Date <span className="req">★</span>
+              </label>
               <input
                 type="date"
                 className="innovic-input"
@@ -370,7 +376,9 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
 
             <div className="form-grp form-full">
-              <label className="form-label">Item ★</label>
+              <label className="form-label">
+                Item <span className="req">★</span>
+              </label>
               <input
                 type="text"
                 className="innovic-input"
@@ -406,8 +414,10 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
                         borderBottom: '1px solid var(--border)',
                       }}
                     >
-                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.code}</span> —{' '}
-                      {it.name}
+                      <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
+                        {it.code}
+                      </span>{' '}
+                      — {it.name}
                     </div>
                   ))}
                 </div>
@@ -415,7 +425,9 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
 
             <div className="form-grp">
-              <label className="form-label">Qty to Issue ★</label>
+              <label className="form-label">
+                Qty to Issue <span className="req">★</span>
+              </label>
               <input
                 type="number"
                 min={1}
@@ -428,7 +440,9 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
 
             <div className="form-grp">
-              <label className="form-label">Issued To ★</label>
+              <label className="form-label">
+                Issued To <span className="req">★</span>
+              </label>
               <input
                 type="text"
                 className="innovic-input"
@@ -518,7 +532,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
                 <Loader2 size={14} className="inline animate-spin" /> Saving…
               </>
             ) : (
-              'Save'
+              'Save Issue'
             )}
           </button>
         </div>

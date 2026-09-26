@@ -5,7 +5,8 @@
 // Styled to SO Master (sales-orders/routes/list.tsx) 2026-08-13:
 //  - The four status COUNT CARDS are one `<StatStrip>` row (styling skill
 //    Rule 3) — same counts, same click-to-filter, no per-tile cards.
-//  - Title + search + status filter + New PR sit in the frozen header band.
+//  - Title + search + New PR sit in the frozen header band; the StatStrip
+//    tiles are the status filter (the status dropdown was dropped, R5).
 //  - The 11-column table (nowrap on every cell, three free-text columns) is one
 //    `.panel` card per PR, so the page no longer scrolls sideways and the PR No.
 //    stays in view. Every column it showed is still on the card.
@@ -40,7 +41,6 @@ import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
 import { PrCard } from '../components/pr-card';
-import { PR_STATUS_LABELS } from '../lib/pr-labels';
 
 const PAGE_SIZE = 25;
 
@@ -51,6 +51,7 @@ const COUNT_ALL: ListPurchaseRequestsQuery = { limit: 1, offset: 0 };
 const COUNT_OPEN: ListPurchaseRequestsQuery = { status: 'open', limit: 1, offset: 0 };
 const COUNT_APPROVED: ListPurchaseRequestsQuery = { status: 'approved', limit: 1, offset: 0 };
 const COUNT_PO_CREATED: ListPurchaseRequestsQuery = { status: 'po_created', limit: 1, offset: 0 };
+const COUNT_CANCELLED: ListPurchaseRequestsQuery = { status: 'cancelled', limit: 1, offset: 0 };
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -138,7 +139,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       const reason = window.prompt(`Reject ${pr.code} — reason:`);
       if (reason === null) return; // cancelled prompt
       if (!reason.trim()) {
-        setActionError('Rejection reason is required');
+        setActionError('Rejection reason is required.');
         return;
       }
       rejectMut.mutate(
@@ -159,6 +160,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const openCount = usePurchaseRequestsList(COUNT_OPEN).data?.total ?? 0;
   const approvedCount = usePurchaseRequestsList(COUNT_APPROVED).data?.total ?? 0;
   const poCreatedCount = usePurchaseRequestsList(COUNT_PO_CREATED).data?.total ?? 0;
+  const cancelledCount = usePurchaseRequestsList(COUNT_CANCELLED).data?.total ?? 0;
 
   const setStatusFilter = useCallback(
     (next: PrStatus | undefined): void => {
@@ -181,7 +183,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Purchase Requests. Ask an admin.
       </div>
     );
   }
@@ -213,7 +215,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               marginBottom: -1,
             }}
           >
-            {t === 'pr' ? '📋 Purchase Requests' : '🔗 Outsource Jobs'}
+            {t === 'pr' ? 'Purchase Requests' : 'Outsource Jobs'}
           </button>
         ))}
       </div>
@@ -259,27 +261,11 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <input
                   className="innovic-input"
-                  placeholder="🔍 Search PR no, item, vendor, SO/JC, PO…"
+                  placeholder="🔍 Search PR No., item, vendor, SO/JC, PO…"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   style={{ width: 220, fontSize: 12 }}
                 />
-                <select
-                  className="innovic-select"
-                  value={search.status ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value as PrStatus | '';
-                    setStatusFilter(v === '' ? undefined : v);
-                  }}
-                  style={{ width: 160, fontSize: 12 }}
-                >
-                  <option value="">All statuses</option>
-                  {PR_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {PR_STATUS_LABELS[s]}
-                    </option>
-                  ))}
-                </select>
                 {isFetching && !isLoading ? (
                   <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
                     <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
@@ -293,19 +279,31 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               </div>
             </div>
 
+            {/* The tiles ARE the status filter (R5 PU-P46) — the status
+                dropdown that did the same thing is gone; Cancelled got its
+                own tile so no status became unreachable. */}
             <StatStrip
               items={[
+                {
+                  key: 'all',
+                  label: 'All PRs',
+                  count: allCount,
+                  color: 'var(--cyan)',
+                  active: search.status === undefined,
+                  onClick: () => setStatusFilter(undefined),
+                  title: 'Clear the status filter',
+                },
                 {
                   key: 'open',
                   label: 'Open',
                   count: openCount,
-                  color: 'var(--amber2)',
+                  color: 'var(--blue)',
                   active: search.status === 'open',
                   onClick: toggleStatus('open'),
                 },
                 {
                   key: 'approved',
-                  label: 'Approved (Awaiting PO)',
+                  label: 'Approved',
                   count: approvedCount,
                   color: 'var(--blue)',
                   active: search.status === 'approved',
@@ -320,13 +318,12 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                   onClick: toggleStatus('po_created'),
                 },
                 {
-                  key: 'all',
-                  label: 'All PRs',
-                  count: allCount,
-                  color: 'var(--cyan)',
-                  active: search.status === undefined,
-                  onClick: () => setStatusFilter(undefined),
-                  title: 'Clear the status filter',
+                  key: 'cancelled',
+                  label: 'Cancelled',
+                  count: cancelledCount,
+                  color: 'var(--text3)',
+                  active: search.status === 'cancelled',
+                  onClick: toggleStatus('cancelled'),
                 },
               ]}
             />
@@ -359,7 +356,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No purchase requests found
+              {search.search || search.status ? 'No PRs match.' : 'No PRs yet.'}
             </div>
           ) : (
             rows.map((pr) => (
@@ -388,7 +385,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
           >
             <span>
               {total === 0
-                ? 'No purchase requests'
+                ? 'No PRs'
                 : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
             </span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

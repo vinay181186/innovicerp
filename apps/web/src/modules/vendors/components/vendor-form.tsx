@@ -99,7 +99,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Code
+            Vendor Code
           </label>
           <input
             id="code"
@@ -283,10 +283,9 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Code
+            Vendor Code
           </label>
           <input id="code" className="innovic-input" value={props.vendor.code} readOnly />
-          <div className="form-help">Code cannot be changed after creation.</div>
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="name">

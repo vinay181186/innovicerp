@@ -12,15 +12,15 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { VendorPicker } from '@/components/shared/vendor-picker';
 import { LineItemPicker } from '@/components/shared/line-item-picker';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
 import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
-import { useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
@@ -72,7 +72,7 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   // UTC-derived, so between 00:00 and 05:30 IST it defaults Date to YESTERDAY.
   // Legacy today() L1485-87 is correct because it reads LOCAL getFullYear/
   // getMonth/getDate. Also module-level, so it is frozen at first import.
-  grnDate: todayLocal(),
+  grnDate: todayIst(),
 };
 
 const NEW_LINE: LineFormValue = {
@@ -165,9 +165,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
     [qcUsers.data?.options],
   );
 
-  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
-  const vendors = vendorsData?.vendors ?? [];
-
   const { data: posData } = usePurchaseOrdersList({ limit: 200, offset: 0 });
   const pos = (posData?.items ?? []).filter((p) =>
     ['draft', 'open', 'partial', 'qc_pending'].includes(p.status),
@@ -217,7 +214,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
       if (!hasVendor) {
         setError('header.vendorId', {
           type: 'required',
-          message: 'Select a vendor or enter a vendor code.',
+          message: 'Vendor is required.',
         });
         return;
       }
@@ -291,31 +288,10 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
           party first, then the PO, then the vendor's paper numbers. */}
       <Panel title="GRN Details">
         <FormGrid>
-          {/* Row 1 — Vendor · Vendor Code · GRN No. (6 + 3 + 3). */}
-          <FormField
-            label="Vendor"
-            required
-            size="lg"
-            htmlFor="vendorId"
-            error={errors.header?.vendorId?.message}
-          >
-            <select id="vendorId" className="innovic-select" {...register('header.vendorId')}>
-              <option value="">— Type the Vendor Code below —</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.code} — {v.name}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Vendor Code" size="sm" htmlFor="vendorCodeText">
-            <input
-              id="vendorCodeText"
-              className="innovic-input"
-              autoComplete="off"
-              {...register('header.vendorCodeText')}
-            />
-          </FormField>
+          {/* Same order as New GRN: GRN No. · GRN Date · PO · Vendor · the
+              vendor's paper numbers · Remarks. The old free-text "PO No." and
+              "Vendor Code" boxes show only when nothing is linked (legacy rows),
+              so the user never sees two answers to one question. */}
           <div className="f-sm">
             <DocNumberInput
               type="grn"
@@ -326,16 +302,22 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               onValidityChange={setDocNoValid}
             />
           </div>
-
-          {/* Row 2 — Purchase Order · PO No. (typed) · GRN Date (6 + 3 + 3). */}
-          <FormField label="Purchase Order" size="lg" htmlFor="purchaseOrderId">
+          <FormField label="GRN Date" required size="sm" htmlFor="grnDate">
+            <input
+              id="grnDate"
+              type="date"
+              className="innovic-input"
+              {...register('header.grnDate', { required: 'GRN Date is required.' })}
+            />
+          </FormField>
+          <FormField label="PO No." size="lg" htmlFor="purchaseOrderId">
             <select
               id="purchaseOrderId"
               className="innovic-select"
               disabled={isEdit}
               {...register('header.purchaseOrderId')}
             >
-              <option value="">— Type the PO No. below —</option>
+              <option value="">— Select PO —</option>
               {pos.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
@@ -343,30 +325,44 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               ))}
             </select>
           </FormField>
-          <FormField label="PO No. (typed)" size="sm" htmlFor="poCodeText">
-            <input
-              id="poCodeText"
-              className="innovic-input"
-              autoComplete="off"
-              {...register('header.poCodeText')}
-            />
-          </FormField>
-          <FormField label="GRN Date" required size="sm" htmlFor="grnDate">
-            <input
-              id="grnDate"
-              type="date"
-              className="innovic-input"
-              {...register('header.grnDate', { required: 'GRN Date is required' })}
-            />
-          </FormField>
+          {watch('header.purchaseOrderId') ? null : (
+            <FormField label="PO No. (not linked)" size="sm" htmlFor="poCodeText">
+              <input
+                id="poCodeText"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('header.poCodeText')}
+              />
+            </FormField>
+          )}
 
-          {/* Row 3 — Vendor Invoice No. · Vendor Challan No. (6 + 6). */}
+          <VendorPicker
+            className="form-grp f-lg"
+            value={watch('header.vendorId') || null}
+            initialLabel={isEdit ? (props.detail.vendorName ?? '') : ''}
+            carriedText={watch('header.vendorId') ? '' : (watch('header.vendorCodeText') ?? '')}
+            error={errors.header?.vendorId?.message}
+            onChange={(id) => {
+              setValue('header.vendorId', id ?? '', { shouldDirty: true });
+              if (id) clearErrors('header.vendorId');
+            }}
+          />
+          {watch('header.vendorId') ? null : (
+            <FormField label="Vendor Code (not linked)" size="sm" htmlFor="vendorCodeText">
+              <input
+                id="vendorCodeText"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('header.vendorCodeText')}
+              />
+            </FormField>
+          )}
+
           <FormField label="Vendor Invoice No." size="lg" htmlFor="invoiceNo">
             <input
               id="invoiceNo"
               className="innovic-input"
               autoComplete="off"
-              placeholder="Vendor invoice"
               {...register('header.invoiceNo')}
             />
           </FormField>
@@ -375,7 +371,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               id="dcNo"
               className="innovic-input"
               autoComplete="off"
-              placeholder="Delivery challan"
               {...register('header.dcNo')}
             />
           </FormField>
@@ -387,7 +382,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               id="remarks"
               className="innovic-textarea"
               rows={2}
-              placeholder="Notes"
               {...register('header.remarks')}
             />
           </FormField>
@@ -402,13 +396,13 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             className="btn btn-ghost btn-sm"
             onClick={() => append({ ...NEW_LINE })}
           >
-            <Plus size={13} /> Add line
+            <Plus size={13} /> Add Line
           </button>
         }
       >
         {fields.length === 0 ? (
           <div className="empty-state">
-            No lines yet. Pick a PO above to auto-populate, or click <strong>Add line</strong>.
+            No lines yet. Pick a PO above, or click <strong>Add Line</strong>.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -418,7 +412,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                 <div
                   key={field.id}
                   style={{
-                    border: `1px solid ${locked ? 'rgba(22,163,74,0.5)' : 'var(--border)'}`,
+                    border: `1px solid ${locked ? 'var(--green)' : 'var(--border)'}`,
                     borderRadius: 8,
                     padding: 10,
                     background: 'var(--bg2)',
@@ -433,7 +427,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       fontSize: 'var(--fs-xs)',
                       color: 'var(--text3)',
                       fontFamily: 'var(--mono)',
-                      textTransform: 'uppercase',
                       fontWeight: 700,
                     }}
                   >
@@ -443,9 +436,9 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                         <span
                           className="badge b-green"
                           style={{ marginLeft: 8 }}
-                          title="QC done — fix via a reversing GRN line."
+                          title="QC is done on this line, so it cannot be changed."
                         >
-                          QC locked
+                          QC Cleared
                         </span>
                       ) : null}
                     </span>
@@ -470,7 +463,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                     <Controller
                       control={control}
                       name={`lines.${idx}.itemName` as const}
-                      rules={{ required: 'Item name is required' }}
+                      rules={{ required: 'Item Name is required.' }}
                       render={({ field, fieldState }) => (
                         <LineItemPicker
                           code={watch(`lines.${idx}.itemCodeText`) ?? ''}
@@ -499,7 +492,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                         readOnly={locked}
                         {...register(`lines.${idx}.receivedQty` as const, {
                           valueAsNumber: true,
-                          min: { value: 0, message: 'Min 0' },
+                          min: { value: 0, message: 'Received cannot be less than 0.' },
                         })}
                       />
                     </div>
@@ -562,7 +555,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       />
                     </div>
                     <div className="form-grp">
-                      <label className="form-label">👤 Inspected By</label>
+                      <label className="form-label">Inspected By</label>
                       {/* Until now the server stamped whoever SAVED the GRN, which
                         is usually the storekeeper and not the inspector. Locked
                         the same way as QC Status above: disabled, but still
@@ -588,8 +581,8 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                         valueLabel={watch(`lines.${idx}.qcInspectedByName`) ?? ''}
                         selectedLabel={qcSelectedLabel}
                         disabled={locked}
-                        placeholder="🔍 Select QC person…"
-                        emptyText="No QC users — set them up in Access Control"
+                        placeholder="Select QC person…"
+                        emptyText="No QC users. Ask an admin to set them up in Access Control."
                       />
                     </div>
                     <div className="form-grp f-lg">
@@ -616,7 +609,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       <label className="form-label">QC Report</label>
                       {locked ? (
                         <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                          {watch(`lines.${idx}.qcReportName`) ?? '— none —'}
+                          {watch(`lines.${idx}.qcReportName`) ?? '—'}
                         </div>
                       ) : (
                         <QcReportAttach

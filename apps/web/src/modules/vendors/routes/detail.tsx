@@ -67,7 +67,7 @@ function VendorDetailPage(): React.JSX.Element {
         <BackToMaster />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Vendor not found'}
+          message={error instanceof Error ? error.message : 'Vendor not found. Refresh the page.'}
         />
       </div>
     );
@@ -142,7 +142,7 @@ function VendorDetailPage(): React.JSX.Element {
       {confirmDelete ? (
         <ConfirmDialog
           title={`Move Vendor ${vendor.code} to Trash?`}
-          message={`${vendor.name} will be removed from the Vendor Master. You can restore it from Trash.`}
+          message="You can restore it from Trash."
           confirmLabel="Move to Trash"
           pendingLabel="Moving to Trash…"
           onConfirm={onDelete}

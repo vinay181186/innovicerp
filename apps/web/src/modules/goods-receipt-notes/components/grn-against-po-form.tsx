@@ -18,7 +18,7 @@
 import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut } from '@innovic/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { Panel } from '@/ui/data';
@@ -61,8 +61,8 @@ function lineQtyError(raw: string, balance: number): string | null {
   if (t === '') return null; // blank = 0 = skipped on submit
   const n = Number(t);
   if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Whole number only.';
-  if (n < 0) return 'Min 0.';
-  if (n > balance) return `Cannot receive more than Pending (${balance}).`;
+  if (n < 0) return 'Receive Now cannot be less than 0.';
+  if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
   return null;
 }
 
@@ -73,7 +73,7 @@ export function GrnAgainstPoForm({
   typeField,
   onStatusChange,
 }: GrnAgainstPoFormProps): React.JSX.Element {
-  const [grnDate, setGrnDate] = useState(todayLocal());
+  const [grnDate, setGrnDate] = useState(todayIst());
   const [poId, setPoId] = useState<string | null>(initialPurchaseOrderId ?? null);
   const [poSearch, setPoSearch] = useState('');
   const [invoiceNo, setInvoiceNo] = useState('');
@@ -189,7 +189,7 @@ export function GrnAgainstPoForm({
       return;
     }
     if (!po) {
-      setFormError('Pick a purchase order.');
+      setFormError('Purchase Order is required.');
       return;
     }
     if (poIneligible) {
@@ -273,8 +273,19 @@ export function GrnAgainstPoForm({
 
       <Panel title="GRN Details">
         <FormGrid>
-          {/* Row 1 — GRN Type · Purchase Order · GRN Date (3 + 6 + 3). */}
+          {/* Row 1 — GRN Type · GRN Date · Purchase Order (3 + 3 + 6); GRN Date
+              sits second on all three GRN types. */}
           {typeField}
+          <FormField label="GRN Date" required size="sm" htmlFor="grnDate">
+            <input
+              id="grnDate"
+              type="date"
+              className="innovic-input"
+              value={grnDate}
+              onChange={(e) => setGrnDate(e.target.value)}
+              required
+            />
+          </FormField>
           <FormField
             label="Purchase Order"
             required
@@ -291,17 +302,7 @@ export function GrnAgainstPoForm({
               loading={listLoading}
               placeholder="🔍 Type PO number or vendor…"
               valueLabel={poValueLabel}
-              emptyText="No approved purchase POs with pending lines match"
-            />
-          </FormField>
-          <FormField label="GRN Date" required size="sm" htmlFor="grnDate">
-            <input
-              id="grnDate"
-              type="date"
-              className="innovic-input"
-              value={grnDate}
-              onChange={(e) => setGrnDate(e.target.value)}
-              required
+              emptyText="No open POs with pending qty."
             />
           </FormField>
 
@@ -362,7 +363,6 @@ export function GrnAgainstPoForm({
             receiveNow: l.receiveNow,
             remarks: l.remarks,
             error: l.error,
-            dcRefNo: l.dcRefNo,
           }))}
           qtyLabel="Qty"
           emptyText={
@@ -370,17 +370,13 @@ export function GrnAgainstPoForm({
               ? 'Pick a purchase order to load its pending lines.'
               : !po
                 ? 'Loading PO lines…'
-                : 'Every line on this PO is fully received — nothing pending to receive.'
+                : 'Every line on this PO is fully received.'
           }
           onReceiveNow={(idx, v) => {
             const l = lines[idx];
             if (l) patchLine(idx, { receiveNow: v, error: lineQtyError(v, l.balance) });
           }}
           onRemarks={(idx, v) => patchLine(idx, { remarks: v })}
-          challan={{
-            headerValue: dcNo.trim(),
-            onChange: (idx, v) => patchLine(idx, { dcRefNo: v }),
-          }}
           onRemove={(idx) => {
             setLinesTouched(true);
             setLines((prev) => prev.filter((_, i) => i !== idx));

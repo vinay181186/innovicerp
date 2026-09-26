@@ -33,7 +33,6 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import {
   type PrOrderBalance,
-  prBalanceBadgeClass,
   prBalanceClosedText,
   prBalanceColor,
   prOrderBalance,
@@ -57,14 +56,23 @@ function QtyBox({
   value,
   color,
   bordered,
+  note,
+  noteColor,
+  title,
 }: {
   label: string;
   value: React.ReactNode;
   color?: string | undefined;
   bordered?: boolean | undefined;
+  /** Small line under the label — the Pending box carries the ordering
+   *  progress here (R5 PU-P48) instead of a third badge in the title band. */
+  note?: string | undefined;
+  noteColor?: string | undefined;
+  title?: string | undefined;
 }): React.JSX.Element {
   return (
     <div
+      title={title}
       style={{
         padding: '4px 12px',
         textAlign: 'center',
@@ -83,12 +91,15 @@ function QtyBox({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
       </div>
+      {note ? (
+        <div style={{ fontSize: 11, fontWeight: 600, color: noteColor ?? 'var(--text3)' }}>
+          {note}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -100,7 +111,7 @@ function SourceRef({ pr }: { pr: PurchaseRequestListItem }): React.JSX.Element {
     return (
       <span style={{ color: 'var(--cyan)' }}>
         {pr.soCode}
-        {pr.soLineNo ? <span className="text3"> · L{pr.soLineNo}</span> : null}
+        {pr.soLineNo ? <span className="text3"> · Ln {pr.soLineNo}</span> : null}
       </span>
     );
   }
@@ -108,7 +119,7 @@ function SourceRef({ pr }: { pr: PurchaseRequestListItem }): React.JSX.Element {
     return (
       <span style={{ color: 'var(--cyan)' }}>
         {pr.sourceJcCode}
-        {pr.sourceJcOpSeq ? <span className="text3"> · op {opSrNo(pr.sourceJcOpSeq)}</span> : null}
+        {pr.sourceJcOpSeq ? <span className="text3"> · Op {opSrNo(pr.sourceJcOpSeq)}</span> : null}
       </span>
     );
   }
@@ -186,7 +197,7 @@ export function PrCard({
             </span>
           ) : null}
           <span style={{ fontSize: 12 }}>
-            <span className="mono" style={{ color: 'var(--purple)' }}>
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
               {/* CODE/REV — the customer's drawing revision off the SO line this
                   request was raised against. A PR with no SO behind it has no
                   revision and keeps the bare code. */}
@@ -199,25 +210,12 @@ export function PrCard({
           </span>
           <PrStatusBadge status={pr.status} />
           {/* How far the ORDERING has got, which the status alone cannot say:
-              a `po_created` PR may still have 90 of 100 to buy. Shown only once
-              something has actually been ordered — before that the status badge
-              already says Open / Approved and the Balance box below carries the
-              full quantity, so a second "Open" pill would only add noise. */}
-          {bal.ordered > 0 ? (
-            <span
-              className={`badge ${prBalanceBadgeClass(bal.state)}`}
-              title={
-                bal.closed
-                  ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`
-                  : `${bal.ordered} of ${bal.qty} ordered · ${bal.balance} pending`
-              }
-            >
-              {bal.label}
-            </span>
-          ) : null}
+              a `po_created` PR may still have 90 of 100 to buy. It now sits
+              under the Pending box below (R5 PU-P48) — status + type are the
+              only badges here. */}
           {/* Type tag — only when it is NOT a plain buy, so a normal PR row stays
               as clean as it was. Service becomes a Service PO (sends the item out
-              on a DC); JW OSP is the system-raised outsource PR. */}
+              on a DC); Outsource is the system-raised outsource PR. */}
           {pr.prType === 'service' ? (
             <span className="badge b-teal">{PR_TYPE_LABELS[pr.prType]}</span>
           ) : pr.prType === 'jw_osp' ? (
@@ -315,7 +313,7 @@ export function PrCard({
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
             <QtyBox label="PR Qty" value={pr.qty} />
-            <QtyBox label="On PO Qty" value={bal.ordered} bordered />
+            <QtyBox label="On PO" value={bal.ordered} bordered />
             {/* Negative = more ordered than requested. Red and flagged, never
                 clamped to 0 — somebody has to go and look at it. */}
             <QtyBox
@@ -323,10 +321,17 @@ export function PrCard({
               value={bal.balance < 0 ? `⚠ ${bal.balance}` : bal.balance}
               color={prBalanceColor(bal.state)}
               bordered
+              note={bal.ordered > 0 ? bal.label : undefined}
+              noteColor={prBalanceColor(bal.state)}
+              title={
+                bal.closed
+                  ? `${prBalanceClosedText(bal)}${bal.closedReason ? ` — ${bal.closedReason}` : ''}`
+                  : `${bal.ordered} of ${bal.qty} ordered · ${bal.balance} pending`
+              }
             />
             {priceHidden ? null : (
               <QtyBox
-                label="Est. Rate (₹/pc)"
+                label="Est. Rate (₹)"
                 value={estCost > 0 ? `₹${estCost.toFixed(2)}` : '—'}
                 bordered
               />

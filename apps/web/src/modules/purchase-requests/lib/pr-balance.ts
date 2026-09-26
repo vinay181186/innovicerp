@@ -90,13 +90,13 @@ export function prOrderBalance(pr: PrBalanceSource): PrOrderBalance {
             : 'partial';
   const label =
     state === 'over'
-      ? 'Over-ordered'
+      ? 'Over-Ordered'
       : state === 'closed'
         ? 'Short Closed'
         : state === 'full'
-          ? 'Fully ordered'
+          ? 'Fully Ordered'
           : state === 'partial'
-            ? 'Partly ordered'
+            ? 'Partly Ordered'
             : 'Open';
   return {
     qty,

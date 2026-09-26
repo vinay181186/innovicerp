@@ -94,7 +94,7 @@ function StoreInventoryPage(): React.JSX.Element {
       ) : (
         <>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="section-hdr m-0">🏬 Store / Inventory</div>
+            <div className="section-hdr m-0">Store Inventory</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 type="text"
@@ -175,7 +175,7 @@ function StoreInventoryPage(): React.JSX.Element {
                         <th className="th-num" style={{ color: 'var(--blue)' }}>
                           On PO
                         </th>
-                        <th className="th-num" style={{ color: 'var(--orange)' }}>
+                        <th className="th-num" style={{ color: 'var(--amber2)' }}>
                           At Vendor
                         </th>
                         <th className="th-num" style={{ color: 'var(--amber2)' }}>
@@ -188,7 +188,9 @@ function StoreInventoryPage(): React.JSX.Element {
                       {data.rows.length === 0 ? (
                         <tr>
                           <td colSpan={canEdit ? 12 : 11} className="empty-state">
-                            {search.trim() ? 'No items match this search.' : 'No items in master'}
+                            {search.trim() || filter !== 'all'
+                              ? 'No items match.'
+                              : 'No items yet.'}
                           </td>
                         </tr>
                       ) : (
@@ -196,10 +198,10 @@ function StoreInventoryPage(): React.JSX.Element {
                           <tr
                             key={row.itemId}
                             style={{
-                              background: row.lowStock ? 'rgba(220,38,38,0.04)' : undefined,
+                              background: row.lowStock ? 'var(--amber3)' : undefined,
                             }}
                           >
-                            <td className="td-code" style={{ color: 'var(--purple)' }}>
+                            <td className="td-code fw-700" style={{ color: 'var(--text)' }}>
                               {row.itemCode}
                             </td>
                             <td className="fw-700">{row.itemName}</td>
@@ -231,7 +233,7 @@ function StoreInventoryPage(): React.JSX.Element {
                               </span>
                               {row.lowStock ? (
                                 <div
-                                  style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700 }}
+                                  style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}
                                 >
                                   ⚠ Low Stock
                                 </div>
@@ -285,13 +287,9 @@ function StoreInventoryPage(): React.JSX.Element {
                               <span
                                 className="mono"
                                 style={{
-                                  color: row.atVendorQty > 0 ? 'var(--orange)' : 'var(--text3)',
+                                  color: row.atVendorQty > 0 ? 'var(--amber2)' : 'var(--text3)',
                                 }}
-                                title={
-                                  row.atVendorQty > 0
-                                    ? `${row.atVendorQty} pcs out at an OSP vendor — not on the shelf`
-                                    : undefined
-                                }
+                                title={row.atVendorQty > 0 ? 'At an OSP vendor' : undefined}
                               >
                                 {row.atVendorQty || '—'}
                               </span>
@@ -391,8 +389,7 @@ function KpiStrip({
       key: 'low',
       label: 'Low Stock Alert',
       count: summary.lowStockCount,
-      color: 'var(--red2)',
-      sub: 'Below minimum level',
+      color: 'var(--amber2)',
       active: filter === 'low',
       onClick: () => setFilter(filter === 'low' ? 'all' : 'low'),
     },
@@ -400,7 +397,7 @@ function KpiStrip({
       key: 'zero',
       label: 'Zero Stock',
       count: summary.zeroStockCount,
-      color: 'var(--amber2)',
+      color: 'var(--red2)',
       active: filter === 'zero',
       onClick: () => setFilter(filter === 'zero' ? 'all' : 'zero'),
     },
@@ -428,12 +425,16 @@ function AdjustModal({
   const onSave = (): void => {
     setErr(null);
     const q = Number(qty);
+    if (qty.trim() === '') {
+      setErr('Quantity is required.');
+      return;
+    }
     if (!Number.isFinite(q) || q <= 0) {
-      setErr('Enter a valid quantity');
+      setErr('Quantity must be more than 0.');
       return;
     }
     if (!remarks.trim()) {
-      setErr('Enter a reason for the adjustment');
+      setErr('Reason / Remarks is required.');
       return;
     }
     const input: AdjustStockInput = {
@@ -491,7 +492,9 @@ function AdjustModal({
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label">Quantity ★</label>
+          <label className="form-label">
+            Quantity <span className="req">★</span>
+          </label>
           <input
             type="number"
             min={1}
@@ -503,7 +506,9 @@ function AdjustModal({
           />
         </div>
         <div className="form-grp form-full">
-          <label className="form-label">Reason / Remarks ★</label>
+          <label className="form-label">
+            Reason / Remarks <span className="req">★</span>
+          </label>
           <input
             type="text"
             className="innovic-input"
@@ -560,7 +565,7 @@ function SetMinModal({
     setErr(null);
     const n = Number(val);
     if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-      setErr('Enter 0 or a whole number');
+      setErr('Min Qty must be 0 or a whole number.');
       return;
     }
     const input: SetMinStockInput = { itemId: row.itemId, minQty: n };
@@ -657,12 +662,16 @@ function ManualReceiveModal({
   const onSave = (): void => {
     setErr(null);
     if (!itemId) {
-      setErr('Select an item');
+      setErr('Item is required.');
       return;
     }
     const q = Number(qty);
+    if (qty.trim() === '') {
+      setErr('Quantity is required.');
+      return;
+    }
     if (!Number.isFinite(q) || q <= 0) {
-      setErr('Enter a valid quantity');
+      setErr('Quantity must be more than 0.');
       return;
     }
     const composedRemarks = [
@@ -686,10 +695,12 @@ function ManualReceiveModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title="+ Manual Stock Receipt">
+    <ModalShell onClose={onClose} title="Manual Receipt">
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label">Item ★</label>
+          <label className="form-label">
+            Item <span className="req">★</span>
+          </label>
           <input
             type="text"
             className="innovic-input"
@@ -726,8 +737,10 @@ function ManualReceiveModal({
                     borderBottom: '1px solid var(--border)',
                   }}
                 >
-                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{r.itemCode}</span> —{' '}
-                  {r.itemName}
+                  <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
+                    {r.itemCode}
+                  </span>{' '}
+                  — {r.itemName}
                   <span className="text3" style={{ marginLeft: 6 }}>
                     · stock {r.inStock} {r.uom}
                   </span>
@@ -737,7 +750,9 @@ function ManualReceiveModal({
           ) : null}
         </div>
         <div className="form-grp">
-          <label className="form-label">Quantity ★</label>
+          <label className="form-label">
+            Quantity <span className="req">★</span>
+          </label>
           <input
             type="number"
             min={1}
@@ -762,7 +777,7 @@ function ManualReceiveModal({
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label">Reference No.</label>
+          <label className="form-label">Ref No.</label>
           <input
             type="text"
             className="innovic-input"
@@ -778,7 +793,6 @@ function ManualReceiveModal({
             className="innovic-input"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Optional notes"
           />
         </div>
       </div>
@@ -806,7 +820,7 @@ function ManualReceiveModal({
               <Loader2 size={14} className="inline animate-spin" /> Saving…
             </>
           ) : (
-            'Receive'
+            'Save Receipt'
           )}
         </button>
       </div>

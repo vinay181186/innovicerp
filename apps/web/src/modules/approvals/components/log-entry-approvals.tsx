@@ -1,4 +1,4 @@
-// Log Entry tab of Settings → Approvals (ADR-130).
+// Op Entry tab of Settings → Approvals (ADR-130).
 //
 // Date/time corrections on op entries. Sub-tabbed into Waiting / Approved /
 // Rejected so a decision does not vanish the moment it is made — the row keeps
@@ -183,7 +183,7 @@ function RequestCard({
             </span>
           ) : null}
           {req.itemCode ? (
-            <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+            <span className="mono fw-700" style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
               {itemCodeWithRev(req.itemCode, req.itemRevision, '')}
             </span>
           ) : null}
@@ -202,13 +202,12 @@ function RequestCard({
               {req.itemName}
             </span>
           ) : null}
-          <span className="mono">Op{opSrNo(req.opSeq)}</span>
+          <span className="mono">Op {opSrNo(req.opSeq)}</span>
           <span>{req.operation}</span>
-          <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             {LOG_TYPE_LABEL[req.logType] ?? req.logType}
           </span>
           {req.machineCode ? <span className="mono">{req.machineCode}</span> : null}
-          <span className="mono">{req.qty} pcs</span>
           {req.rejectQty > 0 ? (
             <span className="mono" style={{ color: 'var(--red2)' }}>
               {req.rejectQty} rejected

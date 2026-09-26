@@ -11,7 +11,7 @@ import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatStrip } from '@/ui/data';
 import { ReportFilter, ReportShell, reportTotalRowStyle } from '@/ui/data/ReportShell';
-import { exportStockValuation } from '../lib/export';
+import { categoryLabel, exportStockValuation } from '../lib/export';
 
 export const stockValuationRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,21 +23,6 @@ function inr(v: number | null): string {
   if (v == null) return '';
   return `₹${Math.round(v).toLocaleString('en-IN')}`;
 }
-
-// Legacy's per-category text colour for the Category cell, ported verbatim from
-// renderStockValuation L21038 (local to this page — not a shared colour fn).
-// NOTE: legacy keys this on its own six-value item.category taxonomy. Our
-// `category` is items.item_type ('component' | 'assembly'), so every real row
-// currently falls through to the same var(--text3) legacy gives an unmapped
-// category. See ISSUE-043 — the taxonomy gap, not the colour map, is the defect.
-const CAT_COLOR: Record<string, string> = {
-  'Raw Material': 'var(--blue)',
-  Component: 'var(--cyan)',
-  'Finished Goods': 'var(--green)',
-  'Bought Out': 'var(--purple)',
-  Consumable: 'var(--amber)',
-};
-const catColor = (c: string): string => CAT_COLOR[c] ?? 'var(--text3)';
 
 function StockValuationPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQuery<StockValuationResponse>({
@@ -61,9 +46,7 @@ function StockValuationPage(): React.JSX.Element {
   }, [rows, filter, showZero, search]);
 
   const shell = (body: React.ReactNode): React.JSX.Element => (
-    <ReportShell title="Stock Valuation" icon="📦">
-      {body}
-    </ReportShell>
+    <ReportShell title="Stock Valuation">{body}</ReportShell>
   );
   if (isLoading) {
     return shell(
@@ -85,31 +68,15 @@ function StockValuationPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = !data.priceVisible;
-  const catKeys = ['all', ...data.categories.map((c) => c.category)];
-  const catCount = (k: string): number =>
-    k === 'all' ? data.grandItems : (data.categories.find((c) => c.category === k)?.count ?? 0);
   const tblTotal = filtered.reduce((s, r) => s + (r.value ?? 0), 0);
 
   return (
     <ReportShell
       title="Stock Valuation"
-      icon="📦"
       filters={
         <>
-          <ReportFilter label="Item Category" htmlFor="sv-category" size="lg">
-            <select
-              id="sv-category"
-              className="innovic-select"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            >
-              {catKeys.map((k) => (
-                <option key={k} value={k}>
-                  {k === 'all' ? 'All Categories' : k} ({catCount(k)})
-                </option>
-              ))}
-            </select>
-          </ReportFilter>
+          {/* Category is filtered by the tiles above the table (one strip:
+              category value + count, click to filter) — no second dropdown. */}
           {/* Legacy L21029 — searchBox('svSearch','svTable','Search item code or name...'). */}
           <ReportFilter label="Search" htmlFor="sv-search" size="lg">
             <input
@@ -147,26 +114,29 @@ function StockValuationPage(): React.JSX.Element {
       }}
       onExport={{ excel: () => exportStockValuation(rows) }}
       kpis={
-        priceHidden ? undefined : (
-          <StatStrip
-            items={[
-              {
-                key: 'all',
-                label: 'Total Stock Value',
-                count: inr(data.grandTotal),
-                color: 'var(--cyan)',
-                sub: `${data.grandStockItems} / ${data.grandItems} items in stock`,
-              },
-              ...data.categories.map((c) => ({
-                key: c.category,
-                label: c.category,
-                count: inr(c.value),
-                color: 'var(--green2)',
-                sub: `${c.stockCount} in stock`,
-              })),
-            ]}
-          />
-        )
+        // Money hidden for L1 Viewers: the tiles then show item counts only.
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'All Categories',
+              count: priceHidden ? data.grandItems : inr(data.grandTotal),
+              color: 'var(--cyan)',
+              sub: `${data.grandStockItems} / ${data.grandItems} items in stock`,
+              active: filter === 'all',
+              onClick: () => setFilter('all'),
+            },
+            ...data.categories.map((c) => ({
+              key: c.category,
+              label: categoryLabel(c.category),
+              count: priceHidden ? c.count : inr(c.value),
+              color: 'var(--green2)',
+              sub: `${c.stockCount} / ${c.count} items in stock`,
+              active: filter === c.category,
+              onClick: () => setFilter(filter === c.category ? 'all' : c.category),
+            })),
+          ]}
+        />
       }
       rowCount={filtered.length}
       rowNoun="item"
@@ -196,30 +166,28 @@ function StockValuationPage(): React.JSX.Element {
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={priceHidden ? 6 : 8} className="empty-state">
-                    No items
+                    {filter !== 'all' || search.trim() || rows.length > 0
+                      ? 'No items match.'
+                      : 'No items yet.'}
                   </td>
                 </tr>
               ) : (
                 filtered.map((r) => (
                   <tr key={r.itemId}>
-                    <td>
-                      <span style={{ fontWeight: 700, color: catColor(r.category) }}>
-                        {r.category}
-                      </span>
-                    </td>
-                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="text2">{categoryLabel(r.category)}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                       {r.code}
                     </td>
                     <td>{r.name}</td>
                     <td>{r.uom}</td>
                     <td
                       className="td-num mono fw-700"
-                      title={r.lowStock ? 'Below minimum stock' : undefined}
+                      title={r.lowStock ? 'Low Stock' : undefined}
                       style={{
                         color:
                           r.stockQty > 0
                             ? r.lowStock
-                              ? 'var(--red)'
+                              ? 'var(--amber2)'
                               : 'var(--green)'
                             : 'var(--text3)',
                       }}
@@ -251,7 +219,7 @@ function StockValuationPage(): React.JSX.Element {
             <tfoot>
               <tr style={reportTotalRowStyle}>
                 <td colSpan={priceHidden ? 5 : 6} style={{ color: 'var(--text2)' }}>
-                  TOTAL ({filtered.length} items)
+                  Total ({filtered.length} items)
                 </td>
                 {priceHidden ? null : (
                   <td className="td-num mono" style={{ color: 'var(--cyan)' }}>

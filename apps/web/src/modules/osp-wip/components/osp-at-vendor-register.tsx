@@ -8,6 +8,7 @@ import { type ListOspWipResponse, type OspWipRow, opSrNo } from '@innovic/shared
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { useOspWip } from '../api';
 
 type FilterKey = 'all' | 'at_vendor' | 'not_sent' | 'ready_to_send';
@@ -59,29 +60,9 @@ export function OspAtVendorRegister(): React.JSX.Element {
 
           <div className="panel">
             <div className="panel-hdr">
-              <span className="panel-title">
-                Outsourced Operations{' '}
-                {filter !== 'all' ? (
-                  <span style={{ color: 'var(--amber2)', fontSize: 12 }}>
-                    (Filtered:{' '}
-                    {filter === 'at_vendor'
-                      ? 'still at vendor'
-                      : filter === 'not_sent'
-                        ? 'not yet sent'
-                        : 'ready to send today'}
-                    )
-                  </span>
-                ) : null}
-              </span>
-              {filter !== 'all' ? (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setFilter('all')}
-                >
-                  Show All
-                </button>
-              ) : null}
+              {/* The active StatStrip tile shows the filter — no "(Filtered: …)"
+                  caption or Show All button (R5 PU-N45). */}
+              <span className="panel-title">Outsourced Operations</span>
             </div>
             <div className="tbl-wrap">
               <table className="innovic-table">
@@ -123,7 +104,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
                     <th
                       className="td-ctr"
                       style={{ color: 'var(--blue)' }}
-                      title="Pending qty still to be outsourced"
+                      title="Not yet sent to the vendor"
                     >
                       Not Sent
                     </th>
@@ -143,7 +124,9 @@ export function OspAtVendorRegister(): React.JSX.Element {
                   {data.rows.length === 0 ? (
                     <tr>
                       <td colSpan={15} className="empty-state">
-                        No outsourced operations match this filter
+                        {filter !== 'all' || search.trim()
+                          ? 'No outsourced operations match.'
+                          : 'No outsourced operations yet.'}
                       </td>
                     </tr>
                   ) : (
@@ -173,7 +156,7 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {row.clientPoLineNo ?? '—'}
       </td>
-      <td className="td-code" style={{ color: 'var(--purple)' }}>
+      <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(row.itemCode, row.itemRevision)}
       </td>
       <td className="fw-700">{row.itemName ?? '—'}</td>
@@ -243,6 +226,9 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
   );
 }
 
+// Counts as the ONE shared StatStrip (styling rule 3). "Outsourced Ops" is the
+// All tile, first. Total Sent is a plain total in the body colour — green in
+// this table means Accepted (R5 PU-N46).
 function KpiStrip({
   summary,
   filter,
@@ -252,61 +238,47 @@ function KpiStrip({
   filter: FilterKey;
   setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
-  const tiles: Array<{
-    variant: 'cyan' | 'amber' | 'blue' | 'green' | 'purple';
-    label: string;
-    value: number | string;
-    sub?: string;
-    onClick?: () => void;
-  }> = [
-    {
-      variant: 'cyan',
-      label: 'Outsourced Ops',
-      value: summary.totalOps,
-      onClick: () => setFilter('all'),
-    },
-    {
-      variant: 'amber',
-      label: 'At Vendor',
-      value: summary.atVendorQty,
-      sub: `${summary.opsAtVendor} ops still out`,
-      onClick: () => setFilter(filter === 'at_vendor' ? 'all' : 'at_vendor'),
-    },
-    {
-      variant: 'blue',
-      label: 'Not Sent',
-      value: summary.notSentQty,
-      onClick: () => setFilter(filter === 'not_sent' ? 'all' : 'not_sent'),
-    },
-    {
-      // 'purple' matches the column below it. Like the 'blue' tile above, the
-      // theme defines no `.stat-card.purple` accent bar (see innovic-theme.css
-      // L468) — the tile renders bar-less, exactly as Not Sent already does.
-      variant: 'purple',
-      label: 'Ready to Send',
-      value: summary.readyToSendQty,
-      onClick: () => setFilter(filter === 'ready_to_send' ? 'all' : 'ready_to_send'),
-    },
-    {
-      variant: 'green',
-      label: 'Total Sent',
-      value: summary.sentQty,
-    },
-  ];
+  const toggle = (k: FilterKey) => () => setFilter(filter === k ? 'all' : k);
   return (
-    <div className="stat-grid">
-      {tiles.map((t, i) => (
-        <div
-          key={i}
-          className={`stat-card ${t.variant}`}
-          onClick={t.onClick}
-          style={t.onClick ? { cursor: 'pointer' } : undefined}
-        >
-          <div className="stat-label">{t.label}</div>
-          <div className="stat-val">{t.value}</div>
-          {t.sub ? <div className="stat-sub">{t.sub}</div> : null}
-        </div>
-      ))}
+    <div style={{ marginBottom: 14 }}>
+      <StatStrip
+        items={[
+          {
+            key: 'all',
+            label: 'Outsourced Ops',
+            count: summary.totalOps,
+            color: 'var(--cyan)',
+            active: filter === 'all',
+            onClick: () => setFilter('all'),
+          },
+          {
+            key: 'at_vendor',
+            label: 'At Vendor',
+            count: summary.atVendorQty,
+            color: 'var(--amber)',
+            sub: `${summary.opsAtVendor} ops still out`,
+            active: filter === 'at_vendor',
+            onClick: toggle('at_vendor'),
+          },
+          {
+            key: 'not_sent',
+            label: 'Not Sent',
+            count: summary.notSentQty,
+            color: 'var(--blue)',
+            active: filter === 'not_sent',
+            onClick: toggle('not_sent'),
+          },
+          {
+            key: 'ready_to_send',
+            label: 'Ready to Send',
+            count: summary.readyToSendQty,
+            color: 'var(--purple)',
+            active: filter === 'ready_to_send',
+            onClick: toggle('ready_to_send'),
+          },
+          { key: 'sent', label: 'Total Sent', count: summary.sentQty },
+        ]}
+      />
     </div>
   );
 }

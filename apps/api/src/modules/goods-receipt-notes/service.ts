@@ -519,15 +519,14 @@ export async function listGoodsReceiptNotes(
     // PL-GRN-1b — KPI summary across the SAME filter set (no LIMIT). Mirrors
     // legacy renderGRN L26483–26488 four-tile strip. A GRN counts as
     // QC-cleared if all its lines have qc_status='completed'; QC-pending if
-    // any line is pending or partial. "Today" uses the company-local date —
-    // we approximate with NOW()::date (UTC); IST drift is < 1 day and the
-    // tile is informational. Future: take company TZ into account.
+    // any line is pending or partial. "Today" is the IST calendar date (a
+    // bare CURRENT_DATE is UTC, which is still yesterday before 05:30 IST).
     const summaryRows = await tx.execute(sql`
       SELECT
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE per_grn.has_pending)::int AS qc_pending,
         COUNT(*) FILTER (WHERE NOT per_grn.has_pending AND per_grn.line_count > 0)::int AS qc_cleared,
-        COUNT(*) FILTER (WHERE grn.grn_date = CURRENT_DATE)::int AS today
+        COUNT(*) FILTER (WHERE grn.grn_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date)::int AS today
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN LATERAL (

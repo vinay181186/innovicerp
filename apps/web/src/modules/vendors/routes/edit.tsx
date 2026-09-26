@@ -50,7 +50,7 @@ function VendorNewPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
-          ⛔ You do not have entry access to create a vendor.
+          You do not have permission to create Vendors. Ask an admin.
         </div>
       </div>
     );
@@ -65,10 +65,7 @@ function VendorNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">+ New Vendor</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for a vendor.
-            </div>
+            <div className="panel-title">New Vendor</div>
           </div>
         </div>
         <div className="panel-body">
@@ -116,7 +113,7 @@ function VendorEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
-          ⛔ You do not have edit access to change a vendor.
+          You do not have permission to edit Vendors. Ask an admin.
         </div>
       </div>
     );
@@ -140,7 +137,7 @@ function VendorEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Vendor not found'}
+            {error instanceof Error ? error.message : 'Vendor not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -156,14 +153,14 @@ function VendorEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to vendor
+        <ArrowLeft size={14} /> Back to Vendor
       </Link>
       <div className="panel">
         <div className="panel-hdr">
           <div>
             <div
               className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+              style={{ color: 'var(--text)', fontSize: 14, fontWeight: 700 }}
             >
               {vendor.code}
             </div>

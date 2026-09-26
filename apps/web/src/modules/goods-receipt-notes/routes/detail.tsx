@@ -1,8 +1,12 @@
 // GRN detail (UI-003-05).
 
-import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLineDetail } from '@innovic/shared';
+import type {
+  GoodsReceiptNoteDetail,
+  GoodsReceiptNoteLineDetail,
+  GrnQcStatus,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -10,6 +14,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { useSession } from '@/lib/session';
 import { useMyCompany } from '@/modules/settings/api';
@@ -50,7 +55,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view GRNs. Ask an admin.
       </div>
     );
   }
@@ -72,19 +77,19 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'GRN not found'}
+            {error instanceof Error ? error.message : 'GRN not found. Refresh the page.'}
           </div>
         </div>
       </div>
     );
   }
 
-  const onDelete = (): void => {
-    softDelete.mutate(detail.id, {
-      onSuccess: () => {
-        void navigate({ to: '/goods-receipt-notes', replace: true });
-      },
-    });
+  // mutateAsync: ConfirmDialog stays pending while it runs and shows a
+  // rejection inside the dialog instead of closing.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(detail.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/goods-receipt-notes', replace: true });
   };
 
   // Print follows the page's existing VIEW permission — if you can read the
@@ -113,6 +118,15 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // The next step for a GRN is Incoming QC. `?line=` deep-links straight to
   // the Inspect popup for that GRN line (incoming-qc/routes/index.tsx).
   const firstQcPending = detail.lines.find((l) => l.qcStatus !== 'completed');
+  // Header QC status — same rule as the GRN list card and tile: cleared once
+  // every line is inspected, "In Progress" only when a line's QC status is
+  // 'in_progress', else pending.
+  const headerQcStatus: GrnQcStatus =
+    detail.lines.length > 0 && !firstQcPending
+      ? 'completed'
+      : detail.lines.some((l) => l.qcStatus === 'in_progress')
+        ? 'in_progress'
+        : 'pending';
 
   return (
     <div>
@@ -123,11 +137,14 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
-            >
-              {detail.code}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span
+                className="td-code"
+                style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
+              >
+                {detail.code}
+              </span>
+              <QcStatusBadge status={headerQcStatus} />
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
               {detail.vendorName ?? detail.vendorCodeText ?? '—'}
@@ -199,11 +216,14 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 {
                   label: 'Delete',
                   danger: true,
-                  onClick: () => setConfirmDelete(true),
-                  hidden: !canDelete || confirmDelete,
+                  onClick: () => {
+                    softDelete.reset();
+                    setConfirmDelete(true);
+                  },
+                  hidden: !canDelete,
                   disabled: anyCompleted,
                   title: anyCompleted
-                    ? 'GRN has at least one QC-completed line — create a reversing GRN line instead'
+                    ? 'A line is already QC Cleared, so this GRN cannot be moved to Trash.'
                     : undefined,
                 },
               ]}
@@ -218,54 +238,9 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 Open in Incoming QC
               </Link>
             ) : null}
-            {canDelete && confirmDelete ? (
-              <>
-                <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
-                  Move GRN {detail.code} to Trash? You can restore it from Trash.
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={onDelete}
-                  disabled={softDelete.isPending}
-                >
-                  {softDelete.isPending ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={13} />
-                  )}
-                  Move to Trash
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={softDelete.isPending}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : null}
           </div>
         </div>
         <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Could not delete GRN. Try again.'}
-            </div>
-          ) : null}
           <DetailGrid detail={detail} />
         </div>
       </div>
@@ -274,9 +249,9 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div className="panel-title">Line Items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            received <b style={{ color: 'var(--text)' }}>{totalReceived}</b> · accepted{' '}
-            <b style={{ color: 'var(--green2)' }}>{totalAccepted}</b> · rejected{' '}
-            <b style={{ color: 'var(--amber2)' }}>{totalRejected}</b>
+            Received <b style={{ color: 'var(--text)' }}>{totalReceived}</b> · Accepted{' '}
+            <b style={{ color: 'var(--green2)' }}>{totalAccepted}</b> · Rejected{' '}
+            <b style={{ color: 'var(--red2)' }}>{totalRejected}</b>
           </span>
         </div>
         <div className="tbl-wrap">
@@ -313,6 +288,28 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       </div>
 
       <RelatedDocsPanel module="goods-receipt-notes" id={detail.id} />
+
+      {canDelete && confirmDelete ? (
+        <ConfirmDialog
+          title={`Move GRN ${detail.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          tone="danger"
+          onConfirm={onDelete}
+          onCancel={() => {
+            softDelete.reset();
+            setConfirmDelete(false);
+          }}
+          errorText={
+            softDelete.isError
+              ? softDelete.error instanceof Error
+                ? softDelete.error.message
+                : 'Could not move GRN to Trash. Try again.'
+              : null
+          }
+        />
+      ) : null}
     </div>
   );
 }
@@ -339,7 +336,7 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
       <td className="mono td-num" style={{ color: 'var(--green2)' }}>
         {l.qcAcceptedQty}
       </td>
-      <td className="mono td-num" style={{ color: 'var(--amber2)' }}>
+      <td className="mono td-num" style={{ color: 'var(--red2)' }}>
         {l.qcRejectedQty}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
@@ -365,7 +362,7 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
       {/* On an NC-return GRN there is no PO: the header's poCodeText holds the
           NC code, so it is shown once, under an "NC" label. */}
       {detail.ncCode ? (
-        <Pair label="NC" value={detail.ncCode} />
+        <Pair label="NC No." value={detail.ncCode} />
       ) : (
         <Pair label="PO No." value={detail.poCode ?? detail.poCodeText ?? '—'} />
       )}

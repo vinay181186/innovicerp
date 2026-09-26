@@ -29,7 +29,6 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNote, useGoodsReceiptNotesList } from '../api';
 import { QcStatusBadge } from '../components/qc-status-badge';
-import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 // Pagination is KEPT here (unlike SO Master): the GRN API is paginated and the
 // receipt book grows every day, so the whole list is not loaded in one go.
@@ -69,8 +68,6 @@ function QtyBox({
         style={{
           fontSize: 11,
           color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}
       >
         {label}
@@ -129,6 +126,21 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query);
+  // The KPI summary has no "QC In Progress" count, so the tile reads the pager
+  // total of the same list filtered to it (same endpoint). The rows also tell
+  // each card whether a line is in QC right now — the same rule as the tile
+  // (a line with QC status 'in_progress'), so card and tile always agree.
+  const { data: inProgressData } = useGoodsReceiptNotesList({
+    search: search.search,
+    qcStatus: 'in_progress',
+    limit: 200,
+    offset: 0,
+  });
+  const inProgressIds = useMemo(
+    () => new Set((inProgressData?.items ?? []).map((g) => g.id)),
+    [inProgressData],
+  );
+  const filtered = Boolean(search.search) || search.qcStatus !== undefined;
 
   // Many cards can be open at once, so this is a Set. Nothing auto-expands on
   // load: each open card fetches that GRN's detail, and expanding 25 of them on
@@ -150,6 +162,15 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   const accentFor = (grn: GoodsReceiptNoteListItem): string =>
     grn.grnStatus === 'close' ? 'var(--green)' : 'var(--amber)';
 
+  /** Card QC status: cleared once every line is inspected; "In Progress" only
+   *  when a line's QC status is 'in_progress' (the tile's rule); else pending. */
+  const qcStatusFor = (grn: GoodsReceiptNoteListItem): GrnQcStatus =>
+    grn.grnStatus === 'close'
+      ? 'completed'
+      : search.qcStatus === 'in_progress' || inProgressIds.has(grn.id)
+        ? 'in_progress'
+        : 'pending';
+
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
@@ -161,7 +182,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view GRNs. Ask an admin.
       </div>
     );
   }
@@ -227,45 +248,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           </div>
         </div>
 
-        {/* QC-status filter as pills. Replaces the <select> it used to sit
-            beside — every GRN_QC_STATUSES value gets a pill, so nothing that
-            could be filtered before is unreachable now. Same `qcStatus` search
-            param, same query; only the control changed. */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 10,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {([null, ...GRN_QC_STATUSES] as (GrnQcStatus | null)[]).map((s) => {
-              const active = (search.qcStatus ?? null) === s;
-              return (
-                <button
-                  key={s ?? 'all'}
-                  type="button"
-                  className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{
-                    fontSize: 11,
-                    textTransform: 'capitalize',
-                    borderRadius: 999,
-                    padding: '3px 12px',
-                  }}
-                  onClick={() =>
-                    void navigate({
-                      search: (prev) => ({ ...prev, qcStatus: s ?? undefined, page: 1 }),
-                      replace: true,
-                    })
-                  }
-                >
-                  {s ? GRN_QC_STATUS_LABELS[s] : 'All'}
-                </button>
-              );
-            })}
-          </div>
+        {/* The KPI tiles below are the only QC-status filter (the pills that
+            repeated them are gone, R5). */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -273,7 +258,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             disabled={rows.length === 0}
             title={allExpanded ? 'Hide every card’s lines' : 'Show every card’s lines'}
           >
-            {allExpanded ? 'Collapse all' : 'Expand all'}
+            {allExpanded ? 'Collapse All' : 'Expand All'}
           </button>
         </div>
       </div>
@@ -282,6 +267,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         <GrnKpiStrip
           summary={data.summary}
           activeStatus={search.qcStatus ?? null}
+          inProgressCount={inProgressData?.total}
           onSelectStatus={(s) => {
             void navigate({
               search: (prev) => ({ ...prev, qcStatus: s, page: 1 }),
@@ -302,12 +288,11 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         </div>
       ) : rows.length === 0 ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
-          No GRNs yet. Click + New GRN.
+          {filtered ? 'No GRNs match.' : 'No GRNs yet.'}
         </div>
       ) : (
         rows.map((grn) => {
           const isExpanded = expandedIds.has(grn.id);
-          const closed = grn.grnStatus === 'close';
           const poRef = grn.poCode ?? grn.poCodeText;
           return (
             <div
@@ -353,9 +338,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                   {/* GRN status: 'close' once every line is fully QC-inspected,
                       else 'pending' (any line still has QC qty remaining, incl.
                       partial approval). */}
-                  <span className={`badge ${closed ? 'b-green' : 'b-amber'}`}>
-                    {closed ? 'QC Cleared' : 'QC Pending'}
-                  </span>
+                  <QcStatusBadge status={qcStatusFor(grn)} />
                   {/* Source: an NC's return-to-vendor challan (ADR-161), an OSP
                       delivery challan (ADR-080) or a purchase PO. An NC GRN
                       also carries deliveryChallanId, so NC is checked first. */}
@@ -498,7 +481,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       >
         <span>
           {total === 0
-            ? 'No goods receipt notes'
+            ? ''
             : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -572,19 +555,10 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
             color: 'var(--blue)',
             fontFamily: 'var(--mono)',
             fontWeight: 700,
-            letterSpacing: '0.06em',
           }}
         >
-          ▸ LINES — {data.code}
+          Lines — {data.code}
         </div>
-        <Link
-          to="/goods-receipt-notes/$id"
-          params={{ id: data.id }}
-          style={{ fontSize: 11, color: 'var(--blue)' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          Open full detail →
-        </Link>
       </div>
       {/* tbl-ctr — the table-alignment standard: header and data share one
           centre line; no per-cell textAlign / td-ctr. */}
@@ -604,7 +578,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
             <th className="th-num" style={{ color: 'var(--red2)' }}>
               Rejected
             </th>
-            <th>QC</th>
+            <th>QC Status</th>
             <th>QC Date</th>
           </tr>
         </thead>
@@ -612,7 +586,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
           {data.lines.length === 0 ? (
             <tr>
               <td colSpan={9} className="empty-state">
-                No lines
+                No lines yet.
               </td>
             </tr>
           ) : (
@@ -675,10 +649,12 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
 function GrnKpiStrip({
   summary,
   activeStatus,
+  inProgressCount,
   onSelectStatus,
 }: {
   summary: { total: number; qcPending: number; qcCleared: number; today: number };
   activeStatus: GrnQcStatus | null;
+  inProgressCount: number | undefined;
   onSelectStatus: (next: GrnQcStatus | undefined) => void;
 }): React.JSX.Element {
   return (
@@ -700,6 +676,14 @@ function GrnKpiStrip({
             color: 'var(--amber2)',
             onClick: () => onSelectStatus('pending'),
             active: activeStatus === 'pending',
+          },
+          {
+            key: 'qcinprogress',
+            label: 'QC In Progress',
+            count: inProgressCount ?? '—',
+            color: 'var(--amber2)',
+            onClick: () => onSelectStatus('in_progress'),
+            active: activeStatus === 'in_progress',
           },
           {
             key: 'qccleared',

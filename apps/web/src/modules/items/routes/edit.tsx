@@ -70,7 +70,7 @@ function ItemNewPage(): React.JSX.Element {
         <PageHeader title="New Item" backLabel={BACK_TO_LIST} onBack={goBack} />
         <PageState
           state="noaccess"
-          message="⛔ You do not have create access to Item Master. Ask an admin for L2 Data Entry or above in Store."
+          message="You do not have permission to create Items. Ask an admin."
         />
       </>
     );
@@ -129,10 +129,10 @@ function ItemEditPage(): React.JSX.Element {
   if (!perms.edit) {
     return (
       <>
-        <PageHeader title="Edit Item" backLabel="Back to item" onBack={goBack} />
+        <PageHeader title="Edit Item" backLabel="Back to Item" onBack={goBack} />
         <PageState
           state="noaccess"
-          message="⛔ You do not have edit access to Item Master. Ask an admin for L3 Editor or above in Store."
+          message="You do not have permission to edit Items. Ask an admin."
         />
       </>
     );
@@ -144,7 +144,7 @@ function ItemEditPage(): React.JSX.Element {
         <PageHeader title="Edit Item" backLabel={BACK_TO_LIST} onBack={goToList} />
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Item not found'}
+          message={error instanceof Error ? error.message : 'Item not found. Refresh the page.'}
         />
       </>
     );
@@ -157,7 +157,7 @@ function ItemEditPage(): React.JSX.Element {
         mode="edit"
         item={item}
         title="Edit Item"
-        backLabel="Back to item"
+        backLabel="Back to Item"
         onBack={goBack}
         onSubmit={onSubmit}
         submitError={submitError}

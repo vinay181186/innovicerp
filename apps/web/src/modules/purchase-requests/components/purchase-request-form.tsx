@@ -252,9 +252,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             label="PR Type"
             size="md"
             htmlFor="prType"
-            help={
-              isEdit ? 'PR type is fixed at creation.' : 'Service = work done outside (DC out).'
-            }
+            help={isEdit ? undefined : 'Service = work done outside (DC out).'}
           >
             {/* What this PR is FOR, and therefore what the PO it becomes can do:
                 standard ends in a GRN (goods in), service sends the item out on
@@ -289,13 +287,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             )}
           </FormField>
 
-          <FormField
-            label="PR No."
-            size="md"
-            htmlFor="code"
-            help={isEdit ? 'PR No. cannot be changed after creation.' : undefined}
-            error={errors.code?.message}
-          >
+          <FormField label="PR No." size="md" htmlFor="code" error={errors.code?.message}>
             {/* System-generated, never typed. The server allocates the next
                 IN-PR-##### on save. This was a free text box that only defaulted
                 to auto when left blank, which is how PRs ended up numbered
@@ -315,7 +307,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
               id="prDate"
               type="date"
               className="innovic-input"
-              {...register('prDate', { required: 'PR Date is required' })}
+              {...register('prDate', { required: 'PR Date is required.' })}
             />
           </FormField>
 
@@ -355,7 +347,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
               className="innovic-input"
               {...register('qty', {
                 valueAsNumber: true,
-                min: { value: 1, message: 'Min 1' },
+                min: { value: 1, message: 'PR Qty must be at least 1.' },
               })}
             />
           </FormField>
@@ -380,7 +372,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             />
           </div>
 
-          <FormField label="Est. Rate (₹/pc)" size="sm" htmlFor="estCost">
+          <FormField label="Est. Rate (₹)" size="sm" htmlFor="estCost">
             <input
               id="estCost"
               type="number"
