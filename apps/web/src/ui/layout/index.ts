@@ -56,3 +56,9 @@ export {
 } from './PageState';
 export { StatusPills, ViewToggle } from './StatusPills';
 export type { StatusPillOption, StatusPillsProps, ViewToggleProps } from './StatusPills';
+
+// ERPNext gap report 2026-09-26: one primary button + an Actions drop-down on
+// detail headers, and Ctrl+S on every create/edit form.
+export { ActionMenu } from './ActionMenu';
+export type { ActionMenuItem, ActionMenuProps } from './ActionMenu';
+export { useSaveShortcut } from './use-save-shortcut';

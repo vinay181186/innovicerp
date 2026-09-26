@@ -717,6 +717,29 @@ table.tbl-ctr th,
 table.tbl-ctr td {
   text-align: center;
 }
+/* NUMBERS ARE THE EXCEPTION (decided 2026-09-26, ERPNext gap report): qty,
+   rate, amount, % and every other number sit RIGHT-aligned — header and value
+   together — with fixed-width digits, so decimals line up down the column the
+   way they do in ERPNext and on paper. Text columns stay centred.
+   Mark a numeric column with `th-num` on its <th> and `td-num` on its <td>
+   (`td-right` / `th-right` are accepted aliases). A number <input> inside a
+   table cell right-aligns on its own. (0,2,1) outranks the centring above. */
+.innovic-table th.th-num,
+.innovic-table td.td-num,
+.innovic-table th.th-right,
+.innovic-table td.td-right,
+table.tbl-ctr th.th-num,
+table.tbl-ctr td.td-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.innovic-table td input.innovic-input[type='number'],
+.innovic-table td.td-num .innovic-input,
+.ops-routing td input.innovic-input[type='number'],
+table.tbl-ctr td input.innovic-input[type='number'] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 /* On form-style tables the value the user reads sits inside a full-width
    <input>/<select> that fills the cell, so centring the cell alone moves
    nothing on screen. An inline textAlign on the control still wins over this. */
@@ -1018,7 +1041,9 @@ table.tbl-ctr td .innovic-select {
 .btn-sm {
   height: var(--control-h-sm);
   padding: 0 var(--sp-2);
-  font-size: var(--fs-label);
+  /* 13px, not 11px: 640+ page actions use btn-sm, and 11px button text was
+     the smallest thing a user has to click (ERPNext gap report 2026-09-26). */
+  font-size: var(--fs-control);
 }
 .btn-icon {
   padding: 0 var(--sp-2);
@@ -1112,12 +1137,13 @@ table.tbl-ctr td .innovic-select {
   gap: var(--sp-1);
 }
 .form-label {
-  font-size: var(--fs-label);
+  /* 13px sentence-case body font, not 11px UPPERCASE mono: labels are read on
+     every field of every form, and uppercase mono at 11px was the hardest text
+     in the app to scan (ERPNext gap report 2026-09-26; ERPNext: 13px). */
+  font-size: var(--fs-body);
   color: var(--text2);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-family: var(--mono);
+  font-family: var(--bfont);
 }
 .form-label .req {
   color: var(--red2);
@@ -1182,8 +1208,12 @@ textarea.innovic-input {
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .innovic-input[readonly] {
-  opacity: 0.6;
-  cursor: not-allowed;
+  /* Read-only values are read, so they keep full-strength text; the grey
+     fill alone says "not editable". It was opacity .6 — the faintest thing
+     on the screen was the value the user came to check. */
+  background: var(--bg4);
+  color: var(--text);
+  cursor: default;
 }
 .innovic-input:disabled,
 .innovic-select:disabled,
@@ -1643,4 +1673,44 @@ input[type='radio'] {
   .gs-results .innovic-table col.gs-col-status {
     width: auto;
   }
+}
+
+/* ── ActionMenu (ui/layout/ActionMenu.tsx) — the "Actions ▾" drop-down ────── */
+.action-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--sp-1));
+  z-index: 50;
+  min-width: 180px;
+  padding: var(--sp-1) 0;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+}
+.action-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--sp-1) var(--sp-3);
+  background: none;
+  border: 0;
+  font-family: var(--bfont);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.6;
+}
+.action-menu-item:hover:not(:disabled) {
+  background: var(--bg4);
+}
+.action-menu-item:disabled {
+  color: var(--text3);
+  cursor: not-allowed;
+}
+.action-menu-sep {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--border);
 }
