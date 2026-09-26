@@ -44,7 +44,11 @@ function PurchaseRequestNewPage(): React.JSX.Element {
       const created = await create.mutateAsync(values);
       exit.leave(
         () =>
-          void navigate({ to: '/purchase-requests/$id', params: { id: created.id }, replace: true }),
+          void navigate({
+            to: '/purchase-requests/$id',
+            params: { id: created.id },
+            replace: true,
+          }),
       );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save PR. Try again.');
@@ -80,27 +84,16 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link to="/purchase-requests" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Purchase Requests
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">📝 New Purchase Request</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Procurement intent — pick a vendor + item, set qty + cost.
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <PurchaseRequestForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <PurchaseRequestForm
+        mode="create"
+        title="📝 New Purchase Request"
+        subtitle="Procurement intent — pick a vendor + item, set qty + cost."
+        backLabel="Back to Purchase Requests"
+        onBack={goBack}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -212,42 +205,22 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/purchase-requests/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to PR
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
-            >
-              {detail.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              Edit Purchase Request
-              <PrStatusBadge status={detail.status} />
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <PurchaseRequestForm
-            mode="edit"
-            detail={detail}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <PurchaseRequestForm
+        mode="edit"
+        title="Edit Purchase Request"
+        subtitle={
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+            <span className="td-code">{detail.code}</span>
+            <PrStatusBadge status={detail.status} />
+          </span>
+        }
+        backLabel="Back to PR"
+        onBack={goBack}
+        detail={detail}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

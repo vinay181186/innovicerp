@@ -9,7 +9,7 @@
 // it browser-side would violate CLAUDE.md rule 1. Reported, not invented.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -17,6 +17,7 @@ import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
+import { ActionMenu } from '@/ui/layout';
 import { useBomMaster, useDeleteBomMaster } from '../api';
 
 export const bomMasterDetailRoute = createRoute({
@@ -140,31 +141,33 @@ function BomMasterDetailPage(): React.JSX.Element {
               </span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          {/* ONE primary next step (Edit / Revise) + an Actions menu for the
+              rest, Delete last in red. */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {perms.edit && (
               <Link
                 to="/bom-masters/$id/edit"
                 params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
+                className="btn btn-primary"
               >
                 <Pencil size={13} /> Edit / Revise
               </Link>
             )}
-            {perms.edit && perms.approve && (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={onDeleteClick}
-                disabled={del.isPending}
-                title={
-                  detail.linkedSoCount > 0
-                    ? `Linked to ${detail.linkedSoCount} SO line(s)`
-                    : 'Delete BOM'
-                }
-              >
-                <Trash2 size={13} /> Delete
-              </button>
-            )}
+            <ActionMenu
+              items={[
+                {
+                  label: 'Delete',
+                  danger: true,
+                  hidden: !(perms.edit && perms.approve),
+                  disabled: del.isPending,
+                  title:
+                    detail.linkedSoCount > 0
+                      ? `Linked to ${detail.linkedSoCount} SO line(s)`
+                      : 'Delete BOM',
+                  onClick: onDeleteClick,
+                },
+              ]}
+            />
           </div>
         </div>
         <div className="panel-body">
@@ -232,10 +235,12 @@ function BomMasterDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 36 }}>Sr No</th>
+                <th className="th-num" style={{ width: 36 }}>
+                  Sr No
+                </th>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-ctr">Qty / Set</th>
+                <th className="th-num">Qty / Set</th>
                 <th>BOM Type</th>
                 {/* Raw material is per LINE: each child is a different part cut
                     from its own stock, and this is what the BOM cascade stamps
@@ -260,12 +265,12 @@ function BomMasterDetailPage(): React.JSX.Element {
                   };
                   return (
                     <tr key={line.id}>
-                      <td className="td-ctr mono fw-700">{idx + 1}</td>
+                      <td className="td-num mono fw-700">{idx + 1}</td>
                       <td className="td-code" style={{ color: 'var(--purple)' }}>
                         {line.childItemCode ?? '—'}
                       </td>
                       <td>{line.childItemName ?? '—'}</td>
-                      <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>
+                      <td className="td-num mono fw-700" style={{ fontSize: 14 }}>
                         {Number(line.qtyPerSet)}
                       </td>
                       <td>
@@ -307,7 +312,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               <tbody>
                 {detail.revisions.map((rev) => (
                   <tr key={rev.id}>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {rev.revision}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
@@ -371,22 +376,22 @@ function BomMasterDetailPage(): React.JSX.Element {
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>Sr No</th>
+                    <th className="th-num">Sr No</th>
                     <th>Item Code</th>
                     <th>Item Name</th>
-                    <th>Qty / Set</th>
+                    <th className="th-num">Qty / Set</th>
                     <th>BOM Type</th>
                   </tr>
                 </thead>
                 <tbody>
                   {openSnapshot.itemsSnapshot.map((it, i) => (
                     <tr key={`${it.childItemId}-${i}`}>
-                      <td className="td-ctr mono">{i + 1}</td>
+                      <td className="td-num mono">{i + 1}</td>
                       <td className="td-code" style={{ color: 'var(--purple)' }}>
                         {it.childItemCode ?? '—'}
                       </td>
                       <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
-                      <td className="td-ctr mono fw-700">{Number(it.qtyPerSet)}</td>
+                      <td className="td-num mono fw-700">{Number(it.qtyPerSet)}</td>
                       <td style={{ fontSize: 11 }}>{BOM_TYPE_WORD[it.bomType] ?? it.bomType}</td>
                     </tr>
                   ))}

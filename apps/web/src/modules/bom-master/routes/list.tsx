@@ -107,7 +107,13 @@ function BomMastersListPage(): React.JSX.Element {
   // is left-aligned.
   const columns = useMemo<DataTableColumn<BomMasterListItem>[]>(
     () => [
-      { header: 'Sr No', width: '4%', className: 'text3', render: (_b, i) => i + 1 },
+      {
+        header: 'Sr No',
+        width: '4%',
+        className: 'text3',
+        align: 'right',
+        render: (_b, i) => i + 1,
+      },
       {
         header: 'BOM No.',
         width: '11%',
@@ -186,6 +192,7 @@ function BomMastersListPage(): React.JSX.Element {
       {
         header: 'Items',
         width: '6%',
+        align: 'right',
         className: 'mono fw-700',
         nowrap: true,
         render: (b) => <span style={{ color: 'var(--purple)' }}>{b.lineCount}</span>,
@@ -208,6 +215,7 @@ function BomMastersListPage(): React.JSX.Element {
       {
         header: 'Linked SOs',
         width: '8%',
+        align: 'right',
         nowrap: true,
         render: (b) =>
           b.linkedSoCount > 0 ? (
@@ -320,7 +328,13 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
 
   const columns = useMemo<DataTableColumn<NonNullable<typeof data>['lines'][number]>[]>(
     () => [
-      { header: 'Sr No', width: '6%', className: 'mono fw-700', render: (_l, i) => i + 1 },
+      {
+        header: 'Sr No',
+        width: '6%',
+        className: 'mono fw-700',
+        align: 'right',
+        render: (_l, i) => i + 1,
+      },
       {
         header: 'Item Code',
         width: '20%',
@@ -339,6 +353,7 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
       {
         header: 'Qty / Set',
         width: '13%',
+        align: 'right',
         className: 'mono fw-700',
         nowrap: true,
         render: (l) => Number(l.qtyPerSet),

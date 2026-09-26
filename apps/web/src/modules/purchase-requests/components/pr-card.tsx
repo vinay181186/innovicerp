@@ -245,8 +245,7 @@ export function PrCard({
               <>
                 <button
                   type="button"
-                  className="btn btn-sm btn-success"
-                  style={{ fontSize: 11 }}
+                  className="btn btn-sm btn-primary"
                   disabled={approving}
                   onClick={() => onApprove(pr)}
                 >
@@ -255,7 +254,6 @@ export function PrCard({
                 <button
                   type="button"
                   className="btn btn-sm btn-danger"
-                  style={{ fontSize: 11 }}
                   disabled={rejecting}
                   onClick={() => onReject(pr)}
                 >
@@ -271,8 +269,7 @@ export function PrCard({
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: pr.id }}
-                className="btn btn-sm btn-success"
-                style={{ fontSize: 11 }}
+                className="btn btn-sm btn-primary"
               >
                 Create PO
               </Link>
