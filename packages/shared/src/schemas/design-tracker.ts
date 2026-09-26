@@ -64,7 +64,7 @@ export const designTrackerSchema = z.object({
 export type DesignTracker = z.infer<typeof designTrackerSchema>;
 
 export const designTrackerListItemSchema = designTrackerSchema.extend({
-  /** Σ hours from design_time_log for this design. */
+  /** Σ hours from design_work_log rows logged against this design (ADR-188). */
   totalHours: z.number(),
 });
 export type DesignTrackerListItem = z.infer<typeof designTrackerListItemSchema>;

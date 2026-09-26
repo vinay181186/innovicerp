@@ -9987,3 +9987,54 @@ query before any ×60 correction; no data was changed.
    IGST n. NULL rows (raised before 0148) keep the single "GST @ n%" row. Totals are unchanged.
 3. PO, Tax Invoice, JW Invoice and JW DC prints show each line's real UOM (SO line / JWSO line /
    item master), "NOS" only when blank. The Tax Invoice print shows the customer's Client PO No.
+
+---
+
+## ADR-188: ERPNext gap round 2 — owner decisions
+
+**Date:** 2026-09-26
+**Status:** Accepted (owner decision; code on the layout-fix branch, migration 0150 not yet applied)
+
+### Context
+
+The second ERPNext comparison round found five places where the app either kept two records of
+one fact, offered two screens for one job, hard-coded a value that has a real upstream source,
+hard-deleted from inside the app, or computed a figure in the browser. The owner decided each one.
+
+### Decision
+
+1. **Design Project is THE per-SO design record; there is ONE engineer time log.** Design
+   Tracker's "Log Time" (`POST /design-tracker/:id/time`) now writes to `design_work_log`, not
+   `design_time_log`. `design_work_log.design_tracker_id` (migration 0150) records which tracker
+   the time was logged from; `design_project_id` is set to the SO's live Design Project when
+   exactly one exists (none or two → left empty, still reachable through the tracker). The
+   tracker's detail and list read their hours back from `design_work_log`; the response shape
+   (`DesignTimeLogEntry`, `totalHours`) is unchanged. Project Hours roll-ups and the design
+   reports therefore include tracker time. 0150 moves every live `design_time_log` row across
+   and soft-deletes it; the table is kept, no longer written.
+2. **SO Status and Planning are the SO-progress screens.** SO Overview is a summary that drills
+   into SO Status for one order; it is not a third progress screen.
+3. **Invoice defaults come from upstream, never a hard-coded 18 % / 45 days.** The GST % default
+   is the Sales Order's `gst_percent`; the Payment Terms default is the customer's new
+   `clients.payment_days` (Payment Days, nullable, 0..365). `GET /invoices/invoiceable/:soId`
+   returns both (`gstPercent`, `paymentDays`). The invoice-from-dispatch path loads the same
+   endpoint once the dispatch's SO is picked, so it gets the same values. Both stay editable on
+   the invoice; the invoice keeps its own `payment_terms_days`.
+4. **No permanent delete inside the app.** `POST /trash/perm-delete` and `POST /trash/empty` are
+   removed with their service code; Trash keeps list + restore. CLAUDE.md §6 rule 8 stands with
+   no exception: hard deletes only via documented admin scripts after a backup. This settles the
+   "ratify or revoke" question in ISSUES.md (Trash, rule 8 tension): revoked.
+5. **Report totals computed in the browser are accepted as display-only** — an explicit, bounded
+   exception to §6 rule 1. A total the browser adds up from rows the server already sent may be
+   shown; it is never submitted, stored, printed as a document figure, or used to gate an action.
+   Any total that is saved, printed on a document or drives a decision is computed server-side.
+
+### Consequences
+
+- 0150 must be applied to BOTH databases (test and production) before the new API is deployed
+  there: without it the Customer master reads (which select every `clients` column), the
+  invoiceable-SO load, Design Tracker Log Time and the Design Work Log list all fail on the
+  missing columns.
+- The web still needs: a Payment Days field on the Customer form, the invoice form prefilled from
+  `gstPercent` / `paymentDays`, the Trash "Delete permanently" / "Empty Trash" buttons and hooks
+  removed, and the Design Work Log marking rows that came from a Design Tracker.

@@ -66,12 +66,7 @@ export const DESIGN_DCR_CHANGE_TYPES = [
 export type DesignDcrChangeType = (typeof DESIGN_DCR_CHANGE_TYPES)[number];
 export const designDcrChangeTypeSchema = z.enum(DESIGN_DCR_CHANGE_TYPES);
 
-export const DESIGN_DCR_STATUSES = [
-  'Submitted',
-  'Under Review',
-  'Accepted',
-  'Rejected',
-] as const;
+export const DESIGN_DCR_STATUSES = ['Submitted', 'Under Review', 'Accepted', 'Rejected'] as const;
 export type DesignDcrStatus = (typeof DESIGN_DCR_STATUSES)[number];
 export const designDcrStatusSchema = z.enum(DESIGN_DCR_STATUSES);
 
@@ -180,6 +175,9 @@ export const designWorkLogEntrySchema = z.object({
   logDate: z.string(),
   engineerText: z.string(),
   designProjectId: z.string().uuid().nullable(),
+  /** Set when the row was logged from a Design Tracker entry ("Log Time"),
+   *  null when entered on the Design Work Log itself (ADR-188). */
+  designTrackerId: z.string().uuid().nullable(),
   projectName: z.string().nullable(),
   projectCode: z.string().nullable(),
   taskText: z.string().nullable(),

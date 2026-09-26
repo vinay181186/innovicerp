@@ -393,6 +393,7 @@ function EntryTab(): React.JSX.Element {
                       >
                         {l.category}
                       </span>
+                      <TrackerBadge designTrackerId={l.designTrackerId} />
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text3)' }}>{l.projectName ?? ''}</div>
                     {l.description ? (
@@ -603,6 +604,7 @@ function DailyTab(): React.JSX.Element {
                   <div style={{ flex: 1 }}>
                     <b>{l.taskText ?? 'General'}</b>{' '}
                     <span style={{ fontSize: 11, color: 'var(--text3)' }}>{l.category}</span>
+                    <TrackerBadge designTrackerId={l.designTrackerId} />
                     <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                       {l.projectName ?? ''}
                       {l.description ? ` — ${l.description}` : ''}
@@ -1080,5 +1082,17 @@ function Tile({
       </div>
       <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
+  );
+}
+
+/** ADR-188 — time logged on the Design Tracker now lands in the Work Log as a
+ *  row that carries its tracker id. The badge tells engineers where it came
+ *  from; hand-entered rows (null) show nothing. */
+function TrackerBadge(props: { designTrackerId: string | null }): React.JSX.Element | null {
+  if (!props.designTrackerId) return null;
+  return (
+    <span className="badge b-blue" title="Logged from the Design Tracker" style={{ marginLeft: 4 }}>
+      Tracker
+    </span>
   );
 }

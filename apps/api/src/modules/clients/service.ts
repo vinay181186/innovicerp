@@ -179,6 +179,7 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
           city: emptyToNull(input.city),
           state: emptyToNull(input.state),
           pincode: emptyToNull(input.pincode),
+          paymentDays: input.paymentDays ?? null,
           isActive: input.isActive,
           createdBy: user.id,
           updatedBy: user.id,
@@ -293,6 +294,7 @@ export async function createClientsBulk(
         city: emptyToNull(c.city),
         state: emptyToNull(c.state),
         pincode: emptyToNull(c.pincode),
+        paymentDays: c.paymentDays ?? null,
         isActive: c.isActive,
         createdBy: user.id,
         updatedBy: user.id,
@@ -340,6 +342,7 @@ export async function updateClient(
     if (input.city !== undefined) updates.city = emptyToNull(input.city);
     if (input.state !== undefined) updates.state = emptyToNull(input.state);
     if (input.pincode !== undefined) updates.pincode = emptyToNull(input.pincode);
+    if (input.paymentDays !== undefined) updates.paymentDays = input.paymentDays;
     if (input.isActive !== undefined) updates.isActive = input.isActive;
 
     const updated = await tx.update(clients).set(updates).where(eq(clients.id, id)).returning();

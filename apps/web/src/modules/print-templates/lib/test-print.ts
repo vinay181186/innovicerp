@@ -220,7 +220,6 @@ export function poSampleOrder(isSpo = false): SheetField[] {
   ];
 }
 
-
 // The two sample GRN lines. Exported so the editor's on-screen preview and the
 // GRN test print show the SAME material — 100 + 100 received, 95 + 95 accepted,
 // 5 + 5 rejected, which is the 200 / 190 / 10 in the sample totals above.
@@ -373,10 +372,7 @@ function openChallanTestPrint(
 // A SERVICE PO differs from a PO in wording only: its own title, its own
 // spo_* blocks and its own {spoNo}/{spoDate}/{expenseHead}/{costCenter}
 // vocabulary. The sheet, the columns and the money are identical.
-function openPoTestPrint(
-  doc: 'PO' | 'SERVICE PO',
-  templates: EffectivePrintTemplate[],
-): boolean {
+function openPoTestPrint(doc: 'PO' | 'SERVICE PO', templates: EffectivePrintTemplate[]): boolean {
   const isSpo = doc === 'SERVICE PO';
   const data = sampleDataFor(doc);
   const recipient = poSampleRecipient(isSpo);
@@ -436,6 +432,7 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     city: 'Vadodara',
     state: 'Gujarat',
     pincode: '390010',
+    paymentDays: null,
     isActive: true,
     createdAt: '',
     createdBy: JWINV_SAMPLE_ID,
