@@ -8,6 +8,15 @@
 import { normalizeRevision, type SalesOrderListItem } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { coerceDate } from '@/lib/xlsx-import';
+import { soStatusLabel } from './so-status-label';
+
+/** 'component_manufacturing' → 'Component Manufacturing' (no SO-type label map exists). */
+function titleCase(code: string): string {
+  return code
+    .split('_')
+    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(' ');
+}
 
 /** Format a stored UTC timestamp as IST date + time for export/display. */
 function fmtIst(iso: string | null | undefined): string {
@@ -47,12 +56,12 @@ export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<voi
     r.soDate,
     r.customerName ?? '',
     r.clientPoNo ?? '',
-    r.type.replaceAll('_', ' '),
+    titleCase(r.type),
     r.lineCount,
     r.totalQty,
     r.jcQty,
     r.earliestDueDate ?? '',
-    r.status,
+    soStatusLabel(r.status),
     r.bomStatus ?? '',
     r.createdByName ?? '',
     fmtIst(r.createdAt),
@@ -63,7 +72,7 @@ export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<voi
   XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
 
   const stamp = new Date().toISOString().slice(0, 10);
-  const filename = `sales-orders-${stamp}.xlsx`;
+  const filename = `Sales Orders Export ${stamp}.xlsx`;
   const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
   const blob = new Blob([buffer], { type: XLSX_MIME });
 
@@ -98,12 +107,23 @@ export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<voi
 }
 
 // ── In-form line-items import (adds lines to the SO being created/edited) ──
-// 'Rev' sits next to 'Drawing No' because that is what it describes: the
+// 'Drawing Rev' sits next to 'Drawing No.' because that is what it describes: the
 // revision printed on the customer's drawing. It is compulsory on the form, so a
 // sheet that omits the column leaves every imported line on the '0' default and
 // the person then has to type each one by hand — which is the whole reason the
 // column is here.
-const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'Rev', 'POL', 'Qty', 'Rate', 'Due Date'] as const;
+// Headers renamed 2026-09-26 (Drawing No → Drawing No., Rev → Drawing Rev,
+// Qty → Order Qty); the parser still reads the old names so an older sheet imports.
+const LINE_COLUMNS = [
+  'Item Code',
+  'Material',
+  'Drawing No.',
+  'Drawing Rev',
+  'POL',
+  'Order Qty',
+  'Rate',
+  'Due Date',
+] as const;
 
 export interface SoLineImportRow {
   itemCodeText: string;
@@ -123,7 +143,7 @@ export function downloadSoLineTemplate(): void {
   const ws = XLSX.utils.aoa_to_sheet([LINE_COLUMNS as unknown as string[], sample]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'SO Lines');
-  XLSX.writeFile(wb, 'so-line-items-template.xlsx');
+  XLSX.writeFile(wb, 'SO Lines Import Template.xlsx');
 }
 
 export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportRow[]; errors: string[] }> {
@@ -136,7 +156,7 @@ export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportR
   const rows: SoLineImportRow[] = [];
   raw.forEach((r, i) => {
     const itemCodeText = String(r['Item Code'] ?? '').trim();
-    const orderQty = Math.round(Number(r['Qty']));
+    const orderQty = Math.round(Number(r['Order Qty'] ?? r['Qty']));
     if (!itemCodeText) {
       errors.push(
         `Row ${i + 2}: "Item Code" is empty. Write the item code only — the item name comes from Item Master. Row skipped.`,
@@ -144,15 +164,15 @@ export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportR
       return;
     }
     if (!Number.isFinite(orderQty) || orderQty <= 0) {
-      errors.push(`Row ${i + 2}: "Qty" must be a number bigger than 0. Row skipped.`);
+      errors.push(`Row ${i + 2}: "Order Qty" must be a number bigger than 0. Row skipped.`);
       return;
     }
     rows.push({
       itemCodeText,
       material: String(r['Material'] ?? '').trim() || undefined,
-      drawingNo: String(r['Drawing No'] ?? '').trim() || undefined,
+      drawingNo: String(r['Drawing No.'] ?? r['Drawing No'] ?? '').trim() || undefined,
       // ADR-177: capital letters always — 'b' in the sheet lands as 'B'.
-      revision: normalizeRevision(String(r['Rev'] ?? '')) || undefined,
+      revision: normalizeRevision(String(r['Drawing Rev'] ?? r['Rev'] ?? '')) || undefined,
       // 'POL' is the current header; 'CPO Line' is what sheets downloaded
       // before the rename still carry, so both are read.
       clientPoLineNo: String(r['POL'] ?? r['CPO Line'] ?? '').trim() || undefined,

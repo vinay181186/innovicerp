@@ -123,7 +123,7 @@ export function coerceEnum<T extends string>(
   if ((allowed as readonly string[]).includes(t)) return { value: t as T };
   return {
     value: opts.fallback,
-    warning: `unrecognized ${opts.label} "${raw}" — defaulted to ${opts.fallback}`,
+    warning: `Unknown ${opts.label} "${raw}" — set to ${opts.fallback}`,
   };
 }
 

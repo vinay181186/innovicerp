@@ -4,10 +4,19 @@
 // Uses the SheetJS dep already in the app (see items/lib/import-export.ts).
 
 import type { JcOpEnriched, JobCardListItem, MachineSplit, OpLog } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import { opSrNo, SHIFT_LABELS } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { JC_STATUS_LABEL } from '../components/jc-status-badge';
+import { OP_STATUS } from './jc-op-labels';
+
+// Log type code → the word the Op Log screens show (op-log/routes/list.tsx).
+const LOG_TYPE_LABEL: Record<OpLog['logType'], string> = {
+  start: 'Start',
+  complete: 'Completed',
+  qc: 'QC Inspection',
+};
 
 // The op's PLANNED machine — where the REMAINING qty runs, not who made the
 // completed qty (ADR-126). See actualMachine / machineSplitCell for the rest.
@@ -61,7 +70,7 @@ export function exportJobCardExcel(args: {
 
   // ── Sheet 1: Job Card header (key/value rows) ──
   const headerAoa: (string | number)[][] = [
-    ['JOB CARD', jc.code],
+    ['JC No.', jc.code],
     ['JC Date', jc.jcDate],
     // The item code is written `CODE/REV` here, the same way it reads on every
     // screen and print for a row that traces back to a Sales Order line (user
@@ -83,7 +92,7 @@ export function exportJobCardExcel(args: {
     ['Pending', pending],
     ['Due Date', jc.dueDate ?? ''],
     ['Priority', jc.priority === 'high' ? 'High' : 'Normal'],
-    ['JC Status', jc.computedStatus.replaceAll('_', ' ')],
+    ['JC Status', JC_STATUS_LABEL[jc.computedStatus]],
   ];
   const wsHeader = XLSX.utils.aoa_to_sheet(headerAoa);
   wsHeader['!cols'] = [{ wch: 18 }, { wch: 36 }];
@@ -91,16 +100,16 @@ export function exportJobCardExcel(args: {
   // ── Sheet 2: Operations ──
   const opCols = [
     'Op',
-    'Machine',
+    'Planned Machine',
     // The machine the pieces were / are being made on (ADR-164); equals
-    // "Machine" (the plan) unless the operator ran the op elsewhere.
+    // "Planned Machine" unless the operator ran the op elsewhere.
     'Actual Machine',
     'Operation',
     'Cycle (min)',
     'Program',
     'Tool No.',
     'Order Qty',
-    'Input',
+    'Input Available',
     'Completed',
     // Who actually made "Completed", per machine (ADR-126). Blank unless the op
     // ran on more than one machine.
@@ -129,7 +138,7 @@ export function exportJobCardExcel(args: {
       o.qcAcceptedQty,
       o.qcRejectedQty,
       o.qcPending,
-      o.computedStatus.replaceAll('_', ' '),
+      OP_STATUS[o.computedStatus]?.label ?? o.computedStatus.replaceAll('_', ' '),
     ]),
   ];
   const wsOps = XLSX.utils.aoa_to_sheet(opAoa);
@@ -145,7 +154,7 @@ export function exportJobCardExcel(args: {
     'Op',
     'Operation',
     'Log Type',
-    'Machine',
+    'Actual Machine',
     // The op's PLANNED machine beside the one this entry was actually made on
     // (ADR-164). Same name unless the op was run elsewhere.
     'Planned Machine',
@@ -163,10 +172,10 @@ export function exportJobCardExcel(args: {
       const op = opById.get(l.jcOpId);
       return [
         l.logDate,
-        l.shift,
+        SHIFT_LABELS[l.shift],
         op ? opSrNo(op.opSeq) : '',
         op?.operation ?? '',
-        l.logType,
+        LOG_TYPE_LABEL[l.logType],
         logMachine(l),
         l.plannedMachineCode ?? '',
         l.qty,
@@ -183,5 +192,5 @@ export function exportJobCardExcel(args: {
   XLSX.utils.book_append_sheet(wb, wsHeader, 'Job Card');
   XLSX.utils.book_append_sheet(wb, wsOps, 'Operations');
   XLSX.utils.book_append_sheet(wb, wsLog, 'Production Log');
-  XLSX.writeFile(wb, `JobCard_${jc.code}.xlsx`);
+  XLSX.writeFile(wb, `Job Card Export ${jc.code}.xlsx`);
 }

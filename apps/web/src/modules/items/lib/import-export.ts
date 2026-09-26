@@ -19,7 +19,7 @@ import { coerceEnum, getCol, readSheetRows } from '@/lib/xlsx-import';
 // Template header row (the "*" marks required columns, legacy convention).
 const COLUMNS = [
   'Item Code*',
-  'Name*',
+  'Item Name*',
   'Description',
   'Material',
   'UOM',
@@ -34,14 +34,14 @@ export function downloadItemTemplate(): void {
     'Main drive shaft',
     'EN8 Steel',
     'NOS',
-    'component',
-    'make',
+    'Component',
+    'Make',
   ];
   const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
   ws['!cols'] = [14, 22, 28, 18, 8, 12, 8].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Items');
-  XLSX.writeFile(wb, 'ItemMaster_ImportTemplate.xlsx');
+  XLSX.writeFile(wb, 'Item Master Import Template.xlsx');
 }
 
 export interface ItemImportResult {
@@ -60,14 +60,15 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
   rows.forEach((r, i) => {
     const rowNum = i + 2; // 1-indexed + header row
     const code = getCol(r, ['Item Code*', 'Item Code', 'item_code', 'Code', 'code']);
-    const name = getCol(r, ['Name*', 'Name', 'name']);
+    // 'Item Name*' is the template header since 2026-09-26; older sheets carry 'Name*'.
+    const name = getCol(r, ['Item Name*', 'Item Name', 'item_name', 'Name*', 'Name', 'name']);
     if (!code && !name) return; // fully blank row — skip silently
     if (!code) {
       errors.push(`Row ${rowNum}: Item Code is required — skipped`);
       return;
     }
     if (!name) {
-      errors.push(`Row ${rowNum}: Name is required — skipped`);
+      errors.push(`Row ${rowNum}: Item Name is required — skipped`);
       return;
     }
     if (seen.has(code)) {

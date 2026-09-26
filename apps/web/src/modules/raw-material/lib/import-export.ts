@@ -20,7 +20,7 @@ export function downloadMaterialGradeTemplate(): void {
   ws['!cols'] = [22, 40].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Grades');
-  XLSX.writeFile(wb, 'Material_Grade_Import_Template.xlsx');
+  XLSX.writeFile(wb, 'Material Grade Import Template.xlsx');
 }
 
 export function downloadMaterialSizeTemplate(): void {
@@ -29,7 +29,7 @@ export function downloadMaterialSizeTemplate(): void {
   ws['!cols'] = [26, 40].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sizes');
-  XLSX.writeFile(wb, 'Material_Size_Import_Template.xlsx');
+  XLSX.writeFile(wb, 'Material Size Import Template.xlsx');
 }
 
 export interface MaterialImportResult<T> {
