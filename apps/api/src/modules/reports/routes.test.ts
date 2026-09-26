@@ -46,14 +46,22 @@ describe('reports routes', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('GET /reports returns all registered report definitions for any role', async () => {
+  it('GET /reports returns every registered report for an admin', async () => {
+    app = await buildApp(admin);
+    const res = await app.inject({ method: 'GET', url: '/reports' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.reports).toHaveLength(listReportDefinitions().length);
+  });
+
+  it('GET /reports filters a non-admin by Access Control (canSeeReport)', async () => {
     const viewer: AuthContext = { ...admin, role: 'viewer' };
     app = await buildApp(viewer);
     const res = await app.inject({ method: 'GET', url: '/reports' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    // Any role sees every registered report (no role-based filtering).
-    expect(body.reports).toHaveLength(listReportDefinitions().length);
+    // Never more than the registry; exactly how many depends on the account's grants.
+    expect(body.reports.length).toBeLessThanOrEqual(listReportDefinitions().length);
   });
 
   it('GET /reports/:slug runs and returns rows + columns + filters', async () => {

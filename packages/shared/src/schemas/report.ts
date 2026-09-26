@@ -63,6 +63,13 @@ export const reportDefinitionSchema = z.object({
   description: z.string(),
   /** Display group for the list page (e.g. "Operations" / "Procurement" / "Quality"). */
   group: z.string(),
+  /** Access Control department that owns the report (an ACCESS_DEPTS key, e.g.
+   *  'sales' / 'store'). The catalogue shows the report only to users with
+   *  access to that department. Omitted = shown to every Reports user. */
+  dept: z.string().optional(),
+  /** True when any column is money (rate / value / amount). The catalogue then
+   *  also needs the user's tier in `dept` to see prices (tierSeesPrice). */
+  showsMoney: z.boolean().optional(),
   /** Filter form rendered on the run page. Empty array = no filters (run-immediately). */
   filters: z.array(reportFilterFieldSchema),
   /** Output columns in display order. */

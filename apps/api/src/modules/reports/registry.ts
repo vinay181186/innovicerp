@@ -29,6 +29,28 @@ import { productionSoLineTrackerReport } from './definitions/production-so-line-
 import { soOpenBacklogReport } from './definitions/so-open-backlog';
 import { stockMovementLogReport } from './definitions/stock-movement-log';
 import { vendorPoSummaryReport } from './definitions/vendor-po-summary';
+import { poLineAnalysisReport } from './definitions/po-line-analysis';
+import { procurementTrackerReport } from './definitions/procurement-tracker';
+import { prPendingToOrderReport } from './definitions/pr-pending-to-order';
+import { vendorPerformanceReport } from './definitions/vendor-performance';
+import { ospAtVendorReport } from './definitions/osp-at-vendor';
+import { stockBalanceReport } from './definitions/stock-balance';
+import { projectedStockReport } from './definitions/projected-stock';
+import { reservedStockReport } from './definitions/reserved-stock';
+import { inspectionSummaryReport } from './definitions/inspection-summary';
+import { firstPassYieldReport } from './definitions/first-pass-yield';
+import { vendorRejectionReport } from './definitions/vendor-rejection';
+import { soLineAnalysisReport } from './definitions/so-line-analysis';
+import { lateDeliveryReport } from './definitions/late-delivery';
+import { jwsoBalanceReport } from './definitions/jwso-balance';
+import { unplannedSoLinesReport } from './definitions/unplanned-so-lines';
+import { designHoursVsEstimateReport } from './definitions/design-hours-vs-estimate';
+import { wipByOperationReport } from './definitions/wip-by-operation';
+import { machineUtilisationReport } from './definitions/machine-utilisation';
+import { receivableAgeingReport } from './definitions/receivable-ageing';
+import { dispatchedNotInvoicedReport } from './definitions/dispatched-not-invoiced';
+import { gstSalesRegisterReport } from './definitions/gst-sales-register';
+import { hsnOutwardSummaryReport } from './definitions/hsn-outward-summary';
 import type { ReportColumn, ReportDefinition, ReportRow } from './schema';
 
 export interface ReportRunContext {
@@ -68,6 +90,29 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [productionItemTrackerReport.definition.slug]: productionItemTrackerReport,
   [productionSoLineTrackerReport.definition.slug]: productionSoLineTrackerReport,
   [productionOrdersReport.definition.slug]: productionOrdersReport,
+  // Department P1 reports (ERPNext study, 2026-09-26).
+  [soLineAnalysisReport.definition.slug]: soLineAnalysisReport,
+  [lateDeliveryReport.definition.slug]: lateDeliveryReport,
+  [jwsoBalanceReport.definition.slug]: jwsoBalanceReport,
+  [unplannedSoLinesReport.definition.slug]: unplannedSoLinesReport,
+  [designHoursVsEstimateReport.definition.slug]: designHoursVsEstimateReport,
+  [wipByOperationReport.definition.slug]: wipByOperationReport,
+  [machineUtilisationReport.definition.slug]: machineUtilisationReport,
+  [receivableAgeingReport.definition.slug]: receivableAgeingReport,
+  [dispatchedNotInvoicedReport.definition.slug]: dispatchedNotInvoicedReport,
+  [gstSalesRegisterReport.definition.slug]: gstSalesRegisterReport,
+  [hsnOutwardSummaryReport.definition.slug]: hsnOutwardSummaryReport,
+  [poLineAnalysisReport.definition.slug]: poLineAnalysisReport,
+  [procurementTrackerReport.definition.slug]: procurementTrackerReport,
+  [prPendingToOrderReport.definition.slug]: prPendingToOrderReport,
+  [vendorPerformanceReport.definition.slug]: vendorPerformanceReport,
+  [ospAtVendorReport.definition.slug]: ospAtVendorReport,
+  [stockBalanceReport.definition.slug]: stockBalanceReport,
+  [projectedStockReport.definition.slug]: projectedStockReport,
+  [reservedStockReport.definition.slug]: reservedStockReport,
+  [inspectionSummaryReport.definition.slug]: inspectionSummaryReport,
+  [firstPassYieldReport.definition.slug]: firstPassYieldReport,
+  [vendorRejectionReport.definition.slug]: vendorRejectionReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {

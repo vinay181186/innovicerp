@@ -12,7 +12,8 @@ export const openPoAgeingReport: RegisteredReport = {
     title: 'Open PO ageing',
     description:
       'POs not yet Closed or Cancelled, with Days Open counted from the PO Date. Sorted oldest first to surface stuck procurement.',
-    group: 'Procurement',
+    group: 'Purchase',
+    dept: 'purchase',
     filters: [
       {
         key: 'status',

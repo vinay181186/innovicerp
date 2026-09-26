@@ -11,7 +11,8 @@ export const stockMovementLogReport: RegisteredReport = {
     title: 'Stock movement log',
     description:
       'Every stock movement with item code, name, qty and stock after, over a date range. Filter by source type to scope to GRN QC, dispatch, or manual adjustments.',
-    group: 'Inventory',
+    group: 'Store',
+    dept: 'store',
     filters: [
       { key: 'fromDate', label: 'Txn Date From', kind: 'date' },
       { key: 'toDate', label: 'Txn Date To', kind: 'date' },

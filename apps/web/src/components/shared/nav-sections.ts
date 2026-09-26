@@ -15,6 +15,12 @@ export interface NavItem {
   // Items without a formKey are always shown to anyone who can see the section,
   // exactly as before. Wired for Purchase first; add keys to widen it.
   formKey?: AccessFormKey;
+  // Query string for the link, e.g. { group: 'Sales' } on a department's
+  // "Reports" link → /reports?group=Sales. An item with `search` matches the
+  // current page only when the URL carries the same values (see
+  // navItemMatches); the breadcrumbs and open-page tabs skip such items, so
+  // /reports is always named by the plain Reports-section entry.
+  search?: Record<string, string>;
 }
 
 export interface NavSubGroup {
@@ -63,6 +69,10 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
         ],
       },
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Planning' }, label: 'Reports', icon: '📊' }],
+      },
     ],
   },
   {
@@ -90,6 +100,10 @@ export const SECTIONS: readonly NavSection[] = [
       },
       // Pending SO Value (a price-gated revenue report) is filed under the
       // Reports section, not a Sales menu item — see the Reports block below.
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Sales' }, label: 'Reports', icon: '📊' }],
+      },
     ],
   },
   {
@@ -116,7 +130,10 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Report',
-        items: [{ to: '/store-inventory', label: 'Store Inventory', icon: '📦' }],
+        items: [
+          { to: '/store-inventory', label: 'Store Inventory', icon: '📦' },
+          { to: '/reports', search: { group: 'Store' }, label: 'Reports', icon: '📊' },
+        ],
       },
     ],
   },
@@ -162,6 +179,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/job-queue', label: 'Job Queue', icon: '⬛' },
           { to: '/machine-loading', label: 'Machine Loading', icon: '▣' },
           { to: '/production-schedule', label: 'Production Schedule', icon: '📅' },
+          { to: '/reports', search: { group: 'Production' }, label: 'Reports', icon: '📊' },
         ],
       },
     ],
@@ -188,6 +206,10 @@ export const SECTIONS: readonly NavSection[] = [
           },
         ],
       },
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Design' }, label: 'Reports', icon: '📊' }],
+      },
     ],
   },
   {
@@ -211,6 +233,10 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/qc-processes', label: 'QC Process Master', icon: '⚙', formKey: 'qcprocess_create' },
           { to: '/tpi-masters', label: 'TPI Master', icon: '🔍', formKey: 'tpimaster_create' },
         ],
+      },
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Quality' }, label: 'Reports', icon: '📊' }],
       },
     ],
   },
@@ -237,6 +263,10 @@ export const SECTIONS: readonly NavSection[] = [
       },
       // Supply Chain Dashboard (a price-gated PO/GRN report) is filed under the
       // Reports section, not a Purchase menu item — see the Reports block below.
+      {
+        label: 'Report',
+        items: [{ to: '/reports', search: { group: 'Purchase' }, label: 'Reports', icon: '📊' }],
+      },
     ],
   },
   {
@@ -274,6 +304,7 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/so-costing', label: 'SO Costing', icon: '💰' },
           { to: '/stock-valuation', label: 'Stock Valuation', icon: '📦' },
+          { to: '/reports', search: { group: 'Finance' }, label: 'Reports', icon: '📊' },
         ],
       },
     ],
@@ -348,6 +379,22 @@ const SECTION_ORDER: readonly string[] = [
 export const ORDERED_SECTIONS: readonly NavSection[] = [...SECTIONS].sort(
   (a, b) => SECTION_ORDER.indexOf(a.key) - SECTION_ORDER.indexOf(b.key),
 );
+
+/** Does this nav item point at the page the user is on? A plain item matches
+ *  its path and anything under it (/job-cards → /job-cards/123). An item with
+ *  `search` matches only its exact path AND the same query values, so the
+ *  eight department "Reports" links (/reports?group=…) light up one at a time. */
+export function navItemMatches(
+  it: NavItem,
+  pathname: string,
+  search: Record<string, unknown> | undefined,
+): boolean {
+  if (it.search) {
+    if (pathname !== it.to) return false;
+    return Object.entries(it.search).every(([k, v]) => String(search?.[k] ?? '') === v);
+  }
+  return pathname === it.to || pathname.startsWith(it.to + '/');
+}
 
 export function initials(email: string | undefined): string {
   if (!email) return '??';

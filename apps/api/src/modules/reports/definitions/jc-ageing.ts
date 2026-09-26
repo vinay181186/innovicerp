@@ -11,7 +11,8 @@ export const jcAgeingReport: RegisteredReport = {
     title: 'JC ageing',
     description:
       'Open Job Cards (not yet Completed or Closed) sorted oldest-first to surface stuck production. Days Open is today minus the JC Date.',
-    group: 'Operations',
+    group: 'Production',
+    dept: 'production',
     filters: [
       {
         key: 'computedStatus',

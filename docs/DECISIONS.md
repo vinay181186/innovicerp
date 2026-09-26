@@ -10190,3 +10190,32 @@ grandTotal }` — Σ Order Qty × Rate over every line, GST at the SO's GST %, r
   pending (picked from the open-QC-call list), so the only work it can mean is that inspection.
 - **NC disposition closes the NC's task only when the whole NC is disposed.** A partial
   disposition splits the remainder onto a new pending NC; the task stays open.
+
+## ADR-191: Reports live in one catalogue, reached per department — never in the menus
+
+**Date:** 2026-09-26
+**Status:** Accepted (user: "yes" to the navigation proposal after the ERPNext report study)
+
+### Context
+
+A study of ERPNext's ~150 standard reports against our data model (PDF "Innovic-vs-ERPNext - Suggested Reports by Department", 2026-09-26) proposed 63 reports across 10 departments; 28 are P1. Putting them in the header menus would make every department menu unusable. The /reports engine already existed (20 canned reports, `?group=` department mode that RAN every report on open), but its groups were a mix of departments and topics (Operations / Procurement / Inventory) and it had no access control at all — any logged-in user could run any report, money included.
+
+### Decision
+
+1. **One catalogue, three doors.** Reports are canned definitions on /reports only. Each department menu (Sales, Planning, Design, Production, Purchase, Store, Quality, Finance) gets ONE last item "Reports" → `/reports?group=<Dept>`, which shows that department's reports as cards (nothing runs until opened). The full catalogue has search, a per-user ★ My Reports row and a Recently opened row (browser storage, per user id — a convenience, not data).
+2. **`group` is the department.** Old groups renamed: Operations → Production, Procurement → Purchase, Inventory → Store. Every definition carries `dept` (an ACCESS_DEPTS key) and `showsMoney`.
+3. **One access rule, enforced on the server.** `canSeeReport(user, eff, def)` in `@innovic/shared` (lib/report-access.ts): admin / full access / auditor see all; otherwise a report is visible through its own department OR through the existing Reports grant, and a money report additionally needs a tier in that door's department that sees prices (`tierSeesPrice`). GET /reports is filtered with it; GET /reports/:slug and the Excel export return 403 before any SQL runs. The web uses the same function only to avoid offering what the server will refuse.
+4. **First batch: 22 new reports** (so-line-analysis, late-delivery, jwso-balance, unplanned-so-lines, design-hours-vs-estimate, wip-by-operation, machine-utilisation, po-line-analysis, procurement-tracker, pr-pending-to-order, vendor-performance, osp-at-vendor, stock-balance, projected-stock, reserved-stock, inspection-summary, first-pass-yield, vendor-rejection, receivable-ageing, dispatched-not-invoiced, gst-sales-register, hsn-outward-summary). New labels registered in NAMING.md §A.
+5. **Item columns follow ADR-160**: a clean `Item Code` cell plus a separate `Drawing Rev` column, because every report is also an Excel export.
+
+### Alternatives Considered
+
+- **Every report as a menu item** — rejected: 60+ items across 8 menus.
+- **Client-only access filter** — rejected in review: the browser is not a gate (CLAUDE.md §6 rule 1).
+- **Favourites in the database** — rejected for now: a per-browser convenience needs no migration on two databases; revisit if users ask for favourites to follow them across machines.
+
+### Consequences
+
+- A user who could open every report through the Reports grant but whose Reports tier cannot see prices (L1/L2) no longer sees money reports there — the same price rule every other screen follows.
+- The Production copy of SO Line Tracker drops its Line Value column so Production L2 keeps it.
+- Adding a report = one definition file + one registry line; set `group`, `dept`, `showsMoney`.

@@ -1,17 +1,19 @@
-import type { ReportColumn, ReportDefinition } from '@innovic/shared';
+import type { ReportDefinition } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { z } from 'zod';
-import { apiDownload } from '@/lib/api';
-import { fmtDate, fmtDateTime } from '@/lib/date';
-import { matchesSearchTerm } from '@/components/shared/search-match';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ActionMenu, ListHeader, PageHeader } from '@/ui/layout';
-import { useReportList, useReportRun } from '../api';
+import { ListHeader, PageHeader } from '@/ui/layout';
+import { useReportList } from '../api';
+import { useReportAccess } from '../lib/report-access';
+import { StarToggle } from '../components/star-toggle';
+import { useReportPrefs } from '../lib/report-prefs';
 
 const listSearchSchema = z.object({
   group: z.string().optional(),
+  search: z.string().optional(),
 });
 
 export const reportsListRoute = createRoute({
@@ -22,90 +24,112 @@ export const reportsListRoute = createRoute({
 });
 
 // Per-dept accent, mirroring legacy `deptColors` (HTML L20033) — used for the
-// dept-page header and for the per-report chips, exactly as legacy colours its
+// per-group headings and the per-report chips, exactly as legacy colours its
 // report tabs. Legacy's hexes are mapped to the nearest theme token rather than
 // copied literally (the port is a light theme; legacy was dark):
 //   #2563EB → --blue · #D97706 → --amber · #DC2626 → --red · #16A34A → --green
 //   #0D9488 → --dept-finance · #0891B2 → --cyan · #7C3AED → --purple
-// Groups legacy has no colour for fall back to var(--cyan), as legacy does.
+// Planning has no legacy colour; it takes its own department token. Groups
+// with no entry fall back to var(--cyan), as legacy does.
 const DEPT_COLOR: Record<string, string> = {
+  Sales: 'var(--green)',
+  Planning: 'var(--dept-planning)',
+  Design: 'var(--purple)',
+  Production: 'var(--cyan)',
   Purchase: 'var(--blue)',
   Store: 'var(--amber)',
   Quality: 'var(--red)',
   QC: 'var(--red)',
-  Sales: 'var(--green)',
   Finance: 'var(--dept-finance)',
-  Production: 'var(--cyan)',
-  Design: 'var(--purple)',
 };
+
+/** Department order on the catalogue — the order of the header menus' work
+ *  flow. Any other group follows, alphabetically. */
+const GROUP_ORDER = [
+  'Sales',
+  'Planning',
+  'Design',
+  'Production',
+  'Purchase',
+  'Store',
+  'Quality',
+  'Finance',
+];
+
+function groupRank(g: string): number {
+  const i = GROUP_ORDER.indexOf(g);
+  return i === -1 ? GROUP_ORDER.length : i;
+}
 
 function ReportsListPage() {
   const search = reportsListRoute.useSearch();
+  const navigate = reportsListRoute.useNavigate();
   const { data, isLoading, isError, error } = useReportList();
-  // Catalogue search — client-side over the report list (one fetch): title,
-  // description and department group. Not applied in dept mode (?group=),
-  // which runs every report of that department inline.
-  const [term, setTerm] = useState('');
+  const { ready: accessReady, canSee } = useReportAccess();
 
-  const grouped = useMemo(() => {
-    if (!data) return {} as Record<string, ReportDefinition[]>;
-    const out: Record<string, ReportDefinition[]> = {};
-    for (const r of data.reports) {
-      if (search.group && r.group !== search.group) continue;
-      if (!search.group && !matchesSearchTerm([r.title, r.description, r.group], term)) continue;
-      if (!out[r.group]) out[r.group] = [];
-      out[r.group]!.push(r);
-    }
-    return out;
-  }, [data, search.group, term]);
-  const shownCount = Object.values(grouped).reduce((n, g) => n + g.length, 0);
+  // Only the reports this user's Access Control allows. Empty until access has
+  // loaded (the page shows its loading line meanwhile), so nothing flickers in
+  // and back out.
+  const visible = useMemo(
+    () => (data && accessReady ? data.reports.filter((r) => canSee(r)) : []),
+    [data, accessReady, canSee],
+  );
 
-  const deptReports = search.group && data ? grouped[search.group] : undefined;
-  const isDeptMode = Boolean(search.group);
+  const loading = isLoading || !accessReady;
+  const failed = !loading && (isError || !data);
+  const errorText = error instanceof Error ? error.message : 'Could not load reports. Try again.';
 
-  if (isDeptMode) {
-    // Dept-summary mode — mirrors legacy renderDeptReport(dept) chrome
-    // (HTML L20029): a PageHeader title (no longer dept-tinted) + .panel/.innovic-table per
-    // report, Excel-only export per panel. Legacy shows one report at a time
-    // behind a tab row (L20037–20043); we stack every dept report instead, so
-    // nothing is hidden behind a tab.
-    const dept = search.group!;
+  if (search.group) {
+    const dept = search.group;
+    const deptReports = visible.filter((r) => r.group === dept);
     return (
       <div>
-        <PageHeader title={`${dept} Reports`} icon="📊" />
-
-        {isLoading ? (
+        <PageHeader
+          title={`${dept} Reports`}
+          icon="📊"
+          actions={
+            <Link to="/reports" className="btn btn-ghost">
+              All Reports
+            </Link>
+          }
+        />
+        {loading ? (
+          <LoadingPanel />
+        ) : failed ? (
+          <ErrorPanel text={errorText} />
+        ) : deptReports.length === 0 ? (
           <div className="panel">
-            <div className="panel-body text3">
-              <Loader2 size={14} className="inline animate-spin" /> Loading reports…
+            <div className="panel-body empty-state">
+              No reports for this department that you have access to.
             </div>
-          </div>
-        ) : isError || !data ? (
-          <div className="panel">
-            <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
-            </div>
-          </div>
-        ) : (deptReports?.length ?? 0) === 0 ? (
-          <div className="panel">
-            <div className="panel-body empty-state">No reports configured for this department.</div>
           </div>
         ) : (
-          (deptReports ?? []).map((r) => <InlineReportPanel key={r.slug} report={r} />)
+          <ReportCardGrid reports={deptReports} />
         )}
       </div>
     );
   }
+
+  const term = search.search ?? '';
+  const shownCount = visible.filter((r) =>
+    matchesSearchTerm([r.title, r.description, r.group], term),
+  ).length;
 
   return (
     <div>
       <ListHeader
         title="Reports"
         icon="📊"
-        count={data ? shownCount : undefined}
+        count={loading || failed ? undefined : shownCount}
         noun="report"
         search={term}
-        onSearch={setTerm}
+        onSearch={(v) => {
+          const next = normalizeSearchTerm(v);
+          void navigate({
+            search: (prev) => ({ ...prev, search: next === '' ? undefined : next }),
+            replace: true,
+          });
+        }}
         searchPlaceholder="Search report name, description, department…"
         tools={
           <Link to="/saved-reports" className="btn btn-ghost">
@@ -113,241 +137,188 @@ function ReportsListPage() {
           </Link>
         }
       />
-
-      {isLoading ? (
-        <div className="panel">
-          <div className="panel-body text3">
-            <Loader2 size={14} className="inline animate-spin" /> Loading reports…
-          </div>
-        </div>
-      ) : isError || !data ? (
-        <div className="panel">
-          <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
-          </div>
-        </div>
-      ) : shownCount === 0 ? (
-        <div className="panel">
-          <div className="panel-body empty-state">No reports match.</div>
-        </div>
+      {loading ? (
+        <LoadingPanel />
+      ) : failed ? (
+        <ErrorPanel text={errorText} />
       ) : (
-        Object.entries(grouped).map(([group, reports]) => {
-          const color = DEPT_COLOR[group] ?? 'var(--cyan)';
-          return (
-            <div key={group}>
-              <div className="section-hdr" style={{ marginBottom: 8, color }}>
-                {group}
-              </div>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 16 }}>
-                {reports.map((report) => (
-                  <Link
-                    key={report.slug}
-                    to="/reports/$slug"
-                    params={{ slug: report.slug }}
-                    className="btn btn-sm"
-                    // Department colour on the text and outline — tokens only.
-                    style={{
-                      fontWeight: 700,
-                      background: color,
-                      color: 'var(--bg2)',
-                      border: `1px solid ${color}`,
-                    }}
-                    title={report.description}
-                  >
-                    {report.title}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          );
-        })
+        <Catalogue reports={visible} term={term} />
       )}
     </div>
   );
 }
 
-// ─── Dept-mode inline panel (legacy `_rptTbl` chrome) ────────────────────
-
-function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.Element {
-  const { data, isLoading, isError, error } = useReportRun(report.slug, {});
-  const [excelLoading, setExcelLoading] = useState(false);
-
-  const onExcel = async (): Promise<void> => {
-    setExcelLoading(true);
-    try {
-      await apiDownload(`/reports/${report.slug}/export.xlsx`, {}, `${report.slug}.xlsx`);
-    } finally {
-      setExcelLoading(false);
-    }
-  };
-
-  const rowCount = data?.rowCount ?? 0;
-
+function LoadingPanel(): React.JSX.Element {
   return (
     <div className="panel">
-      <div
-        style={{
-          padding: '8px 12px',
-          background: 'var(--bg4)',
-          fontWeight: 700,
-          fontSize: 'var(--fs-sm)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <span>
-          {report.title}{' '}
-          <span className="text3" style={{ fontWeight: 400 }}>
-            ({rowCount} rows)
-          </span>
-        </span>
-        <ActionMenu
-          label={excelLoading ? 'Exporting…' : 'Export'}
-          items={[
-            {
-              label: 'Excel',
-              onClick: () => void onExcel(),
-              disabled: excelLoading || rowCount === 0,
-            },
-          ]}
-        />
-      </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table tbl-grid">
-          <thead>
-            <tr>
-              {report.columns.map((c) => (
-                <th key={c.key} className={c.type === 'number' ? 'th-num' : undefined}>
-                  {c.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td
-                  colSpan={report.columns.length}
-                  style={{ padding: '12px', color: 'var(--text3)', fontSize: 'var(--fs-xs)' }}
-                >
-                  <Loader2 size={12} className="inline animate-spin" /> Running…
-                </td>
-              </tr>
-            ) : isError ? (
-              <tr>
-                <td
-                  colSpan={report.columns.length}
-                  style={{ padding: '12px', color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}
-                >
-                  {error instanceof Error ? error.message : 'Could not run report. Try again.'}
-                </td>
-              </tr>
-            ) : !data || data.rows.length === 0 ? (
-              <tr>
-                <td colSpan={report.columns.length} className="empty-state">
-                  No records yet.
-                </td>
-              </tr>
-            ) : (
-              data.rows.map((row, i) => (
-                <tr key={i}>
-                  {report.columns.map((c, ci) => (
-                    <td
-                      key={c.key}
-                      className={
-                        c.type === 'number' || typeof row[c.key] === 'number' ? 'td-num' : undefined
-                      }
-                      style={cellStyle(c, row[c.key], ci)}
-                    >
-                      {formatCell(c, row[c.key])}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      <div className="panel-body text3">
+        <Loader2 size={14} className="inline animate-spin" /> Loading reports…
       </div>
     </div>
   );
 }
 
-function formatCell(col: ReportColumn, raw: unknown): string {
-  if (raw === null || raw === undefined || raw === '') return '—';
-  if (col.type === 'number') {
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return String(raw);
-    return n % 1 === 0 ? String(n) : n.toFixed(2);
-  }
-  if (typeof raw === 'string' && col.type === 'date') return fmtDate(raw);
-  if (typeof raw === 'string' && col.type === 'datetime') return fmtDateTime(raw);
-  return String(raw);
+function ErrorPanel({ text }: { text: string }): React.JSX.Element {
+  return (
+    <div className="panel">
+      <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
+        {text}
+      </div>
+    </div>
+  );
 }
 
-/** Per-cell style, transcribing legacy `_rptTbl`'s inline-style cascade
- *  (HTML L20090–20101). Legacy appends each rule to one style string, so the
- *  LAST write wins per property: a status colour overrides the column-0 cyan,
- *  and a numeric zero renders muted. Legacy sniffs numeric columns from the
- *  first five rows (L20076–20078); the server types them for us, so `col.type`
- *  stands in for legacy's `numCols[ci]`. Right-alignment is the `td-num` class
- *  on the cell, not an inline style. */
-function cellStyle(col: ReportColumn, raw: unknown, ci: number): React.CSSProperties {
-  const st: React.CSSProperties = {};
-  const isNum = typeof raw === 'number';
-  if (isNum) {
-    st.fontFamily = 'var(--mono)';
-    st.fontWeight = 600;
-  } else if (col.type === 'number') {
-    st.fontFamily = 'var(--mono)';
-  }
-  if (ci === 0) {
-    st.fontWeight = 700;
-    st.color = 'var(--cyan)';
-  }
-  if (isNum && raw === 0) st.color = 'var(--text3)';
-  if (typeof raw === 'string') {
-    const tint = statusColor(raw);
-    if (tint) {
-      st.color = tint;
-      st.fontWeight = 700;
+// ─── Dept mode: compact card grid, nothing runs until a card is opened ────
+
+function ReportCardGrid({ reports }: { reports: ReportDefinition[] }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+        gap: 8,
+      }}
+    >
+      {reports.map((r) => (
+        <div key={r.slug} className="panel" style={{ margin: 0 }}>
+          <div className="panel-body" style={{ padding: '8px 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Link
+                to="/reports/$slug"
+                params={{ slug: r.slug }}
+                style={{
+                  fontWeight: 700,
+                  color: 'var(--text)',
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={r.title}
+              >
+                {r.title}
+              </Link>
+              <StarToggle slug={r.slug} title={r.title} />
+            </div>
+            <div
+              className="text3"
+              style={{
+                fontSize: 'var(--fs-xs)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={r.description}
+            >
+              {r.description}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Catalogue mode: search, ★ My Reports, Recently opened, then by dept ──
+
+function Catalogue({ reports, term }: { reports: ReportDefinition[]; term: string }) {
+  const { starred, recent } = useReportPrefs();
+
+  const matched = useMemo(
+    () => reports.filter((r) => matchesSearchTerm([r.title, r.description, r.group], term)),
+    [reports, term],
+  );
+  const bySlug = useMemo(() => new Map(matched.map((r) => [r.slug, r])), [matched]);
+
+  // Starred / recent slugs that are still a visible, matching report — a
+  // report the user has since lost access to drops out of both rows.
+  const pick = (slugs: readonly string[]): ReportDefinition[] =>
+    slugs.map((s) => bySlug.get(s)).filter((r): r is ReportDefinition => Boolean(r));
+  const mine = pick(starred);
+  const recents = pick(recent);
+
+  const groups = useMemo(() => {
+    const out = new Map<string, ReportDefinition[]>();
+    for (const r of matched) {
+      const list = out.get(r.group) ?? [];
+      list.push(r);
+      out.set(r.group, list);
     }
-  }
-  return st;
+    return [...out.entries()].sort(([a], [b]) => groupRank(a) - groupRank(b) || a.localeCompare(b));
+  }, [matched]);
+
+  return (
+    <>
+      {mine.length > 0 ? (
+        <ChipRow label="★ My Reports" color="var(--amber)" reports={mine} />
+      ) : null}
+      {recents.length > 0 ? (
+        <ChipRow label="Recently opened" color="var(--text2)" reports={recents} />
+      ) : null}
+
+      {groups.length === 0 ? (
+        <div className="panel">
+          <div className="panel-body empty-state">
+            {term ? 'No report matches your search.' : 'No reports you have access to.'}
+          </div>
+        </div>
+      ) : (
+        groups.map(([group, list]) => (
+          <ChipRow
+            key={group}
+            label={group}
+            color={DEPT_COLOR[group] ?? 'var(--cyan)'}
+            reports={list}
+          />
+        ))
+      )}
+    </>
+  );
 }
 
-/** Conditional colours for known status keywords — matches legacy `_rptTbl` (HTML L20096–20100). */
-function statusColor(raw: string): string | undefined {
-  // One colour per state, app-wide: open / pending blue, under way amber,
-  // finished green, stopped / not started grey, faults red.
-  if (['DELAYED', 'ZERO', 'NO GRN'].includes(raw)) return 'var(--red)';
-  if (['Cancelled', 'Not Planned'].includes(raw)) return 'var(--text3)';
-  if (['Pending', 'PENDING', 'Open'].includes(raw)) return 'var(--blue)';
-  if (
-    [
-      'ON TIME',
-      'EARLY',
-      'Accepted',
-      'PO Created',
-      'Closed',
-      'OK',
-      'FULLY RECEIVED',
-      'RETURNED',
-      'Complete',
-      'Completed',
-      'Released',
-      'Resolved',
-    ].includes(raw)
-  ) {
-    return 'var(--green)';
-  }
-  if (['Approved', 'In Planning', 'Planned', 'Design Active'].includes(raw)) {
-    return 'var(--blue)';
-  }
-  if (['PARTIAL', 'In Progress', 'AT VENDOR', 'On Hold', 'In Review', 'Submitted'].includes(raw)) {
-    return 'var(--amber)';
-  }
-  if (['Critical', 'Major'].includes(raw)) return 'var(--red)';
-  if (['Minor', 'Low'].includes(raw)) return 'var(--green)';
-  return undefined;
+function ChipRow(props: {
+  label: string;
+  color: string;
+  reports: ReportDefinition[];
+}): React.JSX.Element {
+  const { label, color, reports } = props;
+  return (
+    <div>
+      <div className="section-hdr" style={{ marginBottom: 8, color }}>
+        {label}
+      </div>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 16 }}>
+        {reports.map((report) => {
+          const chip = DEPT_COLOR[report.group] ?? 'var(--cyan)';
+          return (
+            <span
+              key={report.slug}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}
+            >
+              <Link
+                to="/reports/$slug"
+                params={{ slug: report.slug }}
+                className="btn btn-sm"
+                style={{
+                  fontWeight: 700,
+                  background: chip,
+                  color: 'var(--bg2)',
+                  border: `1px solid ${chip}`,
+                }}
+                title={`${report.description} — ${report.columns.length} columns · ${
+                  report.filters.length === 0
+                    ? 'no filters'
+                    : `${report.filters.length} filter${report.filters.length === 1 ? '' : 's'}`
+                }`}
+              >
+                {report.title}
+              </Link>
+              <StarToggle slug={report.slug} title={report.title} />
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

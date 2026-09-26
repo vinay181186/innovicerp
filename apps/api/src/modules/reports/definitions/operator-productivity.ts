@@ -12,7 +12,8 @@ export const operatorProductivityReport: RegisteredReport = {
     title: 'Operator productivity',
     description:
       'Per-operator total qty, entry count and reject rate over a date range, from Op Entry. Operators with no entries in the window do not appear.',
-    group: 'Operations',
+    group: 'Production',
+    dept: 'production',
     filters: [
       { key: 'fromDate', label: 'Log Date From', kind: 'date' },
       { key: 'toDate', label: 'Log Date To', kind: 'date' },

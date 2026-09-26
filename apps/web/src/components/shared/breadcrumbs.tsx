@@ -31,6 +31,9 @@ function buildCrumbs(pathname: string): Crumb[] {
   for (const sec of SECTIONS) {
     for (const grp of sec.groups) {
       for (const it of grp.items) {
+        // Query-specific aliases (a department's "Reports" link) share their
+        // path with the Reports-section entry; that entry names the crumb.
+        if (it.search) continue;
         const base = it.to.split('?')[0] ?? it.to;
         if (pathname === base || pathname.startsWith(base + '/')) {
           if (!best || base.length > best.base.length) {
