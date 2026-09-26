@@ -18,7 +18,7 @@ test('T23+T20/22 blank numbers auto-generate', async ({ page }: { page: Page }) 
   await page.getByPlaceholder('Required if no vendor picked').fill('E2E-VEND').catch(() => {});
   await page.locator('input[type="number"]').first().fill('5'); // qty
   await page.screenshot({ path: `${SHOT}/v4-pr-filled.png`, fullPage: true });
-  await page.getByRole('button', { name: /Create PR/i }).click();
+  await page.getByRole('button', { name: /Save PR/i }).click();
   await page.waitForTimeout(4000);
   await page.screenshot({ path: `${SHOT}/v4-pr-saved.png`, fullPage: true });
   const prBody = await page.locator('body').innerText();
@@ -29,13 +29,13 @@ test('T23+T20/22 blank numbers auto-generate', async ({ page }: { page: Page }) 
   // Chain: create a PO from this PR with a blank number → IN-PO-.
   await page.goto(`/purchase-requests?search=${pr[0]}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByText('📝 PO', { exact: false }).first().click().catch(() => {});
+  await page.getByText('Create PO', { exact: false }).first().click().catch(() => {});
   await page.waitForTimeout(3000);
   // Clear the PO number so the blank→auto path is exercised.
   const poNoInput = page.locator('input[value^="IN-PO-"]').first();
   await poNoInput.fill('').catch(() => {});
   await page.waitForTimeout(600);
-  await page.getByRole('button', { name: /Create PO/i }).click().catch(() => {});
+  await page.getByRole('button', { name: /Save PO/i }).click().catch(() => {});
   await page.waitForTimeout(4000);
   await page.screenshot({ path: `${SHOT}/v4-po-saved.png`, fullPage: true });
   const poBody = await page.locator('body').innerText();

@@ -81,7 +81,7 @@ async function fillEntryHeader(page: Page, operator: string): Promise<void> {
   await page.locator('#opf-date').fill(today());
   await page.locator('#opf-time').fill(now());
   await page.locator('#opf-shift').selectOption('day');
-  await page.getByPlaceholder(/Operator name|QC inspector name/i).first().fill(operator);
+  await page.locator('#opf-op').first().fill(operator);
 }
 
 async function popupGone(page: Page): Promise<void> {
@@ -118,13 +118,13 @@ test('planned vs actual machine part 2: log, stop, verify', async ({ page }) => 
       const m = await page.locator('#opf-machine').inputValue();
       const dlg = await page.locator('[role="dialog"]').first().innerText();
       if (m !== ACTUAL) throw new Error(`machine box reads "${m}"`);
-      if (!new RegExp(`planned ${PLANNED}`).test(dlg)) throw new Error('planned note missing');
+      if (!new RegExp(`Planned Machine\\s*${PLANNED}`).test(dlg)) throw new Error('planned note missing');
       return `Machine ${m} · planned ${PLANNED} shown`;
     });
     await fillEntryHeader(page, 'E2E Operator');
     await page.locator('#opf-qty').fill(String(LOG_QTY));
     await page.locator('#opf-rej').fill('0');
-    await page.getByRole('button', { name: /Submit completion/i }).click();
+    await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
     await popupGone(page);
     await step(page, 'Log 4', `Qty ${LOG_QTY} → ✓ Submit completion`, `${LOG_QTY} pcs booked on ${ACTUAL}; session still running`, async () => {
       await loadJc(page, JC);

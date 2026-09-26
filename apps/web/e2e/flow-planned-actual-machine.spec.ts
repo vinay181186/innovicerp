@@ -80,7 +80,7 @@ async function fillEntryHeader(page: Page, operator: string): Promise<void> {
   await page.locator('#opf-date').fill(today());
   await page.locator('#opf-time').fill(now());
   await page.locator('#opf-shift').selectOption('day');
-  await page.getByPlaceholder(/Operator name|QC inspector name/i).first().fill(operator);
+  await page.locator('#opf-op').first().fill(operator);
 }
 
 async function popupGone(page: Page): Promise<void> {
@@ -133,7 +133,7 @@ test('planned vs actual machine: start on cnc-2, plan stays cnc-1', async ({ pag
     if (planned !== PLANNED) throw new Error(`planned changed to "${planned}"`);
     if (actual !== ACTUAL) throw new Error(`actual reads "${actual}"`);
     const dlg = await page.locator('[role="dialog"]').first().innerText();
-    if (!new RegExp(`Running on ${ACTUAL}[\\s\\S]{0,20}\\(planned ${PLANNED}\\)`).test(dlg)) {
+    if (!new RegExp(`Planned Machine\\s*${PLANNED}[\\s\\S]{0,40}Actual Machine\\s*${ACTUAL}`).test(dlg)) {
       throw new Error('deviation note missing');
     }
     return `Planned ${planned} · Actual ${actual} · "as Running on ${ACTUAL} (planned ${PLANNED})"`;

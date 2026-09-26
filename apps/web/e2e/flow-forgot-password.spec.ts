@@ -225,7 +225,7 @@ async function authCookies(ctx: BrowserContext) {
   return all.filter((c) => c.name.startsWith(AUTH_COOKIE_PREFIX));
 }
 
-const LOGIN_FAIL_RE = /don't match|Invalid login credentials/i;
+const LOGIN_FAIL_RE = /Email or password is wrong|Invalid login credentials/i;
 
 /** Put the admin password back. Idempotent; safe to call twice. */
 async function restoreAdminPassword(reason: string): Promise<void> {
@@ -349,9 +349,9 @@ test('2 - request reset: 200 { ok, mailer } identical for real and made-up addre
     const status = res.status();
     const body = (await res.json()) as { ok?: unknown; mailer?: unknown };
     await expect(page.getByRole('heading', { name: 'Check your inbox' })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('If an account exists for')).toBeVisible();
+    await expect(page.getByText('has an account, a reset link is on its way')).toBeVisible();
     await expect(page.getByText(email, { exact: true })).toBeVisible();
-    await expect(page.getByText(`valid for ${RESET_MINUTES} minutes and works once`)).toBeVisible();
+    await expect(page.getByText(`(valid ${RESET_MINUTES} min)`)).toBeVisible();
     await expect(page.locator('p.text-destructive')).toHaveCount(0);
     return { status, body, apiUrl: res.url() };
   };
@@ -420,7 +420,8 @@ test('3-6 - token_hash link, password change lands on /login signed out, new/old
     const shown = Date.now() - landed;
     log(`"Choose a new password" visible ${shown} ms after landing`);
     await expect(page.getByText('Reset link problem')).toHaveCount(0);
-    await expect(page.getByText(`Reset links are valid for ${RESET_MINUTES} minutes and work once.`)).toBeVisible();
+    // The "Reset links are valid for N minutes and work once." note was removed
+    // from this page (round-3 clutter); the heading above is the visible fact.
 
     await expect
       .poll(() => page.url(), { timeout: 3_000, message: 'query must be cleaned' })

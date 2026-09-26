@@ -30,7 +30,7 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   await page.waitForTimeout(2000);
   await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
   await page.waitForTimeout(1500);
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
   const pln = ((await page.locator('text=/Plan:\\s*PLN-/i').first().innerText().catch(() => '')) || '').match(/PLN-\d+/)?.[0] ?? '';
   if (pln) log('PLN', pln);
@@ -46,7 +46,7 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   await snap(page, 'c3', '02-fo-filled');
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Execute/i }).first().click();
+  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
   await page.waitForTimeout(4500);
   await snap(page, 'c3', '03-executed');
   const body = await page.locator('body').innerText();
@@ -72,7 +72,7 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   const po = 'IN-JWPO-8' + String(Date.now()).slice(-4);
   await page.getByPlaceholder(/IN-JWPO-/i).first().fill(po).catch(() => {});
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /Create JW PO/i }).click();
+  await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(3500);
   log('IN-JWPO', po);
 
@@ -108,7 +108,7 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   await qcRow.getByRole('link', { name: /Inspect/i }).click();
   await page.waitForTimeout(2000);
   await page.locator('input[type="number"]').first().fill(String(QTY));
-  await page.getByRole('button', { name: /Submit QC/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await page.waitForTimeout(3000);
   log('QC', `accepted ${QTY} (OSP return)`);
   await snap(page, 'c3', '05-qc-done');

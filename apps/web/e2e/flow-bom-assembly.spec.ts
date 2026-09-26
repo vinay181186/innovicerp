@@ -228,7 +228,7 @@ test('@bom 02 — create the equipment (assembly) SO with that BOM', async ({ pa
   await typeSel.selectOption('equipment');
   await page.waitForTimeout(2500);
 
-  await pick(page, /Type client code or name/i, CLIENT_CODE, CLIENT_MATCH);
+  await pick(page, /Type customer code or name/i, CLIENT_CODE, CLIENT_MATCH);
   await page.getByPlaceholder(/Client PO reference/i).fill(TAG);
   await page.waitForTimeout(600);
 
@@ -393,7 +393,7 @@ test('@bom 04 — add a routing and execute the child plan', async ({ page }) =>
 
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(4000);
-  await page.getByRole('button', { name: /Execute/i }).first().click();
+  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
   await page.waitForTimeout(6000);
 
   state.jcCode = await codeOnPage(page, /IN-JC-\d{2}-\d+/);
@@ -428,7 +428,7 @@ test('@bom 05 — produce and pass QC', async ({ page }) => {
     await page.waitForTimeout(1500);
     await page.getByRole('spinbutton').first().fill(String(qty));
     await page.getByPlaceholder(/Operator name/i).fill('E2E Auto').catch(() => {});
-    await page.getByRole('button', { name: /Submit completion/i }).click();
+    await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
     await page.waitForTimeout(4000);
   }
   const qcOp = page.getByText('DIR', { exact: true }).first();
@@ -436,7 +436,7 @@ test('@bom 05 — produce and pass QC', async ({ page }) => {
     await qcOp.click();
     await page.waitForTimeout(1800);
     await page.getByRole('spinbutton').first().fill(String(qty));
-    await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+    await page.getByRole('button', { name: /Submit Inspection/i }).click();
     await page.waitForTimeout(4500);
   }
   const after = await page.locator('body').innerText();
@@ -495,7 +495,7 @@ test('@bom 06 — dispatch the assembled units', async ({ page }) => {
     return;
   }
   await dqty.fill(String(SO_QTY));
-  await page.getByRole('button', { name: /Create Dispatch/i }).click();
+  await page.getByRole('button', { name: /Save Dispatch/i }).click();
   await page.waitForTimeout(5000);
   const err = await bannerText(page);
   // The first attempt produced no document and no error text, so dump what the
@@ -554,7 +554,7 @@ test('@bom 07 — invoice the assembly', async ({ page }) => {
     }
   }
   await page.waitForTimeout(500);
-  await page.getByRole('button', { name: /Create Invoice/i }).click();
+  await page.getByRole('button', { name: /Save Invoice/i }).click();
   await page.waitForTimeout(5000);
   const err = await bannerText(page);
   // eslint-disable-next-line no-console

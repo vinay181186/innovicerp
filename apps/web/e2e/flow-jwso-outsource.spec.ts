@@ -122,7 +122,7 @@ test('@jwout 01 — create the JWSO', async ({ page }) => {
   }
   await page.goto('/job-work-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await pick(page, /Type client code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
+  await pick(page, /Type customer code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
   await page.getByPlaceholder(/Client PO reference/i).fill(TAG);
 
   const lineCodeBoxes = page.locator('input[name$=".itemCodeText"]');
@@ -164,7 +164,7 @@ test('@jwout 02 — party material + GRN (customer supplies the material)', asyn
     await page.getByRole('button', { name: /Add Material/i }).first().click();
     await page.waitForTimeout(1500);
     state.pmCode = await page.locator('input[value^="PM-"]').first().inputValue().catch(() => '');
-    await pick(page, /Type client code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
+    await pick(page, /Type customer code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
     await pick(page, /Type SO \/ JWSO no/i, state.jwCode, new RegExp(state.jwCode));
     await pick(page, /Pick an item from this order/i, ITEM_CODE, new RegExp(ITEM_CODE));
     await page.getByRole('button', { name: /Save Material/i }).click();
@@ -220,7 +220,7 @@ test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ 
   // on the create modal and found nothing there.)
   await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
   await page.waitForTimeout(2000);
-  await page.getByRole('button', { name: /^Save$/ }).first().click();
+  await page.getByRole('button', { name: /^Save Plan$/ }).first().click();
   await page.waitForTimeout(4000);
   state.planCode = await codeOnPage(page, /PLN-\d+/);
   // eslint-disable-next-line no-console
@@ -254,7 +254,7 @@ test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ 
     console.log(`>> plan save error: "${saveErr}"`);
   }
 
-  await page.getByRole('button', { name: /Execute/i }).first().click();
+  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
   await page.waitForTimeout(6000);
   const body = await page.locator('body').innerText();
   state.jcCode = (body.match(/IN-JC-\d{2}-\d+/) ?? [''])[0];
@@ -305,9 +305,9 @@ test('@jwout 05 — PR → PO', async ({ page }) => {
   }
   await page.goto(`/purchase-requests?search=${state.prCode}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3500);
-  await page.getByText('📝 PO', { exact: false }).first().click();
+  await page.getByText('Create PO', { exact: false }).first().click();
   await page.waitForTimeout(3500);
-  await page.getByRole('button', { name: /Create PO/i }).click();
+  await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(5000);
   state.poCode = await codeOnPage(page, /IN-(?:JW)?PO-\d+/);
 

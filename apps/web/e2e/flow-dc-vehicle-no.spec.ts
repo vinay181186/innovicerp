@@ -175,7 +175,7 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     await page.goto('/delivery-challans', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(4000);
 
-    const noDcs = await page.getByText(/No OSP DCs yet/i).count();
+    const noDcs = await page.getByText(/No DCs yet/i).count();
     test.skip(noDcs > 0, 'No delivery challans exist to open.');
 
     // Open the first DC by its code link. Read-only navigation.
@@ -335,7 +335,7 @@ test.describe('Delivery Challan — Vehicle No field', () => {
       // the reason in a red banner just above it.
       const banner = page
         .locator('div')
-        .filter({ hasText: /Cannot outsource|cannot ship|Failed to create DC|validation/i })
+        .filter({ hasText: /Cannot outsource|cannot ship|Failed to create DC|Could not save DC|validation/i })
         .last();
       const message = (await banner.innerText().catch(() => '')).trim();
       throw new Error(

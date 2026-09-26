@@ -102,7 +102,7 @@ async function fillEntryHeader(page: Page, operator: string): Promise<void> {
   await page.locator('#opf-date').fill(today());
   await page.locator('#opf-time').fill(now());
   await page.locator('#opf-shift').selectOption('day');
-  await page.getByPlaceholder(/Operator name|QC inspector name/i).first().fill(operator);
+  await page.locator('#opf-op').first().fill(operator);
 }
 
 /** Every entry popup closes itself once the write lands (onSubmitted). On the
@@ -125,7 +125,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
   const soCode = await page.locator('input[value^="IN-SO-"]').first().inputValue();
-  const client = page.getByPlaceholder(/Type client code or name/i);
+  const client = page.getByPlaceholder(/Type customer code or name/i);
   await client.click();
   await client.fill('Adani');
   await page.waitForTimeout(1300);
@@ -179,7 +179,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   const planQty = page.locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]').first();
   await planQty.waitFor({ state: 'visible', timeout: 30_000 });
   await planQty.fill(String(ORDER_QTY));
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
   const del = page.locator('table.ops-routing tbody tr button.btn-danger');
   for (let i = (await del.count()) - 1; i >= 0; i--) {
@@ -194,7 +194,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   // The modal closes when the save lands; Execute only exists after that.
   await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
-  const execBtn = page.getByRole('button', { name: /Execute/i }).first();
+  const execBtn = page.getByRole('button', { name: /Create JC|Raise PR/ }).first();
   await execBtn.waitFor({ state: 'visible', timeout: 60_000 });
   await execBtn.click();
   // Execute raises the job card server-side; on the test API that is many
@@ -252,12 +252,12 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   });
 
   // ── 4. QC: accept 8, reject 2 → NC auto-raised ────────────────────────────
-  await opRow(page, 'DIR').getByRole('button', { name: /QC/ }).click();
+  await opRow(page, 'DIR').getByRole('button', { name: /Inspect/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Inspector');
   await page.locator('#opf-qty').fill(String(ACCEPT_1));
   await page.locator('#opf-rej').fill(String(REJECT_1));
-  await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await popupGone(page);
   await step(
     page,
@@ -295,7 +295,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     `DIR op card shows ✓${ACCEPT_1} · ✗${REJECT_1} · "NC raised ${REJECT_1}" together`,
     async () => {
       const body = await page.locator('body').innerText();
-      const ok = new RegExp(`NC raised\\s*${REJECT_1}`).test(body);
+      const ok = new RegExp(`NC Raised\\s*${REJECT_1}`).test(body);
       if (!ok) throw new Error('strip "NC raised 2" not visible on the op card');
       return `"NC raised ${REJECT_1}" shown beside ✓${ACCEPT_1} / ✗${REJECT_1}`;
     },
@@ -313,7 +313,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.locator('#dispAction').selectOption('rework');
   await page.locator('#dispQty').fill(String(REJECT_1));
   await page.locator('#dispRemarks').fill('E2E rework cycle');
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Disposition$/ }).click();
   await page.getByText(/-RW\d+/).first().waitFor({ timeout: 90_000 });
   await page.waitForTimeout(1000);
   await step(
@@ -352,7 +352,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.waitForTimeout(800);
   await step(page, 'Parent JC (§6)', 'Re-open the parent job card', `"Under rework ${REJECT_1}" on the DIR op card`, async () => {
     const body = await page.locator('body').innerText();
-    if (!new RegExp(`Under rework\\s*${REJECT_1}`).test(body)) throw new Error('"Under rework 2" not visible');
+    if (!new RegExp(`Under Rework\\s*${REJECT_1}`).test(body)) throw new Error('"Under rework 2" not visible');
     return `"Under rework ${REJECT_1}" shown`;
   });
 
@@ -406,12 +406,12 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     return 'child op logged';
   });
 
-  await opRow(page, 'DIR').getByRole('button', { name: /QC/ }).click();
+  await opRow(page, 'DIR').getByRole('button', { name: /Inspect/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Inspector');
   await page.locator('#opf-qty').fill(String(REJECT_1));
   await page.locator('#opf-rej').fill('0');
-  await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await popupGone(page);
   await step(
     page,
@@ -439,8 +439,8 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     `DIR shows ✓${ORDER_QTY}; strip shows "NC closed ${REJECT_1}"; no Under rework`,
     async () => {
       const body = await page.locator('body').innerText();
-      const closed = new RegExp(`NC closed\\s*${REJECT_1}`).test(body);
-      const under = new RegExp(`Under rework\\s*[1-9]`).test(body);
+      const closed = new RegExp(`NC Closed\\s*${REJECT_1}`).test(body);
+      const under = new RegExp(`Under Rework\\s*[1-9]`).test(body);
       if (!closed) throw new Error('"NC closed 2" not shown on the parent');
       if (under) throw new Error('parent still shows pieces under rework');
       const acc = body.match(/✓\s*(\d+)/g)?.join(' ') ?? '';

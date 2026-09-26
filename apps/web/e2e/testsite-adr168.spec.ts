@@ -229,7 +229,7 @@ function viewCards(page: Page): Locator {
   return page.locator('span.mono.fw-700[style*="height: 24px"]');
 }
 const hint = (page: Page): Locator => page.getByRole('alert').filter({ hasText: RULE_RE });
-const saveJc = (page: Page): Locator => page.getByRole('button', { name: /Save Job Card/ });
+const saveJc = (page: Page): Locator => page.getByRole('button', { name: /Save Job Card|Save Changes/ });
 
 async function addProcessOp(page: Page, n: number, name: string, machine: string): Promise<void> {
   await page.getByRole('button', { name: '+ Add Op', exact: true }).click();
@@ -444,8 +444,8 @@ test('S3 (−) QC Process Master refuses to delete "Final Inspection" (system-ad
   );
   const fi = rows.find((r) => r.code === 'Final Inspection');
   const dr = rows.find((r) => r.code === 'dir');
-  const finalOk = /adds it automatically/i.test(finalMsg) && !!fi && fi.deleted_at === null;
-  const dirOk = /in use by \d+ job card op/i.test(dirMsg) && !!dr && dr.deleted_at === null;
+  const finalOk = /automatic Final Inspection step/i.test(finalMsg) && !!fi && fi.deleted_at === null;
+  const dirOk = /used in \d+ job card op/i.test(dirMsg) && !!dr && dr.deleted_at === null;
   record({
     scenario: 'S3', action: 'Delete system QC process', document: 'QC Process: Final Inspection', qty: '',
     headerStatus: fi?.is_active ? 'Active' : 'Inactive', overallStatus: 'row still present', result: finalOk ? 'by-design' : 'fail',
@@ -456,8 +456,8 @@ test('S3 (−) QC Process Master refuses to delete "Final Inspection" (system-ad
     headerStatus: dr?.is_active ? 'Active' : 'Inactive', overallStatus: 'row still present', result: dirOk ? 'by-design' : 'fail',
     note: dirMsg,
   });
-  expect(finalMsg).toMatch(/adds it automatically/i);
-  expect(dirMsg).toMatch(/in use by \d+ job card op/i);
+  expect(finalMsg).toMatch(/automatic Final Inspection step/i);
+  expect(dirMsg).toMatch(/used in \d+ job card op/i);
   expect(finalMsg).not.toBe(dirMsg);
   expect(fi?.deleted_at ?? null).toBeNull();
   expect(dr?.deleted_at ?? null).toBeNull();
@@ -836,7 +836,7 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
     await planQty.waitFor({ state: 'visible', timeout: 30_000 });
     await planQty.fill(String(PLAN_QTY));
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/plans$/.test(new URL(r.url()).pathname), { timeout: 60_000 });
-    await page.getByRole('button', { name: /^Save$/ }).click();
+    await page.getByRole('button', { name: /^Save Plan$/ }).click();
     const cr = await created;
     const cbody = (await cr.json().catch(() => ({}))) as { id?: string; code?: string };
     s = writeState({ planId: cbody.id, planCode: cbody.code });

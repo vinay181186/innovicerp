@@ -188,7 +188,7 @@ async function fillEntryHeader(page: Page, operator: string): Promise<void> {
   await page.locator('#opf-date').fill(today());
   await page.locator('#opf-time').fill(now());
   await page.locator('#opf-shift').selectOption('day');
-  await page.getByPlaceholder(/Operator name|QC inspector name/i).first().fill(operator);
+  await page.locator('#opf-op').first().fill(operator);
 }
 
 async function popupGone(page: Page): Promise<void> {
@@ -244,7 +244,15 @@ async function readGrnDetail(page: Page, grnId: string) {
   const nc = (await page.locator('.form-grp').filter({ has: page.getByText('NC', { exact: true }) }).count()) > 0
     ? await readPair(page, 'NC')
     : '';
-  const dcNo = await readPair(page, 'DC No.');
+  // Our DC shows as "DC No." (DC-linked GRN); the vendor's own challan as
+  // "Vendor Challan No."; neither pair renders when both are empty.
+  const pairCount = async (l: string): Promise<number> =>
+    page.locator('.form-grp').filter({ has: page.getByText(l, { exact: true }) }).count();
+  const dcNo = (await pairCount('DC No.')) > 0
+    ? await readPair(page, 'DC No.')
+    : (await pairCount('Vendor Challan No.')) > 0
+      ? await readPair(page, 'Vendor Challan No.')
+      : '—';
   const vendor = await readPair(page, 'Vendor');
   const openDc = await page.getByRole('link', { name: 'Open DC' }).count();
   const openNc = await page.getByRole('link', { name: 'Open NC' }).count();
@@ -318,7 +326,7 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
   if (!s.soCode) {
     await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2500);
-    const client = page.getByPlaceholder(/Type client code or name/i);
+    const client = page.getByPlaceholder(/Type customer code or name/i);
     await client.click();
     await client.fill('Adani');
     await page.locator('[role="option"], li').filter({ hasText: /Adani/ }).first().waitFor({ timeout: 45_000 });
@@ -355,7 +363,7 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     const planQty = page.locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]').first();
     await planQty.waitFor({ state: 'visible', timeout: 30_000 });
     await planQty.fill(String(ORDER_QTY));
-    await page.getByRole('button', { name: /^Save$/ }).click();
+    await page.getByRole('button', { name: /^Save Plan$/ }).click();
     await page.waitForTimeout(2500);
     const del = page.locator('table.ops-routing tbody tr button.btn-danger');
     for (let i = (await del.count()) - 1; i >= 0; i--) {
@@ -369,7 +377,7 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     await pickFirst(page, row0.getByPlaceholder('🔍 Machine', { exact: true }), 'cnc');
     await page.getByRole('button', { name: /Save Plan/i }).click();
     await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
-    const execBtn = page.getByRole('button', { name: /Execute/i }).first();
+    const execBtn = page.getByRole('button', { name: /Create JC|Raise PR/ }).first();
     await execBtn.waitFor({ state: 'visible', timeout: 60_000 });
     await execBtn.click();
     await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 120_000 });
@@ -411,12 +419,12 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     }
     log('C0: Turning started + stopped with ' + ORDER_QTY + ' made');
 
-    await opRow(page, 'DIR').getByRole('button', { name: /QC/ }).click();
+    await opRow(page, 'DIR').getByRole('button', { name: /Inspect/ }).click();
     await page.waitForTimeout(1200);
     await fillEntryHeader(page, 'E2E_ Inspector');
     await page.locator('#opf-qty').fill(String(QC_OK));
     await page.locator('#opf-rej').fill(String(QC_REJ));
-    await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+    await page.getByRole('button', { name: /Submit Inspection/i }).click();
     await popupGone(page);
 
     await page.goto(`/nc-register?search=${JC}`, { waitUntil: 'domcontentloaded' });
@@ -448,7 +456,7 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     await page.locator('#dispAction').selectOption('return_to_vendor');
     await page.locator('#dispQty').fill(String(QC_REJ));
     await page.locator('#dispRemarks').fill('E2E_ GRN Against NC check (ADR-163) - return to vendor');
-    await page.getByRole('button', { name: /^Save$/ }).click();
+    await page.getByRole('button', { name: /^Save Disposition$/ }).click();
     await page.waitForTimeout(3000);
     await page.goto(s.ncUrl!, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.panel-hdr .badge').first()).toBeVisible({ timeout: 60_000 });
@@ -587,18 +595,18 @@ test('C3 - Receive Now 5 is refused inline; 3 creates the GRN and lands on its d
   await expect(line1).toHaveValue(String(QC_REJ), { timeout: 30_000 });
 
   await line1.fill(String(QC_REJ + 1));
-  await expect(page.getByText(`Cannot exceed balance of ${QC_REJ}.`, { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /Create GRN/ }).click();
+  await expect(page.getByText(`Cannot receive more than Pending (${QC_REJ}).`, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /Save GRN/ }).click();
   await page.waitForTimeout(3000);
   const native = await line1.evaluate((el) => (el as HTMLInputElement).validity.rangeOverflow);
   const summary = await page.getByText('Fix the highlighted quantities.').count();
   await expect(page).toHaveURL(/goods-receipt-notes\/new/);
-  await expect(page.getByText(`Cannot exceed balance of ${QC_REJ}.`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`Cannot receive more than Pending (${QC_REJ}).`, { exact: true })).toBeVisible();
   log('C3: ' + (QC_REJ + 1) + ' -> "Cannot exceed balance of ' + QC_REJ + '." shown; Create refused (still on /new; native max block=' + native + ', form summary shown=' + (summary > 0) + ')');
 
   await line1.fill(String(FIRST_RECEIVE));
   await page.locator('#ncRemarks').fill('E2E_ GRN against NC - partial (3 of 4)');
-  await page.getByRole('button', { name: /Create GRN/ }).click();
+  await page.getByRole('button', { name: /Save GRN/ }).click();
   await expect(page).toHaveURL(/goods-receipt-notes\/[0-9a-f-]{36}$/, { timeout: 120_000 });
   const grnId = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
   const d = await readGrnDetail(page, grnId);
@@ -632,8 +640,8 @@ test('C4 - NC detail Sent 4 / Received 3 + Received – QC Pending; DC has 1 rec
 
   const strip = await readJcNcStrip(page, s.jcUrl!);
   log('C4: JC ' + s.jcCode + ' op strip: "' + strip + '"');
-  expect(strip).toMatch(new RegExp('Sent to vendor\\s*' + (QC_REJ - FIRST_RECEIVE) + '\\b'));
-  expect(strip).toMatch(new RegExp('Received – QC pending\\s*' + FIRST_RECEIVE + '\\b'));
+  expect(strip).toMatch(new RegExp('Sent to Vendor\\s*' + (QC_REJ - FIRST_RECEIVE) + '\\b'));
+  expect(strip).toMatch(new RegExp('Received – QC Pending\\s*' + FIRST_RECEIVE + '\\b'));
 });
 
 test('C5 - GRN list: my GRN card carries the red "Against NC" badge and "NC <code>"; click expands the lines', async ({ page }) => {
@@ -714,7 +722,7 @@ test('C7 - server guard via API: receiving 2 against a balance of 1 -> 409, NC r
   const body = await over.text();
   log('C7: over-receipt (2 vs balance 1) -> HTTP ' + over.status() + ' ' + body);
   expect(over.status()).toBe(409);
-  expect(body).toMatch(/would exceed|cumulative receive/i);
+  expect(body).toMatch(/cannot be more than Sent Qty|cannot be more than Pending/i);
 
   const ncRes = await page.request.get(api + '/nc-register/' + s.ncId, { headers });
   expect(ncRes.status()).toBe(200);
@@ -864,7 +872,7 @@ test('11 - Incoming QC lists both NC GRN lines as pending inspection (read-only)
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/Pending Inspection/)).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(2000);
-  const pendingTable = page.locator('table').filter({ has: page.getByText('Pending QC', { exact: true }) }).first();
+  const pendingTable = page.locator('table').filter({ has: page.getByText('QC Pending', { exact: true }) }).first();
   const rowsText = (await pendingTable.locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' '));
   const mine = rowsText.filter((t) => t.includes(s.grnCode!) || t.includes(s.grn2Code ?? '§'));
   log('11: pending rows for my GRNs (' + mine.length + '):\n   ' + mine.join('\n   '));
