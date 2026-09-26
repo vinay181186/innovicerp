@@ -72,3 +72,32 @@ export function buildTimeline(
   events.sort((a, b) => (a.ts ?? '9999-99-99').localeCompare(b.ts ?? '9999-99-99'));
   return events;
 }
+
+/** The most rows a master record's Related Documents section lists (ADR-189).
+ *  A customer or an item can own hundreds of documents; the section shows the
+ *  newest this many and its `count` still says how many there are in all. */
+export const MASTER_RELATED_ROW_CAP = 50;
+
+/** Raw-SQL rows for one master section → a section. Each row carries
+ *  `id, code, status, date, label` and `total` (count(*) OVER () — the full
+ *  number before the cap), so the heading count is true even when capped. */
+export function masterSection(
+  key: string,
+  title: string,
+  icon: string,
+  routeKind: string | null,
+  raw: unknown,
+): RelatedSection {
+  const rows = raw as Array<Record<string, unknown>>;
+  const items: RelatedDoc[] = rows.map((r) => ({
+    id: String(r['id']),
+    code: String(r['code'] ?? ''),
+    status: r['status'] != null ? String(r['status']) : null,
+    date: toIsoDate(r['date']),
+    linkId: null,
+    label: r['label'] != null ? String(r['label']) : null,
+  }));
+  const s = section(key, title, icon, routeKind, items);
+  const total = rows[0] ? Number(rows[0]['total'] ?? rows.length) : 0;
+  return { ...s, count: Math.max(total, items.length) };
+}

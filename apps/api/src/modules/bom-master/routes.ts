@@ -6,6 +6,7 @@ import {
   listBomMastersQuerySchema,
   updateBomMasterInputSchema,
 } from './schema';
+import { listBomLinkedSoLines } from './linked-so-lines';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -32,6 +33,13 @@ export async function bomMasterRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.getBomMasterRelated(id, req.user);
+  });
+
+  // SO lines built from this BOM (ADR-189).
+  app.get('/bom-masters/:id/linked-so-lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return listBomLinkedSoLines(id, req.user);
   });
 
   app.post('/bom-masters', async (req, reply) => {

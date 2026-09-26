@@ -7,6 +7,7 @@ import {
   listItemsQuerySchema,
   updateItemInputSchema,
 } from './schema';
+import { getItemRelated } from './related';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -22,6 +23,13 @@ export async function itemsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/items/next-code', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getNextItemCode(req.user);
+  });
+
+  // Related Documents panel for the master (ADR-189).
+  app.get('/items/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return getItemRelated(id, req.user);
   });
 
   app.get('/items/:id', async (req) => {

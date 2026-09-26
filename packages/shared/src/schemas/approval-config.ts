@@ -49,3 +49,44 @@ export const approvalHistoryResponseSchema = z.object({
   items: z.array(approvalHistoryItemSchema),
 });
 export type ApprovalHistoryResponse = z.infer<typeof approvalHistoryResponseSchema>;
+
+// ─── Approvals inbox (ADR-189) ──────────────────────────────────────────────
+// GET /approvals/inbox — what is waiting for the CALLER to sign off, one list
+// per kind. Each list applies the same eligibility rules as the matching
+// approve endpoint (PR: Approve on Purchase Requests, not self-raised; PO:
+// Approve on Purchase Orders, on the approvers list, not self-raised, PO value
+// within the caller's limit; log entry: manager/admin), so everything listed
+// is something the caller can actually approve.
+
+export const approvalInboxRowSchema = z.object({
+  id: z.string().uuid(),
+  /** The document number (PR / PO), or `JC No. · Op` for a log-entry change. */
+  code: z.string(),
+  vendorName: z.string().nullable(),
+  itemCode: z.string().nullable(),
+  itemName: z.string().nullable(),
+  /** PR Qty (PR), Σ line qty (PO), the entry's qty (log entry). */
+  qty: z.number().nullable(),
+  /** ₹, before GST: PR Qty × Est. Rate, or the PO value the approval limit is
+   *  checked against. Null for a log entry, and when the caller's access hides
+   *  prices. */
+  amount: z.number().nullable(),
+  createdByName: z.string().nullable(),
+  /** When it was raised — ISO timestamp. */
+  createdAt: z.string(),
+  /** The page that opens it, e.g. `/purchase-orders/<id>`. */
+  navPage: z.string(),
+});
+export type ApprovalInboxRow = z.infer<typeof approvalInboxRowSchema>;
+
+export const approvalInboxResponseSchema = z.object({
+  counts: z.object({
+    pr: z.number().int().nonnegative(),
+    po: z.number().int().nonnegative(),
+    logEntry: z.number().int().nonnegative(),
+  }),
+  pr: z.array(approvalInboxRowSchema),
+  po: z.array(approvalInboxRowSchema),
+  logEntry: z.array(approvalInboxRowSchema),
+});
+export type ApprovalInboxResponse = z.infer<typeof approvalInboxResponseSchema>;

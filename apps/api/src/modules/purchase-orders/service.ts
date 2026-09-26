@@ -47,6 +47,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { autoCloseLinkedTasks } from '../tasks/service';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 import { loadPrBalances } from '../purchase-requests/service';
 import {
@@ -2547,7 +2548,7 @@ interface ApprovalContext {
   approvalCeiling: number;
 }
 
-async function loadApprovalContext(
+export async function loadApprovalContext(
   tx: DbTransaction,
   companyId: string,
   userId: string,
@@ -2583,7 +2584,7 @@ async function loadApprovalContext(
 }
 
 /** Σ(qty × rate) over a PO's active lines — no tax (legacy `tVal` L21727). */
-async function sumPoLineValue(tx: DbTransaction, purchaseOrderId: string): Promise<number> {
+export async function sumPoLineValue(tx: DbTransaction, purchaseOrderId: string): Promise<number> {
   const lines = await tx
     .select({ qty: purchaseOrderLines.qty, rate: purchaseOrderLines.rate })
     .from(purchaseOrderLines)
@@ -2720,6 +2721,13 @@ export async function approvePurchaseOrder(
         refId: po.code,
       },
       companyId,
+      user,
+    );
+
+    // ADR-189 — a task raised against this PO closes itself on approval.
+    await autoCloseLinkedTasks(
+      tx,
+      { companyId, refTypes: ['purchase_order'], refId: id, doneLabel: `PO ${po.code} approved` },
       user,
     );
 

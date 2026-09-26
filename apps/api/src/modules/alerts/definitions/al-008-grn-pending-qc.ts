@@ -3,6 +3,7 @@
 // has it per line. Returns one record per line whose qc_status is
 // 'pending' or 'in_progress'.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -23,7 +24,7 @@ export const al008GrnPendingQc: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT g.code AS grn_code, g.grn_date,
+      SELECT g.id AS nav_id, g.code AS grn_code, g.grn_date,
              COALESCE(i.code, gl.item_code_text, '') AS item,
              gl.received_qty, gl.qc_status
       FROM public.goods_receipt_note_lines gl
@@ -36,6 +37,7 @@ export const al008GrnPendingQc: RegisteredAlert = {
       ORDER BY g.grn_date, g.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('grn', String(r['nav_id'])),
       grn_code: (r['grn_code'] as string) ?? '',
       grn_date:
         r['grn_date'] instanceof Date

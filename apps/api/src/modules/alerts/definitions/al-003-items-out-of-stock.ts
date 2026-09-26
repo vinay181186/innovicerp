@@ -4,6 +4,7 @@
 // (no items.stock_qty column to avoid drift — exactly the anti-pattern
 // Phase 1 was meant to escape).
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -23,7 +24,7 @@ export const al003ItemsOutOfStock: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT i.code AS item_code, i.name AS item_name,
+      SELECT i.id AS nav_id, i.code AS item_code, i.name AS item_name,
              COALESCE(s.on_hand_qty, 0) AS on_hand_qty,
              COALESCE(i.material, '') AS material
       FROM public.items i
@@ -35,6 +36,7 @@ export const al003ItemsOutOfStock: RegisteredAlert = {
       ORDER BY i.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('item', String(r['nav_id'])),
       item_code: (r['item_code'] as string) ?? '',
       item_name: (r['item_name'] as string) ?? '',
       on_hand_qty: r['on_hand_qty'] != null ? Number(r['on_hand_qty']) : 0,

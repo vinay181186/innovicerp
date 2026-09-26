@@ -184,3 +184,31 @@ export const updateBomMasterInputSchema = z
     'The parent item cannot also be one of its own child parts',
   );
 export type UpdateBomMasterInput = z.infer<typeof updateBomMasterInputSchema>;
+
+// ─── SO lines built from this BOM (ADR-189) ─────────────────────────────────
+// GET /bom-masters/:id/linked-so-lines — every live sales-order line whose
+// source_bom_master_id is this BOM (the same FK the Related Documents panel
+// counts), newest SO first. Line-grain, where the panel only lists the SOs.
+export const bomLinkedSoLineSchema = z.object({
+  salesOrderId: z.string().uuid(),
+  soCode: z.string(),
+  soDate: z.string(),
+  /** The SO header's status. */
+  soStatus: z.string(),
+  salesOrderLineId: z.string().uuid(),
+  lineNo: z.number().int(),
+  clientPoLineNo: z.string().nullable(),
+  itemCode: z.string().nullable(),
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  orderQty: z.number().int(),
+  /** The SO line's own status (open / closed / cancelled …). */
+  lineStatus: z.string(),
+  dueDate: z.string().nullable(),
+});
+export type BomLinkedSoLine = z.infer<typeof bomLinkedSoLineSchema>;
+
+export const bomLinkedSoLinesResponseSchema = z.object({
+  lines: z.array(bomLinkedSoLineSchema),
+});
+export type BomLinkedSoLinesResponse = z.infer<typeof bomLinkedSoLinesResponseSchema>;

@@ -37,6 +37,8 @@ export const grnQcLogReport: RegisteredReport = {
       { key: 'po_code', label: 'PO No.', type: 'text' },
       { key: 'vendor_name', label: 'Vendor', type: 'text' },
     ],
+    // ADR-189 — grn_code opens the document; grn_id is not a column.
+    rowLink: { column: 'grn_code', route: '/goods-receipt-notes/$id', idKey: 'grn_id' },
   },
   async run({ tx, companyId, filters }) {
     const fromDate = filters['fromDate'];
@@ -53,6 +55,7 @@ export const grnQcLogReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
+        grn.id AS grn_id,
         grn.code                                       AS grn_code,
         grn.grn_date                                   AS grn_date,
         grnl.line_no                                   AS line_no,
@@ -81,6 +84,7 @@ export const grnQcLogReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      grn_id: String(r['grn_id'] ?? ''),
       grn_code: String(r['grn_code'] ?? ''),
       grn_date:
         r['grn_date'] instanceof Date

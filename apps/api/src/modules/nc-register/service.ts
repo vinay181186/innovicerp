@@ -45,6 +45,7 @@ import {
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { autoCloseLinkedTasks } from '../tasks/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { type DisposeNcContext, disposeNcCascade, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
@@ -1417,6 +1418,14 @@ export async function disposeNcRegister(
         user,
       );
     }
+    // ADR-189 — the "Dispose NC-…" task raised against this NC closes itself.
+    // A partial disposition splits the rest onto a NEW sibling NC; tasks stay
+    // on the id they were raised for, which is now disposed.
+    await autoCloseLinkedTasks(
+      tx,
+      { companyId, refTypes: ['nc'], refId: id, doneLabel: `NC ${nc.code} disposed` },
+      user,
+    );
     const remainderNc = result.remainderNcId
       ? await readNc(tx, result.remainderNcId, companyId)
       : null;

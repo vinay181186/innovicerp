@@ -47,6 +47,7 @@ import {
 import { onNcReplacementQc, onRecoveryJobCardQc } from '../nc-register/recovery';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
+import { autoCloseLinkedTasks } from '../tasks/service';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -796,6 +797,33 @@ export async function submitIncomingQc(
       if (srcJobCardId) {
         await tryCascadeJcComplete(tx, srcJobCardId, user);
       }
+    }
+
+    // ADR-189 — a task raised against this GRN ("Inspect GRN-…") closes
+    // itself once no line on the GRN has anything left to inspect. The Assign
+    // buttons have written the type as both 'grn' and 'GRN'.
+    const openLines = await tx
+      .select({ id: goodsReceiptNoteLines.id })
+      .from(goodsReceiptNoteLines)
+      .where(
+        and(
+          eq(goodsReceiptNoteLines.goodsReceiptNoteId, line.grnId),
+          isNull(goodsReceiptNoteLines.deletedAt),
+          sql`${goodsReceiptNoteLines.receivedQty} - COALESCE(${goodsReceiptNoteLines.qcAcceptedQty}, 0) - COALESCE(${goodsReceiptNoteLines.qcRejectedQty}, 0) > 0`,
+        ),
+      )
+      .limit(1);
+    if (openLines.length === 0) {
+      await autoCloseLinkedTasks(
+        tx,
+        {
+          companyId,
+          refTypes: ['grn'],
+          refId: line.grnId,
+          doneLabel: `GRN ${line.grnCode} inspected`,
+        },
+        user,
+      );
     }
 
     return { ok: true as const, grnId: line.grnId };

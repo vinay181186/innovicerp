@@ -43,6 +43,7 @@ export async function runReport(
       rowCount: result.rows.length,
       generatedAt: new Date().toISOString(),
       filters,
+      ...(report.definition.rowLink ? { rowLink: report.definition.rowLink } : {}),
     };
   });
 }

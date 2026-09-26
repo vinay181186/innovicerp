@@ -128,6 +128,18 @@ export const salesOrderSchema = z.object({
 });
 export type SalesOrder = z.infer<typeof salesOrderSchema>;
 
+/** The order's money, worked out on the server (ADR-189): Subtotal = Σ line
+ *  Order Qty × Rate over every line, GST at the SO's GST %, Grand Total =
+ *  Subtotal + GST. Rounded to paise. The same sums the SO form shows while
+ *  typing, so the saved order and the form never disagree. */
+export const soTotalsSchema = z.object({
+  subtotal: z.number(),
+  gstPercent: z.number(),
+  gstAmount: z.number(),
+  grandTotal: z.number(),
+});
+export type SoTotals = z.infer<typeof soTotalsSchema>;
+
 /** Detail response: header + ordered lines (open lines first, then by lineNo)
  *  + delivery-schedule milestones (ordered by lotNo). */
 export const salesOrderDetailSchema = salesOrderSchema.extend({
@@ -152,6 +164,9 @@ export const salesOrderDetailSchema = salesOrderSchema.extend({
   // Display name of the user who raised the SO (users.full_name joined on
   // created_by), null when unresolved. UI shows "raised by + date/time".
   createdByName: z.string().nullable().default(null),
+  /** Only the detail read (GET /sales-orders/:id) fills it. Null when the
+   *  caller's access hides prices (priceVisible false). */
+  totals: soTotalsSchema.nullable().optional(),
 });
 export type SalesOrderDetail = z.infer<typeof salesOrderDetailSchema>;
 

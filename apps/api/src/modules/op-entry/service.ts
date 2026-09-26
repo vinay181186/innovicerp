@@ -50,6 +50,7 @@ import { codeLabel, labelOf, OP_LOG_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { onRecoveryJobCardQc } from '../nc-register/recovery';
+import { autoCloseLinkedTasks } from '../tasks/service';
 import { generateOspPrForOp } from './osp-cascade';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from './qc-stock-cascade';
 import { cascadeJcCompleteUpChain, tryCascadeJcComplete } from './sales-cascade';
@@ -1470,6 +1471,9 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // later scrapped), and it must already exist by the time the cascade
     // climbs so the trail reads reject → NC → child JC → reject → NC without
     // a gap.
+    // The NC this inspection raised — named on the response (ADR-183 `ncs`),
+    // the same way the production-entry path already names its NC.
+    let raisedNc: { ncId: string; ncCode: string } | null = null;
     if (input.rejectQty > 0 && jcCode) {
       // WI1 (ADR-164/0095): the auto-NC must name the ACTUAL machine that MADE
       // the rejected pieces, not null. nc.opSeq/operationText still point at the
@@ -1520,7 +1524,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         producingOperatorText = mRows[0]?.opName ?? null;
       }
 
-      await autoCreateNcFromQcReject(
+      raisedNc = await autoCreateNcFromQcReject(
         tx,
         {
           companyId,
@@ -1613,6 +1617,25 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // ordinary JC (no parent) this is exactly one cascade call, as before.
     await cascadeJcCompleteUpChain(tx, op.jobCardId, user);
 
+    // ADR-189 — a task raised against this QC call closes itself once the
+    // call has nothing left to inspect. A partial inspection leaves it open.
+    const pendRows = (await tx.execute(sql`
+      SELECT qc_pending AS "qcPending" FROM public.v_jc_op_status
+      WHERE jc_op_id = ${input.jcOpId}::uuid
+    `)) as unknown as Array<{ qcPending: number | string | null }>;
+    if (Number(pendRows[0]?.qcPending ?? 0) <= 0) {
+      await autoCloseLinkedTasks(
+        tx,
+        {
+          companyId,
+          refTypes: ['qc_call'],
+          refId: input.jcOpId,
+          doneLabel: `QC call ${jcCode ?? ''} Op #${opSrNo(op.opSeq)} inspected`,
+        },
+        user,
+      );
+    }
+
     // Audit emit. Single OP_QC action with both qtys in detail (one log can
     // carry both per legacy; splitting into _ACCEPT/_REJECT loses the link).
     if (jcCode) {
@@ -1654,6 +1677,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       createdAt:
         row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
       createdBy: row.createdBy,
+      // A freshly raised NC is always pending and on its own (see toInsertedOpLog).
+      ncs: raisedNc ? [{ id: raisedNc.ncId, code: raisedNc.ncCode, status: 'pending' }] : [],
     } as OpLog;
   });
 }
