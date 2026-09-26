@@ -1,4 +1,4 @@
-// Related Documents for one vendor (ADR-189) — GET /vendors/:id/related.
+// Related Documents for one vendor (ADR-190) — GET /vendors/:id/related.
 // Read-only, every edge a real FK:
 //   purchase_orders.vendor_id     → Purchase Orders
 //   delivery_challans.vendor_id   → Delivery Challans (material sent out to them)

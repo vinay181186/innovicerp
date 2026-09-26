@@ -51,7 +51,7 @@ export function useBomMaster(id: string | undefined) {
   });
 }
 
-/** SO lines built from this BOM (ADR-189) — fetched only when the list is opened. */
+/** SO lines built from this BOM (ADR-190) — fetched only when the list is opened. */
 export function useBomLinkedSoLines(id: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: bomMastersKeys.linkedSoLines(id ?? '__missing__'),

@@ -128,7 +128,7 @@ export const salesOrderSchema = z.object({
 });
 export type SalesOrder = z.infer<typeof salesOrderSchema>;
 
-/** The order's money, worked out on the server (ADR-189): Subtotal = Σ line
+/** The order's money, worked out on the server (ADR-190): Subtotal = Σ line
  *  Order Qty × Rate over every line, GST at the SO's GST %, Grand Total =
  *  Subtotal + GST. Rounded to paise. The same sums the SO form shows while
  *  typing, so the saved order and the form never disagree. */

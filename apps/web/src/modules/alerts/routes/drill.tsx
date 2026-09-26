@@ -132,7 +132,7 @@ function AlertDrillPage() {
                           // `type` here — the payload's only per-column signal:
                           //   first col  → `mono fw-700` + cyan (L22385 etc.)
                           //   number     → `td-num mono` (right-aligned qty)
-                          // ADR-189: the row carries `navPage` (not a column) —
+                          // ADR-190: the row carries `navPage` (not a column) —
                           // the record code opens its document.
                           const nav = row['navPage'];
                           return (

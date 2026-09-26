@@ -454,7 +454,7 @@ function NewOutwardModal({
   onClose: () => void;
   /** `?jw=` deep link from a JWSO. An outward DC is keyed by the job-work PO,
    *  not the JWSO, so the PO list is asked for the POs whose lines trace to
-   *  that JWSO (`jobWorkOrderId`, ADR-189 addendum): exactly one is pre-picked,
+   *  that JWSO (`jobWorkOrderId`, ADR-190 addendum): exactly one is pre-picked,
    *  several narrow the PO picker to them, none leaves the full picker. */
   forJwId?: string | undefined;
 }): React.JSX.Element {

@@ -444,7 +444,7 @@ function BomMasterDetailPage(): React.JSX.Element {
   );
 }
 
-/** The SO lines whose BOM is this one (ADR-189, GET /bom-masters/:id/linked-so-lines). */
+/** The SO lines whose BOM is this one (ADR-190, GET /bom-masters/:id/linked-so-lines). */
 function LinkedSoLinesModal({
   bomId,
   bomNo,

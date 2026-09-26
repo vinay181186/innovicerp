@@ -1,4 +1,4 @@
-// Related Documents for one item (ADR-189) — GET /items/:id/related.
+// Related Documents for one item (ADR-190) — GET /items/:id/related.
 // Read-only, every edge a real FK:
 //   purchase_requests.item_id, PR Status open / approved → Open PRs (not yet on a PO)
 //   purchase_order_lines.item_id → the PO                 → Purchase Orders

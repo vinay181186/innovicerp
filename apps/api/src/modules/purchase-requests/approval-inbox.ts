@@ -1,5 +1,5 @@
 // PRs waiting for THIS user's approval — the PR half of GET /approvals/inbox
-// (ADR-189). The rules are approvePurchaseRequest's own: Approve on Purchase
+// (ADR-190). The rules are approvePurchaseRequest's own: Approve on Purchase
 // Requests in the Access Control matrix, PR Status Open, and not raised by the
 // caller (segregation of duty, 0100). Nothing else gates a PR approval today.
 

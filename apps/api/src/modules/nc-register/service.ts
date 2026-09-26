@@ -1418,7 +1418,7 @@ export async function disposeNcRegister(
         user,
       );
     }
-    // ADR-189 — the "Dispose NC-…" task raised against this NC closes itself,
+    // ADR-190 — the "Dispose NC-…" task raised against this NC closes itself,
     // but only when the WHOLE NC was disposed. A partial disposition splits
     // the rest onto a NEW pending NC; the job is not done, so the task stays
     // open (it still points at this NC, whose detail links the remainder).

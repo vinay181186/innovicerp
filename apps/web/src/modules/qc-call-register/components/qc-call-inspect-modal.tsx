@@ -34,7 +34,7 @@ export function QcCallInspectModal({
 }: {
   o: QcHistoryPendingRow;
   onClose: () => void;
-  /** A reject raised an NC — the register shows it with a link (ADR-189). */
+  /** A reject raised an NC — the register shows it with a link (ADR-190). */
   onNcRaised?: ((nc: RaisedNc) => void) | undefined;
 }): React.JSX.Element {
   // Whether anything has been typed or attached — reported up by the form.

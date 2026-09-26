@@ -1,4 +1,4 @@
-// Task auto-close (ADR-189). When the action a task was raised for is done
+// Task auto-close (ADR-190). When the action a task was raised for is done
 // somewhere else in the app — the QC call inspected, the GRN inspected, the NC
 // disposed — the open tasks linked to that document are
 // completed here, inside the caller's transaction, so the task and the action

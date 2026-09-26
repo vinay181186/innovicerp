@@ -10169,7 +10169,7 @@ grandTotal }` — Σ Order Qty × Rate over every line, GST at the SO's GST %, r
   Customer / Vendor / Item, Assigned To on the QC Call Register, and the BOM's linked-SO-lines
   table.
 
-## ADR-189 Addendum: PO-approved task auto-close removed; PO list by JWSO; Op Log JC id
+## ADR-190 Addendum: PO-approved task auto-close removed; PO list by JWSO; Op Log JC id
 
 **Date:** 2026-09-26
 

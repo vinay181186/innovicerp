@@ -6,7 +6,7 @@ const OP_ENTRY_ROLES = new Set(['admin', 'manager', 'operator']);
 const QC_ROLES = new Set(['admin', 'manager', 'qc']);
 
 /** requireWriteRole's rule without the throw — for read paths that list only
- *  what the caller could act on (the approvals inbox, ADR-189). */
+ *  what the caller could act on (the approvals inbox, ADR-190). */
 export function isWriteRole(user: AuthContext): boolean {
   return WRITE_ROLES.has(user.role);
 }

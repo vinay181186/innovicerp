@@ -155,7 +155,7 @@ function VendorDetailPage(): React.JSX.Element {
       </DetailHeader>
 
       {/* Purchase Orders, Delivery Challans Out and GRNs for this vendor
-          (ADR-189). Hides when empty. */}
+          (ADR-190). Hides when empty. */}
       <RelatedDocsPanel module="vendors" id={vendor.id} />
 
       {confirmDelete ? (

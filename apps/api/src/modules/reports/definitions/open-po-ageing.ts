@@ -31,7 +31,7 @@ export const openPoAgeingReport: RegisteredReport = {
       { key: 'received_qty', label: 'Received', type: 'number' },
       { key: 'pending_qty', label: 'Pending', type: 'number' },
     ],
-    // ADR-189 — po_code opens the document; po_id is not a column.
+    // ADR-190 — po_code opens the document; po_id is not a column.
     rowLink: { column: 'po_code', route: '/purchase-orders/$id', idKey: 'po_id' },
   },
   async run({ tx, companyId, filters }) {

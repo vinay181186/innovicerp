@@ -97,7 +97,7 @@ function ReportRunPage() {
   }
 
   const rows = data?.rows ?? [];
-  // ADR-189: a report may name one column that opens its document; the id sits
+  // ADR-190: a report may name one column that opens its document; the id sits
   // under `idKey` on the row and is never shown as a column itself.
   const rowLink = data?.rowLink ?? definition.rowLink;
   const total = rows.length;

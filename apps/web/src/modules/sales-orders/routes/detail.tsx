@@ -192,7 +192,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <SoReadGrid detail={detail} />
-        {/* ADR-189 — the SO's money, summed on the server. Null when this
+        {/* ADR-190 — the SO's money, summed on the server. Null when this
             user's access hides prices, and then the strip is not shown. */}
         {detail.totals ? (
           <QtyStrip

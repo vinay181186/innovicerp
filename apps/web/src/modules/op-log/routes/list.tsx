@@ -255,7 +255,7 @@ function OpLogListPage(): React.JSX.Element {
                   <tr key={r.id}>
                     {/* Log No. and JC No. both open the job card the entry was
                         logged against — straight to /job-cards/$id when the row
-                        carries the card's id (ADR-189 addendum), else resolved
+                        carries the card's id (ADR-190 addendum), else resolved
                         from the JC number through search. */}
                     <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {r.jobCardId ? (

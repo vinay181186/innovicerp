@@ -1,5 +1,5 @@
 // POs waiting for THIS user's approval — the PO half of GET /approvals/inbox
-// (ADR-189). Every rule is the approve endpoint's own (approvePurchaseOrder):
+// (ADR-190). Every rule is the approve endpoint's own (approvePurchaseOrder):
 //   - Approve on Purchase Orders in the Access Control matrix, and a write role
 //   - on approval_config.po_approvers (admins always) — loadApprovalContext
 //   - PO Status Draft

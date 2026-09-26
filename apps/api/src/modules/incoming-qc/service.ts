@@ -798,7 +798,7 @@ export async function submitIncomingQc(
       }
     }
 
-    // ADR-189 Addendum — no task auto-close here. A task linked to a GRN is
+    // ADR-190 Addendum — no task auto-close here. A task linked to a GRN is
     // raised by hand ("Inspect …" from the list, "Follow up on GRN …" from the
     // detail) with the same link and an editable title, so nothing tells an
     // inspection task from a follow-up; inspecting must not close a chase.

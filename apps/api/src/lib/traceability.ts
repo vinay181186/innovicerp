@@ -73,7 +73,7 @@ export function buildTimeline(
   return events;
 }
 
-/** The most rows a master record's Related Documents section lists (ADR-189).
+/** The most rows a master record's Related Documents section lists (ADR-190).
  *  A customer or an item can own hundreds of documents; the section shows the
  *  newest this many and its `count` still says how many there are in all. */
 export const MASTER_RELATED_ROW_CAP = 50;

@@ -37,7 +37,7 @@ export const jcAgeingReport: RegisteredReport = {
       { key: 'done_ops', label: 'Done Ops', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
     ],
-    // ADR-189 — jc_code opens the document; jc_id is not a column.
+    // ADR-190 — jc_code opens the document; jc_id is not a column.
     rowLink: { column: 'jc_code', route: '/job-cards/$id', idKey: 'jc_id' },
   },
   async run({ tx, companyId, filters }) {

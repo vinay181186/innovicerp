@@ -60,7 +60,7 @@ export function TopNav(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const isAdmin = me?.role === 'admin';
   // Badge on System Settings → Approvals: everything waiting for THIS user
-  // (ADR-189 inbox — PR + PO + Log Entry). The server lists only rows the
+  // (ADR-190 inbox — PR + PO + Log Entry). The server lists only rows the
   // caller may approve, so someone who approves nothing sees no badge.
   const pendingApprovals = useApprovalInboxTotal(!!me);
 

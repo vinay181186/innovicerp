@@ -127,7 +127,7 @@ export async function requireAnyFormAccess(
 }
 
 /** The non-throwing twin of requireFormAccess, for READ paths that must list
- *  only what the caller could act on (the approvals inbox, ADR-189). Same
+ *  only what the caller could act on (the approvals inbox, ADR-190). Same
  *  rule: admins pass, everyone else by the effective matrix. */
 export async function hasFormAccess(
   user: AuthContext,

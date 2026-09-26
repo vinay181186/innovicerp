@@ -1,4 +1,4 @@
-// Approvals inbox (ADR-189) — GET /approvals/inbox: what is waiting for the
+// Approvals inbox (ADR-190) — GET /approvals/inbox: what is waiting for the
 // signed-in user to approve, as three lists (PR, PO, Log Entry) with counts.
 // The server applies each approve endpoint's own rules, so every row listed is
 // one the caller may actually approve.

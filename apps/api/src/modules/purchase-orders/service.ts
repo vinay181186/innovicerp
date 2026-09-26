@@ -551,7 +551,7 @@ export async function listPurchaseOrders(
     const vendorFrag = input.vendorId ? sql`AND po.vendor_id = ${input.vendorId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND po.po_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND po.po_date <= ${input.toDate}::date` : sql``;
-    // ADR-189 addendum — `?jobWorkOrderId=`: only the job-work / service POs
+    // ADR-190 addendum — `?jobWorkOrderId=`: only the job-work / service POs
     // that carry work for that JWSO. A PO line reaches the JWSO through the JC
     // op it sends out (pol.source_jc_op_id, or the source PR's
     // source_jc_op_id) → jc_ops.job_card_id → job_cards.source_jw_line_id →
@@ -2747,7 +2747,7 @@ export async function approvePurchaseOrder(
       user,
     );
 
-    // ADR-189 addendum — no task auto-close here: a PO-linked task is usually a
+    // ADR-190 addendum — no task auto-close here: a PO-linked task is usually a
     // delivery follow-up ("Follow up on PO …"), not an approval request, and
     // nothing on the task tells the two apart.
 

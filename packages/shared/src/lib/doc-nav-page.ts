@@ -1,4 +1,4 @@
-// Where a document opens in the web app, as a `navPage` string (ADR-189).
+// Where a document opens in the web app, as a `navPage` string (ADR-190).
 //
 // The same string the Task Board stores on a task's linkedRef.navPage (the web
 // helper relatedNavPage in modules/tasks/lib/format.ts builds those, and these

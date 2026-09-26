@@ -1617,7 +1617,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // ordinary JC (no parent) this is exactly one cascade call, as before.
     await cascadeJcCompleteUpChain(tx, op.jobCardId, user);
 
-    // ADR-189 — a task raised against this QC call closes itself once the
+    // ADR-190 — a task raised against this QC call closes itself once the
     // call has nothing left to inspect. A partial inspection leaves it open.
     const pendRows = (await tx.execute(sql`
       SELECT qc_pending AS "qcPending" FROM public.v_jc_op_status

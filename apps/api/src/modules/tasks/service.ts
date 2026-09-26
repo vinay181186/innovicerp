@@ -77,7 +77,7 @@ import {
 } from './history';
 
 export { listRelatedOptions } from './related-options';
-// Other modules close linked tasks through this (ADR-189) — never by writing
+// Other modules close linked tasks through this (ADR-190) — never by writing
 // the tasks table themselves.
 export { autoCloseLinkedTasks } from './auto-close';
 

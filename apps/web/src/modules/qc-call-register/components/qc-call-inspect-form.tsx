@@ -199,7 +199,7 @@ export function useQcCallInspect(props: {
       void queryClient.invalidateQueries({ queryKey: qcHistoryKeys.all });
       void queryClient.invalidateQueries({ queryKey: tpiKeys.all });
       // A reject raises an NC: pass it up so the register names it and links
-      // straight to its disposition (ADR-189) — the popup itself closes, as the
+      // straight to its disposition (ADR-190) — the popup itself closes, as the
       // row may leave the pending feed on this very refetch.
       const nc = saved.ncs[0];
       onDone(nc ? { id: nc.id, code: nc.code } : undefined);

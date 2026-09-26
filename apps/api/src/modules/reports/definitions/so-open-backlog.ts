@@ -43,7 +43,7 @@ export const soOpenBacklogReport: RegisteredReport = {
       { key: 'line_value', label: 'Line Value', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
     ],
-    // ADR-189 — so_code opens the document; so_id is not a column.
+    // ADR-190 — so_code opens the document; so_id is not a column.
     rowLink: { column: 'so_code', route: '/sales-orders/$id', idKey: 'so_id' },
   },
   async run({ tx, companyId, filters }) {

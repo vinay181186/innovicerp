@@ -150,7 +150,7 @@ function ClientDetailPage(): React.JSX.Element {
       </DetailHeader>
 
       {/* Sales Orders, dispatches and outstanding invoices for this customer
-          (ADR-189). Hides when empty. */}
+          (ADR-190). Hides when empty. */}
       <RelatedDocsPanel module="clients" id={client.id} />
 
       {confirmDelete ? (

@@ -35,7 +35,7 @@ export async function bomMasterRoutes(app: FastifyInstance): Promise<void> {
     return service.getBomMasterRelated(id, req.user);
   });
 
-  // SO lines built from this BOM (ADR-189).
+  // SO lines built from this BOM (ADR-190).
   app.get('/bom-masters/:id/linked-so-lines', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

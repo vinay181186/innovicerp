@@ -407,7 +407,7 @@ function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-/** Σ Order Qty × Rate over the lines, GST at the SO's GST % (ADR-189). A
+/** Σ Order Qty × Rate over the lines, GST at the SO's GST % (ADR-190). A
  *  cancelled line is no longer part of the order (the line editor treats it as
  *  removed), so it adds nothing. Closed / dispatched lines were ordered and
  *  still count. */
@@ -761,7 +761,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       ...(showMoney ? headerOut : hideSoHeaderMoney(headerOut)),
       createdByName,
       bomMasterCode,
-      // ADR-189 — totals are the server's arithmetic, never the browser's.
+      // ADR-190 — totals are the server's arithmetic, never the browser's.
       totals: showMoney
         ? computeSoTotals(
             lineRows.map((r) => r.row),

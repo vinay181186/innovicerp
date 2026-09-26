@@ -1,4 +1,4 @@
-// How much of each customer dispatch has been invoiced (ADR-189).
+// How much of each customer dispatch has been invoiced (ADR-190).
 //
 // There is no invoice → dispatch link: an invoice line points at the SO LINE
 // (invoice_lines.sales_order_line_id), exactly as the SO detail's `billedQty`

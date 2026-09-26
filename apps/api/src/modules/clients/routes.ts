@@ -25,7 +25,7 @@ export async function clientsRoutes(app: FastifyInstance): Promise<void> {
     return service.getNextClientCode(req.user);
   });
 
-  // Related Documents panel for the master (ADR-189).
+  // Related Documents panel for the master (ADR-190).
   app.get('/clients/:id/related', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

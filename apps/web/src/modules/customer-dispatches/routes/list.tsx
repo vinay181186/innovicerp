@@ -84,7 +84,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
   const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
-  // ADR-189 — how far each dispatch is invoiced lives on the dispatch-grain
+  // ADR-190 — how far each dispatch is invoiced lives on the dispatch-grain
   // list, not the line-grain register this page is built from.
   const { data: dispatchList } = useDispatchList();
   const billedById = useMemo(

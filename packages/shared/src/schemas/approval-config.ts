@@ -50,7 +50,7 @@ export const approvalHistoryResponseSchema = z.object({
 });
 export type ApprovalHistoryResponse = z.infer<typeof approvalHistoryResponseSchema>;
 
-// ─── Approvals inbox (ADR-189) ──────────────────────────────────────────────
+// ─── Approvals inbox (ADR-190) ──────────────────────────────────────────────
 // GET /approvals/inbox — what is waiting for the CALLER to sign off, one list
 // per kind. Each list applies the same eligibility rules as the matching
 // approve endpoint (PR: Approve on Purchase Requests, not self-raised; PO:

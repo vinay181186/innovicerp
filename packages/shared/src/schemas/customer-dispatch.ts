@@ -100,7 +100,7 @@ export const customerDispatchRowSchema = z.object({
   remarks: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
-  /** Pieces of this dispatch already invoiced (ADR-189) — the same fact the SO
+  /** Pieces of this dispatch already invoiced (ADR-190) — the same fact the SO
    *  line calls `billedQty`, screen label `Billed`. An invoice line points at
    *  the SO LINE, never at a dispatch, so this is DERIVED: each SO line's
    *  invoiced qty is spread over that line's dispatches oldest first (dispatch

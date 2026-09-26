@@ -34,7 +34,7 @@ export const dailyOpLogReport: RegisteredReport = {
       { key: 'reject_qty', label: 'Rejected', type: 'number' },
       { key: 'shift', label: 'Shift', type: 'text' },
     ],
-    // ADR-189 — jc_code opens the document; jc_id is not a column.
+    // ADR-190 — jc_code opens the document; jc_id is not a column.
     rowLink: { column: 'jc_code', route: '/job-cards/$id', idKey: 'jc_id' },
   },
   async run({ tx, companyId, filters }) {

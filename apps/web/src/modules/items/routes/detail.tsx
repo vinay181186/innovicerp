@@ -224,7 +224,7 @@ function ItemDetailPage(): React.JSX.Element {
 
       <StockHistoryCard itemId={item.id} />
 
-      {/* Open PRs, POs and GRNs for this item (ADR-189). Hides when empty. */}
+      {/* Open PRs, POs and GRNs for this item (ADR-190). Hides when empty. */}
       <RelatedDocsPanel module="items" id={item.id} />
     </div>
   );

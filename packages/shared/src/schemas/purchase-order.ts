@@ -371,7 +371,7 @@ export const listPurchaseOrdersQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  /** Only job-work / service POs whose lines trace to this JWSO (ADR-189 addendum). */
+  /** Only job-work / service POs whose lines trace to this JWSO (ADR-190 addendum). */
   jobWorkOrderId: z.string().uuid().optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),

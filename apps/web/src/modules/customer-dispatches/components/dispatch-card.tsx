@@ -69,7 +69,7 @@ function QtyBox({
   );
 }
 
-/** ADR-189 — how far the dispatch is invoiced. Labels per docs/NAMING.md. */
+/** ADR-190 — how far the dispatch is invoiced. Labels per docs/NAMING.md. */
 const BILLED_BADGE: Record<
   NonNullable<CustomerDispatchRow['billedStatus']>,
   { label: string; className: string }

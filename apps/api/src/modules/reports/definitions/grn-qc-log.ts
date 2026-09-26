@@ -37,7 +37,7 @@ export const grnQcLogReport: RegisteredReport = {
       { key: 'po_code', label: 'PO No.', type: 'text' },
       { key: 'vendor_name', label: 'Vendor', type: 'text' },
     ],
-    // ADR-189 — grn_code opens the document; grn_id is not a column.
+    // ADR-190 — grn_code opens the document; grn_id is not a column.
     rowLink: { column: 'grn_code', route: '/goods-receipt-notes/$id', idKey: 'grn_id' },
   },
   async run({ tx, companyId, filters }) {

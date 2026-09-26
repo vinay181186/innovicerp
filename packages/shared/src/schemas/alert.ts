@@ -52,7 +52,7 @@ export const alertDefinitionSchema = z.object({
 export type AlertDefinition = z.infer<typeof alertDefinitionSchema>;
 
 /** Free-form record shape — drill-down values vary per rule. Every record
- *  also carries `navPage` (ADR-189): the page its document opens on, built
+ *  also carries `navPage` (ADR-190): the page its document opens on, built
  *  server-side by docNavPage (e.g. `/purchase-orders/<id>`). It is not a
  *  column — render cells from `columns`, and use navPage as the row's link. */
 export const alertRowSchema = z.record(z.union([z.string(), z.number(), z.null()]));

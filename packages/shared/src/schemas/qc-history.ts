@@ -44,7 +44,7 @@ export const qcHistoryPendingRowSchema = z.object({
   qcCallDate: z.string().nullable(),
   /** The inspector this call is assigned to on QC Command (qc_assignments,
    *  0040) — the same name and field QC Command's queue shows. Null =
-   *  unassigned. ADR-189. */
+   *  unassigned. ADR-190. */
   assignedTo: z.string().nullable().default(null),
 });
 export type QcHistoryPendingRow = z.infer<typeof qcHistoryPendingRowSchema>;

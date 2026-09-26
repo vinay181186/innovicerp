@@ -1,4 +1,4 @@
-// Related Documents for one customer (ADR-189) — GET /clients/:id/related.
+// Related Documents for one customer (ADR-190) — GET /clients/:id/related.
 // Read-only, every edge a real FK:
 //   sales_orders.client_id                          → Sales Orders
 //   customer_dispatches.sales_order_id → that SO    → Customer Dispatches

@@ -41,7 +41,7 @@ export const reportFilterFieldSchema = z.object({
 });
 export type ReportFilterField = z.infer<typeof reportFilterFieldSchema>;
 
-/** Makes one column a link to the document the row is about (ADR-189). The
+/** Makes one column a link to the document the row is about (ADR-190). The
  *  row carries that document's id under `idKey` — a key that is NOT a column,
  *  so the table and the Excel export never show it — and the web opens
  *  `route` with `$id` replaced by that id. Declared only where the id comes

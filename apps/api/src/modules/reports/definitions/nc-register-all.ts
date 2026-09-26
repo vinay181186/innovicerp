@@ -52,7 +52,7 @@ export const ncRegisterAllReport: RegisteredReport = {
       { key: 'status', label: 'NC Status', type: 'text' },
       { key: 'closed_date', label: 'Closed Date', type: 'date' },
     ],
-    // ADR-189 — nc_no opens the document; nc_id is not a column.
+    // ADR-190 — nc_no opens the document; nc_id is not a column.
     rowLink: { column: 'nc_no', route: '/nc-register/$id', idKey: 'nc_id' },
   },
   async run({ tx, companyId, filters }) {

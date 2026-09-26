@@ -134,7 +134,7 @@ function QcCallRegisterPage(): React.JSX.Element {
   // not write to the URL. ?tab= only SEEDS the initial value, so an outside
   // link (the JC op card's 📋 TPI button) can land on the TPI tab.
   const [tab, setTab] = useState<'qc' | 'tpi'>(tabParam ?? 'qc');
-  // The NC the last QC submit raised (ADR-189) — named above the list with a
+  // The NC the last QC submit raised (ADR-190) — named above the list with a
   // link to its disposition until dismissed, instead of the popup closing
   // silently. Held here, not in the popup: a fully inspected call leaves the
   // pending feed on the very refetch the submit triggers, closing the popup.

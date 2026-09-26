@@ -26,7 +26,7 @@ export const opLogListItemSchema = z.object({
   logType: opLogTypeSchema,
   logDate: z.string(), // YYYY-MM-DD
   jcNo: z.string(),
-  /** The job card's id, so the row links straight to /job-cards/$id (ADR-189 addendum). */
+  /** The job card's id, so the row links straight to /job-cards/$id (ADR-190 addendum). */
   jobCardId: z.string().uuid(),
   itemCode: z.string().nullable(),
   /** WHAT the logged operation was making. A JC number says WHICH JOB, not WHICH

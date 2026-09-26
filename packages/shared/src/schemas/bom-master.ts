@@ -185,7 +185,7 @@ export const updateBomMasterInputSchema = z
   );
 export type UpdateBomMasterInput = z.infer<typeof updateBomMasterInputSchema>;
 
-// ─── SO lines built from this BOM (ADR-189) ─────────────────────────────────
+// ─── SO lines built from this BOM (ADR-190) ─────────────────────────────────
 // GET /bom-masters/:id/linked-so-lines — every live sales-order line whose
 // source_bom_master_id is this BOM (the same FK the Related Documents panel
 // counts), newest SO first. Line-grain, where the panel only lists the SOs.

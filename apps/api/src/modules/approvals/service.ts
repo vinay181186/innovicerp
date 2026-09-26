@@ -1,4 +1,4 @@
-// Approvals inbox (ADR-189) — GET /approvals/inbox.
+// Approvals inbox (ADR-190) — GET /approvals/inbox.
 //
 // One read that answers "what is waiting for ME to sign off". It owns no
 // rules of its own: each list comes from the module that owns the approval,

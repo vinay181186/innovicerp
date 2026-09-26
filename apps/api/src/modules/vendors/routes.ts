@@ -25,7 +25,7 @@ export async function vendorsRoutes(app: FastifyInstance): Promise<void> {
     return service.getNextVendorCode(req.user);
   });
 
-  // Related Documents panel for the master (ADR-189).
+  // Related Documents panel for the master (ADR-190).
   app.get('/vendors/:id/related', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

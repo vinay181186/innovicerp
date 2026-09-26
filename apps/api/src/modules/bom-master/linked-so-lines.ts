@@ -1,4 +1,4 @@
-// SO lines built from one BOM (ADR-189) — GET /bom-masters/:id/linked-so-lines.
+// SO lines built from one BOM (ADR-190) — GET /bom-masters/:id/linked-so-lines.
 // Read-only. The link is sales_order_lines.source_bom_master_id, the same FK
 // getBomMasterRelated uses for its "Sales Orders" section; this is the line
 // grain of that list (which line, what item, how many, is it still open).

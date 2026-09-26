@@ -4,7 +4,7 @@
 // rules (which approvals are on, who may approve, the PO limit). This screen
 // holds the queue.
 //
-// ADR-189: the page is an INBOX — GET /approvals/inbox lists what is waiting
+// ADR-190: the page is an INBOX — GET /approvals/inbox lists what is waiting
 // for the signed-in user, in three sections: PR · PO · Log Entry, each with its
 // count. PR and PO rows open the document, where the Approve button lives. The
 // Log Entry section is the existing decide-here screen (ADR-130: Pending /
