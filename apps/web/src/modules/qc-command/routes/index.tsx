@@ -9,6 +9,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePickUpQc, useQcCommand } from '../api';
@@ -32,11 +33,11 @@ export const qcCommandRoute = createRoute({
 
 type Tab = 'queue' | 'fpy' | 'pareto' | 'inspector' | 'rework';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'queue', label: '📝 Assign Inspector' },
-  { id: 'fpy', label: '📈 First-Pass Yield' },
-  { id: 'pareto', label: '📊 Top Rejection Reasons' },
-  { id: 'inspector', label: '👤 Inspector Performance' },
-  { id: 'rework', label: '🔄 Rework Cycles' },
+  { id: 'queue', label: 'Assign Inspector' },
+  { id: 'fpy', label: 'First-Pass Yield' },
+  { id: 'pareto', label: 'Top Rejection Reasons' },
+  { id: 'inspector', label: 'Inspector Performance' },
+  { id: 'rework', label: 'Rework Cycles' },
 ];
 
 function fpyColor(pct: number): string {
@@ -86,7 +87,7 @@ function QcCommandPage(): React.JSX.Element {
   if (eff && !qcPerms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view QC Center. Ask an admin.
       </div>
     );
   }
@@ -104,7 +105,7 @@ function QcCommandPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔬 QC Command Center
+          QC Center
         </div>
         {cmd.isFetching ? (
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
@@ -121,23 +122,42 @@ function QcCommandPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Stats strip (legacy: Pending / Overdue / Oldest / Rework / FPY) */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-              gap: 10,
-              marginBottom: 16,
-            }}
-          >
-            <Stat label="QC Pending" value={stats?.pendingOps ?? 0} color="var(--red)" />
-            <Stat label="Overdue" value={stats?.overdue ?? 0} color="var(--red)" accent />
-            <Stat label="Oldest" value={`${stats?.oldestAgeDays ?? 0}d`} color="var(--amber)" />
-            <Stat label="Rework Items" value={stats?.reworkItems ?? 0} color="#8B5CF6" />
-            <Stat
-              label="First-Pass Yield"
-              value={`${stats?.fpyPct ?? 0}%`}
-              color={fpyColor(stats?.fpyPct ?? 0)}
+          {/* Stats — one StatStrip like the other QC screens (legacy: Pending /
+              Overdue / Oldest / Rework / FPY). Read-only totals. */}
+          <div style={{ marginBottom: 16 }}>
+            <StatStrip
+              items={[
+                {
+                  key: 'pending',
+                  label: 'QC Pending',
+                  count: stats?.pendingOps ?? 0,
+                  color: 'var(--amber2)',
+                },
+                {
+                  key: 'overdue',
+                  label: 'Overdue',
+                  count: stats?.overdue ?? 0,
+                  color: 'var(--red)',
+                },
+                {
+                  key: 'oldest',
+                  label: 'Oldest (Days Waiting)',
+                  count: daysText(stats?.oldestAgeDays ?? 0),
+                  color: 'var(--amber)',
+                },
+                {
+                  key: 'rework',
+                  label: 'Rework Items',
+                  count: stats?.reworkItems ?? 0,
+                  color: 'var(--purple)',
+                },
+                {
+                  key: 'fpy',
+                  label: 'First-Pass Yield',
+                  count: `${stats?.fpyPct ?? 0}%`,
+                  color: fpyColor(stats?.fpyPct ?? 0),
+                },
+              ]}
             />
           </div>
 
@@ -197,31 +217,7 @@ function QcCommandPage(): React.JSX.Element {
   );
 }
 
-// Legacy hand-rolls these tiles (L18633-18638) rather than using .stat-card —
-// bg2 + --border, except Overdue (`accent`) which gets a red wash, red border
-// and a red label (L18634). Values are plain 26px/700, not mono.
-function Stat(props: {
-  label: string;
-  value: number | string;
-  color: string;
-  accent?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        textAlign: 'center',
-        padding: 14,
-        borderRadius: 10,
-        background: props.accent ? 'rgba(239,68,68,0.06)' : 'var(--bg2)',
-        border: props.accent ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)',
-      }}
-    >
-      <div style={{ fontSize: 11, color: props.accent ? 'var(--red)' : 'var(--text3)' }}>
-        {props.label}
-      </div>
-      <div className="fw-700" style={{ fontSize: 26, color: props.color }}>
-        {props.value}
-      </div>
-    </div>
-  );
+/** "1 day" / "3 days" — the one waiting-time format on every QC screen. */
+function daysText(n: number): string {
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
 }

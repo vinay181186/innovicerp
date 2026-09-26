@@ -54,11 +54,10 @@ export interface StageStat {
 }
 
 // ─── shared type styles ──────────────────────────────────────────────────────
-const CAPS: CSSProperties = {
+// Small bold caption, Title Case as written (no ALL-CAPS).
+const CAPTION: CSSProperties = {
   fontSize: 11,
   fontWeight: 700,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
   color: 'var(--text2)',
 };
 const TH: CSSProperties = {
@@ -121,8 +120,9 @@ export function QcStageStrip(props: {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ ...CAPS, color: on ? 'var(--blue)' : 'var(--text3)' }}>{s.n}</span>
-              <span style={{ ...CAPS, color: on ? 'var(--blue)' : 'var(--text2)' }}>{s.label}</span>
+              <span style={{ ...CAPTION, color: on ? 'var(--blue)' : 'var(--text2)' }}>
+                {s.label}
+              </span>
               <span style={{ flex: 1 }} />
               <span
                 style={{
@@ -137,10 +137,10 @@ export function QcStageStrip(props: {
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-              <span style={QUIET}>{st.pcsPending} pcs pending</span>
+              <span style={QUIET}>{st.pcsPending} pcs QC Pending</span>
               <span style={QUIET}>
                 {st.done}
-                {st.doneCapped ? '+' : ''} done
+                {st.doneCapped ? '+' : ''} completed
               </span>
             </div>
           </button>
@@ -160,7 +160,7 @@ function fmtDayMonth(iso: string): string {
 // ─── table frame ─────────────────────────────────────────────────────────────
 // [label, width %, header style]. Widths are fixed (table-layout: fixed) so a
 // long vendor name or log number truncates inside its own column instead of
-// pushing Verdict / Inspect off the right edge of the sheet.
+// pushing QC Result / Inspect off the right edge of the sheet.
 // POL is the CUSTOMER's own purchase-order line number and sits immediately
 // before the item column, as it does on every other document. It used to be
 // buried in the context line; it is a column of its own now. The width comes
@@ -171,7 +171,7 @@ const PENDING_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['Item Code', 17],
   ['Details', 21],
   ['QC Pending', 6],
-  ['Called', 14],
+  ['Called · Days Waiting', 14],
   ['Stage', 14],
   ['Action', 10],
 ];
@@ -184,14 +184,28 @@ const COMPLETED_COLS: ReadonlyArray<[string, number, CSSProperties?]> = [
   ['Rejected', 5],
   ['Called → Attended', 14],
   ['Inspected By · Log Ref', 18],
-  ['Verdict', 10],
+  ['QC Result', 10],
 ];
+// A viewer who can inspect nothing gets no Action column at all (it would say
+// the same thing on every row); its width goes to Details.
+const PENDING_COLS_NO_ACTION: ReadonlyArray<[string, number, CSSProperties?]> = PENDING_COLS.filter(
+  ([label]) => label !== 'Action',
+).map(([label, w, st]): [string, number, CSSProperties?] =>
+  st ? [label, label === 'Details' ? w + 10 : w, st] : [label, label === 'Details' ? w + 10 : w],
+);
 export function QcSheetTable(props: {
   view: QcView;
   children: ReactNode;
   empty: ReactNode | null;
+  /** True when the viewer can open no inspection: drop the Action column. */
+  hideAction?: boolean | undefined;
 }): React.JSX.Element {
-  const cols = props.view === 'pending' ? PENDING_COLS : COMPLETED_COLS;
+  const cols =
+    props.view === 'pending'
+      ? props.hideAction
+        ? PENDING_COLS_NO_ACTION
+        : PENDING_COLS
+      : COMPLETED_COLS;
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--bg2)' }}>
       <table className="innovic-table tbl-grid" style={{ width: '100%' }}>
@@ -336,15 +350,12 @@ function VerdictCell(props: {
     <td style={{ ...TD, ...NOWRAP }}>
       {props.reportPath ? (
         <span style={{ marginRight: 8 }} onClick={(e) => e.stopPropagation()}>
-          <QcReportLink path={props.reportPath} name={props.reportName} label="📎" />
+          <QcReportLink path={props.reportPath} name={props.reportName} label="Report" />
         </span>
       ) : null}
       <span
         style={{
-          ...CAPS,
-          // The verdict shows its Title Case label as written, not in caps.
-          textTransform: 'none',
-          letterSpacing: 0,
+          ...CAPTION,
           display: 'inline-block',
           padding: '3px 10px',
           borderRadius: 4,
@@ -384,7 +395,7 @@ export function CompletedProcessSheetRow({ l }: { l: QcHistoryLogRow }): React.J
       <ContextCell
         line1={
           <>
-            <span style={MONO}>{l.soCode ?? '—'}</span> · Op{opSrNo(l.opSeq)} {l.operation}
+            <span style={MONO}>{l.soCode ?? '—'}</span> · Op {opSrNo(l.opSeq)} {l.operation}
           </>
         }
       />
@@ -447,9 +458,12 @@ export function PendingSheetRow(props: {
   waitDays: number | null;
   overdue: boolean;
   stage: QcStage;
-  /** Whether the caller may record an inspection. False → the line reads
-   *  "View only" and does not open anything. */
+  /** Whether the caller may record an inspection. False → the line does not
+   *  open anything and its Action cell is a dash. */
   canInspect: boolean;
+  /** False when the table dropped its Action column (viewer can inspect
+   *  nothing) — the row then draws no Action cell. Defaults to true. */
+  showAction?: boolean | undefined;
   /** Open the entry popup for this call. */
   onInspect: () => void;
   /** Extra className for the line (the overdue blink). */
@@ -461,7 +475,7 @@ export function PendingSheetRow(props: {
       ? null
       : props.waitDays <= 0
         ? 'Today'
-        : `${props.waitDays} day${props.waitDays > 1 ? 's' : ''} waiting`;
+        : `${props.waitDays} day${props.waitDays > 1 ? 's' : ''}`;
   return (
     <tr
       className={props.className}
@@ -491,19 +505,19 @@ export function PendingSheetRow(props: {
         ) : null}
       </td>
       <td style={{ ...TD, ...NOWRAP }}>
-        <span style={CAPS}>
-          {stage?.n} {stage?.label}
-        </span>
+        <span style={CAPTION}>{stage?.label}</span>
       </td>
-      <td style={{ ...TD, ...NOWRAP }}>
-        {/* No form to open (viewer without `entry`) → say so instead of
-            offering an "Inspect ▸" that opens nothing. */}
-        {props.canInspect ? (
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)' }}>Inspect ▸</span>
-        ) : (
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>View only</span>
-        )}
-      </td>
+      {props.showAction === false ? null : (
+        <td style={{ ...TD, ...NOWRAP }}>
+          {/* No form to open (viewer without `entry` for this kind of call) →
+              a dash instead of an "Inspect ▸" that opens nothing. */}
+          {props.canInspect ? (
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)' }}>Inspect ▸</span>
+          ) : (
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>—</span>
+          )}
+        </td>
+      )}
     </tr>
   );
 }

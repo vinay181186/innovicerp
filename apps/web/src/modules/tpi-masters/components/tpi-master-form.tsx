@@ -102,8 +102,8 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
             readOnly={isEdit}
             {...(isEdit ? {} : { placeholder: 'e.g. Mr. Sharma' })}
             {...register('code', {
-              required: !isEdit ? 'Inspector name is required' : false,
-              maxLength: { value: 120, message: 'Max 120 chars' },
+              required: !isEdit ? 'Inspector Name is required.' : false,
+              maxLength: { value: 120, message: 'Max 120 characters.' },
             })}
           />
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
@@ -119,7 +119,7 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
             autoComplete="off"
             {...(isEdit ? {} : { placeholder: 'e.g. L&T QA Department' })}
             {...register('organization', {
-              maxLength: { value: 255, message: 'Max 255 chars' },
+              maxLength: { value: 255, message: 'Max 255 characters.' },
             })}
           />
           {errors.organization?.message ? (
@@ -137,7 +137,7 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
             autoComplete="off"
             {...(isEdit ? {} : { placeholder: 'e.g. 98200 12345' })}
             {...register('contactNo', {
-              maxLength: { value: 32, message: 'Max 32 chars' },
+              maxLength: { value: 32, message: 'Max 32 characters.' },
             })}
           />
           {errors.contactNo?.message ? (
@@ -155,7 +155,7 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
             autoComplete="off"
             {...(isEdit ? {} : { placeholder: 'e.g. sharma@lnt-qa.com' })}
             {...register('email', {
-              maxLength: { value: 255, message: 'Max 255 chars' },
+              maxLength: { value: 255, message: 'Max 255 characters.' },
             })}
           />
           {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
@@ -187,7 +187,7 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
             autoComplete="off"
             {...(isEdit ? {} : { placeholder: 'Scope of approval, agency notes…' })}
             {...register('remarks', {
-              maxLength: { value: 1000, message: 'Max 1000 chars' },
+              maxLength: { value: 1000, message: 'Max 1000 characters.' },
             })}
           />
           {errors.remarks?.message ? (

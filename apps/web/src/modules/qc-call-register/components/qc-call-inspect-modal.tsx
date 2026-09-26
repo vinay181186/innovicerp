@@ -78,7 +78,7 @@ export function QcCallInspectModal({
   }, []);
 
   const itemCode = itemCodeWithRev(o.itemCode, o.itemRevision, '');
-  const opLabel = `Op${opSrNo(o.opSeq)} ${o.operation}`;
+  const opLabel = `Op ${opSrNo(o.opSeq)} ${o.operation}`;
   const titleText = `${o.jcCode} · ${opLabel}${itemCode ? ` · ${itemCode}` : ''}${
     o.itemName ? ` ${o.itemName}` : ''
   }`;
@@ -188,7 +188,7 @@ export function QcCallInspectModal({
              shown while access is still loading, or every inspector would see
              it flash. */
           <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
-            View only.
+            You do not have permission to inspect this QC call. Ask an admin.
           </div>
         ) : null}
       </div>

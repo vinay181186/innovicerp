@@ -27,14 +27,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { useSubmitIncomingQc } from '../api';
 
 function todayIso(): string {
-  return todayLocal();
+  return todayIst();
 }
 
 export interface IncomingQcInspectState {
@@ -272,7 +272,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 11 }}>
-            👤 Inspected By ★
+            👤 Inspected By<span className="req">★</span>
           </label>
           {/* The whole QC list comes back in one small response, so the
               picker filters it in the browser and there is no ?search= to
@@ -339,7 +339,7 @@ export function IncomingQcInspectFormView(props: {
             className="innovic-input"
             value={form.remarks}
             onChange={(e) => form.setRemarks(e.target.value)}
-            placeholder="NC reason, observations..."
+            placeholder="Observations…"
           />
         </div>
         <div className="form-grp form-full">

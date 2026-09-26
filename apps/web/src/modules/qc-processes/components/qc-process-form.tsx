@@ -100,11 +100,10 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
               ? {}
               : { placeholder: 'e.g. Dimensional Check, Hardness Test, Visual Inspection' })}
             {...register('code', {
-              required: !isEdit ? 'Name is required' : false,
-              maxLength: { value: 64, message: 'Max 64 chars' },
+              required: !isEdit ? 'QC Process Name is required.' : false,
+              maxLength: { value: 64, message: 'Max 64 characters.' },
             })}
           />
-          {isEdit ? <div className="form-help">Name cannot be changed after creation.</div> : null}
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
 
@@ -118,7 +117,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
             autoComplete="off"
             {...(isEdit ? {} : { placeholder: 'What does this QC process involve?' })}
             {...register('description', {
-              maxLength: { value: 1000, message: 'Max 1000 chars' },
+              maxLength: { value: 1000, message: 'Max 1000 characters.' },
             })}
           />
           {errors.description?.message ? (
@@ -139,7 +138,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
             {...(isEdit ? {} : { placeholder: '15' })}
             {...register('defaultCycleTimeMin', {
               valueAsNumber: true,
-              min: { value: 0, message: 'Must be ≥ 0' },
+              min: { value: 0, message: 'Default Cycle Time (min) cannot be less than 0.' },
             })}
           />
           {errors.defaultCycleTimeMin?.message ? (
@@ -166,7 +165,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
             style={{
               color: 'var(--red2)',
               background: 'var(--red3)',
-              border: '1px solid #fca5a5',
+              border: '1px solid var(--red2)',
               borderRadius: 6,
               padding: '6px 10px',
               fontSize: 12,

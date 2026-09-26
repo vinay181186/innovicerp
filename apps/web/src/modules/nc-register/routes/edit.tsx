@@ -51,8 +51,7 @@ function NcRegisterEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have edit access to NC Register. Ask an admin for L3 Editor or above in
-            QC.
+            You do not have permission to edit this NC. Ask an admin.
           </div>
         </div>
       </div>
@@ -68,7 +67,7 @@ function NcRegisterEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'NC not found.'}
+            {error instanceof Error ? error.message : 'NC not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -124,7 +123,7 @@ function NcRegisterEditPage(): React.JSX.Element {
               Edit NC
             </div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Only date, reason and reporter can be changed.
+              Only NC Date, Reason Category, Defect Description and Reported By can be changed.
             </div>
           </div>
         </div>

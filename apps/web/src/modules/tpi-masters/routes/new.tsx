@@ -44,8 +44,7 @@ function TpiMasterNewPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have create access to TPI Master. Ask an admin for L2 Data Entry or above
-            in QC.
+            ⛔ You do not have permission to add an Inspector. Ask an admin.
           </div>
         </div>
       </div>

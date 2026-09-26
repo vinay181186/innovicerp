@@ -18,8 +18,10 @@ export function IncomingPendingRow(props: {
   o: IncomingQcPendingRow;
   /** Open the inspect popup for this line. */
   onInspect: () => void;
+  /** False when the register dropped its Action column. */
+  showAction?: boolean | undefined;
 }): React.JSX.Element {
-  const { o, onInspect } = props;
+  const { o, onInspect, showAction } = props;
   // Incoming material is its OWN form key — this row sits on the QC Call
   // Register, but accepting a GRN line is qc_incoming `entry` (what
   // incoming-qc's submitIncomingQc enforces), not qc_submit. Same gate the
@@ -73,8 +75,9 @@ export function IncomingPendingRow(props: {
       waitDays={o.waitDays}
       overdue={false}
       stage="incoming"
-      // No `entry` → the line reads "View only" and opens nothing.
+      // No `entry` → the line opens nothing.
       canInspect={canEntry}
+      showAction={showAction}
       onInspect={onInspect}
     />
   );

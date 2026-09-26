@@ -26,7 +26,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '@/modules/qc-history/api';
 import { exportCompletedQc, exportPendingQc } from '@/modules/qc-history/lib/export';
@@ -89,7 +89,7 @@ export const qcCallRegisterRoute = createRoute({
 });
 
 function todayIso(): string {
-  return todayLocal();
+  return todayIst();
 }
 
 // The endpoint caps the completed log at 500 rows, so a browser-side count that
@@ -135,6 +135,8 @@ function QcCallRegisterPage(): React.JSX.Element {
   // rows check qc_incoming themselves).
   const { data: eff } = useMyAccess();
   const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
+  // A viewer who can inspect neither kind of call gets no Action column.
+  const showAction = canEntry || effectiveFormPerms(eff, 'qc_incoming').entry;
 
   const allPending = useMemo(() => data?.pending ?? [], [data]);
   const allLogsFull = useMemo(() => data?.logs ?? [], [data]);
@@ -305,8 +307,8 @@ function QcCallRegisterPage(): React.JSX.Element {
       >
         {(
           [
-            ['qc', '📋 QC Queue'],
-            ['tpi', '🔍 TPI'],
+            ['qc', 'QC Calls'],
+            ['tpi', 'TPI'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -340,7 +342,7 @@ function QcCallRegisterPage(): React.JSX.Element {
   if (eff && !effectiveFormPerms(eff, 'qc_submit').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view the QC Call Register. Ask an admin.
       </div>
     );
   }
@@ -430,7 +432,7 @@ function QcCallRegisterPage(): React.JSX.Element {
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.2 }}>QC Call Register</div>
           <div className="text3" style={{ fontSize: 12 }}>
-            {pendingCount} calls · {pcsPending} pcs pending · {completeCount} completed
+            {pendingCount} calls · {pcsPending} pcs QC Pending · {completeCount} completed
           </div>
         </div>
         <div style={{ flex: 1 }} />
@@ -461,21 +463,17 @@ function QcCallRegisterPage(): React.JSX.Element {
 
       <QcSheetTable
         view={view}
+        hideAction={!showAction}
         empty={
           isEmpty ? (
             <div className="empty-state">
-              {view === 'pending' ? (
-                <>
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-                  No pending QC calls{stageName ? ` in ${stageName}` : ''}
-                  {search.trim() ? ' matching your search' : ''}
-                </>
-              ) : (
-                <>
-                  No QC entries{stageName ? ` in ${stageName}` : ''}
-                  {search.trim() ? ' matching your search' : ' yet'}
-                </>
-              )}
+              {view === 'pending'
+                ? stageName || search.trim()
+                  ? 'No QC calls match.'
+                  : 'No pending QC calls yet.'
+                : stageName || search.trim()
+                  ? 'No QC entries match.'
+                  : 'No QC entries yet.'}
             </div>
           ) : null
         }
@@ -486,6 +484,7 @@ function QcCallRegisterPage(): React.JSX.Element {
               <IncomingPendingRow
                 key={`inc:${o.grnLineId}`}
                 o={o}
+                showAction={showAction}
                 onInspect={() => setInspect({ kind: 'inc', grnLineId: o.grnLineId })}
               />
             ))}
@@ -494,6 +493,7 @@ function QcCallRegisterPage(): React.JSX.Element {
                 key={o.jcOpId}
                 o={o}
                 canInspect={canEntry}
+                showAction={showAction}
                 onInspect={() => setInspect({ kind: 'op', jcOpId: o.jcOpId })}
               />
             ))}
@@ -524,12 +524,13 @@ function QcCallRegisterPage(): React.JSX.Element {
 // page opens when this line is clicked.
 function PendingCall(props: {
   o: QcHistoryPendingRow;
-  /** qc_submit `entry` — without it the line reads "View only" and does not
-   *  open (op-entry's submitQcLog would refuse the write anyway). */
+  /** qc_submit `entry` — without it the line does not open (op-entry's
+   *  submitQcLog would refuse the write anyway). */
   canInspect: boolean;
+  showAction: boolean;
   onInspect: () => void;
 }): React.JSX.Element {
-  const { o, canInspect, onInspect } = props;
+  const { o, canInspect, showAction, onInspect } = props;
 
   return (
     <PendingSheetRow
@@ -550,7 +551,7 @@ function PendingCall(props: {
       itemCode={itemCodeWithRev(o.itemCode, o.itemRevision)}
       context={
         <>
-          <span className="mono">{o.soCode ?? '—'}</span> · Op{opSrNo(o.opSeq)} {o.operation}
+          <span className="mono">{o.soCode ?? '—'}</span> · Op {opSrNo(o.opSeq)} {o.operation}
         </>
       }
       qty={o.qcPending}
@@ -564,6 +565,7 @@ function PendingCall(props: {
       overdue={o.overdue}
       stage={processStage(o.isLastOp)}
       canInspect={canInspect}
+      showAction={showAction}
       onInspect={onInspect}
     />
   );

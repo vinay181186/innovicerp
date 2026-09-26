@@ -3,11 +3,17 @@
 // filters + pending QC table + completed QC-entries table + Excel export.
 // Read-only, legacy chrome.
 
-import { type QcHistoryLogRow, type QcHistoryPendingRow, opSrNo } from '@innovic/shared';
+import {
+  type QcHistoryLogRow,
+  type QcHistoryPendingRow,
+  SHIFT_LABELS,
+  opSrNo,
+} from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -86,7 +92,7 @@ function QcHistoryPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📊 QC History
+          QC History
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {isFetching && !isLoading ? (
@@ -125,18 +131,23 @@ function QcHistoryPage(): React.JSX.Element {
           {/* Stats — legacy L23604-23609. `blue` has no accent rule in legacy's
               stylesheet (only cyan/amber/green/red at L97-102), so that tile
               renders bare there and here. */}
-          <div
-            className="stat-grid"
-            style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginBottom: 14 }}
-          >
-            <div className="stat-card red">
-              <div className="stat-label">Overdue (&gt;1 day)</div>
-              <div className="stat-val">{data.stats.overdue}</div>
-            </div>
-            <div className="stat-card blue">
-              <div className="stat-label">Today&apos;s Entries</div>
-              <div className="stat-val">{data.stats.today}</div>
-            </div>
+          <div style={{ marginBottom: 14 }}>
+            <StatStrip
+              items={[
+                {
+                  key: 'overdue',
+                  label: 'Overdue (more than 1 day)',
+                  count: data.stats.overdue,
+                  color: 'var(--red)',
+                },
+                {
+                  key: 'today',
+                  label: "Today's Entries",
+                  count: data.stats.today,
+                  color: 'var(--blue)',
+                },
+              ]}
+            />
           </div>
 
           {/* Filters — legacy L23611-23622 (inline-styled bg3 bar, not a .panel) */}
@@ -153,20 +164,16 @@ function QcHistoryPage(): React.JSX.Element {
               alignItems: 'flex-end',
             }}
           >
-            <div>
-              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
-                {/* The label names what the box actually matches, and it now
-                    matches the part name too, so it has to say so. */}
-                SO / JC / Item / Name
-              </label>
-              <input
-                className="innovic-input"
-                style={{ width: 160, fontSize: 12 }}
-                placeholder="🔍 Filter..."
-                value={term}
-                onChange={(e) => setTerm(e.target.value)}
-              />
-            </div>
+            {/* The placeholder names what the box matches (it matches the part
+                name too), so it needs no label above it. */}
+            <input
+              className="innovic-input"
+              style={{ width: 200, fontSize: 12 }}
+              placeholder="Search SO, JC, item…"
+              aria-label="Search SO, JC, item"
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+            />
             <div>
               <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
                 Date From
@@ -199,9 +206,9 @@ function QcHistoryPage(): React.JSX.Element {
                 type="button"
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(34,197,94,0.1)',
+                  background: 'var(--green3)',
                   color: 'var(--green2)',
-                  border: '1px solid rgba(34,197,94,0.3)',
+                  border: '1px solid var(--green)',
                 }}
                 disabled={logs.length === 0}
                 onClick={() => exportCompletedQc(logs)}
@@ -212,9 +219,9 @@ function QcHistoryPage(): React.JSX.Element {
                 type="button"
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(251,191,36,0.1)',
+                  background: 'var(--amber3)',
                   color: 'var(--amber2)',
-                  border: '1px solid rgba(251,191,36,0.3)',
+                  border: '1px solid var(--amber)',
                 }}
                 disabled={pending.length === 0}
                 onClick={() => exportPendingQc(pending)}
@@ -251,8 +258,8 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>Completed</th>
                       <th style={{ color: 'var(--green2)' }}>Accepted</th>
                       <th style={{ color: 'var(--red2)' }}>Rejected</th>
-                      <th style={{ color: 'var(--amber2)' }}>Pending</th>
-                      <th>Since</th>
+                      <th style={{ color: 'var(--amber2)' }}>QC Pending</th>
+                      <th>Pending Since</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -260,7 +267,7 @@ function QcHistoryPage(): React.JSX.Element {
                     {pending.length === 0 ? (
                       <tr>
                         <td colSpan={14} className="empty-state">
-                          ✅ Nothing QC Pending
+                          {t ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'}
                         </td>
                       </tr>
                     ) : (
@@ -306,7 +313,7 @@ function QcHistoryPage(): React.JSX.Element {
                     {logs.length === 0 ? (
                       <tr>
                         <td colSpan={14} className="empty-state">
-                          No QC entries
+                          {t || dateFrom || dateTo ? 'No QC entries match.' : 'No QC entries yet.'}
                         </td>
                       </tr>
                     ) : (
@@ -327,14 +334,14 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
   return (
     <tr className={o.overdue ? 'qc-alert-blink' : undefined}>
       <td className="td-code cyan">{o.jcCode}</td>
-      <td className="td-ctr mono">Op{opSrNo(o.opSeq)}</td>
+      <td className="td-ctr mono">Op {opSrNo(o.opSeq)}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
         {o.soCode ?? '—'}
       </td>
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {o.clientPoLineNo ?? '—'}
       </td>
-      <td className="td-code" style={{ color: 'var(--purple)' }}>
+      <td className="td-code" style={{ color: 'var(--text)' }}>
         {itemCodeWithRev(o.itemCode, o.itemRevision)}
       </td>
       {/* Free text of any length, so it clips to a fixed width and keeps the
@@ -387,14 +394,14 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
   return (
     <tr>
       <td className="td-code cyan">{l.jcCode}</td>
-      <td className="td-ctr mono">Op{opSrNo(l.opSeq)}</td>
+      <td className="td-ctr mono">Op {opSrNo(l.opSeq)}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
         {l.soCode ?? '—'}
       </td>
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {l.clientPoLineNo ?? '—'}
       </td>
-      <td className="td-code" style={{ color: 'var(--purple)' }}>
+      <td className="td-code" style={{ color: 'var(--text)' }}>
         {itemCodeWithRev(l.itemCode, l.itemRevision)}
       </td>
       {/* Clipped with the full name on hover, the same as the pending table, so
@@ -421,7 +428,9 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
         {l.rejected}
       </td>
       <td style={{ fontSize: 11 }}>{fmtDate(l.logDate)}</td>
-      <td style={{ fontSize: 11 }}>{l.shift ?? '—'}</td>
+      <td style={{ fontSize: 11 }}>
+        {l.shift ? ((SHIFT_LABELS as Record<string, string>)[l.shift] ?? l.shift) : '—'}
+      </td>
       <td style={{ fontSize: 11 }}>{l.inspector ?? '—'}</td>
       <td
         style={{
@@ -436,7 +445,7 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
       </td>
       <td style={{ fontSize: 11 }}>
         {l.qcReportPath ? (
-          <QcReportLink path={l.qcReportPath} name={l.qcReportName} label="View" />
+          <QcReportLink path={l.qcReportPath} name={l.qcReportName} label="Report" />
         ) : (
           '—'
         )}

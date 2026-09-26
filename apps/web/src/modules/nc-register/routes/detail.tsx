@@ -17,6 +17,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -108,7 +109,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'NC not found.'}
+            {error instanceof Error ? error.message : 'NC not found. Refresh the page.'}
           </div>
         </div>
       </div>
@@ -122,7 +123,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   if (eff && !effectiveFormPerms(eff, 'nc_dispose').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view this NC. Ask an admin.
       </div>
     );
   }
@@ -197,12 +198,12 @@ function NcRegisterDetailPage(): React.JSX.Element {
     }
   };
 
-  const onDelete = (): void => {
-    softDelete.mutate(detail.id, {
-      onSuccess: () => {
-        void navigate({ to: '/nc-register', replace: true });
-      },
-    });
+  // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
+  // shows a rejection in the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    await softDelete.mutateAsync(detail.id);
+    setConfirmDelete(false);
+    await navigate({ to: '/nc-register', replace: true });
   };
 
   const onCloseRework = async (): Promise<void> => {
@@ -259,7 +260,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                     fontWeight: 700,
                     textDecoration: 'none',
                   }}
-                  title="Open linked CAPA"
+                  title={`Open CAPA ${detail.linkedCapaCode}`}
                 >
                   🛡 {detail.linkedCapaCode}
                 </Link>
@@ -289,7 +290,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             {isReworkDisposed && canEdit ? (
               <>
                 <span className="text3" style={{ fontSize: 11 }}>
-                  Rework done qty
+                  Rework Completed Qty
                 </span>
                 <input
                   type="number"
@@ -314,7 +315,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   ) : (
                     <CheckCircle2 size={13} />
                   )}
-                  Close rework
+                  Close Rework
                 </button>
               </>
             ) : null}
@@ -367,55 +368,19 @@ function NcRegisterDetailPage(): React.JSX.Element {
               </Link>
             ) : null}
             {canDelete && isPending ? (
-              confirmDelete ? (
-                <>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    Move NC {detail.code} to Trash? You can restore it from Trash.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={onDelete}
-                    disabled={softDelete.isPending}
-                  >
-                    {softDelete.isPending ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Move to Trash
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={softDelete.isPending}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              )
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={13} /> Delete
+              </button>
             ) : null}
           </div>
         </div>
         <div className="panel-body">
-          {softDelete.isError || closeError || capaError ? (
+          {closeError || capaError ? (
             <div style={{ marginBottom: 10 }}>
-              {softDelete.isError ? (
-                <Note tone="red">
-                  {softDelete.error instanceof Error
-                    ? softDelete.error.message
-                    : 'Could not delete NC. Try again.'}
-                </Note>
-              ) : null}
               {closeError ? <Note tone="red">{closeError}</Note> : null}
               {capaError ? <Note tone="red">{capaError}</Note> : null}
             </div>
@@ -504,7 +469,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       ) : null}
       {createDc.isSuccess && detail.deliveryChallanId ? (
         <Note tone="green">
-          Return challan issued:{' '}
+          DC saved:{' '}
           <Link
             to="/delivery-challans/$id"
             params={{ id: detail.deliveryChallanId }}
@@ -517,6 +482,17 @@ function NcRegisterDetailPage(): React.JSX.Element {
       ) : null}
 
       <RelatedDocsPanel module="nc-register" id={detail.id} />
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Move NC ${detail.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
 
       {showDispose ? (
         <DisposeNcPanel
@@ -636,7 +612,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
               </InlinePair>
             ) : null}
             {detail.sourceGrnCode ? (
-              <InlinePair label="Source GRN:">
+              <InlinePair label="Source GRN No.:">
                 <span className="td-code" style={{ color: 'var(--text)' }}>
                   {detail.sourceGrnCode}
                 </span>
@@ -648,7 +624,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
         ) : (
           <InlinePair label="Operation:">
             {/* Op numbers show in tens (display rule, see opSrNo). */}
-            {detail.opSeq != null ? `Op${opSrNo(detail.opSeq)}` : ''}
+            {detail.opSeq != null ? `Op ${opSrNo(detail.opSeq)}` : ''}
             {detail.opSeq != null && operation ? ' — ' : ''}
             {operation ?? (detail.opSeq == null ? '—' : '')}
           </InlinePair>
@@ -658,7 +634,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
         <InlinePair label="Reason Category:">
           {NC_REASON_CATEGORY_LABELS[detail.reasonCategory]}
         </InlinePair>
-        <InlinePair label="Reason:">{detail.reason ?? '—'}</InlinePair>
+        <InlinePair label="Defect Description:">{detail.reason ?? '—'}</InlinePair>
         {detail.timeLogged ? (
           <div className="form-full">
             <span className="text3">⏰ Time Logged:</span> <b>{detail.timeLogged}</b>
@@ -693,7 +669,7 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         {/* Legacy in-route rework only — a new rework raises a child JC
             (linked below) and never sets rework_op_seq. */}
         {detail.reworkOpSeq != null ? (
-          <InlinePair label="Rework Op:">Op{opSrNo(detail.reworkOpSeq)}</InlinePair>
+          <InlinePair label="Rework Op:">Op {opSrNo(detail.reworkOpSeq)}</InlinePair>
         ) : null}
         {/* Not in legacy `_viewNC`, but legacy's LIST row shows "♻ n/m done"
             (HTML L22536) and our close-rework flow captures it. Kept. */}

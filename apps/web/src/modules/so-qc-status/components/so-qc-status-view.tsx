@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/date';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
@@ -46,7 +47,7 @@ export function SoQcStatusView(): React.JSX.Element {
             onChange={setSelectedSo}
             onSearch={setSoSearch}
             loading={soList.isFetching}
-            placeholder="🔍 Select SO — type code or customer…"
+            placeholder="Search SO No. or customer…"
             options={(soList.data?.items ?? []).map((s) => ({
               id: s.id,
               code: s.code,
@@ -106,8 +107,8 @@ export function SoQcStatusView(): React.JSX.Element {
             </div>
             <div className="text3" style={{ fontSize: 12 }}>
               SO Date: {fmtDate(detail.data.so.soDate)}
-              {detail.data.so.dueDate ? ` | Due: ${fmtDate(detail.data.so.dueDate)}` : ''}
-              {detail.data.so.type ? ` | Type: ${detail.data.so.type}` : ''}
+              {detail.data.so.dueDate ? ` · Due: ${fmtDate(detail.data.so.dueDate)}` : ''}
+              {detail.data.so.type ? ` · Type: ${detail.data.so.type}` : ''}
             </div>
           </div>
 
@@ -183,17 +184,17 @@ function StageOpRow({ op }: { op: SoQcStageOp }): React.JSX.Element {
       </span>
       {op.rejected > 0 ? (
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red2)', marginLeft: 2 }}>
-          ({op.rejected} rej)
+          {op.rejected} Rejected
         </span>
       ) : null}
       {op.pending > 0 ? (
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)', marginLeft: 2 }}>
-          [{op.pending} pending]
+          {op.pending} QC Pending
         </span>
       ) : null}
       {op.attempts > 1 ? (
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)', marginLeft: 2 }}>
-          [{op.attempts}x]
+          {op.attempts} attempts
         </span>
       ) : null}
     </div>
@@ -239,7 +240,7 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
           {l.clientPoLineNo ?? '—'}
         </td>
-        <td className="td-code mono fw-700" style={{ color: 'var(--cyan)' }}>
+        <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
           {itemCodeWithRev(l.itemCode, l.itemRevision)}
         </td>
         <td>{l.partName ?? '—'}</td>
@@ -320,8 +321,6 @@ function DetailHeading({ color, children }: { color: string; children: React.Rea
       style={{
         fontSize: 11,
         fontWeight: 700,
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
         marginBottom: 8,
         color,
       }}
@@ -345,7 +344,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>Received</th>
             <th>Accepted</th>
             <th>Rejected</th>
-            <th>Pending</th>
+            <th>QC Pending</th>
             <th>QC Status</th>
             <th>Report</th>
           </tr>
@@ -382,12 +381,12 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>
                 <span className={`badge ${g.status === 'done' ? 'b-green' : 'b-amber'}`}>
-                  {g.status === 'done' ? '✅ Inspected' : '⏳ Pending'}
+                  {g.status === 'done' ? '✅ Inspected' : '⏳ QC Pending'}
                 </span>
               </td>
               <td>
                 {g.qcReportPath ? (
-                  <QcReportLink path={g.qcReportPath} name={g.qcReportName} label="View" />
+                  <QcReportLink path={g.qcReportPath} name={g.qcReportName} label="Report" />
                 ) : (
                   '—'
                 )}
@@ -410,10 +409,10 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>JC No.</th>
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Organisation</th>
-            <th>Inspected By</th>
+            <th>Inspector Name</th>
             <th>Accepted</th>
             <th>Rejected</th>
-            <th>Inspection Date</th>
+            <th>TPI Date</th>
             <th>TPI Status</th>
             <th>Report</th>
           </tr>
@@ -448,7 +447,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               </td>
               <td>
                 {t.qcReportPath ? (
-                  <QcReportLink path={t.qcReportPath} name={t.qcReportName} label="View" />
+                  <QcReportLink path={t.qcReportPath} name={t.qcReportName} label="Report" />
                 ) : (
                   '—'
                 )}
@@ -464,7 +463,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
 function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
   return (
     <>
-      <DetailHeading color="var(--teal, #0d9488)">📄 QC Documents</DetailHeading>
+      <DetailHeading color="var(--teal)">📄 QC Documents</DetailHeading>
       <table className="innovic-table" style={{ marginBottom: 14 }}>
         <thead>
           <tr>
@@ -520,7 +519,7 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
   return (
     <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border2)' }}>
       <td colSpan={5} style={{ fontSize: 11, color: 'var(--text2)' }}>
-        TOTAL ({lines.length} lines)
+        Total ({lines.length} lines)
       </td>
       <td style={{ fontSize: 11, color: 'var(--text2)' }}>
         {t.qcOps} QC stages across {t.jcCount} JCs
@@ -557,38 +556,32 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
   const allDone = (done: number, total: number): string =>
     total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-        gap: 8,
-        marginBottom: 16,
-      }}
-    >
-      <Card label="QC Ops" value={`${t.qcPassed}/${t.qcOps}`} sub="accepted" color={allDone(t.qcPassed, t.qcOps)} />
-      <Card
-        label="Incoming QC"
-        value={`${t.grnDone}/${t.grn}`}
-        sub="completed"
-        color={allDone(t.grnDone, t.grn)}
+    <div style={{ marginBottom: 16 }}>
+      <StatStrip
+        items={[
+          {
+            key: 'qc-ops',
+            label: 'QC Ops',
+            count: `${t.qcPassed}/${t.qcOps}`,
+            sub: 'Accepted',
+            color: allDone(t.qcPassed, t.qcOps),
+          },
+          {
+            key: 'incoming-qc',
+            label: 'Incoming QC',
+            count: `${t.grnDone}/${t.grn}`,
+            sub: 'Completed',
+            color: allDone(t.grnDone, t.grn),
+          },
+          {
+            key: 'documents',
+            label: 'Documents',
+            count: `${t.docsUp}/${t.docs}`,
+            sub: 'Uploaded',
+            color: allDone(t.docsUp, t.docs),
+          },
+        ]}
       />
-      <Card label="Documents" value={`${t.docsUp}/${t.docs}`} sub="uploaded" color={allDone(t.docsUp, t.docs)} />
-    </div>
-  );
-}
-
-function Card(props: { label: string; value: number | string; sub: string; color: string }): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 11 }}>
-        {props.label}
-      </div>
-      <div className="mono fw-700" style={{ fontSize: 20, color: props.color }}>
-        {props.value}
-      </div>
-      <div className="text3" style={{ fontSize: 11 }}>
-        {props.sub}
-      </div>
     </div>
   );
 }

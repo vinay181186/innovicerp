@@ -257,14 +257,17 @@ function TpiMastersListPage(): React.JSX.Element {
             columns={columns}
             rows={rows}
             loading={isLoading}
-            emptyText="No inspectors defined. Click + Add Inspector."
+            emptyText={
+              search.search || search.isActive !== undefined
+                ? 'No Inspectors match.'
+                : 'No Inspectors yet.'
+            }
             onRowClick={(t) => void navigate({ to: '/tpi-masters/$id', params: { id: t.id } })}
             rowActionsWidth="10%"
             rowActions={(t) => (
               <RowActions
-                // View and Edit are ROUTES, so they stay real links —
-                // ctrl-click / middle-click still open a new tab.
-                viewTo={`/tpi-masters/${t.id}`}
+                // Row click opens the record (ERPNext list); Edit stays a real
+                // link so ctrl-click / middle-click open a new tab.
                 editTo={perms.edit ? `/tpi-masters/${t.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
                 // The PROMISE is handed back, not swallowed: the confirm dialog
@@ -284,8 +287,8 @@ function TpiMastersListPage(): React.JSX.Element {
                 // flight, exactly as `disabled={softDelete.isPending}` did.
                 deleteDisabled={softDelete.isPending}
                 deleteConfirm={{
-                  title: `Delete inspector "${t.code}"?`,
-                  message: `${t.code} stops appearing in the TPI Master and in the TPI screen's Inspector picker.`,
+                  title: `Delete Inspector ${t.code}?`,
+                  message: 'Past TPI records keep the name.',
                   pendingLabel: 'Deleting…',
                 }}
               />

@@ -191,7 +191,7 @@ export function IncomingQcInspectModal({
              shown while access is still loading, or every inspector would see
              it flash. */
           <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
-            View only.
+            You do not have permission to inspect this GRN line. Ask an admin.
           </div>
         ) : null}
       </div>

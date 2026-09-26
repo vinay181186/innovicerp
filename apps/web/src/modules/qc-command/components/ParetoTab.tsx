@@ -4,9 +4,9 @@
 
 import { NC_REASON_CATEGORY_LABELS, type QcCommandPareto } from '@innovic/shared';
 
-const RANK_COLORS = ['#EF4444', '#F59E0B', '#F97316', '#64748B'];
+const RANK_COLORS = ['var(--red)', 'var(--amber)', 'var(--orange)', 'var(--text3)'];
 function rankColor(i: number): string {
-  return RANK_COLORS[i] ?? '#64748B';
+  return RANK_COLORS[i] ?? 'var(--text3)';
 }
 
 function reasonLabel(reason: string): string {
@@ -32,7 +32,7 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
         </div>
         {pareto.rows.length === 0 ? (
           <div className="empty-state" style={{ color: 'var(--green2)' }}>
-            ✅ No rejections recorded
+            No rejections recorded yet.
           </div>
         ) : (
           <div className="tbl-wrap">

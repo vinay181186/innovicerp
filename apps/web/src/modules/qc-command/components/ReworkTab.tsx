@@ -7,7 +7,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 
 function attemptColor(attempts: number): string {
   if (attempts === 1) return 'var(--amber)';
-  if (attempts === 2) return '#F97316';
+  if (attempts === 2) return 'var(--orange)';
   return 'var(--red)';
 }
 
@@ -29,7 +29,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
         </div>
         {rework.length === 0 ? (
           <div className="empty-state" style={{ color: 'var(--green2)' }}>
-            ✅ No rework cycles — all items accepted at first QC
+            No rework cycles yet. Every item was accepted at first QC.
           </div>
         ) : (
           <div className="tbl-wrap">
@@ -55,15 +55,15 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                     <td className="td-code">
                       <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
                       <span style={{ color: 'var(--red2)', fontWeight: 700 }}>
-                        Op{opSrNo(g.opSeq)}
+                        Op {opSrNo(g.opSeq)}
                       </span>
                     </td>
                     <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                       {g.clientPoLineNo ?? '—'}
                     </td>
                     <td style={{ fontSize: 11 }}>
-                      {/* Legacy L18939 hardcodes #8B5CF6, not var(--purple). */}
-                      <span style={{ color: '#8B5CF6', fontWeight: 600 }}>
+                      {/* Item code strong in the body colour (item-code rule). */}
+                      <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
                         {itemCodeWithRev(g.itemCode, g.itemRevision)}
                       </span>
                       {/* The Item column named the drawing but never the part.
@@ -104,11 +104,11 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                           fontWeight: 700,
                           padding: '2px 10px',
                           borderRadius: 10,
-                          background: 'rgba(0,0,0,0.05)',
+                          background: 'var(--bg3)',
                           color: attemptColor(g.attempts),
                         }}
                       >
-                        {g.attempts}×
+                        {g.attempts}
                       </span>
                     </td>
                     <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
@@ -120,7 +120,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                       className="td-ctr mono fw-700"
                       style={{ color: g.daysElapsed > 5 ? 'var(--red)' : 'var(--amber)' }}
                     >
-                      {g.daysElapsed}d
+                      {g.daysElapsed} {g.daysElapsed === 1 ? 'day' : 'days'}
                     </td>
                   </tr>
                 ))}

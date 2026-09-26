@@ -45,7 +45,7 @@ import { assertProductionOrderNotShortClosed } from '../../lib/production-order-
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
-import { type DisposeNcContext, disposeNcCascade, resolveNcSource } from './cascades';
+import { type DisposeNcContext, disposeNcCascade, nextNcCode, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
 import type {
   CloseNcReworkInput,
@@ -1037,7 +1037,7 @@ export async function getNcRegisterRelated(
             row(jc.id, jc.code, jc.closedAt ? 'closed' : 'open', jc.date, {
               // display rule — see opSrNo in @innovic/shared
               ...(header.jcOpId && header.opSeq != null
-                ? { label: `Op${opSrNo(header.opSeq)}` }
+                ? { label: `Op ${opSrNo(header.opSeq)}` }
                 : {}),
             }),
           ]
@@ -1203,19 +1203,28 @@ export async function createNcRegister(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const dup = await tx
-      .select({ id: ncRegister.id })
-      .from(ncRegister)
-      .where(
-        and(
-          eq(ncRegister.companyId, companyId),
-          eq(ncRegister.code, input.code),
-          isNull(ncRegister.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(`NC code "${input.code}" already exists`);
+    // NC No. blank → the server assigns the next number in the series (same
+    // advisory-locked helper the auto-NC path uses). A typed code keeps the
+    // duplicate check.
+    let code: string;
+    if (input.code) {
+      code = input.code;
+      const dup = await tx
+        .select({ id: ncRegister.id })
+        .from(ncRegister)
+        .where(
+          and(
+            eq(ncRegister.companyId, companyId),
+            eq(ncRegister.code, code),
+            isNull(ncRegister.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (dup.length > 0) {
+        throw new ConflictError(`NC code "${code}" already exists`);
+      }
+    } else {
+      code = await nextNcCode(tx, companyId);
     }
 
     await assertJobCardExists(tx, input.jobCardId, companyId);
@@ -1233,7 +1242,7 @@ export async function createNcRegister(
       .insert(ncRegister)
       .values({
         companyId,
-        code: input.code,
+        code,
         ncDate: input.ncDate,
         jobCardId: input.jobCardId,
         jcOpId: input.jcOpId ?? null,

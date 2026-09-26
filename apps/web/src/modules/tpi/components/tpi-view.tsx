@@ -23,15 +23,11 @@ import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-atta
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { useTpiMastersList } from '@/modules/tpi-masters/api';
 import { useTpi } from '../api';
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 // Excel export of completed TPI records (legacy _tpiExport L21572 / "⬇ Excel"
 // button). Client-side from the loaded `completed` rows — columns mirror the
@@ -39,7 +35,8 @@ function todayIso(): string {
 // the user actually exports.
 async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
   const { utils: xlsxUtils, write: xlsxWrite } = await import('xlsx');
-  const respLabel = (d: number | null): string => (d === null ? '' : d <= 0 ? 'Same day' : `${d}d`);
+  const respLabel = (d: number | null): string =>
+    d === null ? '' : d <= 0 ? 'Same day' : `${d} day${d === 1 ? '' : 's'}`;
   const aoa: (string | number)[][] = [
     [
       'JC No.',
@@ -62,7 +59,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'Accepted',
       'Rejected',
       'Call Date',
-      'Attended Date',
+      'TPI Date',
       'Days to Attend',
       'Inspector Name',
       'Organisation',
@@ -70,7 +67,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
     ],
     ...rows.map((l) => [
       l.jcCode,
-      `Op${opSrNo(l.opSeq)}`,
+      `Op ${opSrNo(l.opSeq)}`,
       l.soCode ?? '',
       l.clientPoLineNo ?? '',
       l.itemCode ?? '',
@@ -95,7 +92,7 @@ async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `TPI_Records_${todayIso()}.xlsx`;
+  a.download = `TPI_Records_${todayIst()}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -203,7 +200,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                 disabled={completed.length === 0}
                 onClick={() => void exportTpiRecords(completed)}
               >
-                ⬇ Excel
+                ⬇ Export
               </button>
             </div>
             <div className="tbl-wrap">
@@ -225,9 +222,9 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                     <th>Accepted</th>
                     <th>Rejected</th>
                     <th>Call Date</th>
-                    <th>Attended</th>
+                    <th>TPI Date</th>
                     <th>Days to Attend</th>
-                    <th>Inspector</th>
+                    <th>Inspector Name</th>
                     <th>Organisation</th>
                     <th>TPI Certificate No.</th>
                     <th>Report</th>
@@ -237,7 +234,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                   {completed.length === 0 ? (
                     <tr>
                       <td colSpan={16} className="empty-state">
-                        No TPI records yet
+                        No TPI records yet.
                       </td>
                     </tr>
                   ) : (
@@ -253,12 +250,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         <td className="fw-700 cyan" style={{ fontSize: 12 }}>
                           {l.jcCode}
                         </td>
-                        <td style={{ fontSize: 11 }}>Op{opSrNo(l.opSeq)}</td>
+                        <td style={{ fontSize: 11 }}>Op {opSrNo(l.opSeq)}</td>
                         <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{l.soCode ?? '—'}</td>
                         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                           {l.clientPoLineNo ?? '—'}
                         </td>
-                        <td style={{ fontSize: 11, color: 'var(--purple)' }}>
+                        <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--text)' }}>
                           {itemCodeWithRev(l.itemCode, l.itemRevision)}
                         </td>
                         {/* A part name is free text of any length, so it is capped
@@ -310,7 +307,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                             ? '—'
                             : l.respDays <= 0
                               ? 'Same day'
-                              : `${l.respDays}d`}
+                              : `${l.respDays} day${l.respDays === 1 ? '' : 's'}`}
                         </td>
                         <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>
                           {l.inspector ?? '—'}
@@ -326,7 +323,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                             <QcReportLink
                               path={l.qcReportPath}
                               name={l.qcReportName}
-                              label="View"
+                              label="Report"
                             />
                           ) : (
                             '—'
@@ -409,7 +406,7 @@ function PendingTpi(props: {
       return;
     }
     if (acc + rej > o.qcPending) {
-      setErr(`Accepted + Rejected (${acc + rej}) cannot be more than Pending (${o.qcPending}).`);
+      setErr(`Accepted + Rejected (${acc + rej}) cannot be more than QC Pending (${o.qcPending}).`);
       return;
     }
     if (!inspector.trim() || !organization.trim()) {
@@ -463,7 +460,7 @@ function PendingTpi(props: {
             {o.jcCode}
           </b>{' '}
           <span className="text3" style={{ fontSize: 11 }}>
-            Op{opSrNo(o.opSeq)} — {o.operation}
+            Op {opSrNo(o.opSeq)} — {o.operation}
           </span>
           {o.waitDays > 1 ? (
             <span style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginLeft: 8 }}>
@@ -515,7 +512,7 @@ function PendingTpi(props: {
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber2)' }}>{o.qcPending}</div>
           <div className="text3" style={{ fontSize: 11 }}>
-            Pending
+            QC Pending
           </div>
         </div>
       </div>
@@ -531,7 +528,7 @@ function PendingTpi(props: {
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green2)', marginBottom: 12 }}>
-            ✅ TPI Entry — {o.jcCode} Op{opSrNo(o.opSeq)}
+            TPI Entry
           </div>
 
           {/* Legacy L21413-21416: Date | Shift */}
@@ -632,7 +629,7 @@ function PendingTpi(props: {
             <div className="form-grid" style={{ gap: 10 }}>
               <div className="form-grp">
                 <label className="form-label" style={{ fontSize: 11 }}>
-                  Inspector Name ★
+                  Inspector Name<span className="req">★</span>
                 </label>
                 {/* What gets SAVED is unchanged: still the inspector's name as
                     plain text (tpiInspector / operatorName), never an id — a TPI
@@ -653,13 +650,13 @@ function PendingTpi(props: {
                   loading={inspectorQuery.isFetching}
                   options={inspectorOptions}
                   selectedLabel={(op) => op.code ?? op.name}
-                  placeholder="🔍 Click to browse or type a name…"
-                  emptyText="No inspector found — add them in TPI Master"
+                  placeholder="Search Inspector…"
+                  emptyText="No Inspectors match. Add one in TPI Master."
                 />
               </div>
               <div className="form-grp">
                 <label className="form-label" style={{ fontSize: 11 }}>
-                  Organisation ★
+                  Organisation<span className="req">★</span>
                 </label>
                 <input
                   className="innovic-input"
@@ -722,10 +719,8 @@ function PendingTpi(props: {
             </button>
             <button
               type="button"
-              className="btn"
+              className="btn btn-success"
               style={{
-                background: 'var(--green)',
-                color: '#fff',
                 fontWeight: 700,
                 fontSize: 13,
                 padding: '8px 24px',

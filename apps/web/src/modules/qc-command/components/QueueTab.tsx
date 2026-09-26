@@ -1,4 +1,4 @@
-// QC Queue tab (legacy _qccRenderQueue L18667). Pending QC ops with age,
+// Assign Inspector tab (legacy _qccRenderQueue L18667). Pending QC ops with age,
 // attempt counter, due date, assignment, and Pick-Up / Assign actions.
 // Sortable by age / due date / customer.
 
@@ -15,11 +15,9 @@ const SORTS: { id: Sort; label: string }[] = [
   { id: 'customer', label: 'Customer' },
 ];
 
-function attemptLabel(n: number): string {
-  if (n === 1) return '1st';
-  if (n === 2) return '2nd';
-  if (n === 3) return '3rd';
-  return `${n}th`;
+/** "1 day" / "3 days" — the one waiting-time format on every QC screen. */
+function daysText(n: number): string {
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
 }
 function attemptColor(n: number): string {
   if (n === 1) return 'var(--green)';
@@ -71,7 +69,8 @@ export function QueueTab({
           gap: 8,
         }}
       >
-        <div style={{ fontSize: 13, fontWeight: 600 }}>QC Pending Items</div>
+        {/* No title here — the tab above already names this list. */}
+        <div />
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11 }}>
           <span className="text3">Sort by:</span>
           {SORTS.map((s) => (
@@ -83,7 +82,7 @@ export function QueueTab({
                 sort === s.id
                   ? {
                       fontSize: 11,
-                      background: 'rgba(239,68,68,0.1)',
+                      background: 'var(--red3)',
                       color: 'var(--red2)',
                       border: '1px solid var(--red)',
                     }
@@ -101,7 +100,7 @@ export function QueueTab({
           tip — just the sort bar and this line. */}
       {sorted.length === 0 ? (
         <div className="empty-state" style={{ color: 'var(--green2)' }}>
-          ✅ No QC Pending items
+          No QC Pending items.
         </div>
       ) : (
         <>
@@ -110,12 +109,12 @@ export function QueueTab({
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>Age</th>
-                    <th>JC / Op</th>
+                    <th>Days Waiting</th>
+                    <th>JC No.</th>
                     <th>Operation</th>
-                    <th>SO / Customer</th>
+                    <th>SO No. · Customer</th>
                     <th className="td-ctr">QC Pending</th>
-                    <th className="td-ctr">Attempt</th>
+                    <th className="td-ctr">Attempts</th>
                     <th>Due Date</th>
                     <th>Assigned To</th>
                     {showActions ? <th>Actions</th> : null}
@@ -132,22 +131,21 @@ export function QueueTab({
                     return (
                       <tr
                         key={it.jcOpId}
-                        style={it.isOverdue ? { background: 'rgba(239,68,68,0.04)' } : undefined}
+                        style={it.isOverdue ? { background: 'var(--red3)' } : undefined}
                       >
                         <td
                           className="td-ctr mono fw-700"
                           style={{ color: ageColor, fontSize: 14 }}
                         >
-                          {it.ageDays}d
+                          {daysText(it.ageDays)}
                         </td>
                         <td className="td-code" style={{ color: 'var(--cyan)' }}>
-                          {it.jcCode}{' '}
-                          <span style={{ color: 'var(--red2)', fontWeight: 700 }}>
-                            Op{opSrNo(it.opSeq)}
-                          </span>
+                          {it.jcCode}
                         </td>
                         <td style={{ fontSize: 12 }}>
-                          <b style={{ color: 'var(--red2)' }}>{it.operation}</b>
+                          <b style={{ color: 'var(--red2)' }}>
+                            Op {opSrNo(it.opSeq)} · {it.operation}
+                          </b>
                           <br />
                           {/* An inspector reads the code to find the drawing, so
                               it carries weight rather than sitting in the faintest
@@ -210,11 +208,11 @@ export function QueueTab({
                               fontWeight: 700,
                               padding: '2px 10px',
                               borderRadius: 10,
-                              background: 'rgba(0,0,0,0.05)',
+                              background: 'var(--bg3)',
                               color: attemptColor(it.attemptNo),
                             }}
                           >
-                            {attemptLabel(it.attemptNo)}
+                            {it.attemptNo}
                           </span>
                         </td>
                         <td

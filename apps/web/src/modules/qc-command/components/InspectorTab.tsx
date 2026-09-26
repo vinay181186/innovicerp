@@ -29,7 +29,7 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
         </div>
         {/* Legacy L18896 returns early with a bare line — no table — when empty. */}
         {perf.length === 0 ? (
-          <div className="empty-state">No inspections recorded yet</div>
+          <div className="empty-state">No inspections recorded yet.</div>
         ) : (
           <div className="tbl-wrap">
             <table className="innovic-table">

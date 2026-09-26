@@ -80,10 +80,12 @@ export function AssignModal({
   }
 
   return (
-    <Overlay title={`👤 Assign Inspector — ${row.jcCode} Op${opSrNo(row.opSeq)}`} onClose={onClose}>
+    <Overlay title={`Assign Inspector — ${row.jcCode} Op ${opSrNo(row.opSeq)}`} onClose={onClose}>
       <div className="form-grid">
         <div className="form-grp form-full">
-          <label className="form-label">Assign to Inspector ★</label>
+          <label className="form-label">
+            Assign to Inspector<span className="req">★</span>
+          </label>
           <select
             className="innovic-select"
             value={inspectorUserId}

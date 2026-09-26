@@ -23,7 +23,6 @@ import {
   type Shift,
   type SubmitQcLogInput,
   type QcHistoryPendingRow,
-  opSrNo,
   shortName,
 } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
@@ -32,7 +31,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
@@ -41,7 +40,7 @@ import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/
 import { tpiKeys } from '@/modules/tpi/api';
 
 function todayIso(): string {
-  return todayLocal();
+  return todayIst();
 }
 
 export interface QcCallInspectState {
@@ -256,10 +255,7 @@ export function QcCallInspectFormView(props: {
 
   return (
     <div style={{ padding: '14px 16px', borderTop: '2px solid var(--green)' }}>
-      {/* Legacy L4167: QC Entry header naming the JC/Op and the operation. */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green2)', marginBottom: 10 }}>
-        ✅ QC Inspection — {o.jcCode} Op{opSrNo(o.opSeq)} — {o.operation}
-      </div>
+      {/* The popup header above already names the JC, op and item. */}
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 11 }}>
@@ -287,6 +283,25 @@ export function QcCallInspectFormView(props: {
               </option>
             ))}
           </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" style={{ fontSize: 11 }}>
+            👤 Inspected By<span className="req">★</span>
+          </label>
+          {/* The whole QC list comes back in one small response, so the
+              picker filters it in the browser and there is no ?search= to
+              round-trip. */}
+          <SearchableSelect
+            value={form.inspectorId}
+            onChange={form.pickInspector}
+            options={form.qcOptions}
+            onSearch={NO_SERVER_SEARCH}
+            loading={form.qcOptionsLoading}
+            valueLabel={form.inspector}
+            selectedLabel={qcSelectedLabel}
+            placeholder="🔍 Select QC person…"
+            emptyText="No QC users — set them up in Access Control"
+          />
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 11, color: 'var(--green2)' }}>
@@ -332,32 +347,13 @@ export function QcCallInspectFormView(props: {
         </div>
         <div className="form-grp form-full">
           <label className="form-label" style={{ fontSize: 11 }}>
-            👤 Inspected By ★
-          </label>
-          {/* The whole QC list comes back in one small response, so the
-              picker filters it in the browser and there is no ?search= to
-              round-trip. */}
-          <SearchableSelect
-            value={form.inspectorId}
-            onChange={form.pickInspector}
-            options={form.qcOptions}
-            onSearch={NO_SERVER_SEARCH}
-            loading={form.qcOptionsLoading}
-            valueLabel={form.inspector}
-            selectedLabel={qcSelectedLabel}
-            placeholder="🔍 Select QC person…"
-            emptyText="No QC users — set them up in Access Control"
-          />
-        </div>
-        <div className="form-grp form-full">
-          <label className="form-label" style={{ fontSize: 11 }}>
             Remarks
           </label>
           <input
             className="innovic-input"
             value={form.remarks}
             onChange={(e) => form.setRemarks(e.target.value)}
-            placeholder="NC reason, observations..."
+            placeholder="Observations…"
           />
         </div>
         <div className="form-grp form-full">

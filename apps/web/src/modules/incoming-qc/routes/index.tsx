@@ -34,18 +34,16 @@ export const incomingQcRoute = createRoute({
   component: IncomingQcPage,
 });
 
-function waitColor(days: number): string {
-  if (days >= 3) return 'var(--red)';
-  if (days >= 2) return 'var(--amber)';
-  return 'var(--green)';
+// Days Waiting chip: badge classes, no hard-coded colours.
+function waitBadge(days: number): string {
+  if (days >= 3) return 'b-red';
+  if (days >= 2) return 'b-amber';
+  return 'b-green';
 }
 
-// Legacy hard-codes the chip's translucent fill as an rgb triple alongside the
-// var() border/text colour (HTML L23775).
-function waitRgb(days: number): string {
-  if (days >= 3) return '239,68,68';
-  if (days >= 2) return '245,158,11';
-  return '34,197,94';
+/** "1 day" / "3 days" — the one waiting-time format on every QC screen. */
+function daysText(n: number): string {
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
 }
 
 function respColor(days: number | null): string {
@@ -111,7 +109,7 @@ function IncomingQcPage(): React.JSX.Element {
   if (eff && !effectiveFormPerms(eff, 'qc_incoming').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view Incoming QC. Ask an admin.
       </div>
     );
   }
@@ -128,7 +126,7 @@ function IncomingQcPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔬 Incoming QC
+          Incoming QC
         </div>
         {isFetching && !isLoading ? (
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
@@ -160,42 +158,27 @@ function IncomingQcPage(): React.JSX.Element {
                   label: 'GRNs Waiting',
                   count: data.metrics.grnsWaiting,
                   color: 'var(--amber2)',
+                  // Price-gated: the server sends null when prices are hidden.
+                  sub:
+                    data.metrics.valueInQc == null
+                      ? undefined
+                      : `₹${data.metrics.valueInQc.toLocaleString('en-IN')} in QC`,
                 },
                 {
                   key: 'pendingQty',
-                  label: 'Pending Qty',
+                  label: 'QC Pending',
                   count: data.metrics.pendingQty,
-                  color: 'var(--red2)',
-                },
-                {
-                  key: 'avgWait',
-                  label: 'Avg Wait (days)',
-                  count: data.metrics.avgWaitDays,
-                  color:
-                    data.metrics.avgWaitDays > 3
-                      ? 'var(--red)'
-                      : data.metrics.avgWaitDays > 1
-                        ? 'var(--amber)'
-                        : 'var(--green)',
+                  color: 'var(--amber2)',
                 },
                 {
                   key: 'oldest',
                   label: 'Oldest GRN',
-                  count: `${data.metrics.oldestDays}d`,
+                  count: daysText(data.metrics.oldestDays),
                   color: data.metrics.oldestDays > 5 ? 'var(--red)' : 'var(--amber)',
-                  sub: data.metrics.oldestGrnNo ?? undefined,
+                  sub: [data.metrics.oldestGrnNo, `Avg ${daysText(data.metrics.avgWaitDays)}`]
+                    .filter(Boolean)
+                    .join(' · '),
                 },
-                // Price-gated: the server sends null when prices are hidden.
-                ...(data.metrics.valueInQc == null
-                  ? []
-                  : [
-                      {
-                        key: 'valueInQc',
-                        label: 'Value in QC',
-                        count: `₹${data.metrics.valueInQc.toLocaleString('en-IN')}`,
-                        color: 'var(--amber2)',
-                      },
-                    ]),
                 {
                   key: 'todayAccepted',
                   label: 'Today Accepted',
@@ -265,7 +248,7 @@ function IncomingQcPage(): React.JSX.Element {
                   {data.pending.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="empty-state">
-                        ✅ No items pending QC inspection
+                        No GRN lines waiting for QC.
                       </td>
                     </tr>
                   ) : (
@@ -337,7 +320,7 @@ function IncomingQcPage(): React.JSX.Element {
                   {data.completed.length === 0 ? (
                     <tr>
                       <td colSpan={14} className="empty-state">
-                        No completed QC inspections yet
+                        No completed inspections yet.
                       </td>
                     </tr>
                   ) : (
@@ -374,8 +357,8 @@ function PendingRow({
       <td className="text2" style={{ fontSize: 11 }}>
         {fmtDate(r.grnDate)}
       </td>
-      <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
-        {r.poCode ?? 'Manual'}
+      <td className="mono text2" style={{ fontSize: 11 }}>
+        {r.poCode ?? '—'}
       </td>
       <td>{r.vendorName ?? '—'}</td>
       {/* POL — the customer's own PO line number; '—' on a raw-material
@@ -383,7 +366,7 @@ function PendingRow({
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {r.clientPoLineNo ?? '—'}
       </td>
-      <td className="td-code" style={{ color: 'var(--purple)' }}>
+      <td className="td-code" style={{ color: 'var(--text)' }}>
         {/* An OSP return traces back to an SO line and shows CODE/REV; a vendor's
             raw-material receipt has no SO behind it and shows the bare code. Half
             this queue being unslashed is the truth, not a missing value. */}
@@ -392,19 +375,7 @@ function PendingRow({
       <td>{r.itemName ?? '—'}</td>
       <td className="mono fw-700 td-num">{r.receivedQty}</td>
       <td className="td-num">
-        <span
-          style={{
-            fontWeight: 800,
-            color: waitColor(r.waitDays),
-            fontSize: 11,
-            padding: '2px 8px',
-            background: `rgba(${waitRgb(r.waitDays)},0.1)`,
-            borderRadius: 4,
-            border: `1px solid ${waitColor(r.waitDays)}`,
-          }}
-        >
-          ⏳ {r.waitDays}d
-        </span>
+        <span className={`badge ${waitBadge(r.waitDays)}`}>{daysText(r.waitDays)}</span>
       </td>
       <td className="mono fw-700 td-num" style={{ fontSize: 14, color: 'var(--amber2)' }}>
         {r.pendingQty}
@@ -437,7 +408,7 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
         className="td-num"
         style={{ fontSize: 11, fontWeight: 700, color: respColor(r.respDays) }}
       >
-        {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : `${r.respDays}d`}
+        {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : daysText(r.respDays)}
       </td>
       <td>{r.vendorName ?? '—'}</td>
       {/* POL — the customer's own PO line number; '—' on a raw-material
@@ -445,7 +416,7 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {r.clientPoLineNo ?? '—'}
       </td>
-      <td className="td-code" style={{ color: 'var(--purple)' }}>
+      <td className="td-code" style={{ color: 'var(--text)' }}>
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
       <td>{r.itemName ?? '—'}</td>

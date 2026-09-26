@@ -232,9 +232,7 @@ export async function disposeNcCascade(
   const open = ncOpenQty(loaded);
   const qty = input.qty ?? open;
   if (qty > open) {
-    throw new ValidationError(
-      `Disposition Qty (${qty}) cannot be more than the NC's open qty (${open}).`,
-    );
+    throw new ValidationError(`Disposition Qty (${qty}) cannot be more than Open (${open}).`);
   }
   if (qty <= 0) {
     throw new ValidationError(
@@ -892,7 +890,7 @@ export interface AutoCreateNcResult {
  *  company already holds. Rows written before the series — the long
  *  `NC-AUTO-<jc>-Op<n>-<stamp>` names and anything typed by hand — do not match
  *  the strict shape and so cannot move it. */
-async function nextNcCode(tx: DbTransaction, companyId: string): Promise<string> {
+export async function nextNcCode(tx: DbTransaction, companyId: string): Promise<string> {
   // Two inspections or production entries on DIFFERENT ops committing at once
   // would both read the same maximum; the loser then hits
   // nc_register_company_code_uniq and the operator's whole entry is thrown

@@ -49,21 +49,20 @@ export const ncRegisterListRoute = createRoute({
 });
 
 // Accent bar colour by NC status — kept in step with NcStatusBadge's b-*
-// classes: amber = still needs attention (pending / under recovery), blue =
-// action taken, next move belongs to someone else, cyan = intermediate good
-// (rework done), green = closed.
+// classes (app status colours): blue = raised / disposed, waiting for the next
+// step; amber = recovery under way; green = rework completed / closed.
 function accentForNc(status: NcStatus): string {
   switch (status) {
-    case 'pending':
     case 'under_rework':
     case 'under_repair':
+    case 'sent_to_vendor':
+    case 'received_qc_pending':
       return 'var(--amber)';
     case 'rework_done':
-      return 'var(--cyan)';
     case 'closed':
       return 'var(--green)';
     default:
-      // disposed, sent_to_vendor, received_qc_pending
+      // pending (NC Raised), disposed
       return 'var(--blue)';
   }
 }
@@ -130,7 +129,7 @@ function NcRegisterListPage(): React.JSX.Element {
   if (eff && !ncPerms.view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        You do not have permission to view the NC Register. Ask an admin.
       </div>
     );
   }
@@ -151,8 +150,8 @@ function NcRegisterListPage(): React.JSX.Element {
     >
       {(
         [
-          ['nc', '⚠️ NC Register'],
-          ['capa', '🛡 CAPA'],
+          ['nc', 'NC Register'],
+          ['capa', 'CAPA'],
         ] as const
       ).map(([key, label]) => (
         <button
@@ -258,7 +257,7 @@ function NcRegisterListPage(): React.JSX.Element {
           >
             <input
               className="innovic-input"
-              placeholder="🔍 Search NC no., item code, item name, reason…"
+              placeholder="Search NC No., item, reason…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ minWidth: 220, fontSize: 13 }}
@@ -327,7 +326,9 @@ function NcRegisterListPage(): React.JSX.Element {
             </div>
           ) : rows.length === 0 ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
-              No NCs yet.
+              {search.search || search.status || search.reasonCategory
+                ? 'No NCs match.'
+                : 'No NCs yet.'}
             </div>
           ) : (
             rows.map((nc) => {
@@ -336,7 +337,7 @@ function NcRegisterListPage(): React.JSX.Element {
               const opText =
                 seq == null && !op
                   ? null
-                  : `${seq != null ? `Op${opSrNo(seq)}` : ''}${seq != null && op ? ': ' : ''}${op ?? ''}`;
+                  : `${seq != null ? `Op ${opSrNo(seq)}` : ''}${seq != null && op ? ': ' : ''}${op ?? ''}`;
               const itemCode = nc.itemCode
                 ? itemCodeWithRev(nc.itemCode, nc.itemRevision)
                 : (nc.itemCodeText ?? '');
@@ -377,27 +378,12 @@ function NcRegisterListPage(): React.JSX.Element {
                       >
                         {nc.code}
                       </Link>
-                      {itemName ? (
-                        <span
-                          className="fw-700"
-                          style={{
-                            fontSize: 13,
-                            maxWidth: 260,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          title={itemName}
-                        >
-                          {itemName}
-                        </span>
-                      ) : null}
                       <NcStatusBadge status={nc.status} />
                       {nc.disposition ? <NcDispositionBadge disposition={nc.disposition} /> : null}
                       {/* Legacy L22534: rework progress hint beside the disposition. */}
                       {nc.disposition === 'rework' && Number(nc.reworkDoneQty) > 0 ? (
                         <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
-                          ♻ {Number(nc.reworkDoneQty)}/{Number(nc.rejectedQty)} done
+                          ♻ {Number(nc.reworkDoneQty)} of {Number(nc.rejectedQty)} Completed
                         </span>
                       ) : null}
                       <span style={{ flex: 1 }} />
@@ -431,8 +417,7 @@ function NcRegisterListPage(): React.JSX.Element {
                           >
                             ✅ Close Rework
                           </Link>
-                        ) : null}
-                        {canCreateCapa && nc.status !== 'pending' && !nc.linkedCapaCode ? (
+                        ) : canCreateCapa && nc.status !== 'pending' && !nc.linkedCapaCode ? (
                           <Link
                             to="/nc-register/$id"
                             params={{ id: nc.id }}
@@ -541,6 +526,7 @@ function NcRegisterListPage(): React.JSX.Element {
                               fontWeight: 700,
                               textDecoration: 'none',
                             }}
+                            title={`Open CAPA ${nc.linkedCapaCode}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setTab('capa');

@@ -50,8 +50,8 @@ import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
 const PAGE_SIZE = 25;
 
 const TABS = [
-  { key: 'processes', label: '⚙ QC Processes' },
-  { key: 'reports', label: '📄 Report Types' },
+  { key: 'processes', label: 'QC Processes' },
+  { key: 'reports', label: 'Report Types' },
 ];
 
 const listSearchSchema = z.object({
@@ -302,14 +302,17 @@ function QcProcessesListPage(): React.JSX.Element {
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
-                emptyText="No QC processes defined. Click + Add QC Process."
+                emptyText={
+                  search.search || search.isActive !== undefined
+                    ? 'No QC Processes match.'
+                    : 'No QC Processes yet.'
+                }
                 onRowClick={(p) => void navigate({ to: '/qc-processes/$id', params: { id: p.id } })}
                 rowActionsWidth="10%"
                 rowActions={(p) => (
                   <RowActions
-                    // View and Edit are ROUTES, so they stay real links —
-                    // ctrl-click / middle-click still open a new tab.
-                    viewTo={`/qc-processes/${p.id}`}
+                    // Row click opens the record (ERPNext list); Edit stays a
+                    // real link so ctrl-click / middle-click open a new tab.
                     editTo={perms.edit ? `/qc-processes/${p.id}/edit` : undefined}
                     renderLink={(p2) => <Link {...p2} />}
                     // The PROMISE is handed back, not swallowed: the confirm
@@ -330,9 +333,10 @@ function QcProcessesListPage(): React.JSX.Element {
                     // flight, exactly as `disabled={softDelete.isPending}` did.
                     deleteDisabled={softDelete.isPending}
                     deleteConfirm={{
-                      title: `Delete QC process "${p.code}"?`,
-                      message: `${p.code} stops appearing in the QC Process Master and in every QC operation picker.`,
-                      pendingLabel: 'Deleting…',
+                      title: `Move QC Process ${p.code} to Trash?`,
+                      message: 'You can restore it from Trash.',
+                      confirmLabel: 'Move to Trash',
+                      pendingLabel: 'Moving…',
                     }}
                   />
                 )}

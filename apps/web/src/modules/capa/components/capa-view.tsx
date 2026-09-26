@@ -20,8 +20,8 @@ import {
   type UpdateCapaInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { fmtDate, todayLocal } from '@/lib/date';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { StatStrip } from '@/components/shared/stat-strip';
@@ -31,10 +31,12 @@ import { useOperatorsList } from '@/modules/operators/api';
 import { useUsersList } from '@/modules/users/api';
 import { useCapaList, useCreateCapa, useNextCapaCode, useUpdateCapa } from '../api';
 
+// App status colours: Open / Verified (waiting for the next step) = blue,
+// In Progress = amber, Closed = green.
 function statusColor(s: string): string {
-  if (s === 'Open') return 'var(--amber)';
-  if (s === 'In Progress') return 'var(--blue)';
-  if (s === 'Verified') return 'var(--purple)';
+  if (s === 'Open') return 'var(--blue)';
+  if (s === 'In Progress') return 'var(--amber)';
+  if (s === 'Verified') return 'var(--blue)';
   if (s === 'Closed') return 'var(--green)';
   return 'var(--text3)';
 }
@@ -61,8 +63,19 @@ export function CapaView(props: {
   const [term, setTerm] = useState(() => props.initialSearch ?? '');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data]);
   const counters = data?.counters;
+
+  // A link that names one CAPA (NC chip, Global Search) opens that CAPA, not
+  // just the filtered list. Once, when the list first arrives.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpened.current || !props.initialSearch || items.length === 0) return;
+    autoOpened.current = true;
+    const want = props.initialSearch.trim().toLowerCase();
+    const hit = items.find((c) => c.code.toLowerCase() === want);
+    if (hit) setModal({ kind: 'edit', capa: hit, readOnly: true });
+  }, [items, props.initialSearch]);
   const overdue = items.filter((c) => c.overdue);
 
   const filtered = useMemo(() => {
@@ -151,19 +164,19 @@ export function CapaView(props: {
             <div style={{ marginBottom: 16 }}>
               <StatStrip
                 items={[
-                  { key: 'total', label: 'Total', count: counters.total, color: 'var(--purple)' },
-                  { key: 'open', label: 'Open', count: counters.open, color: 'var(--amber2)' },
+                  { key: 'total', label: 'CAPAs', count: counters.total, color: 'var(--purple)' },
+                  { key: 'open', label: 'Open', count: counters.open, color: 'var(--blue)' },
                   {
                     key: 'inProgress',
                     label: 'In Progress',
                     count: counters.inProgress,
-                    color: 'var(--blue)',
+                    color: 'var(--amber2)',
                   },
                   {
                     key: 'verified',
                     label: 'Verified',
                     count: counters.verified,
-                    color: 'var(--purple)',
+                    color: 'var(--blue)',
                   },
                   { key: 'closed', label: 'Closed', count: counters.closed, color: 'var(--green2)' },
                   {
@@ -206,31 +219,26 @@ export function CapaView(props: {
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="empty-state">
-                        No CAPAs yet.
+                        {term.trim() ? 'No CAPAs match.' : 'No CAPAs yet.'}
                       </td>
                     </tr>
                   ) : (
                     filtered.map((c) => (
                       <tr
                         key={c.id}
-                        style={c.overdue ? { borderLeft: '3px solid var(--red)' } : undefined}
+                        style={{
+                          cursor: 'pointer',
+                          ...(c.overdue ? { borderLeft: '3px solid var(--red)' } : {}),
+                        }}
+                        onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
+                        title={`Open CAPA ${c.code}`}
                       >
                         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                           {c.code}
                         </td>
                         <td>
                           <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 700,
-                              padding: '2px 6px',
-                              borderRadius: 3,
-                              color: c.type === 'Corrective' ? 'var(--red)' : 'var(--blue)',
-                              background:
-                                c.type === 'Corrective'
-                                  ? 'rgba(220,38,38,0.1)'
-                                  : 'rgba(37,99,235,0.1)',
-                            }}
+                            className={`badge ${c.type === 'Corrective' ? 'b-red' : 'b-blue'}`}
                           >
                             {c.type}
                           </span>
@@ -279,16 +287,8 @@ export function CapaView(props: {
                             {c.status}
                           </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: 3 }}>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              style={{ fontSize: 11 }}
-                              onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
-                            >
-                              👁 View
-                            </button>
                             {canEdit && c.status !== 'Closed' ? (
                               <button
                                 type="button"
@@ -399,7 +399,7 @@ function NewCapaModal({
   );
 
   const [type, setType] = useState<(typeof CAPA_TYPES)[number]>('Corrective');
-  const [capaDate, setCapaDate] = useState(todayLocal());
+  const [capaDate, setCapaDate] = useState(todayIst());
   const [ncRef, setNcRef] = useState('');
   const [jcNo, setJcNo] = useState('');
   const [soNo, setSoNo] = useState('');
@@ -423,7 +423,7 @@ function NewCapaModal({
   async function submit(): Promise<void> {
     setErr(null);
     if (!problem.trim()) {
-      setErr('Problem Description is required');
+      setErr('Problem Description is required.');
       return;
     }
     const input: CreateCapaInput = {
@@ -446,7 +446,7 @@ function NewCapaModal({
   }
 
   return (
-    <Overlay title="➕ New CAPA" onClose={onClose}>
+    <Overlay title="New CAPA" onClose={onClose}>
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label">CAPA No.</label>
@@ -457,7 +457,7 @@ function NewCapaModal({
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">CAPA Type ★</label>
+          <label className="form-label">CAPA Type</label>
           <select
             className="innovic-select"
             value={type}
@@ -494,12 +494,21 @@ function NewCapaModal({
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label">JC No. / SO No.</label>
+          <label className="form-label">JC No.</label>
           <input
             className="innovic-input"
             value={jcNo}
             onChange={(e) => setJcNo(e.target.value)}
-            placeholder="JC or SO number"
+            placeholder="Fills from NC"
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label">SO No.</label>
+          <input
+            className="innovic-input"
+            value={soNo}
+            onChange={(e) => setSoNo(e.target.value)}
+            placeholder="Fills from NC"
           />
         </div>
         <div className="form-grp">
@@ -515,7 +524,9 @@ function NewCapaModal({
           </select>
         </div>
         <div className="form-grp form-full">
-          <label className="form-label">Problem Description ★</label>
+          <label className="form-label">
+            Problem Description<span className="req">★</span>
+          </label>
           <textarea
             className="innovic-input"
             rows={3}
@@ -557,7 +568,8 @@ function EditCapaModal({
   onClose: () => void;
 }): React.JSX.Element {
   const update = useUpdateCapa();
-  // Responsible is a select of operators + active users (legacy L22862).
+  // Responsible and Verified By are one select of operators + active users
+  // (legacy L22862).
   const operatorsQuery = useOperatorsList({ limit: 200, offset: 0, isActive: true });
   const usersQuery = useUsersList({ limit: 200, offset: 0, isActive: true });
   const responsibleOptions = useMemo(() => {
@@ -614,35 +626,45 @@ function EditCapaModal({
   );
 
   return (
-    <Overlay title={`${readOnly ? '👁' : '✏'} CAPA ${capa.code}`} onClose={onClose}>
+    <Overlay title={`CAPA ${capa.code}`} onClose={onClose}>
       <div
         style={{
-          background: 'rgba(124,58,237,0.06)',
-          border: '1px solid rgba(124,58,237,0.2)',
+          background: 'var(--bg3)',
+          border: '1px solid var(--border)',
           padding: 10,
           borderRadius: 8,
           marginBottom: 14,
           fontSize: 12,
+          display: 'flex',
+          gap: 16,
+          flexWrap: 'wrap',
+          alignItems: 'center',
         }}
       >
-        <span
-          style={{
-            fontSize: 11,
-            padding: '2px 6px',
-            borderRadius: 3,
-            color: capa.type === 'Corrective' ? 'var(--red)' : 'var(--blue)',
-            background: capa.type === 'Corrective' ? 'rgba(220,38,38,0.1)' : 'rgba(37,99,235,0.1)',
-          }}
-        >
+        <span className={`badge ${capa.type === 'Corrective' ? 'b-red' : 'b-blue'}`}>
           {capa.type}
-        </span>{' '}
-        | NC: {capa.ncRefs.join(', ') || '—'} | JC: {capa.jcNo ?? '—'} | POL:{' '}
+        </span>
+        <span>
+          <span className="text3">NC No.</span>{' '}
+          <b className="mono">{capa.ncRefs.join(', ') || '—'}</b>
+        </span>
+        <span>
+          <span className="text3">JC No.</span> <b className="mono">{capa.jcNo ?? '—'}</b>
+        </span>
         {/* POL — the CUSTOMER's own purchase-order line number off the SO line
             behind this CAPA. Read-only; it is typed only on the Sales Order. */}
-        <b className="mono" style={{ color: 'var(--purple)' }}>
-          {capa.clientPoLineNo ?? '—'}
-        </b>{' '}
-        | Item: {itemCodeWithRev(capa.itemCode, capa.itemRevision)}
+        <span>
+          <span className="text3">POL</span>{' '}
+          <b className="mono" style={{ color: 'var(--purple)' }}>
+            {capa.clientPoLineNo ?? '—'}
+          </b>
+        </span>
+        <span>
+          <span className="text3">Item Code</span>{' '}
+          <b className="td-code" style={{ color: 'var(--text)' }}>
+            {itemCodeWithRev(capa.itemCode, capa.itemRevision)}
+          </b>
+        </span>
       </div>
 
       <fieldset disabled={readOnly} style={{ border: 'none', padding: 0, margin: 0 }}>
@@ -728,12 +750,21 @@ function EditCapaModal({
           <div className="form-grid" style={{ marginTop: 6 }}>
             <div className="form-grp">
               <label className="form-label">Verified By</label>
-              <input
-                className="innovic-input"
+              <select
+                className="innovic-select"
                 value={f.verifiedBy ?? ''}
                 onChange={(e) => set('verifiedBy', e.target.value)}
-                placeholder="QC Head / Manager"
-              />
+              >
+                <option value="">— Select —</option>
+                {f.verifiedBy && !responsibleOptions.includes(f.verifiedBy) ? (
+                  <option value={f.verifiedBy}>{f.verifiedBy}</option>
+                ) : null}
+                {responsibleOptions.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="form-grp">
               <label className="form-label">Verification Date</label>

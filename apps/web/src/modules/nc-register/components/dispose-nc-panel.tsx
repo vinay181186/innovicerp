@@ -209,7 +209,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                       </option>
                       {reworkOps.map((o) => (
                         <option key={o.opSeq} value={o.opSeq}>
-                          Op{opSrNo(o.opSeq)}
+                          Op {opSrNo(o.opSeq)}
                           {o.operation ? `: ${o.operation}` : ''}
                         </option>
                       ))}
@@ -259,7 +259,6 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                   id="dispRemarks"
                   className="innovic-textarea"
                   rows={2}
-                  placeholder="Additional notes..."
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                 />
@@ -275,9 +274,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             ) : null}
 
             {action === 'return_to_vendor' ? (
-              <Note tone="blue">
-                After disposition, issue the return challan from this NC (Create DC).
-              </Note>
+              <Note tone="blue">After disposition, make the return DC from this NC.</Note>
             ) : null}
 
             {action === 'make_fresh' ? (

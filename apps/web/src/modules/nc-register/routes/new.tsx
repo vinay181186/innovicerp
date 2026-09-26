@@ -95,8 +95,7 @@ function NcRegisterNewPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have create access to NC Register. Ask an admin for L2 Data Entry or above
-            in QC.
+            You do not have permission to report an NC. Ask an admin.
           </div>
         </div>
       </div>
@@ -112,7 +111,7 @@ function NcRegisterNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">⚠️ Report Non-Conformance</div>
+            <div className="panel-title">Report Non-Conformance</div>
           </div>
         </div>
         <div className="panel-body">

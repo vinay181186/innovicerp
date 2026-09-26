@@ -26,12 +26,14 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { canDownloadDrawings, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { useJobCardsList } from '@/modules/job-cards/api';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoQcStatusView } from '@/modules/so-qc-status/components/so-qc-status-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ConfirmDialog } from '@/ui/feedback';
 import {
   qcDocViewUrl,
   saveQcDoc,
@@ -102,7 +104,7 @@ function QcDocumentsPage(): React.JSX.Element {
   if (eff && !effectiveFormPerms(eff, 'qcdocs_upload').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+        ⛔ You do not have permission to view QC Documents. Ask an admin.
       </div>
     );
   }
@@ -119,7 +121,7 @@ function QcDocumentsPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🗃 QC Documents
+          QC Documents
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button
@@ -195,7 +197,7 @@ function MatrixView(): React.JSX.Element {
   if (sos.length === 0) {
     return (
       <div className="empty-state" style={{ padding: 60 }}>
-        No SOs found
+        No SOs yet.
       </div>
     );
   }
@@ -206,7 +208,7 @@ function MatrixView(): React.JSX.Element {
     ov === 'complete'
       ? 'Completed'
       : ov === 'partial'
-        ? 'In Progress'
+        ? 'Partly Completed'
         : ov === 'no_jc'
           ? 'No JC'
           : 'No QC';
@@ -254,10 +256,10 @@ function MatrixView(): React.JSX.Element {
           disabled={!matrix}
           onClick={() => matrix && exportMatrixExcel(matrix)}
         >
-          ⬇ Export Excel
+          ⬇ Export
         </button>
         {/* Absent, not greyed, for anyone without the download tick — and the
-            server would refuse the links anyway. Export Excel beside it is a
+            server would refuse the links anyway. Export beside it is a
             spreadsheet this page builds itself, not a stored file, so it is
             untouched. */}
         {maySave ? (
@@ -296,7 +298,7 @@ function MatrixView(): React.JSX.Element {
             }
             onSearch={setSoSearch}
             loading={soQuery.isFetching}
-            placeholder="🔍 Select SO — type code or customer…"
+            placeholder="Search SO No. or customer…"
             options={sos.map((s) => ({ id: s.id, code: s.code, name: s.customerName ?? '' }))}
           />
         </div>
@@ -450,7 +452,7 @@ function MatrixView(): React.JSX.Element {
               ) : filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={7 + cols.length} className="empty-state">
-                    No data
+                    {rowsAll.length === 0 ? 'No lines yet.' : 'No lines match.'}
                   </td>
                 </tr>
               ) : (
@@ -470,7 +472,7 @@ function MatrixView(): React.JSX.Element {
                     >
                       {r.clientPoLineNo ?? '—'}
                     </td>
-                    <td className="td-code" style={{ color: 'var(--purple)' }}>
+                    <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                       {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
                     </td>
                     <td style={{ fontSize: 11 }}>{r.itemName ?? ''}</td>
@@ -499,7 +501,7 @@ function MatrixView(): React.JSX.Element {
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
         <span
           style={{ cursor: 'help' }}
-          title="✅ Completed (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Report Missing = QC completed but no report attached"
+          title="✅ Completed (date) + ⬇ Download · ⏳ QC Pending (qty) · Waiting · — not applicable · Report Missing = QC completed but no report attached"
         >
           ?
         </span>
@@ -559,7 +561,7 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
   if (cell.pending) {
     return (
       <td>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)' }}>⏳ Pending</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)' }}>⏳ QC Pending</div>
         <div style={{ fontSize: 11, color: 'var(--amber2)' }}>{cell.qcPending} pcs</div>
         {cell.accepted > 0 ? (
           <div style={{ fontSize: 11, color: 'var(--green2)' }}>{cell.accepted} Accepted</div>
@@ -622,7 +624,7 @@ async function openStoragePath(path: string, refCode?: string | null): Promise<v
     const url = await qcDocViewUrl(path, refCode);
     window.open(url, '_blank', 'noopener');
   } catch (e) {
-    window.alert(e instanceof Error ? e.message : 'Could not open file');
+    window.alert(e instanceof Error ? e.message : 'Could not open file. Try again.');
   }
 }
 
@@ -650,7 +652,7 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
       if (c.done)
         return c.hasDoc ? `Completed (${fmtExportDate(c.docDate)})` : 'Completed, Report Missing';
       if (c.pending)
-        return `Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} Accepted` : ''}`;
+        return `QC Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} Accepted` : ''}`;
       return 'Waiting';
     });
     const overall =
@@ -670,7 +672,7 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, `QC Docs ${matrix.so.code}`.slice(0, 31));
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = todayIst();
   XLSX.writeFile(wb, `QC_Documents_${matrix.so.code}_${stamp}.xlsx`);
 }
 
@@ -740,7 +742,7 @@ function LineDetailModal({
       >
         <div className="panel-hdr">
           <span className="panel-title">
-            📄 QC Documents{' '}
+            QC Documents{' '}
             {data
               ? `— ${itemCodeWithRev(data.itemCode, data.itemRevision, '')} (${data.jcCode})`
               : ''}
@@ -814,7 +816,7 @@ function LineDetailBody({
         <div>
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item Code</span>
           <br />
-          <b style={{ color: 'var(--purple)' }}>
+          <b className="mono fw-700" style={{ color: 'var(--text)' }}>
             {itemCodeWithRev(data.itemCode, data.itemRevision, '')}
           </b>{' '}
           {data.itemName ?? ''}
@@ -829,11 +831,6 @@ function LineDetailBody({
           <br />
           <b>{data.orderQty} pcs</b>
         </div>
-        <div>
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>QC Batches</span>
-          <br />
-          <b>{data.batches.length}</b>
-        </div>
         {maySave ? (
           <div style={{ marginLeft: 'auto' }}>
             <button
@@ -844,6 +841,7 @@ function LineDetailBody({
                 color: 'var(--green2)',
                 border: '1px solid rgba(34,197,94,0.3)',
               }}
+              disabled={!data.sections.some((s) => s.docs.some((d) => d.storagePath))}
               onClick={() => void downloadAllLine(data)}
             >
               ⬇ Download All
@@ -856,7 +854,7 @@ function LineDetailBody({
       {data.batches.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-            QC Inspection Batches
+            QC Inspection Batches ({data.batches.length})
           </div>
           {data.batches.map((b, i) => (
             <div
@@ -878,7 +876,7 @@ function LineDetailBody({
               </span>
               <span>{fmtDate(b.date, '')}</span>
               <span>
-                Op{opSrNo(b.opSeq)}: <b>{b.operation}</b>
+                Op {opSrNo(b.opSeq)}: <b>{b.operation}</b>
               </span>
               <span style={{ color: 'var(--green2)' }}>
                 Accepted: <b>{b.accepted}</b>
@@ -889,7 +887,7 @@ function LineDetailBody({
                 </span>
               ) : null}
               <span className="mono fw-700" style={{ color: 'var(--cyan)', marginLeft: 'auto' }}>
-                Sr. {b.srFrom} to {b.srTo}
+                Pieces {b.srFrom} to {b.srTo}
               </span>
             </div>
           ))}
@@ -957,7 +955,7 @@ function DocSection({
 
   async function onUpload(file: File): Promise<void> {
     if (!companyId) {
-      setErr('Session expired — log in again');
+      setErr('Session expired. Log in again.');
       return;
     }
     if (srTo < srFrom) {
@@ -989,10 +987,7 @@ function DocSection({
     }
   }
 
-  async function onDelete(id: string): Promise<void> {
-    if (!window.confirm('Delete this QC document upload?')) return;
-    await del.mutateAsync(id);
-  }
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; fileName: string } | null>(null);
 
   const showUpload = canUpload && (nextSrFrom <= totalNeeded || totalNeeded === 0);
 
@@ -1029,7 +1024,7 @@ function DocSection({
               color: section.mandatory ? 'var(--red)' : 'var(--text3)',
             }}
           >
-            {section.mandatory ? 'MANDATORY' : 'OPTIONAL'}
+            {section.mandatory ? 'Mandatory' : 'Optional'}
           </span>
         </div>
         <span style={{ fontWeight: 700, fontSize: 11, color: statusColor }}>{statusLabel}</span>
@@ -1059,7 +1054,7 @@ function DocSection({
           }}
         >
           <span className="mono fw-700" style={{ fontSize: 11, color: 'var(--cyan)' }}>
-            {up.srFrom != null && up.srTo != null ? `Sr. ${up.srFrom} – ${up.srTo}` : 'Sr. —'}
+            {up.srFrom != null && up.srTo != null ? `Pieces ${up.srFrom} – ${up.srTo}` : '—'}
           </span>
           {up.srFrom != null && up.srTo != null ? (
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -1092,7 +1087,7 @@ function DocSection({
                 className="btn btn-ghost btn-sm"
                 style={{ fontSize: 11, color: 'var(--red2)' }}
                 disabled={del.isPending}
-                onClick={() => void onDelete(up.id)}
+                onClick={() => setPendingDelete({ id: up.id, fileName: up.fileName })}
               >
                 ✗
               </button>
@@ -1100,6 +1095,20 @@ function DocSection({
           </div>
         </div>
       ))}
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          title={`Delete ${pendingDelete.fileName}?`}
+          message="The file is removed from QC Documents."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={async () => {
+            await del.mutateAsync(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      ) : null}
 
       {showUpload ? (
         <div
@@ -1166,10 +1175,7 @@ function DocSection({
 
 async function downloadAllLine(data: QcLineDetailResponse): Promise<void> {
   const paths = data.sections.flatMap((s) => s.docs.map((d) => d.storagePath)).filter(Boolean);
-  if (paths.length === 0) {
-    window.alert('No documents uploaded yet');
-    return;
-  }
+  if (paths.length === 0) return;
   for (const p of paths) {
     try {
       await saveQcDoc(p, null, data.jcCode);
@@ -1232,13 +1238,10 @@ function RegisterView(): React.JSX.Element {
       const url = await qcDocViewUrl(d.storagePath, d.soCodeText);
       window.open(url, '_blank', 'noopener');
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not open file');
+      window.alert(e instanceof Error ? e.message : 'Could not open file. Try again.');
     }
   }
-  async function onDelete(d: QcDocument): Promise<void> {
-    if (!window.confirm(`Remove "${d.fileName}" from the QC document register?`)) return;
-    await del.mutateAsync(d.id);
-  }
+  const [pendingDelete, setPendingDelete] = useState<QcDocument | null>(null);
 
   return (
     <div>
@@ -1271,7 +1274,7 @@ function RegisterView(): React.JSX.Element {
               })
             }
           >
-            <option value="">All categories</option>
+            <option value="">All Categories</option>
             {QC_DOC_CATEGORIES.map((c) => (
               <option key={c} value={c}>
                 {CATEGORY_LABEL[c]}
@@ -1337,7 +1340,9 @@ function RegisterView(): React.JSX.Element {
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="empty-state">
-                    No QC documents yet.
+                    {search.category || search.search
+                      ? 'No QC Documents match.'
+                      : 'No QC Documents yet.'}
                   </td>
                 </tr>
               ) : (
@@ -1362,7 +1367,7 @@ function RegisterView(): React.JSX.Element {
                         line behind the card, never items.revision. A document
                         with no card behind it gets the helper's dash, which is
                         what the JC and SO cells either side already show. */}
-                    <td className="td-code" style={{ color: 'var(--purple)' }}>
+                    <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                       {itemCodeWithRev(d.itemCode, d.itemRevision)}
                     </td>
                     <td style={{ fontSize: 11 }}>
@@ -1411,7 +1416,7 @@ function RegisterView(): React.JSX.Element {
                             type="button"
                             className="btn btn-danger btn-sm"
                             disabled={del.isPending}
-                            onClick={() => void onDelete(d)}
+                            onClick={() => setPendingDelete(d)}
                           >
                             ✕
                           </button>
@@ -1425,6 +1430,20 @@ function RegisterView(): React.JSX.Element {
           </table>
         </div>
       </div>
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          title={`Delete ${pendingDelete.fileName}?`}
+          message="The file is removed from QC Documents."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          onConfirm={async () => {
+            await del.mutateAsync(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      ) : null}
 
       {uploadOpen && me?.companyId ? (
         <UploadModal companyId={me.companyId} onClose={() => setUploadOpen(false)} />
@@ -1444,8 +1463,18 @@ function UploadModal({
   const [file, setFile] = useState<File | null>(null);
   const [category, setCategory] = useState<QcDocCategory>('qc-docs');
   const [docType, setDocType] = useState<string>(QC_DOC_TYPES[0]);
+  // JC / SO are picked from their masters (a hand-typed code broke the link on
+  // every typo). What is SAVED is unchanged: the picked code as text.
+  const [jcId, setJcId] = useState<string | null>(null);
   const [jcCode, setJcCode] = useState('');
+  const [jcSearch, setJcSearch] = useState('');
+  const [soId, setSoId] = useState<string | null>(null);
   const [soCode, setSoCode] = useState('');
+  const [soSearch, setSoSearch] = useState('');
+  const jcQuery = useJobCardsList({ search: jcSearch || undefined, limit: 20, offset: 0 });
+  const soQuery = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
+  const jcItems = jcQuery.data?.items ?? [];
+  const soItems = soQuery.data?.items ?? [];
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1541,21 +1570,52 @@ function UploadModal({
               </select>
             </div>
             <div className="form-grp">
-              <label className="form-label">JC No. (optional)</label>
-              <input
-                className="innovic-input"
-                value={jcCode}
-                onChange={(e) => setJcCode(e.target.value)}
-                placeholder="IN-JC-00001"
+              <label className="form-label">JC No.</label>
+              <SearchableSelect
+                id="qc-doc-upload-jc"
+                value={jcId}
+                valueLabel={jcCode || undefined}
+                onChange={(id) => {
+                  const jc = jcItems.find((j) => j.id === id);
+                  setJcId(id);
+                  setJcCode(jc?.code ?? '');
+                  // Fetch-from: a JC raised against an SO line already knows
+                  // its SO, so SO No. fills from it.
+                  if (jc?.sourceLink?.type === 'so') {
+                    setSoId(jc.sourceLink.salesOrderId);
+                    setSoCode(jc.sourceLink.code);
+                  }
+                }}
+                onSearch={setJcSearch}
+                loading={jcQuery.isFetching}
+                placeholder="Search JC No. or item…"
+                selectedLabel={(o) => o.code ?? o.name}
+                options={jcItems.map((j) => ({
+                  id: j.id,
+                  code: j.code,
+                  name: `${itemCodeWithRev(j.itemCode, j.itemRevision)} ${j.itemName}`,
+                }))}
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">SO No. (optional)</label>
-              <input
-                className="innovic-input"
-                value={soCode}
-                onChange={(e) => setSoCode(e.target.value)}
-                placeholder="IN-SO-00001"
+              <label className="form-label">SO No.</label>
+              <SearchableSelect
+                id="qc-doc-upload-so"
+                value={soId}
+                valueLabel={soCode || undefined}
+                onChange={(id) => {
+                  setSoId(id);
+                  setSoCode(soItems.find((so) => so.id === id)?.code ?? '');
+                }}
+                onSearch={setSoSearch}
+                loading={soQuery.isFetching}
+                placeholder="Search SO No. or customer…"
+                selectedLabel={(o) => o.code ?? o.name}
+                options={soItems.map((so) => ({
+                  id: so.id,
+                  code: so.code,
+                  name: so.customerName ?? '',
+                }))}
               />
             </div>
           </div>
@@ -1574,7 +1634,7 @@ function UploadModal({
               disabled={busy}
               onClick={() => void submit()}
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Upload &amp; Register
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save QC Document
             </button>
           </div>
         </div>

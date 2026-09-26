@@ -58,7 +58,7 @@ function GroupPanel({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={4} className="empty-state">
-                  No QC data yet
+                  No QC data yet.
                 </td>
               </tr>
             ) : (
@@ -123,14 +123,14 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
               {fpy.byItem.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="empty-state">
-                    No QC data yet
+                    No QC data yet.
                   </td>
                 </tr>
               ) : (
                 fpy.byItem.map((it: QcFpyItemRow) => (
                   <tr key={it.code}>
-                    {/* Legacy L18823 hardcodes #8B5CF6, not var(--purple) (#7c3aed). */}
-                    <td className="td-code" style={{ color: '#8B5CF6' }}>
+                    {/* Item code strong in the body colour (item-code rule). */}
+                    <td className="td-code" style={{ color: 'var(--text)' }}>
                       {it.code}
                     </td>
                     <td style={{ fontSize: 12 }}>{it.name}</td>

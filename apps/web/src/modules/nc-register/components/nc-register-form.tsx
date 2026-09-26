@@ -3,6 +3,7 @@
 
 import {
   type CreateNcRegisterInput,
+  type JobCardListItem,
   NC_REASON_CATEGORIES,
   NC_REASON_CATEGORY_LABELS,
   type NcReasonCategory,
@@ -10,7 +11,7 @@ import {
   type UpdateNcRegisterInput,
   opSrNo,
 } from '@innovic/shared';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -18,8 +19,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { useItemsList } from '@/modules/items/api';
-import { useJobCardsList } from '@/modules/job-cards/api';
-import { useNcRegisterList } from '../api';
+import { useJobCard, useJobCardsList } from '@/modules/job-cards/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 
 interface FormValues {
@@ -44,7 +44,7 @@ interface FormValues {
 
 const DEFAULTS: FormValues = {
   code: '',
-  ncDate: todayLocal(),
+  ncDate: todayIst(),
   jobCardId: '',
   itemId: '',
   rejectedQty: 1,
@@ -83,8 +83,24 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
   const { register, handleSubmit, formState, watch, setValue } = form;
   const errors = formState.errors;
 
-  const { data: jcData } = useJobCardsList({ limit: 200, offset: 0 });
-  const jcs = jcData?.items ?? [];
+  // JC No. is a searchable picker (server search), not a fixed list of the
+  // latest 200 — older JCs were unreachable. The picked row is kept so the
+  // item / SO prefill still works after the search term changes.
+  const [jcSearch, setJcSearch] = useState('');
+  const { data: jcData, isFetching: jcFetching } = useJobCardsList(
+    { search: jcSearch || undefined, limit: 50, offset: 0 },
+    { enabled: !isEdit },
+  );
+  const jcs = useMemo(() => jcData?.items ?? [], [jcData]);
+  const [pickedJc, setPickedJc] = useState<JobCardListItem | null>(null);
+  const jcOptions = jcs.map((jc) => ({
+    id: jc.id,
+    code: jc.code,
+    // CODE/REV so two job cards on the same part at different drawing
+    // revisions can be told apart. What the pick WRITES stays bare — the
+    // prefill effect sets itemCodeText from jc.itemCode alone.
+    name: `${itemCodeWithRev(jc.itemCode, jc.itemRevision, '')} ${jc.itemName}`.trim(),
+  }));
 
   const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
   const items = itemsData?.items ?? [];
@@ -114,11 +130,19 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     setValue('itemNameText', match?.name ?? undefined, { shouldDirty: true });
   };
 
-  // Pull recent NCs to auto-suggest the next code (legacy `_nextNCNo` assigns
-  // NC-NNNN from the running max). Only fetched in create mode.
-  const { data: recentNcs } = useNcRegisterList({ limit: 200, offset: 0 }, { enabled: !isEdit });
-
   const selectedJcId = watch('jobCardId');
+
+  // The job card the form OPENED on (seeded from a QC op card). It may not be
+  // in the searched list, so it is fetched by id — the JC box shows its code
+  // and the item / SO prefill can read it.
+  const seededJcId = useRef(defaults.jobCardId);
+  const { data: seededJc } = useJobCard(
+    !isEdit && seededJcId.current ? seededJcId.current : undefined,
+  );
+  const resolveJc = (id: string): JobCardListItem | undefined =>
+    (pickedJc?.id === id ? pickedJc : undefined) ??
+    jcs.find((j) => j.id === id) ??
+    (seededJc?.id === id ? seededJc : undefined);
 
   // Operation dropdown depends on the selected JC's ops (legacy `_ncFillJC`,
   // HTML L22609). Reuses op-entry's enriched-ops hook (cross-module read hook).
@@ -128,32 +152,32 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
   );
   const opsForJc = useMemo(() => (jcOps ?? []).slice().sort((a, b) => a.opSeq - b.opSeq), [jcOps]);
 
-  // Pre-fill a suggested NC code once on mount (create mode only). Manual edit
-  // still allowed — server enforces uniqueness.
+  // NC No. is assigned by the server on save (NC series, like an ERPNext
+  // naming series) — the form shows "Auto" and sends no code.
+
+  // Op fields are reset only when the JC actually CHANGES — not when the
+  // searched JC list refreshes, and not on mount when the op card seeded a JC
+  // and an operation (legacy behaviour, `fRejOp`).
+  const prevJcId = useRef(defaults.jobCardId);
+  // The SO No. this form last filled from a JC. When the JC changes and SO No.
+  // still holds that value (the user did not type over it), it follows the
+  // new JC.
+  const autoSoCode = useRef<string | null>(null);
+
   useEffect(() => {
     if (isEdit) return;
-    if (!recentNcs?.items) return;
-    const current = watch('code');
-    if (current && current.trim().length > 0) return;
-    let max = 0;
-    for (const r of recentNcs.items) {
-      const num = Number.parseInt(String(r.code).replace(/\D/g, ''), 10);
-      if (!Number.isNaN(num) && num > max) max = num;
+    const jcChanged = selectedJcId !== prevJcId.current;
+    prevJcId.current = selectedJcId;
+    if (jcChanged) {
+      // Reset the op selection when the JC changes — legacy clears `fRejOp`.
+      setValue('jcOpId', undefined, { shouldDirty: false });
+      setValue('opSeq', undefined, { shouldDirty: false });
+      setValue('operationText', undefined, { shouldDirty: false });
     }
-    setValue('code', `NC-${String(max + 1).padStart(4, '0')}`, { shouldDirty: false });
-  }, [recentNcs, isEdit, setValue, watch]);
-
-  // The job card the form OPENED on. When the op card seeds a JC and an
-  // operation, this effect must not wipe the operation the moment it runs on
-  // mount — it only clears the op selection when the user picks a DIFFERENT
-  // JC than the one the form started with (legacy behaviour, `fRejOp`).
-  const seededJcId = useRef(defaults.jobCardId);
-
-  useEffect(() => {
-    if (isEdit) return;
     if (!selectedJcId) return;
-    const jc = jcs.find((j) => j.id === selectedJcId);
-    if (jc?.itemId) {
+    const jc = resolveJc(selectedJcId);
+    if (!jc) return;
+    if (jc.itemId) {
       setValue('itemId', jc.itemId, { shouldDirty: true });
       if (jc.itemCode) {
         setValue('itemCodeText', jc.itemCode, { shouldDirty: true });
@@ -162,12 +186,15 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         setValue('itemNameText', jc.itemName, { shouldDirty: true });
       }
     }
-    if (selectedJcId === seededJcId.current) return;
-    // Reset the op selection when the JC changes — legacy clears `fRejOp`.
-    setValue('jcOpId', undefined, { shouldDirty: false });
-    setValue('opSeq', undefined, { shouldDirty: false });
-    setValue('operationText', undefined, { shouldDirty: false });
-  }, [selectedJcId, isEdit, jcs, setValue]);
+    // Fetch-from: the JC already knows its SO — fill SO No. when it is blank
+    // or still holds the value filled from the previous JC.
+    const currentSo = watch('soCodeText') ?? '';
+    if (!currentSo || currentSo === autoSoCode.current) {
+      const jcSo = jc.sourceLink?.type === 'so' ? jc.sourceLink.code : '';
+      if (jcSo !== currentSo) setValue('soCodeText', jcSo, { shouldDirty: true });
+      autoSoCode.current = jcSo || null;
+    }
+  }, [selectedJcId, isEdit, jcs, pickedJc, seededJc, setValue, watch]);
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {
@@ -180,8 +207,8 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
       };
       await props.onSubmit(payload);
     } else {
+      // No `code`: the server assigns the next NC No.
       const payload: CreateNcRegisterInput = {
-        code: values.code.trim(),
         ncDate: values.ncDate,
         jobCardId: values.jobCardId,
         ...(values.jcOpId ? { jcOpId: values.jcOpId } : {}),
@@ -214,18 +241,16 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            NC No.<span className="req">★</span>
+            NC No.
           </label>
           <input
             id="code"
             className="innovic-input"
-            autoFocus={!isEdit}
             autoComplete="off"
-            readOnly={isEdit}
-            placeholder="NC-0010"
-            {...register('code', { required: !isEdit ? 'NC No. is required' : false })}
+            readOnly
+            placeholder="Auto"
+            {...register('code')}
           />
-          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="ncDate">
@@ -235,7 +260,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             id="ncDate"
             type="date"
             className="innovic-input"
-            {...register('ncDate', { required: 'NC Date is required' })}
+            {...register('ncDate', { required: 'NC Date is required.' })}
           />
         </div>
 
@@ -245,23 +270,23 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
               <label className="form-label" htmlFor="jobCardId">
                 JC No.<span className="req">★</span>
               </label>
-              <select
+              <SearchableSelect
                 id="jobCardId"
-                className="innovic-select"
-                {...register('jobCardId', { required: 'JC No. is required' })}
-              >
-                <option value="">-- Select JC --</option>
-                {jcs.map((jc) => (
-                  <option key={jc.id} value={jc.id}>
-                    {/* The picker shows CODE/REV so the reporter can tell two job
-                        cards on the same part at different drawing revisions
-                        apart. What the pick then WRITES stays bare — see the
-                        prefill effect above, which sets itemCodeText from
-                        jc.itemCode alone. */}
-                    {jc.code} — {itemCodeWithRev(jc.itemCode, jc.itemRevision, '')} {jc.itemName}
-                  </option>
-                ))}
-              </select>
+                value={selectedJcId || null}
+                valueLabel={selectedJcId ? resolveJc(selectedJcId)?.code : undefined}
+                onChange={(id) => {
+                  setPickedJc(jcs.find((j) => j.id === id) ?? null);
+                  setValue('jobCardId', id ?? '', { shouldDirty: true, shouldValidate: true });
+                }}
+                onSearch={setJcSearch}
+                loading={jcFetching}
+                placeholder="Search JC No. or item…"
+                options={jcOptions}
+              />
+              <input
+                type="hidden"
+                {...register('jobCardId', { required: 'JC No. is required.' })}
+              />
               {errors.jobCardId?.message ? (
                 <div className="form-error">{errors.jobCardId.message}</div>
               ) : null}
@@ -275,19 +300,22 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                 className="innovic-input"
                 list="dlNcItems"
                 autoComplete="off"
-                placeholder="🔍 Auto-fills from JC, or search code…"
+                placeholder="Fills from JC, or type code…"
                 value={watch('itemCodeText') ?? ''}
                 onChange={(e) => onItemCodeChange(e.target.value)}
               />
               {/* itemId is the submitted value; hidden so RHF can validate it. */}
-              <input type="hidden" {...register('itemId', { required: 'Item Code is required' })} />
+              <input
+                type="hidden"
+                {...register('itemId', { required: 'Item Code is required.' })}
+              />
               {watch('itemId') ? (
                 <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                   ✓ {watch('itemNameText') ?? ''}
                 </div>
               ) : watch('itemCodeText')?.trim() ? (
                 <div style={{ color: 'var(--red2)', fontSize: 11, marginTop: 2 }}>
-                  ⚠ not found in item master
+                  ⚠ Item not found.
                 </div>
               ) : null}
               {errors.itemId?.message ? (
@@ -308,7 +336,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                 }}
                 onSearch={setSoSearch}
                 loading={soQuery.isFetching}
-                placeholder="🔍 SO No. — type code or customer…"
+                placeholder="Search SO No. or customer…"
                 options={soOptions}
               />
             </div>
@@ -333,11 +361,11 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                   }}
                 >
                   <option value="">
-                    {selectedJcId ? '-- Select --' : '-- Select JC first --'}
+                    {selectedJcId ? '-- Select Op --' : '-- Select JC first --'}
                   </option>
                   {opsForJc.map((op) => (
                     <option key={op.id} value={op.id}>
-                      Op{opSrNo(op.opSeq)}: {op.operation}
+                      Op {opSrNo(op.opSeq)}: {op.operation}
                     </option>
                   ))}
                 </select>
@@ -389,7 +417,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                 className="innovic-input fw-700 red"
                 {...register('rejectedQty', {
                   valueAsNumber: true,
-                  min: { value: 0.01, message: 'Must be > 0' },
+                  min: { value: 0.01, message: 'Rejected must be more than 0.' },
                 })}
               />
               {errors.rejectedQty?.message ? (
@@ -434,7 +462,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             rows={3}
             placeholder="Describe the defect or problem in detail..."
             {...register('reason', {
-              validate: (v) => (v?.trim().length ?? 0) > 0 || 'Defect Description is required',
+              validate: (v) => (v?.trim().length ?? 0) > 0 || 'Defect Description is required.',
             })}
           />
           {errors.reason?.message ? (
@@ -457,7 +485,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             style={{
               color: 'var(--red2)',
               background: 'var(--red3)',
-              border: '1px solid #fca5a5',
+              border: '1px solid var(--red)',
               borderRadius: 6,
               padding: '6px 10px',
               fontSize: 12,

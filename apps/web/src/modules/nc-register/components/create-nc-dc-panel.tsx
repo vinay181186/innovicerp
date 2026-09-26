@@ -5,7 +5,7 @@
 import type { CreateNcDcInput, NcRegister } from '@innovic/shared';
 import { Loader2, Truck } from 'lucide-react';
 import { useState } from 'react';
-import { todayLocal } from '@/lib/date';
+import { todayIst } from '@/lib/date';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { Note } from './nc-note';
 
@@ -21,9 +21,9 @@ export function CreateNcDcPanel(props: {
   const { nc, pending, error, onSubmit } = props;
   // Defaults to today, like every other DC / receipt screen (delivery-challans
   // create + receive, nc-register-form). It opened blank before, which left the
-  // Create DC button disabled after a vendor was picked — a required ★ field the
+  // Save DC button disabled after a vendor was picked — a required ★ field the
   // user could not see was empty. Still editable.
-  const [dcDate, setDcDate] = useState(todayLocal());
+  const [dcDate, setDcDate] = useState(todayIst());
   // Preselect the return vendor from the NC's source when the material came
   // from a vendor (GRN/OSP reject) — the server also defaults it, but showing
   // it here lets the operator see and confirm the supplier. Still overridable.
@@ -57,9 +57,6 @@ export function CreateNcDcPanel(props: {
           <Truck size={14} style={{ verticalAlign: -2 }} /> Create DC — return{' '}
           {Number(nc.rejectedQty)} pcs to vendor
         </div>
-        <span className="text3" style={{ fontSize: 11 }}>
-          Reference: <span className="mono">{nc.code}</span>
-        </span>
       </div>
       <div className="panel-body">
         <form onSubmit={submit}>
@@ -132,7 +129,7 @@ export function CreateNcDcPanel(props: {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 16 }}>
             <button type="submit" className="btn btn-primary" disabled={pending || !canSubmit}>
               {pending ? <Loader2 size={13} className="animate-spin" /> : <Truck size={13} />}
-              Create DC
+              Save DC
             </button>
           </div>
         </form>

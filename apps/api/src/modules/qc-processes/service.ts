@@ -204,7 +204,7 @@ export async function softDeleteQcProcess(id: string, user: AuthContext): Promis
     // position of generating a QC step whose name nothing defines.
     if (row.code === DEFAULT_FINAL_QC_OP) {
       throw new ConflictError(
-        `"${row.code}" is the automatic Final Inspection step and cannot be deleted. Set it Inactive.`,
+        `Cannot delete QC Process ${row.code}: it is the automatic Final Inspection step. Set it to Inactive instead.`,
       );
     }
 
