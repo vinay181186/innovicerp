@@ -78,7 +78,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load SO documents. Try again.'}
       </div>
     );
@@ -206,7 +206,7 @@ function LinePanel({
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="panel-hdr" style={{ background: 'rgba(34,197,94,0.06)' }}>
-        <span className="panel-title" style={{ color: 'var(--green)' }}>
+        <span className="panel-title" style={{ color: 'var(--green2)' }}>
           {/* POL is the line number on the CUSTOMER'S OWN purchase order — an
               extra value beside our line number, never a substitute for it. */}
           📦 Ln {line.lineNo} ·{' '}
@@ -233,7 +233,7 @@ function LinePanel({
                 style={{
                   padding: '6px 14px',
                   background: 'var(--bg4)',
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 700,
                   color: 'var(--text3)',
                   textTransform: 'uppercase',
@@ -310,18 +310,18 @@ function FileRow({
         >
           {file.fileName}
           {file.source === 'qc' ? (
-            <span className="badge b-grey" style={{ marginLeft: 6, fontSize: 9 }}>
+            <span className="badge b-grey" style={{ marginLeft: 6, fontSize: 11 }}>
               QC · read-only
             </span>
           ) : null}
         </div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>{meta}</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{meta}</div>
       </div>
       <div style={{ display: 'flex', gap: 4 }}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 10 }}
+          style={{ fontSize: 11 }}
           title="Preview this file (download from the preview window)"
           onClick={() => onView(file)}
         >
@@ -331,7 +331,7 @@ function FileRow({
           <button
             type="button"
             className="btn btn-danger btn-sm"
-            style={{ fontSize: 10, padding: '2px 6px' }}
+            style={{ fontSize: 11, padding: '2px 6px' }}
             disabled={deleting}
             onClick={() => onDelete(file)}
           >
@@ -482,12 +482,12 @@ function UploadDialog({
               onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
             />
             {files.length > 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700, marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: 'var(--green2)', fontWeight: 700, marginTop: 4 }}>
                 {files.length} file(s): {files.map((f) => f.name).join(', ')}
               </div>
             ) : null}
           </div>
-          {msg ? <div style={{ fontSize: 12, color: 'var(--red)' }}>{msg}</div> : null}
+          {msg ? <div style={{ fontSize: 12, color: 'var(--red2)' }}>{msg}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
               Cancel

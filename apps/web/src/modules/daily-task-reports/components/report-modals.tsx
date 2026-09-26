@@ -181,7 +181,7 @@ function ReportEditor({
         </div>
       </div>
 
-      {err ? <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
+      {err ? <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
           Cancel
@@ -257,22 +257,22 @@ export function ViewReportModal({ id, onClose }: { id: string; onClose: () => vo
         <div>
           <div style={{ padding: '10px 14px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             <div>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>USER</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>USER</span>
               <br />
               <b>{r.userName ?? '—'}</b>
             </div>
             <div>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>REPORT DATE</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>REPORT DATE</span>
               <br />
               <b>{fmtDate(r.reportDate)}</b>
             </div>
             <div>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>SHIFT</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>SHIFT</span>
               <br />
               <b>{SHIFT_LABELS[r.shift]}</b>
             </div>
             <div>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>TOTAL HOURS</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>TOTAL HOURS</span>
               <br />
               <b style={{ color: 'var(--cyan)' }}>{r.totalHours.toFixed(1)}h</b>
             </div>

@@ -90,7 +90,7 @@ function NumberTile({
 }): JSX.Element {
   return (
     <div style={tile} title={title}>
-      <div style={{ fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{label}</div>
       <div
         className="mono fw-700"
         style={{ fontSize: 18, color: color ?? 'var(--text)', whiteSpace: 'nowrap' }}
@@ -106,7 +106,7 @@ function LineIdentity({ f }: { f: StockLineFacts }): JSX.Element {
   return (
     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 10 }}>
       <div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>Item</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Item</div>
         {/* The item code is the main thing: strong mono, darkest text. */}
         <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
           {f.itemLabel}
@@ -118,13 +118,13 @@ function LineIdentity({ f }: { f: StockLineFacts }): JSX.Element {
         ) : null}
       </div>
       <div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>SO</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>SO</div>
         <b className="mono" style={{ whiteSpace: 'nowrap' }}>
           {f.soCode}
         </b>
       </div>
       <div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>Ln</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Ln</div>
         <b className="mono">{f.lineNo}</b>
       </div>
     </div>
@@ -140,7 +140,7 @@ function ErrorBox({ message }: { message: string }): JSX.Element {
         padding: 8,
         borderRadius: 4,
         background: 'var(--red3)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
       }}
     >
       {message}
@@ -257,7 +257,7 @@ export function AllocateStockModal({
         <label
           className="form-label"
           htmlFor="allocate-qty"
-          style={{ color: 'var(--amber)', fontWeight: 700 }}
+          style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
           Qty to allocate ★
         </label>
@@ -390,7 +390,7 @@ export function ReleaseStockModal({
         <label
           className="form-label"
           htmlFor="release-qty"
-          style={{ color: 'var(--amber)', fontWeight: 700 }}
+          style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
           Qty to release ★
         </label>
@@ -415,7 +415,7 @@ export function ReleaseStockModal({
         <label
           className="form-label"
           htmlFor="release-reason"
-          style={{ color: 'var(--amber)', fontWeight: 700 }}
+          style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
           Reason ★
         </label>

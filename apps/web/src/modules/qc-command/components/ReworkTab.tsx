@@ -28,7 +28,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
           Rework Cycle Tracking — {rework.length} items with multiple attempts
         </div>
         {rework.length === 0 ? (
-          <div className="empty-state" style={{ color: 'var(--green)' }}>
+          <div className="empty-state" style={{ color: 'var(--green2)' }}>
             ✅ No rework cycles — all items accepted at first QC
           </div>
         ) : (
@@ -54,7 +54,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                   <tr key={g.jcOpId}>
                     <td className="td-code">
                       <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
-                      <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                      <span style={{ color: 'var(--red2)', fontWeight: 700 }}>
                         Op{opSrNo(g.opSeq)}
                       </span>
                     </td>
@@ -111,7 +111,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                         {g.attempts}×
                       </span>
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
                       {g.totalRejected}
                     </td>
                     <td style={{ fontSize: 11 }}>{fmtDate(g.firstEntry)}</td>

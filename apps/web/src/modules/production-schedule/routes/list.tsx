@@ -166,7 +166,7 @@ function ProductionSchedulePage(): React.JSX.Element {
               key={f}
               type="button"
               className={`btn ${filter === f ? 'btn-primary' : 'btn-ghost'} btn-sm`}
-              style={{ fontSize: 10, padding: '4px 10px' }}
+              style={{ fontSize: 11, padding: '4px 10px' }}
               onClick={() => setFilter(f)}
             >
               {label}
@@ -209,7 +209,7 @@ function ProductionSchedulePage(): React.JSX.Element {
           display: 'flex',
           gap: 14,
           marginBottom: 10,
-          fontSize: 10,
+          fontSize: 11,
           flexWrap: 'wrap',
           padding: '6px 10px',
           background: 'var(--bg3)',
@@ -252,7 +252,7 @@ function ProductionSchedulePage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error
                 ? error.message
                 : 'Could not load production schedule. Try again.'}
@@ -275,7 +275,7 @@ function ProductionSchedulePage(): React.JSX.Element {
               style={{
                 borderCollapse: 'collapse',
                 width: '100%',
-                fontSize: 10,
+                fontSize: 11,
                 minWidth: 220 + 30 * COL_WIDTH,
               }}
             >
@@ -315,7 +315,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                         style={{
                           border: '1px solid var(--border)',
                           padding: '4px 2px',
-                          fontSize: 9,
+                          fontSize: 11,
                           fontWeight: 600,
                           background: bg,
                           color: col,
@@ -349,7 +349,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                         {m.machineName ? `${m.machineCode} — ${m.machineName}` : m.machineCode}
                       </div>
                       {m.machineType ? (
-                        <div style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
                           {m.machineType}
                         </div>
                       ) : null}
@@ -476,7 +476,7 @@ function Bar({
         cursor: canWrite ? 'grab' : 'pointer',
         overflow: 'hidden',
         color: c.fg,
-        fontSize: 9,
+        fontSize: 11,
         lineHeight: 1.2,
         zIndex: 2 + colIdx,
       }}
@@ -484,7 +484,7 @@ function Bar({
       <div
         style={{
           fontWeight: 700,
-          fontSize: 10,
+          fontSize: 11,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -494,7 +494,7 @@ function Bar({
       </div>
       <div
         style={{
-          fontSize: 9,
+          fontSize: 11,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -545,7 +545,7 @@ function StatCard({
       <div
         className="text3"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '.04em',
         }}

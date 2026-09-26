@@ -139,7 +139,7 @@ export function OutsourceBalanceModal({
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
             Item: {itemCodeWithRev(itemCode, itemRevision)} · Available:{' '}
-            <b style={{ color: 'var(--amber)' }}>{available}</b> pcs. Raises an outsource PR.
+            <b style={{ color: 'var(--amber2)' }}>{available}</b> pcs. Raises an outsource PR.
           </div>
         </div>
 
@@ -148,10 +148,10 @@ export function OutsourceBalanceModal({
             <div
               className="text3"
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 textTransform: 'uppercase',
                 marginBottom: 4,
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
               }}
             >
               Qty to outsource ★
@@ -169,7 +169,7 @@ export function OutsourceBalanceModal({
           <div style={{ flex: '1 1 200px' }}>
             <div
               className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
             >
               Vendor ★
             </div>
@@ -197,7 +197,7 @@ export function OutsourceBalanceModal({
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}

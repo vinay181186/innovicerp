@@ -284,7 +284,7 @@ export function BomPlanningModal({
             padding: 8,
             borderRadius: 4,
             background: 'rgba(239,68,68,0.1)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >
@@ -368,12 +368,12 @@ function BomBody({
           {mode === 'equipment' ? (
             <>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT SO</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>EQUIPMENT SO</span>
                 <br />
                 <b style={{ color: 'var(--cyan)' }}>{data.soCode}</b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>EQUIPMENT</span>
                 <br />
                 <b style={{ color: 'var(--purple)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
@@ -382,19 +382,19 @@ function BomBody({
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIP QTY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>EQUIP QTY</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.orderQty}</b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>BOM</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM</span>
                 <br />
-                <b style={{ color: 'var(--green)' }}>
+                <b style={{ color: 'var(--green2)' }}>
                   {data.bomNo} BOM Rev {data.bomRev}
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>BOM ITEMS</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM ITEMS</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.children.length}</b>
               </div>
@@ -402,7 +402,7 @@ function BomBody({
           ) : (
             <>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>ASSEMBLY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>ASSEMBLY</span>
                 <br />
                 <b style={{ color: 'var(--purple)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
@@ -411,17 +411,17 @@ function BomBody({
                 {data.parentItemName}
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO/JW</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO/JW</span>
                 <br />
                 <b className="mono">{data.soCode}</b>
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>ORDER QTY</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>ORDER QTY</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.orderQty}</b> units
               </div>
               <div>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>BOM ITEMS</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM ITEMS</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.children.length}</b>
               </div>
@@ -460,8 +460,8 @@ function BomBody({
               <th>Item Name</th>
               <th>{mode === 'equipment' ? 'Qty/Set' : 'Per Unit'}</th>
               <th>Total Need</th>
-              <th style={{ color: 'var(--green)' }}>Stock</th>
-              <th style={{ color: 'var(--red)' }} title="Total Need − Current Stock">
+              <th style={{ color: 'var(--green2)' }}>Stock</th>
+              <th style={{ color: 'var(--red2)' }} title="Total Need − Current Stock">
                 Pending
               </th>
               <th>BOM Type</th>
@@ -503,7 +503,7 @@ function BomBody({
                   <td>{c.childItemName}</td>
                   <td>{c.qtyPerSet}</td>
                   <td className="fw-700">{c.totalNeed}</td>
-                  <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                  <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                     {c.stockQty}
                   </td>
                   <td
@@ -532,7 +532,7 @@ function BomBody({
                         {c.existingPlan.jcCode ? (
                           <>
                             {' '}
-                            <span className="mono" style={{ fontSize: 10, color: 'var(--cyan)' }}>
+                            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
                               {c.existingPlan.jcCode}
                             </span>
                           </>
@@ -542,7 +542,7 @@ function BomBody({
                         {mode === 'assembly' && c.existingPlan.dpPrCode ? (
                           <>
                             {' '}
-                            <span className="mono" style={{ fontSize: 10, color: 'var(--purple)' }}>
+                            <span className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                               {c.existingPlan.dpPrCode}
                             </span>
                           </>
@@ -629,7 +629,7 @@ function BomBody({
                         />
                       ) : null}
                       {!s.vendorId ? (
-                        <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>
+                        <span style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}>
                           vendor required
                         </span>
                       ) : null}
@@ -667,7 +667,7 @@ function BomBody({
               onChange={(e) => setPlanAssembly(e.target.checked)}
               style={{ width: 16, height: 16, accentColor: 'var(--green)' }}
             />
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green2)' }}>
               🛠 Final Assembly Job Card
             </span>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -696,7 +696,7 @@ function BomBody({
             padding: 8,
             borderRadius: 4,
             background: 'rgba(239,68,68,0.1)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >

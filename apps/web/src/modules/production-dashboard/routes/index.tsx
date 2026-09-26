@@ -97,7 +97,7 @@ function ProductionDashboardPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load dashboard. Try again.'}
           </div>
         </div>
@@ -204,7 +204,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th>Actual Machine</th>
                       <th>Order Qty</th>
                       <th>Completed</th>
-                      <th style={{ color: 'var(--amber)' }}>Available</th>
+                      <th style={{ color: 'var(--amber2)' }}>Available</th>
                       <th>Pending Hrs</th>
                       <th>Op Status</th>
                     </tr>
@@ -352,7 +352,7 @@ function MachineCard({
       >
         {label}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span className="text3" style={{ fontSize: 10 }}>
+          <span className="text3" style={{ fontSize: 11 }}>
             {ops.length} op{ops.length !== 1 ? 's' : ''}
           </span>
           {runCount > 0 ? (
@@ -370,7 +370,7 @@ function MachineCard({
               <th>Item Code</th>
               <th>Operation</th>
               <th>Op Status</th>
-              <th style={{ color: 'var(--amber)' }}>Available</th>
+              <th style={{ color: 'var(--amber2)' }}>Available</th>
               <th>Due Date</th>
             </tr>
           </thead>
@@ -415,12 +415,12 @@ function MachineCard({
                   <td className="td-ctr">
                     <OpStatusBadge status={o.computedStatus} />
                   </td>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                  <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                     {o.available}
                   </td>
                   <td
                     className="td-ctr"
-                    style={{ fontSize: 10, color: dueSoon ? 'var(--red)' : 'var(--text3)' }}
+                    style={{ fontSize: 11, color: dueSoon ? 'var(--red)' : 'var(--text3)' }}
                   >
                     {fmtDate(o.dueDate)}
                   </td>
@@ -502,7 +502,7 @@ function SupplyChainPanel({
       </div>
       {lowStockItems.length > 0 ? (
         <div style={{ padding: '0 14px 14px' }}>
-          <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700, marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginBottom: 6 }}>
             ⚠ Low Stock Items:
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -551,7 +551,7 @@ function ScTile({
         border: `1px solid ${border}`,
       }}
     >
-      <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase' }}>{label}</div>
       <div className="mono fw-700" style={{ fontSize: 22, color }}>
         {value}
       </div>
@@ -731,12 +731,12 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
             />
           </div>
         </div>
-        <span className="text3" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
+        <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
           {pct}%
         </span>
       </div>
       {jc.dueDate ? (
-        <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
+        <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
           Due: {fmtDate(jc.dueDate)}
         </div>
       ) : null}

@@ -116,7 +116,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 11,
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
           }}
         >
           ⏳ {notice}
@@ -171,7 +171,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     style={{
                       background: ts.bg,
                       color: ts.fg,
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: 700,
                       textTransform: 'uppercase',
                       letterSpacing: '0.04em',
@@ -214,7 +214,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   <span className="mono" style={{ fontSize: 12 }} title="Completed / Rejected">
                     {l.qty}
                     {l.rejectQty ? (
-                      <span style={{ color: 'var(--red)' }}> · rej {l.rejectQty}</span>
+                      <span style={{ color: 'var(--red2)' }}> · rej {l.rejectQty}</span>
                     ) : null}
                   </span>
                   {/* Row action — edit / approve / reject. Logic preserved from
@@ -253,7 +253,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                       </span>
                     )
                   ) : req ? (
-                    <span className="text3" style={{ fontSize: 10 }}>
+                    <span className="text3" style={{ fontSize: 11 }}>
                       awaiting approval
                     </span>
                   ) : (
@@ -316,7 +316,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   {l.timingEditedAt ? (
                     <span
                       className="text3"
-                      style={{ fontSize: 10, marginLeft: 4 }}
+                      style={{ fontSize: 11, marginLeft: 4 }}
                       title={`Date/time corrected on ${fmtDateTime(l.timingEditedAt)}. Qty unchanged.`}
                     >
                       (retimed)
@@ -328,7 +328,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
               {/* Pending-change line */}
               {!editing && req ? (
                 <div
-                  style={{ fontSize: 10, color: 'var(--amber)', wordBreak: 'break-word' }}
+                  style={{ fontSize: 11, color: 'var(--amber2)', wordBreak: 'break-word' }}
                   title={req.reason ?? ''}
                 >
                   <Clock className="mr-1 inline h-3 w-3" />
@@ -423,7 +423,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
       )}
 
       {retime.isError || decide.isError ? (
-        <div style={{ color: 'var(--red)', fontSize: 11, padding: '6px 4px' }}>
+        <div style={{ color: 'var(--red2)', fontSize: 11, padding: '6px 4px' }}>
           {(retime.error ?? decide.error)?.message}
         </div>
       ) : null}

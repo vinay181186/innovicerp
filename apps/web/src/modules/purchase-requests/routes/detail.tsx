@@ -85,7 +85,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Purchase request not found'}
           </div>
         </div>
@@ -99,7 +99,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -292,7 +292,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
           {softDelete.isError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--sig-critical-bd)',
                 borderRadius: 6,
@@ -411,7 +411,7 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
       {bal.state === 'over' ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--sig-critical-bd)',
             borderRadius: 6,

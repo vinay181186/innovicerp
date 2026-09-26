@@ -78,7 +78,7 @@ function BackupPage(): React.JSX.Element {
   if (!isAdmin) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           <Lock size={14} style={{ display: 'inline', marginRight: 6 }} />
           Admin access required for Backup & Export.
         </div>
@@ -114,8 +114,8 @@ function BackupPage(): React.JSX.Element {
         }}
       >
         <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 9 }}>BACKUP SCHEDULE</div>
-          <div className="mono fw-700" style={{ fontSize: 12, color: 'var(--green)' }}>
+          <div className="text3" style={{ fontSize: 11 }}>BACKUP SCHEDULE</div>
+          <div className="mono fw-700" style={{ fontSize: 12, color: 'var(--green2)' }}>
             Daily 02:00 IST<br />→ Backblaze B2
           </div>
         </div>
@@ -153,7 +153,7 @@ function BackupPage(): React.JSX.Element {
               background: 'rgba(239,68,68,0.06)',
               border: '1px solid rgba(239,68,68,0.3)',
               borderRadius: 6,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               fontSize: 12,
             }}
           >
@@ -187,7 +187,7 @@ function BackupPage(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={2} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={2} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {error instanceof Error
                       ? error.message
                       : 'Could not load backup figures. Try again.'}

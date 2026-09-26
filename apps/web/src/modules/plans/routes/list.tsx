@@ -132,7 +132,7 @@ function PlansListPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -260,7 +260,7 @@ function PlansListPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load plans. Try again.'}
             </div>
           </div>
@@ -398,7 +398,7 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                     <td className="td-ctr mono fw-700">
                       {row.planQty}
                       {row.derivedStatus ? (
-                        <div className="text3" style={{ fontSize: 10, fontWeight: 400 }}>
+                        <div className="text3" style={{ fontSize: 11, fontWeight: 400 }}>
                           Covered {row.coveredQty}
                           <br />
                           Pending{' '}

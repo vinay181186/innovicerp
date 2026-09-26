@@ -25,8 +25,8 @@ type Tab = 'all' | 'pending' | 'completed';
 // Legacy L23599-23601: All is plain, Pending is amber, Completed is green.
 const TABS: { key: Tab; label: string; color?: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending', color: 'var(--amber)' },
-  { key: 'completed', label: 'Completed', color: 'var(--green)' },
+  { key: 'pending', label: 'Pending', color: 'var(--amber2)' },
+  { key: 'completed', label: 'Completed', color: 'var(--green2)' },
 ];
 
 function QcHistoryPage(): React.JSX.Element {
@@ -116,7 +116,7 @@ function QcHistoryPage(): React.JSX.Element {
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load QC History. Try again.'}
           </div>
         </div>
@@ -154,7 +154,7 @@ function QcHistoryPage(): React.JSX.Element {
             }}
           >
             <div>
-              <label className="text3" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>
+              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
                 {/* The label names what the box actually matches, and it now
                     matches the part name too, so it has to say so. */}
                 SO / JC / Item / Name
@@ -168,7 +168,7 @@ function QcHistoryPage(): React.JSX.Element {
               />
             </div>
             <div>
-              <label className="text3" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>
+              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
                 Date From
               </label>
               <input
@@ -180,7 +180,7 @@ function QcHistoryPage(): React.JSX.Element {
               />
             </div>
             <div>
-              <label className="text3" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>
+              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
                 Date To
               </label>
               <input
@@ -200,7 +200,7 @@ function QcHistoryPage(): React.JSX.Element {
                 className="btn btn-sm"
                 style={{
                   background: 'rgba(34,197,94,0.1)',
-                  color: 'var(--green)',
+                  color: 'var(--green2)',
                   border: '1px solid rgba(34,197,94,0.3)',
                 }}
                 disabled={logs.length === 0}
@@ -213,7 +213,7 @@ function QcHistoryPage(): React.JSX.Element {
                 className="btn btn-sm"
                 style={{
                   background: 'rgba(251,191,36,0.1)',
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   border: '1px solid rgba(251,191,36,0.3)',
                 }}
                 disabled={pending.length === 0}
@@ -227,7 +227,7 @@ function QcHistoryPage(): React.JSX.Element {
           {showPend ? (
             <div className="panel" style={{ marginBottom: 14 }}>
               <div className="panel-hdr">
-                <span className="panel-title" style={{ color: 'var(--amber)' }}>
+                <span className="panel-title" style={{ color: 'var(--amber2)' }}>
                   ⏳ QC Pending ({pending.length})
                 </span>
               </div>
@@ -249,9 +249,9 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>Operation</th>
                       <th>Order Qty</th>
                       <th>Completed</th>
-                      <th style={{ color: 'var(--green)' }}>Accepted</th>
-                      <th style={{ color: 'var(--red)' }}>Rejected</th>
-                      <th style={{ color: 'var(--amber)' }}>Pending</th>
+                      <th style={{ color: 'var(--green2)' }}>Accepted</th>
+                      <th style={{ color: 'var(--red2)' }}>Rejected</th>
+                      <th style={{ color: 'var(--amber2)' }}>Pending</th>
                       <th>Since</th>
                       <th></th>
                     </tr>
@@ -275,7 +275,7 @@ function QcHistoryPage(): React.JSX.Element {
           {showComp ? (
             <div className="panel">
               <div className="panel-hdr">
-                <span className="panel-title" style={{ color: 'var(--green)' }}>
+                <span className="panel-title" style={{ color: 'var(--green2)' }}>
                   ✅ QC Entries ({logs.length})
                 </span>
               </div>
@@ -293,8 +293,8 @@ function QcHistoryPage(): React.JSX.Element {
                           tell you what was inspected. */}
                       <th>Item Name</th>
                       <th>Operation</th>
-                      <th style={{ color: 'var(--green)' }}>Accepted</th>
-                      <th style={{ color: 'var(--red)' }}>Rejected</th>
+                      <th style={{ color: 'var(--green2)' }}>Accepted</th>
+                      <th style={{ color: 'var(--red2)' }}>Rejected</th>
                       <th>QC Date</th>
                       <th>Shift</th>
                       <th>Inspected By</th>
@@ -357,24 +357,24 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
       <td style={{ fontSize: 11 }}>{o.operation}</td>
       <td className="td-ctr mono fw-700">{o.orderQty}</td>
       <td className="td-ctr mono fw-700">{o.completed}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
         {o.qcAccepted}
       </td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
         {o.qcRejected}
       </td>
-      <td className="td-ctr mono fw-700" style={{ fontSize: 16, color: 'var(--amber)' }}>
+      <td className="td-ctr mono fw-700" style={{ fontSize: 16, color: 'var(--amber2)' }}>
         {o.qcPending}
       </td>
-      <td className="text3" style={{ fontSize: 10 }}>
+      <td className="text3" style={{ fontSize: 11 }}>
         {fmtDate(o.pendSince)}
-        {o.overdue ? <span style={{ color: 'var(--red)', fontWeight: 700 }}> ⚠</span> : null}
+        {o.overdue ? <span style={{ color: 'var(--red2)', fontWeight: 700 }}> ⚠</span> : null}
       </td>
       <td>
         <Link
           to="/qc-call-register"
           className="btn btn-primary btn-sm"
-          style={{ fontSize: 10, whiteSpace: 'nowrap' }}
+          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
         >
           🔬 QC
         </Link>
@@ -414,10 +414,10 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
         {l.itemName ? l.itemName : null}
       </td>
       <td style={{ fontSize: 11 }}>{l.operation}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
         {l.accepted}
       </td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
         {l.rejected}
       </td>
       <td style={{ fontSize: 11 }}>{fmtDate(l.logDate)}</td>
@@ -425,7 +425,7 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
       <td style={{ fontSize: 11 }}>{l.inspector ?? '—'}</td>
       <td
         style={{
-          fontSize: 10,
+          fontSize: 11,
           maxWidth: 100,
           overflow: 'hidden',
           textOverflow: 'ellipsis',

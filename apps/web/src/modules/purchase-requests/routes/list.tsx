@@ -180,7 +180,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -299,7 +299,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                   key: 'open',
                   label: 'Open',
                   count: openCount,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   active: search.status === 'open',
                   onClick: toggleStatus('open'),
                 },
@@ -315,7 +315,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                   key: 'po_created',
                   label: 'PO Created',
                   count: poCreatedCount,
-                  color: 'var(--green)',
+                  color: 'var(--green2)',
                   active: search.status === 'po_created',
                   onClick: toggleStatus('po_created'),
                 },
@@ -335,7 +335,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
           {actionError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
                 borderRadius: 6,
@@ -354,7 +354,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               Loading…
             </div>
           ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load PRs. Try again.'}
             </div>
           ) : rows.length === 0 ? (

@@ -91,7 +91,7 @@ function TrashListPage(): React.JSX.Element {
   if (!isAdmin) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           <Lock size={14} style={{ display: 'inline', marginRight: 6 }} />
           Admin access required for Trash.
         </div>
@@ -214,7 +214,7 @@ function TrashListPage(): React.JSX.Element {
             background: 'rgba(239,68,68,0.06)',
             border: '1px solid rgba(239,68,68,0.3)',
             borderRadius: 6,
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >
@@ -251,7 +251,7 @@ function TrashListPage(): React.JSX.Element {
                   </tr>
                 ) : isError ? (
                   <tr>
-                    <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
+                    <td colSpan={5} className="empty-state" style={{ color: 'var(--red2)' }}>
                       {error instanceof Error ? error.message : 'Could not load Trash. Try again.'}
                     </td>
                   </tr>

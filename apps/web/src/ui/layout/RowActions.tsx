@@ -103,7 +103,7 @@ export function RowActions({
           padding: 'var(--sp-1)',
           ...(kind === 'delete'
             ? {
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--bg2)',
                 borderColor: 'var(--border3)',
               }

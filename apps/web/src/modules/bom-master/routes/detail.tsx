@@ -29,8 +29,8 @@ export const bomMasterDetailRoute = createRoute({
 // labels the BOM form's <select> uses (L8537-8539).
 const BOM_TYPE_DISPLAY: Record<string, { label: string; color: string }> = {
   manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
-  purchase: { label: '🛒 Buy', color: 'var(--green)' },
-  outsource: { label: '🏭 Outsrc', color: 'var(--amber)' },
+  purchase: { label: '🛒 Buy', color: 'var(--green2)' },
+  outsource: { label: '🏭 Outsrc', color: 'var(--amber2)' },
 };
 
 const BOM_TYPE_WORD: Record<string, string> = {
@@ -76,7 +76,7 @@ function BomMasterDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -98,7 +98,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'BOM not found.'}
           </div>
         </div>
@@ -181,7 +181,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                     <span className="text3"> — {detail.parentItemName}</span>
                   </>
                 ) : (
-                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+                  <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
                     Not set — use Edit / Revise to pick it
                   </span>
                 )}
@@ -195,7 +195,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               <span className="form-label">Linked SO Lines</span>
               <div>
                 {detail.linkedSoCount > 0 ? (
-                  <span style={{ color: 'var(--green)', fontWeight: 700 }}>
+                  <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
                     {detail.linkedSoCount}
                   </span>
                 ) : (
@@ -208,7 +208,7 @@ function BomMasterDetailPage(): React.JSX.Element {
             <div
               style={{
                 marginTop: 8,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -307,7 +307,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               <tbody>
                 {detail.revisions.map((rev) => (
                   <tr key={rev.id}>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {rev.revision}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
@@ -322,13 +322,13 @@ function BomMasterDetailPage(): React.JSX.Element {
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 10 }}
+                          style={{ fontSize: 11 }}
                           onClick={() => setSnapshotRev(rev.revision)}
                         >
                           👁 View ({rev.itemsSnapshot.length})
                         </button>
                       ) : (
-                        <span className="text3" style={{ fontSize: 10 }}>
+                        <span className="text3" style={{ fontSize: 11 }}>
                           Current
                         </span>
                       )}

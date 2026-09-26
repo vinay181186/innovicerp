@@ -167,7 +167,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   }
   if (isError || !jc) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Job Card not found.'}
       </div>
     );

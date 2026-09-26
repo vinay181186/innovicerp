@@ -33,7 +33,7 @@ export function SortableHead<T>({ table }: { table: Table<T> }): ReactElement {
                       <span
                         aria-hidden
                         style={{
-                          fontSize: 9,
+                          fontSize: 11,
                           opacity: sorted ? 1 : 0.3,
                           color: sorted ? 'var(--cyan)' : 'inherit',
                         }}

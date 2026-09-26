@@ -115,7 +115,7 @@ function KpiTile({
       </div>
       <div
         style={{
-          fontSize: 9.5,
+          fontSize: 11,
           color: 'var(--text3)',
           marginTop: 2,
           textTransform: 'uppercase',
@@ -437,13 +437,13 @@ export function JcViewSummary({
                   {jc.routeCardCode}
                 </Link>
                 {jc.routeCardRevision != null ? (
-                  <span className="badge b-grey" style={{ fontSize: 9, padding: '1px 7px' }}>
+                  <span className="badge b-grey" style={{ fontSize: 11, padding: '1px 7px' }}>
                     Route Card Rev {jc.routeCardRevision}
                   </span>
                 ) : null}
               </span>
             ) : (
-              <span style={{ color: 'var(--amber)' }}>none</span>
+              <span style={{ color: 'var(--amber2)' }}>none</span>
             )}
           </Kv>
           {/* ADR-170 — the Production Order that built this card. Only such a
@@ -509,7 +509,7 @@ export function JcViewSummary({
                   {c.recoveryKind ? (
                     <span
                       className={`badge ${c.recoveryKind === 'rework' ? 'b-amber' : 'b-blue'}`}
-                      style={{ fontSize: 9, padding: '1px 7px' }}
+                      style={{ fontSize: 11, padding: '1px 7px' }}
                     >
                       {c.recoveryKind === 'rework' ? 'Rework' : 'Repair'}
                     </span>
@@ -613,12 +613,12 @@ export function JcViewSummary({
                   <>
                     {' '}
                     · running on{' '}
-                    <span style={{ color: 'var(--amber)' }}>{stuckRunningOn.label}</span>
+                    <span style={{ color: 'var(--amber2)' }}>{stuckRunningOn.label}</span>
                   </>
                 ) : null}
               </>
             ) : (
-              <span style={{ color: 'var(--green)' }}>All operations complete</span>
+              <span style={{ color: 'var(--green2)' }}>All operations complete</span>
             )}
           </div>
         </div>
@@ -658,7 +658,7 @@ export function SectionBar({
           color: 'var(--blue2)',
         }}
       >
-        <span style={{ fontSize: 10, color: 'var(--text3)' }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{open ? '▾' : '▸'}</span>
         {title}
       </button>
       {right ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{right}</div> : null}

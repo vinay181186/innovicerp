@@ -25,7 +25,7 @@ import { JcStatusBadge } from './jc-status-badge';
 import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
 
 const lblStyle: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 11,
   fontWeight: 700,
   color: 'var(--text3)',
   textTransform: 'uppercase',
@@ -157,14 +157,14 @@ export function JcStatTiles({
                   {jc.routeCardCode}
                 </span>
                 {jc.routeCardRevision != null ? (
-                  <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>
+                  <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 11 }}>
                     Route Card Rev {jc.routeCardRevision}
                   </span>
                 ) : null}
               </>
             ) : (
               <span style={{ color: 'var(--text3)' }}>
-                Route Card: <span style={{ color: 'var(--amber)' }}>none</span>
+                Route Card: <span style={{ color: 'var(--amber2)' }}>none</span>
               </span>
             )}
           </div>
@@ -273,7 +273,7 @@ export function JcStatTiles({
                 {stuckRunningOn?.differs ? (
                   <>
                     {' '}
-                    · running on <b style={{ color: 'var(--amber)' }}>{stuckRunningOn.label}</b>
+                    · running on <b style={{ color: 'var(--amber2)' }}>{stuckRunningOn.label}</b>
                   </>
                 ) : null}
               </>
@@ -426,7 +426,7 @@ export function JcOpFlowChips({
                   minWidth: 80,
                 }}
               >
-                <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: opColor }}>
+                <div className="mono" style={{ fontSize: 11, fontWeight: 700, color: opColor }}>
                   Op {opSrNo(o.opSeq)}
                   {isOut ? ' 🏭' : ''}
                   {isQc ? ' 🔬' : ''}
@@ -438,12 +438,12 @@ export function JcOpFlowChips({
                         fontSize: 11,
                         fontWeight: 600,
                         margin: '2px 0',
-                        color: 'var(--green)',
+                        color: 'var(--green2)',
                       }}
                     >
                       QC
                     </div>
-                    <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.operation}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>{o.operation}</div>
                   </>
                 ) : isOut ? (
                   <div
@@ -451,7 +451,7 @@ export function JcOpFlowChips({
                       fontSize: 11,
                       fontWeight: 600,
                       margin: '2px 0',
-                      color: 'var(--amber)',
+                      color: 'var(--amber2)',
                     }}
                   >
                     OUTSOURCE
@@ -480,7 +480,7 @@ export function JcOpFlowChips({
                       return actual.differs ? (
                         <div
                           className="mono"
-                          style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}
+                          style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)' }}
                           title={`Actual machine: ${actual.label}`}
                         >
                           {actual.label}
@@ -488,22 +488,22 @@ export function JcOpFlowChips({
                       ) : null;
                     })()}
                     {opExtraById.get(o.id)?.machineName ? (
-                      <div style={{ fontSize: 9, color: 'var(--text3)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                         {opExtraById.get(o.id)?.machineName}
                       </div>
                     ) : null}
                   </>
                 )}
-                <div style={{ fontSize: 9, color: 'var(--text3)' }}>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                   {isQc ? '' : o.operation.split(' ').slice(0, 2).join(' ')}
                 </div>
                 {isOut ? (
                   <div
                     style={{
-                      fontSize: 9,
+                      fontSize: 11,
                       marginTop: 3,
                       fontWeight: 700,
-                      color: 'var(--amber)',
+                      color: 'var(--amber2)',
                     }}
                   >
                     {OUTSOURCE_STATUS_LABEL[o.outsourceStatus ?? 'pending']}
@@ -512,21 +512,21 @@ export function JcOpFlowChips({
                 {/* Every op carries a qty, outsource included — it used to
                     show the vendor status alone, so a chip with 38 pieces
                     accepted back read as bare "Received" with no number. */}
-                <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: doneColor }}>
+                <div style={{ fontSize: 11, marginTop: 3, fontWeight: 700, color: doneColor }}>
                   {stateIcons && done ? (
-                    <span style={{ color: 'var(--green)' }}>✓ </span>
+                    <span style={{ color: 'var(--green2)' }}>✓ </span>
                   ) : stateIcons && partial ? (
-                    <span style={{ color: 'var(--amber)' }}>↻ </span>
+                    <span style={{ color: 'var(--amber2)' }}>↻ </span>
                   ) : null}
                   {flowLabel}
                 </div>
                 {o.reworkPendingQty > 0 || o.reworkRaisedQty > 0 ? (
                   <div
                     style={{
-                      fontSize: 9,
+                      fontSize: 11,
                       marginTop: 2,
                       fontWeight: 700,
-                      color: 'var(--amber)',
+                      color: 'var(--amber2)',
                     }}
                   >
                     ♻{o.reworkPendingQty > 0 ? o.reworkPendingQty : o.reworkRaisedQty}
@@ -686,7 +686,7 @@ export function JcOpFlowCards({
                   <>
                     {o.machineCode ?? o.machineCodeText ?? '—'}
                     {actual?.differs ? (
-                      <span className="mono" style={{ color: 'var(--amber)' }}>
+                      <span className="mono" style={{ color: 'var(--amber2)' }}>
                         {' '}
                         → {actual.label}
                       </span>
@@ -789,7 +789,7 @@ function QtySeg({
       </div>
       <div
         style={{
-          fontSize: 9,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '.05em',
           color: 'var(--text3)',

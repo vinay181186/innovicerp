@@ -224,7 +224,7 @@ export function JcOpEditCard({
                 className="badge"
                 style={{
                   background: 'rgba(245,158,11,0.12)',
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   border: '1px solid rgba(245,158,11,0.35)',
                 }}
               >
@@ -250,7 +250,7 @@ export function JcOpEditCard({
                   valueLabel={op.machineCode || undefined}
                   selectedLabel={(m) => m.code ?? m.name ?? ''}
                 />
-                <div className="cyan" style={{ fontSize: 10, marginTop: 2, minHeight: 13 }}>
+                <div className="cyan" style={{ fontSize: 11, marginTop: 2, minHeight: 13 }}>
                   {machineName}
                 </div>
               </>
@@ -296,7 +296,7 @@ export function JcOpEditCard({
           {st ? (
             <span className={`badge ${st.cls}`}>{st.label}</span>
           ) : (
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               —
             </span>
           )}
@@ -366,15 +366,15 @@ export function JcOpEditCard({
                 sub={
                   !en ? null : isQc ? (
                     <>
-                      <div style={{ fontSize: 8, color: 'var(--green)' }}>✓ accepted</div>
+                      <div style={{ fontSize: 11, color: 'var(--green2)' }}>✓ accepted</div>
                       {en.qcRejectedQty > 0 ? (
-                        <div style={{ fontSize: 8, color: 'var(--red)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--red2)' }}>
                           ✗{en.qcRejectedQty} rejected
                         </div>
                       ) : null}
                     </>
                   ) : en.qcRequired && en.qcAcceptedQty > 0 ? (
-                    <div style={{ fontSize: 8, color: 'var(--green)' }}>
+                    <div style={{ fontSize: 11, color: 'var(--green2)' }}>
                       ✓{en.qcAcceptedQty} accepted
                     </div>
                   ) : null
@@ -473,9 +473,9 @@ export function JcOpEditCard({
                     type="button"
                     className="btn btn-sm"
                     style={{
-                      fontSize: 9,
+                      fontSize: 11,
                       fontWeight: 700,
-                      color: 'var(--amber)',
+                      color: 'var(--amber2)',
                       border: '1px solid rgba(245,158,11,0.4)',
                       padding: '2px 6px',
                     }}
@@ -506,7 +506,7 @@ export function JcOpEditCard({
                     />
                     <span
                       style={{
-                        fontSize: 9,
+                        fontSize: 11,
                         fontWeight: 700,
                         color: isOut ? 'var(--amber)' : 'var(--text3)',
                       }}
@@ -558,7 +558,7 @@ export function JcOpEditCard({
                         value={op.outsourceCost || ''}
                         placeholder="₹ Cost/pc"
                         onChange={(e) => onChange({ outsourceCost: Number(e.target.value) })}
-                        style={{ fontSize: 10, width: '100%' }}
+                        style={{ fontSize: 11, width: '100%' }}
                       />
                     ) : null}
                   </div>
@@ -627,7 +627,7 @@ export function JcOpEditCard({
                     <span className="mono" style={{ color: 'var(--text3)' }}>
                       {fmtDate(l.logDate)}
                     </span>{' '}
-                    · {SHIFT_LABELS[l.shift]} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
+                    · {SHIFT_LABELS[l.shift]} · <b style={{ color: 'var(--green2)' }}>+{l.qty}</b> ·{' '}
                     {l.operatorName ?? ''}
                   </div>
                 ))}

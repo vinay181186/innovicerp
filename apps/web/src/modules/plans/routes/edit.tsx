@@ -25,7 +25,7 @@ function PlanEditPage(): React.JSX.Element {
 
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You do not have edit access to Plans. Ask an admin for L2 Data Entry or above in
         Planning.
       </div>
@@ -43,7 +43,7 @@ function PlanEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Plan not found.'}
           </div>
         </div>
@@ -63,7 +63,7 @@ function PlanEditPage(): React.JSX.Element {
           >
             <ArrowLeft size={14} /> Back to detail
           </Link>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             Plans in status <b>{plan.planStatus}</b> are read-only. Cancel via the workflow if you
             need changes.
           </div>

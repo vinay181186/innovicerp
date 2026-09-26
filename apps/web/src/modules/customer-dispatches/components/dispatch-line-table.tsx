@@ -77,7 +77,7 @@ export function DispatchLineTable(props: {
               <th style={{ width: '5%' }} className="td-ctr">
                 Order Qty
               </th>
-              <th style={{ width: '6%', color: 'var(--green)' }} className="td-ctr">
+              <th style={{ width: '6%', color: 'var(--green2)' }} className="td-ctr">
                 Ready
               </th>
               <th style={{ width: '8%' }} className="td-ctr">
@@ -85,7 +85,7 @@ export function DispatchLineTable(props: {
               </th>
               {/* ADR-180 — Pending is what the customer is still owed; it caps
                   the DC qty. Reserved / Available are the stock position. */}
-              <th style={{ width: '6%', color: 'var(--amber)' }} className="td-ctr">
+              <th style={{ width: '6%', color: 'var(--amber2)' }} className="td-ctr">
                 Pending
               </th>
               {/* The column that used to be called "Available" — ready +
@@ -117,7 +117,7 @@ export function DispatchLineTable(props: {
               <th style={{ width: '9%' }} className="td-ctr">
                 Customer Dispatch Date
               </th>
-              <th style={{ width: '10%', color: 'var(--green)' }} className="td-ctr">
+              <th style={{ width: '10%', color: 'var(--green2)' }} className="td-ctr">
                 Dispatch Qty<span className="req">★</span>
               </th>
               <th style={{ width: '4%' }} />
@@ -191,12 +191,12 @@ export function DispatchLineTable(props: {
                       />
                     </td>
                     <td className="td-ctr mono">{line ? line.orderQty : '—'}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--green2)' }}>
                       {line ? (
                         <>
                           {line.readyQty}
                           {line.reservedQty > 0 ? (
-                            <div style={{ fontSize: 10, color: 'var(--purple)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--purple)' }}>
                               +{line.reservedQty} resv
                             </div>
                           ) : null}
@@ -207,7 +207,7 @@ export function DispatchLineTable(props: {
                     </td>
                     <td className="td-ctr mono text3">{line ? line.dispatchedQty : '—'}</td>
                     {/* ADR-180 — Pending caps the dispatch qty. */}
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {line ? line.pendingQty : '—'}
                     </td>
                     <td className="td-ctr mono">{line ? line.availableQty : '—'}</td>
@@ -267,7 +267,7 @@ export function DispatchLineTable(props: {
                         className="btn btn-sm"
                         style={{
                           background: 'transparent',
-                          color: 'var(--red)',
+                          color: 'var(--red2)',
                           border: '1px solid var(--red)',
                           padding: '3px 8px',
                         }}

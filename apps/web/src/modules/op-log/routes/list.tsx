@@ -211,10 +211,10 @@ function OpLogListPage(): React.JSX.Element {
                 <th>Planned Machine</th>
                 <th>Actual Machine</th>
                 <th>Operation</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                   Completed
                 </th>
-                <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                <th className="td-ctr" style={{ color: 'var(--red2)' }}>
                   Rejected
                 </th>
                 <th>Operator</th>
@@ -232,7 +232,7 @@ function OpLogListPage(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={16} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={16} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {error instanceof Error ? error.message : 'Could not load op log. Try again.'}
                   </td>
                 </tr>
@@ -270,7 +270,7 @@ function OpLogListPage(): React.JSX.Element {
                         <div
                           className="text3"
                           style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             maxWidth: 160,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -289,7 +289,7 @@ function OpLogListPage(): React.JSX.Element {
                         {LOG_TYPE_LABEL[r.logType]}
                       </span>
                       {r.isTpi ? (
-                        <span className="badge b-purple" style={{ marginLeft: 4, fontSize: 9 }}>
+                        <span className="badge b-purple" style={{ marginLeft: 4, fontSize: 11 }}>
                           TPI
                         </span>
                       ) : null}

@@ -103,7 +103,7 @@ export function QcReportAttach({
           × Remove
         </button>
       ) : null}
-      {err ? <span style={{ color: 'var(--red)', fontSize: 11 }}>{err}</span> : null}
+      {err ? <span style={{ color: 'var(--red2)', fontSize: 11 }}>{err}</span> : null}
     </div>
   );
 }

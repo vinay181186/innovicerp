@@ -133,12 +133,12 @@ export function LineRow({
           <>
             {selected.name}
             {selected.itemCode ?? selected.itemCodeText ? (
-              <span className="mono text3" style={{ fontSize: 10, marginLeft: 4 }}>
+              <span className="mono text3" style={{ fontSize: 11, marginLeft: 4 }}>
                 ({selected.itemCode ?? selected.itemCodeText})
               </span>
             ) : null}
             {mismatch ? (
-              <div style={{ fontSize: 10, fontWeight: 700 }}>
+              <div style={{ fontSize: 11, fontWeight: 700 }}>
                 ⚠ not L{line.jwLineNoText} — that line is {pickedLine?.partName}
               </div>
             ) : null}
@@ -185,7 +185,7 @@ export function LineRow({
           className="btn btn-sm"
           style={{
             background: 'transparent',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             border: '1px solid var(--red)',
             padding: '3px 6px',
           }}

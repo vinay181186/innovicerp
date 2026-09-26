@@ -127,7 +127,7 @@ function StoreInventoryPage(): React.JSX.Element {
           ) : isError ? (
             <div className="panel">
               <div className="panel-body">
-                <div className="empty-state" style={{ color: 'var(--red)' }}>
+                <div className="empty-state" style={{ color: 'var(--red2)' }}>
                   {error instanceof Error ? error.message : 'Could not load inventory. Try again.'}
                 </div>
               </div>
@@ -151,7 +151,7 @@ function StoreInventoryPage(): React.JSX.Element {
                         {/* ADR-180 — three numbers, three columns, always in
                             this order: Physical − Reserved = Available. */}
                         <th
-                          style={{ color: 'var(--green)' }}
+                          style={{ color: 'var(--green2)' }}
                           title="On the shelf, reserved or not. Reserving never changes it."
                         >
                           Physical
@@ -171,7 +171,7 @@ function StoreInventoryPage(): React.JSX.Element {
                         <th>Min Qty</th>
                         <th style={{ color: 'var(--blue)' }}>On PO</th>
                         <th style={{ color: 'var(--orange)' }}>At Vendor</th>
-                        <th style={{ color: 'var(--amber)' }}>Pending to Make</th>
+                        <th style={{ color: 'var(--amber2)' }}>Pending to Make</th>
                         {canEdit ? <th>Actions</th> : null}
                       </tr>
                     </thead>
@@ -221,7 +221,7 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.inStock}
                               </span>
                               {row.lowStock ? (
-                                <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 700 }}>
+                                <div style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700 }}>
                                   ⚠ Low Stock
                                 </div>
                               ) : null}
@@ -374,13 +374,13 @@ function KpiStrip({
       key: 'inStock',
       label: 'Items in Stock',
       count: summary.itemsInStockCount,
-      color: 'var(--green)',
+      color: 'var(--green2)',
     },
     {
       key: 'low',
       label: 'Low Stock Alert',
       count: summary.lowStockCount,
-      color: 'var(--red)',
+      color: 'var(--red2)',
       sub: 'Below minimum level',
       active: filter === 'low',
       onClick: () => setFilter(filter === 'low' ? 'all' : 'low'),
@@ -389,7 +389,7 @@ function KpiStrip({
       key: 'zero',
       label: 'Zero Stock',
       count: summary.zeroStockCount,
-      color: 'var(--amber)',
+      color: 'var(--amber2)',
       active: filter === 'zero',
       onClick: () => setFilter(filter === 'zero' ? 'all' : 'zero'),
     },
@@ -452,7 +452,7 @@ function AdjustModal({
         </span>
         <span
           className="mono fw-700"
-          style={{ fontSize: 18, color: 'var(--green)', marginLeft: 8 }}
+          style={{ fontSize: 18, color: 'var(--green2)', marginLeft: 8 }}
         >
           {row.inStock} {row.uom}
         </span>
@@ -508,7 +508,7 @@ function AdjustModal({
             marginTop: 12,
             padding: 8,
             background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
             borderRadius: 4,
           }}
@@ -583,7 +583,7 @@ function SetMinModal({
             marginTop: 12,
             padding: 8,
             background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
             borderRadius: 4,
           }}
@@ -777,7 +777,7 @@ function ManualReceiveModal({
             marginTop: 12,
             padding: 8,
             background: 'rgba(239,68,68,0.08)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
             borderRadius: 4,
           }}

@@ -55,7 +55,7 @@ function DesignProjectsListPage(): React.JSX.Element {
   // VIEW was removed for this page sees the no-access panel, not the page.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -152,7 +152,7 @@ function DesignProjectsListPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error
                 ? error.message
                 : 'Could not load design projects. Try again.'}
@@ -206,7 +206,7 @@ function Tile({
         ...(onClick ? { cursor: 'pointer' } : {}),
       }}
     >
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
@@ -262,7 +262,7 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
           {isOverdue ? ' ⚠' : ''}
         </span>
         {project.openIssuesCount > 0 ? (
-          <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+          <span style={{ color: 'var(--red2)', fontWeight: 700 }}>
             ⚠ {project.openIssuesCount} open
           </span>
         ) : null}
@@ -290,7 +290,7 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
           style={{
             display: 'flex',
             justifyContent: 'space-between',
-            fontSize: 10,
+            fontSize: 11,
             color: 'var(--text3)',
             marginTop: 3,
           }}
@@ -320,7 +320,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
         display: 'inline-block',
         padding: '2px 9px',
         borderRadius: 12,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         color: c,
         background: `${c}12`,
@@ -630,7 +630,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,
       }}

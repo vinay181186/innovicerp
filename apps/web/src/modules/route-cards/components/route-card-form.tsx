@@ -412,7 +412,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       >
         <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
         <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>{help}</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{help}</div>
       </label>
     );
   };
@@ -601,7 +601,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 {rmPrefillFrom ? (
                   <div
                     className="text3"
-                    style={{ gridColumn: '1 / -1', fontSize: 10.5, marginTop: 2 }}
+                    style={{ gridColumn: '1 / -1', fontSize: 11, marginTop: 2 }}
                   >
                     Prefilled from plan{' '}
                     <b className="mono" style={{ color: 'var(--text)' }}>
@@ -626,10 +626,10 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 <span className="form-label">Route Card Rev</span>
                 <div
                   className="mono fw-700"
-                  style={{ color: 'var(--amber)', paddingTop: 7, fontSize: 14 }}
+                  style={{ color: 'var(--amber2)', paddingTop: 7, fontSize: 14 }}
                 >
                   Route Card Rev {routeCard.currentRevision} →{' '}
-                  <span style={{ color: 'var(--green)' }}>{routeCard.currentRevision + 1}</span>
+                  <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
                 </div>
               </div>
             ) : null}
@@ -661,7 +661,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               className="btn btn-sm"
               style={{
                 background: 'rgba(34,197,94,0.08)',
-                color: 'var(--green)',
+                color: 'var(--green2)',
                 border: '1px solid rgba(34,197,94,0.25)',
               }}
               onClick={() => addOp('qc')}
@@ -821,14 +821,14 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
       </td>
       <td>
         {op.opType === 'qc' ? (
-          <span className="badge b-green" style={{ fontSize: 10 }}>
+          <span className="badge b-green" style={{ fontSize: 11 }}>
             🔬 QC
           </span>
         ) : op.opType === 'outsource' ? (
           <span
             className="badge"
             style={{
-              fontSize: 10,
+              fontSize: 11,
               color: 'var(--purple)',
               background: 'rgba(124,58,237,0.12)',
               border: '1px solid rgba(124,58,237,0.3)',
@@ -875,13 +875,13 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
               selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
             />
             {vendorLabel ? (
-              <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 {vendorLabel}
               </div>
             ) : null}
           </>
         ) : op.opType === 'qc' ? (
-          <span className="badge b-green" style={{ fontSize: 10 }}>
+          <span className="badge b-green" style={{ fontSize: 11 }}>
             QC
           </span>
         ) : (
@@ -902,7 +902,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
               ))}
             </datalist>
             {machineLabel ? (
-              <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 {machineLabel}
               </div>
             ) : null}

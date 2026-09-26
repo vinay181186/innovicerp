@@ -227,10 +227,10 @@ export function SoSheetTable({
                   <td className="mono fw-700" style={{ color: jcColor }}>
                     {so.jcQty}
                   </td>
-                  <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                  <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                     {so.dispatchedQty}
                   </td>
-                  <td className="mono fw-700" style={{ color: 'var(--red)' }}>
+                  <td className="mono fw-700" style={{ color: 'var(--red2)' }}>
                     {Math.max(0, so.totalQty - so.dispatchedQty)}
                   </td>
                   <td
@@ -312,7 +312,7 @@ export function SoSheetTable({
                         <button
                           type="button"
                           className="btn btn-danger btn-sm btn-icon"
-                          style={{ ...ICON_BTN, color: 'var(--red)' }}
+                          style={{ ...ICON_BTN, color: 'var(--red2)' }}
                           onClick={() => onDeleteSo(so)}
                           title="Delete"
                           aria-label="Delete"

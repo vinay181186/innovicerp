@@ -74,7 +74,7 @@ function DesignTrackerListPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -129,7 +129,7 @@ function DesignTrackerListPage(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load designs. Try again.'}
             </div>
           </div>
@@ -235,7 +235,7 @@ function KpiStrip({
       k: 'progress',
       label: 'In Progress',
       value: summary.inProgress,
-      color: 'var(--amber)',
+      color: 'var(--amber2)',
       labelColor: 'var(--text3)',
       background: 'var(--bg2)',
       border: '1px solid var(--border)',
@@ -255,7 +255,7 @@ function KpiStrip({
       k: 'approved',
       label: 'Approved',
       value: summary.approved,
-      color: 'var(--green)',
+      color: 'var(--green2)',
       labelColor: 'var(--text3)',
       background: 'var(--bg2)',
       border: '1px solid var(--border)',
@@ -265,7 +265,7 @@ function KpiStrip({
       k: 'overdue',
       label: 'Overdue',
       value: summary.overdue,
-      color: 'var(--red)',
+      color: 'var(--red2)',
       labelColor: 'var(--red)',
       background: 'rgba(239,68,68,0.06)',
       border: '1px solid rgba(239,68,68,0.3)',
@@ -296,7 +296,7 @@ function KpiStrip({
               border: t.border,
             }}
           >
-            <div style={{ fontSize: 10, color: t.labelColor }}>{t.label}</div>
+            <div style={{ fontSize: 11, color: t.labelColor }}>{t.label}</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
           </div>
         ))}
@@ -389,7 +389,7 @@ function Row({
             color: stColor,
             padding: '2px 10px',
             borderRadius: 10,
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 700,
           }}
         >
@@ -404,14 +404,14 @@ function Row({
         >
           {row.totalHours}
         </span>
-        <span style={{ color: 'var(--text3)', fontSize: 10 }}> / {row.estimatedHours}h</span>
+        <span style={{ color: 'var(--text3)', fontSize: 11 }}> / {row.estimatedHours}h</span>
       </td>
       <td>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 11 }}
             onClick={onLogTime}
           >
             ⏱ Log
@@ -420,7 +420,7 @@ function Row({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ fontSize: 10 }}
+              style={{ fontSize: 11 }}
               onClick={onEdit}
             >
               ✏ Edit
@@ -430,7 +430,7 @@ function Row({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ fontSize: 10, color: 'var(--blue)' }}
+              style={{ fontSize: 11, color: 'var(--blue)' }}
               disabled={submitMut.isPending}
               onClick={() => {
                 if (window.confirm(`Submit ${row.code} for design review?`)) submitMut.mutate(row.id);
@@ -444,7 +444,7 @@ function Row({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10, color: 'var(--green)' }}
+                style={{ fontSize: 11, color: 'var(--green2)' }}
                 disabled={approveMut.isPending}
                 onClick={() => {
                   if (
@@ -460,7 +460,7 @@ function Row({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 10, color: 'var(--red)' }}
+                style={{ fontSize: 11, color: 'var(--red2)' }}
                 disabled={reviseMut.isPending}
                 onClick={() => {
                   const reason = window.prompt('Revision reason:');
@@ -876,7 +876,7 @@ function LogTimeModal({
                 {previous.map((t) => (
                   <tr key={t.id}>
                     <td style={{ fontSize: 11 }}>{fmtDate(t.logDate)}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                       {t.hours}h
                     </td>
                     <td style={{ fontSize: 11 }}>{t.workerText}</td>
@@ -1039,7 +1039,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,
       }}

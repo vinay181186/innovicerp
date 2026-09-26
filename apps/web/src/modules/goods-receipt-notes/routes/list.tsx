@@ -67,7 +67,7 @@ function QtyBox({
       <div
         className="mono"
         style={{
-          fontSize: 9,
+          fontSize: 11,
           color: 'var(--text3)',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
@@ -160,7 +160,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -299,7 +299,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           Loading…
         </div>
       ) : isError ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
           {error instanceof Error ? error.message : 'Could not load GRNs. Try again.'}
         </div>
       ) : rows.length === 0 ? (
@@ -550,7 +550,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>
+      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load GRN detail. Try again.'}
       </div>
     );
@@ -568,7 +568,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
       >
         <div
           style={{
-            fontSize: 10,
+            fontSize: 11,
             color: 'var(--blue)',
             fontFamily: 'var(--mono)',
             fontWeight: 700,
@@ -598,8 +598,8 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
             <th>Item Code</th>
             <th>Item Name</th>
             <th>Received</th>
-            <th style={{ color: 'var(--green)' }}>Accepted</th>
-            <th style={{ color: 'var(--red)' }}>Rejected</th>
+            <th style={{ color: 'var(--green2)' }}>Accepted</th>
+            <th style={{ color: 'var(--red2)' }}>Rejected</th>
             <th>QC</th>
             <th>QC Date</th>
           </tr>
@@ -687,7 +687,7 @@ function GrnKpiStrip({
             key: 'qcpending',
             label: 'QC Pending',
             count: summary.qcPending,
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
             onClick: () => onSelectStatus('pending'),
             active: activeStatus === 'pending',
           },
@@ -695,7 +695,7 @@ function GrnKpiStrip({
             key: 'qccleared',
             label: 'QC Cleared',
             count: summary.qcCleared,
-            color: 'var(--green)',
+            color: 'var(--green2)',
             onClick: () => onSelectStatus('completed'),
             active: activeStatus === 'completed',
           },

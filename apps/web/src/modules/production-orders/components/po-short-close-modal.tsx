@@ -103,7 +103,7 @@ export function PoShortCloseModal({
         <div style={{ marginTop: 8 }}>
           {creditedQty} of {orderQty} pieces are already credited to stock and{' '}
           <span className="fw-700">stay credited</span>. The pending{' '}
-          <span className="fw-700" style={{ color: 'var(--amber)' }}>
+          <span className="fw-700" style={{ color: 'var(--amber2)' }}>
             {stopping}
           </span>{' '}
           go back to the plan&apos;s Pending, so a new Production Order can be raised for them.

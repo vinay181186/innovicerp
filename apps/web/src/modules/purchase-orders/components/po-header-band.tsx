@@ -29,7 +29,7 @@ function accentFor(status: PurchaseOrderDetail['status']): string {
 }
 
 const CAPTION: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 11,
   fontWeight: 700,
   textTransform: 'uppercase',
   letterSpacing: '0.08em',
@@ -210,7 +210,7 @@ export function PoHeaderBand({
           <Row
             label="Received"
             value={
-              <span className="mono" style={{ color: 'var(--green)' }}>
+              <span className="mono" style={{ color: 'var(--green2)' }}>
                 {receivedQty}
               </span>
             }
@@ -244,7 +244,7 @@ export function PoHeaderBand({
                 }}
               >
                 <span style={{ fontSize: 12, fontWeight: 700 }}>Total</span>
-                <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
+                <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--green2)' }}>
                   ₹{detail.totalAmount.toFixed(2)}
                 </span>
               </div>
@@ -286,7 +286,7 @@ export function PoHeaderBand({
               <Row
                 label="Rejected at"
                 value={
-                  <span className="mono" style={{ color: 'var(--red)' }}>
+                  <span className="mono" style={{ color: 'var(--red2)' }}>
                     {fmtDateTime(detail.rejectedAt)}
                   </span>
                 }
@@ -294,7 +294,7 @@ export function PoHeaderBand({
               {detail.rejectionReason ? (
                 <Row
                   label="Reason"
-                  value={<span style={{ color: 'var(--red)' }}>{detail.rejectionReason}</span>}
+                  value={<span style={{ color: 'var(--red2)' }}>{detail.rejectionReason}</span>}
                 />
               ) : null}
             </>

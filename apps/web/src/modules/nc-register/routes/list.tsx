@@ -129,7 +129,7 @@ function NcRegisterListPage(): React.JSX.Element {
   // return never trips rules-of-hooks.
   if (eff && !ncPerms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -213,13 +213,13 @@ function NcRegisterListPage(): React.JSX.Element {
                   key: 'total',
                   label: 'NCs',
                   count: summary?.total == null ? '—' : Math.round(summary.total),
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                 },
                 {
                   key: 'pending',
                   label: 'NC Raised',
                   count: summary?.pending == null ? '—' : Math.round(summary.pending),
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                 },
                 {
                   key: 'totalQty',
@@ -236,7 +236,7 @@ function NcRegisterListPage(): React.JSX.Element {
                   key: 'scrap',
                   label: 'Scrap Qty',
                   count: summary?.scrapQty == null ? '—' : Math.round(summary.scrapQty),
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                 },
               ]}
             />
@@ -322,7 +322,7 @@ function NcRegisterListPage(): React.JSX.Element {
               Loading…
             </div>
           ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load NCs. Try again.'}
             </div>
           ) : rows.length === 0 ? (
@@ -371,7 +371,7 @@ function NcRegisterListPage(): React.JSX.Element {
                         to="/nc-register/$id"
                         params={{ id: nc.id }}
                         className="td-code"
-                        style={{ color: 'var(--red)', fontWeight: 800, fontSize: 13 }}
+                        style={{ color: 'var(--red2)', fontWeight: 800, fontSize: 13 }}
                         title="Open the NC detail page"
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -396,7 +396,7 @@ function NcRegisterListPage(): React.JSX.Element {
                       {nc.disposition ? <NcDispositionBadge disposition={nc.disposition} /> : null}
                       {/* Legacy L22534: rework progress hint beside the disposition. */}
                       {nc.disposition === 'rework' && Number(nc.reworkDoneQty) > 0 ? (
-                        <span style={{ fontSize: 10, color: 'var(--cyan)' }}>
+                        <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
                           ♻ {Number(nc.reworkDoneQty)}/{Number(nc.rejectedQty)} done
                         </span>
                       ) : null}
@@ -414,7 +414,7 @@ function NcRegisterListPage(): React.JSX.Element {
                             to="/nc-register/$id"
                             params={{ id: nc.id }}
                             className="btn btn-primary btn-sm"
-                            style={{ fontSize: 10 }}
+                            style={{ fontSize: 11 }}
                             title="Dispose this NC on its detail page"
                           >
                             ✏ Dispose
@@ -426,7 +426,7 @@ function NcRegisterListPage(): React.JSX.Element {
                             to="/nc-register/$id"
                             params={{ id: nc.id }}
                             className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 10 }}
+                            style={{ fontSize: 11 }}
                             title="Close the rework on this NC's detail page"
                           >
                             ✅ Close Rework
@@ -437,7 +437,7 @@ function NcRegisterListPage(): React.JSX.Element {
                             to="/nc-register/$id"
                             params={{ id: nc.id }}
                             className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 10, color: 'var(--purple)' }}
+                            style={{ fontSize: 11, color: 'var(--purple)' }}
                             title="Create a CAPA from this NC on its detail page"
                           >
                             🛡 CAPA
@@ -521,7 +521,7 @@ function NcRegisterListPage(): React.JSX.Element {
                       <span>·</span>
                       <span>
                         Rejected{' '}
-                        <span className="mono fw-700" style={{ color: 'var(--red)' }}>
+                        <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
                           {Number(nc.rejectedQty).toFixed(0)}
                         </span>
                       </span>

@@ -78,7 +78,7 @@ function DesignProjectDetailPage(): React.JSX.Element {
   // no-access panel, not the detail page.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -93,7 +93,7 @@ function DesignProjectDetailPage(): React.JSX.Element {
         <div className="panel" style={{ marginTop: 14 }}>
           <div className="panel-body">
             {isError ? (
-              <div className="empty-state" style={{ color: 'var(--red)' }}>
+              <div className="empty-state" style={{ color: 'var(--red2)' }}>
                 {error instanceof Error
                   ? error.message
                   : 'Could not load design project. Try again.'}
@@ -200,7 +200,7 @@ function Tile({
       className="panel"
       style={{ textAlign: 'center', padding: 12 }}
     >
-      <div className="text3" style={{ fontSize: 10 }}>
+      <div className="text3" style={{ fontSize: 11 }}>
         {label}
       </div>
       <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
@@ -223,7 +223,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
         display: 'inline-block',
         padding: '2px 9px',
         borderRadius: 12,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         color,
         background: `${color}12`,
@@ -270,7 +270,7 @@ function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.E
         display: 'inline-block',
         padding: '2px 9px',
         borderRadius: kind === 'status' ? 4 : 12,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         color: c,
         background: `${c}12`,
@@ -383,7 +383,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                         </td>
                         <td className="td-ctr">
                           {linkedIssues > 0 ? (
-                            <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                            <span style={{ color: 'var(--red2)', fontWeight: 700 }}>
                               ⚠ {linkedIssues}
                             </span>
                           ) : (
@@ -395,7 +395,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              style={{ fontSize: 10 }}
+                              style={{ fontSize: 11 }}
                               onClick={() => setEditTask(t)}
                             >
                               ✏
@@ -456,7 +456,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                       background: 'var(--bg4)',
                       padding: '1px 7px',
                       borderRadius: 10,
-                      fontSize: 10,
+                      fontSize: 11,
                       color: 'var(--text3)',
                     }}
                   >
@@ -490,7 +490,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                           {t.title}
                         </div>
                         <div
-                          style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 10 }}
+                          style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 11 }}
                         >
                           <Badge value={t.priority} />
                           <span className="text3">👤 {t.assigneeText ?? ''}</span>
@@ -500,7 +500,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                             </span>
                           ) : null}
                           {taskIssues > 0 ? (
-                            <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                            <span style={{ color: 'var(--red2)', fontWeight: 700 }}>
                               ⚠{taskIssues}
                             </span>
                           ) : null}
@@ -713,38 +713,38 @@ function ViewTaskModal({
         }}
       >
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Assignee
           </div>
           <div style={{ fontWeight: 600 }}>{task.assigneeText ?? ''}</div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Item Name
           </div>
           <div>{task.partText ?? '—'}</div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Priority
           </div>
           <Badge value={task.priority} />
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Due Date
           </div>
           <div>{fmtDate(task.dueDate)}</div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Task Status
           </div>
           <Badge value={task.status} kind="status" />
         </div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 10 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           Description
         </div>
         <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
@@ -754,7 +754,7 @@ function ViewTaskModal({
 
       {issues.length > 0 ? (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red2)', marginBottom: 6 }}>
             ⚠ Issues ({issues.length})
           </div>
           {issues.map((i) => (
@@ -798,7 +798,7 @@ function ViewTaskModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 700,
                 color: 'var(--blue)',
                 flexShrink: 0,
@@ -921,7 +921,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                           <button
                             type="button"
                             className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 10 }}
+                            style={{ fontSize: 11 }}
                             onClick={() => setEditIssue(i)}
                           >
                             ✏
@@ -1155,25 +1155,25 @@ function ViewIssueModal({
     <Modal onClose={onClose} title={`⚠ ${issue.title}`}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Severity
           </div>
           <Badge value={issue.severity} />
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Issue Status
           </div>
           <Badge value={issue.status} kind="status" />
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Assigned To
           </div>
           <div style={{ fontWeight: 600 }}>{issue.assignedToText ?? ''}</div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Raised Date
           </div>
           <div>
@@ -1181,14 +1181,14 @@ function ViewIssueModal({
           </div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Resolved Date
           </div>
           <div>{fmtDate(issue.resolvedDate)}</div>
         </div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 10 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           Description
         </div>
         <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
@@ -1211,7 +1211,7 @@ function ViewIssueModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 700,
                 color: 'var(--blue)',
                 flexShrink: 0,
@@ -1299,7 +1299,7 @@ function ChecklistTab({
             padding: '10px 14px',
             marginBottom: 12,
             fontSize: 12,
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
           }}
         >
           ⚠ {detail.tasks.filter((t) => t.status !== 'Completed').length} task(s) incomplete
@@ -1314,7 +1314,7 @@ function ChecklistTab({
             padding: '10px 14px',
             marginBottom: 12,
             fontSize: 12,
-            color: 'var(--red)',
+            color: 'var(--red2)',
           }}
         >
           ⚠{' '}
@@ -1405,7 +1405,7 @@ function ChecklistTab({
           }}
         >
           <div style={{ fontSize: 24, marginBottom: 4 }}>✅</div>
-          <div style={{ fontWeight: 700, color: 'var(--green)', fontSize: 15 }}>
+          <div style={{ fontWeight: 700, color: 'var(--green2)', fontSize: 15 }}>
             Ready for Release!
           </div>
           {canApprove && detail.project.status !== 'Released' ? (
@@ -1623,7 +1623,7 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                         <td>
                           {linked ? (
                             <span
-                              style={{ color: 'var(--green)', fontWeight: 700, fontSize: 10 }}
+                              style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 11 }}
                             >
                               ✔ {linked.code}
                             </span>
@@ -2067,7 +2067,7 @@ function Field({
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 4,
@@ -2116,7 +2116,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,
       }}

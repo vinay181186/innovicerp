@@ -82,7 +82,7 @@ function InvoiceDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -97,7 +97,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   }
   if (isError || !inv) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load invoice. Try again.'}
       </div>
     );
@@ -141,9 +141,9 @@ function InvoiceDetailPage(): React.JSX.Element {
           label: `GST ${inv.gstPercent}%`,
           value: inr(inv.gstAmount ?? 0),
           size: 16,
-          color: 'var(--amber)',
+          color: 'var(--amber2)',
         },
-        { label: 'Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green)' },
+        { label: 'Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green2)' },
         { label: 'Paid', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
         {
           label: 'Outstanding',
@@ -279,7 +279,7 @@ function InvoiceDetailPage(): React.JSX.Element {
               </div>
             </div>
             {payErr ? (
-              <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{payErr}</div>
+              <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{payErr}</div>
             ) : null}
             <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
               <button
@@ -337,7 +337,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
                     <td style={{ fontSize: 11 }}>{fmtDate(p.paymentDate)}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                       {inr(p.amount ?? 0)}
                     </td>
                     <td style={{ fontSize: 11 }}>{p.mode}</td>

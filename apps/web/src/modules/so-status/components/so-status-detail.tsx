@@ -69,9 +69,9 @@ const CHIP_TINT = {
   cyan: { color: 'var(--cyan)', bg: 'rgba(0,136,187,0.03)', border: 'rgba(0,136,187,0.19)' },
   purple: { color: 'var(--purple)', bg: 'rgba(124,58,237,0.03)', border: 'rgba(124,58,237,0.19)' },
   blue: { color: 'var(--blue)', bg: 'rgba(37,99,235,0.03)', border: 'rgba(37,99,235,0.19)' },
-  green: { color: 'var(--green)', bg: 'rgba(22,163,74,0.03)', border: 'rgba(22,163,74,0.19)' },
+  green: { color: 'var(--green2)', bg: 'rgba(22,163,74,0.03)', border: 'rgba(22,163,74,0.19)' },
   green2: { color: 'var(--green2)', bg: 'rgba(21,128,61,0.03)', border: 'rgba(21,128,61,0.19)' },
-  amber: { color: 'var(--amber)', bg: 'rgba(196,122,0,0.03)', border: 'rgba(196,122,0,0.19)' },
+  amber: { color: 'var(--amber2)', bg: 'rgba(196,122,0,0.03)', border: 'rgba(196,122,0,0.19)' },
 } satisfies Record<string, ChipTint>;
 
 function todayStr(): string {
@@ -105,7 +105,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)', padding: 24 }}>
+      <div className="empty-state" style={{ color: 'var(--red2)', padding: 24 }}>
         {error instanceof Error ? error.message : 'Unable to load SO status'}
       </div>
     );
@@ -132,7 +132,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
           <button
             type="button"
             className="btn btn-sm"
-            style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)', fontSize: 11 }}
+            style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--green2)', border: '1px solid rgba(34,197,94,0.3)', fontSize: 11 }}
             onClick={() => exportSoStatusExcel(data)}
           >
             ⬇ Export
@@ -159,7 +159,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
           <HeaderFact label="Progress" value={`${header.totalDoneQty}/${header.totalQty} · ${header.overallCompletionPct}%`} />
           {header.remarks ? (
             <div style={{ flex: 1 }}>
-              <div className="text3" style={{ fontSize: 10 }}>Remarks</div>
+              <div className="text3" style={{ fontSize: 11 }}>Remarks</div>
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>{header.remarks}</div>
             </div>
           ) : null}
@@ -234,7 +234,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
               <Loader2 className="inline h-4 w-4 animate-spin" /> Loading timeline…
             </div>
           ) : timeline.isError || !timeline.data ? (
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {timeline.error instanceof Error
                 ? timeline.error.message
                 : 'Could not load timeline. Try again.'}
@@ -310,7 +310,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
 function HeaderFact({ label, value, sub, color, bold }: { label: string; value: string; sub?: string | undefined; color?: string | undefined; bold?: boolean | undefined }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 10 }}>{label}</div>
+      <div className="text3" style={{ fontSize: 11 }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: bold ? 700 : 400, color }}>{value}</div>
       {sub ? <div className="text3" style={{ fontSize: 11 }}>{sub}</div> : null}
     </div>
@@ -338,22 +338,22 @@ function EquipmentBomBanner({
   return (
     <div style={{ marginTop: 10, display: 'flex', gap: 16, flexWrap: 'wrap', padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, border: '1px solid var(--border)' }}>
       <div>
-        <div className="text3" style={{ fontSize: 10 }}>EQUIPMENT</div>
+        <div className="text3" style={{ fontSize: 11 }}>EQUIPMENT</div>
         <div style={{ fontWeight: 700, color: 'var(--purple)' }}>{info.equipmentItemCode ?? '—'} {info.equipmentItemName ?? ''}</div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 10 }}>EQUIP QTY</div>
+        <div className="text3" style={{ fontSize: 11 }}>EQUIP QTY</div>
         <div style={{ fontWeight: 700, fontSize: 16 }}>{info.equipmentQty}</div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 10 }}>BOM STATUS</div>
+        <div className="text3" style={{ fontSize: 11 }}>BOM STATUS</div>
         <div style={{ fontWeight: 700, color: bomStatusColor }}>{bomStatus ?? 'BOM Pending'}</div>
       </div>
       {bomLinked && info.bomNo ? (
         <>
           <div>
-            <div className="text3" style={{ fontSize: 10 }}>LINKED BOM</div>
-            <div style={{ fontWeight: 700, color: 'var(--green)' }}>{info.bomNo} BOM Rev {info.bomRev ?? '—'}</div>
+            <div className="text3" style={{ fontSize: 11 }}>LINKED BOM</div>
+            <div style={{ fontWeight: 700, color: 'var(--green2)' }}>{info.bomNo} BOM Rev {info.bomRev ?? '—'}</div>
             <div className="text3" style={{ fontSize: 11 }}>{info.bomName} ({info.bomPartsCount} items)</div>
           </div>
           <div style={{ marginLeft: 'auto' }}>
@@ -374,7 +374,7 @@ function EquipmentBomBanner({
           </div>
         </>
       ) : (
-        <div style={{ flex: 1, color: 'var(--amber)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}>
+        <div style={{ flex: 1, color: 'var(--amber2)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}>
           ⚠ No BOM linked — assign a BOM in SO Master to plan items.
         </div>
       )}
@@ -394,8 +394,8 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
             <tr>
               <th>Sr No</th><th>Item Code</th><th>Item Name</th><th>Qty / Set</th>
               <th style={{ color: 'var(--cyan)', fontWeight: 800 }} title="Equipment Qty × Qty per Set">Total Need</th><th>BOM Type</th>
-              <th style={{ color: 'var(--green)' }}>Stock</th>
-              <th style={{ color: 'var(--red)' }}>Pending</th><th>Plan Status</th>
+              <th style={{ color: 'var(--green2)' }}>Stock</th>
+              <th style={{ color: 'var(--red2)' }}>Pending</th><th>Plan Status</th>
             </tr>
           </thead>
           <tbody>
@@ -417,7 +417,7 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
                     {c.planStatus ? (
                       <>
                         <span style={{ fontWeight: 700, color: c.planStatus === 'in_planning' ? 'var(--amber)' : c.planStatus === 'jc_created' ? 'var(--cyan)' : 'var(--green)' }}>{c.planStatus === 'in_planning' ? 'In Planning' : c.planStatus === 'jc_created' ? 'JC Created' : c.planStatus?.replaceAll('_', ' ')}</span>
-                        {c.jcCode ? <span className="mono" style={{ fontSize: 10, color: 'var(--cyan)', marginLeft: 6 }}>{c.jcCode}</span> : null}
+                        {c.jcCode ? <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', marginLeft: 6 }}>{c.jcCode}</span> : null}
                       </>
                     ) : (
                       <span className="text3">Not planned</span>
@@ -473,25 +473,25 @@ function LinePanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="text3 mono" style={{ fontSize: 11, fontWeight: 700 }}>Ln {line.lineNo}</span>
           {line.clientPoLineNo ? (
-            <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>POL {line.clientPoLineNo}</span>
+            <span style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>POL {line.clientPoLineNo}</span>
           ) : null}
           <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--purple)' }}>{itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision, '')}</span>
           <span style={{ fontSize: 13 }}>{line.partName ?? ''}</span>
         </div>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap', marginLeft: 'auto' }}>
           <div style={{ textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 10 }}>ORDER QTY</div>
+            <div className="text3" style={{ fontSize: 11 }}>ORDER QTY</div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{line.orderQty}</div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 10 }}>PROGRESS</div>
+            <div className="text3" style={{ fontSize: 11 }}>PROGRESS</div>
             <div style={{ width: 90, height: 8, background: 'var(--bg5)', borderRadius: 4, margin: '4px auto 2px' }}>
               <div style={{ width: `${line.completionPct}%`, height: '100%', background: statusColor, borderRadius: 4 }} />
             </div>
-            <div className="text3" style={{ fontSize: 10 }}>{line.completionPct}%</div>
+            <div className="text3" style={{ fontSize: 11 }}>{line.completionPct}%</div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, border: `1px solid ${statusColor}`, color: statusColor }}>
+            <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, border: `1px solid ${statusColor}`, color: statusColor }}>
               {LINE_STATUS_LABEL[line.status]}
             </span>
           </div>
@@ -524,7 +524,7 @@ function LinePanel({
               {/* POL — the CUSTOMER's own purchase-order line number off the SO
                   line behind this card, immediately before the item code. */}
               <th>JC No.</th><th style={{ color: 'var(--purple)' }}>POL</th><th>Item Code</th><th>Item Name</th><th>Order Qty</th><th>Completed</th>
-              <th style={{ color: 'var(--red)' }}>Pending</th><th>Priority</th><th>Due Date</th>
+              <th style={{ color: 'var(--red2)' }}>Pending</th><th>Priority</th><th>Due Date</th>
               <th>JC Status</th><th>Operations</th><th></th>
             </tr>
           </thead>
@@ -568,7 +568,7 @@ function LinePanel({
             <Plus size={12} /> Plan {remainingToPlan} pcs
           </button>
         ) : !showAssemblyBom && !isEquipmentLine ? (
-          <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✓ Fully Planned</span>
+          <span style={{ fontSize: 11, color: 'var(--green2)', fontWeight: 700 }}>✓ Fully Planned</span>
         ) : null}
         <button
           type="button"
@@ -599,7 +599,7 @@ function OutsourceAlertRows({ alert }: { alert: SoStatusOutsourceAlert }): React
         </div>
       ) : null}
       {alert.pendingPrCount > 0 ? (
-        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--amber)', fontWeight: 600 }}>
+        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--amber2)', fontWeight: 600 }}>
           📋 {alert.pendingPrCount} outsource op(s) awaiting Purchase Request
         </div>
       ) : null}
@@ -623,7 +623,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
     <tr>
       <td style={{ paddingLeft: 28, width: 130 }}>
         <Link to="/job-cards/$id" params={{ id: jc.id }} style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', textDecoration: 'underline dotted' }}>{jc.code}</Link>
-        {runCount > 0 ? <span style={{ fontSize: 10, color: 'var(--amber)', marginLeft: 4 }}>▶{runCount} running</span> : null}
+        {runCount > 0 ? <span style={{ fontSize: 11, color: 'var(--amber2)', marginLeft: 4 }}>▶{runCount} running</span> : null}
       </td>
       <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>{jc.clientPoLineNo ?? '—'}</td>
       <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{itemCodeWithRev(jc.itemCode, jc.itemRevision)}</td>
@@ -639,7 +639,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
         <span style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: 6, width: 80, height: 5, background: 'var(--bg5)', borderRadius: 3 }}>
           <span style={{ display: 'block', width: `${jc.completionPct}%`, height: '100%', background: jcColor, borderRadius: 3 }} />
         </span>
-        <span className="text3" style={{ fontSize: 10, marginLeft: 4 }}>{jc.completionPct}%</span>
+        <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>{jc.completionPct}%</span>
       </td>
       <td className="td-ctr" style={{ fontSize: 12, color: jc.remainingQty > 0 ? 'var(--red)' : 'var(--green)' }}>{jc.remainingQty}</td>
       <td><JcPriorityBadge priority={jc.priority} /></td>
@@ -655,7 +655,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
                 key={`${p.jcId}-${p.opSeq}`}
                 type="button"
                 className="btn btn-sm"
-                style={{ background: 'rgba(255,176,32,0.1)', color: 'var(--amber)', border: '1px solid rgba(255,176,32,0.3)', fontSize: 9, padding: '2px 8px', margin: 1 }}
+                style={{ background: 'rgba(255,176,32,0.1)', color: 'var(--amber2)', border: '1px solid rgba(255,176,32,0.3)', fontSize: 11, padding: '2px 8px', margin: 1 }}
                 title={`Raise PR for Op ${opSrNo(p.opSeq)} — ${p.operation}`}
                 onClick={() => navigate({ to: '/purchase-requests', search: { jc: p.jcCode, op: p.opSeq } as never })}
               >
@@ -666,7 +666,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
         ) : null}
       </td>
       <td>
-        <Link to="/job-cards/$id" params={{ id: jc.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 8px' }}>View</Link>
+        <Link to="/job-cards/$id" params={{ id: jc.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}>View</Link>
       </td>
     </tr>
   );
@@ -715,7 +715,7 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
         className="mono"
         title={title}
         style={{
-          fontSize: 9,
+          fontSize: 11,
           padding: '1px 5px',
           borderRadius: 3,
           border: `1px solid ${ic}`,
@@ -768,9 +768,9 @@ function Chip({ label, icon, tint, qty, total }: { label: string; icon: string; 
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <span className="text3" style={{ fontSize: 10, fontWeight: 600 }}>{icon} {label}</span>
+        <span className="text3" style={{ fontSize: 11, fontWeight: 600 }}>{icon} {label}</span>
         <span className="mono" style={{ fontSize: 13, fontWeight: 800, color: filled ? tint.color : 'var(--text3)' }}>
-          {qty}<span className="text3" style={{ fontSize: 10, fontWeight: 400 }}> /{total}</span>
+          {qty}<span className="text3" style={{ fontSize: 11, fontWeight: 400 }}> /{total}</span>
         </span>
       </div>
       <div style={{ height: 4, background: 'var(--bg5)', borderRadius: 2 }}>

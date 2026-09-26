@@ -62,7 +62,7 @@ export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: P
               <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
             </div>
           ) : isError ? (
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               Could not load revisions. Try again.
             </div>
           ) : items.length === 0 ? (

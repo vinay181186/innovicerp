@@ -67,7 +67,7 @@ function StockValuationPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load stock valuation. Try again.'}
       </div>
     );
@@ -133,23 +133,23 @@ function StockValuationPage(): React.JSX.Element {
           }}
         >
           <div className="panel" style={{ padding: 10, textAlign: 'center', border: '2px solid var(--cyan)' }}>
-            <div style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>Total Stock Value</div>
+            <div style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>Total Stock Value</div>
             <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--cyan)' }}>
               {inr(data.grandTotal)}
             </div>
-            <div className="text3" style={{ fontSize: 9 }}>
+            <div className="text3" style={{ fontSize: 11 }}>
               {data.grandStockItems} / {data.grandItems} items in stock
             </div>
           </div>
           {data.categories.map((c) => (
             <div key={c.category} className="panel" style={{ padding: 10, textAlign: 'center' }}>
-              <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
+              <div className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
                 {c.category}
               </div>
-              <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
+              <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green2)' }}>
                 {inr(c.value)}
               </div>
-              <div className="text3" style={{ fontSize: 9 }}>
+              <div className="text3" style={{ fontSize: 11 }}>
                 {c.stockCount} in stock
               </div>
             </div>
@@ -209,7 +209,7 @@ function StockValuationPage(): React.JSX.Element {
                 filtered.map((r) => (
                   <tr key={r.itemId}>
                     <td>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: catColor(r.category) }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: catColor(r.category) }}>
                         {r.category}
                       </span>
                     </td>

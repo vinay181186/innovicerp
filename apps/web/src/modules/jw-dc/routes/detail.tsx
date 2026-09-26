@@ -56,7 +56,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'JW DC not found'}
           </div>
         </div>
@@ -124,7 +124,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
           <div className="panel-title">Line Items ({dc.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             sent <b style={{ color: 'var(--text)' }}>{dc.totalSentQty}</b> · returned{' '}
-            <b style={{ color: 'var(--green)' }}>{dc.totalReturnedQty}</b> · pending{' '}
+            <b style={{ color: 'var(--green2)' }}>{dc.totalReturnedQty}</b> · pending{' '}
             <b style={{ color: dc.pendingQty > 0 ? 'var(--red)' : 'var(--green)' }}>
               {dc.pendingQty}
             </b>
@@ -173,7 +173,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                     <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {l.sentQty}
                     </td>
-                    <td className="mono" style={{ color: 'var(--green)' }}>
+                    <td className="mono" style={{ color: 'var(--green2)' }}>
                       {l.alreadyReturned}
                     </td>
                     <td

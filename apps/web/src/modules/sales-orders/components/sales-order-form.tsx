@@ -681,7 +681,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
+              style={{ borderColor: 'var(--amber)', color: 'var(--amber2)' }}
               disabled={formState.isSubmitting || !docNoValid}
               onClick={() => void handleSubmit(onValid(true))()}
               title="Save as Draft — not yet released to planning"
@@ -775,7 +775,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         </div>
 
         <div className="form-grp">
-          <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green)' }}>GST %</label>
+          <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green2)' }}>GST %</label>
           <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
             {SO_GST_PERCENTS.map((g) => <option key={g} value={g}>{g}%</option>)}
           </select>
@@ -792,9 +792,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           as dashed pills inside the Client PO group. Same inputs, same handlers. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', fontSize: 11, marginBottom: 14 }}>
         {poFileName ? (
-          <span style={{ color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: 'var(--green2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{poFileName}</span>
-            <button type="button" onClick={clearPoFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>✕</button>
+            <button type="button" onClick={clearPoFile} style={{ color: 'var(--red2)', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>✕</button>
           </span>
         ) : (
           <label style={{ color: 'var(--blue)', fontWeight: 600, cursor: 'pointer' }}>
@@ -803,18 +803,18 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           </label>
         )}
         {emailFileName ? (
-          <span style={{ color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: 'var(--green2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
             {emailFileUrl ? (
               <button
                 type="button"
                 onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
-                style={{ color: 'var(--cyan)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                style={{ color: 'var(--cyan)', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
               >
                 View
               </button>
             ) : null}
-            <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>✕</button>
+            <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red2)', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>✕</button>
           </span>
         ) : (
           <label style={{ color: 'var(--blue)', fontWeight: 600, cursor: 'pointer' }}>
@@ -891,14 +891,14 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               ) : null}
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="so-equip-rate" style={{ color: 'var(--green)' }}>SO Value (₹ / unit)</label>
+              <label className="form-label" htmlFor="so-equip-rate" style={{ color: 'var(--green2)' }}>SO Value (₹ / unit)</label>
               {/* No ★ — the server defaults this to 0. `setValueAs` is what
                   makes that actually true: with valueAsNumber a cleared box
                   became NaN, which goes over the wire as null. The `min={0}`
                   attribute only ever raised a native browser bubble, which is
                   not how this form reports anything else — so the rule is a
                   real one now and lands in .form-error like its neighbours. */}
-              <input id="so-equip-rate" type="number" step="0.01" min={0} className="innovic-input" style={{ fontWeight: 700, color: 'var(--green)' }} {...register('lines.0.rate', { setValueAs: (v: string | number | null | undefined) => (v === '' || v === null || v === undefined ? 0 : Number(v)), validate: (v) => !isEquip || (Number.isFinite(v) && v >= 0) || 'SO Value cannot be negative' })} />
+              <input id="so-equip-rate" type="number" step="0.01" min={0} className="innovic-input" style={{ fontWeight: 700, color: 'var(--green2)' }} {...register('lines.0.rate', { setValueAs: (v: string | number | null | undefined) => (v === '' || v === null || v === undefined ? 0 : Number(v)), validate: (v) => !isEquip || (Number.isFinite(v) && v >= 0) || 'SO Value cannot be negative' })} />
               {errors.lines?.[0]?.rate?.message ? (
                 <div className="form-error">{errors.lines[0]?.rate?.message}</div>
               ) : null}
@@ -947,7 +947,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       <Link
                         to="/bom-masters/new"
                         className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 10, marginLeft: 6 }}
+                        style={{ fontSize: 11, marginLeft: 6 }}
                       >
                         Go to BOM Master →
                       </Link>
@@ -1002,13 +1002,13 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                         borderRadius: 6,
                         background: 'rgba(245,158,11,0.10)',
                         border: '1px solid rgba(245,158,11,0.35)',
-                        color: 'var(--amber)',
+                        color: 'var(--amber2)',
                       }
                     : {}),
                 }}
               >
                 {isWarn ? '⚠ ' : ''}{importMsg}{' '}
-                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setImportMsg(null)}>✕</button>
               </div>
             );
           })() : null}
@@ -1036,8 +1036,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   <th style={{ width: '8%' }}>POL</th>
                   <th style={{ width: '5%' }}>UOM</th>
                   <th style={{ width: '7%' }} className="td-ctr">Order Qty <span className="req">★</span></th>
-                  <th style={{ width: '6%', color: 'var(--green)' }}>Rate (₹)</th>
-                  <th style={{ width: '6%', color: 'var(--green)' }}>Amount</th>
+                  <th style={{ width: '6%', color: 'var(--green2)' }}>Rate (₹)</th>
+                  <th style={{ width: '6%', color: 'var(--green2)' }}>Amount</th>
                   <th style={{ width: '3%' }} />
                 </tr>
               </thead>
@@ -1096,9 +1096,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                         <td><input className="innovic-input" autoComplete="off" placeholder="POL" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
-                        <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
-                        <td><button type="button" className="btn btn-sm" style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', padding: '3px 8px' }} onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}>Delete</button></td>
+                        <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green2)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
+                        <td className="mono" style={{ fontSize: 11, color: 'var(--green2)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
+                        <td><button type="button" className="btn btn-sm" style={{ background: 'transparent', color: 'var(--red2)', border: '1px solid var(--red)', padding: '3px 8px' }} onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}>Delete</button></td>
                       </tr>
                     );
                   })
@@ -1194,10 +1194,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       {lineError || props.submitError ? (
         <div style={{ marginTop: 16 }}>
           {lineError ? (
-            <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{lineError}</div>
+            <div style={{ color: 'var(--red2)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{lineError}</div>
           ) : null}
           {props.submitError ? (
-            <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>{props.submitError}</div>
+            <div style={{ color: 'var(--red2)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>{props.submitError}</div>
           ) : null}
         </div>
       ) : null}

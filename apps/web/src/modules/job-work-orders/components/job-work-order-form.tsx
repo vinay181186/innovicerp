@@ -572,7 +572,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         </div>
 
         <div className="form-grp">
-          <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green)' }}>GST %</label>
+          <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green2)' }}>GST %</label>
           <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
             {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
           </select>
@@ -624,21 +624,21 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             </label>
             <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
             {emailFileName ? (
-              <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--green2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 📧 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
                 {emailFileUrl ? (
                   <button
                     type="button"
                     onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
-                    style={{ color: 'var(--blue)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    style={{ color: 'var(--blue)', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
                   >
                     👁 View
                   </button>
                 ) : null}
-                <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
+                <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red2)', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
               </span>
             ) : (
-              <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <label style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                 📧 Attach Email Ref
                 <input type="file" accept=".eml,.msg,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickEmailFile} />
               </label>
@@ -667,7 +667,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             {poFileName ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                 <span className="mono" style={{ color: 'var(--blue)' }}>📎 {poFileName}</span>
-                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={clearPoFile} aria-label="Remove PO document">✕</button>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={clearPoFile} aria-label="Remove PO document">✕</button>
               </div>
             ) : (
               <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => poFileRef.current?.click()}>
@@ -677,7 +677,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             {poFileError ? <div className="form-error">{poFileError}</div> : null}
           </div>
           {poEmailError ? (
-            <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red)' }}>⚠ {poEmailError}</div>
+            <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red2)' }}>⚠ {poEmailError}</div>
           ) : null}
         </div>
 
@@ -689,7 +689,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
       {/* Client Material Details (legacy L12839) */}
       <div style={{ border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: 12, margin: '0 0 16px', background: 'rgba(34,197,94,0.04)' }}>
-        <div style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '.08em', marginBottom: 8 }}>▸ CLIENT MATERIAL DETAILS</div>
+        <div style={{ fontSize: 11, color: 'var(--green2)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '.08em', marginBottom: 8 }}>▸ CLIENT MATERIAL DETAILS</div>
         <div className="form-grid">
           <div className="form-grp">
             <label className="form-label">Customer Material (Party Supplied Item)</label>
@@ -704,7 +704,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 page, so absence from the page does not prove absence from the
                 master and the warning would fire falsely. Positive match only. */}
             {matchedRmItem ? (
-              <div className="form-help" style={{ color: 'var(--green)' }}>
+              <div className="form-help" style={{ color: 'var(--green2)' }}>
                 ✅ <b>{matchedRmItem.name}</b>{matchedRmItem.material ? ` [${matchedRmItem.material}]` : ''}
               </div>
             ) : null}
@@ -742,13 +742,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     borderRadius: 6,
                     background: 'rgba(245,158,11,0.10)',
                     border: '1px solid rgba(245,158,11,0.35)',
-                    color: 'var(--amber)',
+                    color: 'var(--amber2)',
                   }
                 : {}),
             }}
           >
             {isWarn ? '⚠ ' : ''}{importMsg}{' '}
-            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setImportMsg(null)}>✕</button>
           </div>
         );
       })() : null}
@@ -781,8 +781,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               <th style={{ width: '5%' }}>Drawing Rev <span className="req">★</span></th>
               <th style={{ width: '5%' }}>UOM</th>
               <th style={{ width: '6%' }}>Order Qty <span className="req">★</span></th>
-              <th style={{ width: '6%', color: 'var(--green)' }}>Rate (₹)</th>
-              <th style={{ width: '7%', color: 'var(--green)' }}>Amount</th>
+              <th style={{ width: '6%', color: 'var(--green2)' }}>Rate (₹)</th>
+              <th style={{ width: '7%', color: 'var(--green2)' }}>Amount</th>
               <th style={{ width: '14%' }}>Assembly BOM</th>
               <th style={{ width: '3%' }} />
             </tr>
@@ -809,7 +809,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     </td>
                     <td>
                       <input className="innovic-input" autoComplete="off" placeholder="Item Name" readOnly={lineOnMaster} title={lineOnMaster ? 'Auto-filled from Item Master (item code is the key)' : undefined} style={lineOnMaster ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined} {...register(`lines.${idx}.partName` as const, { required: 'Item Name is required' })} />
-                      {errors.lines?.[idx]?.partName?.message ? <div className="form-error" style={{ fontSize: 10 }}>{errors.lines[idx]?.partName?.message}</div> : null}
+                      {errors.lines?.[idx]?.partName?.message ? <div className="form-error" style={{ fontSize: 11 }}>{errors.lines[idx]?.partName?.message}</div> : null}
                     </td>
                     <td><input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.material` as const)} /></td>
                     <td><input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.drawingNo` as const)} /></td>
@@ -830,8 +830,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       </select>
                     </td>
                     <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} /></td>
-                    <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
-                    <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
+                    <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ fontSize: 12, color: 'var(--green2)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
+                    <td className="mono" style={{ fontSize: 11, color: 'var(--green2)', fontWeight: 700 }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
                     <td>
                       <select className="innovic-select" {...register(`lines.${idx}.sourceBomMasterId` as const)}>
                         <option value="">— none (plain machining) —</option>
@@ -858,15 +858,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           <Tot label={`GST (${gstPercent}%)`} value={gstAmt} />
           <Tot label="Grand Total" value={grand} bold />
         </div>
-        <div className="text3" style={{ fontSize: 10, textAlign: 'right', marginTop: 4 }}>{lineCount} item{lineCount === 1 ? '' : 's'} • {totalPcs} total pcs</div>
+        <div className="text3" style={{ fontSize: 11, textAlign: 'right', marginTop: 4 }}>{lineCount} item{lineCount === 1 ? '' : 's'} • {totalPcs} total pcs</div>
       </div>
 
       <div style={{ marginTop: 16 }}>
         {lineError ? (
-          <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{lineError}</div>
+          <div style={{ color: 'var(--red2)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{lineError}</div>
         ) : null}
         {props.submitError ? (
-          <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{props.submitError}</div>
+          <div style={{ color: 'var(--red2)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{props.submitError}</div>
         ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           {props.onCancel ? <button type="button" className="btn btn-ghost" onClick={props.onCancel}>Cancel</button> : null}
@@ -967,7 +967,7 @@ function QuickAddClient({
 function Tot({ label, value, bold }: { label: string; value: number; bold?: boolean }): React.JSX.Element {
   return (
     <div style={{ textAlign: 'right' }}>
-      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase' }}>{label}</div>
+      <div className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{label}</div>
       <div className="mono" style={{ fontSize: bold ? 18 : 14, fontWeight: 700, color: bold ? 'var(--green)' : 'var(--text)' }}>₹{inrFormat(value)}</div>
     </div>
   );

@@ -63,7 +63,7 @@ function RouteCardDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -85,7 +85,7 @@ function RouteCardDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Route Card not found.'}
           </div>
         </div>
@@ -118,7 +118,7 @@ function RouteCardDetailPage(): React.JSX.Element {
               <span
                 className="mono fw-700"
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   padding: '2px 8px',
                   borderRadius: 3,
                   background: 'rgba(0,136,187,0.12)',
@@ -186,7 +186,7 @@ function RouteCardDetailPage(): React.JSX.Element {
               {detail.planType === 'direct_purchase' ? (
                 // ADR-171: the tile is gone from the form; the value survives
                 // on old cards so the user knows where the flag now lives.
-                <div className="text3" style={{ fontSize: 10 }}>
+                <div className="text3" style={{ fontSize: 11 }}>
                   legacy — set the item&apos;s Source to Buy instead
                 </div>
               ) : null}
@@ -218,7 +218,7 @@ function RouteCardDetailPage(): React.JSX.Element {
             <div
               style={{
                 marginTop: 8,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -304,14 +304,14 @@ function RouteCardDetailPage(): React.JSX.Element {
                       </td>
                       <td>
                         {op.opType === 'qc' ? (
-                          <span className="badge b-green" style={{ fontSize: 10 }}>
+                          <span className="badge b-green" style={{ fontSize: 11 }}>
                             🔬 QC
                           </span>
                         ) : op.opType === 'outsource' ? (
                           <span
                             className="badge"
                             style={{
-                              fontSize: 10,
+                              fontSize: 11,
                               color: 'var(--purple)',
                               background: 'rgba(124,58,237,0.12)',
                               border: '1px solid rgba(124,58,237,0.3)',
@@ -341,7 +341,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                           {tagName ? (
                             <span
                               style={{
-                                fontSize: 9,
+                                fontSize: 11,
                                 color: 'var(--text3)',
                                 fontWeight: 400,
                                 display: 'block',
@@ -447,7 +447,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                     <td className="td-ctr text3">
                       {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                     </td>
-                    <td className="mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
                       Route Card Rev {rev.revisionNo}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
@@ -470,7 +470,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                         <div
                           className="text3"
                           style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: 700,
                             letterSpacing: '.07em',
                             marginBottom: 6,

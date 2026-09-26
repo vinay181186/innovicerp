@@ -60,11 +60,11 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                     {r.entryCount}
                   </td>
                   <td>
-                    <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--green)' }}>
+                    <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--green2)' }}>
                       {r.completedQty}
                     </span>
                   </td>
-                  <td className="mono" style={{ color: 'var(--red)' }}>
+                  <td className="mono" style={{ color: 'var(--red2)' }}>
                     {r.rejectQty || ''}
                   </td>
                   <td className="mono" style={{ fontSize: 11 }}>
@@ -85,7 +85,7 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                     {totalQty}
                   </span>
                 </td>
-                <td className="mono fw-700" style={{ color: 'var(--red)' }}>
+                <td className="mono fw-700" style={{ color: 'var(--red2)' }}>
                   {totalReject || ''}
                 </td>
                 <td />

@@ -70,7 +70,7 @@ export function StatStrip({ items }: { items: StatStripItem[] }): React.JSX.Elem
           <>
             <div
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 700,
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',

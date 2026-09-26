@@ -73,7 +73,7 @@ function UserEditPage(): React.JSX.Element {
   if (!isAdmin) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           ⛔ Admin access required.
         </div>
       </div>
@@ -96,7 +96,7 @@ function UserEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'User not found'}
           </div>
         </div>
@@ -221,7 +221,7 @@ function UserEditPage(): React.JSX.Element {
           {softDelete.isError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -311,7 +311,7 @@ function UserEditPage(): React.JSX.Element {
               {submitError ? (
                 <div
                   style={{
-                    color: 'var(--red)',
+                    color: 'var(--red2)',
                     background: 'var(--red3)',
                     border: '1px solid #fca5a5',
                     borderRadius: 6,

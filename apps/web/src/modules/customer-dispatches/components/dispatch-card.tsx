@@ -53,7 +53,7 @@ function QtyBox({
       </div>
       <div
         className="mono"
-        style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+        style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
       >
         {label}
       </div>
@@ -117,7 +117,7 @@ export function DispatchCard(props: {
                 to="/invoices/new"
                 search={{ dispatchId: g.dispatchId }}
                 className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--green)' }}
+                style={{ color: 'var(--green2)' }}
                 title="Raise an invoice against this dispatch"
               >
                 🧾 Invoice
@@ -186,7 +186,7 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div
         style={{
-          fontSize: 10,
+          fontSize: 11,
           color: 'var(--blue)',
           fontFamily: 'var(--mono)',
           fontWeight: 700,
@@ -204,7 +204,7 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
             <th style={{ color: 'var(--purple)' }}>POL</th>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th className="td-ctr" style={{ color: 'var(--red)' }}>Dispatch Qty</th>
+            <th className="td-ctr" style={{ color: 'var(--red2)' }}>Dispatch Qty</th>
             <th className="td-ctr">UOM</th>
             <th className="td-ctr">Stock Before → After</th>
           </tr>
@@ -226,7 +226,7 @@ function DispatchLines({ g }: { g: DispatchGroup }): React.JSX.Element {
                 {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
               </td>
               <td className="fw-700">{l.itemName}</td>
-              <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>{l.qty}</td>
+              <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>{l.qty}</td>
               <td className="td-ctr">
                 <span className="badge b-grey">{l.uom ?? 'NOS'}</span>
               </td>

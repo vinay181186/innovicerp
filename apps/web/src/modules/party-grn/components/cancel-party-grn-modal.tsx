@@ -64,7 +64,7 @@ export function CancelPartyGrnModal({
           ⚠ Cancel {row.code}
         </div>
         <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          Takes <b style={{ color: 'var(--green)' }}>{row.totalReceivedQty}</b> off party stock for{' '}
+          Takes <b style={{ color: 'var(--green2)' }}>{row.totalReceivedQty}</b> off party stock for{' '}
           <b>{row.jwCodeText ?? 'this JWSO'}</b>. Cannot be undone. Refused if already issued to a
           Job Card.
         </div>
@@ -86,7 +86,7 @@ export function CancelPartyGrnModal({
           <div
             style={{
               marginTop: 12,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid var(--red)',
               borderRadius: 6,

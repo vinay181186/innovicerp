@@ -299,7 +299,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
   // after every hook so the early return never trips rules-of-hooks.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -397,7 +397,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
               key: 'closed',
               label: 'Closed',
               count: closedCount,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               active: search.status === 'closed',
               onClick: toggleStatus('closed'),
               title: 'Closed — stock credited with the finished qty',
@@ -406,7 +406,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
               key: 'short_closed',
               label: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
               count: shortClosedCount,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               active: search.status === 'short_closed',
               onClick: toggleStatus('short_closed'),
             },
@@ -431,7 +431,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
                   <td
                     colSpan={columns.length}
                     className="empty-state"
-                    style={{ color: 'var(--red)' }}
+                    style={{ color: 'var(--red2)' }}
                   >
                     {error instanceof Error
                       ? error.message

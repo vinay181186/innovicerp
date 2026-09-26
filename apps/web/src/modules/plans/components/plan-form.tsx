@@ -399,7 +399,7 @@ export function PlanForm({
       {submitError ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid #fca5a5',
             borderRadius: 6,
@@ -760,7 +760,7 @@ export function PlanForm({
                     'Loading…'
                   ) : (
                     <>
-                      Route Card: <span style={{ color: 'var(--amber)' }}>none</span> &mdash; enter
+                      Route Card: <span style={{ color: 'var(--amber2)' }}>none</span> &mdash; enter
                       the operations below
                     </>
                   )}
@@ -954,7 +954,7 @@ export function PlanForm({
             <div
               role="alert"
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -1012,7 +1012,7 @@ function Field({
         className="text3"
         style={{
           display: 'block',
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 4,

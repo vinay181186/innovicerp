@@ -59,16 +59,16 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
                       {p.inspections}
                     </td>
                     <td className="td-ctr mono">{p.jcs}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--green2)' }}>
                       {p.accepted}
                     </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--red2)' }}>
                       {p.rejected}
                     </td>
                     <td className="td-ctr mono fw-700" style={{ color: rejColor(p.rejRate) }}>
                       {p.rejRate}%
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {p.currentLoad}
                     </td>
                   </tr>

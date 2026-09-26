@@ -85,7 +85,7 @@ function PendingSoValuePage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error
                 ? error.message
                 : 'Could not load pending SO value. Try again.'}
@@ -130,7 +130,7 @@ function PendingSoValuePage(): React.JSX.Element {
                         <>
                           <th>Order Value</th>
                           <th>Dispatched</th>
-                          <th style={{ color: 'var(--amber)' }}>
+                          <th style={{ color: 'var(--amber2)' }}>
                             Pending Value
                           </th>
                           <th>Invoiced</th>
@@ -196,24 +196,24 @@ function KpiStrip({
       }}
     >
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           Order Value
         </div>
         <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--cyan)' }}>
           {inr(totals.orderValue)}
         </div>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           {totals.soCount} SOs
         </div>
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           Dispatched Value
         </div>
-        <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
+        <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green2)' }}>
           {inr(totals.dispatchedValue)}
         </div>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           {pct(d, o)}
         </div>
       </div>
@@ -225,40 +225,40 @@ function KpiStrip({
           border: '2px solid var(--amber)',
         }}
       >
-        <div style={{ fontSize: 9, color: 'var(--amber)', fontWeight: 700 }}>
+        <div style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}>
           Pending Value
         </div>
-        <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--amber)' }}>
+        <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--amber2)' }}>
           {inr(totals.pendingValue)}
         </div>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           {pct(p, o)}
         </div>
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           Invoiced
         </div>
         <div className="mono fw-700" style={{ fontSize: 16, color: TEAL }}>
           {inr(totals.invoicedValue)}
         </div>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           {pct(i, d)} of dispatched
         </div>
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           Received
         </div>
-        <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
+        <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green2)' }}>
           {inr(totals.receivedValue)}
         </div>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           {pct(Number(totals.receivedValue), i)} of invoiced
         </div>
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           Outstanding
         </div>
         <div
@@ -267,7 +267,7 @@ function KpiStrip({
         >
           {inr(totals.outstandingValue)}
         </div>
-        <div className="text3" style={{ fontSize: 9 }}>
+        <div className="text3" style={{ fontSize: 11 }}>
           {pct(out, i)} of invoiced
         </div>
       </div>
@@ -315,7 +315,7 @@ function PsvRow({
       {priceHidden ? null : (
         <>
           <td className="mono">{inr(row.orderValue)}</td>
-          <td className="mono" style={{ color: 'var(--green)' }}>
+          <td className="mono" style={{ color: 'var(--green2)' }}>
             {inr(row.dispatchedValue)}
           </td>
           <td
@@ -327,7 +327,7 @@ function PsvRow({
           <td className="mono" style={{ color: TEAL }}>
             {inr(row.invoicedValue)}
           </td>
-          <td className="mono" style={{ color: 'var(--green)' }}>
+          <td className="mono" style={{ color: 'var(--green2)' }}>
             {inr(row.receivedValue)}
           </td>
           <td

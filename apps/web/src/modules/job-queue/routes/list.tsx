@@ -140,15 +140,15 @@ function JobQueuePage(): React.JSX.Element {
               <div className="mono fw-700" style={{ fontSize: 13 }}>
                 {m.machineCode}
               </div>
-              <div className="text3" style={{ fontSize: 10, marginBottom: 4 }}>
+              <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
                 {m.machineType ?? ''}
               </div>
               {m.runningCount > 0 ? (
-                <div style={{ color: 'var(--amber)', fontSize: 11, fontWeight: 700 }}>
+                <div style={{ color: 'var(--amber2)', fontSize: 11, fontWeight: 700 }}>
                   ▶ {m.runningCount} running
                 </div>
               ) : null}
-              <div style={{ fontSize: 10, color: 'var(--text3)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                 {m.pendingCount} pending ops
               </div>
             </div>
@@ -167,7 +167,7 @@ function JobQueuePage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load job queue. Try again.'}
             </div>
           </div>
@@ -198,7 +198,7 @@ function JobQueuePage(): React.JSX.Element {
                   style={{
                     padding: '2px 8px',
                     borderRadius: 10,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: 700,
                     background:
                       m.pendingHrs > 80
@@ -242,8 +242,8 @@ function JobQueuePage(): React.JSX.Element {
                       <th>Priority</th>
                       <th>Due Date</th>
                       <th>Order Qty</th>
-                      <th style={{ color: 'var(--green)' }}>Completed</th>
-                      <th style={{ color: 'var(--amber)' }}>Available</th>
+                      <th style={{ color: 'var(--green2)' }}>Completed</th>
+                      <th style={{ color: 'var(--amber2)' }}>Available</th>
                       <th>Op Status</th>
                       <th>Action</th>
                     </tr>
@@ -373,7 +373,7 @@ function JobQueuePage(): React.JSX.Element {
                             {r.isRunning ? (
                               <span
                                 style={{
-                                  color: 'var(--amber)',
+                                  color: 'var(--amber2)',
                                   fontWeight: 700,
                                   fontSize: 12,
                                 }}
@@ -396,7 +396,7 @@ function JobQueuePage(): React.JSX.Element {
                                   style={{
                                     background: 'var(--green3)',
                                     border: '1px solid var(--green2)',
-                                    color: 'var(--green)',
+                                    color: 'var(--green2)',
                                     fontSize: 11,
                                     whiteSpace: 'nowrap',
                                   }}

@@ -305,11 +305,11 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase orders…
         </div>
       ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
           Could not load purchase orders.
         </div>
       ) : eligible.length === 0 ? (
-        <div className="empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="empty-state" style={{ color: 'var(--amber2)' }}>
           No Job Work / Service PO is open for dispatch
           {search.trim() ? ' for this search' : ''}. Raise or issue one first.
         </div>
@@ -456,7 +456,7 @@ function PoDcFormBody({
 
   if (!perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)' }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)' }}>
         ⛔ You do not have entry access to create an OSP delivery challan.
       </div>
     );
@@ -472,7 +472,7 @@ function PoDcFormBody({
 
   if (poError || !po) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
         Could not load PO.
       </div>
     );
@@ -547,24 +547,24 @@ function PoDcFormBody({
           <div>
             {/* Reads "PO No / NC No" because this same summary slot carries the
                 NC number on the Against-NC form. */}
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO No. / NC No.</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PO No. / NC No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {po.code}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>VENDOR</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>VENDOR</span>
             <br />
             <b>{po.vendorName ?? po.vendorCodeText ?? '—'}</b>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PROCESS</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PROCESS</span>
             <br />
             <b style={{ color: 'var(--purple)' }}>{po.remarks || ''}</b>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>LINES</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>LINES</span>
             <br />
             <b>{po.lines.length}</b>
           </div>
@@ -653,7 +653,7 @@ function PoDcFormBody({
               <th style={{ width: '14%' }}>Item Code</th>
               <th style={{ width: '20%' }}>Item Name</th>
               <th style={{ width: '8%' }}>PO Qty</th>
-              <th style={{ width: '12%', color: 'var(--green)' }}>Send Now ★</th>
+              <th style={{ width: '12%', color: 'var(--green2)' }}>Send Now ★</th>
               <th style={{ width: '16%' }}>Material</th>
               <th style={{ width: '20%' }}>Remarks</th>
             </tr>
@@ -717,7 +717,7 @@ function PoDcFormBody({
                       {cap ? (
                         <div
                           style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             marginTop: 3,
                             color: done
                               ? 'var(--green)'
@@ -815,7 +815,7 @@ function PoDcFormBody({
       {submitError ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid #fca5a5',
             borderRadius: 6,
@@ -924,11 +924,11 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
           <Loader2 className="inline h-4 w-4 animate-spin" /> Loading NCs…
         </div>
       ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
           Could not load NCs.
         </div>
       ) : eligible.length === 0 ? (
-        <div className="empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="empty-state" style={{ color: 'var(--amber2)' }}>
           No NC is awaiting a return-to-vendor challan
           {search.trim() ? ' for this search' : ''}. Dispose an NC as “Return to Vendor” first.
         </div>
@@ -963,7 +963,7 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
                       {n.itemName ?? n.itemNameText ?? '—'}
                     </div>
                   </td>
-                  <td className="mono" style={{ color: 'var(--red)' }}>
+                  <td className="mono" style={{ color: 'var(--red2)' }}>
                     {Number(n.rejectedQty)}
                   </td>
                   <td>
@@ -1025,7 +1025,7 @@ function NcDcFormBody({
 
   if (!canCreateDc) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)' }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)' }}>
         ⛔ You cannot create a return challan. Ask an admin.
       </div>
     );
@@ -1041,7 +1041,7 @@ function NcDcFormBody({
 
   if (isError || !nc) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
         Could not load NC.
       </div>
     );
@@ -1116,7 +1116,7 @@ function NcDcFormBody({
           }}
         >
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO No. / NC No.</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PO No. / NC No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {nc.code}
@@ -1125,14 +1125,14 @@ function NcDcFormBody({
           {/* POL — the customer's own PO line number off the SO line behind
               this NC's job card. */}
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>POL</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>POL</span>
             <br />
             <b className="mono fw-700" style={{ color: 'var(--purple)' }}>
               {nc.clientPoLineNo ?? '—'}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>ITEM</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>ITEM</span>
             <br />
             <b className="mono fw-700" style={{ color: 'var(--text)' }}>
               {itemCode}
@@ -1142,9 +1142,9 @@ function NcDcFormBody({
             </div>
           </div>
           <div>
-            <span style={{ fontSize: 9, color: 'var(--text3)' }}>QTY TO RETURN</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>QTY TO RETURN</span>
             <br />
-            <b className="mono" style={{ color: 'var(--red)' }}>
+            <b className="mono" style={{ color: 'var(--red2)' }}>
               {Number(nc.rejectedQty)} pcs
             </b>
           </div>
@@ -1163,7 +1163,7 @@ function NcDcFormBody({
       {!isEligible ? (
         <div
           style={{
-            color: 'var(--amber)',
+            color: 'var(--amber2)',
             background: 'var(--amber3)',
             border: '1px solid var(--amber)',
             borderRadius: 6,
@@ -1245,7 +1245,7 @@ function NcDcFormBody({
       {submitError ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid #fca5a5',
             borderRadius: 6,

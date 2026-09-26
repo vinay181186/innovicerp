@@ -156,7 +156,7 @@ function SettingsPage(): React.JSX.Element {
               <Loader2 className="inline h-4 w-4 animate-spin" /> Loading company…
             </div>
           ) : isError || !company ? (
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error
                 ? error.message
                 : 'Could not load company details. Try again.'}
@@ -301,7 +301,7 @@ function SettingsPage(): React.JSX.Element {
                     {submitError ? (
                       <div
                         style={{
-                          color: 'var(--red)',
+                          color: 'var(--red2)',
                           background: 'var(--red3)',
                           border: '1px solid #fca5a5',
                           borderRadius: 6,

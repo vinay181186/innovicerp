@@ -60,8 +60,8 @@ function statusBadgeLabel(row: AssemblyListItem): string {
 // Tile order matches legacy L28747–28749.
 const TILES: Array<{ key: FilterKey; label: string; color: string }> = [
   { key: 'all', label: 'Total', color: 'var(--blue)' },
-  { key: 'waiting', label: 'Waiting', color: 'var(--amber)' },
-  { key: 'ready', label: 'Ready', color: 'var(--green)' },
+  { key: 'waiting', label: 'Waiting', color: 'var(--amber2)' },
+  { key: 'ready', label: 'Ready', color: 'var(--green2)' },
   { key: 'assembling', label: 'Assembling', color: 'var(--cyan)' },
   { key: 'done', label: 'Completed', color: 'var(--teal, #14b8a6)' },
 ];
@@ -116,7 +116,7 @@ function AssemblyListPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load assemblies. Try again.'}
             </div>
           </div>

@@ -77,7 +77,7 @@ function ReportsListPage() {
           </div>
         ) : isError || !data ? (
           <div className="panel">
-            <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
+            <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
             </div>
           </div>
@@ -121,7 +121,7 @@ function ReportsListPage() {
         </div>
       ) : isError || !data ? (
         <div className="panel">
-          <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
+          <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load reports. Try again.'}
           </div>
         </div>
@@ -205,7 +205,7 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
           className="btn btn-ghost btn-sm"
           onClick={() => void onExcel()}
           disabled={excelLoading || rowCount === 0}
-          style={{ fontSize: 10 }}
+          style={{ fontSize: 11 }}
         >
           {excelLoading ? (
             <>
@@ -246,7 +246,7 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
               <tr>
                 <td
                   colSpan={report.columns.length}
-                  style={{ padding: '12px', color: 'var(--red)', fontSize: 11 }}
+                  style={{ padding: '12px', color: 'var(--red2)', fontSize: 11 }}
                 >
                   {error instanceof Error ? error.message : 'Could not run report. Try again.'}
                 </td>

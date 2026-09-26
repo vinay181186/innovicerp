@@ -45,7 +45,7 @@ function Stat({
 }): React.JSX.Element {
   return (
     <div>
-      <span className="text3" style={{ fontSize: 10 }}>
+      <span className="text3" style={{ fontSize: 11 }}>
         {label}
       </span>
       <br />
@@ -70,7 +70,7 @@ function SoCostingDetailPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load SO costing. Try again.'}
       </div>
     );
@@ -133,7 +133,7 @@ function SoCostingDetailPage(): React.JSX.Element {
                 <th>Operation</th>
                 <th>Op Type</th>
                 {priceHidden ? null : (
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     Cost
                   </th>
                 )}
@@ -174,7 +174,7 @@ function LineRows({
         <td className="td-ctr mono fw-700">{line.orderQty}</td>
         <td colSpan={3} />
         {priceHidden ? null : (
-          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+          <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
             {m2(line.lineTotal)}
           </td>
         )}
@@ -187,10 +187,10 @@ function LineRows({
           <td />
           <td />
           <td />
-          <td colSpan={3} style={{ fontSize: 10, color: 'var(--blue)' }}>
+          <td colSpan={3} style={{ fontSize: 11, color: 'var(--blue)' }}>
             📦 Material POs
           </td>
-          <td className="td-ctr mono" style={{ fontSize: 10, color: 'var(--blue)' }}>
+          <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
             ₹{inrFormat(line.materialCost ?? 0)}
           </td>
         </tr>
@@ -212,16 +212,16 @@ function LineRows({
             <td />
             <td />
             <td />
-            <td className="mono" style={{ color: 'var(--cyan)', fontSize: 10 }}>
+            <td className="mono" style={{ color: 'var(--cyan)', fontSize: 11 }}>
               {op.jcNo}
             </td>
-            <td style={{ fontSize: 10 }}>
+            <td style={{ fontSize: 11 }}>
               Op{opSrNo(op.opSeq)}: {op.operation}
             </td>
-            <td className="text3" style={{ fontSize: 10 }}>
+            <td className="text3" style={{ fontSize: 11 }}>
               {typeLabel}
               {(op.machineTimeCost ?? 0) > 0 ? (
-                <span style={{ color: 'var(--amber)', fontSize: 9 }}>
+                <span style={{ color: 'var(--amber2)', fontSize: 11 }}>
                   {' '}
                   ({op.cycleTimeMin}m × {op.qty})
                 </span>
@@ -231,9 +231,9 @@ function LineRows({
                 two separately coloured spans, not a sum. Kept that way: both are
                 server-owned, so nothing is added in the browser. */}
             {priceHidden ? null : (
-              <td className="td-ctr mono" style={{ fontSize: 10 }}>
+              <td className="td-ctr mono" style={{ fontSize: 11 }}>
                 {(op.outsourceCost ?? 0) > 0 ? (
-                  <span style={{ color: 'var(--amber)' }}>₹{inrFormat(op.outsourceCost ?? 0)}</span>
+                  <span style={{ color: 'var(--amber2)' }}>₹{inrFormat(op.outsourceCost ?? 0)}</span>
                 ) : null}
                 {(op.outsourceCost ?? 0) > 0 && (op.machineTimeCost ?? 0) > 0 ? ' + ' : null}
                 {(op.machineTimeCost ?? 0) > 0 ? (

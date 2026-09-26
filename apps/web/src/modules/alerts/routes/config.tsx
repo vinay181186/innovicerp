@@ -93,7 +93,7 @@ function ConfigTable() {
     return (
       <div className="panel">
         <div className="empty-state">
-          <span style={{ color: 'var(--red)' }}>
+          <span style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load alert settings. Try again.'}
           </span>
         </div>

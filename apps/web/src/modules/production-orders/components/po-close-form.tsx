@@ -177,7 +177,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           style={{ marginTop: 2 }}
         />
         <span>
-          <b style={{ color: 'var(--amber)' }}>Finish Short</b>
+          <b style={{ color: 'var(--amber2)' }}>Finish Short</b>
           <span className="text3">
             {' '}
             — finish now; {po.remainingQty} of {po.orderQty} not made are recorded as lost.
@@ -201,7 +201,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           role="alert"
           style={{
             marginTop: 10,
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
             borderRadius: 6,

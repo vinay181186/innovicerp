@@ -104,7 +104,7 @@ function ScDashboardPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error
           ? error.message
           : 'Could not load Supply Chain Dashboard. Try again.'}
@@ -179,7 +179,7 @@ function ScDashboardPage(): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--red)', fontSize: 11 }}
+                style={{ color: 'var(--red2)', fontSize: 11 }}
                 onClick={clearFilters}
               >
                 ✕ Clear Filters
@@ -223,12 +223,12 @@ function ScDashboardPage(): React.JSX.Element {
             width={120}
           />
           <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
-            {isFiltered ? <span style={{ color: 'var(--amber)' }}>Filtered: </span> : null}
+            {isFiltered ? <span style={{ color: 'var(--amber2)' }}>Filtered: </span> : null}
             {filteredPending.length} line{filteredPending.length !== 1 ? 's' : ''} · Pending Qty:{' '}
-            <span style={{ color: 'var(--red)' }}>{fltPendQty}</span>
+            <span style={{ color: 'var(--red2)' }}>{fltPendQty}</span>
             {priceHidden ? null : (
               <>
-                {' '}· Pend Value: <span style={{ color: 'var(--amber)' }}>₹{inr(fltPendVal)}</span>
+                {' '}· Pend Value: <span style={{ color: 'var(--amber2)' }}>₹{inr(fltPendVal)}</span>
               </>
             )}
           </div>
@@ -245,12 +245,12 @@ function ScDashboardPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="td-ctr">Order Qty</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-                <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+                <th className="td-ctr" style={{ color: 'var(--green2)' }}>Received</th>
+                <th className="td-ctr" style={{ color: 'var(--red2)' }}>Pending</th>
                 {priceHidden ? null : (
                   <>
                     <th>Rate</th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+                    <th className="td-ctr" style={{ color: 'var(--amber2)' }}>Pending Value</th>
                   </>
                 )}
                 <th>PO Status</th>
@@ -293,12 +293,12 @@ function ScDashboardPage(): React.JSX.Element {
                       </td>
                       <td style={{ fontSize: 12 }}>{p.itemName ?? '—'}</td>
                       <td className="td-ctr mono fw-700">{p.qty}</td>
-                      <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                      <td className="td-ctr mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
                         {p.receivedQty}
                       </td>
                       <td
                         className="td-ctr mono fw-700"
-                        style={{ color: 'var(--red)', fontSize: 14 }}
+                        style={{ color: 'var(--red2)', fontSize: 14 }}
                       >
                         {p.pendingQty}
                       </td>
@@ -307,7 +307,7 @@ function ScDashboardPage(): React.JSX.Element {
                           <td className="td-ctr mono" style={{ fontSize: 11 }}>
                             {p.rate ? `₹${p.rate.toFixed(2)}` : '—'}
                           </td>
-                          <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                          <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                             {(p.pendingVal ?? 0) > 0 ? `₹${inr(p.pendingVal)}` : '—'}
                           </td>
                         </>
@@ -328,7 +328,7 @@ function ScDashboardPage(): React.JSX.Element {
       <Section
         title="🏭 Vendor-wise Open PO Summary"
         meta={
-          <span className="mono" style={{ fontSize: 12, color: 'var(--amber)' }}>
+          <span className="mono" style={{ fontSize: 12, color: 'var(--amber2)' }}>
             {data.byVendor.length} vendors with open POs
           </span>
         }
@@ -341,12 +341,12 @@ function ScDashboardPage(): React.JSX.Element {
               <th className="td-ctr">PO Lines</th>
               <th className="td-ctr">Items</th>
               <th className="td-ctr">Order Qty</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending Qty</th>
+              <th className="td-ctr" style={{ color: 'var(--green2)' }}>Received</th>
+              <th className="td-ctr" style={{ color: 'var(--red2)' }}>Pending Qty</th>
               {priceHidden ? null : (
                 <>
                   <th className="td-ctr">Order Value</th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+                  <th className="td-ctr" style={{ color: 'var(--amber2)' }}>Pending Value</th>
                 </>
               )}
             </tr>
@@ -366,16 +366,16 @@ function ScDashboardPage(): React.JSX.Element {
                     <td className="td-ctr mono">{v.lines}</td>
                     <td className="td-ctr" style={{ fontSize: 11 }}>{v.uniqueItems}</td>
                     <td className="td-ctr mono fw-700">{v.totalQty}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
                       {v.receivedQty}
                     </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red)', fontWeight: 700 }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--red2)', fontWeight: 700 }}>
                       {pendQty}
                     </td>
                     {priceHidden ? null : (
                       <>
                         <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(v.totalVal)}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                           ₹{inr(v.pendingVal)}
                         </td>
                       </>
@@ -404,12 +404,12 @@ function ScDashboardPage(): React.JSX.Element {
               <th className="td-ctr">PO Lines</th>
               <th className="td-ctr">Vendors</th>
               <th className="td-ctr">Order Qty</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending Qty</th>
+              <th className="td-ctr" style={{ color: 'var(--green2)' }}>Received</th>
+              <th className="td-ctr" style={{ color: 'var(--red2)' }}>Pending Qty</th>
               {priceHidden ? null : (
                 <>
                   <th className="td-ctr">Order Value</th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+                  <th className="td-ctr" style={{ color: 'var(--amber2)' }}>Pending Value</th>
                 </>
               )}
             </tr>
@@ -428,16 +428,16 @@ function ScDashboardPage(): React.JSX.Element {
                     <td className="td-ctr mono">{s.lines}</td>
                     <td className="td-ctr" style={{ fontSize: 11 }}>{s.uniqueVendors}</td>
                     <td className="td-ctr mono fw-700">{s.totalQty}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
                       {s.receivedQty}
                     </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red)', fontWeight: 700 }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--red2)', fontWeight: 700 }}>
                       {pendQty}
                     </td>
                     {priceHidden ? null : (
                       <>
                         <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(s.totalVal)}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                           ₹{inr(s.pendingVal)}
                         </td>
                       </>
@@ -454,7 +454,7 @@ function ScDashboardPage(): React.JSX.Element {
       <Section
         title="📦 Complete Purchase Summary"
         meta={
-          <span className="mono" style={{ fontSize: 12, color: 'var(--green)' }}>
+          <span className="mono" style={{ fontSize: 12, color: 'var(--green2)' }}>
             {data.poSummary.length} POs{priceHidden ? '' : ` · Grand Total: ₹${inr(grandOrderTotal)}`}
           </span>
         }
@@ -468,13 +468,13 @@ function ScDashboardPage(): React.JSX.Element {
               <th>SO / JWSO No.</th>
               <th className="td-ctr">Lines</th>
               <th className="td-ctr">Order Qty</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+              <th className="td-ctr" style={{ color: 'var(--green2)' }}>Received</th>
+              <th className="td-ctr" style={{ color: 'var(--red2)' }}>Pending</th>
               {priceHidden ? null : (
                 <>
                   <th className="td-ctr">Subtotal</th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Tax</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>Grand Total</th>
+                  <th className="td-ctr" style={{ color: 'var(--amber2)' }}>Tax</th>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>Grand Total</th>
                 </>
               )}
               <th className="td-ctr">GRNs</th>
@@ -507,7 +507,7 @@ function ScDashboardPage(): React.JSX.Element {
                     <td className="text2" style={{ fontSize: 11 }}>{g.soCode ?? '—'}</td>
                     <td className="td-ctr mono">{g.lines}</td>
                     <td className="td-ctr mono fw-700">{g.totalQty}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
                       {g.receivedQty}
                     </td>
                     <td
@@ -519,10 +519,10 @@ function ScDashboardPage(): React.JSX.Element {
                     {priceHidden ? null : (
                       <>
                         <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(g.totalVal)}</td>
-                        <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--amber)' }}>
+                        <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--amber2)' }}>
                           ₹{inr(g.taxAmount)}
                         </td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
                           ₹{inr(g.grandTotal)}
                         </td>
                       </>

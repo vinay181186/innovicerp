@@ -58,7 +58,7 @@ function SoCostingListPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load SO costing. Try again.'}
       </div>
     );
@@ -84,15 +84,15 @@ function SoCostingListPage(): React.JSX.Element {
                 <th className="td-ctr">Lines</th>
                 <th className="td-ctr">Total Qty</th>
                 {priceHidden ? null : (
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>SO Value</th>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>SO Value</th>
                 )}
                 <th>Cost Centre</th>
                 {priceHidden ? null : (
                   <>
                     <th className="td-ctr" style={{ color: 'var(--blue)' }}>Material</th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Outsource</th>
+                    <th className="td-ctr" style={{ color: 'var(--amber2)' }}>Outsource</th>
                     <th className="td-ctr" style={{ color: 'var(--cyan)' }}>Machine Time</th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>Total Cost</th>
+                    <th className="td-ctr" style={{ color: 'var(--green2)' }}>Total Cost</th>
                   </>
                 )}
               </tr>
@@ -120,7 +120,7 @@ function SoCostingListPage(): React.JSX.Element {
                     <td className="td-ctr">{r.lineCount}</td>
                     <td className="td-ctr mono fw-700">{r.totalQty}</td>
                     {priceHidden ? null : (
-                      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>{money(r.soValue)}</td>
+                      <td className="td-ctr mono" style={{ color: 'var(--green2)' }}>{money(r.soValue)}</td>
                     )}
                     <td style={{ fontSize: 11, color: 'var(--teal, #0d9488)' }}>
                       {r.costCenter ? `${r.costCenter}${r.costCenterName ? ` — ${r.costCenterName}` : ''}` : '—'}
@@ -128,9 +128,9 @@ function SoCostingListPage(): React.JSX.Element {
                     {priceHidden ? null : (
                       <>
                         <td className="td-ctr mono" style={{ color: 'var(--blue)' }}>{money(r.materialCost)}</td>
-                        <td className="td-ctr mono" style={{ color: 'var(--amber)' }}>{money(r.outsourceCost)}</td>
+                        <td className="td-ctr mono" style={{ color: 'var(--amber2)' }}>{money(r.outsourceCost)}</td>
                         <td className="td-ctr mono" style={{ color: 'var(--cyan)' }}>{money(r.machineTimeCost)}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>{money(r.totalCost)}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>{money(r.totalCost)}</td>
                       </>
                     )}
                   </tr>

@@ -91,7 +91,7 @@ function PartyGrnListPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -211,7 +211,7 @@ function PartyGrnListPage(): React.JSX.Element {
                   key: 'today',
                   label: 'Today',
                   count: summary.today,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   title: 'GRNs recorded today',
                 },
               ]}
@@ -224,7 +224,7 @@ function PartyGrnListPage(): React.JSX.Element {
               Loading…
             </div>
           ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load party GRNs. Try again.'}
             </div>
           ) : rows.length === 0 ? (

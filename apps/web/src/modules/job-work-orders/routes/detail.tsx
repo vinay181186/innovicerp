@@ -53,7 +53,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Job-work order not found'}
           </div>
         </div>
@@ -64,7 +64,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // Hide-page: VIEW removed for JWSO Master → no-access panel, not the detail.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -170,7 +170,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           {softDelete.isError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -223,8 +223,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <th>UOM</th>
                 {priceHidden ? null : (
                   <>
-                    <th style={{ color: 'var(--green)' }}>Rate (₹)</th>
-                    <th style={{ color: 'var(--green)' }}>Amount</th>
+                    <th style={{ color: 'var(--green2)' }}>Rate (₹)</th>
+                    <th style={{ color: 'var(--green2)' }}>Amount</th>
                   </>
                 )}
                 <th>Due Date</th>
@@ -446,8 +446,8 @@ function LineRow(props: {
       <td>{l.uom}</td>
       {priceHidden ? null : (
         <>
-          <td className="mono" style={{ color: 'var(--green)' }}>{Number(l.rate ?? 0).toFixed(2)}</td>
-          <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+          <td className="mono" style={{ color: 'var(--green2)' }}>{Number(l.rate ?? 0).toFixed(2)}</td>
+          <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
             {(l.orderQty * Number(l.rate ?? 0)).toFixed(2)}
           </td>
         </>

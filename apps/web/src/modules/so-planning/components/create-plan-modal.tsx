@@ -37,7 +37,7 @@ const stepBtnStyle: React.CSSProperties = {
 };
 
 const groupTitle: React.CSSProperties = {
-  fontSize: 9,
+  fontSize: 11,
   textTransform: 'uppercase',
   letterSpacing: '.08em',
   marginBottom: 6,
@@ -276,7 +276,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       >
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>
               {so.source === 'jw' ? 'JWSO' : 'SO'}
             </span>
             <br />
@@ -285,7 +285,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>ITEM</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>ITEM</span>
             <br />
             {/* Item code is the main thing: strong mono, darkest text. */}
             <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
@@ -298,7 +298,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             ) : null}
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>ORDER QTY</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>ORDER QTY</span>
             <br />
             <b style={{ fontSize: 18 }}>{line.orderQty}</b>
           </div>
@@ -313,7 +313,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--border)',
             }}
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>ALREADY PLANNED</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>ALREADY PLANNED</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--cyan)' }}>
               {line.totalPlanned}
             </div>
@@ -327,8 +327,8 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--green)',
             }}
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>PENDING TO PLAN</div>
-            <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>PENDING TO PLAN</div>
+            <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green2)' }}>
               {remaining}
             </div>
           </div>
@@ -343,7 +343,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           >
             {/* ADR-180 — this is AVAILABLE (physical − reserved), not what is
                 on the shelf. PHYSICAL sits in its own tile beside it. */}
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>AVAILABLE</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>AVAILABLE</div>
             <div
               className="mono fw-700"
               style={{ fontSize: 20, color: stock > 0 ? 'var(--amber)' : 'var(--text3)' }}
@@ -361,7 +361,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             }}
             title="On the shelf for this item — reserving never changes it"
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>PHYSICAL</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>PHYSICAL</div>
             <div
               className="mono fw-700"
               style={{ fontSize: 20, color: line.physicalQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}
@@ -378,7 +378,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--border)',
             }}
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>RESERVED</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>RESERVED</div>
             <div
               className="mono fw-700"
               style={{ fontSize: 20, color: reserved > 0 ? 'var(--purple)' : 'var(--text3)' }}
@@ -396,7 +396,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
                   padding: 0,
                   marginTop: 2,
                   color: 'var(--cyan)',
-                  fontSize: 10,
+                  fontSize: 11,
                   cursor: 'pointer',
                 }}
               >
@@ -553,7 +553,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           <label
             className="form-label"
             htmlFor="reserve-qty"
-            style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 14 }}
+            style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 14 }}
           >
             Reserve Qty (from stock)
           </label>
@@ -583,7 +583,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
                 fontWeight: 800,
                 textAlign: 'center',
                 border: '2px solid var(--amber)',
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
                 padding: 6,
                 width: 120,
                 height: 38,
@@ -631,7 +631,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             padding: 8,
             borderRadius: 4,
             background: 'var(--red3)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >

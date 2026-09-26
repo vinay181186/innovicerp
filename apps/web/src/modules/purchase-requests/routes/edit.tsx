@@ -68,7 +68,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to Purchase Requests
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have create access to Purchase Requests. Ask an admin for L2 Data Entry or
             above in Purchase.
           </div>
@@ -152,7 +152,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to PR
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have edit access to Purchase Requests. Ask an admin for L3 Editor or above
             in Purchase.
           </div>
@@ -170,7 +170,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Purchase request not found'}
           </div>
         </div>

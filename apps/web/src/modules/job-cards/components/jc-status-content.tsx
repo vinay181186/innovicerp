@@ -98,7 +98,7 @@ function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
   }
   if (isError || modelError || !jc || !model) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red)' }}>
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Job Card not found.'}
       </div>
     );
@@ -678,7 +678,7 @@ function JcStatusEditForm({
           <button
             type="button"
             className="btn btn-sm"
-            style={{ color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)' }}
+            style={{ color: 'var(--green2)', border: '1px solid rgba(34,197,94,0.3)' }}
             onClick={() => addOp('qc')}
           >
             + Add QC Op
@@ -686,7 +686,7 @@ function JcStatusEditForm({
           <button
             type="button"
             className="btn btn-sm"
-            style={{ color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}
+            style={{ color: 'var(--amber2)', border: '1px solid rgba(245,158,11,0.4)' }}
             onClick={() => addOp('outsource')}
           >
             + Add OSP Op
@@ -697,7 +697,7 @@ function JcStatusEditForm({
         <div
           role="status"
           style={{
-            color: 'var(--green)',
+            color: 'var(--green2)',
             background: 'rgba(34,197,94,0.08)',
             border: '1px solid rgba(34,197,94,0.3)',
             borderRadius: 6,
@@ -714,7 +714,7 @@ function JcStatusEditForm({
         <div
           role="alert"
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
             borderRadius: 6,
@@ -789,7 +789,7 @@ function JcStatusEditForm({
       {error ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid #fca5a5',
             borderRadius: 6,
@@ -805,7 +805,7 @@ function JcStatusEditForm({
       {balanceNote ? (
         <div
           style={{
-            color: 'var(--green)',
+            color: 'var(--green2)',
             background: 'rgba(34,197,94,0.08)',
             border: '1px solid rgba(34,197,94,0.3)',
             borderRadius: 6,

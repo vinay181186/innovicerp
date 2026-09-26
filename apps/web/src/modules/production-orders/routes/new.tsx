@@ -196,7 +196,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to Production Orders
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have create access to Production Orders. Ask an admin for L2 Data Entry or
             above in Production.
           </div>
@@ -288,7 +288,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                     {routeCard.opCount === 1 ? '' : 's'}{' '}
                     <PlanTypeChip planType={routeCard.planType} />
                     {routeCard.opCount === 0 ? (
-                      <span style={{ color: 'var(--amber)' }}>
+                      <span style={{ color: 'var(--amber2)' }}>
                         {' '}
                         — this route card has no operations; add them before creating the JC.
                       </span>
@@ -407,7 +407,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                   marginTop: 12,
                   padding: '8px 12px',
                   fontSize: 12,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   background: 'var(--bg3)',
                   border: '1px solid var(--amber)',
                   borderRadius: 6,
@@ -428,7 +428,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                   marginTop: 12,
                   padding: '8px 12px',
                   fontSize: 12,
-                  color: 'var(--amber)',
+                  color: 'var(--amber2)',
                   background: 'var(--bg3)',
                   border: '1px solid var(--amber)',
                   borderRadius: 6,
@@ -446,7 +446,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                   marginTop: 12,
                   padding: '8px 12px',
                   fontSize: 12,
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                   background: 'var(--bg3)',
                   border: '1px solid var(--red)',
                   borderRadius: 6,
@@ -462,7 +462,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                 role="alert"
                 style={{
                   marginTop: 12,
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                   background: 'var(--red3)',
                   border: '1px solid var(--red)',
                   borderRadius: 6,
@@ -540,7 +540,7 @@ function PlanTypeChip({ planType }: { planType: PlanType }): React.JSX.Element {
       title="Plan Type (from the route card)"
       style={{
         display: 'inline-block',
-        fontSize: 10,
+        fontSize: 11,
         padding: '1px 6px',
         borderRadius: 4,
         color,
@@ -604,7 +604,7 @@ function Fact({ label, value, mono }: { label: string; value: string; mono?: boo
     <div>
       <div
         className="text3"
-        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}
+        style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}
       >
         {label}
       </div>

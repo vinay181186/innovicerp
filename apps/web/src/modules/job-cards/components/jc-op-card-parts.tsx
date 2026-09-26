@@ -6,7 +6,7 @@
 
 /** Small uppercase section caption inside a card ("QUANTITIES", "SETUP", …). */
 export const secLabel: React.CSSProperties = {
-  fontSize: 9,
+  fontSize: 11,
   color: 'var(--text3)',
   textTransform: 'uppercase',
   letterSpacing: '.08em',
@@ -26,7 +26,7 @@ export function SetupField({
 }): React.JSX.Element {
   return (
     <div style={{ width }}>
-      <div style={{ fontSize: 9, color: 'var(--text3)', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>{label}</div>
       {children}
     </div>
   );
@@ -69,7 +69,7 @@ export function QtyChip({
       </div>
       <div
         style={{
-          fontSize: 9.5,
+          fontSize: 11,
           letterSpacing: '.04em',
           textTransform: 'uppercase',
           color: 'var(--text3)',

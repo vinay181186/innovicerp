@@ -216,7 +216,7 @@ function MachineLoadingPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Could not load machine loading. Try again.'}
           </div>
         </div>
@@ -295,10 +295,10 @@ function MachineLoadCardView({
       <div className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 13 }}>
         {card.machineCode}
       </div>
-      <div className="text3" style={{ fontSize: 10, marginBottom: 2 }}>
+      <div className="text3" style={{ fontSize: 11, marginBottom: 2 }}>
         {card.name}
       </div>
-      <div className="text3 mono" style={{ fontSize: 10, marginBottom: 8 }}>
+      <div className="text3 mono" style={{ fontSize: 11, marginBottom: 8 }}>
         {card.machineType ?? '—'}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -315,7 +315,7 @@ function MachineLoadCardView({
           alignItems: 'center',
         }}
       >
-        <span className="mono text3" style={{ fontSize: 10 }}>
+        <span className="mono text3" style={{ fontSize: 11 }}>
           {pct}%
         </span>
         <span className={`badge ${loadBadgeClass(card.loadStatus)}`}>{card.loadStatus}</span>
@@ -330,7 +330,7 @@ function Num({ val, lbl, color }: { val: number; lbl: string; color?: string }):
       <div className="mono fw-700" style={{ fontSize: 14, color: color ?? 'var(--text)' }}>
         {val}
       </div>
-      <div className="text3" style={{ fontSize: 9 }}>
+      <div className="text3" style={{ fontSize: 11 }}>
         {lbl}
       </div>
     </div>
@@ -426,7 +426,7 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
         </span>
       </td>
       <td className="td-ctr">
-        <span className="mono fw-700" style={{ color: 'var(--red)' }}>
+        <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
           {op.pendingHrs}h
         </span>
       </td>
@@ -452,7 +452,7 @@ function OperationView({
             ? `${selMachineCode} — Job Queue`
             : 'All Open Operations — sorted by Priority → Due Date'}
         </span>
-        <span className="mono" style={{ color: 'var(--amber)', fontSize: 12 }}>
+        <span className="mono" style={{ color: 'var(--amber2)', fontSize: 12 }}>
           {ops.length} ops
         </span>
       </div>
@@ -472,8 +472,8 @@ function OperationView({
               <th>Due Date</th>
               <th>Order Qty</th>
               <th>Completed</th>
-              <th style={{ color: 'var(--amber)' }}>Available</th>
-              <th style={{ color: 'var(--red)' }}>Pending Hrs</th>
+              <th style={{ color: 'var(--amber2)' }}>Available</th>
+              <th style={{ color: 'var(--red2)' }}>Pending Hrs</th>
               <th>Op Status</th>
             </tr>
           </thead>
@@ -564,7 +564,7 @@ function JobQueueView({
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span className={`badge ${loadBadgeClass(m.loadStatus)}`}>{m.loadStatus}</span>
-                <span className="mono" style={{ color: 'var(--amber)', fontSize: 11 }}>
+                <span className="mono" style={{ color: 'var(--amber2)', fontSize: 11 }}>
                   {machOps.length} jobs
                 </span>
                 <button
@@ -593,8 +593,8 @@ function JobQueueView({
                     <th>Due Date</th>
                     <th>Order Qty</th>
                     <th>Completed</th>
-                    <th style={{ color: 'var(--amber)' }}>Available</th>
-                    <th style={{ color: 'var(--red)' }}>Pending Hrs</th>
+                    <th style={{ color: 'var(--amber2)' }}>Available</th>
+                    <th style={{ color: 'var(--red2)' }}>Pending Hrs</th>
                     <th>Op Status</th>
                   </tr>
                 </thead>
@@ -651,7 +651,7 @@ function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.J
                   <td className="td-ctr mono">{m.openOps}</td>
                   <td className="td-ctr mono fw-700 amber">{m.totalAvailQty}</td>
                   <td className="td-ctr">
-                    <span className="mono fw-700" style={{ color: 'var(--red)' }}>
+                    <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
                       {m.pendingHrs}h
                     </span>
                   </td>

@@ -66,7 +66,7 @@ function GroupPanel({
                 <tr key={r.name}>
                   <td style={{ fontSize: 12, fontWeight: nameWeight }}>{r.name}</td>
                   <td className="td-ctr mono">{r.total}</td>
-                  <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                  <td className="td-ctr mono" style={{ color: 'var(--green2)' }}>
                     {r.passed}
                   </td>
                   <td className="td-ctr mono fw-700" style={{ color: fpyColor(r.pct) }}>
@@ -135,7 +135,7 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
                     </td>
                     <td style={{ fontSize: 12 }}>{it.name}</td>
                     <td className="td-ctr mono">{it.total}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--green2)' }}>
                       {it.passed}
                     </td>
                     <td className="td-ctr mono fw-700" style={{ color: fpyColor(it.pct) }}>

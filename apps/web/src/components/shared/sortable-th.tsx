@@ -47,7 +47,7 @@ export function SortTh<F extends string>({
       {label}
       <span
         aria-hidden
-        style={{ fontSize: 9, opacity: active ? 1 : 0.3, color: active ? 'var(--cyan)' : 'inherit' }}
+        style={{ fontSize: 11, opacity: active ? 1 : 0.3, color: active ? 'var(--cyan)' : 'inherit' }}
       >
         {active ? (sortDir === 'desc' ? '▼' : '▲') : '↕'}
       </span>

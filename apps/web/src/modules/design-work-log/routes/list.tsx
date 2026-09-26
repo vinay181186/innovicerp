@@ -65,7 +65,7 @@ function DesignWorkLogPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -302,7 +302,7 @@ function EntryTab(): React.JSX.Element {
                 marginTop: 12,
                 padding: 8,
                 background: 'rgba(239,68,68,0.08)',
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 fontSize: 12,
                 borderRadius: 4,
               }}
@@ -396,7 +396,7 @@ function EntryTab(): React.JSX.Element {
                       {l.taskText ?? 'General'}{' '}
                       <span
                         style={{
-                          fontSize: 9,
+                          fontSize: 11,
                           padding: '1px 6px',
                           borderRadius: 10,
                           color: cc,
@@ -426,7 +426,7 @@ function EntryTab(): React.JSX.Element {
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
-                      style={{ fontSize: 10 }}
+                      style={{ fontSize: 11 }}
                       disabled={deleteMut.isPending}
                       onClick={() => {
                         if (window.confirm('Delete entry?')) deleteMut.mutate(l.id);
@@ -558,7 +558,7 @@ function DailyTab(): React.JSX.Element {
               >
                 {hrs.toFixed(1)}h
               </div>
-              <div style={{ fontSize: 10, color: 'var(--text3)' }}>{eng}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{eng}</div>
             </div>
           );
         })}
@@ -573,7 +573,7 @@ function DailyTab(): React.JSX.Element {
           >
             {totalHrs.toFixed(1)}h
           </div>
-          <div style={{ fontSize: 10, color: 'var(--text3)' }}>Total</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Total</div>
         </div>
       </div>
 
@@ -616,7 +616,7 @@ function DailyTab(): React.JSX.Element {
                 >
                   <div style={{ flex: 1 }}>
                     <b>{l.taskText ?? 'General'}</b>{' '}
-                    <span style={{ fontSize: 10, color: 'var(--text3)' }}>{l.category}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>{l.category}</span>
                     <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                       {l.projectName ?? ''}
                       {l.description ? ` — ${l.description}` : ''}
@@ -701,7 +701,7 @@ function WeeklyTab(): React.JSX.Element {
               <tr>
                 <th>Design Engineer</th>
                 {weekDates.map((dt) => (
-                  <th key={dt} style={{ fontSize: 10 }}>
+                  <th key={dt} style={{ fontSize: 11 }}>
                     {dayName(dt)}
                     <br />
                     {fmtDate(dt)}
@@ -811,7 +811,7 @@ function ProjectTab(): React.JSX.Element {
         className="panel"
         style={{ textAlign: 'center', padding: 14, marginBottom: 16 }}
       >
-        <div style={{ fontSize: 10, color: 'var(--text3)' }}>Grand Total</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Grand Total</div>
         <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--blue)' }}>
           {gt.toFixed(0)}h
         </div>
@@ -973,7 +973,7 @@ function AlertsTab(): React.JSX.Element {
               background: 'rgba(239,68,68,0.06)',
               fontWeight: 700,
               fontSize: 12,
-              color: 'var(--red)',
+              color: 'var(--red2)',
             }}
           >
             🔴 Unlogged Working Days
@@ -1009,7 +1009,7 @@ function AlertsTab(): React.JSX.Element {
               background: 'rgba(196,122,0,0.06)',
               fontWeight: 700,
               fontSize: 12,
-              color: 'var(--amber)',
+              color: 'var(--amber2)',
             }}
           >
             ⚠ Low Hours (&lt;4h)
@@ -1030,7 +1030,7 @@ function AlertsTab(): React.JSX.Element {
                     <td className="mono">{fmtDate(u.date)}</td>
                     <td>{dayName(u.date)}</td>
                     <td className="fw-700">{u.engineer}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--amber)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {u.hours.toFixed(1)}h
                     </td>
                   </tr>
@@ -1113,7 +1113,7 @@ function Tile({
 }): React.JSX.Element {
   return (
     <div className="panel" style={{ textAlign: 'center', padding: 14 }}>
-      <div className="text3" style={{ fontSize: 10 }}>
+      <div className="text3" style={{ fontSize: 11 }}>
         {label}
       </div>
       <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>

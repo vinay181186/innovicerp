@@ -99,7 +99,7 @@ export function SearchResults({
   if (rows.isError) {
     body = (
       <tr>
-        <td colSpan={RESULT_COLUMNS} style={{ color: 'var(--red)', whiteSpace: 'normal' }}>
+        <td colSpan={RESULT_COLUMNS} style={{ color: 'var(--red2)', whiteSpace: 'normal' }}>
           {rows.error.message}
         </td>
       </tr>

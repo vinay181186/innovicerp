@@ -86,7 +86,7 @@ function QtyBox({
       </div>
       <div
         className="mono"
-        style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+        style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
       >
         {label}
       </div>
@@ -285,7 +285,7 @@ function SalesOrdersListPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -410,7 +410,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       {importMsg ? (
         <div className="panel" style={{ marginBottom: 10, padding: '8px 12px', fontSize: 12, color: 'var(--text2)' }}>
           {importMsg}
-          <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 8, fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 8, fontSize: 11 }} onClick={() => setImportMsg(null)}>✕</button>
         </div>
       ) : null}
 
@@ -419,7 +419,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…
         </div>
       ) : isError ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
           {error instanceof Error ? error.message : 'Could not load sales orders. Try again.'}
         </div>
       ) : rows.length === 0 ? (
@@ -622,7 +622,7 @@ function SalesOrdersListPage(): React.JSX.Element {
 function SoExpandedPanel({ soId, soType, canEdit, canDelete }: { soId: string; soType: SoType; canEdit: boolean; canDelete: boolean }): React.JSX.Element {
   const { data, isLoading, isError, error } = useSalesOrder(soId);
   if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
-  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Could not load SO detail. Try again.'}</div>;
+  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>{error instanceof Error ? error.message : 'Could not load SO detail. Try again.'}</div>;
   return soType === 'equipment' ? <EquipmentSoExpand so={data} canEdit={canEdit} canDelete={canDelete} /> : <ComponentSoExpand so={data} canEdit={canEdit} />;
 }
 
@@ -638,13 +638,13 @@ function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; c
             code · name) rather than a string. The equipment line is an SO line
             like any other, so its drawing revision renders as CODE/REV (ADR-177). */}
         <div>
-          <div style={{ fontSize: 10, color: 'var(--text3)' }}>EQUIPMENT</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>EQUIPMENT</div>
           <ItemBadge size="row" code={line.itemCode ?? line.itemCodeText} name={line.partName} revision={line.revision} imagePath={line.itemImagePath} />
         </div>
         <Fact label="EQUIP QTY" value={String(line.orderQty)} big />
         <Fact label="DUE DATE" value={fmtDate(line.dueDate)} />
         <div>
-          <div style={{ fontSize: 10, color: 'var(--text3)' }}>BOM STATUS</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>BOM STATUS</div>
           <div style={{ fontWeight: 700, color: bomStatus === 'BOM Pending' ? 'var(--amber)' : bomStatus === 'BOM Planned' ? 'var(--green)' : 'var(--cyan)' }}>
             {bomStatus === 'BOM Pending' ? '⚠ BOM Pending' : bomStatus === 'BOM Planned' ? '✅ BOM Planned' : `📦 ${bomStatus}`}
           </div>
@@ -654,12 +654,12 @@ function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; c
           {so.bomMasterId ? (
             <Link to="/planning" className="btn btn-sm" style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}>📦 Plan BOM Items</Link>
           ) : (
-            <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}>⚠ No BOM linked — assign one in Edit.</span>
+            <span style={{ color: 'var(--amber2)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}>⚠ No BOM linked — assign one in Edit.</span>
           )}
           {canDelete ? <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} onClick={() => { if (confirm(`Move SO ${so.code} to Trash? You can restore it from Trash.`)) softDelete.mutate(so.id); }}>Delete</button> : null}
         </div>
       </div>
-      {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : <div style={{ padding: '4px 32px 12px', color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>⚠ No BOM linked.</div>}
+      {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : <div style={{ padding: '4px 32px 12px', color: 'var(--amber2)', fontSize: 12, fontWeight: 600 }}>⚠ No BOM linked.</div>}
     </div>
   );
 }
@@ -670,7 +670,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
   if (items.length === 0) return null;
   return (
     <div style={{ padding: '4px 12px 8px 32px' }}>
-      <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, marginBottom: 4 }}>
+      <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, marginBottom: 4 }}>
         ▸ BOM ITEMS — {data?.header.equipmentInfo?.bomNo ?? ''} × {data?.header.equipmentInfo?.equipmentQty ?? 0} sets
       </div>
       {/* tbl-ctr — the table-alignment standard: data centred, headers untouched. */}
@@ -679,7 +679,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
           <tr style={{ background: 'var(--bg4)' }}>
             <th style={{ width: 36 }}>Sr No</th><th>Item Code</th><th>Item Name</th><th className="td-ctr">Qty / Set</th>
             <th className="td-ctr" style={{ color: 'var(--cyan)' }}>Total Need</th><th>BOM Type</th>
-            <th className="td-ctr" style={{ color: 'var(--green)' }}>Stock</th><th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+            <th className="td-ctr" style={{ color: 'var(--green2)' }}>Stock</th><th className="td-ctr" style={{ color: 'var(--red2)' }}>Pending</th>
           </tr>
         </thead>
         <tbody>
@@ -717,7 +717,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
       {/* Preview header. The row no longer navigates, so the preview carries its
           own way through to the full record — same route the SO code uses. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>Line Items</div>
+        <div style={{ fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>Line Items</div>
         <Link
           to="/sales-orders/$id"
           params={{ id: so.id }}
@@ -751,8 +751,8 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
                 decision 2026-09-21); the old Item Code + Part Name pair folded in. */}
             <th>Ln</th><th style={{ color: 'var(--purple)' }}>POL</th><ItemThumbnailHeader /><th style={{ textAlign: 'left' }}>Item</th>
             <th className="td-ctr">Order Qty</th><th className="td-ctr">JC Qty</th>
-            <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
-            <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+            <th className="td-ctr" style={{ color: 'var(--green2)' }}>Dispatched</th>
+            <th className="td-ctr" style={{ color: 'var(--red2)' }}>Pending</th>
             <th>Due Date</th><th>SO Status</th>{canEdit ? <th /> : null}
           </tr>
         </thead>
@@ -773,7 +773,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
                   <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
                   <td className="td-ctr mono" style={{ fontSize: 11 }}>
                     <span style={{ color: l.jcQty >= l.orderQty ? 'var(--green)' : l.jcQty > 0 ? 'var(--amber)' : 'var(--text3)' }}>{l.jcQty}</span>
-                    <span className="text3" style={{ fontSize: 10 }}> /{l.orderQty}</span>
+                    <span className="text3" style={{ fontSize: 11 }}> /{l.orderQty}</span>
                   </td>
                   <td className="td-ctr mono fw-700" style={{ color: l.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{l.dispatchedQty}</td>
                   <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance <= 0 ? '✅ Dispatched' : balance}</td>
@@ -782,8 +782,8 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
                   {canEdit ? (
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}>Edit</Link>
-                        <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 10 }} disabled={update.isPending} onClick={() => onDeleteLine(l.id)}>Delete</button>
+                        <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>Edit</Link>
+                        <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} disabled={update.isPending} onClick={() => onDeleteLine(l.id)}>Delete</button>
                       </div>
                     </td>
                   ) : null}
@@ -800,7 +800,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
 function Fact({ label, value, color, big }: { label: string; value: string; color?: string | undefined; big?: boolean | undefined }): React.JSX.Element {
   return (
     <div>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div style={{ fontWeight: 700, color, fontSize: big ? 16 : undefined }}>{value}</div>
     </div>
   );

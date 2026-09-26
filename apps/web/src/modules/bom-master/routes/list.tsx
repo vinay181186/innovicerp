@@ -211,7 +211,7 @@ function BomMastersListPage(): React.JSX.Element {
         nowrap: true,
         render: (b) =>
           b.linkedSoCount > 0 ? (
-            <span className="fw-700" style={{ color: 'var(--green)' }}>
+            <span className="fw-700" style={{ color: 'var(--green2)' }}>
               {b.linkedSoCount} SO{b.linkedSoCount > 1 ? 's' : ''}
             </span>
           ) : (
@@ -378,7 +378,7 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
 function BomTypeBadge({ type }: { type: string }): React.JSX.Element {
   const cfg = {
     manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
-    purchase: { label: '🛒 Buy', color: 'var(--green)' },
+    purchase: { label: '🛒 Buy', color: 'var(--green2)' },
     outsource: { label: '🏭 Outsrc', color: 'var(--amber2)' },
   }[type] ?? { label: type, color: 'var(--text3)' };
   return (

@@ -135,7 +135,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   if (!perms.entry) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           ⛔ You do not have entry access to receive against a delivery challan.
         </div>
       </div>
@@ -158,7 +158,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Delivery challan not found'}
           </div>
         </div>
@@ -311,7 +311,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
         {submitError ? (
           <div
             style={{
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid #fca5a5',
               borderRadius: 6,

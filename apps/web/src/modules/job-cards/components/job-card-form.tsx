@@ -669,7 +669,7 @@ export function JobCardForm({
                 <div
                   style={{
                     fontSize: 11,
-                    color: 'var(--amber)',
+                    color: 'var(--amber2)',
                     marginBottom: 4,
                     fontWeight: 600,
                   }}
@@ -890,7 +890,7 @@ export function JobCardForm({
             <button
               type="button"
               className="btn btn-sm"
-              style={{ color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)' }}
+              style={{ color: 'var(--green2)', border: '1px solid rgba(34,197,94,0.3)' }}
               onClick={() => addOp('qc')}
             >
               + Add QC Op
@@ -898,7 +898,7 @@ export function JobCardForm({
             <button
               type="button"
               className="btn btn-sm"
-              style={{ color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}
+              style={{ color: 'var(--amber2)', border: '1px solid rgba(245,158,11,0.4)' }}
               onClick={() => addOp('outsource')}
             >
               + Add OSP Op
@@ -910,7 +910,7 @@ export function JobCardForm({
             <div
               role="alert"
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
                 borderRadius: 6,
@@ -1053,7 +1053,7 @@ export function JobCardForm({
       {error ? (
         <div
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid #fca5a5',
             borderRadius: 6,
@@ -1069,7 +1069,7 @@ export function JobCardForm({
       {balanceNote ? (
         <div
           style={{
-            color: 'var(--green)',
+            color: 'var(--green2)',
             background: 'rgba(34,197,94,0.08)',
             border: '1px solid rgba(34,197,94,0.3)',
             borderRadius: 6,

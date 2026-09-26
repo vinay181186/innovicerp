@@ -165,7 +165,7 @@ function OutwardView(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load outward DCs. Try again.'}
             </div>
           </div>
@@ -183,10 +183,10 @@ function OutwardView(): React.JSX.Element {
                   <th className="td-ctr" style={{ color: 'var(--purple)' }}>
                     Sent
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     Received
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--red2)' }}>
                     Pending
                   </th>
                   <th>DC Status</th>
@@ -293,7 +293,7 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
       >
         {dc.totalSentQty}
       </td>
-      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+      <td className="td-ctr mono" style={{ color: 'var(--green2)' }}>
         {dc.totalReturnedQty}
       </td>
       <td
@@ -311,7 +311,7 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
             to="/jw-dc/$id"
             params={{ id: dc.id }}
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 11 }}
           >
             👁 View
           </Link>
@@ -377,7 +377,7 @@ function InwardView(): React.JSX.Element {
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load inward entries. Try again.'}
             </div>
           </div>
@@ -392,10 +392,10 @@ function InwardView(): React.JSX.Element {
                   <th>Vendor</th>
                   <th>Vendor Challan No.</th>
                   <th className="td-ctr">Received</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     Accepted
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--red2)' }}>
                     Rejected
                   </th>
                 </tr>
@@ -411,7 +411,7 @@ function InwardView(): React.JSX.Element {
                 ) : (
                   data.items.map((inv) => (
                     <tr key={inv.id}>
-                      <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                      <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                         {inv.code}
                       </td>
                       <td style={{ fontSize: 11 }}>{fmtDate(inv.inwardDate)}</td>
@@ -424,10 +424,10 @@ function InwardView(): React.JSX.Element {
                       <td style={{ fontWeight: 600 }}>{inv.vendorNameText ?? '—'}</td>
                       <td style={{ fontSize: 11 }}>{inv.vendorChallanNo ?? '—'}</td>
                       <td className="td-ctr mono fw-700">{inv.totalReceivedQty}</td>
-                      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                      <td className="td-ctr mono" style={{ color: 'var(--green2)' }}>
                         {inv.totalOkQty}
                       </td>
-                      <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                      <td className="td-ctr mono" style={{ color: 'var(--red2)' }}>
                         {inv.totalRejectedQty > 0 ? inv.totalRejectedQty : '—'}
                       </td>
                     </tr>
@@ -684,8 +684,8 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                 <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ color: 'var(--purple)', padding: 6 }}>Process</th>
                 <th style={{ padding: 6 }}>PO Qty</th>
-                <th style={{ color: 'var(--amber)', padding: 6 }}>Already Sent</th>
-                <th style={{ color: 'var(--green)', padding: 6 }}>Available</th>
+                <th style={{ color: 'var(--amber2)', padding: 6 }}>Already Sent</th>
+                <th style={{ color: 'var(--green2)', padding: 6 }}>Available</th>
                 <th style={{ color: 'var(--cyan)', padding: 6 }}>Qty to Send</th>
               </tr>
             </thead>
@@ -726,7 +726,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
                     </td>
                     <td
                       className="td-ctr mono"
-                      style={{ padding: 6, color: 'var(--amber)' }}
+                      style={{ padding: 6, color: 'var(--amber2)' }}
                     >
                       {l.alreadySent > 0 ? l.alreadySent : '0'}
                     </td>
@@ -1011,11 +1011,11 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                 <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ padding: 6, color: 'var(--purple)' }}>Process</th>
                 <th style={{ padding: 6 }}>Sent</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>Received</th>
-                <th style={{ padding: 6, color: 'var(--amber)' }}>Pending</th>
+                <th style={{ padding: 6, color: 'var(--green2)' }}>Received</th>
+                <th style={{ padding: 6, color: 'var(--amber2)' }}>Pending</th>
                 <th style={{ padding: 6 }}>Receive Now</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>Accepted</th>
-                <th style={{ padding: 6, color: 'var(--red)' }}>Rejected</th>
+                <th style={{ padding: 6, color: 'var(--green2)' }}>Accepted</th>
+                <th style={{ padding: 6, color: 'var(--red2)' }}>Rejected</th>
               </tr>
             </thead>
             <tbody>
@@ -1046,7 +1046,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                     </td>
                     <td
                       className="td-ctr mono"
-                      style={{ padding: 6, color: 'var(--green)' }}
+                      style={{ padding: 6, color: 'var(--green2)' }}
                     >
                       {l.alreadyReturned > 0 ? l.alreadyReturned : '0'}
                     </td>
@@ -1094,7 +1094,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                           fontSize: 13,
                           fontWeight: 700,
                           textAlign: 'center',
-                          color: 'var(--green)',
+                          color: 'var(--green2)',
                         }}
                       />
                     </td>
@@ -1114,7 +1114,7 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
                           fontSize: 13,
                           fontWeight: 700,
                           textAlign: 'center',
-                          color: 'var(--red)',
+                          color: 'var(--red2)',
                         }}
                       />
                     </td>
@@ -1204,7 +1204,7 @@ function ErrorBox({ message }: { message: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         borderRadius: 4,
         fontSize: 12,
       }}

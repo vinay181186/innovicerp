@@ -108,8 +108,8 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
             <th>Planned Machine</th>
             <th>Actual Machine</th>
             <th>Op Type</th>
-            <th style={{ color: 'var(--green)' }}>Completed</th>
-            <th style={{ color: 'var(--amber)' }}>Pending</th>
+            <th style={{ color: 'var(--green2)' }}>Completed</th>
+            <th style={{ color: 'var(--amber2)' }}>Pending</th>
             <th>Op Status</th>
             <th>Action</th>
           </tr>
@@ -145,8 +145,8 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                     {op.reworkPendingQty > 0 ? (
                       <span
                         style={{
-                          color: 'var(--amber)',
-                          fontSize: 9,
+                          color: 'var(--amber2)',
+                          fontSize: 11,
                           fontWeight: 700,
                           marginLeft: 3,
                         }}
@@ -199,8 +199,8 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                         {op.qcRejectedQty > 0 ? (
                           <span
                             style={{
-                              color: 'var(--red)',
-                              fontSize: 9,
+                              color: 'var(--red2)',
+                              fontSize: 11,
                               fontWeight: 700,
                               marginLeft: 3,
                             }}
@@ -226,7 +226,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                   </td>
                   <td>
                     {op.computedStatus === 'running' ? (
-                      <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 12 }}>
+                      <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 12 }}>
                         ▶ Running
                       </span>
                     ) : (

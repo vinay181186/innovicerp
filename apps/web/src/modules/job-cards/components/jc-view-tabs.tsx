@@ -38,8 +38,8 @@ import type { JcDrawingRef } from './jc-view-summary';
 // snake_case, so the keys are remapped.
 const DISPOSITION_ICON: Record<string, { icon: string; color: string }> = {
   rework: { icon: '♻', color: 'var(--cyan)' },
-  scrap: { icon: '🗑', color: 'var(--red)' },
-  use_as_is: { icon: '✅', color: 'var(--green)' },
+  scrap: { icon: '🗑', color: 'var(--red2)' },
+  use_as_is: { icon: '✅', color: 'var(--green2)' },
   return_to_vendor: { icon: '📦', color: 'var(--purple)' },
   make_fresh: { icon: '📦', color: 'var(--purple)' },
 };
@@ -109,7 +109,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       date: e.date,
       time: e.time,
       icon: '❌',
-      color: 'var(--red)',
+      color: 'var(--red2)',
       title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ? labelOf(NC_REASON_CATEGORY_LABELS, e.reasonCategory) : 'NC'} at Op${e.opSeq != null ? fmtOpSrNo(e.opSeq) : '?'}`,
       detail,
       remarks: '',
@@ -244,7 +244,7 @@ function HistoryFeed({
                         {e.title}
                       </span>
                       {e.time ? (
-                        <span className="mono" style={{ fontSize: 10, color: 'var(--text3)' }}>
+                        <span className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
                           {e.time}
                         </span>
                       ) : null}
@@ -266,9 +266,9 @@ function HistoryFeed({
                       {e.qtyKind === 'qc' ? (
                         `+${e.qty}`
                       ) : e.qtyKind === 'nc' ? (
-                        <span style={{ color: 'var(--red)' }}>-{e.qty}</span>
+                        <span style={{ color: 'var(--red2)' }}>-{e.qty}</span>
                       ) : (
-                        <b style={{ color: 'var(--green)' }}>+{e.qty}</b>
+                        <b style={{ color: 'var(--green2)' }}>+{e.qty}</b>
                       )}
                     </div>
                   ) : null}

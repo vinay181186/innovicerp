@@ -100,7 +100,7 @@ export function JwInvoiceView({
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load JW invoices. Try again.'}
             </div>
           </div>
@@ -121,7 +121,7 @@ export function JwInvoiceView({
                       <th>Taxable</th>
                       <th>GST%</th>
                       <th>GST Amt</th>
-                      <th style={{ color: 'var(--green)' }}>Total</th>
+                      <th style={{ color: 'var(--green2)' }}>Total</th>
                     </>
                   )}
                   {/* Print. No new permission gate: anyone who can see the row
@@ -179,7 +179,7 @@ export function JwInvoiceView({
                         </td>
                         <td
                           className="mono fw-700"
-                          style={{ fontSize: 14, color: 'var(--green)' }}
+                          style={{ fontSize: 14, color: 'var(--green2)' }}
                         >
                           {money(r.totalAmount ?? 0)}
                         </td>
@@ -375,7 +375,7 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
               value={qty}
               onChange={(e) => setQty(e.target.value)}
               placeholder="0"
-              style={{ fontWeight: 700, color: 'var(--green)' }}
+              style={{ fontWeight: 700, color: 'var(--green2)' }}
             />
           </Field>
 
@@ -428,7 +428,7 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
           <PreviewCell label={`GST (${gstPct}%)`} value={money(gstAmount)} />
           <PreviewCell label="Total" value={money(total)} accent />
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div className="text3" style={{ fontSize: 10 }}>
+            <div className="text3" style={{ fontSize: 11 }}>
               qty × rate = taxable · + GST from JWSO
             </div>
           </div>
@@ -440,7 +440,7 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
               marginTop: 12,
               padding: 8,
               background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
+              color: 'var(--red2)',
               borderRadius: 4,
               fontSize: 12,
             }}
@@ -487,7 +487,7 @@ function PreviewCell({
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 4,
@@ -517,7 +517,7 @@ function Field({
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           marginBottom: 4,

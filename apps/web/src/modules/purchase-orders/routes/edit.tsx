@@ -39,7 +39,7 @@ function PurchaseOrderEditPage(): React.JSX.Element {
   if (!canEdit) {
     return (
       <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+        <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
           ⛔ Edit access required to change a purchase order.
         </div>
       </div>
@@ -55,7 +55,7 @@ function PurchaseOrderEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Purchase order not found'}
           </div>
         </div>

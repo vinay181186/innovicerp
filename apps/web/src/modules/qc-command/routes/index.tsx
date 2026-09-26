@@ -85,7 +85,7 @@ function QcCommandPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !qcPerms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -216,7 +216,7 @@ function Stat(props: {
         border: props.accent ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)',
       }}
     >
-      <div style={{ fontSize: 10, color: props.accent ? 'var(--red)' : 'var(--text3)' }}>
+      <div style={{ fontSize: 11, color: props.accent ? 'var(--red)' : 'var(--text3)' }}>
         {props.label}
       </div>
       <div className="fw-700" style={{ fontSize: 26, color: props.color }}>

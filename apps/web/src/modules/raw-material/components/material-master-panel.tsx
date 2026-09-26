@@ -172,7 +172,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
               key: 'active',
               label: 'Active',
               count: activeCount,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               active: status === 'active',
               onClick: () => setStatus('active'),
             },
@@ -180,7 +180,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
               key: 'inactive',
               label: 'Inactive',
               count: inactiveCount,
-              color: 'var(--amber)',
+              color: 'var(--amber2)',
               active: status === 'inactive',
               onClick: () => setStatus('inactive'),
             },
@@ -195,7 +195,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ marginLeft: 8, fontSize: 10 }}
+              style={{ marginLeft: 8, fontSize: 11 }}
               onClick={() => setImportMsg(null)}
             >
               ✕
@@ -225,7 +225,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={5} className="empty-state" style={{ color: 'var(--red2)' }}>
                     {error instanceof Error
                       ? error.message
                       : `Could not load material ${noun.toLowerCase()}s. Try again.`}
@@ -516,7 +516,7 @@ function MaterialRowModal({
             </div>
           </div>
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
               {err}
             </div>
           ) : null}

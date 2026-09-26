@@ -42,7 +42,7 @@ function WidgetBody({ w }: { w: WidgetData }): React.JSX.Element {
           {w.stats.map((s, i) => (
             <div key={i}>
               <div className="mono fw-700" style={{ fontSize: 22, color: toneColor(s.tone) }}>{s.value}</div>
-              <div style={{ fontSize: 10, color: 'var(--text3)' }}>{s.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -51,7 +51,7 @@ function WidgetBody({ w }: { w: WidgetData }): React.JSX.Element {
         <div>
           {w.bars.map((b, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <span style={{ fontSize: 10, width: 70, color: 'var(--cyan)', fontWeight: 600 }}>{b.label}</span>
+              <span style={{ fontSize: 11, width: 70, color: 'var(--cyan)', fontWeight: 600 }}>{b.label}</span>
               <div style={{ flex: 1, height: 8, background: 'var(--bg5)', borderRadius: 4 }}>
                 <div
                   style={{
@@ -62,7 +62,7 @@ function WidgetBody({ w }: { w: WidgetData }): React.JSX.Element {
                   }}
                 />
               </div>
-              <span className="mono" style={{ fontSize: 10, width: 30, textAlign: 'right' }}>{b.pct}%</span>
+              <span className="mono" style={{ fontSize: 11, width: 30, textAlign: 'right' }}>{b.pct}%</span>
             </div>
           ))}
         </div>
@@ -93,12 +93,12 @@ function AlertsWidget(): React.JSX.Element {
         🔔 Alerts {total > 0 ? <span className="mono" style={{ fontSize: 16, marginLeft: 6 }}>{total}</span> : null}
       </div>
       {visible.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--green)' }}>✅ All clear! No pending alerts.</div>
+        <div style={{ fontSize: 12, color: 'var(--green2)' }}>✅ All clear! No pending alerts.</div>
       ) : (
         visible.slice(0, 8).map((a) => (
           <div key={a.code} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 11, borderBottom: '1px solid var(--border)' }}>
             <span>{a.name}</span>
-            <span className="mono fw-700" style={{ color: 'var(--red)' }}>{a.count}</span>
+            <span className="mono fw-700" style={{ color: 'var(--red2)' }}>{a.count}</span>
           </div>
         ))
       )}

@@ -79,7 +79,7 @@ export function LogEntryApprovals(): React.JSX.Element {
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading requests…
         </div>
       ) : list.isError ? (
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
           {list.error instanceof Error ? list.error.message : 'Could not load requests. Try again.'}
         </div>
       ) : ordered.length === 0 ? (
@@ -90,7 +90,7 @@ export function LogEntryApprovals(): React.JSX.Element {
       ) : (
         <div style={{ display: 'grid', gap: 10 }}>
           {decide.isError ? (
-            <div style={{ color: 'var(--red)', fontSize: 12 }}>{decide.error.message}</div>
+            <div style={{ color: 'var(--red2)', fontSize: 12 }}>{decide.error.message}</div>
           ) : null}
           {ordered.map((r) => (
             <RequestCard
@@ -210,7 +210,7 @@ function RequestCard({
           {req.machineCode ? <span className="mono">{req.machineCode}</span> : null}
           <span className="mono">{req.qty} pcs</span>
           {req.rejectQty > 0 ? (
-            <span className="mono" style={{ color: 'var(--red)' }}>
+            <span className="mono" style={{ color: 'var(--red2)' }}>
               {req.rejectQty} rejected
             </span>
           ) : null}
@@ -227,7 +227,7 @@ function RequestCard({
           <Field label="Log Date / Time">
             <span className="mono">{when(req.prevLogDate, req.prevStartTime)}</span>
             <span className="text3"> → </span>
-            <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>
+            <span className="mono" style={{ color: 'var(--amber2)', fontWeight: 700 }}>
               {when(req.requestedLogDate, req.requestedStartTime)}
             </span>
           </Field>
@@ -236,7 +236,7 @@ function RequestCard({
           </Field>
           <Field label="Asked By">
             {req.requestedByName ?? '—'}
-            <span className="text3" style={{ fontSize: 10 }}>
+            <span className="text3" style={{ fontSize: 11 }}>
               {' '}
               · {istStamp(req.requestedAt)}
             </span>
@@ -253,7 +253,7 @@ function RequestCard({
             longer matches the row. Approving still writes the requested value.
             Only relevant while the request is still waiting. */}
         {isPending && req.isStale ? (
-          <div style={{ color: 'var(--amber)', fontSize: 11, marginBottom: 8 }}>
+          <div style={{ color: 'var(--amber2)', fontSize: 11, marginBottom: 8 }}>
             ⚠ This entry has been changed since the request was raised — the “from” value above is
             out of date.
           </div>
@@ -353,7 +353,7 @@ function Field({
 }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 9, letterSpacing: '0.06em' }}>
+      <div className="text3" style={{ fontSize: 11, letterSpacing: '0.06em' }}>
         {label}
       </div>
       <div style={{ fontSize: 12 }}>{children}</div>

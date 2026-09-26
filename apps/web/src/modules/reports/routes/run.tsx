@@ -250,7 +250,7 @@ function ResultsTable(props: {
             className="btn btn-ghost btn-sm"
             onClick={onCsv}
             disabled={rowCount === 0}
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 11 }}
           >
             ⬇ CSV
           </button>
@@ -259,7 +259,7 @@ function ResultsTable(props: {
             className="btn btn-ghost btn-sm"
             onClick={onExcel}
             disabled={rowCount === 0 || excelLoading}
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 11 }}
           >
             {excelLoading ? (
               <>
@@ -291,7 +291,7 @@ function ResultsTable(props: {
               <tr>
                 <td
                   colSpan={columns.length}
-                  style={{ color: 'var(--red)', fontSize: 11 }}
+                  style={{ color: 'var(--red2)', fontSize: 11 }}
                 >
                   {errorMessage ?? 'Could not run report. Try again.'}
                 </td>

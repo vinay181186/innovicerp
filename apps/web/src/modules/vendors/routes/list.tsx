@@ -319,7 +319,7 @@ function VendorsListPage(): React.JSX.Element {
               key: 'active',
               label: 'Active',
               count: activeCount,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               active: search.status === 'active',
               onClick: () => setStatus('active'),
             },

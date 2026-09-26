@@ -72,11 +72,11 @@ export function OutsourceInfo({
   const row = useOutsourceRow(jcCode, jcOpId);
   return (
     <>
-      <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>🏭 Outsource</div>
+      <div style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}>🏭 Outsource</div>
       {row?.outsourceVendorName ? (
-        <div style={{ fontSize: 10, color: 'var(--text2)' }}>{row.outsourceVendorName}</div>
+        <div style={{ fontSize: 11, color: 'var(--text2)' }}>{row.outsourceVendorName}</div>
       ) : null}
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{OUTSOURCE_STATUS_LABEL[status]}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{OUTSOURCE_STATUS_LABEL[status]}</div>
     </>
   );
 }
@@ -395,7 +395,7 @@ export function JcOpFooter({
           <button
             type="button"
             className="btn btn-sm"
-            style={{ color: 'var(--green)' }}
+            style={{ color: 'var(--green2)' }}
             onClick={onQc}
             title="Open the QC Call Register filtered to this job card"
           >
@@ -403,13 +403,13 @@ export function JcOpFooter({
           </button>
         ) : showQcText ? (
           op.computedStatus === 'complete' ? (
-            <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ QC Completed</span>
+            <span style={{ color: 'var(--green2)', fontSize: 12 }}>✓ QC Completed</span>
           ) : (
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>Waiting</span>
           )
         ) : null
       ) : showDone ? (
-        <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Completed</span>
+        <span style={{ color: 'var(--green2)', fontSize: 12 }}>✓ Completed</span>
       ) : showLog ? (
         /* T33: Log only while a session is actually running on this op. Start
            and Log are the two ends of one chain, so exactly one of them shows —

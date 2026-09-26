@@ -107,7 +107,7 @@ function SoCycleTimePage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load SO cycle time. Try again.'}
       </div>
     );
@@ -275,7 +275,7 @@ function Avg({
 }): React.JSX.Element {
   return (
     <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 10 }}>
+      <div className="text3" style={{ fontSize: 11 }}>
         {label}
       </div>
       <div className="fw-700" style={{ fontSize: 22, color }}>

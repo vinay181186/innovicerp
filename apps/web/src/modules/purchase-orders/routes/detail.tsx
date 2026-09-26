@@ -112,7 +112,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Purchase order not found'}
           </div>
         </div>
@@ -126,7 +126,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -338,7 +338,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
         {softDelete.isError ? (
           <div
             style={{
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid var(--red)',
               borderRadius: 6,
@@ -381,11 +381,11 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 {priceHidden ? null : (
                   <>
                     <th>Rate</th>
-                    <th style={{ color: 'var(--green)' }}>Amount</th>
+                    <th style={{ color: 'var(--green2)' }}>Amount</th>
                   </>
                 )}
-                <th style={{ color: 'var(--green)' }}>Received</th>
-                <th style={{ color: 'var(--red)' }}>Pending</th>
+                <th style={{ color: 'var(--green2)' }}>Received</th>
+                <th style={{ color: 'var(--red2)' }}>Pending</th>
                 <th>Due Date</th>
                 <th>Remarks</th>
               </tr>
@@ -438,7 +438,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              <div className="fw-700" style={{ color: 'var(--green)' }}>
+              <div className="fw-700" style={{ color: 'var(--green2)' }}>
                 ✅ Approve PO {detail.code}?
               </div>
               <button
@@ -466,7 +466,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                     background: 'rgba(239,68,68,0.06)',
                     border: '1px solid rgba(239,68,68,0.3)',
                     borderRadius: 6,
-                    color: 'var(--red)',
+                    color: 'var(--red2)',
                     fontSize: 12,
                   }}
                 >
@@ -533,7 +533,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              <div className="fw-700" style={{ color: 'var(--red)' }}>
+              <div className="fw-700" style={{ color: 'var(--red2)' }}>
                 ❌ Reject PO — {detail.code}
               </div>
               <button
@@ -576,7 +576,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                     background: 'rgba(239,68,68,0.06)',
                     border: '1px solid rgba(239,68,68,0.3)',
                     borderRadius: 6,
-                    color: 'var(--red)',
+                    color: 'var(--red2)',
                     fontSize: 12,
                   }}
                 >
@@ -639,8 +639,8 @@ function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): Reac
           was raised against. A hand-typed line has no SO behind it and keeps
           the bare code, with no trailing slash. */}
       <td className="td-code">{itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}</td>
-      <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.itemName}</td>
-      <td className="mono text2" style={{ fontSize: 10 }}>
+      <td style={{ color: 'var(--amber2)', fontWeight: 700 }}>{l.itemName}</td>
+      <td className="mono text2" style={{ fontSize: 11 }}>
         {l.sourceJcOpId ? 'JC op' : '—'}
       </td>
       <td className="mono fw-700">{l.qty}</td>

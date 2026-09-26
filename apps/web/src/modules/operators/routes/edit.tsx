@@ -63,7 +63,7 @@ function OperatorNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to Operator Master
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have create access to Operator Master. Ask an admin for L2 Data Entry or
             above in Production.
           </div>
@@ -143,7 +143,7 @@ function OperatorEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to Operator Master
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have edit access to Operator Master. Ask an admin for L3 Editor or above in
             Production.
           </div>
@@ -169,7 +169,7 @@ function OperatorEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Operator not found.'}
           </div>
         </div>

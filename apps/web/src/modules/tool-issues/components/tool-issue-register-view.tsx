@@ -64,7 +64,7 @@ export function ToolIssueRegisterView({
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -114,7 +114,7 @@ export function ToolIssueRegisterView({
           </div>
         ) : isError ? (
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load tool issues. Try again.'}
             </div>
           </div>
@@ -131,13 +131,13 @@ export function ToolIssueRegisterView({
                   <th>Reference No.</th>
                   <th>Expected Return Date</th>
                   <th>Issue Status</th>
-                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                     Good
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--red)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--red2)' }}>
                     Damaged
                   </th>
-                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>
+                  <th className="td-ctr" style={{ color: 'var(--amber2)' }}>
                     Consumed
                   </th>
                   <th className="td-ctr">Action</th>
@@ -288,10 +288,10 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
       <span
         style={{
           background: 'rgba(34,197,94,0.12)',
-          color: 'var(--green)',
+          color: 'var(--green2)',
           padding: '2px 8px',
           borderRadius: 10,
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: 700,
         }}
       >
@@ -309,7 +309,7 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
           color: 'var(--cyan)',
           padding: '2px 8px',
           borderRadius: 10,
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: 700,
         }}
       >
@@ -322,10 +322,10 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
       <span
         style={{
           background: 'rgba(239,68,68,0.12)',
-          color: 'var(--red)',
+          color: 'var(--red2)',
           padding: '2px 8px',
           borderRadius: 10,
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: 700,
         }}
       >
@@ -337,10 +337,10 @@ function StatusBadge({ issue }: { issue: ToolIssueListItem }): React.JSX.Element
     <span
       style={{
         background: 'rgba(245,158,11,0.12)',
-        color: 'var(--amber)',
+        color: 'var(--amber2)',
         padding: '2px 8px',
         borderRadius: 10,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
       }}
     >
@@ -360,12 +360,12 @@ function KpiStrip({
 }): React.JSX.Element {
   const tiles: Array<{ key: FilterKey; label: string; value: number; color: string }> = [
     { key: 'all', label: 'Total', value: summary.total, color: 'var(--blue)' },
-    { key: 'out', label: 'Currently Out', value: summary.out, color: 'var(--red)' },
-    { key: 'returned', label: 'Returned', value: summary.returned, color: 'var(--green)' },
+    { key: 'out', label: 'Currently Out', value: summary.out, color: 'var(--red2)' },
+    { key: 'returned', label: 'Returned', value: summary.returned, color: 'var(--green2)' },
   ];
   // Legacy only emits the Overdue card when the count is non-zero (L24016).
   if (summary.overdue > 0) {
-    tiles.push({ key: 'overdue', label: 'Overdue', value: summary.overdue, color: 'var(--red)' });
+    tiles.push({ key: 'overdue', label: 'Overdue', value: summary.overdue, color: 'var(--red2)' });
   }
   return (
     <div
@@ -390,7 +390,7 @@ function KpiStrip({
               t.key === 'overdue' ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)',
           }}
         >
-          <div style={{ fontSize: 10, color: t.key === 'overdue' ? 'var(--red)' : 'var(--text3)' }}>
+          <div style={{ fontSize: 11, color: t.key === 'overdue' ? 'var(--red)' : 'var(--text3)' }}>
             {t.label}
           </div>
           <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
@@ -692,7 +692,7 @@ function ReturnModal({
           <div className="text3" style={{ marginTop: 6, fontSize: 11 }}>
             Already returned: Good {issue.returnGoodQty} | Damaged {issue.returnDamagedQty} |
             Consumed {issue.returnConsumedQty} = {alreadyTotal} |{' '}
-            <b style={{ color: 'var(--red)' }}>Pending: {remaining}</b>
+            <b style={{ color: 'var(--red2)' }}>Pending: {remaining}</b>
           </div>
         ) : null}
       </div>
@@ -740,7 +740,7 @@ function ReturnModal({
                 fontSize: 16,
                 fontWeight: 700,
                 textAlign: 'center',
-                color: 'var(--green)',
+                color: 'var(--green2)',
                 border: '2px solid rgba(34,197,94,0.4)',
               }}
             />
@@ -757,7 +757,7 @@ function ReturnModal({
                 fontSize: 16,
                 fontWeight: 700,
                 textAlign: 'center',
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 border: '2px solid rgba(239,68,68,0.4)',
               }}
             />
@@ -774,7 +774,7 @@ function ReturnModal({
                 fontSize: 16,
                 fontWeight: 700,
                 textAlign: 'center',
-                color: 'var(--amber)',
+                color: 'var(--amber2)',
                 border: '2px solid rgba(245,158,11,0.4)',
               }}
             />
@@ -861,7 +861,7 @@ function ErrorBanner({ msg }: { msg: string }): React.JSX.Element {
         marginTop: 12,
         padding: 8,
         background: 'rgba(239,68,68,0.08)',
-        color: 'var(--red)',
+        color: 'var(--red2)',
         fontSize: 12,
         borderRadius: 4,
       }}

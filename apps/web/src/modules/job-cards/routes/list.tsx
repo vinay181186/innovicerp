@@ -573,7 +573,7 @@ function JobCardsListPage(): React.JSX.Element {
             figures: no onClick, no filtering. */}
         <StatStrip
           items={[
-            { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber)' },
+            { key: 'open', label: 'Open', count: kpis.open, color: 'var(--amber2)' },
             {
               key: 'in_progress',
               label: 'In Progress',
@@ -584,9 +584,9 @@ function JobCardsListPage(): React.JSX.Element {
               key: 'completed',
               label: 'Completed',
               count: kpis.completed,
-              color: 'var(--green)',
+              color: 'var(--green2)',
             },
-            { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red)' },
+            { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red2)' },
           ]}
         />
 
@@ -806,7 +806,7 @@ function JobCardsListPage(): React.JSX.Element {
                   <QtyStrip
                     items={[
                       { label: 'Order Qty', value: jc.orderQty },
-                      { label: 'Completed', value: done, color: 'var(--green)' },
+                      { label: 'Completed', value: done, color: 'var(--green2)' },
                       {
                         label: 'Pending',
                         value: pending,

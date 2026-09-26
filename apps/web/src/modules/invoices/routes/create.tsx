@@ -172,7 +172,7 @@ function InvoiceNewPage(): React.JSX.Element {
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You do not have create access to Invoices. Ask an admin for L2 Data Entry or above in
         Finance.
       </div>
@@ -259,7 +259,7 @@ function InvoiceNewPage(): React.JSX.Element {
                     gridTemplateColumns: GRID,
                     gap: 8,
                     padding: '0 10px 4px',
-                    fontSize: 9,
+                    fontSize: 11,
                     fontWeight: 700,
                     letterSpacing: 0.4,
                     color: 'var(--text3)',
@@ -271,10 +271,10 @@ function InvoiceNewPage(): React.JSX.Element {
                   <span>Item Code ★</span>
                   <span>Item Name</span>
                   <span style={{ textAlign: 'center' }}>Order Qty</span>
-                  <span style={{ textAlign: 'center', color: 'var(--green)' }}>Dispatched</span>
+                  <span style={{ textAlign: 'center', color: 'var(--green2)' }}>Dispatched</span>
                   <span style={{ textAlign: 'center' }}>Invoiced</span>
-                  <span style={{ textAlign: 'center', color: 'var(--amber)' }}>To Invoice</span>
-                  <span style={{ textAlign: 'center', color: 'var(--green)' }}>Invoice Qty</span>
+                  <span style={{ textAlign: 'center', color: 'var(--amber2)' }}>To Invoice</span>
+                  <span style={{ textAlign: 'center', color: 'var(--green2)' }}>Invoice Qty</span>
                   <span style={{ textAlign: 'center' }}>Rate</span>
                   <span />
                 </div>
@@ -382,7 +382,7 @@ function InvoiceNewPage(): React.JSX.Element {
                       className="btn btn-ghost btn-sm"
                       title="Remove line"
                       onClick={() => removeLine(card.id)}
-                      style={{ color: 'var(--red)', padding: 4 }}
+                      style={{ color: 'var(--red2)', padding: 4 }}
                     >
                       <X size={14} />
                     </button>

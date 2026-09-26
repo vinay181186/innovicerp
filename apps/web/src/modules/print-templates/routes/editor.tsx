@@ -382,7 +382,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                 {t.isCustomised ? (
                   <span
                     onClick={() => resetBlock(t.templateKey)}
-                    style={{ cursor: 'pointer', color: 'var(--red)', textDecoration: 'underline' }}
+                    style={{ cursor: 'pointer', color: 'var(--red2)', textDecoration: 'underline' }}
                   >
                     ↺ Reset to default
                   </span>
@@ -484,7 +484,7 @@ function PrintTemplatesPage(): React.JSX.Element {
         </div>
       ) : isError ? (
         <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             Could not load print templates. Try again.
           </div>
         </div>

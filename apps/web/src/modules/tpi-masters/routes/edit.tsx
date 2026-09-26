@@ -48,7 +48,7 @@ function TpiMasterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to TPI Master
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have edit access to TPI Master. Ask an admin for L3 Editor or above in QC.
           </div>
         </div>
@@ -64,7 +64,7 @@ function TpiMasterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Inspector not found.'}
           </div>
         </div>
@@ -86,7 +86,7 @@ function TpiMasterEditPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="fw-700" style={{ color: 'var(--green)', fontSize: 14 }}>
+            <div className="fw-700" style={{ color: 'var(--green2)', fontSize: 14 }}>
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>

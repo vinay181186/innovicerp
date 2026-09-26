@@ -143,7 +143,7 @@ export function DocNumberInputView({
 function hintFor(readOnly: boolean, state: DocNumberInputState, empty: boolean): React.ReactNode {
   if (readOnly) return 'Code cannot be changed after creation.';
   if (state === 'checking') return 'Checking…';
-  if (state === 'ok' && !empty) return <span style={{ color: 'var(--green)' }}>✓ Available</span>;
+  if (state === 'ok' && !empty) return <span style={{ color: 'var(--green2)' }}>✓ Available</span>;
   // Idle with something typed falls through to the auto-fill line, exactly as
   // the reference and the live field do. Returning nothing here would drop the
   // line out of the layout and make the field jump height as you type.

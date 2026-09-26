@@ -447,7 +447,7 @@ export function GrnAgainstPoForm({
                       className="btn btn-sm"
                       style={{
                         background: 'transparent',
-                        color: 'var(--red)',
+                        color: 'var(--red2)',
                         border: '1px solid var(--red)',
                         padding: '3px 8px',
                       }}
@@ -468,7 +468,7 @@ export function GrnAgainstPoForm({
         {formError || submitError ? (
           <div
             style={{
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid var(--red)',
               borderRadius: 6,

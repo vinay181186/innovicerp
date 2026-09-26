@@ -68,7 +68,7 @@ function StoreIssuesListPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -153,7 +153,7 @@ function StoreIssuesListPage(): React.JSX.Element {
               </div>
             ) : isError ? (
               <div className="panel-body">
-                <div className="empty-state" style={{ color: 'var(--red)' }}>
+                <div className="empty-state" style={{ color: 'var(--red2)' }}>
                   {error instanceof Error ? error.message : 'Could not load issues. Try again.'}
                 </div>
               </div>
@@ -493,7 +493,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
                 marginTop: 12,
                 padding: 8,
                 background: 'rgba(239,68,68,0.08)',
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 borderRadius: 4,
                 fontSize: 12,
               }}

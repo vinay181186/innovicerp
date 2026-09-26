@@ -121,7 +121,7 @@ function DailyReportPage(): React.JSX.Element {
           <div>
             <div
               className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
             >
               Date
             </div>
@@ -136,7 +136,7 @@ function DailyReportPage(): React.JSX.Element {
           <div>
             <div
               className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+              style={{ fontSize: 11, textTransform: 'uppercase', marginBottom: 4 }}
             >
               Machine
             </div>
@@ -187,7 +187,7 @@ function DailyReportPage(): React.JSX.Element {
       ) : isError ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
+            <div className="empty-state" style={{ color: 'var(--red2)' }}>
               {error instanceof Error ? error.message : 'Could not load daily report. Try again.'}
             </div>
           </div>
@@ -228,7 +228,7 @@ function DailyReportPage(): React.JSX.Element {
                   style={{
                     fontFamily: 'var(--mono)',
                     fontWeight: 700,
-                    color: 'var(--green)',
+                    color: 'var(--green2)',
                     fontSize: 15,
                   }}
                 >
@@ -258,7 +258,7 @@ function DailyReportPage(): React.JSX.Element {
                     <th className="td-ctr">Op</th>
                     <th>Operation</th>
                     <th className="td-ctr">Shift</th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                    <th className="td-ctr" style={{ color: 'var(--green2)' }}>
                       Completed
                     </th>
                     <th>Operator</th>
@@ -286,7 +286,7 @@ function DailyReportPage(): React.JSX.Element {
                           style={{
                             padding: '2px 8px',
                             borderRadius: 10,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: 700,
                             background: 'var(--bg4)',
                             color: 'var(--text2)',
@@ -297,7 +297,7 @@ function DailyReportPage(): React.JSX.Element {
                       </td>
                       <td
                         className="td-ctr mono fw-700"
-                        style={{ fontSize: 15, color: 'var(--green)' }}
+                        style={{ fontSize: 15, color: 'var(--green2)' }}
                       >
                         {r.qty}
                       </td>
@@ -333,7 +333,7 @@ function KpiTile({
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 11,
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
           marginBottom: 6,

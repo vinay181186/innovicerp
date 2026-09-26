@@ -84,7 +84,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You do not have create access to JWSO Master. Ask an admin for L2 Data Entry or above in
         Sales.
       </div>
@@ -157,7 +157,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
 
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You do not have edit access to JWSO Master. Ask an admin for L2 Data Entry or above in
         Sales.
       </div>
@@ -181,7 +181,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Job-work order not found'}
           </div>
         </div>

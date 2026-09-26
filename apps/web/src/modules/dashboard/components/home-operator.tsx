@@ -79,13 +79,13 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                   ) : null}
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>ELAPSED</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>ELAPSED</div>
                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)' }}>
                     {elapsedStr(r.elapsedMin)}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>PROGRESS</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>PROGRESS</div>
                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)' }}>
                     {r.completed}/{r.orderQty}
                   </div>

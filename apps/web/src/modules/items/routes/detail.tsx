@@ -72,7 +72,7 @@ function ItemDetailPage(): React.JSX.Element {
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -95,7 +95,7 @@ function ItemDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Item not found'}
           </div>
         </div>
@@ -190,7 +190,7 @@ function ItemDetailPage(): React.JSX.Element {
           {softDelete.isError ? (
             <div
               style={{
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid #fca5a5',
                 borderRadius: 6,
@@ -284,7 +284,7 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
               </tr>
             ) : isError ? (
               <tr>
-                <td colSpan={7} className="empty-state" style={{ color: 'var(--red)' }}>
+                <td colSpan={7} className="empty-state" style={{ color: 'var(--red2)' }}>
                   Could not load stock history. Try again.
                 </td>
               </tr>
@@ -313,7 +313,7 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
                   <td className="mono" style={{ fontSize: 11 }}>
                     {r.stockBefore} → <b>{r.stockAfter}</b>
                   </td>
-                  <td className="text3" style={{ fontSize: 10 }}>
+                  <td className="text3" style={{ fontSize: 11 }}>
                     {r.remarks ?? ''}
                   </td>
                 </tr>

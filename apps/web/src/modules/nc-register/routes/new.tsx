@@ -94,7 +94,7 @@ function NcRegisterNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to NC Register
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have create access to NC Register. Ask an admin for L2 Data Entry or above
             in QC.
           </div>

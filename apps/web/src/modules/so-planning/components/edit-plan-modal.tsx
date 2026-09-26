@@ -551,7 +551,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     >
       <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
       <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
-      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{help}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{help}</div>
     </label>
   );
 
@@ -574,7 +574,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         background: tint,
         border: `1px solid ${edge}`,
         borderRadius: 4,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 700,
         letterSpacing: '.04em',
         whiteSpace: 'nowrap',
@@ -616,21 +616,21 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       >
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Plan</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Plan</span>
             <br />
             <b className="mono" style={{ color: 'var(--cyan)' }}>
               {plan.code}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>SO / JWSO</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO / JWSO</span>
             <br />
             <b className="mono">
               {plan.soCodeText ?? '—'} L{plan.lineNo ?? '—'}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Item</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item</span>
             <br />
             {/* `CODE/REV` — see planItemLabel. nowrap so a short code never
                 breaks across two lines in this summary strip. */}
@@ -640,12 +640,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             {plan.itemName ?? plan.itemNameText ?? ''}
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Order Qty</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
             <br />
             <b style={{ fontSize: 16 }}>{plan.orderQty}</b>
           </div>
           <div>
-            <span style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 700 }}>Plan Qty ★</span>
+            <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>Plan Qty ★</span>
             <br />
             <input
               type="number"
@@ -738,7 +738,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div
             className="mono fw-700 text3"
             style={{
-              fontSize: 9,
+              fontSize: 11,
               textTransform: 'uppercase',
               letterSpacing: '.08em',
               marginBottom: 6,
@@ -783,7 +783,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div
             className="mono fw-700"
             style={{
-              fontSize: 9,
+              fontSize: 11,
               textTransform: 'uppercase',
               letterSpacing: '.08em',
               marginBottom: 6,
@@ -876,7 +876,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         {defaultOpsQuery.data.routeCardCode}
                       </span>
                       {defaultOpsQuery.data.routeCardRevision != null ? (
-                        <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>
+                        <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 11 }}>
                           Route Card Rev {defaultOpsQuery.data.routeCardRevision}
                         </span>
                       ) : null}
@@ -889,7 +889,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                     </>
                   ) : (
                     <span style={{ color: 'var(--text3)' }}>
-                      Route Card: <span style={{ color: 'var(--amber)' }}>none</span> &mdash; enter
+                      Route Card: <span style={{ color: 'var(--amber2)' }}>none</span> &mdash; enter
                       the operations below
                     </span>
                   )}
@@ -928,7 +928,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 className="btn btn-sm"
                 style={{
                   background: 'rgba(34,197,94,0.08)',
-                  color: 'var(--green)',
+                  color: 'var(--green2)',
                   border: '1px solid rgba(34,197,94,0.25)',
                   fontSize: 11,
                 }}
@@ -963,7 +963,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                     <th style={{ width: 210 }}>Machine / Vendor</th>
                     <th style={{ minWidth: 200 }}>Operation</th>
                     <th style={{ width: 96 }}>Cycle Time (min)</th>
-                    <th style={{ width: 132, color: 'var(--amber)' }}>OSP</th>
+                    <th style={{ width: 132, color: 'var(--amber2)' }}>OSP</th>
                     <th style={{ width: 48 }} />
                   </tr>
                 </thead>
@@ -980,7 +980,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             borderLeft: '3px solid var(--green)',
                           }}
                         >
-                          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                          <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
                             {opSrNo(i + 1)}
                           </td>
                           {/* A QC step has no machine group — the badge takes the
@@ -1207,7 +1207,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 6,
-                              fontSize: 10,
+                              fontSize: 11,
                               fontWeight: 700,
                               // Legacy L9576: amber only while ticked, else text3.
                               color: isOS ? 'var(--amber)' : 'var(--text3)',
@@ -1322,7 +1322,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 value={foRate ?? ''}
                 onChange={(e) => setFoRate(e.target.value === '' ? null : Number(e.target.value))}
                 placeholder="0.00"
-                style={{ fontSize: 14, color: 'var(--green)', fontWeight: 700 }}
+                style={{ fontSize: 14, color: 'var(--green2)', fontWeight: 700 }}
               />
             </div>
             <div className="form-grp form-full">
@@ -1380,7 +1380,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             style={{
               fontSize: 12,
               fontWeight: 700,
-              color: 'var(--green)',
+              color: 'var(--green2)',
               marginBottom: 10,
             }}
           >
@@ -1388,7 +1388,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           </div>
           <div className="form-grid">
             <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--green)' }}>
+              <label className="form-label" style={{ color: 'var(--green2)' }}>
                 Vendor ★
               </label>
               <SearchableSelect
@@ -1447,7 +1447,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <span
             style={{
               fontSize: 11,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               fontFamily: 'var(--mono)',
               fontWeight: 700,
               letterSpacing: '0.06em',
@@ -1542,7 +1542,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         <div
           style={{
             padding: '6px 12px',
-            fontSize: 10,
+            fontSize: 11,
             color: 'var(--text3)',
             borderTop: '1px solid var(--border)',
           }}
@@ -1558,7 +1558,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             padding: 8,
             borderRadius: 4,
             background: 'rgba(239,68,68,0.1)',
-            color: 'var(--red)',
+            color: 'var(--red2)',
             fontSize: 12,
           }}
         >

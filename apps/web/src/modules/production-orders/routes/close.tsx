@@ -203,7 +203,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to Production Orders
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have edit access to Production Orders. Ask an admin for L3 Editor or above
             in Production.
           </div>
@@ -292,7 +292,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
               role="alert"
               style={{
                 marginTop: 12,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
                 borderRadius: 6,

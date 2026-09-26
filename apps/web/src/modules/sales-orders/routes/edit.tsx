@@ -88,7 +88,7 @@ function SalesOrderNewPage(): React.JSX.Element {
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You cannot create SOs. Ask an admin.
       </div>
     );
@@ -139,7 +139,7 @@ function SalesOrderEditPage(): React.JSX.Element {
   // Access matrix: edit access to SO Master is required (also enforced server-side).
   if (eff && !perms.edit) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You cannot edit SOs. Ask an admin.
       </div>
     );
@@ -155,7 +155,7 @@ function SalesOrderEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to SO
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             🔒 Only an admin can edit a Sales Order.
           </div>
         </div>
@@ -190,7 +190,7 @@ function SalesOrderEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Sales order not found'}
           </div>
         </div>

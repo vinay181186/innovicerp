@@ -193,7 +193,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -324,7 +324,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 key: 'pcs',
                 label: 'Total Dispatched',
                 count: totalPcs,
-                color: 'var(--red)',
+                color: 'var(--red2)',
                 sub: 'pieces',
               },
               {
@@ -342,7 +342,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…
         </div>
       ) : isError || !data ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
           {error instanceof Error ? error.message : 'Could not load dispatches. Try again.'}
         </div>
       ) : (
@@ -360,7 +360,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                       <th>Item Name</th>
                       <th>Total Dispatched</th>
                       <th>No. of Dispatches</th>
-                      <th style={{ color: 'var(--green)' }}>Current Stock</th>
+                      <th style={{ color: 'var(--green2)' }}>Current Stock</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -368,11 +368,11 @@ function CustomerDispatchListPage(): React.JSX.Element {
                       <tr key={s.code + s.name}>
                         <td className="td-code" style={{ color: 'var(--purple)' }}>{s.code}</td>
                         <td className="fw-700">{s.name}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>{s.total}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>{s.total}</td>
                         <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
                           {s.count}
                         </td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green2)' }}>
                           {s.stock ?? 0}
                         </td>
                       </tr>

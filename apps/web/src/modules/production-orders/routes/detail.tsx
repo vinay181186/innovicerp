@@ -78,7 +78,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'Production Order not found.'}
           </div>
         </div>
@@ -88,7 +88,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -217,9 +217,9 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 the store really cut (RM size above is the planned one). */}
             <Fact label="Raw Material Available">
               {data.rawMaterialAvailable ? (
-                <span style={{ color: 'var(--green)' }}>✓ Yes</span>
+                <span style={{ color: 'var(--green2)' }}>✓ Yes</span>
               ) : (
-                <span style={{ color: 'var(--red)' }}>✗ No</span>
+                <span style={{ color: 'var(--red2)' }}>✗ No</span>
               )}
             </Fact>
             <Fact label="Actual Size" mono>
@@ -267,7 +267,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       {stopped ? (
         <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--red)' }}>
           <div className="panel-hdr">
-            <div className="panel-title" style={{ color: 'var(--red)' }}>
+            <div className="panel-title" style={{ color: 'var(--red2)' }}>
               ⛔ Short closed on {fmtDate(data.shortClosedAt)} by {data.shortClosedByName ?? '—'} —{' '}
               {data.shortCloseReason ?? '—'}
             </div>

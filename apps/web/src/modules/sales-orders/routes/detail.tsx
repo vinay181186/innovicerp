@@ -360,7 +360,7 @@ function lineColumns(opts: {
       headColor: 'var(--green)',
       className: 'mono',
       nowrap: true,
-      render: (l) => <span style={{ color: 'var(--green)' }}>{l.dispatchedQty}</span>,
+      render: (l) => <span style={{ color: 'var(--green2)' }}>{l.dispatchedQty}</span>,
     },
     {
       header: 'Billed',
@@ -368,7 +368,7 @@ function lineColumns(opts: {
       headColor: 'var(--green)',
       className: 'mono',
       nowrap: true,
-      render: (l) => <span style={{ color: 'var(--green)' }}>{l.billedQty}</span>,
+      render: (l) => <span style={{ color: 'var(--green2)' }}>{l.billedQty}</span>,
     },
     {
       header: 'Pending',
@@ -640,7 +640,7 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
           label="GST %"
           size="xs"
           value={
-            <span style={{ color: 'var(--green)', fontWeight: 700 }}>{detail.gstPercent}%</span>
+            <span style={{ color: 'var(--green2)', fontWeight: 700 }}>{detail.gstPercent}%</span>
           }
         />
       )}

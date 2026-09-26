@@ -326,7 +326,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
                   Material<span className="req">★</span>
                 </th>
                 <th style={{ width: '22%' }}>Material Name</th>
-                <th style={{ width: '10%', color: 'var(--green)' }} className="td-ctr">
+                <th style={{ width: '10%', color: 'var(--green2)' }} className="td-ctr">
                   Received<span className="req">★</span>
                 </th>
                 <th style={{ width: '7%' }} className="td-ctr">UOM</th>
@@ -362,7 +362,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
           <div
             style={{
               marginTop: 12,
-              color: 'var(--red)',
+              color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid var(--red)',
               borderRadius: 6,

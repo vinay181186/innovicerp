@@ -55,7 +55,7 @@ function GoodsReceiptNoteNewPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to GRN list
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have create access to GRN. Ask an admin for L2 Data Entry or above in
             Store.
           </div>
@@ -117,7 +117,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to GRN
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have edit access to GRN. Ask an admin for L3 Editor or above in Store.
           </div>
         </div>
@@ -134,7 +134,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'GRN not found'}
           </div>
         </div>

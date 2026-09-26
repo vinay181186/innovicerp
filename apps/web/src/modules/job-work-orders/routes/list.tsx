@@ -51,12 +51,12 @@ export const jobWorkOrdersListRoute = createRoute({
 // Material status as colored text: header received vs expected client material.
 function MaterialCell({ received, expected }: { received: number; expected: number }): React.JSX.Element {
   if (expected > 0 && received >= expected) {
-    return <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ Full</span>;
+    return <span style={{ color: 'var(--green2)', fontWeight: 700 }}>✓ Full</span>;
   }
   if (received > 0) {
-    return <span style={{ color: 'var(--amber)', fontWeight: 700 }}>◑ Partly Received ({received})</span>;
+    return <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>◑ Partly Received ({received})</span>;
   }
-  return <span style={{ color: 'var(--red)', fontWeight: 700 }}>✕ Not Received</span>;
+  return <span style={{ color: 'var(--red2)', fontWeight: 700 }}>✕ Not Received</span>;
 }
 
 /** One cell of the card's metric strip — big number over a small caps label,
@@ -65,7 +65,7 @@ function QtyBox({ label, value, color, bordered }: { label: string; value: numbe
   return (
     <div style={{ padding: '4px 12px', textAlign: 'center', minWidth: 58, borderLeft: bordered ? '1px solid var(--border)' : undefined }}>
       <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>{value}</div>
-      <div className="mono" style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div className="mono" style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
     </div>
   );
 }
@@ -136,7 +136,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ This page is hidden for your access. Ask an admin if you need access to it.
       </div>
     );
@@ -179,7 +179,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       {isLoading ? (
         <div className="panel"><div className="empty-state" style={{ padding: 20 }}><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</div></div>
       ) : isError ? (
-        <div className="panel"><div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Could not load JWSOs. Try again.'}</div></div>
+        <div className="panel"><div className="empty-state" style={{ padding: 20, color: 'var(--red2)' }}>{error instanceof Error ? error.message : 'Could not load JWSOs. Try again.'}</div></div>
       ) : rows.length === 0 ? (
         <div className="panel"><div className="empty-state" style={{ padding: 20 }}>No Job Work Sales Orders — click + New JWSO Order</div></div>
       ) : (
@@ -319,7 +319,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 function JwExpandedPanel({ jwId, canEdit }: { jwId: string; canEdit: boolean }): React.JSX.Element {
   const { data, isLoading, isError, error } = useJobWorkOrder(jwId);
   if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
-  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Could not load JWSO detail. Try again.'}</div>;
+  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>{error instanceof Error ? error.message : 'Could not load JWSO detail. Try again.'}</div>;
   return <JwLinesTable jw={data} canEdit={canEdit} />;
 }
 
@@ -335,13 +335,13 @@ function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolea
   const cols = (canEdit ? 13 : 12) - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
-      <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
+      <div style={{ fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
             <th style={{ width: 36 }}>Ln</th><ItemThumbnailHeader /><th>Item</th><th>Material</th><th>Drawing No.</th>
             <th className="td-ctr">Order Qty</th>
-            <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
+            <th className="td-ctr" style={{ color: 'var(--green2)' }}>Dispatched</th>
             <th className="td-ctr">Pending</th>
             <th>UOM</th>{priceHidden ? null : <th className="td-ctr">Rate</th>}<th>Due Date</th><th>JWSO Status</th>
             {canEdit ? <th /> : null}
@@ -371,7 +371,7 @@ function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolea
                 <td><SoStatusBadge status={l.status} /></td>
                 {canEdit ? (
                   <td onClick={(e) => e.stopPropagation()}>
-                    <Link to="/job-work-orders/$id/edit" params={{ id: jw.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}>Edit</Link>
+                    <Link to="/job-work-orders/$id/edit" params={{ id: jw.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>Edit</Link>
                   </td>
                 ) : null}
               </tr>

@@ -37,7 +37,7 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
       <div className="mono cyan" style={{ fontWeight: 800, fontSize: 14 }}>
         {machine.code}
       </div>
-      <div className="text3" style={{ fontSize: 10, marginBottom: 6 }}>
+      <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
         {machine.name}
       </div>
       <div
@@ -66,7 +66,7 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
             <div
               className="mono"
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 color: 'var(--purple)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -83,7 +83,7 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
               {itemCode}
             </div>
           ) : null}
-          <div className="text3" style={{ fontSize: 10 }}>
+          <div className="text3" style={{ fontSize: 11 }}>
             Op{opSrNo(running.opSeq)}: {running.operation}
           </div>
         </>

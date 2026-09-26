@@ -179,7 +179,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
   if (eff && !perms.entry) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         ⛔ You cannot create Dispatches. Ask an admin.
       </div>
     );
@@ -363,7 +363,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                   colours. */}
               <div
                 style={{
-                  color: 'var(--red)',
+                  color: 'var(--red2)',
                   background: 'var(--red3)',
                   border: '1px solid var(--red)',
                   borderRadius: 6,

@@ -44,7 +44,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load daily reports. Try again.'}
       </div>
     );
@@ -108,11 +108,11 @@ function DailyTaskReportsPage(): React.JSX.Element {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 3 }}>
-                        <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setModal({ kind: 'view', id: r.id })}>
+                        <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setModal({ kind: 'view', id: r.id })}>
                           👁 View
                         </button>
                         {r.canEdit ? (
-                          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setModal({ kind: 'edit', id: r.id })}>
+                          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setModal({ kind: 'edit', id: r.id })}>
                             ✏ Edit
                           </button>
                         ) : null}

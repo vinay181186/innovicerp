@@ -20,10 +20,10 @@ import { StatStrip, type StatStripItem } from '@/ui/data';
 type StatusTile = { status: PlanEffectiveStatus; label: string; color: string; kpiKey: string };
 
 const STATUS_TILES: StatusTile[] = [
-  { status: 'in_planning', label: 'In Planning', color: 'var(--amber)', kpiKey: 'inPlanning' },
+  { status: 'in_planning', label: 'In Planning', color: 'var(--amber2)', kpiKey: 'inPlanning' },
   { status: 'planned', label: 'Planned (Ready)', color: 'var(--blue)', kpiKey: 'planned' },
   // ADR-185 — route-card plans are counted by the status their row shows.
-  { status: 'route_card_pending', label: 'RC Pending', color: 'var(--amber)', kpiKey: 'rcPending' },
+  { status: 'route_card_pending', label: 'RC Pending', color: 'var(--amber2)', kpiKey: 'rcPending' },
   {
     status: 'gen_production_order',
     label: 'RC Created',
@@ -35,10 +35,10 @@ const STATUS_TILES: StatusTile[] = [
   {
     status: 'in_production',
     label: 'In Production',
-    color: 'var(--amber)',
+    color: 'var(--amber2)',
     kpiKey: 'inProduction',
   },
-  { status: 'complete', label: 'Completed', color: 'var(--green)', kpiKey: 'complete' },
+  { status: 'complete', label: 'Completed', color: 'var(--green2)', kpiKey: 'complete' },
 ];
 
 export function PlanningKpiStrip({
@@ -59,7 +59,7 @@ export function PlanningKpiStrip({
       key: 'needsPlanning',
       label: 'Needs Planning',
       count: kpi['needsPlanning'] ?? 0,
-      color: 'var(--red)',
+      color: 'var(--red2)',
       active: needsPlanning,
       onClick: onSelectNeedsPlanning,
     },

@@ -50,7 +50,7 @@ function NcRegisterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back to NC
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             ⛔ You do not have edit access to NC Register. Ask an admin for L3 Editor or above in
             QC.
           </div>
@@ -67,7 +67,7 @@ function NcRegisterEditPage(): React.JSX.Element {
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
             {error instanceof Error ? error.message : 'NC not found.'}
           </div>
         </div>

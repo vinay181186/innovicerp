@@ -67,7 +67,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
         <div
           role="alert"
           style={{
-            color: 'var(--red)',
+            color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
             borderRadius: 6,
