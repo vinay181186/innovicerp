@@ -167,7 +167,6 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
       </div>
       ${letterheadFooterHtml({ addressLines: coAddr, email: company?.email, phone: company?.phone })}
     </div>
-    <div style="text-align:center;font-size:9px;color:#999;margin-top:8px">This is a Computer Generated Invoice</div>
   </div>`;
 }
 

@@ -107,9 +107,7 @@ function UserCreatePage(): React.JSX.Element {
                 permissions live on Access Control and the approver flag on Approval Config,
                 so the tip must not promise them here (ISSUE-021, same rewording as the list). */}
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Creates the login + the app account in one step. Hand the email and password to the
-              user — they can sign in immediately. The account starts with <b>no access at all</b>;
-              you'll land on <b>Access Control</b> next to set their role and department tiers.
+              New users start with no access — set it on the next screen.
             </div>
           </div>
         </div>

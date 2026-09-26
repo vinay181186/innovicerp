@@ -571,7 +571,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 value={mainDept}
                 disabled={disabled}
                 onChange={(e) => changeMainDept(e.target.value)}
-                title="Sets this department to L3 Editor / Executor. Change the level, or add other departments, below."
                 style={{ fontSize: 12, fontWeight: 700, width: 130, padding: '5px 8px' }}
               >
                 <option value="">— none —</option>
@@ -581,6 +580,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   </option>
                 ))}
               </select>
+              <span className="text3" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
+                (sets L3)
+              </span>
             </label>
 
             {/* Moved here from User Management: the PO approval ceiling is an
@@ -610,7 +612,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
 
             <div style={{ display: 'flex', gap: 6 }}>
               <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopyJson}>
-                <Copy size={13} /> {copyFlash ? 'Copied ✓' : 'Copy JSON'}
+                <Copy size={13} /> {copyFlash ? 'Copied ✓' : 'Copy Access'}
               </button>
               <button
                 type="button"
@@ -620,7 +622,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   setImportError(null);
                 }}
               >
-                <ClipboardPaste size={13} /> Paste JSON
+                <ClipboardPaste size={13} /> Paste Access
               </button>
             </div>
           </div>
@@ -914,27 +916,27 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         >
                           <span style={{ color: 'var(--orange2)', fontWeight: 700 }}>
                             ₹ from {priceStartTier(d.key)}
-                          </span>{' '}
-                          — in {d.label}, prices show from {priceStartTier(d.key)} upwards.
-                          {priceStartTier(d.key) === 'L3'
-                            ? ' L2 here is data entry only and sees no money.'
-                            : ' This department works with the money itself.'}{' '}
-                          Click a ticked ₹ box to hide money on that one form.
+                          </span>
                           {OFF_SWITCH_DEPTS.includes(d.key) ? (
                             <>
-                              {' '}
-                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>
-                                Per-page switches:
-                              </span>{' '}
-                              untick any box to remove that action for one page. A{' '}
-                              <span style={{ color: 'var(--text2)', fontWeight: 700 }}>grey dot</span> marks
-                              a box switched off here, a{' '}
-                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue dot</span> one
-                              added above the tier; a plain box is just the tier. Untick{' '}
-                              <strong>View</strong> to hide the whole page. Changing the tier resets
-                              this department&rsquo;s pages to the new level.
+                              {' · '}
+                              <span style={{ color: 'var(--text2)', fontWeight: 700 }}>grey dot</span> =
+                              switched off{' · '}
+                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue dot</span> =
+                              added
                             </>
-                          ) : null}
+                          ) : null}{' '}
+                          <span
+                            style={{ cursor: 'help', fontWeight: 700 }}
+                            title={
+                              `Prices show from ${priceStartTier(d.key)} upwards. Click a ticked ₹ box to hide money on that one form.` +
+                              (OFF_SWITCH_DEPTS.includes(d.key)
+                                ? ' Untick any box to remove that action for one page; untick View to hide the whole page. Changing the tier resets this department’s pages to the new level.'
+                                : '')
+                            }
+                          >
+                            ?
+                          </span>
                         </div>
                         <div
                           style={{
@@ -1182,10 +1184,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 flexWrap: 'wrap',
               }}
             >
-              <span className="text3" style={{ fontSize: 11 }}>
-                Tier grants the grey ticks; extra ticks add rights on top of it. To take a right
-                away, lower the tier.
-              </span>
               <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
                   Cancel

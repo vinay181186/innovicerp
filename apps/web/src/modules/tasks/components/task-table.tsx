@@ -17,13 +17,6 @@ export const PERSON_LABEL: Record<TaskView, string> = {
   all: 'Assigned To',
 };
 
-export const VIEW_HINT: Record<TaskView, string> = {
-  inbox: 'Inbox: tasks assigned to the logged-in user by other users.',
-  outbox: 'Outbox: tasks created by the logged-in user and assigned to other users.',
-  todo: 'My To-Do: personal tasks created by and assigned to the logged-in user.',
-  all: 'All Tasks: Admin-only view. Backend permission must enforce this.',
-};
-
 export type RowAction = 'view' | 'status' | 'complete' | 'reassign' | 'cancel';
 
 export function personName(t: TaskRow, view: TaskView): string {
@@ -209,16 +202,6 @@ export function TaskTable({
             )}
           </tbody>
         </table>
-      </div>
-      <div
-        style={{
-          padding: '8px 12px',
-          fontSize: 11,
-          color: 'var(--text3)',
-          borderTop: '1px solid var(--border)',
-        }}
-      >
-        {VIEW_HINT[view]} 💡 Click a row to open it.
       </div>
     </div>
   );

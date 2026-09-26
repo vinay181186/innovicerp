@@ -97,9 +97,7 @@ function AccessControlListPage(): React.JSX.Element {
             🔒 Access Control
           </div>
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Pick the department someone works in and their level follows; add other departments
-            below it as needed. L6 Super Admin and L7 Auditor are whole-account levels. This is
-            also where the PO approval limit is set — User Management only handles who they are.
+            Set each user's departments, levels and PO limit.
           </div>
         </div>
       </div>
@@ -151,23 +149,8 @@ function AccessControlListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
-        💡 Click Configure to set someone's department, their level in it, and any form-level
-        extras.
-        <br />
-        <b>The role is worked out for you</b> from the departments and levels you grant — it is
-        not something you pick any more, and you will only see it inside Configure. A row warns in
-        amber when the role the server is still enforcing has fallen behind what the row shows;
-        opening Configure and saving clears it.
-        <br />
-        <b>An empty matrix now denies.</b> A user with no tier saved sees nothing at all —
-        it used to mean "allow everything until configured", which left the person nobody had
-        set up with more access than the person you had. Admins always bypass, so you can never
-        lock yourself out.
-        <br />
-        Server-side enforcement is live for <b>Approve</b> (Purchase Orders and Purchase
-        Requests). The other modules still gate writes on the role alone — extending the matrix to
-        them is the follow-up sweep (ADR-035).
+      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+        Admins always have full access.
       </div>
 
       {editing ? (

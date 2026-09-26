@@ -6,7 +6,7 @@ import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from '@innovic/shared';
 import { useState } from 'react';
 import { useCreatePersonalTodo, useNextTaskCode } from '../api';
 import { localDateTimeToIso } from '../lib/format';
-import { FormError, FormNote, Overlay } from './task-overlay';
+import { FormError, Overlay } from './task-overlay';
 
 export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const create = useCreatePersonalTodo();
@@ -71,8 +71,6 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         </>
       }
     >
-      <FormNote>Created By and Assigned To are automatically set to the logged-in user.</FormNote>
-
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="td-title">

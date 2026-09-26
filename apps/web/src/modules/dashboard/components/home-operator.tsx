@@ -115,15 +115,15 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
             count: o.readyCount,
             color: 'var(--dept-production)',
             to: '/op-entry',
-            sub: o.readyCount > 0 ? 'Pick an op below to start' : 'All ops waiting on material',
+            sub: o.readyCount > 0 ? 'Pick an op below to start' : 'None ready',
           },
           {
             key: 'running',
             label: 'Running Now',
-            count: `${o.allRunningCount} in factory`,
+            count: o.allRunningCount,
+            sub: 'Whole factory',
             color: 'var(--sig-warn)',
             to: '/production-dashboard',
-            sub: 'All running operations',
           },
         ]}
       />

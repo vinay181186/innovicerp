@@ -98,33 +98,29 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   // PURCHASE ORDER
   po_special_notes: '',
   po_terms:
-    '1. Goods supplied must conform to our specifications strictly.\n2. Payment will be made as per agreed terms ({paymentTerms}).\n3. Delivery as per the agreed schedule. Late delivery may attract penalty.\n4. Test certificates and inspection reports must accompany the supply where applicable.\n5. Goods rejected during inspection shall be replaced at vendor’s cost.\n6. All disputes are subject to V.U. Nagar jurisdiction only.',
-  po_footer:
-    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
+    '1. Goods supplied must conform to our specifications strictly.\n2. Payment as per agreed terms.\n3. Delivery as per the agreed schedule. Late delivery may attract penalty.\n4. Test certificates and inspection reports must accompany the supply where applicable.\n5. Goods rejected during inspection shall be replaced at vendor’s cost.\n6. All disputes are subject to V.U. Nagar jurisdiction only.',
+  po_footer: 'E. & O.E.',
   po_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 
   // SERVICE PURCHASE ORDER
   spo_special_notes: '',
   spo_terms:
-    '1. Services must be rendered as per the scope and specifications agreed.\n2. Payment will be made as per agreed terms ({paymentTerms}).\n3. Service completion timeline must be adhered to; delays may attract penalty.\n4. Invoices must quote this SPO number and the relevant expense head.\n5. All disputes are subject to V.U. Nagar jurisdiction only.',
-  spo_footer:
-    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
+    '1. Services must be rendered as per the scope and specifications agreed.\n2. Payment as per agreed terms.\n3. Service completion timeline must be adhered to; delays may attract penalty.\n4. Invoices must quote this SPO number and the relevant expense head.\n5. All disputes are subject to V.U. Nagar jurisdiction only.',
+  spo_footer: 'E. & O.E.',
   spo_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 
   // OSP DELIVERY CHALLAN
   ospdc_special_notes: '',
   ospdc_terms:
     '1. Material is sent on a returnable basis for processing only.\n2. Material to be returned within agreed timeline along with processed output.\n3. Any rejection or scrap during processing must be returned with finished goods.\n4. Vendor is responsible for material damage or loss during transit and processing.\n5. Any subcontracting or outsourcing of this work without prior written consent is prohibited.',
-  ospdc_footer:
-    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
+  ospdc_footer: 'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction',
   ospdc_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 
   // JOB WORK DELIVERY CHALLAN
   jwdc_special_notes: '',
   jwdc_terms:
     '1. Material is sent on returnable basis under GST Job Work provisions.\n2. Material to be returned within the timeline mandated by GST law.\n3. All scrap, waste and rejections must be returned along with the finished goods.\n4. Vendor must not use this material for any purpose other than the specified job work.\n5. Subcontracting of this job work without prior written consent is prohibited.\n6. Loss or damage during transit and processing is the vendor’s responsibility.',
-  jwdc_footer:
-    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
+  jwdc_footer: 'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction',
   jwdc_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 
   // GOODS RECEIPT NOTE
@@ -135,21 +131,19 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   // outward 'For Innovic Technology'.
   grn_special_notes: '',
   grn_terms:
-    '1. Quantity received is subject to inspection; acceptance is confirmed only after QC clearance.\n2. Short supply, excess supply or damage in transit must be reported to the vendor within 48 hours of receipt.\n3. Rejected material is held at the vendor’s risk and cost, and must be collected against a debit note.\n4. Payment is released against accepted quantity only, not against quantity received.\n5. This receipt does not by itself constitute acceptance of the goods.',
-  grn_footer:
-    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
+    '1. Quantity received is subject to inspection; acceptance is confirmed only after QC clearance.\n2. Short supply, excess supply or damage in transit must be reported to the vendor within 48 hours of receipt.\n3. Rejected material is held at the vendor’s risk and cost, and must be collected against a debit note.\n4. Payment is released against accepted quantity only, not against quantity received.',
+  grn_footer: 'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction',
   grn_signature: 'Checked By\n\n\n\nAuthorised Signatory',
   // JOB WORK INVOICE — labour only. That the material stays the client's
   // throughout is the one thing a reader must never have to infer from a
   // document that otherwise looks like an ordinary sale invoice, so it is
   // factory text rather than something each admin has to remember to type.
   jwinv_special_notes:
-    'This invoice is for the labour / processing charge only. The material processed under it is supplied by the customer and remains the property of the customer throughout — no material value is charged on this invoice.',
+    "Labour charge only. Material is the customer's; no material value is charged.",
   jwinv_terms:
     '1. This invoice covers job-work charges against the JWSO and quantity stated above.\n2. Quantity billed is the quantity returned to the customer and accepted; rejected pieces are not billed.\n3. GST is charged on the job-work value only, at the rate shown.\n4. Payment is due within the terms agreed on the JWSO.\n5. Any discrepancy must be raised in writing within 7 days of the invoice date.',
-  jwinv_footer:
-    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
-  jwinv_signature: 'Prepared By\n\n\n\nAuthorised Signatory',
+  jwinv_footer: 'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction',
+  jwinv_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 };
 
 export function printTemplateDefault(key: string): string {

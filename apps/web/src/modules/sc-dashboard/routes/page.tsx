@@ -153,19 +153,19 @@ function ScDashboardPage(): React.JSX.Element {
           kept as-is (they are correct and legacy's are not reproducible from
           the payload — see report), rendered in legacy's tile vocabulary. */}
       <div className="stat-grid">
-        <Card label="OPEN POs" value={data.summary.openPos} accent="" />
-        <Card label="PARTIAL POs" value={data.summary.partialPos} accent="amber" />
-        <Card label="CLOSED POs" value={data.summary.closedPos} accent="green" />
-        <Card label="CANCELLED" value={data.summary.cancelledPos} accent="red" />
+        <Card label="Open POs" value={data.summary.openPos} accent="" />
+        <Card label="Partly Received POs" value={data.summary.partialPos} accent="amber" />
+        <Card label="Closed POs" value={data.summary.closedPos} accent="green" />
+        <Card label="Cancelled POs" value={data.summary.cancelledPos} accent="red" />
         {priceHidden ? null : (
           <>
-            <Card label="ORDER VAL" value={`₹${inr(data.summary.totalOrderVal)}`} accent="cyan" />
-            <Card label="RECEIVED VAL" value={`₹${inr(data.summary.totalRecvVal)}`} accent="green" />
-            <Card label="PENDING VAL" value={`₹${inr(data.summary.pendingVal)}`} accent="amber" />
+            <Card label="Order Value" value={`₹${inr(data.summary.totalOrderVal)}`} accent="cyan" />
+            <Card label="Received Value" value={`₹${inr(data.summary.totalRecvVal)}`} accent="green" />
+            <Card label="Pending Value" value={`₹${inr(data.summary.pendingVal)}`} accent="amber" />
           </>
         )}
-        <Card label="GRN TOTAL" value={data.summary.grnCount} accent="cyan" />
-        <Card label="GRN TODAY" value={data.summary.todayGrn} accent="green" />
+        <Card label="Total GRNs" value={data.summary.grnCount} accent="cyan" />
+        <Card label="GRNs Today" value={data.summary.todayGrn} accent="green" />
       </div>
 
       {/* ═══ PENDING PO TRACKER with Filters (legacy L17030 — first panel

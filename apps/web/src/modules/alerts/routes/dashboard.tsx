@@ -310,16 +310,8 @@ function AlertsDashboardPage() {
             </div>
           </div>
 
-          {/* Tip — legacy L22370. The email-digest sentence is ours: the Email
-              column above is a real port-only feature (Phase B subscriptions). */}
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-            💡 Click any alert with records to see details. Use the{' '}
-            <Bell size={12} className="inline align-text-bottom" /> column to opt into the email
-            digest for that alert. Configure alerts in{' '}
-            <Link to="/alerts/config" style={{ color: 'var(--cyan)' }}>
-              🔔 Alert Configuration
-            </Link>
-            .
+            <Bell size={12} className="inline align-text-bottom" /> = get this alert by email.
           </div>
         </>
       )}

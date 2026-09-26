@@ -111,9 +111,6 @@ function ReportsListPage() {
           ✨ Saved Reports
         </Link>
       </div>
-      <div className="text3" style={{ fontSize: 12, marginBottom: 16 }}>
-        Server-defined reports — pick one, fill the filters, run.
-      </div>
 
       {isLoading ? (
         <div className="panel">

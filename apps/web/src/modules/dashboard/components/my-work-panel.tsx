@@ -67,7 +67,7 @@ export function MyWorkPanel({ mode = 'full' }: { mode?: 'full' | 'strip' }): Rea
           <span className="panel-title">📋 My Work</span>
         </div>
         <div style={{ padding: 16, color: 'var(--sig-ok)', fontWeight: 600 }}>
-          ✅ You're all caught up — no pending work.
+          ✅ Nothing pending
         </div>
       </div>
     );

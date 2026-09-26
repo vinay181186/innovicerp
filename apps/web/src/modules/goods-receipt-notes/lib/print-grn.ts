@@ -165,8 +165,8 @@ export function printGrnDoc(args: {
       qcStatus: qcLabel(l.qcStatus),
       // The per-line DC reference has no column of its own -- it would be a
       // column of dashes on most GRNs -- so it rides under the item, labelled,
-      // and only on the lines that carry one.
-      ...(l.dcRefNo ? { description: l.dcRefNo, descLabel: 'Vendor Challan No.' } : {}),
+      // and only on the lines whose reference differs from the header's.
+      ...(l.dcRefNo && l.dcRefNo !== model.dcNo ? { description: l.dcRefNo, descLabel: 'Vendor Challan No.' } : {}),
     })),
     totalQty: String(totalReceived),
     totalAccepted: String(totalAccepted),
