@@ -88,7 +88,7 @@ function headerPanel(page: Page): Locator {
   return page
     .locator('.panel')
     .filter({ hasText: 'Order Qty' })
-    .filter({ hasText: 'Waiting at' })
+    .filter({ hasText: 'Current Op' })
     .first();
 }
 function flowPanel(page: Page): Locator {
@@ -533,12 +533,12 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await opBox.fill(OPERATOR);
     await page.waitForTimeout(300);
     await shot(page, '07-start-form');
-    await page.getByRole('button', { name: /Start Operation/i }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
     await dialogGone(page);
     await page.goto(`/op-entry?jc=${JC_START}`, { waitUntil: 'domcontentloaded' });
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
-    const logBtn = opRow(page, '10').getByRole('button', { name: /Log/ });
+    const logBtn = opRow(page, '10').getByRole('button', { name: /✓ Complete/ });
     await expect(logBtn).toBeVisible({ timeout: 30_000 });
     row(
       {
@@ -624,7 +624,7 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await page.goto(`/op-entry?jc=${JC_START}`, { waitUntil: 'domcontentloaded' });
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
-    await opRow(page, '10').getByRole('button', { name: /Log/ }).click();
+    await opRow(page, '10').getByRole('button', { name: /✓ Complete/ }).click();
     await dlg.waitFor({ timeout: 30_000 });
     await expect(page.locator('#opf-op')).toHaveValue(OPERATOR, { timeout: 45_000 });
     await page.locator('#opf-date').fill(today());
@@ -638,7 +638,7 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
     const startAgain = await opRow(page, '10').getByRole('button', { name: /Start/ }).count();
-    const logStill = await opRow(page, '10').getByRole('button', { name: /Log/ }).count();
+    const logStill = await opRow(page, '10').getByRole('button', { name: /✓ Complete/ }).count();
     await shot(page, '11-after-stop');
     row(
       {

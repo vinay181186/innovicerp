@@ -402,11 +402,11 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
       await startBtn.click();
       await page.waitForTimeout(1200);
       await fillEntryHeader(page, 'E2E_ Operator');
-      await page.getByRole('button', { name: /Start Operation/i }).click();
+      await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
       await popupGone(page);
       await loadJc(page, JC);
     }
-    const logBtn = opRow(page, 'Turning').getByRole('button', { name: /Log/ });
+    const logBtn = opRow(page, 'Turning').getByRole('button', { name: /✓ Complete/ });
     if (await logBtn.count()) {
       await logBtn.click();
       await page.waitForTimeout(1200);
@@ -476,7 +476,7 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     await pickFromCombo(page, 'ncDcVendor', VENDOR_CODE, new RegExp(VENDOR_CODE));
     await page.locator('#ncDcTransport').fill('E2E_ Shree Ganesh Roadlines');
     await page.locator('#ncDcRemarks').fill('E2E_ GRN Against NC check (ADR-163) - safe to cancel.');
-    const create = page.getByRole('button', { name: /Create DC/ });
+    const create = page.getByRole('button', { name: /Save DC/ });
     await expect(create).toBeEnabled({ timeout: 30_000 });
     await create.click();
     const link = page.getByRole('link', { name: /IN-DC-\d+/ }).first();
@@ -595,13 +595,13 @@ test('C3 - Receive Now 5 is refused inline; 3 creates the GRN and lands on its d
   await expect(line1).toHaveValue(String(QC_REJ), { timeout: 30_000 });
 
   await line1.fill(String(QC_REJ + 1));
-  await expect(page.getByText(`Cannot receive more than Pending (${QC_REJ}).`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`Receive Now cannot be more than Pending (${QC_REJ}).`, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Save GRN/ }).click();
   await page.waitForTimeout(3000);
   const native = await line1.evaluate((el) => (el as HTMLInputElement).validity.rangeOverflow);
   const summary = await page.getByText('Fix the highlighted quantities.').count();
   await expect(page).toHaveURL(/goods-receipt-notes\/new/);
-  await expect(page.getByText(`Cannot receive more than Pending (${QC_REJ}).`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`Receive Now cannot be more than Pending (${QC_REJ}).`, { exact: true })).toBeVisible();
   log('C3: ' + (QC_REJ + 1) + ' -> "Cannot exceed balance of ' + QC_REJ + '." shown; Create refused (still on /new; native max block=' + native + ', form summary shown=' + (summary > 0) + ')');
 
   await line1.fill(String(FIRST_RECEIVE));
@@ -750,7 +750,7 @@ test('D8 - old Challan -> Receive page still works for an NC challan: receive th
     expect([sent, already, remaining]).toEqual([String(QC_REJ), String(FIRST_RECEIVE), String(QC_REJ - FIRST_RECEIVE)]);
     await qty.first().fill(String(QC_REJ - FIRST_RECEIVE));
     await page.locator('#remarks').fill('E2E_ GRN against NC - balance via old Receive page (1 of 4)');
-    const submit = page.getByRole('button', { name: /Record receipt/ });
+    const submit = page.getByRole('button', { name: /Save Receipt/ });
     await expect(submit).toBeEnabled({ timeout: 30_000 });
     await submit.click();
     await expect(page).toHaveURL(/delivery-challans\/[0-9a-f-]{36}$/, { timeout: 120_000 });

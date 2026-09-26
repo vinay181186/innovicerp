@@ -141,12 +141,12 @@ test('planned vs actual machine: start on cnc-2, plan stays cnc-1', async ({ pag
 
   // ── 3. Start ─────────────────────────────────────────────────────────────
   await fillEntryHeader(page, 'E2E Operator');
-  await page.getByRole('button', { name: /Start Operation/i }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
   await popupGone(page);
   await step(page, 'Start on cnc-2', 'date/time/shift/operator → ▶ Start Operation', `Session running on ${ACTUAL}; ops row offers Log`, async () => {
     await loadJc(page, JC);
     const body = await page.locator('body').innerText();
-    if (!/Log/.test(body)) throw new Error('op did not show as running');
+    if (!/✓ Complete/.test(body)) throw new Error('op did not show as running');
     return 'Op running; row now offers ✚ Log';
   });
 
@@ -166,7 +166,7 @@ test('planned vs actual machine: start on cnc-2, plan stays cnc-1', async ({ pag
     await notice.waitFor({ timeout: 30_000 });
     const txt = await page.locator('[role="dialog"]').first().innerText();
     if (!txt.includes(JC)) throw new Error('notice does not name the running JC');
-    const disabled = await page.getByRole('button', { name: /Start Operation/i }).isDisabled();
+    const disabled = await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).isDisabled();
     if (!disabled) throw new Error('Start still enabled');
     return `Notice names ${JC}; ▶ Start Operation disabled`;
   });

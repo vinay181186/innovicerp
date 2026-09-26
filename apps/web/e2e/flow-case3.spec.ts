@@ -65,9 +65,12 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   await page.getByRole('button', { name: /Create PO from Selected/i }).first().click();
   await page.waitForTimeout(1800);
   await snap(page, 'c3', '04-createpo');
-  // FO PRs carry NO suggested vendor — the modal's vendor select must be set
-  const vsel = page.locator('select').filter({ has: page.locator('option', { hasText: /Select vendor/i }) }).first();
-  await vsel.selectOption({ index: 1 }).catch(() => {});
+  // FO PRs carry NO suggested vendor — the modal's vendor picker must be set
+  // (type-to-search: type a code prefix, take the first vendor offered).
+  const vbox = page.locator('#osp-po-vendor');
+  await vbox.click().catch(() => {});
+  await vbox.fill('VND').catch(() => {});
+  await page.getByRole('option').first().click({ timeout: 15_000 }).catch(() => {});
   await page.locator('input[type="number"]').last().fill('5').catch(() => {});
   const po = 'IN-JWPO-8' + String(Date.now()).slice(-4);
   await page.getByPlaceholder(/IN-JWPO-/i).first().fill(po).catch(() => {});
@@ -97,7 +100,7 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   await page.locator('table tbody tr', { hasText: dcNo }).first().getByRole('link', { name: /Receive/i }).click();
   await page.waitForTimeout(2200);
   await page.locator('input[type="number"]').first().fill(String(QTY));
-  await page.getByRole('button', { name: /Record receipt/i }).click();
+  await page.getByRole('button', { name: /Save Receipt/i }).click();
   await page.waitForTimeout(3500);
   log('receive', `${QTY} received (auto-GRN)`);
 

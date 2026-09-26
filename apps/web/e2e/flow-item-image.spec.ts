@@ -322,7 +322,7 @@ async function raiseJcViaRouteCard(page: Page, s: State): Promise<void> {
   }
   // 3. Production Order → Create JC
   await gotoApp(page, '/production-orders/new', 3000);
-  const planInput = page.getByPlaceholder(/Type plan no, item code or SO no/i).first();
+  const planInput = page.getByPlaceholder(/Search Plan No\., Item Code or SO No\./i).first();
   await pickOption(page, planInput, s.soCode!, new RegExp(`${s.soCode}|${s.itemCode}`));
   const rc = page.locator('#po-route-card');
   await expect(rc).toBeEnabled({ timeout: 30_000 });

@@ -30,7 +30,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   { const opts = await jsel.locator('option').allInnerTexts(); const idx = opts.findIndex((t) => t.includes(jc)); if (idx >= 0) await jsel.selectOption({ index: idx }); }
   await page.waitForTimeout(1800);
   await snap(page, 'c2', '01-jcops');
-  await page.getByRole('button', { name: /🏭 Outsource Pending/ }).first().click();
+  await page.getByRole('button', { name: /🏭 Outsource Available/ }).first().click();
   await page.waitForTimeout(1200);
   const bqty = page.locator('input[type="number"]').first();
   const bmax = await bqty.getAttribute('max').catch(() => null);
@@ -39,7 +39,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   const vcode = await page.locator('#outsource-balance-vendors option').first().getAttribute('value').catch(() => '');
   await page.getByPlaceholder('Vendor code').fill(vcode || '');
   await snap(page, 'c2', '02-balance-modal');
-  await page.getByRole('button', { name: 'Outsource Pending', exact: true }).click();
+  await page.getByRole('button', { name: 'Outsource Available', exact: true }).click();
   await page.waitForTimeout(3500);
   await snap(page, 'c2', '03-pr-raised');
 
@@ -94,7 +94,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   await page.waitForTimeout(2200);
   await snap(page, 'c2', '09-receive-form');
   await page.locator('input[type="number"]').first().fill(String(QTY)); // received qty
-  await page.getByRole('button', { name: /Record receipt/i }).click();
+  await page.getByRole('button', { name: /Save Receipt/i }).click();
   await page.waitForTimeout(3500);
   log('receive', `${QTY} received (auto-GRN, QC pending)`);
   await snap(page, 'c2', '10-received');

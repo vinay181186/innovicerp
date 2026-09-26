@@ -613,11 +613,11 @@ async function runProcessOp(page: Page, jc: string, opName: string, qty: number)
     await page.waitForTimeout(1200);
     await fillEntryHeader(page, 'E2E_ Operator');
     // ADR-164: Start asks for the ACTUAL machine (defaults to planned).
-    await page.getByRole('button', { name: /Start Operation/i }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
     await popupGone(page);
     await loadJc(page, jc);
   }
-  const logBtn = opRow(page, opName).getByRole('button', { name: /Log/ });
+  const logBtn = opRow(page, opName).getByRole('button', { name: /✓ Complete/ });
   if (await logBtn.count()) {
     await logBtn.click();
     await page.waitForTimeout(1200);
@@ -807,7 +807,7 @@ async function planAndExecute(
     await row0.getByPlaceholder('Operation name').fill(op.name);
     await pickFirst(page, row0.getByPlaceholder('🔍 Machine', { exact: true }), 'cnc');
   } else {
-    await page.getByRole('button', { name: /\+ Add OSP Op$/ }).click();
+    await page.getByRole('button', { name: /\+ Add Outsource Op$/ }).click();
     await page.waitForTimeout(400);
     const row0 = page.locator('table.ops-routing tbody tr').nth(0);
     await row0.getByPlaceholder('Operation name').fill(op.name);
@@ -1018,7 +1018,7 @@ async function incomingQc(page: Page, grnCode: string, acc: number, rej: number,
   const rejBox = page.locator('.form-grp').filter({ hasText: /Reject Qty/ }).locator('input');
   await accBox.fill(String(acc));
   await rejBox.fill(String(rej));
-  await page.getByPlaceholder(/NC reason, observations/).fill(remark);
+  await page.getByPlaceholder(/Observations/).fill(remark);
   await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await page.waitForTimeout(2000);
   const err = page.getByRole('alert');
@@ -1161,7 +1161,7 @@ async function createRtvDc(page: Page, ncUrl: string, remark: string): Promise<{
   await page.locator('#ncDcTransport').fill('E2E_ Shree Ganesh Roadlines');
   await page.locator('#ncDcVehicle').fill('GJ-23-E2E-0915');
   await page.locator('#ncDcRemarks').fill(remark);
-  const create = page.getByRole('button', { name: /Create DC/ });
+  const create = page.getByRole('button', { name: /Save DC/ });
   await expect(create).toBeEnabled({ timeout: 30_000 });
   await create.click();
   const link = page.getByRole('link', { name: /IN-DC-\d+/ }).first();
@@ -1217,7 +1217,7 @@ async function tryDispose(page: Page, ncUrl: string, action: NcAction, qty: numb
     await page.waitForTimeout(3000);
     if (!(await page.locator('#dispAction').count())) break;
     const t = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-    if (/came from a vendor|made in-house|cannot be more than the NC's open qty/i.test(t)) break;
+    if (/came from a vendor|made in-house|cannot be more than Open/i.test(t)) break;
   }
   const alerts = page.getByRole('alert');
   const n = await alerts.count();
@@ -1829,7 +1829,7 @@ test('T2b - build: SO 10 -> JC with one outsource op (VND-959) -> JWPO -> DC 10 
     const n = await ncApi(page, s.t2NcId!);
     const sv = /Source Vendor:\s*(VND-\d+)/.exec(d.body)?.[1] ?? '';
     const spo = /Source PO No\.:\s*(IN-[A-Z]*PO-\d+(?:\/R\d+)?)/.exec(d.body)?.[1] ?? '';
-    const sgrn = /Source GRN:\s*(IN-GRN-\d+)/.exec(d.body)?.[1] ?? '';
+    const sgrn = /Source GRN No\.:\s*(IN-GRN-\d+)/.exec(d.body)?.[1] ?? '';
     const ok = Number(n.rejectedQty) === T2_REJ1 && d.body.includes(s.t2JcCode!) && sv === VENDOR_CODE && sgrn === s.t2Grn1Code;
     return { actual: `badge "${d.status}"; JC on page: ${d.body.includes(s.t2JcCode!)}; Source Vendor: ${sv || '(not shown)'}; Source PO: ${spo || '(not shown)'}; Source GRN: ${sgrn || '(not shown)'}; api: ${ncLine(n)}`, ok };
   });
@@ -2023,7 +2023,7 @@ test('T2b - RTV: NC -> Return to vendor -> Create DC (vendor prefill) -> JWPO dr
       for (let i = 0; i < 20; i += 1) {
         await page.waitForTimeout(1500);
         const t = (await page.locator('table tbody').innerText().catch(() => '')).replace(/\s+/g, ' ');
-        if (!/Loading store transactions/.test(t) && (t.includes(term) || /No transactions|no rows|Nothing/i.test(t))) break;
+        if (!/Loading stock movements/.test(t) && (t.includes(term) || /No transactions|No stock movements|no rows|Nothing/i.test(t))) break;
       }
       const out: string[] = [];
       for (let i = 0; i < Math.min(await rows.count(), 8); i += 1) out.push((await rows.nth(i).innerText()).replace(/\s+/g, ' ').trim().slice(0, 200));
@@ -2185,7 +2185,7 @@ test('T3 - level 1: replacement rejected again (1 ok / 2 rej) -> NC-B -> Rework 
     const na = await ncApi(page, s.t3NcAId!);
     const d = await readNcDetail(page, s.t3NcBUrl!);
     const sv = /Source Vendor:\s*(VND-\d+)/.exec(d.body)?.[1] ?? '';
-    const sgrn = /Source GRN:\s*(IN-GRN-\d+)/.exec(d.body)?.[1] ?? '';
+    const sgrn = /Source GRN No\.:\s*(IN-GRN-\d+)/.exec(d.body)?.[1] ?? '';
     const g = await readGrnDetail(page, s.t3Grn2Id!);
     const linkToA = d.body.includes(s.t3NcACode!);
     const spo = /Source PO No\.:\s*(\S+)/.exec(d.body)?.[1] ?? '';
@@ -2305,7 +2305,7 @@ test('T3 - level 2: GRN Against NC-B 2 -> QC 1 ok / 1 rej -> NC-C -> Rework aske
     const nc = await ncApi(page, s.t3NcCId!);
     const nb = await ncApi(page, s.t3NcBId!);
     const d = await readNcDetail(page, s.t3NcCUrl!);
-    const sgrn = /Source GRN:\s*(IN-GRN-\d+)/.exec(d.body)?.[1] ?? '';
+    const sgrn = /Source GRN No\.:\s*(IN-GRN-\d+)/.exec(d.body)?.[1] ?? '';
     const g = await readGrnDetail(page, s.t3Grn3Id!);
     return { actual: `NC-C ${nc.code} badge "${d.status}" Source GRN ${sgrn || '(none)'}; api NC-C: ${ncLine(nc)}; api NC-B: ${ncLine(nb)}; GRN 3 ${g.code} NC=${g.nc} line ${JSON.stringify(g.lines[0])}`, ok: Number(nc.rejectedQty) === T3_REJ3 && sgrn === s.t3Grn3Code && Number(nb.clearedQty) === T3_ACC3 && Number(nb.failedQty) === T3_REJ3 };
   });
@@ -3898,7 +3898,8 @@ async function deletePoUi(page: Page, poId: string): Promise<{ before: string; v
   const before = (await badge.innerText()).trim().toLowerCase();
   if (before === 'draft' && (await page.getByRole('button', { name: /^Reject$/ }).count())) {
     await page.getByRole('button', { name: /^Reject$/ }).click();
-    await page.getByPlaceholder(/Why is this PO being rejected/).fill(`E2E_ ${R3_TAG} - G9a reject`);
+    // The reason box lost its placeholder; it is the textarea under the "Rejection Reason" label.
+    await page.locator('label', { hasText: 'Rejection Reason' }).locator('xpath=following-sibling::textarea[1]').fill(`E2E_ ${R3_TAG} - G9a reject`);
     await page.getByRole('button', { name: /^Reject PO$/ }).click();
     await page.waitForTimeout(4000);
     const after = (await badge.innerText().catch(() => '')).trim().toLowerCase();
@@ -4047,13 +4048,17 @@ async function createJwso(page: Page, qty: number): Promise<{ id: string; code: 
   await pickFromCombo(page, 'clientId', 'Adani', /Adani/);
   await page.locator('#clientPoNo').fill(`E2E_ADR167-JW-${STAMP}`);
   // The form opens with one empty line already; "+ Add Line" only when it does not.
-  const lineRows = page.locator('table tbody tr').filter({ has: page.getByPlaceholder('🔍 ITM-001') });
+  const lineRows = page.locator('table tbody tr').filter({ has: page.locator('input[id^="jwln-ic-"]') });
   if ((await lineRows.count()) === 0) {
     await page.getByRole('button', { name: /Add Line/ }).click();
     await page.waitForTimeout(500);
   }
   const row = lineRows.first();
-  await row.getByPlaceholder('🔍 ITM-001').fill(ITEM_CODE);
+  // Line Item Code is a type-to-search picker: type, then pick the option.
+  const lineCode = row.locator('input[id^="jwln-ic-"]');
+  await lineCode.click();
+  await lineCode.fill(ITEM_CODE);
+  await page.getByRole('option').filter({ hasText: ITEM_CODE }).first().click({ timeout: 30_000 });
   await page.waitForTimeout(800);
   const partName = row.getByPlaceholder('Item Name');
   if (!(await partName.inputValue()).trim()) await partName.fill('E2E_ COVER');
@@ -4113,7 +4118,7 @@ async function createJcFromJwso(page: Page, jwCode: string): Promise<{ code: str
   if (!(await qtyBox.inputValue()).trim()) await qtyBox.fill(String(o!.remaining || 6));
   const itemVal = await itemBox.inputValue();
   const qtyVal = await qtyBox.inputValue();
-  await page.getByRole('button', { name: /Add OSP Op/ }).click();
+  await page.getByRole('button', { name: /Add Outsource Op/ }).click();
   await page.waitForTimeout(600);
   await page.getByPlaceholder('Operation name ★').first().fill(`E2E_ Heat treatment (ADR-167 G9d)`);
   // The vendor picker on this form holds only the first 200 vendors (by code)
@@ -4839,7 +4844,7 @@ async function createJcChainV(page: Page, jwCode: string): Promise<PickerRun> {
   await page.getByPlaceholder('Operation name ★').nth(0).fill('E2E_ Turning (vendor picker, chain V)');
   await pickFirst(page, page.locator('#jc-edit-mach-0'), 'cnc');
   // Op 2: outsource — type "959" and expect "VND-959 — E2E_ Shreeji …".
-  await page.getByRole('button', { name: /Add OSP Op/ }).click();
+  await page.getByRole('button', { name: /Add Outsource Op/ }).click();
   await page.waitForTimeout(500);
   await page.getByPlaceholder('Operation name ★').nth(1).fill('E2E_ Heat treatment (vendor picker, chain V)');
   const first = await comboOptions(page, 'jc-edit-vend-1', '959', new RegExp(VENDOR_CODE + ' — E2E_ Shreeji'));
@@ -4847,7 +4852,7 @@ async function createJcChainV(page: Page, jwCode: string): Promise<PickerRun> {
   await page.waitForTimeout(400);
   const pickedLabel = await page.locator('#jc-edit-vend-1').inputValue();
   // Op 3: a second outsource op searching ANOTHER vendor — row 2's label must survive.
-  await page.getByRole('button', { name: /Add OSP Op/ }).click();
+  await page.getByRole('button', { name: /Add Outsource Op/ }).click();
   await page.waitForTimeout(500);
   await page.getByPlaceholder('Operation name ★').nth(2).fill('E2E_ Plating (vendor picker, chain V)');
   const second = await comboOptions(page, 'jc-edit-vend-2', V_OTHER_VENDOR, new RegExp('^' + V_OTHER_VENDOR + ' — '));
@@ -4964,7 +4969,7 @@ test('R3 - vendor picker re-run (58154c54): Job Cards -> + New, OSP op vendor bo
       return [{ document: '(no started in-house op with a balance on this stack)', qty: '', headerStatus: '', overallStatus: 'modal could not be opened', ok: false, note: `board rows: ${board.items.length}; in_progress process ops with available > 0: 0` }];
     }
     await page.goto(`/job-cards/${pick.jcId}/edit`, { waitUntil: 'domcontentloaded' });
-    const btn = page.getByRole('button', { name: /Outsource Pending/ }).first();
+    const btn = page.getByRole('button', { name: /Outsource Available/ }).first();
     const offered = await btn.waitFor({ state: 'visible', timeout: 60_000 }).then(() => true).catch(() => false);
     if (!offered) {
       return [{ document: `${pick.jcCode} Op ${pick.opSeq} (edit page)`, qty: `${pick.available}`, headerStatus: pick.status, overallStatus: '"Outsource balance" button not offered', ok: false, note: `board: ${pick.jcCode} op ${pick.opSeq} "${pick.operation}" status=${pick.status} completed=${pick.completed} available=${pick.available}` }];
@@ -5026,7 +5031,7 @@ test('R3 - vendor picker read-only re-read (58154c54): Job Cards -> + New -> + A
     await page.goto('/job-cards/new', { waitUntil: 'domcontentloaded' });
     await page.getByPlaceholder(/Search JWSO number/).waitFor({ timeout: 60_000 });
     await page.waitForTimeout(1500);
-    await page.getByRole('button', { name: /Add OSP Op/ }).click();
+    await page.getByRole('button', { name: /Add Outsource Op/ }).click();
     await page.waitForTimeout(500);
     const vend = page.locator('#jc-edit-vend-0');
     await vend.waitFor({ timeout: 30_000 });

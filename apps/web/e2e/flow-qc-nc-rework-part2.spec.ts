@@ -102,10 +102,10 @@ test('QC → NC → Rework → Re-QC → Closure — part 2 (child run to closur
   await opRow(page, 'Rework polish').getByRole('button', { name: /Start/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
-  await page.getByRole('button', { name: /Start Operation/i }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
   await popupGone(page);
   await loadJc(page, CHILD);
-  await opRow(page, 'Rework polish').getByRole('button', { name: /Log/ }).click();
+  await opRow(page, 'Rework polish').getByRole('button', { name: /✓ Complete/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.locator('#opf-qty').fill(String(REJECT_1));

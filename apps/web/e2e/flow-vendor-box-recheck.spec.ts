@@ -172,13 +172,13 @@ test('R3-07c-1 recheck — started in-house op → "Outsource balance" → vendo
   expect(pick, 'a started in-house op with a balance exists on this stack').toBeTruthy();
 
   await page.goto('/job-cards/' + pick!.jcId + '/edit', { waitUntil: 'domcontentloaded' });
-  const btn = page.getByRole('button', { name: /Outsource Pending/ }).first();
+  const btn = page.getByRole('button', { name: /Outsource Available/ }).first();
   await btn.waitFor({ state: 'visible', timeout: 60_000 });
   await btn.click();
   const box = page.locator('#jcOutsourceBalanceVendor');
   await box.waitFor({ timeout: 30_000 });
   await page.waitForTimeout(1000);
-  const header = (await page.locator('.section-hdr').filter({ hasText: /Outsource Pending Qty —/ }).first().innerText()).replace(/\s+/g, ' ').trim();
+  const header = (await page.locator('.section-hdr').filter({ hasText: /Outsource Available Qty —/ }).first().innerText()).replace(/\s+/g, ' ').trim();
   const preset = await box.inputValue();
   const placeholder = (await box.getAttribute('placeholder')) ?? '';
   const opts = await search(page, 'jcOutsourceBalanceVendor', '959');
@@ -196,7 +196,7 @@ test('R3-07c-1 recheck — started in-house op → "Outsource balance" → vendo
   // the modal "still open" on the earlier run). Picking an option already
   // closed the list; if the list is still open, click the modal header instead.
   if (await page.getByRole('option').count()) {
-    await page.locator('.section-hdr').filter({ hasText: /Outsource Pending Qty —/ }).first().click();
+    await page.locator('.section-hdr').filter({ hasText: /Outsource Available Qty —/ }).first().click();
     await page.waitForTimeout(300);
   }
   let cancelHow = 'modal Cancel (mouse)';

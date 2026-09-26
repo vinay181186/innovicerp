@@ -229,16 +229,16 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await opRow(page, 'Turning').getByRole('button', { name: /Start/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
-  await page.getByRole('button', { name: /Start Operation/i }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
   await popupGone(page);
   await step(page, 'Start Op 1', 'Popup: date/time/shift/operator → ▶ Start Operation', 'Session running on cnc-1', async () => {
     await loadJc(page, JC);
     const body = await page.locator('body').innerText();
-    if (!/Running|Log/.test(body)) throw new Error('op did not show as running');
+    if (!/Running|✓ Complete/.test(body)) throw new Error('op did not show as running');
     return 'Op 1 running; row now offers ✚ Log';
   });
 
-  await opRow(page, 'Turning').getByRole('button', { name: /Log/ }).click();
+  await opRow(page, 'Turning').getByRole('button', { name: /✓ Complete/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.locator('#opf-qty').fill(String(ORDER_QTY));
@@ -391,10 +391,10 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await opRow(page, 'Rework polish').getByRole('button', { name: /Start/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
-  await page.getByRole('button', { name: /Start Operation/i }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
   await popupGone(page);
   await loadJc(page, docs['CHILD_JC']!);
-  await opRow(page, 'Rework polish').getByRole('button', { name: /Log/ }).click();
+  await opRow(page, 'Rework polish').getByRole('button', { name: /✓ Complete/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
   await page.locator('#opf-qty').fill(String(REJECT_1));

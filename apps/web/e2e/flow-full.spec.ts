@@ -83,7 +83,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.waitForTimeout(250);
   await page.getByRole('button', { name: /\+ Add Op$/ }).click();
   await page.waitForTimeout(250);
-  await page.getByRole('button', { name: /\+ Add OSP Op/ }).click();
+  await page.getByRole('button', { name: /\+ Add Outsource Op/ }).click();
   await page.waitForTimeout(250);
   await page.getByRole('button', { name: /\+ Add Op$/ }).click();
   await page.waitForTimeout(400);
@@ -139,7 +139,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.goto(`/delivery-challans/${dcId}/receive`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3500);
   await page.getByRole('spinbutton').first().fill(QTY);
-  await page.getByRole('button', { name: /Record receipt|Save/i }).click();
+  await page.getByRole('button', { name: /Save Receipt|Save/i }).click();
   await page.waitForTimeout(4000);
 
   // Incoming QC: find the GRN row for our PO and accept full qty

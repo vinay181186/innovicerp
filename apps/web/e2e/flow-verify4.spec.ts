@@ -63,7 +63,7 @@ test('T13 DC date required', async ({ page }: { page: Page }) => {
   // Reach a DC create via an existing job-work PO's "Create DC".
   await page.goto('/purchase-orders', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  const createDc = page.getByText('📦 Create DC').first();
+  const createDc = page.getByText('Create DC', { exact: true }).first();
   if (await createDc.count()) {
     await createDc.click();
     await page.waitForTimeout(3000);

@@ -240,7 +240,7 @@ async function addProcessOp(page: Page, n: number, name: string, machine: string
   await pickCombo(page, card.locator('input[id^="jc-edit-mach-"]'), machine, new RegExp(machine, 'i'));
 }
 async function addOspOp(page: Page, n: number, name: string, vendor: string): Promise<void> {
-  await page.getByRole('button', { name: '+ Add OSP Op', exact: true }).click();
+  await page.getByRole('button', { name: '+ Add Outsource Op', exact: true }).click();
   await page.waitForTimeout(400);
   const card = opCard(page, n);
   await expect(card).toBeVisible({ timeout: 15_000 });
@@ -320,12 +320,15 @@ test('01 - build the JWSO the job cards hang off (E2E_ADR168_)', async ({ page }
     await page.waitForTimeout(3000);
     await pickCombo(page, page.locator('#clientId'), CLIENT_CODE, new RegExp(CLIENT_CODE));
     await page.getByPlaceholder(/Client PO reference/i).fill(`${MARK}JWSO-${STAMP}`);
-    const lineCodeBoxes = page.locator('input[name$=".itemCodeText"]');
+    const lineCodeBoxes = page.locator('input[id^="jwln-ic-"]');
     if ((await lineCodeBoxes.count()) === 0) {
       await page.getByRole('button', { name: /Add Line/i }).first().click();
       await page.waitForTimeout(800);
     }
-    await page.locator('input[name="lines.0.itemCodeText"]').fill(ITEM_CODE);
+    // Line Item Code is a type-to-search picker (#jwln-ic-0): type, then pick the option.
+    await page.locator('#jwln-ic-0').click();
+    await page.locator('#jwln-ic-0').fill(ITEM_CODE);
+    await page.getByRole('option').filter({ hasText: ITEM_CODE }).first().click({ timeout: 30_000 });
     await page.waitForTimeout(2500);
     await expect(page.locator('input[name="lines.0.partName"]')).not.toHaveValue('', { timeout: 30_000 });
     await page.locator('input[name="lines.0.orderQty"]').fill(String(JWSO_QTY));
@@ -858,7 +861,7 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   log(`S12: ${seeded} seeded op row(s) from the item's route card`);
 
   // OSP → QC
-  await page.getByRole('button', { name: '+ Add OSP Op', exact: true }).click();
+  await page.getByRole('button', { name: '+ Add Outsource Op', exact: true }).click();
   await page.waitForTimeout(400);
   await rows.nth(seeded).getByPlaceholder('Operation name').fill(`${MARK}Heat treatment`);
   await pickCombo(page, rows.nth(seeded).locator('input[id^="plan-osp-vend-"]'), VENDOR_CODE, new RegExp(VENDOR_CODE));
@@ -932,14 +935,14 @@ async function routeCardEditPath(page: Page, s: State): Promise<void> {
     await page.waitForTimeout(250);
   }
   await expect(rows).toHaveCount(0);
-  await page.getByRole('button', { name: /Add OSP Op/ }).click();
+  await page.getByRole('button', { name: /Add Outsource Op/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(0).getByPlaceholder(/Vendor code/).fill(VENDOR_CODE);
   await rows.nth(0).getByPlaceholder(/Coating \/ Painting/).fill(`${MARK}Heat treatment`);
   await page.getByRole('button', { name: /Add QC Op/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(1).getByPlaceholder(/DIR \/ MIR/).fill('dir');
-  const saveBtn = page.getByRole('button', { name: /Save Route Card/ });
+  const saveBtn = page.getByRole('button', { name: /Save Changes/ });
   await expect(saveBtn).toBeEnabled({ timeout: 15_000 });
   const isPut = (r: { request: () => { method: () => string }; url: () => string }): boolean =>
     r.request().method() === 'PUT' && /\/route-cards\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname);
@@ -1017,7 +1020,7 @@ test('S13 (−/+) Route Card: OSP → QC refused; OSP → Process → QC saves',
     await page.waitForTimeout(250);
   }
   await expect(rows).toHaveCount(0);
-  await page.getByRole('button', { name: /Add OSP Op/ }).click();
+  await page.getByRole('button', { name: /Add Outsource Op/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(0).getByPlaceholder(/Vendor code/).fill(VENDOR_CODE);
   await rows.nth(0).getByPlaceholder(/Coating \/ Painting/).fill(`${MARK}Heat treatment`);

@@ -112,7 +112,7 @@ test('planned vs actual machine part 2: log, stop, verify', async ({ page }) => 
   else {
   // ── 5. Log 4 on the running session ────────────────────────────────────
     await loadJc(page, JC);
-    await rowWith(page, /Log/).getByRole('button', { name: /Log/ }).click();
+    await rowWith(page, /✓ Complete/).getByRole('button', { name: /✓ Complete/ }).click();
     await page.locator('#opf-machine').waitFor({ timeout: 30_000 });
     await step(page, 'Log popup', `${JC} → ✚ Log`, `Machine box reads ${ACTUAL} with "planned ${PLANNED}"`, async () => {
       const m = await page.locator('#opf-machine').inputValue();
@@ -124,17 +124,17 @@ test('planned vs actual machine part 2: log, stop, verify', async ({ page }) => 
     await fillEntryHeader(page, 'E2E Operator');
     await page.locator('#opf-qty').fill(String(LOG_QTY));
     await page.locator('#opf-rej').fill('0');
-    await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^✓\s*Complete$/ }).click();
     await popupGone(page);
     await step(page, 'Log 4', `Qty ${LOG_QTY} → ✓ Submit completion`, `${LOG_QTY} pcs booked on ${ACTUAL}; session still running`, async () => {
       await loadJc(page, JC);
       const body = await page.locator('body').innerText();
-      if (!/Log/.test(body)) throw new Error('session ended unexpectedly');
+      if (!/✓ Complete/.test(body)) throw new Error('session ended unexpectedly');
       return 'Entry accepted; row still offers Log (session open)';
     });
   
     // ── 6. Stop with 3 ───────────────────────────────────────────────────────
-    await rowWith(page, /Log/).getByRole('button', { name: /Log/ }).click();
+    await rowWith(page, /✓ Complete/).getByRole('button', { name: /✓ Complete/ }).click();
     await page.locator('#opf-qty').waitFor({ timeout: 30_000 });
     await fillEntryHeader(page, 'E2E Operator');
     await page.locator('#opf-qty').fill(String(STOP_QTY));

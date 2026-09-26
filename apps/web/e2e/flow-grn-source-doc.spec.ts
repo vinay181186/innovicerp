@@ -422,7 +422,7 @@ test('A3 - Receive Now 11 is refused inline; 4 + 5 creates the GRN', async ({ pa
   await expect(line1).toHaveValue('10', { timeout: 30_000 });
 
   await line1.fill('11');
-  await expect(page.getByText('Cannot receive more than Pending (10).', { exact: true })).toBeVisible();
+  await expect(page.getByText('Receive Now cannot be more than Pending (10).', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Save GRN/ }).click();
   await page.waitForTimeout(3000);
   // Two nets stop the submit: the input's native max=10 (browser constraint
@@ -431,7 +431,7 @@ test('A3 - Receive Now 11 is refused inline; 4 + 5 creates the GRN', async ({ pa
   const native = await line1.evaluate((el) => (el as HTMLInputElement).validity.rangeOverflow);
   const summary = await page.getByText('Fix the highlighted quantities.').count();
   await expect(page).toHaveURL(/goods-receipt-notes\/new/);
-  await expect(page.getByText('Cannot receive more than Pending (10).', { exact: true })).toBeVisible();
+  await expect(page.getByText('Receive Now cannot be more than Pending (10).', { exact: true })).toBeVisible();
   log(
     'A3: 11 -> "Cannot exceed balance of 10." shown; Create refused (still on /new; native max block=' +
       native +

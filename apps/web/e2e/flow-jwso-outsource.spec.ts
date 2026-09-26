@@ -125,12 +125,15 @@ test('@jwout 01 — create the JWSO', async ({ page }) => {
   await pick(page, /Type customer code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
   await page.getByPlaceholder(/Client PO reference/i).fill(TAG);
 
-  const lineCodeBoxes = page.locator('input[name$=".itemCodeText"]');
+  const lineCodeBoxes = page.locator('input[id^="jwln-ic-"]');
   if ((await lineCodeBoxes.count()) === 0) {
     await page.getByRole('button', { name: /Add Line/i }).first().click();
     await page.waitForTimeout(800);
   }
-  await page.locator('input[name="lines.0.itemCodeText"]').fill(ITEM_CODE);
+  // Line Item Code is a type-to-search picker (#jwln-ic-0): type, then pick the option.
+  await page.locator('#jwln-ic-0').click();
+  await page.locator('#jwln-ic-0').fill(ITEM_CODE);
+  await page.getByRole('option').filter({ hasText: ITEM_CODE }).first().click({ timeout: 30_000 });
   await page.waitForTimeout(2000);
   await page.locator('input[name="lines.0.orderQty"]').fill(String(QTY));
   await page.locator('input[name="lines.0.rate"]').fill(String(RATE));
@@ -441,7 +444,7 @@ test('@jwout 07 — vendor returns the goods (receive → GRN)', async ({ page }
   await page.goto(`/delivery-challans/${state.dcId}/receive`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   await page.getByRole('spinbutton').first().fill(String(QTY));
-  await page.getByRole('button', { name: /Record receipt|Save/i }).click();
+  await page.getByRole('button', { name: /Save Receipt|Save/i }).click();
   await page.waitForTimeout(5000);
   record({
     step: '07',
