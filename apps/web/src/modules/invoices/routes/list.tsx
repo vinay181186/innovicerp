@@ -36,6 +36,9 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
 const searchSchema = z.object({
   tab: z.enum(['so', 'jw']).optional(),
   search: z.string().optional(),
+  // `?tab=jw&jw=<jwsoId>` — the JWSO detail's "JW Invoice" button: opens the
+  // New JW Invoice form with that JWSO already picked.
+  jw: z.string().optional(),
 });
 
 export const invoiceListRoute = createRoute({
@@ -57,7 +60,9 @@ const TABS = [
 function InvoiceListPage(): React.JSX.Element {
   const routeSearch = invoiceListRoute.useSearch();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
+  const [tab, setTab] = useState<'so' | 'jw'>(
+    () => routeSearch.tab ?? (routeSearch.jw ? 'jw' : 'so'),
+  );
   const { data, isLoading, isFetching, isError, error } = useInvoiceList();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
@@ -79,7 +84,11 @@ function InvoiceListPage(): React.JSX.Element {
         {tabs}
         {/* key: a new ?search landing while already on this page remounts the
             view so it re-seeds; nothing else changes the key. */}
-        <JwInvoiceView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
+        <JwInvoiceView
+          key={`${routeSearch.search ?? ''}|${routeSearch.jw ?? ''}`}
+          initialSearch={routeSearch.search}
+          initialJwId={routeSearch.jw}
+        />
       </div>
     );
   }

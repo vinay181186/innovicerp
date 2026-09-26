@@ -14,12 +14,13 @@ import type {
   SetMinStockInput,
   StoreInventoryRow,
 } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useAdjustStock, useSetMinStock, useStoreInventory } from '../api';
 import { ModalShell } from '../components/modal-shell';
 import { ReservationDrilldown } from '../components/reservation-drilldown';
@@ -41,6 +42,10 @@ function StoreInventoryPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'item_create');
   const canEdit = perms.edit;
+  // "Raise PR" on a low-stock row opens a new Purchase Request — gated on the
+  // PR's own entry right, the same gate /purchase-requests/new enforces.
+  const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;
+  const showActions = canEdit || canRaisePr;
   // Inventory | Stock Ledger tabs — Stock Ledger is the former standalone screen.
   const [tab, setTab] = useState<'inventory' | 'ledger'>('inventory');
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -93,18 +98,22 @@ function StoreInventoryPage(): React.JSX.Element {
         <StockLedger />
       ) : (
         <>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="section-hdr m-0">🏬 Store / Inventory</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="🔍 Search item code, name, material, UOM…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{ width: 240, fontSize: 12 }}
-              />
-              {canEdit ? (
+          {/* THE list header (ui/layout ListHeader): title · count · search ·
+              + Manual Receipt, with the item-count strip (which doubles as
+              the Low / Zero filter) pinned inside the same band. */}
+          <ListHeader
+            title="Store / Inventory"
+            icon="📦"
+            count={data?.rows.length}
+            noun="item"
+            filterNote={
+              filter === 'low' ? 'Low stock' : filter === 'zero' ? 'Zero stock' : undefined
+            }
+            search={search}
+            onSearch={setSearch}
+            searchPlaceholder="Search item code, name, material, UOM…"
+            primary={
+              canEdit ? (
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -112,9 +121,13 @@ function StoreInventoryPage(): React.JSX.Element {
                 >
                   + Manual Receipt
                 </button>
-              ) : null}
-            </div>
-          </div>
+              ) : null
+            }
+          >
+            {data ? (
+              <KpiStrip summary={data.summary} filter={filter} setFilter={setFilter} />
+            ) : null}
+          </ListHeader>
 
           {isLoading ? (
             <div className="panel">
@@ -134,14 +147,12 @@ function StoreInventoryPage(): React.JSX.Element {
             </div>
           ) : data ? (
             <>
-              <KpiStrip summary={data.summary} filter={filter} setFilter={setFilter} />
-
               <div className="panel">
                 <div className="panel-hdr">
                   <span className="panel-title">Stock Levels</span>
                 </div>
                 <div className="tbl-wrap">
-                  <table className="innovic-table">
+                  <table className="innovic-table tbl-grid">
                     <thead>
                       <tr>
                         <th>Item Code</th>
@@ -181,32 +192,36 @@ function StoreInventoryPage(): React.JSX.Element {
                         <th className="th-num" style={{ color: 'var(--amber2)' }}>
                           Pending to Make
                         </th>
-                        {canEdit ? <th>Actions</th> : null}
+                        {showActions ? <th>Actions</th> : null}
                       </tr>
                     </thead>
                     <tbody>
                       {data.rows.length === 0 ? (
                         <tr>
-                          <td colSpan={canEdit ? 12 : 11} className="empty-state">
+                          <td colSpan={showActions ? 12 : 11} className="empty-state">
                             {search.trim() ? 'No items match this search.' : 'No items in master'}
                           </td>
                         </tr>
                       ) : (
                         data.rows.map((row) => (
-                          <tr
-                            key={row.itemId}
-                            style={{
-                              background: row.lowStock ? 'rgba(220,38,38,0.04)' : undefined,
-                            }}
-                          >
-                            <td className="td-code" style={{ color: 'var(--purple)' }}>
-                              {row.itemCode}
+                          <tr key={row.itemId}>
+                            {/* Item code opens the Item Master record. */}
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <Link
+                                to="/items/$id"
+                                params={{ id: row.itemId }}
+                                className="td-code"
+                                style={{ color: 'var(--purple)' }}
+                                title="Open this item in the Item Master"
+                              >
+                                {row.itemCode}
+                              </Link>
                             </td>
                             <td className="fw-700">{row.itemName}</td>
                             <td className="text2" style={{ fontSize: 11 }}>
                               {row.material ?? '—'}
                             </td>
-                            <td className="td-ctr">
+                            <td>
                               <span
                                 className="tag"
                                 style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
@@ -306,25 +321,47 @@ function StoreInventoryPage(): React.JSX.Element {
                                 {row.mfgPendingQty || '—'}
                               </span>
                             </td>
-                            {canEdit ? (
+                            {showActions ? (
                               <td>
                                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    onClick={() => setAdjustRow(row)}
-                                    style={{ fontSize: 11 }}
-                                  >
-                                    ± Adjust
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    onClick={() => setMinRow(row)}
-                                    style={{ fontSize: 11 }}
-                                  >
-                                    Min Qty
-                                  </button>
+                                  {/* Low stock → buy the shortfall: Min Qty less
+                                      what is on the shelf and already on PO. The
+                                      PR form opens with item + qty filled, both
+                                      still editable. */}
+                                  {canRaisePr && row.lowStock ? (
+                                    <Link
+                                      to="/purchase-requests/new"
+                                      search={{
+                                        itemId: row.itemId,
+                                        qty: Math.max(0, row.minQty - row.inStock - row.onPoQty),
+                                      }}
+                                      className="btn btn-primary btn-sm"
+                                      style={{ fontSize: 11 }}
+                                      title="Raise a Purchase Request for the shortfall"
+                                    >
+                                      Raise PR
+                                    </Link>
+                                  ) : null}
+                                  {canEdit ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => setAdjustRow(row)}
+                                        style={{ fontSize: 11 }}
+                                      >
+                                        ± Adjust
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => setMinRow(row)}
+                                        style={{ fontSize: 11 }}
+                                      >
+                                        Min Qty
+                                      </button>
+                                    </>
+                                  ) : null}
                                 </div>
                               </td>
                             ) : null}
@@ -405,11 +442,7 @@ function KpiStrip({
       onClick: () => setFilter(filter === 'zero' ? 'all' : 'zero'),
     },
   ];
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <StatStrip items={items} />
-    </div>
-  );
+  return <StatStrip items={items} />;
 }
 
 function AdjustModal({

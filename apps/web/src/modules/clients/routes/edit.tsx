@@ -56,27 +56,17 @@ function ClientNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link to="/clients" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Customer Master
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">New Customer</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for a customer.
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <ClientForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <ClientForm
+        mode="create"
+        header={{
+          title: 'New Customer',
+          subtitle: 'Create a master record for a customer.',
+          backLabel: 'Back to Customer Master',
+        }}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -143,38 +133,22 @@ function ClientEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/clients/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to customer
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
-            >
-              {client.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Customer — {client.name}
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <ClientForm
-            mode="edit"
-            client={client}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+      <ClientForm
+        mode="edit"
+        header={{
+          title: 'Edit Customer',
+          subtitle: (
+            <>
+              <span className="td-code">{client.code}</span> · {client.name}
+            </>
+          ),
+          backLabel: 'Back to customer',
+        }}
+        client={client}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

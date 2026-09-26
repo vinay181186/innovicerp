@@ -142,6 +142,11 @@ export const purchaseRequestListItemSchema = purchaseRequestSchema.extend({
    *  send; absent means money is present. See the note on the detail shape. */
   priceVisible: z.boolean().optional(),
   vendorName: z.string().nullable(),
+  /** The vendor master's code — by vendorId, else by a vendorCodeText that
+   *  matches a master code. Null for a TBD / unmatched free-text vendor. The
+   *  list's one-vendor-per-PO tick rule keys on this, so a linked PR and a
+   *  text-only PR for the same vendor count as one vendor. */
+  vendorCode: z.string().nullable().default(null),
   itemCode: z.string().nullable(), // resolved from items master when itemId set
   /** The customer's drawing revision off the SO line behind this PR — same
    *  source, same rules, same `CODE/REV` rendering as the detail shape above.

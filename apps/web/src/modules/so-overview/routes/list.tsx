@@ -14,6 +14,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { SearchInput } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useSoOverview } from '../api';
 
 const searchSchema = z.object({
@@ -96,13 +97,22 @@ function SoOverviewPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📋 SO Overview</div>
-        <div className="flex items-center gap-2">
-          {/* Legacy placeholder promises "SO, client, equipment, item" search,
-              but our server (so-overview/service.ts L100-104) only ILIKEs
-              code / customerName / clientPoNo. Placeholder states what actually
-              works rather than repeating legacy's wider claim. */}
+      {/* The ONE list header (ui/layout ListHeader). The debounced SearchInput
+          rides in `searchSlot` so the URL write keeps its 300ms delay; the
+          overall-status pills sit in the sticky band. */}
+      <ListHeader
+        title="SO Overview"
+        icon="📊"
+        count={data ? filteredRows.length : undefined}
+        noun="SO"
+        filterNote={
+          overallFilter !== 'all'
+            ? OVERALL_STATUS_LABELS.find((o) => o.value === overallFilter)?.label
+            : undefined
+        }
+        searchSlot={
+          // Our server (so-overview/service.ts) ILIKEs code / customerName /
+          // clientPoNo only — the placeholder states what actually works.
           <SearchInput
             width={280}
             debounceMs={300}
@@ -110,6 +120,8 @@ function SoOverviewPage(): React.JSX.Element {
             value={searchInput}
             onChange={setSearchInput}
           />
+        }
+        tools={
           <select
             className="innovic-select"
             style={{ width: 140 }}
@@ -137,8 +149,12 @@ function SoOverviewPage(): React.JSX.Element {
             <option value="cancelled">Cancelled</option>
             <option value="all">All</option>
           </select>
-        </div>
-      </div>
+        }
+      >
+        {data ? (
+          <OverallStatusPills rows={data.rows} value={overallFilter} onChange={setOverallFilter} />
+        ) : null}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -158,8 +174,8 @@ function SoOverviewPage(): React.JSX.Element {
         </div>
       ) : data ? (
         <>
-          <OverallStatusPills rows={data.rows} value={overallFilter} onChange={setOverallFilter} />
           <OverviewTable rows={filteredRows} onRowClick={openSoStatus} />
+          <ListFooter total={data.rows.length} shown={filteredRows.length} noun="SO" />
         </>
       ) : null}
     </div>
@@ -191,7 +207,6 @@ function OverallStatusPills({
         display: 'flex',
         flexWrap: 'wrap',
         gap: 6,
-        margin: '0 0 14px',
         alignItems: 'center',
       }}
     >
@@ -207,15 +222,9 @@ function OverallStatusPills({
           <button
             key={opt.value}
             type="button"
-            className="btn btn-sm"
-            style={{
-              fontSize: 11,
-              padding: '3px 10px',
-              borderRadius: 12,
-              background: active ? 'var(--cyan)' : 'var(--bg4)',
-              color: active ? '#fff' : 'var(--text2)',
-              border: `1px solid ${active ? 'var(--cyan)' : 'var(--border)'}`,
-            }}
+            className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+            aria-pressed={active}
+            style={{ borderRadius: 999, padding: '0 var(--sp-3)' }}
             onClick={() => onChange(active && opt.value !== 'all' ? 'all' : opt.value)}
           >
             {opt.label} <b>{count}</b>
@@ -237,7 +246,7 @@ function OverviewTable({
     <>
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>SO No.</th>
@@ -293,7 +302,7 @@ function Row({
     row.overallStatus !== 'completed';
   return (
     <tr style={{ cursor: 'pointer' }} onClick={() => onRowClick(row.id)}>
-      <td onClick={(e) => e.stopPropagation()}>
+      <td style={{ whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
         <Link
           to="/sales-orders/$id"
           params={{ id: row.id }}
@@ -323,12 +332,12 @@ function Row({
       <td>
         <span className={`badge ${badge.cls}`}>{badge.label}</span>
       </td>
-      <td style={{ width: 130 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <td>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110 }}>
           <ProgBar pct={row.overallPct} status={row.overallStatus} />
           <span
             className="mono fw-700"
-            style={{ fontSize: 11, color: barColor(row.overallStatus) }}
+            style={{ fontSize: 11, color: barTextColor(row.overallStatus) }}
           >
             {row.overallPct}%
           </span>
@@ -340,17 +349,24 @@ function Row({
       </td>
       <td
         className="td-num mono fw-700"
-        style={{ color: row.totalBalanceQty > 0 ? 'var(--red)' : 'var(--green)' }}
+        style={{ color: row.totalBalanceQty > 0 ? 'var(--red2)' : 'var(--green2)' }}
       >
         {row.totalBalanceQty}
       </td>
-      <td style={{ fontSize: 11, fontWeight: 700, color: overdue ? 'var(--red)' : 'var(--text)' }}>
+      <td
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+          color: overdue ? 'var(--red2)' : 'var(--text)',
+        }}
+      >
         {fmtDate(row.earliestDueDate)}
       </td>
       <td>
         <AlertFlags row={row} />
       </td>
-      <td className="text2" style={{ fontSize: 11 }}>
+      <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
         {fmtDate(row.soDate)}
       </td>
       <td onClick={(e) => e.stopPropagation()}>
@@ -426,6 +442,15 @@ function barColor(status: SoOverallStatus): string {
     ? 'var(--red)'
     : status === 'completed'
       ? 'var(--green)'
+      : 'var(--cyan)';
+}
+
+/** The same status colours as text — the "2" variants, which hold contrast. */
+function barTextColor(status: SoOverallStatus): string {
+  return status === 'delayed'
+    ? 'var(--red2)'
+    : status === 'completed'
+      ? 'var(--green2)'
       : 'var(--cyan)';
 }
 

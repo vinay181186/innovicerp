@@ -1,6 +1,7 @@
 // AL-006 — Pending PRs (purchase). Legacy line 22267-22268.
 // Filter: status = 'open'. Same shape as AL-002 but no age threshold.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -21,7 +22,7 @@ export const al006PrsPending: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT pr.code AS pr_code, pr.pr_date,
+      SELECT pr.id AS nav_id, pr.code AS pr_code, pr.pr_date,
              COALESCE(v.code, pr.vendor_code_text, '') AS vendor,
              COALESCE(i.code, pr.item_code_text, '') AS item, pr.qty
       FROM public.purchase_requests pr
@@ -33,6 +34,7 @@ export const al006PrsPending: RegisteredAlert = {
       ORDER BY pr.pr_date, pr.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('purchase-request', String(r['nav_id'])),
       pr_code: (r['pr_code'] as string) ?? '',
       pr_date:
         r['pr_date'] instanceof Date

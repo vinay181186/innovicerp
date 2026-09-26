@@ -107,14 +107,14 @@ export function QueueTab({
         <>
           <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th>Age</th>
                     <th>JC / Op</th>
                     <th>Operation</th>
                     <th>SO / Customer</th>
-                    <th className="td-ctr">QC Pending</th>
+                    <th className="th-num">QC Pending</th>
                     <th className="td-ctr">Attempt</th>
                     <th>Due Date</th>
                     <th>Assigned To</th>
@@ -198,7 +198,7 @@ export function QueueTab({
                           </span>
                         </td>
                         <td
-                          className="td-ctr mono fw-700"
+                          className="td-num mono fw-700"
                           style={{ color: 'var(--amber2)', fontSize: 14 }}
                         >
                           {it.pendingQty}

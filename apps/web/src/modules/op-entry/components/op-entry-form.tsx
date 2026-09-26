@@ -123,6 +123,40 @@ export function OpEntryForm({
   // start_time: null, so an operator logging a shift late could never record
   // when the work actually happened.
   const [entryTime, setEntryTime] = useState<string>('');
+  // ONE-TAP "Now" (round-2 "Next" item, 2026-09-26). The boxes still open
+  // BLANK — nothing is seeded — but the operator logging at the machine can
+  // fill today's date and the current clock time (both IST, the zone the
+  // server records in) with one tap instead of two pickers. It is an explicit
+  // action, so the reasoning above (no value nobody chose) still holds.
+  // SHIFT IS NOT FILLED: this app has no shift timings anywhere (SHIFTS is
+  // just Day / Night / General), so "the current shift" cannot be worked out
+  // without inventing the hours — the operator still picks it.
+  function fillNow(): void {
+    setLogDate(todayIst());
+    setEntryTime(
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).format(new Date()),
+    );
+  }
+  const nowChip = (
+    <div className="form-grp" style={{ width: 'auto' }}>
+      <label className="form-label" aria-hidden="true">
+        &nbsp;
+      </label>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        onClick={fillNow}
+        title="Fill Log Date and Time with today's date and the current time (IST)"
+      >
+        ⏱ Now
+      </button>
+    </div>
+  );
   // '' is the un-answered state, which is why this is Shift | '' and the
   // dropdown opens on a "Select shift" placeholder rather than on 'day'.
   const [shift, setShift] = useState<Shift | ''>('');
@@ -813,6 +847,7 @@ export function OpEntryForm({
                   onChange={(e) => setEntryTime(e.target.value)}
                 />
               </div>
+              {nowChip}
               <div className="form-grp" style={{ width: 120 }}>
                 <label className="form-label" htmlFor="opf-shift">
                   Shift<span className="req">★</span>
@@ -1009,6 +1044,7 @@ export function OpEntryForm({
                 onChange={(e) => setEntryTime(e.target.value)}
               />
             </div>
+            {nowChip}
             <div className="form-grp" style={{ width: 120 }}>
               <label className="form-label" htmlFor="opf-shift">
                 Shift<span className="req">★</span>

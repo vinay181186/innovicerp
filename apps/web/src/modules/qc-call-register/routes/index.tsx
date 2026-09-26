@@ -13,7 +13,7 @@
 // sheet's own title row ("QC Call Register", below) is the page's title — the
 // old top bar that used to repeat it is gone (header navigation, 2026-09-21).
 
-import { opSrNo } from '@innovic/shared';
+import { opSrNo, shortName } from '@innovic/shared';
 import type {
   IncomingQcCompletedRow,
   IncomingQcPendingRow,
@@ -24,9 +24,12 @@ import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
+import { ListHeader } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { todayLocal } from '@/lib/date';
+import { useSession } from '@/lib/session';
+import { Banner } from '@/ui/feedback/Banner';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '@/modules/qc-history/api';
 import { exportCompletedQc, exportPendingQc } from '@/modules/qc-history/lib/export';
@@ -35,6 +38,7 @@ import { TpiView } from '@/modules/tpi/components/tpi-view';
 import { IncomingPendingRow } from '@/modules/incoming-qc/components/qc-call-rows';
 import { IncomingQcInspectModal } from '@/modules/incoming-qc/components/incoming-qc-inspect-modal';
 import { QcCallInspectModal } from '../components/qc-call-inspect-modal';
+import type { RaisedNc } from '../components/qc-call-inspect-form';
 import {
   CompletedIncomingSheetRow,
   CompletedProcessSheetRow,
@@ -130,6 +134,21 @@ function QcCallRegisterPage(): React.JSX.Element {
   // not write to the URL. ?tab= only SEEDS the initial value, so an outside
   // link (the JC op card's 📋 TPI button) can land on the TPI tab.
   const [tab, setTab] = useState<'qc' | 'tpi'>(tabParam ?? 'qc');
+  // The NC the last QC submit raised (ADR-190) — named above the list with a
+  // link to its disposition until dismissed, instead of the popup closing
+  // silently. Held here, not in the popup: a fully inspected call leaves the
+  // pending feed on the very refetch the submit triggers, closing the popup.
+  const [raisedNc, setRaisedNc] = useState<RaisedNc | null>(null);
+  // "Mine": only the pending calls QC Command assigned to the signed-in user.
+  // Client-side over the loaded feed — Assigned To is the inspector's NAME
+  // (qc_assignments.inspector_name), so it is matched on the session's full
+  // name and its short form, case-insensitively.
+  const [mineOnly, setMineOnly] = useState(false);
+  const session = useSession().data;
+  const myNames = useMemo(() => {
+    const full = (session?.fullName ?? '').trim().toLowerCase();
+    return new Set([full, shortName(session?.fullName ?? '').toLowerCase()].filter(Boolean));
+  }, [session?.fullName]);
   // Caller's effective access — drives the "Hide page" VIEW guard below and
   // whether a process-QC row opens its popup (qc_submit `entry`; the incoming
   // rows check qc_incoming themselves).
@@ -245,17 +264,25 @@ function QcCallRegisterPage(): React.JSX.Element {
       search,
     );
   const matchIncC = (l: IncomingQcCompletedRow): boolean =>
-    matchesSearchTerm([l.grnNo, l.clientPoLineNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName], search);
+    matchesSearchTerm(
+      [l.grnNo, l.clientPoLineNo, l.itemCode, l.itemRevision, l.itemName, l.vendorName],
+      search,
+    );
   const inStage = (s: QcStage): boolean => stage === null || stage === s;
 
-  const pending = allPending.filter((o) => inStage(processStage(o.isLastOp)) && matchP(o));
+  const isMine = (o: QcHistoryPendingRow): boolean =>
+    !!o.assignedTo && myNames.has(o.assignedTo.trim().toLowerCase());
+  const pending = allPending.filter(
+    (o) => inStage(processStage(o.isLastOp)) && matchP(o) && (!mineOnly || isMine(o)),
+  );
   // Search + stage run over EVERY log the server sent (up to 500), and only
   // then is the list cut to LOG_SHOWN — so a card inspected 40 entries ago is
   // still found by its number instead of silently reading "no entries".
   const logs = allLogsFull
     .filter((l) => inStage(processStage(l.isLastOp)) && matchC(l))
     .slice(0, LOG_SHOWN);
-  const incPendingF = inStage('incoming') ? incPending.filter(matchIncP) : [];
+  // Incoming (GRN) calls carry no QC Command assignment, so "Mine" hides them.
+  const incPendingF = inStage('incoming') && !mineOnly ? incPending.filter(matchIncP) : [];
   const incCompletedF = inStage('incoming') ? incCompleted.filter(matchIncC) : [];
 
   // Unified completed feed — incoming + process QC interleaved newest-first by
@@ -280,27 +307,17 @@ function QcCallRegisterPage(): React.JSX.Element {
     else exportCompletedQc(logs, incCompletedF);
   }
 
-  // Legacy L4221's full-bleed box (margin:-16, height:calc(100vh - 112px)) is
-  // kept verbatim as the outer shell; it just becomes a flex COLUMN so the tab
-  // bar can sit above the sheet without a negative-margin collision. Everything
-  // below the bar gets the leftover height via flex:1 + minHeight:0.
+  // The tab bar sits above whichever tab is showing. No full-bleed box any
+  // more (it used margin:-16 + a fixed height): the app shell owns the gutter
+  // and the width, and the sheet scrolls inside its own .tbl-wrap.
   const shell = (children: React.ReactNode): React.JSX.Element => (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: 'calc(100vh - 112px)',
-        margin: -16,
-        overflow: 'hidden',
-      }}
-    >
+    <div>
       <div
         style={{
           display: 'flex',
           gap: 4,
           borderBottom: '1px solid var(--border)',
-          padding: '0 16px',
-          flexShrink: 0,
+          marginBottom: 'var(--sp-2)',
         }}
       >
         {(
@@ -348,30 +365,22 @@ function QcCallRegisterPage(): React.JSX.Element {
   // TPI first, ahead of the QC loading/error gates: TPI runs off its own query,
   // so a failing qc-history fetch must not black out the TPI tab.
   if (tab === 'tpi') {
-    return shell(
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
-        <TpiView />
-      </div>,
-    );
+    return shell(<TpiView />);
   }
   if (isLoading) {
     return shell(
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
-        <div className="panel">
-          <div className="empty-state">
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
-          </div>
+      <div className="panel">
+        <div className="empty-state">
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
         </div>
       </div>,
     );
   }
   if (isError || !data) {
     return shell(
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
-        <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load QC Call Register. Try again.'}
-          </div>
+      <div className="panel">
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          {error instanceof Error ? error.message : 'Could not load QC Call Register. Try again.'}
         </div>
       </div>,
     );
@@ -406,58 +415,92 @@ function QcCallRegisterPage(): React.JSX.Element {
       : completedFeed.length === 0;
   const stageName = stage ? QC_STAGES.find((s) => s.key === stage)?.label : null;
 
-  return shell(
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        flex: 1,
-        minHeight: 0,
-        background: 'var(--bg2)',
-      }}
-    >
-      {/* Title row: register totals left; Export · search · Pending|Completed right. */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '10px 16px',
-          borderBottom: '1px solid var(--border2)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.2 }}>QC Call Register</div>
-          <div className="text3" style={{ fontSize: 12 }}>
-            {pendingCount} calls · {pcsPending} pcs pending · {completeCount} completed
-          </div>
-        </div>
-        <div style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: 12 }}
-          disabled={isEmpty}
-          title={`Export the ${view} rows on screen to Excel`}
-          onClick={onExport}
-        >
-          ⬇ Export
-        </button>
-        <input
-          className="innovic-input"
-          style={{ fontSize: 12, width: 230 }}
-          placeholder="Search JC, GRN, SO, item, vendor…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <div style={{ display: 'flex', gap: 4 }}>
-          {viewBtn('pending', 'Pending')}
-          {viewBtn('completed', 'Completed')}
-        </div>
-      </div>
+  const shownCount =
+    view === 'pending' ? pending.length + incPendingF.length : completedFeed.length;
 
-      <QcStageStrip stats={stageStats} selected={stage} onSelect={setStage} />
+  return shell(
+    <>
+      <ListHeader
+        title="QC Call Register"
+        icon="📋"
+        count={shownCount}
+        noun={view === 'pending' ? 'pending call' : 'completed entry'}
+        nounPlural={view === 'pending' ? 'pending calls' : 'completed entries'}
+        filterNote={stageName ?? undefined}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search JC, GRN, SO, POL, item, part, vendor…"
+        tools={
+          <>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {viewBtn('pending', 'Pending')}
+              {viewBtn('completed', 'Completed')}
+            </div>
+            {view === 'pending' ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                aria-pressed={mineOnly}
+                title="Only the QC calls assigned to you on QC Command"
+                onClick={() => setMineOnly((v) => !v)}
+                style={{
+                  background: mineOnly ? 'var(--text)' : 'var(--bg2)',
+                  color: mineOnly ? 'var(--bg2)' : 'var(--text)',
+                  border: `1px solid ${mineOnly ? 'var(--text)' : 'var(--border2)'}`,
+                  fontSize: 12,
+                }}
+              >
+                👤 Mine
+              </button>
+            ) : null}
+            {view === 'completed' ? (
+              <Link
+                to="/qc-history"
+                className="btn btn-ghost btn-sm"
+                title="The full QC history log — every completed entry, not just the latest 30"
+              >
+                Full history →
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={isEmpty}
+              title={`Export the ${view} rows on screen to Excel`}
+              onClick={onExport}
+            >
+              ⬇ Export
+            </button>
+          </>
+        }
+      >
+        <div className="text3" style={{ fontSize: 12 }}>
+          {pendingCount} calls · {pcsPending} pcs pending · {completeCount} completed
+        </div>
+        <QcStageStrip stats={stageStats} selected={stage} onSelect={setStage} />
+      </ListHeader>
+
+      {raisedNc ? (
+        <Banner
+          tone="warn"
+          accent
+          onDismiss={() => setRaisedNc(null)}
+          title={
+            <>
+              NC{' '}
+              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                {raisedNc.code}
+              </span>{' '}
+              raised —{' '}
+              <Link to="/nc-register/$id" params={{ id: raisedNc.id }}>
+                Dispose now →
+              </Link>
+            </>
+          }
+        >
+          The rejected qty from the QC Inspection just saved is on this NC until it is disposed.
+        </Banner>
+      ) : null}
 
       <QcSheetTable
         view={view}
@@ -467,7 +510,8 @@ function QcCallRegisterPage(): React.JSX.Element {
               {view === 'pending' ? (
                 <>
                   <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-                  No pending QC calls{stageName ? ` in ${stageName}` : ''}
+                  No pending QC calls{mineOnly ? ' assigned to you' : ''}
+                  {stageName ? ` in ${stageName}` : ''}
                   {search.trim() ? ' matching your search' : ''}
                 </>
               ) : (
@@ -506,7 +550,12 @@ function QcCallRegisterPage(): React.JSX.Element {
       {/* The entry popups. Keyed by the call so moving from one row to
           another starts a fresh form, never one carrying the last row's qty. */}
       {inspectOp ? (
-        <QcCallInspectModal key={inspectOp.jcOpId} o={inspectOp} onClose={() => setInspect(null)} />
+        <QcCallInspectModal
+          key={inspectOp.jcOpId}
+          o={inspectOp}
+          onClose={() => setInspect(null)}
+          onNcRaised={setRaisedNc}
+        />
       ) : null}
       {inspectInc ? (
         <IncomingQcInspectModal
@@ -515,7 +564,7 @@ function QcCallRegisterPage(): React.JSX.Element {
           onClose={() => setInspect(null)}
         />
       ) : null}
-    </div>,
+    </>,
   );
 }
 
@@ -553,6 +602,8 @@ function PendingCall(props: {
           <span className="mono">{o.soCode ?? '—'}</span> · Op{opSrNo(o.opSeq)} {o.operation}
         </>
       }
+      // Assigned To (NAMING.md) — QC Command's inspector for this call.
+      contextLine2={o.assignedTo ? `Assigned To: ${o.assignedTo}` : undefined}
       qty={o.qcPending}
       calledDate={o.qcCallDate ?? o.pendSince}
       waitDays={(() => {

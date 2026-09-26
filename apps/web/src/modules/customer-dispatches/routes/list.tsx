@@ -26,8 +26,9 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
-import { useCancelDispatch, useDispatchRegister } from '../api';
+import { useCancelDispatch, useDispatchList, useDispatchRegister } from '../api';
 import { type DispatchGroup, DispatchCard } from '../components/dispatch-card';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
@@ -83,6 +84,13 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
   const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
+  // ADR-190 — how far each dispatch is invoiced lives on the dispatch-grain
+  // list, not the line-grain register this page is built from.
+  const { data: dispatchList } = useDispatchList();
+  const billedById = useMemo(
+    () => new Map((dispatchList?.dispatches ?? []).map((d) => [d.id, d.billedStatus])),
+    [dispatchList],
+  );
   const cancel = useCancelDispatch();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
@@ -211,11 +219,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   );
 
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   if (tab === 'jw') {
@@ -232,52 +236,27 @@ function CustomerDispatchListPage(): React.JSX.Element {
   return (
     <div>
       {tabBar}
-      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + count + filters + Export/Print/New stay pinned while the cards
-          scroll underneath. `#content` is the scroll container, so top:0 pins this
-          to its padding box; the background must be opaque var(--bg) or cards show
-          through as they pass under. Not bled to the edges — that would give the
-          app a horizontal scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📦 Customer Dispatch
-            </div>
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {groups.length} dispatch{groups.length === 1 ? '' : 'es'}
-              {soFilter ? (
-                <>
-                  {' '}
-                  · <span className="text2">{soFilter}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* The ONE list header (ui/layout ListHeader). Same filters, same
+          client-side search, same Export / Print as before — Excel + Print
+          now sit under one Export menu. The KPI strip stays in the band. */}
+      <ListHeader
+        title="Customer Dispatch"
+        icon="🚚"
+        count={groups.length}
+        noun="dispatch"
+        nounPlural="dispatches"
+        filterNote={soFilter || undefined}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search dispatch no., SO, JC, POL, item, customer, date…"
+        updating={isFetching && !isLoading}
+        tools={
+          <>
             <select
               className="innovic-select"
               value={soFilter}
               onChange={(e) => setSoFilter(e.target.value)}
-              style={{ width: 160, fontSize: 12 }}
+              style={{ width: 160 }}
             >
               <option value="">All SOs</option>
               {soOptions.map((s) => (
@@ -286,34 +265,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 </option>
               ))}
             </select>
-            <input
-              className="innovic-input"
-              placeholder="Search dispatch no, SO, JC, item, customer, date…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 200, fontSize: 12 }}
-            />
-            <button
-              type="button"
-              className="btn btn-ghost"
-              title="Export the current (SO-filtered) register to Excel"
-              onClick={() => exportDispatchRegister(soRows, soFilter || undefined)}
-            >
-              📊 Export Excel
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              title="Print the dispatch register"
-              disabled={isLoading}
-              onClick={() => {
-                if (!printCustomerDispatchRegister({ rows: active, company })) {
-                  window.alert('Allow popups to print.');
-                }
-              }}
-            >
-              🖨 Print
-            </button>
             <button
               type="button"
               className="btn btn-ghost"
@@ -325,44 +276,56 @@ function CustomerDispatchListPage(): React.JSX.Element {
             >
               {allExpanded ? 'Collapse all' : 'Expand all'}
             </button>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canAdd ? (
-              <Link to="/customer-dispatches/new" className="btn btn-primary">
-                + New Dispatch
-              </Link>
-            ) : null}
-          </div>
-        </div>
-
-        {/* The three KPIs were three `.panel` tiles in a 3-col grid below the
-            band — centred text, ~120px tall, and they scrolled away with the
-            list. Now one strip in the band (styling skill Rule 3). Read-only
-            metrics, so no onClick: they are totals, not filters. Counts are
-            over ACTIVE rows (cancelled dispatches were reversed) and follow the
-            SO filter + search, exactly as before. */}
-        <div style={{ marginTop: 10 }}>
-          <StatStrip
-            items={[
-              {
-                key: 'pcs',
-                label: 'Total Dispatched',
-                count: totalPcs,
-                color: 'var(--red2)',
-                sub: 'pieces',
-              },
-              {
-                key: 'entries',
-                label: 'Dispatch Entries',
-                count: groups.filter((g) => g.status !== 'cancelled').length,
-              },
-            ]}
-          />
-        </div>
-      </div>
+            <ActionMenu
+              label="Export"
+              items={[
+                {
+                  label: '📊 Export Excel',
+                  title: 'Export the current (SO-filtered) register to Excel',
+                  onClick: () => exportDispatchRegister(soRows, soFilter || undefined),
+                },
+                {
+                  label: '🖨 Print',
+                  title: 'Print the dispatch register',
+                  disabled: isLoading,
+                  onClick: () => {
+                    if (!printCustomerDispatchRegister({ rows: active, company })) {
+                      window.alert('Allow popups to print.');
+                    }
+                  },
+                },
+              ]}
+            />
+          </>
+        }
+        primary={
+          canAdd ? (
+            <Link to="/customer-dispatches/new" className="btn btn-primary">
+              + New Dispatch
+            </Link>
+          ) : null
+        }
+      >
+        {/* Read-only metrics, not filters. Counts are over ACTIVE rows
+            (cancelled dispatches were reversed) and follow the SO filter +
+            search, exactly as before. */}
+        <StatStrip
+          items={[
+            {
+              key: 'pcs',
+              label: 'Total Dispatched',
+              count: totalPcs,
+              color: 'var(--red2)',
+              sub: 'pieces',
+            },
+            {
+              key: 'entries',
+              label: 'Dispatch Entries',
+              count: groups.filter((g) => g.status !== 'cancelled').length,
+            },
+          ]}
+        />
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel empty-state" style={{ padding: 24 }}>
@@ -381,7 +344,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 <span className="panel-title">Item-wise Summary</span>
               </div>
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid tbl-auto">
                   <thead>
                     <tr>
                       <th>Item Code</th>
@@ -439,6 +402,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
               <DispatchCard
                 key={g.dispatchId}
                 g={g}
+                billedStatus={billedById.get(g.dispatchId)}
                 isOpen={expanded.has(g.dispatchId)}
                 canCancel={canCancel}
                 cancelPending={cancel.isPending}
@@ -451,6 +415,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
               />
             ))
           )}
+          <ListFooter total={groups.length} noun="dispatch" nounPlural="dispatches" />
         </>
       )}
     </div>

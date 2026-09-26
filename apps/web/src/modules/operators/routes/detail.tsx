@@ -23,16 +23,19 @@
 //   Department lg · Linked user lg                      → 6 + 6 = 12
 //   Skills / Machines full                              → 12
 //
-// Linked user shows the login's NAME (looked up in the Task Board's active-user
-// list); only a link to a user missing from that list falls back to the id.
+// Linked user shows the login's NAME · EMAIL for an admin (GET /users/:id is
+// admin-only), and the NAME from the Task Board's active-user list for anyone
+// else; only a link to a user neither knows falls back to the id.
 
 import type { Operator } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { useTaskUserOptions } from '@/modules/tasks/api';
+import { useUser } from '@/modules/users/api';
 import { ConfirmDialog } from '@/ui/feedback';
 import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useOperator, useSoftDeleteOperator } from '../api';
@@ -164,8 +167,19 @@ function OperatorDetailPage(): React.JSX.Element {
 function OperatorFacts(props: { operator: Operator }): React.JSX.Element {
   const { operator } = props;
   const { data: users } = useTaskUserOptions(Boolean(operator.userId));
+  // Name AND email of the linked login. GET /users/:id is admin-only on the
+  // server, so it is asked only for an admin (anyone else would get a 403
+  // and a retry storm); everyone else sees the name from the Task Board's
+  // active-user list. The raw id shows only when neither knows the user.
+  const { data: me } = useSession();
+  const { data: linkedUser } = useUser(
+    me?.role === 'admin' ? (operator.userId ?? undefined) : undefined,
+  );
+  const optionName = users?.options.find((u) => u.id === operator.userId)?.name ?? null;
   const linkedName = operator.userId
-    ? (users?.options.find((u) => u.id === operator.userId)?.name ?? operator.userId)
+    ? linkedUser
+      ? `${linkedUser.fullName?.trim() || optionName || linkedUser.email} · ${linkedUser.email}`
+      : (optionName ?? operator.userId)
     : null;
   return (
     <ReadGrid>

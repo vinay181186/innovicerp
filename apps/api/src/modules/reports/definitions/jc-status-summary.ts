@@ -12,7 +12,8 @@ export const jcStatusSummaryReport: RegisteredReport = {
     title: 'Job-card status summary',
     description:
       'Open Job Cards grouped by JC status with a per-item breakdown. Surfaces stuck JCs at a glance.',
-    group: 'Operations',
+    group: 'Production',
+    dept: 'production',
     filters: [],
     columns: [
       { key: 'computed_status', label: 'JC Status', type: 'text' },

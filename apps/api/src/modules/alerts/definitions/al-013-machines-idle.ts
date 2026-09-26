@@ -9,6 +9,7 @@
 // 'Running', 'Idle', 'Down'. We don't normalise (legacy left it free-
 // form); match the literal 'Running' for parity.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -29,7 +30,7 @@ export const al013MachinesIdle: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT m.code AS machine_code, m.name AS machine_name,
+      SELECT m.id AS nav_id, m.code AS machine_code, m.name AS machine_name,
              COALESCE(m.machine_type, '') AS machine_type, m.status
       FROM public.machines m
       WHERE m.company_id = ${companyId}::uuid
@@ -42,6 +43,7 @@ export const al013MachinesIdle: RegisteredAlert = {
       ORDER BY m.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('machine', String(r['nav_id'])),
       machine_code: (r['machine_code'] as string) ?? '',
       machine_name: (r['machine_name'] as string) ?? '',
       machine_type: (r['machine_type'] as string) ?? '',

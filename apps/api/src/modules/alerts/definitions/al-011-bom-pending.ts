@@ -5,6 +5,7 @@
 // against patterns containing "pending" to absorb legacy capitalisation
 // drift without forcing a normalisation pass on existing data.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -24,7 +25,7 @@ export const al011BomPending: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT so.code AS so_code,
+      SELECT so.id AS nav_id, so.code AS so_code,
              COALESCE(c.name, so.customer_name, '') AS customer,
              COALESCE(so.bom_status, '') AS bom_status, so.so_date
       FROM public.sales_orders so
@@ -37,6 +38,7 @@ export const al011BomPending: RegisteredAlert = {
       ORDER BY so.so_date, so.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('sales-order', String(r['nav_id'])),
       so_code: (r['so_code'] as string) ?? '',
       customer: (r['customer'] as string) ?? '',
       bom_status: (r['bom_status'] as string) ?? '',

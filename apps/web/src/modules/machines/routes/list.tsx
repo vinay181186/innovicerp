@@ -138,7 +138,11 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -189,11 +193,12 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   const total = data?.total ?? 0;
   const currentPage = search.page;
 
-  // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
-  // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below).
-  // With ₹/hr shown: 5+12+26+11+10+9+9+10 = 92, + 8 = 100. With it hidden its
-  // 9% goes to Name (35%) and the sum still lands on 100. Centred by the
-  // standard; only Name is left-aligned (a name reads from its left edge).
+  // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
+  // only Sr No keeps a width; codes, qty and badges sit on one line and size
+  // their own column, and the name columns wrap into whatever is left, so
+  // nothing spills over a gridline and the Action column (1% = shrink to its
+  // buttons) is never pushed off the screen. Centred by the standard; names
+  // read from their left edge, numbers sit right.
   const columns = useMemo<DataTableColumn<Machine>[]>(
     () => [
       {
@@ -205,7 +210,6 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       },
       {
         header: 'Code',
-        width: '12%',
         nowrap: true,
         // A real link, so the code can be ctrl/middle-clicked into a new tab.
         // stopPropagation sits on the link (not the cell) so clicking the rest
@@ -225,21 +229,18 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       },
       {
         header: 'Name',
-        width: priceHidden ? '35%' : '26%',
         align: 'left',
         className: 'fw-700',
-        ellipsis: true,
         key: 'name',
       },
       {
         header: 'Machine Type',
-        width: '11%',
         className: 'text2',
         render: (m) => m.machineType ?? '—',
       },
       {
         header: 'Machine Group',
-        width: '10%',
+        nowrap: true,
         className: 'text2',
         // A machine with no group is normal — every row created before the
         // group master existed. Show an em dash.
@@ -247,7 +248,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       },
       {
         header: 'Capacity / Shift',
-        width: '9%',
+        align: 'right',
         className: 'mono',
         nowrap: true,
         render: (m) => (m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'),
@@ -258,7 +259,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         : [
             {
               header: 'Rate (₹/hr)',
-              width: '9%',
+              align: 'right' as const,
               headColor: 'var(--green)',
               className: 'mono green',
               nowrap: true,
@@ -267,7 +268,6 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
           ]),
       {
         header: 'Machine Status',
-        width: '10%',
         nowrap: true,
         // kind="machine" carries this screen's own four colours — Running blue,
         // Idle grey, Maintenance amber, Down red — the map the local
@@ -287,6 +287,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
         title="Machine Master"
+        icon="⚙"
         // Count comes from the list response's `total` — the only aggregate
         // GET /machines returns.
         count={total}
@@ -294,9 +295,8 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         filterNote={search.status}
         search={searchInput}
         onSearch={setSearchInput}
-        // Placeholder stays generic on purpose: naming columns here is what
-        // dated the old wording, and GET /machines matches across the columns
-        // the table shows.
+        // GET /machines matches code, name, type, status and group code.
+        searchPlaceholder="Search code, name, type, group, status…"
         updating={isFetching && !isLoading}
         tools={
           <Select
@@ -340,7 +340,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
             loading={isLoading}
             emptyText="No machines"
             onRowClick={(m) => void navigate({ to: '/machines/$id', params: { id: m.id } })}
-            rowActionsWidth="8%"
+            rowActionsWidth="1%"
             rowActions={(m) => (
               // View and Edit are ROUTES, so they stay real links — ctrl-click
               // / middle-click still open a new tab. Delete is not offered on

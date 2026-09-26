@@ -11,7 +11,7 @@ import {
   opSrNo,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
@@ -21,6 +21,7 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { CapaView } from '@/modules/capa/components/capa-view';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
 import { NcDispositionBadge } from '../components/nc-disposition-badge';
@@ -75,7 +76,11 @@ function NcRegisterListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -186,27 +191,83 @@ function NcRegisterListPage(): React.JSX.Element {
         <CapaView key={search.capa ?? ''} initialSearch={search.capa} />
       ) : (
         <>
-          {/* Legacy L22549-22551: title + Report NC only; filters sit below the
-          cards in their own row. */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              marginBottom: 14,
-            }}
+          <ListHeader
+            title="NC Register"
+            icon="⚠️"
+            count={data ? total : undefined}
+            noun="NC"
+            filterNote={
+              search.status || search.reasonCategory
+                ? [
+                    search.status ? NC_STATUS_LABELS[search.status] : null,
+                    search.reasonCategory ? NC_REASON_CATEGORY_LABELS[search.reasonCategory] : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : undefined
+            }
+            // Server-side search over code / reason / item (service.ts L215);
+            // it does NOT match JC, so the placeholder does not claim it.
+            search={searchInput}
+            onSearch={setSearchInput}
+            searchPlaceholder="Search NC no., item code, item name, reason…"
+            updating={isFetching && !isLoading}
+            tools={
+              <>
+                <select
+                  className="innovic-select"
+                  value={search.status ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value as NcStatus | '';
+                    void navigate({
+                      search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                      replace: true,
+                    });
+                  }}
+                  style={{ width: 160 }}
+                >
+                  <option value="">All Status</option>
+                  {NC_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {NC_STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="innovic-select"
+                  value={search.reasonCategory ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value as NcReasonCategory | '';
+                    void navigate({
+                      search: (prev) => ({
+                        ...prev,
+                        reasonCategory: v === '' ? undefined : v,
+                        page: 1,
+                      }),
+                      replace: true,
+                    });
+                  }}
+                  style={{ width: 160 }}
+                >
+                  <option value="">All Reasons</option>
+                  {NC_REASON_CATEGORIES.map((r) => (
+                    <option key={r} value={r}>
+                      {NC_REASON_CATEGORY_LABELS[r]}
+                    </option>
+                  ))}
+                </select>
+              </>
+            }
+            primary={
+              canReportNc ? (
+                <Link to="/nc-register/new" className="btn btn-primary">
+                  ⚠️ Report NC
+                </Link>
+              ) : null
+            }
           >
-            {canReportNc ? (
-              <Link to="/nc-register/new" className="btn btn-primary">
-                ⚠️ Report NC
-              </Link>
-            ) : null}
-          </div>
-
-          {/* Counts as ONE single-row strip (styling skill Rule 3 + SO Master),
-              not five separate .panel cards. Read-only metrics — no onClick, so
-              each cell renders as a plain div. */}
-          <div style={{ marginBottom: 16 }}>
+            {/* Counts as ONE single-row strip (styling skill Rule 3 + SO Master).
+                Read-only metrics — no onClick, so each cell renders as a div. */}
             <StatStrip
               items={[
                 {
@@ -240,77 +301,7 @@ function NcRegisterListPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
-
-          {/* Legacy L22553-22557 filter row. Placeholder names only the fields the
-          API actually searches — legacy's "Search JC, item, reason..." works
-          because its filter is a client-side row-text scan; the port's search
-          is server-side over code/reason/item (service.ts L215) and does NOT
-          match JC. */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 8,
-              marginBottom: 14,
-              flexWrap: 'wrap',
-              alignItems: 'center',
-            }}
-          >
-            <input
-              className="innovic-input"
-              placeholder="🔍 Search NC no., item code, item name, reason…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ minWidth: 220, fontSize: 13 }}
-            />
-            <select
-              className="innovic-select"
-              value={search.status ?? ''}
-              onChange={(e) => {
-                const v = e.target.value as NcStatus | '';
-                void navigate({
-                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                  replace: true,
-                });
-              }}
-              style={{ width: 160, fontSize: 12 }}
-            >
-              <option value="">All Status</option>
-              {NC_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {NC_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-            <select
-              className="innovic-select"
-              value={search.reasonCategory ?? ''}
-              onChange={(e) => {
-                const v = e.target.value as NcReasonCategory | '';
-                void navigate({
-                  search: (prev) => ({
-                    ...prev,
-                    reasonCategory: v === '' ? undefined : v,
-                    page: 1,
-                  }),
-                  replace: true,
-                });
-              }}
-              style={{ width: 160, fontSize: 12 }}
-            >
-              <option value="">All Reasons</option>
-              {NC_REASON_CATEGORIES.map((r) => (
-                <option key={r} value={r}>
-                  {NC_REASON_CATEGORY_LABELS[r]}
-                </option>
-              ))}
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-          </div>
+          </ListHeader>
 
           {/* Card-per-NC list, mirroring SO Master (sales-orders list): a rounded
               panel per row with a status accent bar, an identity band and a meta
@@ -557,53 +548,18 @@ function NcRegisterListPage(): React.JSX.Element {
             })
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 8,
-              fontSize: 12,
-              color: 'var(--text3)',
-            }}
-          >
-            <span>
-              {total === 0
-                ? 'No NCs'
-                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-            </span>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage <= 1}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-                Page {currentPage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage >= totalPages}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
+          <ListFooter
+            total={total}
+            noun="NC"
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            onPage={(p) =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+                replace: true,
+              })
+            }
+          />
         </>
       )}
     </div>

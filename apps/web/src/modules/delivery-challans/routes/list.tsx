@@ -25,12 +25,13 @@
 import type { ListDeliveryChallansQuery } from '@innovic/shared';
 import { DC_STATUSES, type DcStatus } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
+import { Loader2, Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
 import { useDeliveryChallansList } from '../api';
 import { DcCard } from '../components/dc-card';
@@ -62,7 +63,11 @@ function DeliveryChallansListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already trims to it.
+    setSearchInput((prev) =>
+      prev.trim() === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -176,57 +181,24 @@ function DeliveryChallansListPage(): React.JSX.Element {
         <OspAtVendorRegister />
       ) : (
         <>
-          {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + count + filters + Print/New and the count strip stay pinned while
-          the cards scroll underneath. `#content` is the scroll container, so top:0
-          pins this to its padding box; the background must be opaque var(--bg) or
-          cards show through as they pass under. Not bled to the edges — that would
-          give the app a horizontal scrollbar. */}
-          <div
-            style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 20,
-              background: 'var(--bg)',
-              paddingBottom: 8,
-              marginBottom: 10,
-              borderBottom: '1px solid var(--border)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                marginBottom: 10,
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  🚛 OSP Outward DC
-                </div>
-                <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-                  {total} DC{total === 1 ? '' : 's'}
-                  {search.status ? (
-                    <>
-                      {' '}
-                      · <span className="text2">{DC_STATUS_LABEL[search.status]}</span> only
-                    </>
-                  ) : null}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <input
-                  className="innovic-input"
-                  placeholder="🔍 Search DC, PO / NC, vendor..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  style={{ width: 240, fontSize: 12 }}
-                />
+          {/* THE list header (ui/layout ListHeader): title · count · search ·
+              status filter · Print Register · + New DC, with the read-only
+              totals strip pinned inside the same band. */}
+          <ListHeader
+            title="OSP Outward DC"
+            icon="🚛"
+            count={total}
+            noun="DC"
+            filterNote={search.status ? DC_STATUS_LABEL[search.status] : undefined}
+            search={searchInput}
+            onSearch={setSearchInput}
+            searchPlaceholder="Search DC, PO / NC, vendor…"
+            updating={isFetching && !isLoading}
+            tools={
+              <>
                 <select
                   className="innovic-select"
+                  aria-label="DC status"
                   value={search.status ?? ''}
                   onChange={(e) => {
                     const v = e.target.value as DcStatus | '';
@@ -235,7 +207,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
                       replace: true,
                     });
                   }}
-                  style={{ width: 160, fontSize: 12 }}
+                  style={{ width: 160 }}
                 >
                   <option value="">All statuses</option>
                   {DC_STATUSES.map((s) => (
@@ -244,36 +216,30 @@ function DeliveryChallansListPage(): React.JSX.Element {
                     </option>
                   ))}
                 </select>
-                {isFetching && !isLoading ? (
-                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                    <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-                  </span>
-                ) : null}
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
-                  style={{ fontSize: 12 }}
+                  className="btn btn-ghost"
                   onClick={onPrintRegister}
                   disabled={isLoading || !data}
                   title="Print the DC register for the current filter/page"
                 >
                   <Printer size={14} /> Print Register
                 </button>
-                {/* A DC is always issued against a PO, but the button lands on the
-                OSP Delivery Challan & Outward form itself — the form asks for the
-                PO. Sending the user to the PO list first made them hunt for a row
-                with a "Create DC" action before they ever saw the DC form. */}
-                {perms.entry ? (
-                  <Link to="/delivery-challans/new" className="btn btn-primary">
-                    <Plus size={14} /> New DC (via PO)
-                  </Link>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Read-only totals, not filters — no onClick, so each cell renders as a
-            <div> instead of a button that does nothing. Rendered with zeros
-            while the first page loads so the list below does not jump. */}
+              </>
+            }
+            primary={
+              // A DC is always issued against a PO, but the button lands on the
+              // OSP Delivery Challan & Outward form itself — the form asks for
+              // the PO.
+              perms.entry ? (
+                <Link to="/delivery-challans/new" className="btn btn-primary">
+                  <Plus size={14} /> New DC (via PO)
+                </Link>
+              ) : null
+            }
+          >
+            {/* Read-only totals, not filters — no onClick, so each cell renders
+                as a <div>. Zeros while the first page loads so nothing jumps. */}
             <StatStrip
               items={[
                 {
@@ -300,7 +266,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
+          </ListHeader>
 
           {isLoading ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
@@ -319,57 +285,23 @@ function DeliveryChallansListPage(): React.JSX.Element {
             rows.map((dc) => <DcCard key={dc.id} dc={dc} />)
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 8,
-              fontSize: 12,
-              color: 'var(--text3)',
-            }}
-          >
-            <span>
-              {total === 0
-                ? 'No DCs'
-                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage <= 1}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-                Page {currentPage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={currentPage >= totalPages}
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                    replace: true,
-                  })
-                }
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-            💡 Click a card to open the DC · <b>+ Receive</b> books material back from the vendor.
-          </div>
+          <ListFooter
+            total={total}
+            noun="DC"
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            onPage={(p) =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+                replace: true,
+              })
+            }
+            hint={
+              <>
+                Click a card to open the DC · <b>+ Receive</b> books material back from the vendor.
+              </>
+            }
+          />
         </>
       )}
     </div>

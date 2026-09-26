@@ -7,6 +7,7 @@ import {
   listVendorsQuerySchema,
   updateVendorInputSchema,
 } from './schema';
+import { getVendorRelated } from './related';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -22,6 +23,13 @@ export async function vendorsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/vendors/next-code', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getNextVendorCode(req.user);
+  });
+
+  // Related Documents panel for the master (ADR-190).
+  app.get('/vendors/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return getVendorRelated(id, req.user);
   });
 
   app.get('/vendors/:id', async (req) => {

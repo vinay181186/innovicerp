@@ -73,11 +73,18 @@ export interface QcCallInspectState {
   doSubmit: () => Promise<void>;
 }
 
+/** The NC a QC submit raised (ADR-183) — handed to `onDone` so the register
+ *  can name it and link to its disposition instead of closing silently. */
+export interface RaisedNc {
+  id: string;
+  code: string;
+}
+
 /** State + submit for one pending job-card operation. */
 export function useQcCallInspect(props: {
   o: QcHistoryPendingRow;
-  /** After a successful submit. */
-  onDone: () => void;
+  /** After a successful submit — with the NC it raised, if any. */
+  onDone: (raisedNc?: RaisedNc) => void;
 }): QcCallInspectState {
   const { o, onDone } = props;
   const submitQc = useSubmitQcLog();
@@ -184,14 +191,18 @@ export function useQcCallInspect(props: {
       ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
     };
     try {
-      await submitQc.mutateAsync(input);
+      const saved = await submitQc.mutateAsync(input);
       // useSubmitQcLog refreshes op-entry's own views but not this register's
       // feed, so the row used to linger in Pending until the 60 s poll. Refresh
       // the register (and the TPI tab, which reads the same operations) now,
       // so the row leaves the list the moment the popup closes.
       void queryClient.invalidateQueries({ queryKey: qcHistoryKeys.all });
       void queryClient.invalidateQueries({ queryKey: tpiKeys.all });
-      onDone();
+      // A reject raises an NC: pass it up so the register names it and links
+      // straight to its disposition (ADR-190) — the popup itself closes, as the
+      // row may leave the pending feed on this very refetch.
+      const nc = saved.ncs[0];
+      onDone(nc ? { id: nc.id, code: nc.code } : undefined);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save QC Inspection. Try again.');
     }
@@ -230,8 +241,8 @@ export function QcCallInspectForm(props: {
   o: QcHistoryPendingRow;
   /** The form's own Cancel button. */
   onCancel: () => void;
-  /** After a successful submit. */
-  onDone: () => void;
+  /** After a successful submit — with the NC it raised, if any. */
+  onDone: (raisedNc?: RaisedNc) => void;
   /** Optional — only the popup listens. */
   onDirtyChange?: (dirty: boolean) => void;
 }): React.JSX.Element | null {

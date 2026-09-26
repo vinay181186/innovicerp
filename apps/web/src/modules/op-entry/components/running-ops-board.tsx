@@ -45,8 +45,8 @@ function JcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
  *  JW-sourced or standalone card has no SO line behind it and therefore no
  *  revision: those rows show the bare code, with no trailing slash.
  *
- *  The name is long free text, so it truncates with the full value on hover; the
- *  code is short and never wraps. */
+ *  The name is long free text, so it WRAPS inside its column (sheet rule,
+ *  2026-09-26); the code is short and never wraps. */
 function ItemCells({ r }: { r: RunningOp }): React.JSX.Element {
   return (
     <>
@@ -59,16 +59,7 @@ function ItemCells({ r }: { r: RunningOp }): React.JSX.Element {
       <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(r.itemCode, r.itemRevision)}
       </td>
-      <td
-        title={r.itemName ?? ''}
-        style={{
-          fontSize: 12,
-          maxWidth: 180,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
+      <td title={r.itemName ?? ''} style={{ fontSize: 12, textAlign: 'left' }}>
         {r.itemName ?? '—'}
       </td>
     </>
@@ -109,7 +100,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
           </span>
         </div>
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>JC No.</th>
@@ -123,7 +114,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                 <th>Actual Machine</th>
                 <th>Operator</th>
                 <th>Started</th>
-                <th></th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -139,11 +130,13 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
               ) : (
                 running.map((r) => (
                   <tr key={r.id}>
-                    <td className="td-code cyan">
+                    <td className="td-code cyan" style={{ whiteSpace: 'nowrap' }}>
                       <JcLink id={r.jobCardId} code={r.jobCardCode} />
                     </td>
                     <ItemCells r={r} />
-                    <td className="mono">{opSrNo(r.opSeq)}</td>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {opSrNo(r.opSeq)}
+                    </td>
                     <td>{r.operation}</td>
                     {/* ADR-164 — the session's machine is the ACTUAL; the op's
                         jc_ops machine is the PLAN. Each gets its own column on
@@ -162,7 +155,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                       )}
                     </td>
                     <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
-                    <td className="mono" style={{ fontSize: 11 }}>
+                    <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDateAndTime(r.startDate, r.startTime)}
                     </td>
                     <td>
@@ -197,7 +190,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
             </span>
           </div>
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>JC No.</th>
@@ -219,11 +212,13 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                   <tr key={r.id}>
                     {/* Same treatment as Running now: a finished session is the
                         one you most often want to open the card for. */}
-                    <td className="td-code">
+                    <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
                       <JcLink id={r.jobCardId} code={r.jobCardCode} />
                     </td>
                     <ItemCells r={r} />
-                    <td className="mono">{opSrNo(r.opSeq)}</td>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {opSrNo(r.opSeq)}
+                    </td>
                     <td>{r.operation}</td>
                     {/* ADR-164 — the session's machine is the ACTUAL; the op's
                         jc_ops machine is the PLAN. Each gets its own column on
@@ -242,7 +237,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                       )}
                     </td>
                     <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
-                    <td className="mono text3" style={{ fontSize: 11 }}>
+                    <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDateTime(r.endedAt)}
                     </td>
                     <td>

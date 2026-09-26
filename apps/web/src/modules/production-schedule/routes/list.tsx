@@ -11,6 +11,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
 
 const COL_WIDTH = 48; // px per day
@@ -129,32 +130,45 @@ function ProductionSchedulePage(): React.JSX.Element {
 
   return (
     <div>
-      {/* Top toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
-      >
-        <div className="section-hdr m-0">📅 Production Schedule (Gantt)</div>
-      </div>
-
-      {/* Filter + nav */}
-      <div
-        className="panel"
-        style={{
-          padding: '10px 14px',
-          marginBottom: 10,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
+      {/* The one header band: title · op count … the window's date controls,
+          with the Show filter underneath it. */}
+      <ListHeader
+        title="Production Schedule (Gantt)"
+        icon="📅"
+        count={isLoading ? undefined : stats.total}
+        noun="op"
+        filterNote={filter === 'all' ? undefined : FILTER_BTNS.find(([f]) => f === filter)?.[1]}
+        tools={
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-7)}>
+              ◀ -7d
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-1)}>
+              ◀
+            </button>
+            <input
+              type="date"
+              className="innovic-input"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              aria-label="Window start date"
+              style={{ fontSize: 11, padding: '4px 8px' }}
+            />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(1)}>
+              ▶
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(7)}>
+              +7d ▶
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setStartDate(todayIso())}
+            >
+              Today
+            </button>
+          </div>
+        }
       >
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--text3)', marginRight: 4 }}>Show:</span>
@@ -170,35 +184,7 @@ function ProductionSchedulePage(): React.JSX.Element {
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-7)}>
-            ◀ -7d
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(-1)}>
-            ◀
-          </button>
-          <input
-            type="date"
-            className="innovic-input"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            style={{ fontSize: 11, padding: '4px 8px' }}
-          />
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(1)}>
-            ▶
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(7)}>
-            +7d ▶
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setStartDate(todayIso())}
-          >
-            Today
-          </button>
-        </div>
-      </div>
+      </ListHeader>
 
       {/* Legend */}
       <div

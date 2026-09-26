@@ -7,6 +7,8 @@ export interface OpLogListItem {
   logType: 'start' | 'complete' | 'qc';
   logDate: string;
   jcNo: string;
+  /** The job card's id — Log No. / JC No. link straight to /job-cards/$id. */
+  jobCardId?: string | undefined;
   itemCode: string | null;
   // WHAT was being made. A JC number says WHICH JOB, not WHICH PART, so the
   // register names the item beside the number. `itemRevision` is the CUSTOMER'S
@@ -62,7 +64,7 @@ export const opLogKeys = {
   list: (q: ListOpLogQuery) => [...opLogKeys.all, 'list', q] as const,
 };
 
-function toQueryString(q: ListOpLogQuery): string {
+export function toQueryString(q: ListOpLogQuery): string {
   const params = new URLSearchParams();
   if (q.jcNo) params.set('jcNo', q.jcNo);
   if (q.logType) params.set('logType', q.logType);

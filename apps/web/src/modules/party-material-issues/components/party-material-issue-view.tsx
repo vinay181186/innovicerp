@@ -19,6 +19,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   useCancelPartyMaterialIssue,
   useCreatePartyMaterialIssue,
@@ -89,21 +90,24 @@ export function PartyMaterialIssueView({
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-end gap-3">
-        <input
-          type="text"
-          className="innovic-input"
-          placeholder="🔍 Search Issue No., date, JWSO, Job Card, material, remarks…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          style={{ width: 260, fontSize: 12 }}
-        />
-        {canIssue ? (
-          <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
-            <Plus size={14} /> New Issue
-          </button>
-        ) : null}
-      </div>
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + New Issue. */}
+      <ListHeader
+        title="Party Material Issue"
+        icon="📤"
+        count={data?.total}
+        noun="issue"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search Issue No., date, JWSO, Job Card, material, remarks…"
+        primary={
+          canIssue ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
+              <Plus size={14} /> New Issue
+            </button>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -122,7 +126,7 @@ export function PartyMaterialIssueView({
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Issue No.</th>
@@ -136,11 +140,11 @@ export function PartyMaterialIssueView({
                       not WHICH PART, which is why the first column now exists. */}
                   <th>Item Name</th>
                   <th>Material</th>
-                  <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                  <th className="th-num" style={{ color: 'var(--green2)' }}>
                     Issue Qty
                   </th>
                   <th>Remarks</th>
-                  {canCancel ? <th className="td-ctr">Actions</th> : null}
+                  {canCancel ? <th>Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -153,18 +157,21 @@ export function PartyMaterialIssueView({
                 ) : null}
                 {rows.map((it) => (
                   <tr key={it.id}>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span className="td-code" style={{ color: 'var(--cyan)' }}>
                         {it.code}
                       </span>
                     </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
+                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDate(it.issueDate)}
                     </td>
-                    <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                    <td
+                      className="mono fw-700"
+                      style={{ fontSize: 11, color: 'var(--purple)', whiteSpace: 'nowrap' }}
+                    >
                       {it.jwCodeText ?? '—'}
                     </td>
-                    <td className="mono text2" style={{ fontSize: 11 }}>
+                    <td className="mono text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {it.jcCodeText ?? '—'}
                     </td>
                     {/* The job card's PRODUCED part — not the party material in
@@ -181,17 +188,7 @@ export function PartyMaterialIssueView({
                         {itemCodeWithRev(it.jcItemCode, it.jcItemRevision, '')}
                       </span>
                       {it.jcItemName ? (
-                        <div
-                          className="text3"
-                          style={{
-                            fontSize: 11,
-                            maxWidth: 160,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          title={it.jcItemName}
-                        >
+                        <div className="text3" style={{ fontSize: 11 }} title={it.jcItemName}>
                           {it.jcItemName}
                         </div>
                       ) : null}
@@ -208,33 +205,23 @@ export function PartyMaterialIssueView({
                       ) : null}
                     </td>
                     <td
-                      className="td-ctr mono fw-700"
+                      className="td-num mono fw-700"
                       style={{ fontSize: 14, color: 'var(--green2)' }}
                     >
                       {it.qty}
                     </td>
-                    <td
-                      className="text3"
-                      style={{
-                        fontSize: 11,
-                        maxWidth: 140,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={it.remarks ?? ''}
-                    >
+                    <td className="text3" style={{ fontSize: 11 }} title={it.remarks ?? ''}>
                       {it.remarks ?? '—'}
                     </td>
                     {canCancel ? (
-                      <td className="td-ctr">
+                      <td>
                         <button
                           type="button"
                           className="btn btn-sm"
                           style={{
-                            background: 'rgba(239,68,68,0.08)',
+                            background: 'var(--red3)',
                             color: 'var(--red2)',
-                            border: '1px solid rgba(239,68,68,0.3)',
+                            border: '1px solid var(--red)',
                             padding: '2px 8px',
                           }}
                           onClick={() => setCancelRow(it)}
@@ -251,6 +238,10 @@ export function PartyMaterialIssueView({
           </div>
         ) : null}
       </div>
+
+      {data ? (
+        <ListFooter total={data.total} shown={rows.length} noun="issue" limit={LIST_LIMIT} />
+      ) : null}
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
       {cancelRow ? <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}

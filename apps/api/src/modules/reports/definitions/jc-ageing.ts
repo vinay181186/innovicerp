@@ -11,7 +11,8 @@ export const jcAgeingReport: RegisteredReport = {
     title: 'JC ageing',
     description:
       'Open Job Cards (not yet Completed or Closed) sorted oldest-first to surface stuck production. Days Open is today minus the JC Date.',
-    group: 'Operations',
+    group: 'Production',
+    dept: 'production',
     filters: [
       {
         key: 'computedStatus',
@@ -37,6 +38,8 @@ export const jcAgeingReport: RegisteredReport = {
       { key: 'done_ops', label: 'Done Ops', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
     ],
+    // ADR-190 — jc_code opens the document; jc_id is not a column.
+    rowLink: { column: 'jc_code', route: '/job-cards/$id', idKey: 'jc_id' },
   },
   async run({ tx, companyId, filters }) {
     const statusFilter = filters['computedStatus'];
@@ -48,6 +51,7 @@ export const jcAgeingReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
+        jc.id AS jc_id,
         jc.code                          AS jc_code,
         jc.jc_date                       AS jc_date,
         (CURRENT_DATE - jc.jc_date)::int AS days_open,
@@ -75,6 +79,7 @@ export const jcAgeingReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      jc_id: String(r['jc_id'] ?? ''),
       jc_code: String(r['jc_code'] ?? ''),
       jc_date:
         r['jc_date'] instanceof Date

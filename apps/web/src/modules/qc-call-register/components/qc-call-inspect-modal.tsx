@@ -25,14 +25,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { QcCallInspectForm } from './qc-call-inspect-form';
+import { QcCallInspectForm, type RaisedNc } from './qc-call-inspect-form';
 
 export function QcCallInspectModal({
   o,
   onClose,
+  onNcRaised,
 }: {
   o: QcHistoryPendingRow;
   onClose: () => void;
+  /** A reject raised an NC — the register shows it with a link (ADR-190). */
+  onNcRaised?: ((nc: RaisedNc) => void) | undefined;
 }): React.JSX.Element {
   // Whether anything has been typed or attached — reported up by the form.
   // Decides if closing asks first.
@@ -179,7 +182,10 @@ export function QcCallInspectModal({
             onCancel={requestClose}
             // Close once the entry has actually landed. The register refetches
             // behind the box (the form invalidates its feed on success).
-            onDone={onClose}
+            onDone={(nc) => {
+              if (nc) onNcRaised?.(nc);
+              onClose();
+            }}
             onDirtyChange={setDirty}
           />
         ) : eff ? (

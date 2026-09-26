@@ -58,7 +58,9 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
         sol.client_po_line_no AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
         (SELECT MAX(ol.log_date) FROM public.op_log ol
-          WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete') AS "pendSince"
+          WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete') AS "pendSince",
+        -- QC Command's active assignment (one per op, unique partial index).
+        qa.inspector_name AS "assignedTo"
       FROM public.v_jc_op_status vos
       JOIN public.jc_ops jo ON jo.id = vos.jc_op_id AND jo.deleted_at IS NULL
       JOIN public.job_cards jc ON jc.id = vos.job_card_id AND jc.deleted_at IS NULL
@@ -69,6 +71,9 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.qc_assignments qa
+        ON qa.jc_op_id = vos.jc_op_id AND qa.company_id = vos.company_id
+       AND qa.deleted_at IS NULL
       WHERE vos.company_id = ${companyId}::uuid
         AND (vos.qc_required OR vos.op_type = 'qc')
         AND vos.qc_pending > 0
@@ -99,6 +104,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         overdue: pendSince !== null && pendSince < today,
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
+        assignedTo: (r['assignedTo'] as string | null) ?? null,
       };
     });
 

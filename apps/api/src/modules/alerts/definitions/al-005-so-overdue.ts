@@ -1,6 +1,7 @@
 // AL-005 — Overdue SO delivery (sales). Legacy line 22265-22266.
 // Same shape as AL-004 but due_date < today.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -22,7 +23,7 @@ export const al005SoOverdue: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT so.code AS so_code, sol.line_no,
+      SELECT so.id AS nav_id, so.code AS so_code, sol.line_no,
              COALESCE(c.name, so.customer_name, '') AS customer,
              COALESCE(i.code, sol.item_code_text, '') AS item,
              sol.order_qty, sol.due_date
@@ -39,6 +40,7 @@ export const al005SoOverdue: RegisteredAlert = {
       ORDER BY sol.due_date, so.code, sol.line_no
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('sales-order', String(r['nav_id'])),
       so_code: (r['so_code'] as string) ?? '',
       line_no: r['line_no'] != null ? Number(r['line_no']) : 0,
       customer: (r['customer'] as string) ?? '',

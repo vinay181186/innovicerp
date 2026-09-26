@@ -13,7 +13,8 @@ export const itemsOnHandReport: RegisteredReport = {
     title: 'Items + on-hand stock',
     description:
       'Every item in Item Master with its current on-hand qty. Items with no stock movement show 0. Useful for the daily stock-check.',
-    group: 'Inventory',
+    group: 'Store',
+    dept: 'store',
     filters: [],
     columns: [
       { key: 'code', label: 'Item Code', type: 'text' },

@@ -3,6 +3,7 @@
 // 'closed'). Joins v_jc_status because job_cards has no status column
 // per ADR-011 #2.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -23,7 +24,7 @@ export const al012JcOverdue: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT jc.code AS jc_code, i.code AS item, jc.order_qty, jc.due_date,
+      SELECT jc.id AS nav_id, jc.code AS jc_code, i.code AS item, jc.order_qty, jc.due_date,
              COALESCE(s.computed_status, 'no_ops') AS computed_status
       FROM public.job_cards jc
       JOIN public.items i ON i.id = jc.item_id
@@ -36,6 +37,7 @@ export const al012JcOverdue: RegisteredAlert = {
       ORDER BY jc.due_date, jc.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('job-card', String(r['nav_id'])),
       jc_code: (r['jc_code'] as string) ?? '',
       item: (r['item'] as string) ?? '',
       order_qty: r['order_qty'] != null ? Number(r['order_qty']) : 0,

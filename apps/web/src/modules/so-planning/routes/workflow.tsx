@@ -44,6 +44,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader, PageState } from '@/ui/layout';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import {
@@ -275,11 +276,7 @@ function PlanningWorkflowPage(): JSX.Element {
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
   // only while access is still loading — don't block then.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
@@ -295,45 +292,38 @@ function PlanningWorkflowPage(): JSX.Element {
         />
       ) : (
         <>
-          {/* ── Level 1 header: title · SO | JWSO toggle · search ── */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              marginBottom: 14,
-            }}
-          >
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              SO / JWSO Planning
-            </div>
-            <span style={{ flex: 1 }} />
-            <div style={{ display: 'flex', gap: 4 }}>
-              {(
-                [
-                  { key: 'so', label: 'SO' },
-                  { key: 'jw', label: 'JWSO' },
-                ] as { key: Source; label: string }[]
-              ).map((tb) => (
-                <button
-                  key={tb.key}
-                  type="button"
-                  className={`btn btn-sm ${src === tb.key ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setSrc(tb.key)}
-                >
-                  {tb.label}
-                </button>
-              ))}
-            </div>
-            <input
-              className="innovic-input"
-              style={{ width: 300 }}
-              placeholder="Search SO / JWSO No., customer, item code or name…"
-              value={soSearch}
-              onChange={(e) => setSoSearch(e.target.value)}
-            />
-          </div>
+          {/* ── Level 1 header: the ONE list header (ui/layout ListHeader) —
+              title · count · client-side search · SO | JWSO toggle. ── */}
+          <ListHeader
+            title="SO/JWSO Planning"
+            icon="📋"
+            count={soList.data ? visibleSos.length : undefined}
+            noun={src === 'jw' ? 'JWSO' : 'SO'}
+            search={soSearch}
+            onSearch={setSoSearch}
+            searchPlaceholder="Search SO / JWSO No., customer, item code or name, due date, status…"
+            updating={soList.isFetching && !soList.isLoading}
+            tools={
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(
+                  [
+                    { key: 'so', label: 'SO' },
+                    { key: 'jw', label: 'JWSO' },
+                  ] as { key: Source; label: string }[]
+                ).map((tb) => (
+                  <button
+                    key={tb.key}
+                    type="button"
+                    className={`btn btn-sm ${src === tb.key ? 'btn-primary' : 'btn-ghost'}`}
+                    aria-pressed={src === tb.key}
+                    onClick={() => setSrc(tb.key)}
+                  >
+                    {tb.label}
+                  </button>
+                ))}
+              </div>
+            }
+          />
 
           <OrderList
             src={src}
@@ -410,7 +400,7 @@ function OrderList({
   return (
     <div className="panel">
       <div className="tbl-wrap">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <SortableHead table={table} />
           <tbody>
             {loading ? (
@@ -446,7 +436,7 @@ function OrderList({
                     style={{ cursor: 'pointer' }}
                     title="Open this order's lines"
                   >
-                    <td className="td-code">
+                    <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                         {so.source === 'jw' ? <JwChip /> : null}
                         <span
@@ -457,23 +447,16 @@ function OrderList({
                         </span>
                       </span>
                     </td>
-                    <td
-                      style={{
-                        maxWidth: 260,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                      title={so.customerName ?? undefined}
-                    >
-                      {so.customerName ?? '—'}
-                    </td>
+                    <td title={so.customerName ?? undefined}>{so.customerName ?? '—'}</td>
                     <td>
                       <span className="badge b-grey">{soTypeLabel(so.soType)}</span>
                     </td>
-                    <td className="mono">{fmtDate(so.dueDate)}</td>
-                    <td className="mono">{so.totalLines}</td>
-                    <td className="mono fw-700">{so.totalQty}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(so.dueDate)}
+                    </td>
+                    <td className="mono td-num">{so.totalLines}</td>
+                    <td className="mono fw-700 td-num">{so.totalQty}</td>
+                    <td className="mono fw-700 td-num" style={{ color: 'var(--cyan)' }}>
                       {so.totalPlannedQty}
                     </td>
                     <td>
@@ -673,9 +656,27 @@ function OrderDetail({
         <HeaderField label={so.source === 'jw' ? 'JWSO No.' : 'SO No.'}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             {so.source === 'jw' ? <JwChip /> : null}
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {so.soCode}
-            </span>
+            {/* The order number opens the order itself — SO Master detail, or
+                the JWSO detail for a JWSO. */}
+            {so.source === 'jw' ? (
+              <Link
+                to="/job-work-orders/$id"
+                params={{ id: soId }}
+                className="td-code"
+                title="Open the JWSO"
+              >
+                {so.soCode}
+              </Link>
+            ) : (
+              <Link
+                to="/sales-orders/$id"
+                params={{ id: soId }}
+                className="td-code"
+                title="Open the SO"
+              >
+                {so.soCode}
+              </Link>
+            )}
           </span>
         </HeaderField>
         <HeaderField label="Customer">
@@ -1425,6 +1426,10 @@ function PlanChip({
   const typeIcon = isDP ? '🛒' : isFO ? '📦' : '🏭';
   const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Mfg';
   const isRouteCard = plan.opsSource === 'route_card';
+  // Raising a Production Order is its own permission (prodorder_create), not
+  // this page's plan_create — the same gate the Plans list uses.
+  const { data: eff } = useMyAccess();
+  const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
   const statusLabel =
     isRouteCard && plan.derivedStatus
       ? PLAN_DERIVED_STATUS_LABEL[plan.derivedStatus]
@@ -1488,6 +1493,21 @@ function PlanChip({
           title="Open the Production Order"
         >
           {plan.productionOrderCode}
+        </Link>
+      ) : null}
+
+      {/* Route-card plan ready for its Production Order (ADR-185 derived
+          status 'gen_production_order' = "RC Created"): the next step, same
+          link + gate as the Plans list's Action column. */}
+      {isRouteCard && plan.derivedStatus === 'gen_production_order' && canProductionOrder ? (
+        <Link
+          to="/production-orders/new"
+          search={{ planId: plan.id, planCode: plan.code }}
+          className="btn btn-primary btn-sm"
+          style={{ fontSize: 11 }}
+          title="Raise the Production Order for this plan"
+        >
+          + Production Order
         </Link>
       ) : null}
 

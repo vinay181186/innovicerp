@@ -100,6 +100,15 @@ export const customerDispatchRowSchema = z.object({
   remarks: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
+  /** Pieces of this dispatch already invoiced (ADR-190) — the same fact the SO
+   *  line calls `billedQty`, screen label `Billed`. An invoice line points at
+   *  the SO LINE, never at a dispatch, so this is DERIVED: each SO line's
+   *  invoiced qty is spread over that line's dispatches oldest first (dispatch
+   *  date, then entry time). Cancelled dispatches are never billed. Filled by
+   *  the list and every single-dispatch read (detail, create, cancel). */
+  billedQty: z.number().int().nonnegative().optional(),
+  /** none = nothing invoiced, partial = some, full = billedQty ≥ totalQty. */
+  billedStatus: z.enum(['none', 'partial', 'full']).optional(),
 });
 export type CustomerDispatchRow = z.infer<typeof customerDispatchRowSchema>;
 

@@ -27,6 +27,7 @@ export const productionOrdersReport: RegisteredReport = {
     description:
       'Every Production Order with its plan, SO/JWSO, item, the Job Card it built, the live JC status and finished qty, and — once closed — the qty credited to stock. Open orders first, then newest.',
     group: 'Production',
+    dept: 'production',
     filters: [
       {
         key: 'status',

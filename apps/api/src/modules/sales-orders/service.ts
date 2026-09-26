@@ -83,6 +83,7 @@ import type {
   SoMilestone,
   UpdateSalesOrderInput,
 } from './schema';
+import type { SoTotals } from '@innovic/shared';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -402,6 +403,26 @@ async function insertDrawingRevisions(
 function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
   // Also STATE it: the reader must not have to infer 'hidden' from the null.
   return { ...h, gstPercent: null, priceVisible: false };
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** Σ Order Qty × Rate over the lines, GST at the SO's GST % (ADR-190). A
+ *  cancelled line is no longer part of the order (the line editor treats it as
+ *  removed), so it adds nothing. Closed / dispatched lines were ordered and
+ *  still count. */
+function computeSoTotals(
+  lines: ReadonlyArray<{ orderQty: number; rate: string | null; status: string }>,
+  gstPercentRaw: string | null,
+): SoTotals {
+  const subtotal = round2(
+    lines
+      .filter((l) => l.status !== 'cancelled')
+      .reduce((sum, l) => sum + Number(l.orderQty) * Number(l.rate ?? 0), 0),
+  );
+  const gstPercent = Number(gstPercentRaw ?? 0);
+  const gstAmount = round2((subtotal * gstPercent) / 100);
+  return { subtotal, gstPercent, gstAmount, grandTotal: round2(subtotal + gstAmount) };
 }
 
 function hideSoLineMoney<T extends { rate: string | null }>(l: T): T {
@@ -740,6 +761,13 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       ...(showMoney ? headerOut : hideSoHeaderMoney(headerOut)),
       createdByName,
       bomMasterCode,
+      // ADR-190 — totals are the server's arithmetic, never the browser's.
+      totals: showMoney
+        ? computeSoTotals(
+            lineRows.map((r) => r.row),
+            header.gstPercent,
+          )
+        : null,
       lines: lineRows.map((r) => {
         const line = {
           ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null),

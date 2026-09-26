@@ -45,6 +45,7 @@ import {
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { autoCloseLinkedTasks } from '../tasks/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { type DisposeNcContext, disposeNcCascade, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
@@ -1414,6 +1415,17 @@ export async function disposeNcRegister(
           refId: result.newJcCode,
         },
         companyId,
+        user,
+      );
+    }
+    // ADR-190 — the "Dispose NC-…" task raised against this NC closes itself,
+    // but only when the WHOLE NC was disposed. A partial disposition splits
+    // the rest onto a NEW pending NC; the job is not done, so the task stays
+    // open (it still points at this NC, whose detail links the remainder).
+    if (!result.remainderNcId) {
+      await autoCloseLinkedTasks(
+        tx,
+        { companyId, refTypes: ['nc'], refId: id, doneLabel: `NC ${nc.code} disposed` },
         user,
       );
     }

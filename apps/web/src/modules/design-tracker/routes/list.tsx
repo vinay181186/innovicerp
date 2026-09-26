@@ -15,6 +15,9 @@ import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import {
   useApproveDesign,
@@ -29,6 +32,15 @@ import {
 } from '../api';
 
 type FilterKey = 'all' | 'pending' | 'progress' | 'review' | 'approved' | 'overdue';
+
+const FILTER_LABEL: Record<FilterKey, string> = {
+  all: 'All',
+  pending: 'Pending',
+  progress: 'In Progress',
+  review: 'Review',
+  approved: 'Approved',
+  overdue: 'Overdue',
+};
 
 const PAGE_SIZE = 100;
 
@@ -57,7 +69,7 @@ function DesignTrackerListPage(): React.JSX.Element {
   const [editRow, setEditRow] = useState<DesignTrackerListItem | null>(null);
   const [logTimeRow, setLogTimeRow] = useState<DesignTrackerListItem | null>(null);
 
-  const { data, isLoading, isError, error } = useDesignTrackerList({
+  const { data, isLoading, isFetching, isError, error } = useDesignTrackerList({
     search: search.trim() || undefined,
     filter,
     limit: PAGE_SIZE,
@@ -82,39 +94,38 @@ function DesignTrackerListPage(): React.JSX.Element {
 
   return (
     <div>
-      <KpiStrip summary={summary} onChange={setFilter} />
-
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">🎨 Design Tracker</div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 'auto', minWidth: 160, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
+      <ListHeader
+        title="Design Tracker"
+        icon="🎨"
+        count={data?.total}
+        noun="design"
+        filterNote={filter === 'all' ? undefined : FILTER_LABEL[filter]}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search design no., SO no., POL, item code, engineer…"
+        updating={isFetching && !isLoading}
+        tools={
+          <Select
+            aria-label="Design Status"
+            fieldWidth="md"
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterKey)}
-            style={{ width: 'auto', fontSize: 12 }}
-          >
-            <option value="all">All</option>
-            <option value="pending">Pending</option>
-            <option value="progress">In Progress</option>
-            <option value="review">Review</option>
-            <option value="approved">Approved</option>
-            <option value="overdue">Overdue</option>
-          </select>
-          {perms.entry ? (
+            options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
+              value: k,
+              label: FILTER_LABEL[k],
+            }))}
+          />
+        }
+        primary={
+          perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               + Assign Design
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      >
+        <KpiStrip summary={summary} filter={filter} onChange={setFilter} />
+      </ListHeader>
 
       <div className="panel">
         {isLoading ? (
@@ -131,7 +142,7 @@ function DesignTrackerListPage(): React.JSX.Element {
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Design No.</th>
@@ -175,6 +186,7 @@ function DesignTrackerListPage(): React.JSX.Element {
         ) : null}
       </div>
 
+      {data ? <ListFooter total={data.total} noun="design" limit={PAGE_SIZE} /> : null}
       <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
         🎨 Design Tracker manages engineering design lifecycle. BOM creation is blocked until design
         is Approved for Equipment SOs.
@@ -189,6 +201,7 @@ function DesignTrackerListPage(): React.JSX.Element {
 
 function KpiStrip({
   summary,
+  filter,
   onChange,
 }: {
   summary: {
@@ -199,111 +212,32 @@ function KpiStrip({
     approved: number;
     overdue: number;
   };
+  filter: FilterKey;
   onChange: (k: FilterKey) => void;
 }): React.JSX.Element {
-  // Legacy L7307–7314: plain --bg2 tiles, 1px --border, radius 10, no top accent
-  // and no active-tile styling. The Overdue tile is the only tinted one and is
-  // rendered only when overdue > 0.
-  const tiles: Array<{
-    k: FilterKey;
-    label: string;
-    value: number;
-    color: string;
-    labelColor: string;
-    background: string;
-    border: string;
-    show: boolean;
-  }> = [
-    {
-      k: 'all',
-      label: 'Total',
-      value: summary.total,
-      color: 'var(--blue)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'pending',
-      label: 'Pending',
-      value: summary.pending,
-      color: 'var(--text3)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'progress',
-      label: 'In Progress',
-      value: summary.inProgress,
-      color: 'var(--amber2)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'review',
-      label: 'Review',
-      value: summary.review,
-      color: 'var(--blue)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'approved',
-      label: 'Approved',
-      value: summary.approved,
-      color: 'var(--green2)',
-      labelColor: 'var(--text3)',
-      background: 'var(--bg2)',
-      border: '1px solid var(--border)',
-      show: true,
-    },
-    {
-      k: 'overdue',
-      label: 'Overdue',
-      value: summary.overdue,
-      color: 'var(--red2)',
-      labelColor: 'var(--red)',
-      background: 'rgba(239,68,68,0.06)',
-      border: '1px solid rgba(239,68,68,0.3)',
-      show: summary.overdue > 0,
-    },
+  // ONE strip (list standard): the counts double as the Design Status filter.
+  // Overdue shows only when there is something overdue, as before.
+  const tiles: Array<{ k: FilterKey; count: number; color: string; show: boolean }> = [
+    { k: 'all', count: summary.total, color: 'var(--blue)', show: true },
+    { k: 'pending', count: summary.pending, color: 'var(--text3)', show: true },
+    { k: 'progress', count: summary.inProgress, color: 'var(--amber2)', show: true },
+    { k: 'review', count: summary.review, color: 'var(--blue)', show: true },
+    { k: 'approved', count: summary.approved, color: 'var(--green2)', show: true },
+    { k: 'overdue', count: summary.overdue, color: 'var(--red2)', show: summary.overdue > 0 },
   ];
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-        gap: 10,
-        marginBottom: 16,
-      }}
-    >
-      {tiles
+    <StatStrip
+      items={tiles
         .filter((t) => t.show)
-        .map((t) => (
-          <div
-            key={t.k}
-            onClick={() => onChange(t.k)}
-            style={{
-              cursor: 'pointer',
-              textAlign: 'center',
-              padding: 12,
-              borderRadius: 10,
-              background: t.background,
-              border: t.border,
-            }}
-          >
-            <div style={{ fontSize: 11, color: t.labelColor }}>{t.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
-          </div>
-        ))}
-    </div>
+        .map((t) => ({
+          key: t.k,
+          label: t.k === 'all' ? 'Total' : FILTER_LABEL[t.k],
+          count: t.count,
+          color: t.color,
+          active: filter === t.k,
+          onClick: () => onChange(t.k),
+        }))}
+    />
   );
 }
 
@@ -355,12 +289,12 @@ function Row({
       {/* `td-code` stays on the span: our `.innovic-table td` (0,1,1) outranks the
           bare `.td-code` (0,1,0) and would force its font-size back to 13px, where
           legacy's bare `td` (0,0,1) loses to `.td-code` and renders 12px. See ISSUE-060. */}
-      <td>
+      <td style={{ whiteSpace: 'nowrap' }}>
         <span className="td-code" style={{ color: 'var(--purple)' }}>
           {row.code}
         </span>
       </td>
-      <td>
+      <td style={{ whiteSpace: 'nowrap' }}>
         <span className="td-code" style={{ color: 'var(--cyan)' }}>
           {row.soCodeText ?? '—'}
         </span>
@@ -368,18 +302,25 @@ function Row({
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {row.clientPoLineNo ?? '—'}
       </td>
-      <td style={{ fontSize: 11 }}>
-        <span style={{ color: 'var(--purple)', fontWeight: 600 }}>
+      <td style={{ fontSize: 11, textAlign: 'left' }}>
+        <span style={{ color: 'var(--purple)', fontWeight: 600, whiteSpace: 'nowrap' }}>
           {itemCodeWithRev(row.itemCodeText, row.itemRevision, '')}
         </span>
         <br />
         {row.itemNameText ?? ''}
       </td>
       <td style={{ fontSize: 12 }}>{row.designer || '—'}</td>
-      <td className="text2" style={{ fontSize: 11 }}>
+      <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
         {fmtDate(row.startDate)}
       </td>
-      <td className="text2" style={{ fontSize: 11, color: isOverdue ? 'var(--red)' : undefined }}>
+      <td
+        className="text2"
+        style={{
+          fontSize: 11,
+          whiteSpace: 'nowrap',
+          color: isOverdue ? 'var(--red)' : undefined,
+        }}
+      >
         {fmtDate(row.targetDate)}
       </td>
       <td>
@@ -396,7 +337,9 @@ function Row({
           {row.status}
         </span>
       </td>
-      <td className="td-ctr mono fw-700">Design Rev {row.revision}</td>
+      <td className="td-ctr mono fw-700" style={{ whiteSpace: 'nowrap' }}>
+        Design Rev {row.revision}
+      </td>
       <td className="td-ctr">
         <span className="mono fw-700" style={{ color: hrsOver ? 'var(--red)' : 'var(--green)' }}>
           {row.totalHours}

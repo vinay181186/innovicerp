@@ -37,6 +37,7 @@ import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
@@ -119,6 +120,9 @@ function ItemDetailPage(): React.JSX.Element {
   // edit without approve; L4 has approve without edit. Admin-only was locking
   // out the tier meant to run the department.
   const canDelete = perms.edit && perms.approve;
+  // "Raise PR" opens a new Purchase Request for this item — gated on the PR's
+  // own entry right, the same gate /purchase-requests/new enforces.
+  const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;
 
   return (
     <div>
@@ -141,6 +145,16 @@ function ItemDetailPage(): React.JSX.Element {
             </div>
           </ItemBadge>
           <div style={{ display: 'flex', gap: 6 }}>
+            {canRaisePr ? (
+              <Link
+                to="/purchase-requests/new"
+                search={{ itemId: item.id }}
+                className="btn btn-primary btn-sm"
+                title="Raise a Purchase Request for this item"
+              >
+                Raise PR
+              </Link>
+            ) : null}
             {canEdit ? (
               <Link to="/items/$id/edit" params={{ id: item.id }} className="btn btn-ghost btn-sm">
                 <Pencil size={13} /> Edit
@@ -192,7 +206,7 @@ function ItemDetailPage(): React.JSX.Element {
               style={{
                 color: 'var(--red2)',
                 background: 'var(--red3)',
-                border: '1px solid #fca5a5',
+                border: '1px solid var(--red)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 fontSize: 12,
@@ -209,6 +223,9 @@ function ItemDetailPage(): React.JSX.Element {
       </div>
 
       <StockHistoryCard itemId={item.id} />
+
+      {/* Open PRs, POs and GRNs for this item (ADR-190). Hides when empty. */}
+      <RelatedDocsPanel module="items" id={item.id} />
     </div>
   );
 }

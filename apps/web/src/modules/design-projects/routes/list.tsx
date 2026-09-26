@@ -8,10 +8,20 @@ import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst, todayLocal } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { Select } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import { useCreateDesignProject, useDesignProjectsList, useNextDesignProjectCode } from '../api';
 
 type FilterKey = 'all' | 'active' | 'released' | 'hold';
+
+const FILTER_LABEL: Record<FilterKey, string> = {
+  all: 'All',
+  active: 'Active',
+  released: 'Released',
+  hold: 'On Hold',
+};
 
 export const designProjectsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -28,7 +38,7 @@ function DesignProjectsListPage(): React.JSX.Element {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [showAdd, setShowAdd] = useState(false);
 
-  const { data, isLoading, isError, error } = useDesignProjectsList({
+  const { data, isLoading, isFetching, isError, error } = useDesignProjectsList({
     search: search.trim() || undefined,
     filter,
     limit: 100,
@@ -56,84 +66,79 @@ function DesignProjectsListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <Tile
-          label="Total"
-          value={summary.total}
-          color="var(--blue)"
-          onClick={() => setFilter('all')}
-        />
-        <Tile
-          label="Active"
-          value={summary.active}
-          color="var(--cyan)"
-          onClick={() => setFilter('active')}
-        />
-        <Tile
-          label="Released"
-          value={summary.released}
-          color="var(--green)"
-          onClick={() => setFilter('released')}
-        />
-        <Tile
-          label="Tasks Completed"
-          value={`${summary.doneTasks}/${summary.totalTasks}`}
-          color="var(--purple)"
-        />
-        <Tile
-          label="Open Issues"
-          value={summary.openIssues}
-          color={summary.openIssues > 0 ? 'var(--red)' : 'var(--green)'}
-        />
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📋 Design Projects
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ minWidth: 160, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
+      <ListHeader
+        title="Design Projects"
+        icon="📋"
+        count={data?.total}
+        noun="project"
+        filterNote={filter === 'all' ? undefined : FILTER_LABEL[filter]}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search project no., name, SO no., customer…"
+        updating={isFetching && !isLoading}
+        tools={
+          <Select
+            aria-label="Project filter"
+            fieldWidth="md"
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterKey)}
-            style={{ fontSize: 12 }}
-          >
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="released">Released</option>
-            <option value="hold">On Hold</option>
-          </select>
-          {perms.entry ? (
+            options={(Object.keys(FILTER_LABEL) as FilterKey[]).map((k) => ({
+              value: k,
+              label: FILTER_LABEL[k],
+            }))}
+          />
+        }
+        primary={
+          perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               + New Project
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      >
+        {/* ONE strip: the first three counts double as the filter; tasks and
+            open issues are read-only totals. */}
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'Total',
+              count: summary.total,
+              color: 'var(--blue)',
+              active: filter === 'all',
+              onClick: () => setFilter('all'),
+            },
+            {
+              key: 'active',
+              label: 'Active',
+              count: summary.active,
+              color: 'var(--cyan)',
+              active: filter === 'active',
+              onClick: () => setFilter('active'),
+            },
+            {
+              key: 'released',
+              label: 'Released',
+              count: summary.released,
+              color: 'var(--green2)',
+              active: filter === 'released',
+              onClick: () => setFilter('released'),
+            },
+            {
+              key: 'tasks',
+              label: 'Tasks Completed',
+              count: `${summary.doneTasks}/${summary.totalTasks}`,
+              color: 'var(--purple)',
+            },
+            {
+              key: 'issues',
+              label: 'Open Issues',
+              count: summary.openIssues,
+              color: summary.openIssues > 0 ? 'var(--red2)' : 'var(--green2)',
+            },
+          ]}
+        />
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -171,37 +176,11 @@ function DesignProjectsListPage(): React.JSX.Element {
               📐 No design projects found.
             </div>
           ) : null}
+          <ListFooter total={data.total} noun="project" limit={100} />
         </>
       ) : null}
 
       {showAdd ? <AddProjectModal onClose={() => setShowAdd(false)} /> : null}
-    </div>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  color,
-  onClick,
-}: {
-  label: string;
-  value: number | string;
-  color: string;
-  onClick?: () => void;
-}): React.JSX.Element {
-  return (
-    <div
-      className="panel"
-      onClick={onClick}
-      style={{
-        textAlign: 'center',
-        padding: 14,
-        ...(onClick ? { cursor: 'pointer' } : {}),
-      }}
-    >
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }

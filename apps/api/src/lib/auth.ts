@@ -5,6 +5,12 @@ const WRITE_ROLES = new Set(['admin', 'manager']);
 const OP_ENTRY_ROLES = new Set(['admin', 'manager', 'operator']);
 const QC_ROLES = new Set(['admin', 'manager', 'qc']);
 
+/** requireWriteRole's rule without the throw — for read paths that list only
+ *  what the caller could act on (the approvals inbox, ADR-190). */
+export function isWriteRole(user: AuthContext): boolean {
+  return WRITE_ROLES.has(user.role);
+}
+
 export function requireWriteRole(user: AuthContext): void {
   if (!WRITE_ROLES.has(user.role)) {
     throw new AuthorizationError('You do not have permission to change this. Ask an admin.');

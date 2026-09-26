@@ -13,7 +13,9 @@ export const vendorPoSummaryReport: RegisteredReport = {
     title: 'Vendor PO summary',
     description:
       'Per-vendor counts + total value + open value across POs. Filter by PO date window. Sorted by total value descending so top suppliers surface first.',
-    group: 'Procurement',
+    group: 'Purchase',
+    dept: 'purchase',
+    showsMoney: true,
     filters: [
       { key: 'fromDate', label: 'PO Date From', kind: 'date' },
       { key: 'toDate', label: 'PO Date To', kind: 'date' },

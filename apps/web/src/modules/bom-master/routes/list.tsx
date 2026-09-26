@@ -101,10 +101,10 @@ function BomMastersListPage(): React.JSX.Element {
     });
   }, []);
 
-  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+11+19+23+6+7+9+8+7 = 94, + 6 = 100, so
-  // the table never scrolls sideways. Centred by the standard; only BOM Name
-  // is left-aligned.
+  // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
+  // only Sr No keeps a width; codes, revs, dates and counts sit on one line
+  // and the BOM name / parent item name wrap into what is left. Centred by the
+  // standard; BOM Name and Parent Item read from their left edge.
   const columns = useMemo<DataTableColumn<BomMasterListItem>[]>(
     () => [
       {
@@ -116,7 +116,6 @@ function BomMastersListPage(): React.JSX.Element {
       },
       {
         header: 'BOM No.',
-        width: '11%',
         nowrap: true,
         render: (b) => (
           <span style={{ whiteSpace: 'nowrap' }}>
@@ -159,30 +158,26 @@ function BomMastersListPage(): React.JSX.Element {
       },
       {
         header: 'BOM Name',
-        width: '19%',
         align: 'left',
         className: 'fw-700',
-        ellipsis: true,
         key: 'bomName',
       },
       {
         header: 'Parent Item',
-        width: '23%',
-        ellipsis: true,
+        align: 'left',
         title: (b) =>
           b.parentItemCode ? `${b.parentItemCode} — ${b.parentItemName ?? ''}` : 'not set',
         // Item code strong, name quiet: the code is the value on this row.
         render: (b) =>
           b.parentItemCode ? (
             <>
-              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              <div className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
                 {b.parentItemCode}
-              </span>
+              </div>
               {b.parentItemName ? (
-                <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                  {' '}
-                  — {b.parentItemName}
-                </span>
+                <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                  {b.parentItemName}
+                </div>
               ) : null}
             </>
           ) : (
@@ -191,7 +186,6 @@ function BomMastersListPage(): React.JSX.Element {
       },
       {
         header: 'Items',
-        width: '6%',
         align: 'right',
         className: 'mono fw-700',
         nowrap: true,
@@ -199,14 +193,12 @@ function BomMastersListPage(): React.JSX.Element {
       },
       {
         header: 'BOM Rev',
-        width: '7%',
         className: 'mono fw-700',
         nowrap: true,
         render: (b) => <span style={{ color: 'var(--cyan)' }}>BOM Rev {b.revision}</span>,
       },
       {
         header: 'Revision Date',
-        width: '9%',
         className: 'mono text2',
         nowrap: true,
         key: 'revisionDate',
@@ -214,7 +206,6 @@ function BomMastersListPage(): React.JSX.Element {
       },
       {
         header: 'Linked SOs',
-        width: '8%',
         align: 'right',
         nowrap: true,
         render: (b) =>
@@ -228,7 +219,6 @@ function BomMastersListPage(): React.JSX.Element {
       },
       {
         header: 'BOM Status',
-        width: '7%',
         nowrap: true,
         // `bom`, not the generic `doc` map: draft happens to agree, but active
         // and obsolete are not in `doc` at all. Same kind the BOM detail page
@@ -305,7 +295,7 @@ function BomMastersListPage(): React.JSX.Element {
             // returning null for a collapsed row means ExpandedLines (and its
             // detail query) never mounts for it.
             renderExpanded={(b) => (expanded.has(b.id) ? <ExpandedLines bomId={b.id} /> : null)}
-            rowActionsWidth="6%"
+            rowActionsWidth="1%"
             rowActions={(b) => (
               // View is a ROUTE, so it stays a real link — ctrl-click /
               // middle-click still open a new tab. Editing and revising a BOM
@@ -337,22 +327,18 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
       },
       {
         header: 'Item Code',
-        width: '20%',
         className: 'td-code',
         nowrap: true,
         render: (l) => l.childItemCode ?? '—',
       },
       {
         header: 'Item Name',
-        width: '46%',
         align: 'left',
-        ellipsis: true,
         render: (l) => l.childItemName ?? '—',
         title: (l) => l.childItemName ?? '',
       },
       {
         header: 'Qty / Set',
-        width: '13%',
         align: 'right',
         className: 'mono fw-700',
         nowrap: true,
@@ -360,7 +346,6 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
       },
       {
         header: 'BOM Type',
-        width: '15%',
         nowrap: true,
         render: (l) => <BomTypeBadge type={l.bomType} />,
       },

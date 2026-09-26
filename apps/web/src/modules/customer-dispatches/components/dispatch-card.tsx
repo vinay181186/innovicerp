@@ -5,7 +5,7 @@
 // No. slid out of view. Same three bands as sales-orders/routes/list.tsx and the
 // JWSO port: accent bar + identity band, metric strip + meta line, line items.
 
-import type { CustomerDispatchRegisterRow } from '@innovic/shared';
+import type { CustomerDispatchRegisterRow, CustomerDispatchRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
@@ -69,6 +69,16 @@ function QtyBox({
   );
 }
 
+/** ADR-190 — how far the dispatch is invoiced. Labels per docs/NAMING.md. */
+const BILLED_BADGE: Record<
+  NonNullable<CustomerDispatchRow['billedStatus']>,
+  { label: string; className: string }
+> = {
+  none: { label: 'To Bill', className: 'badge b-amber' },
+  partial: { label: 'Part Billed', className: 'badge b-blue' },
+  full: { label: 'Billed', className: 'badge b-green' },
+};
+
 /** Left accent bar. Only two states exist for a dispatch: it happened (green —
  *  the same "done" green the status badge uses) or it was reversed (grey). */
 function accentFor(g: DispatchGroup): string {
@@ -77,6 +87,8 @@ function accentFor(g: DispatchGroup): string {
 
 export function DispatchCard(props: {
   g: DispatchGroup;
+  /** Undefined while the dispatch list loads — no badge, Invoice stays shown. */
+  billedStatus?: CustomerDispatchRow['billedStatus'];
   isOpen: boolean;
   canCancel: boolean;
   cancelPending: boolean;
@@ -122,6 +134,11 @@ export function DispatchCard(props: {
             {g.customer ?? '—'}
           </span>
           {cancelled ? <span className="badge b-grey">Cancelled</span> : null}
+          {!cancelled && props.billedStatus ? (
+            <span className={BILLED_BADGE[props.billedStatus].className}>
+              {BILLED_BADGE[props.billedStatus].label}
+            </span>
+          ) : null}
           <span style={{ flex: 1 }} />
           {/* Stop the row-toggle when clicking an action button. */}
           {!cancelled ? (
@@ -129,15 +146,18 @@ export function DispatchCard(props: {
               style={{ display: 'flex', gap: 4, alignItems: 'center' }}
               onClick={(e) => e.stopPropagation()}
             >
-              <Link
-                to="/invoices/new"
-                search={{ dispatchId: g.dispatchId }}
-                className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--green2)' }}
-                title="Raise an invoice against this dispatch"
-              >
-                🧾 Invoice
-              </Link>
+              {/* Fully invoiced — nothing left to bill, so no Invoice button. */}
+              {props.billedStatus === 'full' ? null : (
+                <Link
+                  to="/invoices/new"
+                  search={{ dispatchId: g.dispatchId }}
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: 'var(--green2)' }}
+                  title="Raise an invoice against this dispatch"
+                >
+                  🧾 Invoice
+                </Link>
+              )}
               {props.canCancel ? (
                 <button
                   type="button"

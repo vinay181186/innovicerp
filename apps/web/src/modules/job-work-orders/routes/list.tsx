@@ -28,6 +28,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
 
 // No pagination — mirror the SO/WO list: load all matching JWSOs in one fetch
@@ -127,7 +128,11 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -178,85 +183,52 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   // panel, not the list. `eff` undefined only while access loads — don't block
   // then, or every legitimate user flashes this panel on cold load.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
     <div>
-      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          Title + search + status filter + New button stay pinned while the cards
-          scroll underneath. `#content` is the scroll container, so top:0 pins this
-          to its padding box; the background must be opaque var(--bg) or cards show
-          through as they pass under. The green info banner below is a one-time
-          explainer, so it is left OUTSIDE the band and scrolls away. Not bled to
-          the edges — that would give the app a horizontal scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            JWSO Master — Material from Customer
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              className="innovic-input"
-              placeholder="Search this list…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
-              value={search.status ?? ''}
-              onChange={(e) => {
-                const v = e.target.value as SoStatus | '';
-                void navigate({
-                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                  replace: true,
-                });
-              }}
-              style={{ width: 130, fontSize: 12 }}
-            >
-              <option value="">All statuses</option>
-              {SO_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {SO_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canCreate ? (
-              <Link to="/job-work-orders/new" className="btn btn-primary">
-                + New JWSO
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      </div>
+      {/* The ONE list header (ui/layout ListHeader) — same URL params, same
+          query as before; the status filter stays a select. */}
+      <ListHeader
+        title="JWSO Master"
+        icon="🔧"
+        count={total}
+        noun="JWSO"
+        filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search JWSO no., customer, client PO, part, item code…"
+        updating={isFetching && !isLoading}
+        tools={
+          <select
+            className="innovic-select"
+            value={search.status ?? ''}
+            onChange={(e) => {
+              const v = e.target.value as SoStatus | '';
+              void navigate({
+                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                replace: true,
+              });
+            }}
+            style={{ width: 140 }}
+          >
+            <option value="">All statuses</option>
+            {SO_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {SO_STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        }
+        primary={
+          canCreate ? (
+            <Link to="/job-work-orders/new" className="btn btn-primary">
+              + New JWSO
+            </Link>
+          ) : null
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -446,24 +418,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         })
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No JWSOs'
-            : total > LIST_LIMIT
-              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-              : `Showing all ${total} JWSO${total === 1 ? '' : 's'}`}
-        </span>
-      </div>
+      <ListFooter total={total} shown={rows.length} noun="JWSO" limit={LIST_LIMIT} />
     </div>
   );
 }
@@ -518,107 +473,109 @@ function JwLinesTable({
       >
         ▸ LINE ITEMS — {jw.code}
       </div>
-      <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
-        <thead>
-          <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 36 }}>Ln</th>
-            <ItemThumbnailHeader />
-            <th>Item</th>
-            <th>Material</th>
-            <th>Drawing No.</th>
-            <th className="th-num">Order Qty</th>
-            <th className="th-num" style={{ color: 'var(--green2)' }}>
-              Dispatched
-            </th>
-            <th className="th-num">Pending</th>
-            <th>UOM</th>
-            {priceHidden ? null : <th className="th-num">Rate</th>}
-            <th>Due Date</th>
-            <th>JWSO Status</th>
-            {canEdit ? <th /> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {jw.lines.length === 0 ? (
-            <tr>
-              <td colSpan={cols} className="empty-state">
-                No lines yet
-              </td>
+      <div className="tbl-wrap">
+        <table className="innovic-table tbl-grid tbl-compact" style={{ margin: 0 }}>
+          <thead>
+            <tr style={{ background: 'var(--bg4)' }}>
+              <th style={{ width: 36 }}>Ln</th>
+              <ItemThumbnailHeader />
+              <th>Item</th>
+              <th>Material</th>
+              <th>Drawing No.</th>
+              <th className="th-num">Order Qty</th>
+              <th className="th-num" style={{ color: 'var(--green2)' }}>
+                Dispatched
+              </th>
+              <th className="th-num">Pending</th>
+              <th>UOM</th>
+              {priceHidden ? null : <th className="th-num">Rate</th>}
+              <th>Due Date</th>
+              <th>JWSO Status</th>
+              {canEdit ? <th /> : null}
             </tr>
-          ) : (
-            jw.lines.map((l) => {
-              const balance = Math.max(0, l.orderQty - l.returnedQty);
-              return (
-                <tr key={l.id} style={{ background: 'var(--bg)' }}>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>
-                    {l.lineNo}
-                  </td>
-                  {/* CODE/REV — the client's drawing revision typed on this line travels
+          </thead>
+          <tbody>
+            {jw.lines.length === 0 ? (
+              <tr>
+                <td colSpan={cols} className="empty-state">
+                  No lines yet
+                </td>
+              </tr>
+            ) : (
+              jw.lines.map((l) => {
+                const balance = Math.max(0, l.orderQty - l.returnedQty);
+                return (
+                  <tr key={l.id} style={{ background: 'var(--bg)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                      {l.lineNo}
+                    </td>
+                    {/* CODE/REV — the client's drawing revision typed on this line travels
                     with the code (the badge formats it via itemCodeWithRev). */}
-                  <ItemThumbnailCell imagePath={l.itemImagePath} alt={l.partName} />
-                  <td>
-                    <ItemBadge
-                      size="row"
-                      showImage={false}
-                      code={l.itemCodeText}
-                      name={l.partName}
-                      revision={l.revision}
-                      imagePath={l.itemImagePath}
-                    />
-                  </td>
-                  <td className="text2" style={{ fontSize: 11 }}>
-                    {l.material ?? '—'}
-                  </td>
-                  <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
-                    {l.drawingNo ?? '—'}
-                  </td>
-                  <td className="mono fw-700 td-num" style={{ fontSize: 14 }}>
-                    {l.orderQty}
-                  </td>
-                  <td
-                    className="mono fw-700 td-num"
-                    style={{ color: l.returnedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
-                  >
-                    {l.returnedQty}
-                  </td>
-                  <td
-                    className="mono fw-700 td-num"
-                    style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
-                  >
-                    {balance}
-                  </td>
-                  <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    {l.uom}
-                  </td>
-                  {priceHidden ? null : (
-                    <td className="mono td-num" style={{ fontSize: 11 }}>
-                      {l.rate}
+                    <ItemThumbnailCell imagePath={l.itemImagePath} alt={l.partName} />
+                    <td>
+                      <ItemBadge
+                        size="row"
+                        showImage={false}
+                        code={l.itemCodeText}
+                        name={l.partName}
+                        revision={l.revision}
+                        imagePath={l.itemImagePath}
+                      />
                     </td>
-                  )}
-                  <td className="text2" style={{ fontSize: 11 }}>
-                    {fmtDate(l.dueDate)}
-                  </td>
-                  <td>
-                    <SoStatusBadge status={l.status} />
-                  </td>
-                  {canEdit ? (
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <Link
-                        to="/job-work-orders/$id/edit"
-                        params={{ id: jw.id }}
-                        className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 11 }}
-                      >
-                        Edit
-                      </Link>
+                    <td className="text2" style={{ fontSize: 11 }}>
+                      {l.material ?? '—'}
                     </td>
-                  ) : null}
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
+                    <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                      {l.drawingNo ?? '—'}
+                    </td>
+                    <td className="mono fw-700 td-num" style={{ fontSize: 14 }}>
+                      {l.orderQty}
+                    </td>
+                    <td
+                      className="mono fw-700 td-num"
+                      style={{ color: l.returnedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+                    >
+                      {l.returnedQty}
+                    </td>
+                    <td
+                      className="mono fw-700 td-num"
+                      style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
+                    >
+                      {balance}
+                    </td>
+                    <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+                      {l.uom}
+                    </td>
+                    {priceHidden ? null : (
+                      <td className="mono td-num" style={{ fontSize: 11 }}>
+                        {l.rate}
+                      </td>
+                    )}
+                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                      {fmtDate(l.dueDate)}
+                    </td>
+                    <td>
+                      <SoStatusBadge status={l.status} />
+                    </td>
+                    {canEdit ? (
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <Link
+                          to="/job-work-orders/$id/edit"
+                          params={{ id: jw.id }}
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 11 }}
+                        >
+                          Edit
+                        </Link>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

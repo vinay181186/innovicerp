@@ -21,6 +21,7 @@ export const itemTrackerReport: RegisteredReport = {
     description:
       'Per-item rollup of current location: in stock, in production (open JCs), and pending on open POs. Drives the sales-planner question "where is this item right now?".',
     group: 'Sales',
+    dept: 'sales',
     filters: [
       {
         key: 'search',

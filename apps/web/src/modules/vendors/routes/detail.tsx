@@ -23,6 +23,7 @@ import type { Vendor } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -88,6 +89,9 @@ function VendorDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'vendor_create');
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+  // "New PO" raises a purchase order to this vendor — gated on the PO's own
+  // entry right, the same gate /purchase-orders/from-pr enforces.
+  const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
@@ -114,6 +118,17 @@ function VendorDetailPage(): React.JSX.Element {
         badges={<StatusBadge kind="active" status={String(vendor.isActive)} />}
         actions={
           <>
+            {/* The one next step on a vendor: buy from them. Opens the PO form
+                with this vendor already in the Vendor box. */}
+            {canCreatePo ? (
+              <Link
+                to="/purchase-orders/from-pr"
+                search={{ vendorId: vendor.id }}
+                className="btn btn-primary btn-sm"
+              >
+                <Icon name="plus" size={13} /> New PO
+              </Link>
+            ) : null}
             {canEdit ? (
               <Link
                 to="/vendors/$id/edit"
@@ -138,6 +153,10 @@ function VendorDetailPage(): React.JSX.Element {
       >
         <VendorFacts vendor={vendor} />
       </DetailHeader>
+
+      {/* Purchase Orders, Delivery Challans Out and GRNs for this vendor
+          (ADR-190). Hides when empty. */}
+      <RelatedDocsPanel module="vendors" id={vendor.id} />
 
       {confirmDelete ? (
         <ConfirmDialog

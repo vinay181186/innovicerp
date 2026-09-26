@@ -193,7 +193,8 @@ export function renderDigestHtml(payload: {
   records: ReadonlyArray<Record<string, string | number | null>>;
 }): string {
   const { userName, code, alertName, columns = [], alertsUrl = null, records } = payload;
-  const headerKeys = records[0] ? Object.keys(records[0]) : [];
+  // navPage (ADR-190) is the web's link target, not a column of the digest.
+  const headerKeys = records[0] ? Object.keys(records[0]).filter((k) => k !== 'navPage') : [];
   const labelByKey = new Map<string, string>(columns.map((c) => [c.key, c.label] as const));
   const cap = records.slice(0, 50);
   const overflow = records.length > cap.length ? records.length - cap.length : 0;
