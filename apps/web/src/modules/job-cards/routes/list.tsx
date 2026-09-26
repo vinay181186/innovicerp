@@ -41,7 +41,7 @@
 //     edit+approve pair only L5 Department Admin and above hold.
 //
 // JC STATUS COLOURS are now <StatusBadge kind="jc">, whose map
-// (open grey · qc_pending amber · complete cyan · closed green · no_ops red)
+// (open grey · qc_pending amber · complete green · closed green · no_ops red)
 // is the SAME map the local jc-status-badge.tsx carries, checked value by
 // value — nothing about what a colour means has changed. That file stays: the
 // Job Card detail view, the stat tiles and two Production Order screens still
@@ -56,6 +56,7 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { ItemBadge, ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -484,7 +485,13 @@ function JobCardsListPage(): React.JSX.Element {
         nowrap: true,
         render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} />,
       },
-      { header: 'Start Date', width: '7%', className: 'mono', nowrap: true, key: 'jcDate' },
+      {
+        header: 'Start Date',
+        width: '7%',
+        className: 'mono',
+        nowrap: true,
+        render: (jc) => fmtDate(jc.jcDate),
+      },
       {
         header: 'Due Date',
         width: '7%',
@@ -492,7 +499,7 @@ function JobCardsListPage(): React.JSX.Element {
         nowrap: true,
         render: (jc) => (
           <>
-            {jc.dueDate ?? '—'}
+            {fmtDate(jc.dueDate)}
             {/* The plan's Customer Dispatch Date under the due date — a second
                 line, not a column, so the tuned widths above still add up. */}
             {jc.customerDispatchDate ? (
@@ -501,7 +508,7 @@ function JobCardsListPage(): React.JSX.Element {
                 style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
                 title="Customer Dispatch Date (from the plan)"
               >
-                Disp {jc.customerDispatchDate}
+                Disp {fmtDate(jc.customerDispatchDate)}
               </div>
             ) : null}
           </>
@@ -827,7 +834,7 @@ function JobCardsListPage(): React.JSX.Element {
                       flexWrap: 'wrap',
                     }}
                   >
-                    <span className="text2">{jc.jcDate}</span>
+                    <span className="text2">{fmtDate(jc.jcDate)}</span>
                     {jc.clientPoLineNo ? (
                       <>
                         <span>·</span>
@@ -846,7 +853,9 @@ function JobCardsListPage(): React.JSX.Element {
                         fontWeight: overdue ? 700 : undefined,
                       }}
                     >
-                      {jc.dueDate ? `Due ${jc.dueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                      {jc.dueDate
+                        ? `Due ${fmtDate(jc.dueDate)}${overdue ? ' ⚠' : ''}`
+                        : 'No due date'}
                     </span>
                     {jc.remarks ? (
                       <>

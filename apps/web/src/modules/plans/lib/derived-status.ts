@@ -11,10 +11,10 @@ export const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
   production_complete: 'Completed',
 };
 
-// Same badge classes as the old statuses; amber = blocked (no route card),
-// blue = ready for a Production Order, amber = order open, green = done.
+// One colour per state (ADR-186): grey = no route card yet, blue = ready for a
+// Production Order, amber = order open, green = done.
 export const DERIVED_BADGE: Record<PlanDerivedStatus, string> = {
-  route_card_pending: 'b-amber',
+  route_card_pending: 'b-grey',
   gen_production_order: 'b-blue',
   // Same colour as the stored 'in_production' badge (list STATUS_BADGE): one
   // status, one colour, whichever kind of plan the row is.

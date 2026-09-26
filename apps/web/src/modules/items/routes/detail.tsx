@@ -34,6 +34,7 @@ import { type Company, ITEM_PROCUREMENT_TYPE_LABEL, type Item } from '@innovic/s
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -297,7 +298,7 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
               data!.items.map((r) => (
                 <tr key={r.id}>
                   <td className="mono" style={{ fontSize: 11 }}>
-                    {r.txnDate}
+                    {fmtDate(r.txnDate)}
                   </td>
                   <td>
                     <TxnTypeBadge type={r.txnType} />

@@ -25,6 +25,7 @@ import { BomPlanningModal } from '@/modules/so-planning/components/bom-planning-
 import { CreatePlanModal } from '@/modules/so-planning/components/create-plan-modal';
 import { EditPlanModal } from '@/modules/so-planning/components/edit-plan-modal';
 import { useSoTimeline } from '@/modules/so-timeline/api';
+import { fmtDate } from '@/lib/date';
 import { SoTimelineBody } from '@/modules/so-timeline/components/timeline-body';
 import { useSoStatus } from '../api';
 import { exportSoStatusExcel } from '../lib/export';
@@ -152,8 +153,8 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
             </div>
           </div>
           <HeaderFact label="Customer" value={header.customerName ?? '—'} sub={header.clientPoNo ? `Client PO No. ${header.clientPoNo}` : undefined} bold />
-          <HeaderFact label="SO Date" value={header.soDate} />
-          <HeaderFact label="Due Date" value={header.dueDate ?? '—'} color={dueOverdue ? 'var(--red)' : undefined} bold />
+          <HeaderFact label="SO Date" value={fmtDate(header.soDate)} />
+          <HeaderFact label="Due Date" value={fmtDate(header.dueDate)} color={dueOverdue ? 'var(--red)' : undefined} bold />
           {/* PROGRESS fact + header bar have no legacy counterpart — kept (ours is a superset). */}
           <HeaderFact label="Progress" value={`${header.totalDoneQty}/${header.totalQty} · ${header.overallCompletionPct}%`} />
           {header.remarks ? (
@@ -642,7 +643,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
       </td>
       <td className="td-ctr" style={{ fontSize: 12, color: jc.remainingQty > 0 ? 'var(--red)' : 'var(--green)' }}>{jc.remainingQty}</td>
       <td><JcPriorityBadge priority={jc.priority} /></td>
-      <td style={{ fontSize: 11, color: dueOverdue ? 'var(--red)' : 'var(--text3)' }}>{jc.dueDate ?? '—'}</td>
+      <td style={{ fontSize: 11, color: dueOverdue ? 'var(--red)' : 'var(--text3)' }}>{fmtDate(jc.dueDate)}</td>
       <td><JcStatusBadge status={jc.status} /></td>
       <td style={{ whiteSpace: 'nowrap' }}>
         {jc.ops.map((op) => <OpChip key={op.id} op={op} />)}
@@ -684,6 +685,7 @@ const OP_CODE_LABEL: Record<string, string> = {
   process: 'In-house',
   outsource: 'Outsource',
   qc: 'QC',
+  in_progress: 'Partly Completed',
   qc_pending: 'QC Pending',
   complete: 'Completed',
   pr_raised: 'PR Raised',
@@ -729,8 +731,9 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
 
 // Mirrors legacy's `ic` ternary (L4337) over our richer op-status union.
 function opChipColor(op: SoStatusOp): string {
-  if (op.status === 'complete') return 'var(--green)';
-  if (op.status === 'qc_pending' || op.status === 'in_progress' || op.status === 'running') return 'var(--amber)';
+  // Running = an open machine session (green, owner decision wave 2).
+  if (op.status === 'complete' || op.status === 'running') return 'var(--green)';
+  if (op.status === 'qc_pending' || op.status === 'in_progress') return 'var(--amber)';
   if (op.opType === 'outsource') {
     if (op.outsourceStatus === 'sent' || op.outsourceStatus === 'po_created') return 'var(--purple)';
     if (op.outsourceStatus === 'pr_raised') return 'var(--blue)';

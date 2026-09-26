@@ -9941,3 +9941,49 @@ to explain:
 - **Empty Trash** falls back to row-by-row only for a table whose set delete was blocked, so one
   row in use no longer keeps its whole table in Trash.
 - Plan delete explains itself truthfully: a plan with order history stays.
+
+## ADR-186: Cycle time is minutes per piece; "Running" means a machine is on it now
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Context
+
+`cycle_time_min` on route card ops, plan ops and job card ops was labelled "Cycle Time (h)" on the
+Route Card and Plan screens, but "(min)" on the Job Card, the QC Process Master and every
+calculation (machine loading, job queue, production dashboard, SO costing) divided it by 60. ADR-029
+#2 and ISSUE-011 called it hours; ADR-089 called it minutes. Separately, the op status
+`in_progress` (some qty done, no open machine session) and `running` (open session) both read as
+"under way" in the same colour.
+
+### Decision
+
+1. `cycle_time_min` is **minutes per piece** everywhere. Every entry and display label reads
+   "Cycle Time (min)". The only hours shown are derived (JC Ops list cycle, "Pending Hrs").
+   No stored value or formula changed. Supersedes ADR-029 #2 and ISSUE-011's hours note.
+2. Op status words: `running` = "Running" (green) only while a machine session is open;
+   `in_progress` = "Partly Completed" (amber). Job Card / SO / task "In Progress" is unchanged.
+3. Plan, Production Order, Job Card and Op badges use one colour per state: open / pending grey or
+   blue, under way amber, finished green, stopped red or grey.
+
+### Consequence
+
+Values typed into the Route Card / Plan "hrs" box before this, and rows migrated from legacy, are
+hours read as minutes (loading and cost 60× too low for those rows). Audit PROD with a read-only
+query before any ×60 correction; no data was changed.
+
+## ADR-187: PO Tax Type "None" is NULL; JW Invoice carries a tax type; prints show the real UOM
+
+**Date:** 2026-09-26
+**Status:** Accepted (TEST stack)
+
+### Decision
+
+1. A PO's Tax Type is SGST + CGST, IGST or None. None is stored as NULL, never 'none' or ''. The
+   form offers one "None" option; on edit it sends `null`, which clears the value. Migration 0147
+   folds old 'none' / '' rows into NULL.
+2. `jw_invoices.tax_type` (NULL | 'sgst_cgst' | 'igst', migration 0148) is picked on the New JW
+   Invoice form (default SGST + CGST). The print splits the stored GST into SGST n/2 + CGST n/2 or
+   IGST n. NULL rows (raised before 0148) keep the single "GST @ n%" row. Totals are unchanged.
+3. PO, Tax Invoice, JW Invoice and JW DC prints show each line's real UOM (SO line / JWSO line /
+   item master), "NOS" only when blank. The Tax Invoice print shows the customer's Client PO No.

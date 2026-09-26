@@ -30,7 +30,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   { const opts = await jsel.locator('option').allInnerTexts(); const idx = opts.findIndex((t) => t.includes(jc)); if (idx >= 0) await jsel.selectOption({ index: idx }); }
   await page.waitForTimeout(1800);
   await snap(page, 'c2', '01-jcops');
-  await page.getByRole('button', { name: /🏭 Outsource balance/ }).first().click();
+  await page.getByRole('button', { name: /🏭 Outsource Pending/ }).first().click();
   await page.waitForTimeout(1200);
   const bqty = page.locator('input[type="number"]').first();
   const bmax = await bqty.getAttribute('max').catch(() => null);
@@ -39,7 +39,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   const vcode = await page.locator('#outsource-balance-vendors option').first().getAttribute('value').catch(() => '');
   await page.getByPlaceholder('Vendor code').fill(vcode || '');
   await snap(page, 'c2', '02-balance-modal');
-  await page.getByRole('button', { name: 'Outsource balance', exact: true }).click();
+  await page.getByRole('button', { name: 'Outsource Pending', exact: true }).click();
   await page.waitForTimeout(3500);
   await snap(page, 'c2', '03-pr-raised');
 
@@ -63,7 +63,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   const po = 'IN-JWPO-9' + String(Date.now()).slice(-4);
   await page.getByPlaceholder(/IN-JWPO-/i).first().fill(po).catch(() => {});
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /Create JW PO/i }).click();
+  await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(3500);
   log('IN-JWPO', po);
   await snap(page, 'c2', '06-po-created');
@@ -107,7 +107,7 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   await page.waitForTimeout(2000);
   await snap(page, 'c2', '11-qc-form');
   await page.locator('input[type="number"]').first().fill(String(QTY)); // accepted
-  await page.getByRole('button', { name: /Submit QC/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await page.waitForTimeout(3000);
   log('QC', `accepted ${QTY} → recombine (dual-lane)`);
   await snap(page, 'c2', '12-qc-done');

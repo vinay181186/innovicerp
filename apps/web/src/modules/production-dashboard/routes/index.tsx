@@ -24,6 +24,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachineLoading } from '@/modules/machine-loading/api';
@@ -40,12 +41,14 @@ export const productionDashboardRoute = createRoute({
 // stylesheet (L10559-10561), never in its main sheet at L10, so legacy renders
 // both as an unstyled `.badge` on screen. Empty class reproduces that exactly;
 // neither class exists in our theme either. Mirrors machine-loading's map.
+// Wave 2 (owner, 2026-09-26) overrides the legacy note above: in_progress now
+// reads "Partly Completed" (amber) and running (an open session) is green.
 const OP_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   complete: { label: 'Completed', cls: 'b-green' },
-  in_progress: { label: 'In Progress', cls: '' },
-  running: { label: 'Running', cls: '' },
+  in_progress: { label: 'Partly Completed', cls: 'b-amber' },
+  running: { label: 'Running', cls: 'b-green' },
   available: { label: 'Available', cls: 'b-blue' },
-  waiting: { label: 'Waiting', cls: 'b-red' },
+  waiting: { label: 'Waiting', cls: 'b-grey' },
   qc_pending: { label: 'QC Pending', cls: 'b-amber' },
 };
 
@@ -419,7 +422,7 @@ function MachineCard({
                     className="td-ctr"
                     style={{ fontSize: 10, color: dueSoon ? 'var(--red)' : 'var(--text3)' }}
                   >
-                    {o.dueDate ?? '—'}
+                    {fmtDate(o.dueDate)}
                   </td>
                 </tr>
               );
@@ -734,7 +737,7 @@ function JcCard({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
       </div>
       {jc.dueDate ? (
         <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
-          Due: {jc.dueDate}
+          Due: {fmtDate(jc.dueDate)}
         </div>
       ) : null}
     </div>

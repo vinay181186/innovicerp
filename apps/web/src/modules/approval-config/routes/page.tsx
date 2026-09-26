@@ -14,6 +14,7 @@ import type { ApprovalConfig, UserRole } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useUsersList } from '@/modules/users/api';
@@ -30,21 +31,33 @@ function inr(n: number): string {
   return Math.round(n).toLocaleString('en-IN');
 }
 
-function fmtTs(ts: string): string {
-  const dt = new Date(ts);
-  return (
-    dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ' ' +
-    dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  );
-}
-
 // Screen word for the logged action code (APPROVE / REJECT / PAYMENT).
 function actionLabel(action: string): string {
   if (action === 'APPROVE') return 'Approved';
   if (action === 'REJECT') return 'Rejected';
   if (action === 'PAYMENT') return 'Payment';
   return action;
+}
+
+// Screen word for the logged document type. The server writes 'Purchase Order'
+// and 'Invoice' already spaced, but 'PurchaseRequest' as a raw code.
+const DOC_TYPE_LABELS: Record<string, string> = {
+  PurchaseRequest: 'Purchase Request',
+  'Purchase Order': 'Purchase Order',
+  Invoice: 'Invoice',
+};
+
+function docTypeLabel(entity: string): string {
+  const known = DOC_TYPE_LABELS[entity];
+  if (known) return known;
+  // Fallback: split camelCase / snake_case and title-case each word.
+  return entity
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
 }
 
 function ApprovalConfigPage(): React.JSX.Element {
@@ -358,9 +371,11 @@ function ApprovalConfigPage(): React.JSX.Element {
                   h.action === 'APPROVE' ? 'var(--green)' : h.action === 'REJECT' ? 'var(--red)' : 'var(--cyan)';
                 return (
                   <tr key={h.id}>
-                    <td style={{ fontSize: 11 }}>{fmtTs(h.ts)}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDateTime(h.ts)}</td>
                     <td style={{ fontWeight: 700, color, fontSize: 11 }}>{actionLabel(h.action)}</td>
-                    <td style={{ fontSize: 11, color: 'var(--cyan)' }}>{h.entity}</td>
+                    <td style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                      {docTypeLabel(h.entity)}
+                    </td>
                     <td className="text2" style={{ fontSize: 11 }}>{h.detail}</td>
                     <td style={{ fontSize: 11 }}>{h.userName ?? '—'}</td>
                   </tr>

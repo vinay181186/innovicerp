@@ -4,6 +4,7 @@ import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLineDetail } from '@innovi
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -334,7 +335,7 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
         {l.qcRejectedQty}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {l.qcDate ?? '—'}
+        {fmtDate(l.qcDate)}
       </td>
     </tr>
   );
@@ -344,13 +345,14 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
   const { detail } = props;
   return (
     <div className="form-grid form-grid-3">
-      <Pair label="GRN Date" value={detail.grnDate} />
-      {/* The linked OSP challan's own code when the GRN came from a DC receive;
-          otherwise whatever the storekeeper typed on Against PO. */}
-      <Pair
-        label={detail.dcCode ? 'DC No.' : 'Vendor Challan No.'}
-        value={detail.dcCode ?? detail.dcNo ?? '—'}
-      />
+      <Pair label="GRN Date" value={fmtDate(detail.grnDate)} />
+      {/* Two different numbers, each shown only when present: our own DC (when
+          the GRN came from a DC receive) and the vendor's challan number the
+          storekeeper typed. */}
+      {detail.dcCode ? <Pair label="DC No." value={detail.dcCode} /> : null}
+      {detail.dcNo && detail.dcNo !== detail.dcCode ? (
+        <Pair label="Vendor Challan No." value={detail.dcNo} />
+      ) : null}
       <Pair label="Vendor Invoice No." value={detail.invoiceNo ?? '—'} />
       {/* On an NC-return GRN there is no PO: the header's poCodeText holds the
           NC code, so it is shown once, under an "NC" label. */}

@@ -962,7 +962,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                     <th style={{ width: 190 }}>Group</th>
                     <th style={{ width: 210 }}>Machine / Vendor</th>
                     <th style={{ minWidth: 200 }}>Operation</th>
-                    <th style={{ width: 96 }}>Cycle Time (h)</th>
+                    <th style={{ width: 96 }}>Cycle Time (min)</th>
                     <th style={{ width: 132, color: 'var(--amber)' }}>OSP</th>
                     <th style={{ width: 48 }} />
                   </tr>

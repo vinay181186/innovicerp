@@ -14,10 +14,12 @@ import type { OutsourceStatus } from '@innovic/shared';
 // so they render unstyled in legacy too. We keep our `b-amber` for both rather
 // than port a no-op class (same call the SO Status port made for `b-blue`).
 export const OP_STATUS: Record<string, { label: string; cls: string }> = {
-  waiting: { label: 'Waiting', cls: 'b-red' },
+  waiting: { label: 'Waiting', cls: 'b-grey' },
   available: { label: 'Available', cls: 'b-blue' },
-  in_progress: { label: 'In Progress', cls: 'b-amber' },
-  running: { label: 'Running', cls: 'b-amber' },
+  // Wave 2 (owner): Running = an open machine session only (green); some qty
+  // done with no open session = Partly Completed (amber).
+  in_progress: { label: 'Partly Completed', cls: 'b-amber' },
+  running: { label: 'Running', cls: 'b-green' },
   qc_pending: { label: 'QC Pending', cls: 'b-amber' },
   complete: { label: 'Completed', cls: 'b-green' },
   pr_raised: { label: 'PR Raised', cls: 'b-amber' },

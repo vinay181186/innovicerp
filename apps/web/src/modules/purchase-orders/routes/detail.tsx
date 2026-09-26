@@ -25,9 +25,8 @@
 //    `PO_TYPES` has FOUR values and legacy's vocabulary has two — labelling an
 //    `outsource`/`service` PO "With Material PO" is exactly the ISSUE-124 error
 //    in markup. The Type field renders the real enum value instead.
-//  - Dates render as stored (`YYYY-MM-DD`), not legacy `fmt()`'s `15-Jul-26`:
-//    list.tsx renders them the same way, so formatting only here would open an
-//    ISSUE-098-shaped seam inside one module. Closes module-wide with ISSUE-040.
+//  - Dates render DD-MMM-YYYY via the shared `fmtDate` (lib/date.ts), the same
+//    as list.tsx and every other web list, not legacy `fmt()`'s `15-Jul-26`.
 //
 // Kept over legacy (never delete a working feature): Back link, Approve/Reject,
 // Delete, Assign task, Issue DC / Receive (new GRN), Due date, Tax type, GST
@@ -52,6 +51,7 @@ import { useApprovalConfig } from '@/modules/approval-config/api';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -659,7 +659,7 @@ function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): Reac
       >
         {pending}
       </td>
-      <td style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
+      <td style={{ fontSize: 11 }}>{fmtDate(l.dueDate)}</td>
       <td className="text3" style={{ fontSize: 11 }}>
         {l.lineRemarks ?? '—'}
       </td>

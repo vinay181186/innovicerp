@@ -12,6 +12,7 @@ import type { ListInvoicesResponse } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -47,20 +48,6 @@ export const invoiceListRoute = createRoute({
 type InvoiceListRow = ListInvoicesResponse['invoices'][number];
 
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
-
-// Mirror of legacy fmt() (L1484): '' → '—', else dd Mon yy (en-IN).
-const fmt = (d: string | null | undefined): string => {
-  if (!d) return '—';
-  try {
-    return new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: '2-digit',
-    });
-  } catch {
-    return d;
-  }
-};
 
 const TABS = [
   { key: 'so', label: '🧾 SO Invoices' },
@@ -215,7 +202,7 @@ function InvoiceListPage(): React.JSX.Element {
       header: 'Invoice Date',
       width: priceHidden ? '11%' : '8%',
       nowrap: true,
-      render: (inv) => fmt(inv.invoiceDate),
+      render: (inv) => fmtDate(inv.invoiceDate),
     },
     {
       header: 'SO No.',
@@ -268,7 +255,7 @@ function InvoiceListPage(): React.JSX.Element {
       nowrap: true,
       render: (inv) => (
         <span style={{ color: inv.overdue ? 'var(--red)' : 'var(--text3)' }}>
-          {fmt(inv.dueDate)}
+          {fmtDate(inv.dueDate)}
         </span>
       ),
     },

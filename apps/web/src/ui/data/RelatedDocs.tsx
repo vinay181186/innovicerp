@@ -21,6 +21,7 @@ import { useState } from 'react';
 import { TabStrip, type TabStripTab } from '../navigation/TabStrip';
 import { EmptyState } from './EmptyState';
 import { Panel } from './Panel';
+import { fmtDate } from '@/lib/date';
 
 export interface RelatedDoc {
   /** Stable key — the document's id. */
@@ -170,7 +171,7 @@ export function RelatedDocs({
                   <td className="text2 td-left">{d.label ?? '—'}</td>
                   <td>{d.status ?? '—'}</td>
                   <td className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
-                    {d.date ?? '—'}
+                    {fmtDate(d.date)}
                   </td>
                 </tr>
               ))}

@@ -17,7 +17,8 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { type Control, Controller, useForm } from 'react-hook-form';
+import { useTaskUserOptions } from '@/modules/tasks/api';
 import { useNextOperatorCode } from '../api';
 
 type CreateMode = {
@@ -64,6 +65,45 @@ function operatorToUpdateDefaults(o: Operator): UpdateOperatorInput {
 export function OperatorForm(props: OperatorFormProps): React.JSX.Element {
   if (props.mode === 'create') return <CreateOperatorForm {...props} />;
   return <EditOperatorForm {...props} />;
+}
+
+// Linked User: a dropdown of the company's active logins (the same list the
+// Task Board's assignee picker reads). It saves the user's id exactly as the
+// old free-text box did; '' = no linked login. A saved link to a user who is
+// no longer in the list (deactivated) keeps its own option, so re-saving the
+// form never silently drops it.
+function LinkedUserSelect(props: {
+  control: Control<CreateOperatorInput> | Control<UpdateOperatorInput>;
+}): React.JSX.Element {
+  const { data, isLoading } = useTaskUserOptions();
+  const options = data?.options ?? [];
+  return (
+    <Controller
+      control={props.control as Control<CreateOperatorInput>}
+      name="userId"
+      render={({ field }) => {
+        const value = field.value ?? '';
+        const known = value === '' || options.some((u) => u.id === value);
+        return (
+          <select
+            id="userId"
+            className="innovic-select"
+            value={value}
+            onChange={(e) => field.onChange(e.target.value)}
+            onBlur={field.onBlur}
+          >
+            <option value="">{isLoading ? 'Loading users…' : '— No linked login —'}</option>
+            {!known ? <option value={value}>(user not in the active list)</option> : null}
+            {options.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.role ? `${u.name} — ${u.role}` : u.name}
+              </option>
+            ))}
+          </select>
+        );
+      }}
+    />
+  );
 }
 
 function CreateOperatorForm(props: CreateMode): React.JSX.Element {
@@ -151,7 +191,7 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="userId">
             Linked User (optional)
           </label>
-          <input id="userId" className="innovic-input" autoComplete="off" placeholder="UUID of a user account, if this operator also has a login" {...register('userId')} />
+          <LinkedUserSelect control={form.control} />
           <div className="form-help">Leave blank for shop-floor-only operators.</div>
         </div>
       </div>
@@ -235,13 +275,7 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="userId">
             Linked User (optional)
           </label>
-          <input
-            id="userId"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="UUID of a user account, if this operator also has a login"
-            {...register('userId')}
-          />
+          <LinkedUserSelect control={form.control} />
           <div className="form-help">Leave blank for shop-floor-only operators.</div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-re
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
@@ -274,7 +275,7 @@ function PlanDetailPage(): React.JSX.Element {
           ) : null}
 
           <Grid>
-            <KV label="Plan Date" value={plan.planDate} />
+            <KV label="Plan Date" value={fmtDate(plan.planDate)} />
             <KV label="Order Qty" value={plan.orderQty} />
             <KV label="Plan Qty" value={plan.planQty} />
             {/* ADR-185 — the same Covered / Pending the Plans list shows for
@@ -285,9 +286,9 @@ function PlanDetailPage(): React.JSX.Element {
                 <KV label="Pending" value={plan.pendingQty} />
               </>
             ) : null}
-            <KV label="Planned Start Date" value={plan.plannedStartDate ?? '—'} />
-            <KV label="Planned End Date" value={plan.plannedEndDate ?? '—'} />
-            <KV label="Customer Dispatch Date" value={plan.customerDispatchDate ?? '—'} />
+            <KV label="Planned Start Date" value={fmtDate(plan.plannedStartDate)} />
+            <KV label="Planned End Date" value={fmtDate(plan.plannedEndDate)} />
+            <KV label="Customer Dispatch Date" value={fmtDate(plan.customerDispatchDate)} />
             {/* Raw material — read-only here; both are optional, so a plan with
                 neither still shows the pair as dashes rather than hiding them
                 (a missing grade is a planning gap worth seeing). */}
@@ -339,7 +340,7 @@ function PlanDetailPage(): React.JSX.Element {
                 <KV label="Process" value={plan.foProcess ?? '—'} />
                 {priceHidden ? null : <KV label="Rate" value={plan.foRate ?? '—'} />}
                 <KV label="Material Source" value={plan.foMaterialSrc ?? '—'} />
-                <KV label="Delivery Date" value={plan.foDeliveryDate ?? '—'} />
+                <KV label="Delivery Date" value={fmtDate(plan.foDeliveryDate)} />
                 <KV label="Cost Centre" value={plan.foCostCenter ?? '—'} />
                 <KV label="JW PR" value={plan.foPrId ? '✓ Created' : '—'} />
                 <KV label="Material PR" value={plan.foMatPrId ? '✓ Created' : '—'} />
@@ -408,7 +409,7 @@ function PlanDetailPage(): React.JSX.Element {
                   <th>Operation</th>
                   <th>Op Type</th>
                   <th>Planned Machine</th>
-                  <th>Cycle Time (h)</th>
+                  <th>Cycle Time (min)</th>
                   <th>QC Required</th>
                   <th>OSP Vendor</th>
                   {priceHidden ? null : <th>OSP Cost</th>}

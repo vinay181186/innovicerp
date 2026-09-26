@@ -24,6 +24,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Play, RotateCcw, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 
@@ -721,7 +722,7 @@ function UnitsPanel({
                     {u.serialNo ?? '—'}
                   </td>
                   <td className="mono" style={{ fontSize: 12 }}>
-                    {u.assemblyDate}
+                    {fmtDate(u.assemblyDate)}
                   </td>
                   <td style={{ fontSize: 12 }}>{u.assembledBy ?? '—'}</td>
                   <td className="text3" style={{ fontSize: 12 }}>
@@ -734,7 +735,7 @@ function UnitsPanel({
                       </span>
                     ) : u.dispatched ? (
                       <span className="badge b-green">
-                        Dispatched ✓{u.dispatchDate ? ` ${u.dispatchDate}` : ''}
+                        Dispatched ✓{u.dispatchDate ? ` ${fmtDate(u.dispatchDate)}` : ''}
                       </span>
                     ) : (
                       <span className="badge b-amber">Pending</span>

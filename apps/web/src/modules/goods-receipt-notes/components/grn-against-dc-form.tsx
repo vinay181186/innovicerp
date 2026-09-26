@@ -21,7 +21,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import {
   useDeliveryChallan,
@@ -132,8 +132,8 @@ export function GrnAgainstDcForm({ onLeave, onCancel }: GrnAgainstDcFormProps): 
     const pool = jwpoId ? eligibleDcs.filter((d) => d.purchaseOrderId === jwpoId) : eligibleDcs;
     return pool
       .map((d) => {
-        const short = `${d.dcDate} · ${d.lineCount} line${d.lineCount === 1 ? '' : 's'}`;
-        const long = `${d.poCode ?? d.poCodeText} · ${d.vendorName ?? d.vendorCodeText} · ${d.dcDate}`;
+        const short = `${fmtDate(d.dcDate)} · ${d.lineCount} line${d.lineCount === 1 ? '' : 's'}`;
+        const long = `${d.poCode ?? d.poCodeText} · ${d.vendorName ?? d.vendorCodeText} · ${fmtDate(d.dcDate)}`;
         return {
           id: d.id,
           code: d.code,

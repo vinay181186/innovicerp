@@ -10,15 +10,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Loader2, Search } from 'lucide-react';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
-
-function fmtTs(ts: string): string {
-  const dt = new Date(ts);
-  return (
-    dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) +
-    ' ' +
-    dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  );
-}
+import { fmtDateTime } from '@/lib/date';
 
 function severityColor(s: 'ok' | 'warn' | 'error'): string {
   if (s === 'ok') return 'var(--green)';
@@ -69,7 +61,7 @@ export function DataIntegrityPanel(): React.JSX.Element {
           </button>
           {result ? (
             <span className="text3" style={{ fontSize: 11 }}>
-              Last run: {fmtTs(result.ranAt)}
+              Last run: {fmtDateTime(result.ranAt)}
             </span>
           ) : null}
         </div>

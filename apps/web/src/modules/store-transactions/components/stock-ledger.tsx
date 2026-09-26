@@ -21,6 +21,7 @@ import {
 } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { useStoreTransactionsList } from '../api';
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { TxnTypeBadge } from './txn-type-badge';
@@ -83,7 +84,7 @@ export function StockLedger(): React.JSX.Element {
       {
         header: 'Date',
         accessorKey: 'txnDate',
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.txnDate}</span>,
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{fmtDate(row.original.txnDate)}</span>,
       },
       {
         header: 'Item Code',

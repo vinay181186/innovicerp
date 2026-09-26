@@ -9,7 +9,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import {
@@ -258,7 +258,7 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
       >
         <span className="text3">👤 {project.leadText ?? ''}</span>
         <span style={{ color: isOverdue ? 'var(--red)' : 'var(--text3)' }}>
-          📅 {project.targetDate}
+          📅 {fmtDate(project.targetDate)}
           {isOverdue ? ' ⚠' : ''}
         </span>
         {project.openIssuesCount > 0 ? (

@@ -331,7 +331,7 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     const expandAll = page.getByRole('button', { name: /Expand All/ });
     if (await expandAll.count()) await expandAll.first().click();
     await page.waitForTimeout(600);
-    const planned = await page.getByText('Planned Qty', { exact: true }).count();
+    const planned = await page.getByText('QC Pending', { exact: true }).count();
     const completed = await page.getByText('Completed', { exact: true }).count();
     const pending = await page.getByText('Pending', { exact: true }).count();
     row(
@@ -366,7 +366,7 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await collapsedRows.first().click();
     await page.waitForTimeout(500);
     const afterOne = await collapsedRows.count();
-    const plannedAfter = await page.getByText('Planned Qty', { exact: true }).count();
+    const plannedAfter = await page.getByText('QC Pending', { exact: true }).count();
     // Collapse that one again via its own header toggle
     await page.locator('button[title="Collapse this operation to one row"]').first().click();
     await page.waitForTimeout(400);
@@ -388,40 +388,28 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
       },
     );
 
-    // Per-op "Recent Logs" toggle on OP10 (complete, has logs). The strip
-    // opens by default ("▲ hide"); hide it, then show it again.
+    // Per-op "Recent Logs" strip on OP10 (complete, has logs). The ▲ hide /
+    // ▼ show toggle was removed (round-3 clutter) — the strip is always open.
     await collapsedRows.first().click();
     await page.waitForTimeout(500);
-    const hideBtn = page.getByRole('button', { name: 'Hide recent logs' }).first();
-    await hideBtn.waitFor({ timeout: 15_000 });
-    // The strip itself, anchored on its fixed "Recent Logs" caption (the
-    // hide / show button is replaced on every toggle).
-    const strip = page.getByText('Recent Logs', { exact: true }).first().locator('xpath=..');
+    // The strip itself, anchored on its fixed "Recent Logs" caption.
+    const caption = page.getByText('Recent Logs', { exact: true }).first();
+    await caption.waitFor({ timeout: 15_000 });
+    const strip = caption.locator('xpath=..');
     const openText = (await strip.innerText()).replace(/\s+/g, ' ');
-    await hideBtn.click();
-    await page.waitForTimeout(300);
-    const showBtn = page.getByRole('button', { name: 'Show recent logs' }).first();
-    await showBtn.waitFor({ timeout: 10_000 });
-    const hiddenText = (await strip.innerText()).replace(/\s+/g, ' ');
-    await showBtn.click();
-    await page.waitForTimeout(300);
-    const reopened = await page.getByRole('button', { name: 'Hide recent logs' }).count();
     const logsText = openText;
     row(
       {
-        action: 'Per-op control: Recent Logs strip on OP10 lists entries; ▲ hide / ▼ show toggles',
+        action: 'Per-op control: Recent Logs strip on OP10 lists entries (always open, no hide / show toggle)',
         document: JC_VIEW,
         qty: '—',
         headerStatus: `open: ${openText.slice(0, 110)}`,
-        overallStatus: `hidden: ${hiddenText.slice(0, 60)} · reopened=${reopened === 1}`,
-        note: 'no dropdown menu exists on an op row — the per-op controls are expand/collapse, the action strip and this toggle',
+        overallStatus: 'always open',
+        note: 'no dropdown menu exists on an op row — the per-op controls are expand/collapse and the action strip',
       },
       () => {
         expect(logsText).toMatch(/Qty\s*\+\d+/);
         expect(logsText).toMatch(/Operator/);
-        expect(hiddenText).not.toMatch(/Qty\s*\+\d+/);
-        expect(hiddenText).toMatch(/latest \d+ entr/);
-        expect(reopened).toBe(1);
       },
     );
     await shot(page, '04-recent-logs');
@@ -599,8 +587,8 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
         expect(startedBy).toMatch(
           new RegExp(`started by ${OPERATOR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
         );
-        expect(dlgText).toMatch(/ACTUAL MACHINE/);
-        expect(dlgText).toMatch(/Log production/);
+        expect(dlgText).toMatch(/Actual Machine/);
+        expect(dlgText).toMatch(/Complete Operation/);
       },
     );
 
@@ -644,7 +632,7 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await page.locator('#opf-shift').selectOption('day');
     await page.locator('#opf-qty').fill('0');
     await shot(page, '10-stop-form');
-    await dlg.getByRole('button', { name: /Stop \(running\)/ }).click();
+    await dlg.getByRole('button', { name: /Stop Operation/ }).click();
     await dialogGone(page);
     await page.goto(`/op-entry?jc=${JC_START}`, { waitUntil: 'domcontentloaded' });
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
@@ -679,7 +667,7 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });
     await page.waitForTimeout(1000);
     const qcRow = opRow(page, '20');
-    const qcBtn = qcRow.getByRole('button', { name: /QC/ });
+    const qcBtn = qcRow.getByRole('button', { name: /Inspect/ });
     await expect(qcBtn).toBeVisible({ timeout: 30_000 });
     const qcLabel = await qcBtn.innerText();
     await qcBtn.click();
@@ -705,9 +693,9 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
         note: 'IN-JC-26-00003 OP20 has 0 pcs to inspect (no button), so the same QC form was opened on IN-JC-26-00002 OP20 and closed unsaved',
       },
       () => {
-        expect(dlgText).toMatch(/QC inspection/);
+        expect(dlgText).toMatch(/QC Inspection/);
         expect(inspector).toBe('');
-        expect(placeholder).toMatch(/QC inspector name/);
+        expect(placeholder).toBeNull(); // the "QC inspector name" hint was removed
         expect(help).toBe(0);
       },
     );

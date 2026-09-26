@@ -12,7 +12,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { statusText } from '@/lib/status-text';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
@@ -141,7 +141,7 @@ export function JwDispatchView({
                       </span>
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {r.returnDate}
+                      {fmtDate(r.returnDate)}
                     </td>
                     <td
                       className="mono fw-700"

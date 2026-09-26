@@ -4,6 +4,7 @@
 // Mirrors legacy renderSOTimeline L17847-17862.
 
 import type { SoTimelineResponse } from '@innovic/shared';
+import { fmtDateTime } from '@/lib/date';
 
 export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JSX.Element {
   // Legacy L17844: header line is the SO number only — no customer/type/count.
@@ -79,7 +80,7 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
               >
                 <span style={{ fontSize: 12, fontWeight: 700, color: evt.color }}>{evt.label}</span>
                 <span style={{ fontSize: 10, color: 'var(--text3)' }}>
-                  {formatTimelineDate(evt.date)}
+                  {fmtDateTime(evt.date)}
                 </span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text2)' }}>{evt.detail}</div>
@@ -89,19 +90,4 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
       </div>
     </>
   );
-}
-
-function formatTimelineDate(iso: string): string {
-  // Tolerates both `YYYY-MM-DD` and full ISO timestamps. Date-only events
-  // render without a time; timestamps render with HH:mm.
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    const date = d.toISOString().slice(0, 10);
-    const time = d.toISOString().slice(11, 16);
-    return `${date} ${time}`;
-  } catch {
-    return iso;
-  }
 }

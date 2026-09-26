@@ -13,8 +13,10 @@ import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
+import { ConfirmDialog } from '@/ui/feedback';
 import { useBomMaster, useDeleteBomMaster } from '../api';
 
 export const bomMasterDetailRoute = createRoute({
@@ -47,8 +49,11 @@ function BomMasterDetailPage(): React.JSX.Element {
   const [delError, setDelError] = useState<string | null>(null);
   // Legacy _bomViewSnapshot (L8812) — which revision's archived part list is open.
   const [snapshotRev, setSnapshotRev] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const onDelete = async (): Promise<void> => {
+  // Delete button: the linked-SO guard runs first; only then does the app's
+  // ConfirmDialog open (replaces the browser's window.confirm).
+  const onDeleteClick = (): void => {
     if (!detail) return;
     if (detail.linkedSoCount > 0) {
       setDelError(
@@ -56,15 +61,17 @@ function BomMasterDetailPage(): React.JSX.Element {
       );
       return;
     }
-    if (!window.confirm(`Move BOM ${detail.bomNo} to Trash? You can restore it from Trash.`))
-      return;
     setDelError(null);
-    try {
-      await del.mutateAsync(detail.id);
-      void navigate({ to: '/bom-masters' });
-    } catch (e) {
-      setDelError(e instanceof Error ? e.message : 'Could not move BOM to Trash. Try again.');
-    }
+    setConfirmDelete(true);
+  };
+
+  // `mutateAsync`: ConfirmDialog keeps its buttons disabled while this runs
+  // and shows a rejection inside the dialog instead of closing it.
+  const onDelete = async (): Promise<void> => {
+    if (!detail) return;
+    await del.mutateAsync(detail.id);
+    setConfirmDelete(false);
+    void navigate({ to: '/bom-masters' });
   };
 
   if (eff && !perms.view) {
@@ -147,7 +154,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                onClick={() => void onDelete()}
+                onClick={onDeleteClick}
                 disabled={del.isPending}
                 title={
                   detail.linkedSoCount > 0
@@ -182,7 +189,7 @@ function BomMasterDetailPage(): React.JSX.Element {
             </div>
             <div className="form-grp">
               <span className="form-label">Revision Date</span>
-              <div>{detail.revisionDate}</div>
+              <div>{fmtDate(detail.revisionDate)}</div>
             </div>
             <div className="form-grp">
               <span className="form-label">Linked SO Lines</span>
@@ -304,7 +311,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                       {rev.revision}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {new Date(rev.createdAt).toISOString().slice(0, 10)}
+                      {fmtDate(rev.createdAt)}
                     </td>
                     <td>{rev.changedByText}</td>
                     <td className="text2" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
@@ -400,6 +407,17 @@ function BomMasterDetailPage(): React.JSX.Element {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={`Move BOM ${detail.bomNo} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
       ) : null}
     </div>
   );

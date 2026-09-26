@@ -9,6 +9,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -41,12 +42,14 @@ function loadBadgeClass(status: MachineLoadStatus): string {
 // (L10559-10561), never in its main sheet at L10 — so legacy renders both as an
 // unstyled `.badge` pill on screen. Empty class here reproduces that exactly;
 // neither class exists in our theme either.
+// Wave 2 (owner, 2026-09-26) overrides the legacy note above: in_progress now
+// reads "Partly Completed" (amber) and running (an open session) is green.
 const OP_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   complete: { label: 'Completed', cls: 'b-green' },
-  in_progress: { label: 'In Progress', cls: '' },
-  running: { label: 'Running', cls: '' },
+  in_progress: { label: 'Partly Completed', cls: 'b-amber' },
+  running: { label: 'Running', cls: 'b-green' },
   available: { label: 'Available', cls: 'b-blue' },
-  waiting: { label: 'Waiting', cls: 'b-red' },
+  waiting: { label: 'Waiting', cls: 'b-grey' },
   qc_pending: { label: 'QC Pending', cls: 'b-amber' },
 };
 
@@ -403,7 +406,7 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
         </span>
       </td>
       <td className="text2 td-ctr" style={{ fontSize: 11 }}>
-        {op.dueDate ?? '—'}
+        {fmtDate(op.dueDate)}
       </td>
       <td className="td-ctr mono">{op.orderQty}</td>
       <td className="td-ctr green mono fw-700">

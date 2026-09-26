@@ -12,6 +12,7 @@
 
 import { GLOBAL_SEARCH_KIND_META } from '@innovic/shared';
 import type { GlobalSearchResult } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { statusText } from '@/lib/status-text';
 import { GLOBAL_SEARCH_LANDING_KIND } from '../api';
 
@@ -62,7 +63,7 @@ export function ResultsTable({
                     title={landing ? 'Open in its register' : 'Open'}
                     onClick={() => onOpen(r)}
                   >
-                    <td className="mono">{r.date ?? '—'}</td>
+                    <td className="mono">{fmtDate(r.date)}</td>
                     <td className="text3" style={{ fontSize: 12 }}>
                       {GLOBAL_SEARCH_KIND_META[r.kind].label}
                     </td>

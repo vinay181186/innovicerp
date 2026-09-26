@@ -8,6 +8,7 @@
 import type { CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 /** One dispatch document plus the register rows that belong to it. */
@@ -155,7 +156,7 @@ export function DispatchCard(props: {
             className="mono"
             style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
           >
-            <span className="text2">{g.date}</span>
+            <span className="text2">{fmtDate(g.date)}</span>
             <span>·</span>
             <span>
               SO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{g.soNo ?? '—'}</span>

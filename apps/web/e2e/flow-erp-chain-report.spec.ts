@@ -592,7 +592,7 @@ async function fillEntryHeader(page: Page, operator: string): Promise<void> {
   await page.locator('#opf-date').fill(today());
   await page.locator('#opf-time').fill(now());
   await page.locator('#opf-shift').selectOption('day');
-  await page.getByPlaceholder(/Operator name|QC inspector name/i).first().fill(operator);
+  await page.locator('#opf-op').first().fill(operator);
 }
 
 async function popupGone(page: Page): Promise<void> {
@@ -634,12 +634,12 @@ async function runProcessOp(page: Page, jc: string, opName: string, qty: number)
 /** QC entry on a qc op: accept / reject. */
 async function qcOp(page: Page, jc: string, opName: string, acc: number, rej: number): Promise<void> {
   await loadJc(page, jc);
-  await opRow(page, opName).getByRole('button', { name: /QC/ }).click();
+  await opRow(page, opName).getByRole('button', { name: /Inspect/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E_ Inspector');
   await page.locator('#opf-qty').fill(String(acc));
   await page.locator('#opf-rej').fill(String(rej));
-  await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await popupGone(page);
 }
 
@@ -679,7 +679,7 @@ async function disposeNc(page: Page, ncUrl: string, action: 'rework' | 'return_t
   await page.locator('#dispAction').selectOption(action);
   await page.locator('#dispQty').fill(String(qty));
   await page.locator('#dispRemarks').fill(remark);
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Disposition$/ }).click();
   await page.waitForTimeout(4000);
 }
 
@@ -701,11 +701,11 @@ async function jcBody(page: Page, url: string): Promise<string> {
   return (await page.locator('body').innerText()).replace(/\s+/g, ' ');
 }
 async function jcStatusBadge(page: Page): Promise<string> {
-  // JC detail: the "Overall Status" tile carries the computed-status badge
-  // (innerText is uppercased by CSS); other detail pages (SO) carry theirs in
+  // JC detail: the "Job Card : <code>" header carries the computed-status badge
+  // (the old "Overall Status" tile is gone); other detail pages (SO) carry theirs in
   // the panel header.
   const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-  const m = /OVERALL\s+STATUS\s+(.+?)\s+(NORMAL|HIGH)\b/i.exec(body);
+  const m = /JOB CARD\s*:\s*IN-JC-[\d-]+\s+(.+?)\s+BACK TO LIST\b/i.exec(body);
   if (m) return m[1]!.replace(/[^\x20-\x7E]/g, '').trim();
   const b = page.locator('.panel-hdr .badge').first();
   return (await b.count()) ? (await b.innerText()).trim() : '(no badge)';
@@ -744,7 +744,7 @@ async function jcNcStrips(page: Page, url: string): Promise<string> {
 async function createSo(page: Page, qty: number, poRef: string): Promise<{ code: string; url: string; status: string }> {
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  const client = page.getByPlaceholder(/Type client code or name/i);
+  const client = page.getByPlaceholder(/Type customer code or name/i);
   await client.click();
   await client.fill('Adani');
   await page.locator('[role="option"], li').filter({ hasText: /Adani/ }).first().waitFor({ timeout: 45_000 });
@@ -793,7 +793,7 @@ async function planAndExecute(
   const planQty = page.locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]').first();
   await planQty.waitFor({ state: 'visible', timeout: 30_000 });
   await planQty.fill(String(qty));
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
   const del = page.locator('table.ops-routing tbody tr button.btn-danger');
   for (let i = (await del.count()) - 1; i >= 0; i--) {
@@ -828,7 +828,7 @@ async function planAndExecute(
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
-  const execBtn = page.getByRole('button', { name: /Execute/i }).first();
+  const execBtn = page.getByRole('button', { name: /Create JC|Raise PR/ }).first();
   await execBtn.waitFor({ state: 'visible', timeout: 60_000 });
   await execBtn.click();
   await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 120_000 });
@@ -869,10 +869,10 @@ async function createPoFromPr(page: Page, poType: 'standard' | 'service', prCode
   await pickFromCombo(page, 'pof-vendor', VENDOR_CODE, new RegExp(VENDOR_CODE));
   await page.locator('#pof-delivery-days').fill('14');
   await pickFromCombo(page, 'pof-pr-0', prCode, new RegExp(prCode));
-  await expect(page.getByLabel('Item code, line 1', { exact: true })).toHaveValue(line.code, { timeout: 60_000 });
+  await expect(page.getByLabel('Item Code, line 1', { exact: true })).toHaveValue(line.code, { timeout: 60_000 });
   await page.locator('#pof-remarks').fill(remark);
-  await page.getByLabel('Item code, line 1', { exact: true }).fill(line.code);
-  await page.getByLabel('Item name, line 1', { exact: true }).fill(line.name);
+  await page.getByLabel('Item Code, line 1', { exact: true }).fill(line.code);
+  await page.getByLabel('Item Name, line 1', { exact: true }).fill(line.name);
   await page.getByLabel('Qty, line 1', { exact: true }).fill(String(line.qty));
   await page.getByLabel('Rate, line 1', { exact: true }).fill(String(line.rate));
   const save = page.locator('button.pof-btn-go');
@@ -948,7 +948,15 @@ async function readGrnDetail(page: Page, grnId: string) {
   const po = hasPoPair ? await readPair(page, 'PO') : '';
   const hasNcPair = (await page.locator('.form-grp').filter({ has: page.getByText('NC', { exact: true }) }).count()) > 0;
   const nc = hasNcPair ? await readPair(page, 'NC') : '';
-  const dcNo = await readPair(page, 'DC No.');
+  // Our DC shows as "DC No." (DC-linked GRN); the vendor's own challan as
+  // "Vendor Challan No."; neither pair renders when both are empty.
+  const pairCount = async (l: string): Promise<number> =>
+    page.locator('.form-grp').filter({ has: page.getByText(l, { exact: true }) }).count();
+  const dcNo = (await pairCount('DC No.')) > 0
+    ? await readPair(page, 'DC No.')
+    : (await pairCount('Vendor Challan No.')) > 0
+      ? await readPair(page, 'Vendor Challan No.')
+      : '—';
   const vendor = await readPair(page, 'Vendor');
   const openDc = await page.getByRole('link', { name: 'Open DC' }).count();
   const openNc = await page.getByRole('link', { name: 'Open NC' }).count();
@@ -957,7 +965,7 @@ async function readGrnDetail(page: Page, grnId: string) {
   const recIdx = await colIndex(table, /^Received$/i);
   const accIdx = await colIndex(table, /^Accepted$/i);
   const rejIdx = await colIndex(table, /^Rejected$/i);
-  const qcIdx = await colIndex(table, /^QC$/i);
+  const qcIdx = await colIndex(table, /^QC Status$/i);
   const rows = table.locator('tbody tr');
   const n = await rows.count();
   const lines: { received: number; accepted: string; rejected: string; qc: string }[] = [];
@@ -980,7 +988,7 @@ async function incomingQc(page: Page, grnCode: string, acc: number, rej: number,
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/Pending Inspection/)).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(2500);
-  const pendingTable = page.locator('table').filter({ has: page.getByText('Pending QC', { exact: true }) }).first();
+  const pendingTable = page.locator('table').filter({ has: page.getByText('QC Pending', { exact: true }) }).first();
   const row = pendingTable.locator('tbody tr').filter({ hasText: grnCode }).first();
   await expect(row, 'pending Incoming QC row for ' + grnCode).toBeVisible({ timeout: 60_000 });
   const rowText = (await row.innerText()).replace(/\s+/g, ' ').trim();
@@ -989,10 +997,10 @@ async function incomingQc(page: Page, grnCode: string, acc: number, rej: number,
   await page.waitForTimeout(3000);
   // Only one row is ever open on the register (openId), so page-level
   // locators are unambiguous here.
-  const header = page.getByText(new RegExp('Inspect — .*GRN ' + grnCode));
+  const header = page.getByText(new RegExp('Incoming QC — ' + grnCode));
   await expect(header, 'inline Inspect form for GRN ' + grnCode).toBeVisible({ timeout: 60_000 });
   const formText = (await header.innerText()).replace(/\s+/g, ' ').trim();
-  const noJc = await page.getByRole('note').filter({ hasText: /no job card operation/i }).count();
+  const noJc = await page.getByRole('note').filter({ hasText: /not linked to a JC op/i }).count();
   // QC By is a picker over Access Control's QC users; it opens prefilled with
   // the signed-in user's short name. Keep it (a typed name is what the record
   // stores) unless it is blank, in which case take the first QC user offered.
@@ -1011,7 +1019,7 @@ async function incomingQc(page: Page, grnCode: string, acc: number, rej: number,
   await accBox.fill(String(acc));
   await rejBox.fill(String(rej));
   await page.getByPlaceholder(/NC reason, observations/).fill(remark);
-  await page.getByRole('button', { name: /Submit QC/ }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await page.waitForTimeout(2000);
   const err = page.getByRole('alert');
   if (await err.count().catch(() => 0)) {
@@ -1070,7 +1078,7 @@ async function genPoFromJc(page: Page, jcUrl: string, remark: string): Promise<{
   await expect(page).toHaveURL(/purchase-orders\/from-pr\?prId=/, { timeout: 60_000 });
   await page.locator('#pof-code').waitFor({ timeout: 60_000 });
   await expect(page.locator('#pof-code')).not.toHaveValue('', { timeout: 60_000 });
-  await expect(page.getByLabel('Item code, line 1', { exact: true })).not.toHaveValue('', { timeout: 60_000 });
+  await expect(page.getByLabel('Item Code, line 1', { exact: true })).not.toHaveValue('', { timeout: 60_000 });
   await page.waitForTimeout(2000);
   const poType = await page.locator('#pof-type').inputValue();
   const vendorBox = await page.locator('#pof-vendor').inputValue();
@@ -1130,7 +1138,7 @@ async function grnAgainstDc(page: Page, poCode: string, dcCode: string, qty: num
   const line1 = page.getByLabel('Receive now, line 1', { exact: true });
   await expect(line1).toHaveValue(String(qty), { timeout: 30_000 });
   await page.locator('#dcRemarks').fill(remark);
-  await page.getByRole('button', { name: /Create GRN/ }).click();
+  await page.getByRole('button', { name: /Save GRN/ }).click();
   await expect(page).toHaveURL(/goods-receipt-notes\/[0-9a-f-]{36}$/, { timeout: 120_000 });
   const id = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
   const d = await readGrnDetail(page, id);
@@ -1144,8 +1152,8 @@ async function createRtvDc(page: Page, ncUrl: string, remark: string): Promise<{
   await page.locator('#ncDcDate').waitFor({ timeout: 60_000 });
   await page.waitForTimeout(1500);
   const box = (await page.locator('#ncDcVendor').inputValue()).trim();
-  const origLine = (await page.getByText(/Original supplier:/).first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
-  const prefill = box + (origLine ? ' | ' + origLine : '');
+  // The panel no longer prints an "Original supplier:" line — the vendor box is the prefill.
+  const prefill = box;
   log('Create DC vendor prefill: "' + prefill + '"');
   await page.locator('#ncDcDate').fill(today());
   const pickedByHand = !box.includes(VENDOR_CODE);
@@ -1177,7 +1185,7 @@ async function grnAgainstNc(page: Page, ncCode: string, qty: number, remark: str
   const formNote = `Against NC form filled itself: JC="${jcBox}" challan="${dcBox}" vendor="${vBox}" Receive now=${qty}`;
   log(formNote);
   await page.locator('#ncRemarks').fill(remark);
-  await page.getByRole('button', { name: /Create GRN/ }).click();
+  await page.getByRole('button', { name: /Save GRN/ }).click();
   await expect(page).toHaveURL(/goods-receipt-notes\/[0-9a-f-]{36}$/, { timeout: 120_000 });
   const id = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
   const d = await readGrnDetail(page, id);
@@ -1202,14 +1210,14 @@ async function tryDispose(page: Page, ncUrl: string, action: NcAction, qty: numb
   await page.locator('#dispAction').selectOption(action);
   await page.locator('#dispQty').fill(String(qty));
   await page.locator('#dispRemarks').fill(remark);
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Disposition$/ }).click();
   // The test API can take well over 4 s on a dispose; wait for the panel to
   // close (success) or a message to appear (refusal), up to 90 s.
   for (let i = 0; i < 30; i += 1) {
     await page.waitForTimeout(3000);
     if (!(await page.locator('#dispAction').count())) break;
     const t = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-    if (/came from a vendor|no vendor source|exceeds the open|Requires approve/i.test(t)) break;
+    if (/came from a vendor|made in-house|cannot be more than the NC's open qty/i.test(t)) break;
   }
   const alerts = page.getByRole('alert');
   const n = await alerts.count();
@@ -1219,7 +1227,7 @@ async function tryDispose(page: Page, ncUrl: string, action: NcAction, qty: numb
   }
   // Some panels render the server error as a red Note rather than role=alert.
   const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-  const m = /(This NC's material came from a vendor[^.]*\.|This NC has no vendor source[^.]*\.)/.exec(body);
+  const m = /(This NC's material came from a vendor[^.]*\.|Cannot return NC \S+ to vendor: it was made in-house\.)/.exec(body);
   return m ? m[1]! : '';
 }
 
@@ -1320,7 +1328,7 @@ test('T1 - build: SO 12 -> JC -> Turning 12 -> DIR QC 8/4 -> NC1', async ({ page
     const ops = await opsOf(page, s.t1JcCode!);
     const strip = await jcNcStrips(page, s.t1JcUrl!);
     const dir = ops[1]!;
-    const ok = dir.qcAcceptedQty === T1_ACC1 && dir.qcRejectedQty === T1_REJ1 && new RegExp(`NC raised\\s*${T1_REJ1}\\b`).test(strip);
+    const ok = dir.qcAcceptedQty === T1_ACC1 && dir.qcRejectedQty === T1_REJ1 && new RegExp(`NC Raised\\s*${T1_REJ1}\\b`).test(strip);
     return { actual: `NC ${s.t1Nc1Code} listed in NC Register; JC page strip: "${strip}"; ${opLine(dir)}`, ok };
   });
 
@@ -1393,7 +1401,7 @@ test('T1 - rework: NC1 -> Rework 4 -> child 1 -> run -> QC 3/1 -> NC2', async ({
     required: `Strip shows "Under rework ${T1_REJ1}" (no longer "NC raised")`,
   }, async () => {
     const strip = await jcNcStrips(page, s.t1JcUrl!);
-    return { actual: `strip: "${strip}"`, ok: new RegExp(`Under rework\\s*${T1_REJ1}\\b`).test(strip) && !/NC raised\s*[1-9]/.test(strip) };
+    return { actual: `strip: "${strip}"`, ok: new RegExp(`Under Rework\\s*${T1_REJ1}\\b`).test(strip) && !/NC Raised\s*[1-9]/.test(strip) };
   });
 
   // T1-09 run child 1 + QC 3/1.
@@ -1540,7 +1548,7 @@ test('T1 - second child: NC2 -> Rework 1 -> child 2 -> run -> QC 1/0 -> both NCs
     const strip = await jcNcStrips(page, s.t1Child1Url!);
     const status = await jcStatusBadge(page);
     const dir = ops[ops.length - 1]!;
-    return { actual: `child 1 status "${status}"; strip: "${strip}"; ${opLine(dir)}`, ok: dir.qcAcceptedQty === T1_REJ1 && new RegExp(`NC closed\\s*${T1_REJ2}\\b`).test(strip) && !/Under rework\s*[1-9]/.test(strip) };
+    return { actual: `child 1 status "${status}"; strip: "${strip}"; ${opLine(dir)}`, ok: dir.qcAcceptedQty === T1_REJ1 && new RegExp(`NC Closed\\s*${T1_REJ2}\\b`).test(strip) && !/Under Rework\s*[1-9]/.test(strip) };
   });
 
   await rec(page, 'T1-17', {
@@ -1554,7 +1562,7 @@ test('T1 - second child: NC2 -> Rework 1 -> child 2 -> run -> QC 1/0 -> both NCs
     const status = await jcStatusBadge(page);
     const tiles = await jcQtyTiles(page);
     const dir = ops[1]!;
-    return { actual: `JC status "${status}"; quantity tiles "${tiles}"; strip: "${strip}"; api: ${ops.map(opLine).join(' ;; ')}`, ok: dir.qcAcceptedQty === T1_QTY && new RegExp(`NC closed\\s*${T1_REJ1}\\b`).test(strip) && !/Under rework\s*[1-9]/.test(strip) };
+    return { actual: `JC status "${status}"; quantity tiles "${tiles}"; strip: "${strip}"; api: ${ops.map(opLine).join(' ;; ')}`, ok: dir.qcAcceptedQty === T1_QTY && new RegExp(`NC Closed\\s*${T1_REJ1}\\b`).test(strip) && !/Under Rework\s*[1-9]/.test(strip) };
   });
 
   await rec(page, 'T1-18', {
@@ -1613,7 +1621,7 @@ test('T2a - observation: standard PO -> GRN Against PO -> Incoming QC reject 1 -
     const line1 = page.getByLabel('Receive now, line 1', { exact: true });
     await expect(line1).toHaveValue(String(T2A_LINE.qty), { timeout: 30_000 });
     await page.locator('#remarks').fill('E2E_ chain report - purchase GRN (observation)');
-    await page.getByRole('button', { name: /Create GRN/ }).click();
+    await page.getByRole('button', { name: /Save GRN/ }).click();
     await expect(page).toHaveURL(/goods-receipt-notes\/[0-9a-f-]{36}$/, { timeout: 120_000 });
     const grnId = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
     const d = await readGrnDetail(page, grnId);
@@ -1807,7 +1815,7 @@ test('T2b - build: SO 10 -> JC with one outsource op (VND-959) -> JWPO -> DC 10 
     const n = await ncApi(page, s.t2NcId!);
     const strip = await jcNcStrips(page, s.t2JcUrl!);
     const o = (await opsOf(page, s.t2JcCode!))[0]!;
-    const ok = d.lines[0]?.accepted === String(T2_ACC1) && d.lines[0]?.rejected === String(T2_REJ1) && Number(n.rejectedQty) === T2_REJ1 && Boolean(n.grnLineId) && new RegExp(`NC raised\\s*${T2_REJ1}\\b`).test(strip);
+    const ok = d.lines[0]?.accepted === String(T2_ACC1) && d.lines[0]?.rejected === String(T2_REJ1) && Number(n.rejectedQty) === T2_REJ1 && Boolean(n.grnLineId) && new RegExp(`NC Raised\\s*${T2_REJ1}\\b`).test(strip);
     return { actual: `GRN line ${JSON.stringify(d.lines[0])}; NC ${n.code}: ${ncLine(n)}; JC strip: "${strip}"; op: ${opLine(o)}`, ok };
   });
 
@@ -1820,7 +1828,7 @@ test('T2b - build: SO 10 -> JC with one outsource op (VND-959) -> JWPO -> DC 10 
     const d = await readNcDetail(page, s.t2NcUrl!);
     const n = await ncApi(page, s.t2NcId!);
     const sv = /Source Vendor:\s*(VND-\d+)/.exec(d.body)?.[1] ?? '';
-    const spo = /Source PO:\s*(IN-[A-Z]*PO-\d+(?:\/R\d+)?)/.exec(d.body)?.[1] ?? '';
+    const spo = /Source PO No\.:\s*(IN-[A-Z]*PO-\d+(?:\/R\d+)?)/.exec(d.body)?.[1] ?? '';
     const sgrn = /Source GRN:\s*(IN-GRN-\d+)/.exec(d.body)?.[1] ?? '';
     const ok = Number(n.rejectedQty) === T2_REJ1 && d.body.includes(s.t2JcCode!) && sv === VENDOR_CODE && sgrn === s.t2Grn1Code;
     return { actual: `badge "${d.status}"; JC on page: ${d.body.includes(s.t2JcCode!)}; Source Vendor: ${sv || '(not shown)'}; Source PO: ${spo || '(not shown)'}; Source GRN: ${sgrn || '(not shown)'}; api: ${ncLine(n)}`, ok };
@@ -1901,7 +1909,7 @@ test('T2b - RTV: NC -> Return to vendor -> Create DC (vendor prefill) -> JWPO dr
     const strip = await jcNcStrips(page, s.t2JcUrl!);
     const o = (await opsOf(page, s.t2JcCode!))[0]!;
     const recv = await page.getByRole('link', { name: /Receive/ }).count();
-    return { actual: `strip: "${strip}"; Receive link count ${recv}; op: ${opLine(o)}`, ok: new RegExp(`Sent to vendor\\s*${T2_REJ1}\\b`).test(strip) };
+    return { actual: `strip: "${strip}"; Receive link count ${recv}; op: ${opLine(o)}`, ok: new RegExp(`Sent to Vendor\\s*${T2_REJ1}\\b`).test(strip) };
   });
 
   // GRN Against NC, receive 3.
@@ -1981,7 +1989,7 @@ test('T2b - RTV: NC -> Return to vendor -> Create DC (vendor prefill) -> JWPO dr
     const o = (await opsOf(page, s.t2JcCode!))[0]!;
     const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
     const tiles = /QUANTITIES\s+(\d+\s+ORDER.*?\d+\s+IN QC)/.exec(body)?.[1] ?? '';
-    return { actual: `JC status "${status}"; tiles: "${tiles}"; strip: "${strip}"; op: ${opLine(o)}`, ok: o.atVendorQty === 0 && o.inQcQty === 0 && o.completedQty === T2_QTY && new RegExp(`NC closed\\s*${T2_REJ1}\\b`).test(strip) };
+    return { actual: `JC status "${status}"; tiles: "${tiles}"; strip: "${strip}"; op: ${opLine(o)}`, ok: o.atVendorQty === 0 && o.inQcQty === 0 && o.completedQty === T2_QTY && new RegExp(`NC Closed\\s*${T2_REJ1}\\b`).test(strip) };
   });
 
   await rec(page, 'T2-20', {
@@ -2180,7 +2188,7 @@ test('T3 - level 1: replacement rejected again (1 ok / 2 rej) -> NC-B -> Rework 
     const sgrn = /Source GRN:\s*(IN-GRN-\d+)/.exec(d.body)?.[1] ?? '';
     const g = await readGrnDetail(page, s.t3Grn2Id!);
     const linkToA = d.body.includes(s.t3NcACode!);
-    const spo = /Source PO:\s*(\S+)/.exec(d.body)?.[1] ?? '';
+    const spo = /Source PO No\.:\s*(\S+)/.exec(d.body)?.[1] ?? '';
     if (spo && !/PO-/.test(spo)) finding(`[T3] NC-B (${nb.code}) detail shows "Source PO: ${spo}" — that is NC-A's code, not a PO: the Against-NC GRN's po_code_text carries the NC code (the challan has no PO), and the NC page prints it under the PO label. Owning files: apps/api/src/modules/nc-register/service.ts (ncsrc join ~L440-460, sourcePoCode from grn.po_code_text) / apps/web/src/modules/nc-register/routes/detail.tsx (Source PO pair).`);
     return { actual: `NC-B ${nb.code} badge "${d.status}" Source Vendor ${sv || '(none)'} Source PO label shows "${spo}" Source GRN ${sgrn || '(none)'}; page mentions NC-A: ${linkToA}; api NC-B: ${ncLine(nb)}; api NC-A: ${ncLine(na)}; GRN 2 line ${JSON.stringify(g.lines[0])}`, ok: Number(nb.rejectedQty) === T3_REJ2 && Boolean(nb.grnLineId) && sgrn === s.t3Grn2Code && sv === VENDOR_CODE && Number(na.clearedQty) === T3_ACC2 && Number(na.failedQty) === T3_REJ2 };
   });
@@ -2845,7 +2853,7 @@ const idFromUrl = (url: string): string => /\/([0-9a-f-]{36})(?:[/?#]|$)/.exec(u
  *  outsource op on these chains): the label the user sees. */
 async function ospLabelOnPage(page: Page, jcUrl: string): Promise<string> {
   const body = await jcBody(page, jcUrl);
-  const m = /Outsource\s+(?:E2E_ Shreeji Precision Heat Treaters Pvt Ltd\s+)?(Pending|PR Raised|PO Created|Sent|Received)\b/.exec(body);
+  const m = /Outsource\s+(?:E2E_ Shreeji Precision Heat Treaters Pvt Ltd\s+)?(Pending|PR Raised|PO Created|At Vendor|Received)\b/.exec(body);
   return m ? m[1]! : '(no Outsource label found on the JC page)';
 }
 
@@ -3099,7 +3107,7 @@ test('R2 - chain M: M2 RTV 3 (Sent, at vendor 3) -> M3 GRN Against NC 3 (in QC 3
     const po = await readPo(page, poId);
     const dc = await readDcDetail(page, r2('mRtvDcAId'));
     const pre = r2('mRtvDcAPrefill');
-    const ok = pre.includes(VENDOR_CODE) && o1.outsourceStatus === 'sent' && label === 'Sent' && o1.atVendorQty === R2_M_REJ1 && o1.inQcQty === 0 && o1.ncBreakup.sentToVendorQty === R2_M_REJ1 && new RegExp(`Sent to vendor\\s*${R2_M_REJ1}\\b`).test(strip) && po.received[0] === R2_M_QTY - R2_M_REJ1 && po.status === 'partial' && dc.status === 'issued';
+    const ok = pre.includes(VENDOR_CODE) && o1.outsourceStatus === 'sent' && label === 'At Vendor' && o1.atVendorQty === R2_M_REJ1 && o1.inQcQty === 0 && o1.ncBreakup.sentToVendorQty === R2_M_REJ1 && new RegExp(`Sent to Vendor\\s*${R2_M_REJ1}\\b`).test(strip) && po.received[0] === R2_M_QTY - R2_M_REJ1 && po.status === 'partial' && dc.status === 'issued';
     return { actual: `${retried ? '(re-read after a 2-min wait) ' : ''}Op1: ${opLine(o1)}; JC page Outsource label "${label}"; strip "${strip}"; vendor box on open: "${pre}"; ${dc.code} status ${dc.status}; ${poText(po)}`, ok };
   });
 
@@ -3331,8 +3339,8 @@ function opCardText(body: string, seq: number): string {
 function tilesOf(card: string): string {
   const pick = (label: string): string => new RegExp(`(\\d+|—)\\s+${label}`).exec(card)?.[1] ?? '?';
   const pend = /⏳(\d+)\s+pend/.exec(card)?.[1] ?? '0';
-  const label = /Outsource\s+(?:E2E_ Shreeji Precision Heat Treaters Pvt Ltd\s+)?(Pending|PR Raised|PO Created|Sent|Received)\b/.exec(card)?.[1] ?? '—';
-  const badge = /\b(WAITING|IN PROGRESS|QC PENDING|COMPLETE|CLOSED|PENDING|READY)\b/.exec(card)?.[1] ?? '?';
+  const label = /Outsource\s+(?:E2E_ Shreeji Precision Heat Treaters Pvt Ltd\s+)?(Pending|PR Raised|PO Created|At Vendor|Received)\b/.exec(card)?.[1] ?? '—';
+  const badge = /\b(WAITING|PARTLY COMPLETED|RUNNING|QC PENDING|COMPLETED|CLOSED|PENDING|READY)\b/.exec(card)?.[1] ?? '?';
   return `badge ${badge}; DONE ${pick('DONE')}, PENDING ${pick('PENDING')}, READY TO SEND ${pick('READY TO SEND')}, AT VENDOR ${pick('AT VENDOR')}, IN QC ${pick('IN QC')}; QC pending on card ${pend}; Outsource label ${label}; QC link ${/🔬 QC \((\d+)\)/.exec(card)?.[1] ?? 'none'}`;
 }
 /** SO detail page: header badge + every line's Status badge. */
@@ -3394,7 +3402,7 @@ test('R2 - extra rows: chain G through its return cycle (G4/G5/G6 on a partially
       const strip = await jcNcStrips(page, gJcUrl);
       const j = await jcApi(page, r2('gJcId'));
       const po = await readPo(page, gPoId);
-      const ok = o1.outsourceStatus === 'sent' && /Outsource label Sent/.test(card) && o1.atVendorQty === R2_G_REJ && o1.inQcQty === 0 && o1.completedQty === R2_G_ACC && o1.readyToSendQty === gUnsent && new RegExp(`Sent to vendor\\s*${R2_G_REJ}\\b`).test(strip) && !j.closedAt && po.received[0] === gSent - R2_G_REJ && po.status === 'partial';
+      const ok = o1.outsourceStatus === 'sent' && /Outsource label At Vendor/.test(card) && o1.atVendorQty === R2_G_REJ && o1.inQcQty === 0 && o1.completedQty === R2_G_ACC && o1.readyToSendQty === gUnsent && new RegExp(`Sent to Vendor\\s*${R2_G_REJ}\\b`).test(strip) && !j.closedAt && po.received[0] === gSent - R2_G_REJ && po.status === 'partial';
       return { actual: `Op1 card on page: ${card}; strip "${strip}"; api: ${opLine(o1)}; ${jcApiLine(j)}; ${poText(po)}`, ok };
     });
 
@@ -3542,7 +3550,7 @@ test('R2 - extra rows: chain G through its return cycle (G4/G5/G6 on a partially
       const tiles = await jcQtyTiles(page);
       const progress = /(\d+ of \d+ operations complete[^%]*%)/.exec(body)?.[1] ?? '(route progress text not found)';
       const strip = await jcNcStrips(page, r2('mJcUrl'));
-      const ok = new RegExp(`DONE ${R2_M_QTY}\\b`).test(c1) && /AT VENDOR 0\b/.test(c1) && /IN QC 0\b/.test(c1) && /Outsource label Received/.test(c1) && /badge COMPLETE/.test(c1) && new RegExp(`DONE ${R2_M_QTY}\\b`).test(c2) && /QC pending on card 0/.test(c2) && /QC link none/.test(c2) && /badge COMPLETE/.test(c2) && new RegExp(`NC closed\\s*${R2_M_REJ1}\\b`).test(strip) && !/Sent to vendor|QC pending/.test(strip) && /2 of 2 operations complete/.test(progress) && /CLOSED/.test(badge) && tiles === `${R2_M_QTY} ORDERED ${R2_M_QTY} COMPLETED 0 PENDING`;
+      const ok = new RegExp(`DONE ${R2_M_QTY}\\b`).test(c1) && /AT VENDOR 0\b/.test(c1) && /IN QC 0\b/.test(c1) && /Outsource label Received/.test(c1) && /badge COMPLETED/.test(c1) && new RegExp(`DONE ${R2_M_QTY}\\b`).test(c2) && /QC pending on card 0/.test(c2) && /QC link none/.test(c2) && /badge COMPLETE/.test(c2) && new RegExp(`NC Closed\\s*${R2_M_REJ1}\\b`).test(strip) && !/Sent to Vendor|QC Pending/.test(strip) && /2 of 2 operations complete/.test(progress) && /CLOSED/.test(badge) && tiles === `${R2_M_QTY} ORDERED ${R2_M_QTY} COMPLETED 0 PENDING`;
       return { actual: `Op1 card: ${c1}; Op2 card: ${c2}; strip "${strip}"; route progress "${progress}"; Overall Status "${badge}"; tiles "${tiles}"`, ok };
     });
   }
@@ -3780,8 +3788,8 @@ async function checkParentLink(page: Page, a: { id: string; url: string; code: s
   const relA = await ncRelated(page, a.id);
   const relB = await ncRelated(page, b.id);
   const dB = await readNcDetailWithRelated(page, b.url);
-  const contOnPage = /Continues NC\s*(NC-AUTO-[A-Za-z0-9-]+)/.exec(dB.body)?.[1] ?? '';
-  const parentOnPageB = afterTitle(dB.body, 'Continues NC').includes(a.code);
+  const contOnPage = /Earlier NC:\s*(NC-AUTO-[A-Za-z0-9-]+)/.exec(dB.body)?.[1] ?? '';
+  const parentOnPageB = afterTitle(dB.body, 'Earlier NC:').includes(a.code);
   const dA = await readNcDetailWithRelated(page, a.url);
   const followOnPageA = afterTitle(dA.body, 'Follow-on NCs (same pieces, next trip)').includes(b.code);
   const parentApiB = relCodes(relB, 'parent-nc');
@@ -3900,7 +3908,7 @@ async function deletePoUi(page: Page, poId: string): Promise<{ before: string; v
   const del = page.getByRole('button', { name: /^Delete$/ });
   await expect(del, 'Delete offered on the PO page (needs edit + approve)').toBeVisible({ timeout: 30_000 });
   await del.click();
-  await page.getByRole('button', { name: /^Confirm$/ }).click();
+  await page.getByRole('button', { name: /^Move to Trash$/ }).click();
   let message = '';
   let gone = false;
   for (let i = 0; i < 20; i += 1) {
@@ -3924,7 +3932,7 @@ async function deletePoUi(page: Page, poId: string): Promise<{ before: string; v
 async function savePoForm(page: Page, remark: string, qty?: number): Promise<{ id: string; code: string; status: string }> {
   await page.locator('#pof-code').waitFor({ timeout: 60_000 });
   await expect(page.locator('#pof-code')).not.toHaveValue('', { timeout: 60_000 });
-  await expect(page.getByLabel('Item code, line 1', { exact: true })).not.toHaveValue('', { timeout: 60_000 });
+  await expect(page.getByLabel('Item Code, line 1', { exact: true })).not.toHaveValue('', { timeout: 60_000 });
   await page.waitForTimeout(2000);
   const vendorBox = await page.locator('#pof-vendor').inputValue();
   if (!vendorBox.includes(VENDOR_CODE)) await pickFromCombo(page, 'pof-vendor', VENDOR_CODE, new RegExp(VENDOR_CODE));
@@ -4047,7 +4055,7 @@ async function createJwso(page: Page, qty: number): Promise<{ id: string; code: 
   const row = lineRows.first();
   await row.getByPlaceholder('🔍 ITM-001').fill(ITEM_CODE);
   await page.waitForTimeout(800);
-  const partName = row.getByPlaceholder('Part name');
+  const partName = row.getByPlaceholder('Item Name');
   if (!(await partName.inputValue()).trim()) await partName.fill('E2E_ COVER');
   await row.getByPlaceholder('Rev').fill('A');
   await row.getByPlaceholder('Qty').fill(String(qty));
@@ -4165,7 +4173,7 @@ test('R3 - G7/G8 read-only: chain M strip "NC closed 3" (pieces, not generations
     const body = await jcBody(page, jcUrl);
     const card = opCardText(body, 1);
     const strip = await jcNcStrips(page, jcUrl);
-    const closed = stripNum(strip, 'NC closed');
+    const closed = stripNum(strip, 'NC Closed');
     const ok = o1.ncBreakup.ncClosedQty === R2_M_ACC2 + R2_M_ACC3 && closed === R2_M_ACC2 + R2_M_ACC3 && o1.ncBreakup.ncOpenQty === 0;
     return [
       {
@@ -4193,7 +4201,7 @@ test('R3 - G7/G8 read-only: chain M strip "NC closed 3" (pieces, not generations
       const body = await jcBody(page, r1('jcUrl'));
       const card = opCardText(body, 1);
       const strip = await jcNcStrips(page, r1('jcUrl'));
-      const closed = stripNum(strip, 'NC closed');
+      const closed = stripNum(strip, 'NC Closed');
       const want = R1_ACC2 + R1_ACC3 + R1_ACC4 + R1_ACC5;
       return [
         {
@@ -4284,8 +4292,8 @@ test('R3 - chain N (G7 + G8 live): JWPO 6 -> DC 6 -> GRN -> QC 4/2 -> NC-A -> Re
     const body = await jcBody(page, jcUrl);
     const card = opCardText(body, 1);
     const strip = await jcNcStrips(page, jcUrl);
-    const pending = stripNum(strip, 'Return challan pending');
-    const opOk = o1.ncBreakup.rtvAwaitingChallanQty === R3_N_REJ1 && o1.atVendorQty === 0 && pending === R3_N_REJ1 && !/Sent to vendor\s*[1-9]/.test(strip) && !/NC raised\s*[1-9]/.test(strip);
+    const pending = stripNum(strip, 'Return Challan Pending');
+    const opOk = o1.ncBreakup.rtvAwaitingChallanQty === R3_N_REJ1 && o1.atVendorQty === 0 && pending === R3_N_REJ1 && !/Sent to Vendor\s*[1-9]/.test(strip) && !/NC Raised\s*[1-9]/.test(strip);
     const d = await readNcDetail(page, r2('nNcAUrl'));
     return [
       {
@@ -4329,13 +4337,13 @@ test('R3 - chain N (G7 + G8 live): JWPO 6 -> DC 6 -> GRN -> QC 4/2 -> NC-A -> Re
     const dc = await readDcDetail(page, r2('nRtvDcAId'));
     const po = await readPo(page, poId);
     const n = await ncApi(page, r2('nNcAId'));
-    const opOk = o1.ncBreakup.rtvAwaitingChallanQty === 0 && o1.ncBreakup.sentToVendorQty === R3_N_REJ1 && o1.atVendorQty === R3_N_REJ1 && stripNum(strip, 'Sent to vendor') === R3_N_REJ1 && !/Return challan pending/.test(strip);
+    const opOk = o1.ncBreakup.rtvAwaitingChallanQty === 0 && o1.ncBreakup.sentToVendorQty === R3_N_REJ1 && o1.atVendorQty === R3_N_REJ1 && stripNum(strip, 'Sent to Vendor') === R3_N_REJ1 && !/Return Challan Pending/.test(strip);
     return [
       {
         document: `${jc} Op 1`,
         qty: `${R3_N_REJ1}`,
         headerStatus: opBadge(card),
-        overallStatus: `Sent to vendor ${stripNum(strip, 'Sent to vendor')}; At vendor ${o1.atVendorQty}; strip "${strip}"`,
+        overallStatus: `Sent to vendor ${stripNum(strip, 'Sent to Vendor')}; At vendor ${o1.atVendorQty}; strip "${strip}"`,
         ok: opOk,
         note: `${retried ? '(re-read after a 2-min wait) ' : ''}api rtvAwaitingChallanQty=${o1.ncBreakup.rtvAwaitingChallanQty} sentToVendorQty=${o1.ncBreakup.sentToVendorQty}; ${opLine(o1)}`,
       },
@@ -4367,7 +4375,7 @@ test('R3 - chain N (G7 + G8 live): JWPO 6 -> DC 6 -> GRN -> QC 4/2 -> NC-A -> Re
     const nA = await ncApi(page, r2('nNcAId'));
     rows.push({
       document: `${jc} Op 1`,
-      qty: `NC closed ${stripNum(strip, 'NC closed')}, NC raised ${stripNum(strip, 'NC raised')}`,
+      qty: `NC closed ${stripNum(strip, 'NC Closed')}, NC raised ${stripNum(strip, 'NC Raised')}`,
       headerStatus: opBadge(opCardText(await jcBody(page, jcUrl), 1)),
       overallStatus: `strip "${strip}"`,
       ok: o1.ncBreakup.ncClosedQty === R3_N_ACC2 && o1.ncBreakup.ncRaisedQty === R3_N_REJ2 && /closed/i.test(nA.status) && Number(nA.clearedQty) === R3_N_ACC2 && Number(nA.failedQty) === R3_N_REJ2,
@@ -4399,7 +4407,7 @@ test('R3 - chain N (G7 + G8 live): JWPO 6 -> DC 6 -> GRN -> QC 4/2 -> NC-A -> Re
     const body = await jcBody(page, jcUrl);
     const card = opCardText(body, 1);
     const strip = await jcNcStrips(page, jcUrl);
-    const closed = stripNum(strip, 'NC closed');
+    const closed = stripNum(strip, 'NC Closed');
     return [
       {
         document: `${jc} Op 1`,
@@ -4457,7 +4465,7 @@ test('R3 - chain U (0131 F1): JWPO 3 -> DC 3 -> GRN 3 -> Incoming QC 1 ok / 2 re
     const body = await jcBody(page, jcUrl);
     const card = opCardText(body, 1);
     const strip = await jcNcStrips(page, jcUrl);
-    const closed = stripNum(strip, 'NC closed');
+    const closed = stripNum(strip, 'NC Closed');
     const d = await readNcDetail(page, r2('uNcAUrl'));
     return [
       {
@@ -4956,7 +4964,7 @@ test('R3 - vendor picker re-run (58154c54): Job Cards -> + New, OSP op vendor bo
       return [{ document: '(no started in-house op with a balance on this stack)', qty: '', headerStatus: '', overallStatus: 'modal could not be opened', ok: false, note: `board rows: ${board.items.length}; in_progress process ops with available > 0: 0` }];
     }
     await page.goto(`/job-cards/${pick.jcId}/edit`, { waitUntil: 'domcontentloaded' });
-    const btn = page.getByRole('button', { name: /Outsource balance/ }).first();
+    const btn = page.getByRole('button', { name: /Outsource Pending/ }).first();
     const offered = await btn.waitFor({ state: 'visible', timeout: 60_000 }).then(() => true).catch(() => false);
     if (!offered) {
       return [{ document: `${pick.jcCode} Op ${pick.opSeq} (edit page)`, qty: `${pick.available}`, headerStatus: pick.status, overallStatus: '"Outsource balance" button not offered', ok: false, note: `board: ${pick.jcCode} op ${pick.opSeq} "${pick.operation}" status=${pick.status} completed=${pick.completed} available=${pick.available}` }];
@@ -5315,7 +5323,7 @@ async function buildInhouseChainR4(page: Page, p: string, label: string): Promis
         qty: String(R4_QTY),
         headerStatus: j.badge,
         overallStatus: `${R4_ACC1} ok, ${R4_REJ1} rejected`,
-        ok: routeOk && o1.completedQty === R4_QTY && o2.qcAcceptedQty === R4_ACC1 && o2.qcRejectedQty === R4_REJ1 && stripNum(strip, 'NC raised') === R4_REJ1,
+        ok: routeOk && o1.completedQty === R4_QTY && o2.qcAcceptedQty === R4_ACC1 && o2.qcRejectedQty === R4_REJ1 && stripNum(strip, 'NC Raised') === R4_REJ1,
         note: `route: ${o.map(opLine).join(' ;; ')}; JC ${jcApiLine(j.api)}; tiles "${j.tiles}"; strip "${strip}"`,
       },
       {
@@ -5559,7 +5567,7 @@ async function afterDisposeRowsR4(page: Page, p: string, key: string, kind: 'rew
   const o2 = ops[1]!;
   const strip = await jcNcStrips(page, r4(p + 'JcUrl'));
   const st = await soStatus4(page, r4(p + 'SoId'), jc);
-  const label = kind === 'rework' ? 'Under rework' : 'Under repair';
+  const label = kind === 'rework' ? 'Under Rework' : 'Under Repair';
   const stripQty = kind === 'rework' ? o2.ncBreakup.underReworkQty : o2.ncBreakup.underRepairQty;
   return [
     {
@@ -5660,7 +5668,7 @@ test('R4-A - Rework: NC-1 -> Rework 2 -> child -RW1 -> run -> Final Inspection a
       jcClosed: true,
       ncCleared: R4_REJ1,
       ncFailed: 0,
-      strip: { label: 'NC closed', qty: R4_REJ1 },
+      strip: { label: 'NC Closed', qty: R4_REJ1 },
       jcIssued: R4_QTY,
       produced: R4_QTY,
       soOp: 'complete',
@@ -5698,7 +5706,7 @@ test('R4-B - Rework nested: child QC 1 ok / 1 rej -> NC-2 continues NC-1 -> Rewo
     const n2 = await ncApi4(page, r4('bNc2Id'));
     const d2 = await readNcDetailWithRelated(page, r4('bNc2Url'));
     const n1b = await ncApi4(page, r4('bNc1Id'));
-    const continues = /Continues NC/i.test(d2.body) && d2.body.includes(r4('bNc1Code'));
+    const continues = /Earlier NC:/i.test(d2.body) && d2.body.includes(r4('bNc1Code'));
     return [
       {
         act: 'QC child: 1 ok, 1 reject',
@@ -5777,7 +5785,7 @@ test('R4-B - Rework nested: child QC 1 ok / 1 rej -> NC-2 continues NC-1 -> Rewo
         jcClosed: true,
         ncCleared: R4_REJ1,
         ncFailed: 0,
-        strip: { label: 'NC closed', qty: R4_REJ1 },
+        strip: { label: 'NC Closed', qty: R4_REJ1 },
         jcIssued: R4_QTY,
         produced: R4_QTY,
         soOp: 'complete',
@@ -5806,7 +5814,7 @@ test('R4-C - Use as is: NC-1 -> Use as is 2 -> NC cleared 2, parent op 10 of 10,
       jcClosed: true,
       ncCleared: R4_REJ1,
       ncFailed: 0,
-      strip: { label: 'NC closed', qty: R4_REJ1 },
+      strip: { label: 'NC Closed', qty: R4_REJ1 },
       jcIssued: R4_QTY,
       produced: R4_QTY,
       soOp: 'complete',
@@ -5872,7 +5880,7 @@ test('R4-E - Make fresh: NC-1 -> Make fresh 2 -> NC failed 2, supplementary -S1 
       byDesign: true,
       ncCleared: 0,
       ncFailed: R4_REJ1,
-      strip: { label: 'NC closed', qty: R4_REJ1 },
+      strip: { label: 'NC Closed', qty: R4_REJ1 },
       jcIssued: R4_QTY + R4_REJ1, // the supplementary counts — by design
       produced: R4_ACC1,
       soOp: 'in_progress',
@@ -5936,7 +5944,7 @@ test('R4-F - Repair: NC-1 -> Repair 2 -> child -RP1 ("Under repair") -> run -> F
       jcClosed: true,
       ncCleared: R4_REJ1,
       ncFailed: 0,
-      strip: { label: 'NC closed', qty: R4_REJ1 },
+      strip: { label: 'NC Closed', qty: R4_REJ1 },
       jcIssued: R4_QTY,
       produced: R4_QTY,
       soOp: 'complete',

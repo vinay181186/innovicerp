@@ -14,7 +14,7 @@
 import { SHIFT_LABELS, type OpLog, type OpLogTimeChangeRequest } from '@innovic/shared';
 import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
-import { todayIst } from '@/lib/date';
+import { fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests, useUpdateOpLogTiming } from '../api';
 
@@ -42,7 +42,7 @@ const TYPE_STYLE: Record<OpLog['logType'], { bg: string; fg: string }> = {
 const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '');
 
 function whenLabel(date: string, time: string | null): string {
-  return time ? `${date} ${hhmm(time)}` : date;
+  return fmtDateAndTime(date, time);
 }
 
 export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Element {
@@ -204,7 +204,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     </div>
                   ) : (
                     <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
-                      {l.logDate}
+                      {fmtDate(l.logDate)}
                       {hhmm(l.startTime) ? ` · ${hhmm(l.startTime)}` : ''}
                     </span>
                   )}
@@ -317,9 +317,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     <span
                       className="text3"
                       style={{ fontSize: 10, marginLeft: 4 }}
-                      title={`Date/time corrected on ${new Date(
-                        l.timingEditedAt,
-                      ).toLocaleString()}. Qty unchanged.`}
+                      title={`Date/time corrected on ${fmtDateTime(l.timingEditedAt)}. Qty unchanged.`}
                     >
                       (retimed)
                     </span>

@@ -45,6 +45,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -208,7 +209,7 @@ function RouteCardsListPage(): React.JSX.Element {
         width: '11%',
         className: 'mono text2',
         nowrap: true,
-        render: (rc) => new Date(rc.updatedAt).toISOString().slice(0, 10),
+        render: (rc) => fmtDate(rc.updatedAt),
       },
     ],
     [expanded, toggleExpand],

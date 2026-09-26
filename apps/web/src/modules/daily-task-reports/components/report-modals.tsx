@@ -12,7 +12,7 @@ import {
 } from '@innovic/shared';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { useCreateDailyReport, useDailyReportDetail, useUpdateDailyReport } from '../api';
 
 function todayStr(): string {
@@ -264,7 +264,7 @@ export function ViewReportModal({ id, onClose }: { id: string; onClose: () => vo
             <div>
               <span style={{ fontSize: 10, color: 'var(--text3)' }}>REPORT DATE</span>
               <br />
-              <b>{r.reportDate}</b>
+              <b>{fmtDate(r.reportDate)}</b>
             </div>
             <div>
               <span style={{ fontSize: 10, color: 'var(--text3)' }}>SHIFT</span>

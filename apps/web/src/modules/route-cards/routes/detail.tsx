@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
@@ -205,7 +206,7 @@ function RouteCardDetailPage(): React.JSX.Element {
             <div className="form-grp">
               <span className="form-label">Last Updated</span>
               <div className="text2" style={{ fontSize: 12 }}>
-                {new Date(detail.updatedAt).toISOString().slice(0, 10)}
+                {fmtDate(detail.updatedAt)}
               </div>
             </div>
             <div className="form-grp form-full">
@@ -245,7 +246,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                 <th>Group</th>
                 <th>Machine / Vendor</th>
                 <th>Operation</th>
-                <th className="td-ctr">Cycle Time (h)</th>
+                <th className="td-ctr">Cycle Time (min)</th>
                 <th>Program / Lead</th>
                 <th>Tool No.</th>
                 <th>Tool Details</th>
@@ -450,7 +451,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                       Route Card Rev {rev.revisionNo}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {new Date(rev.createdAt).toISOString().slice(0, 10)}
+                      {fmtDate(rev.createdAt)}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
                       {rev.createdByName ?? '—'}
@@ -485,7 +486,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                 <th>Op Type</th>
                                 <th>Machine / Vendor</th>
                                 <th>Operation</th>
-                                <th className="td-ctr">Cycle Time (h)</th>
+                                <th className="td-ctr">Cycle Time (min)</th>
                                 <th>Program / Lead</th>
                                 <th>Tool No.</th>
                                 <th>Tool Details</th>

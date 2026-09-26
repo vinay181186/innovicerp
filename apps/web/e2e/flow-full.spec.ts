@@ -33,7 +33,7 @@ async function logOp(page: Page, jc: string, opName: string, qty: string): Promi
   await page.waitForTimeout(1200);
   await page.getByRole('spinbutton').first().fill(qty);
   await page.getByPlaceholder(/Operator name/i).fill('E2E Auto');
-  await page.getByRole('button', { name: /Submit completion/i }).click();
+  await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
   await page.waitForTimeout(3200);
 }
 
@@ -45,7 +45,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.waitForTimeout(2500);
   const so = await page.locator('input[value^="IN-SO-"]').first().inputValue();
   rec('SO', so);
-  const client = page.getByPlaceholder(/Type client code or name/i);
+  const client = page.getByPlaceholder(/Type customer code or name/i);
   await client.click();
   await client.fill('Demo');
   await page.waitForTimeout(1300);
@@ -70,7 +70,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.waitForTimeout(1800);
   await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
   await page.waitForTimeout(1300);
-  await page.getByRole('button', { name: /^Save$/ }).click();
+  await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
   const pln = (await page.locator('text=/Plan:\\s*PLN-/i').first().innerText().catch(() => '')).match(/PLN-\d+/);
   if (pln) rec('PLN', pln[0]);
@@ -100,7 +100,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Execute/i }).first().click();
+  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
   await page.waitForTimeout(4500);
   const body2 = await page.locator('body').innerText();
   const jc = body2.match(/IN-JC-\d{2}-\d+/);
@@ -116,10 +116,10 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   // ── 4. OSP loop: PR → PO → DC → receive → Incoming QC ──
   await page.goto(`/purchase-requests?search=${docs['OSP PR']}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByText('📝 PO', { exact: false }).first().click();
+  await page.getByText('Create PO', { exact: false }).first().click();
   await page.waitForTimeout(3000);
   const poAuto = await page.locator('input[value^="IN-PO-"], input[value^="IN-JWPO-"]').first().inputValue().catch(() => '');
-  await page.getByRole('button', { name: /Create PO/i }).click();
+  await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(4000);
   const poId = new URL(page.url()).pathname.split('/').pop()!;
   const poNo = (await page.locator('body').innerText()).match(/IN-(?:JW)?PO-\d+/);
@@ -174,7 +174,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.getByText(/559918151000/).first().click().catch(() => {});
   await page.getByRole('spinbutton').first().fill(QTY, { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(600);
-  await page.getByRole('button', { name: /Create Dispatch/i }).click();
+  await page.getByRole('button', { name: /Save Dispatch/i }).click();
   await page.waitForTimeout(4000);
   const dsp = (await page.locator('body').innerText()).match(/DSP-\d+/);
   rec('Dispatch', dsp ? dsp[0] : dspAuto);
@@ -187,7 +187,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   const invAuto = await page.locator('input[value^="INV-"]').first().inputValue().catch(() => '');
   await page.getByRole('spinbutton').first().fill(QTY, { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(800);
-  await page.getByRole('button', { name: /Create Invoice/i }).click();
+  await page.getByRole('button', { name: /Save Invoice/i }).click();
   await page.waitForTimeout(4000);
   await page.screenshot({ path: `${SHOT}/full-invoice.png`, fullPage: true });
   const inv = (await page.locator('body').innerText()).match(/INV-\d+/);

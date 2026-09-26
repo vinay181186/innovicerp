@@ -6,6 +6,7 @@
 // data and the DC-line lookup the receipt rows resolve their item against.
 
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 export function DcReceiptsPanel({
@@ -38,7 +39,7 @@ export function DcReceiptsPanel({
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <div style={{ fontSize: 12 }}>
                 <span className="mono">{rcpt.receiptCode}</span>{' '}
-                <span className="text3">· {rcpt.receiptDate}</span>
+                <span className="text3">· {fmtDate(rcpt.receiptDate)}</span>
                 {rcpt.vendorInvoiceText ? (
                   <span className="text3">
                     {' '}

@@ -5,6 +5,7 @@
 import { type QcCommandQueueRow, opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 type Sort = 'age' | 'due' | 'customer';
@@ -13,10 +14,6 @@ const SORTS: { id: Sort; label: string }[] = [
   { id: 'due', label: 'Due Date' },
   { id: 'customer', label: 'Customer' },
 ];
-
-function fmt(d: string | null): string {
-  return d ?? '—';
-}
 
 function attemptLabel(n: number): string {
   if (n === 1) return '1st';
@@ -226,7 +223,7 @@ export function QueueTab({
                             color: it.isOverdue ? 'var(--red)' : 'var(--text3)',
                           }}
                         >
-                          {fmt(it.dueDate)}
+                          {fmtDate(it.dueDate)}
                         </td>
                         <td style={{ fontSize: 11 }}>
                           {it.assignedTo ? (

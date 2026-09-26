@@ -18,9 +18,9 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
-import { fmtJcDate } from '@/modules/job-cards/lib/fmt-jc-date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionOrder } from '../api';
 import { PoCloseForm } from '../components/po-close-form';
@@ -184,7 +184,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             </Fact>
             <Fact label="Customer">{data.partyName ?? '—'}</Fact>
             <Fact label="Customer Dispatch Date" mono>
-              {data.targetDate}
+              {fmtDate(data.targetDate)}
             </Fact>
 
             {/* POL — the line number printed on the CUSTOMER's own purchase
@@ -254,7 +254,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               {data.createdByName ?? '—'}
               <span className="text3 mono" style={{ fontSize: 11 }}>
                 {' '}
-                · {fmtJcDate(data.createdAt)}
+                · {fmtDate(data.createdAt)}
               </span>
             </Fact>
             <Fact label="Remarks">{data.remarks ?? '—'}</Fact>
@@ -268,8 +268,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--red)' }}>
           <div className="panel-hdr">
             <div className="panel-title" style={{ color: 'var(--red)' }}>
-              ⛔ Short closed on {data.shortClosedAt ? fmtJcDate(data.shortClosedAt) : '—'} by{' '}
-              {data.shortClosedByName ?? '—'} — {data.shortCloseReason ?? '—'}
+              ⛔ Short closed on {fmtDate(data.shortClosedAt)} by {data.shortClosedByName ?? '—'} —{' '}
+              {data.shortCloseReason ?? '—'}
             </div>
           </div>
           <div className="panel-body">
@@ -321,7 +321,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           </div>
           {data.jcClosedAt ? (
             <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-              JC closed on <span className="mono">{fmtJcDate(data.jcClosedAt)}</span>.
+              JC closed on <span className="mono">{fmtDate(data.jcClosedAt)}</span>.
             </div>
           ) : null}
         </div>
@@ -369,7 +369,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 {data.lostQty ?? '—'}
               </Fact>
               <Fact label="Close Date" mono>
-                {data.closedAt ? fmtJcDate(data.closedAt) : '—'}
+                {fmtDate(data.closedAt)}
               </Fact>
             </div>
           </div>

@@ -509,14 +509,8 @@ export function PlanForm({
               onChange={(e) => update('itemNameText', e.target.value)}
             />
           </Field>
-          <Field label="Item id (UUID, optional)">
-            <input
-              className="innovic-input"
-              placeholder="optional — auto-resolves item code if blank"
-              value={values.itemId ?? ''}
-              onChange={(e) => update('itemId', e.target.value || null)}
-            />
-          </Field>
+          {/* No raw "Item id (UUID)" box: the Item Code picker above already
+              links the plan to the Item Master (sets itemId). */}
           <Field label="Order Qty *">
             <input
               type="number"
@@ -797,7 +791,7 @@ export function PlanForm({
                   <th>Operation</th>
                   <th>Op Type</th>
                   <th>Planned Machine</th>
-                  <th>Cycle Time (h)</th>
+                  <th>Cycle Time (min)</th>
                   <th>QC Required</th>
                   <th>OSP Vendor</th>
                   <th>OSP Cost</th>

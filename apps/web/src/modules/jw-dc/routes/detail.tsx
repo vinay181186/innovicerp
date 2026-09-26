@@ -15,6 +15,7 @@
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
@@ -209,7 +210,7 @@ function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
   return (
     <div className="form-grid form-grid-3">
       <Pair label="DC No." value={dc.code} />
-      <Pair label="DC Date" value={dc.dcDate} />
+      <Pair label="DC Date" value={fmtDate(dc.dcDate)} />
       <Pair label="PO No." value={dc.jwpoCodeText ?? '—'} />
       <Pair label="SO No." value={dc.soCode ?? '—'} />
       <Pair label="Vendor" value={dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />

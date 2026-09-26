@@ -696,6 +696,9 @@ export async function getPurchaseOrder(
         // to a job-work order, not to a customer PO, so it has no client PO
         // line number to offer -- an OSP line sourced that way stays null.
         clientPoLineNo: salesOrderLines.clientPoLineNo,
+        // The item's unit off the master, for the printed UOM column. A PO line
+        // stores none of its own; null on a hand-typed line with no item.
+        uom: sql<string | null>`${items.uom}::text`,
         sourcePrCode: purchaseRequests.code,
       })
       .from(purchaseOrderLines)
@@ -749,7 +752,14 @@ export async function getPurchaseOrder(
 
     const header = toPurchaseOrder(headerRow.row);
     const lines = lineRows.map((r) =>
-      toPurchaseOrderLine(r.row, r.itemCode, r.sourcePrCode, r.itemRevision, r.clientPoLineNo),
+      toPurchaseOrderLine(
+        r.row,
+        r.itemCode,
+        r.sourcePrCode,
+        r.itemRevision,
+        r.clientPoLineNo,
+        r.uom,
+      ),
     );
     return {
       ...(showMoney ? header : hidePoHeaderMoney(header)),
@@ -818,6 +828,8 @@ function toPurchaseOrderLine(
    *  sourced from a job-work order), and on the write-back paths that return a
    *  freshly inserted row without the join. */
   clientPoLineNo: string | null = null,
+  /** items.uom joined on item_id -- detail read only, null elsewhere. */
+  uom: string | null = null,
 ): PurchaseOrderLine {
   return {
     id: row.id,
@@ -829,6 +841,7 @@ function toPurchaseOrderLine(
     itemCode,
     itemRevision,
     clientPoLineNo,
+    uom,
     itemName: row.itemName,
     qty: row.qty,
     rate: row.rate,

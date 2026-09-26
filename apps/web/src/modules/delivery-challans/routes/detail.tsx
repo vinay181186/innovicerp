@@ -18,6 +18,7 @@ import { ArrowLeft, Ban, Inbox, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -398,22 +399,6 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   );
 }
 
-/** Format a stored UTC timestamp as IST date + time — same helper the SO detail
- *  page uses (CLAUDE.md §6 rule 5: stored UTC, displayed IST). */
-function fmtIstDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
-
 function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element {
   const { dc } = props;
   // `form-grid form-grid-3` stacked a 2-col and a 3-col grid on one element and
@@ -421,7 +406,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
   // sixth cell carries "Issued on" instead of a blank — no orphan cells.
   return (
     <div className="form-grid-3">
-      <Pair label="DC Date" value={dc.dcDate} />
+      <Pair label="DC Date" value={fmtDate(dc.dcDate)} />
       <Pair label="Vendor" value={dc.vendorName ?? dc.vendorCodeText} />
       {/* An NC challan has no PO: po_code_text carries the NC code (the column
           is NOT NULL), so the same cell is labelled NC and linked to the NC,
@@ -466,7 +451,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
         label="Issued on"
         value={
           <span className="mono" style={{ fontSize: 12 }}>
-            {fmtIstDateTime(dc.createdAt)}
+            {fmtDateTime(dc.createdAt)}
           </span>
         }
       />

@@ -46,7 +46,7 @@ import { useDocNumber } from '@/lib/use-doc-number';
 import { useEffect, useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useCreatePurchaseOrderFromPrBatch } from '@/modules/purchase-orders/api';
@@ -722,7 +722,7 @@ function OspRow({
       <td className="mono" style={{ color: 'var(--green)' }}>
         {Number(pr.estCost) > 0 ? `₹${Number(pr.estCost).toFixed(2)}` : '—'}
       </td>
-      <td style={{ fontSize: 11 }}>{pr.requiredDate ?? '—'}</td>
+      <td style={{ fontSize: 11 }}>{fmtDate(pr.requiredDate)}</td>
       <td>
         <span style={{ fontWeight: 700, color: statusColor(pr.status) }}>
           {PR_STATUS_LABELS[pr.status]}

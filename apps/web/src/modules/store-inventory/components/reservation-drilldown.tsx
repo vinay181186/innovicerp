@@ -13,7 +13,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { fmtDate } from '@/lib/print/doc-print';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useStockReservations } from '@/modules/plans/api';
 import { ModalShell } from './modal-shell';

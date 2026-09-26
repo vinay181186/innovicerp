@@ -21,6 +21,7 @@
 import type { JcOpEnriched, JobCardListItem, OpLog } from '@innovic/shared';
 import { opSrNo, SHIFT_LABELS } from '@innovic/shared';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
@@ -624,7 +625,7 @@ export function JcOpEditCard({
                 {logs.map((l) => (
                   <div key={l.id} style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.9 }}>
                     <span className="mono" style={{ color: 'var(--text3)' }}>
-                      {l.logDate}
+                      {fmtDate(l.logDate)}
                     </span>{' '}
                     · {SHIFT_LABELS[l.shift]} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
                     {l.operatorName ?? ''}

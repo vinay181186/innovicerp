@@ -75,7 +75,7 @@ async function fillEntryHeader(page: Page, operator: string): Promise<void> {
   await page.locator('#opf-date').fill(today());
   await page.locator('#opf-time').fill(now());
   await page.locator('#opf-shift').selectOption('day');
-  await page.getByPlaceholder(/Operator name|QC inspector name/i).first().fill(operator);
+  await page.locator('#opf-op').first().fill(operator);
 }
 async function popupGone(page: Page): Promise<void> {
   await page.locator('[role="dialog"]').first().waitFor({ state: 'hidden', timeout: 120_000 });
@@ -120,12 +120,12 @@ test('QC → NC → Rework → Re-QC → Closure — part 2 (child run to closur
   });
 
   // ── 14. Re-QC after rework: accept both ───────────────────────────────────
-  await opRow(page, 'DIR').getByRole('button', { name: /QC/ }).click();
+  await opRow(page, 'DIR').getByRole('button', { name: /Inspect/ }).click();
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Inspector');
   await page.locator('#opf-qty').fill(String(REJECT_1));
   await page.locator('#opf-rej').fill('0');
-  await page.getByRole('button', { name: /Submit QC inspection/i }).click();
+  await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await popupGone(page);
   await step(page, 'Re-QC after rework (§8)', `Child DIR: accept ${REJECT_1}, reject 0`, 'NC closes on its own (cleared = rejected)', async () => {
     await page.goto(docs['NC_URL']!, { waitUntil: 'domcontentloaded' });
@@ -142,8 +142,8 @@ test('QC → NC → Rework → Re-QC → Closure — part 2 (child run to closur
   await page.waitForTimeout(1000);
   await step(page, 'Parent rejoined (§9)', 'Re-open the parent job card', `DIR shows ✓${ORDER_QTY}; strip "NC closed ${REJECT_1}"; nothing under rework`, async () => {
     const body = await page.locator('body').innerText();
-    if (!new RegExp(`NC closed\\s*${REJECT_1}`).test(body)) throw new Error('"NC closed 2" not shown on the parent');
-    if (/Under rework\s*[1-9]/.test(body)) throw new Error('parent still shows pieces under rework');
+    if (!new RegExp(`NC Closed\\s*${REJECT_1}`).test(body)) throw new Error('"NC closed 2" not shown on the parent');
+    if (/Under Rework\s*[1-9]/.test(body)) throw new Error('parent still shows pieces under rework');
     const acc = body.match(/✓\s*\d+/g)?.join(' ') ?? '';
     return `"NC closed ${REJECT_1}" shown; accepted markers: ${acc}`;
   });

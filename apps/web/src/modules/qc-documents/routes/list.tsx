@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { canDownloadDrawings, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
@@ -69,7 +70,9 @@ export const qcDocumentsListRoute = createRoute({
   component: QcDocumentsPage,
 });
 
-function fmtDate(iso: string | null): string {
+/** Excel-export date (DD-MM-YYYY) — the export keeps its own format; the
+ *  screen uses the shared `fmtDate` (DD-MMM-YYYY). */
+function fmtExportDate(iso: string | null): string {
   if (!iso) return '';
   const d = iso.slice(0, 10);
   const [y, m, day] = d.split('-');
@@ -518,7 +521,7 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
       return (
         <td>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)' }}>✅ Completed</div>
-          <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
+          <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate, '')}</div>
           <button
             type="button"
             className="btn"
@@ -546,7 +549,7 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
     return (
       <td>
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)' }}>✅ Completed</div>
-        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
+        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate, '')}</div>
         <div style={{ fontSize: 9, color: 'var(--amber)', fontStyle: 'italic' }}>
           Report Missing
         </div>
@@ -645,7 +648,7 @@ function exportMatrixExcel(matrix: QcMatrixResponse): void {
     const cells = r.cells.map((c) => {
       if (!c.applicable) return '—';
       if (c.done)
-        return c.hasDoc ? `Completed (${fmtDate(c.docDate)})` : 'Completed, Report Missing';
+        return c.hasDoc ? `Completed (${fmtExportDate(c.docDate)})` : 'Completed, Report Missing';
       if (c.pending)
         return `Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} Accepted` : ''}`;
       return 'Waiting';
@@ -873,7 +876,7 @@ function LineDetailBody({
               <span className="mono fw-700" style={{ color: 'var(--green)' }}>
                 Batch {i + 1}
               </span>
-              <span>{fmtDate(b.date)}</span>
+              <span>{fmtDate(b.date, '')}</span>
               <span>
                 Op{opSrNo(b.opSeq)}: <b>{b.operation}</b>
               </span>
@@ -1064,7 +1067,7 @@ function DocSection({
             </span>
           ) : null}
           <span style={{ fontSize: 10, color: 'var(--text2)' }}>{up.fileName}</span>
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>{fmtDate(up.createdAt)}</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>{fmtDate(up.createdAt, '')}</span>
           <span style={{ fontSize: 10, color: 'var(--text3)' }}>{up.uploadedByText ?? ''}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
             <button
@@ -1392,7 +1395,7 @@ function RegisterView(): React.JSX.Element {
                       {d.uploadedByText ?? '—'}
                     </td>
                     <td className="text3" style={{ fontSize: 11 }}>
-                      {d.createdAt.slice(0, 10)}
+                      {fmtDate(d.createdAt)}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>

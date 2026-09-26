@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { exportStockValuation } from '../lib/export';
 
@@ -248,7 +249,7 @@ function StockValuationPage(): React.JSX.Element {
                         </td>
                       </>
                     )}
-                    <td style={{ fontSize: 11 }}>{r.lastGrnDate ?? '—'}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDate(r.lastGrnDate)}</td>
                   </tr>
                 ))
               )}

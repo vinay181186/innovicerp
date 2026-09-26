@@ -23,7 +23,7 @@ import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-atta
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { useTpiMastersList } from '@/modules/tpi-masters/api';
@@ -290,8 +290,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         >
                           {l.rejected}
                         </td>
-                        <td style={{ fontSize: 11, color: 'var(--amber)' }}>{l.callDate ?? '—'}</td>
-                        <td style={{ fontSize: 11, color: 'var(--green)' }}>{l.attendedDate}</td>
+                        <td style={{ fontSize: 11, color: 'var(--amber)' }}>
+                          {fmtDate(l.callDate)}
+                        </td>
+                        <td style={{ fontSize: 11, color: 'var(--green)' }}>
+                          {fmtDate(l.attendedDate)}
+                        </td>
                         <td
                           style={{
                             fontSize: 11,
@@ -505,7 +509,7 @@ function PendingTpi(props: {
             • Order: {o.orderQty} pcs
           </div>
           {o.callDate ? (
-            <div style={{ fontSize: 10, color: 'var(--amber)' }}>Called: {o.callDate}</div>
+            <div style={{ fontSize: 10, color: 'var(--amber)' }}>Called: {fmtDate(o.callDate)}</div>
           ) : null}
         </div>
         <div style={{ textAlign: 'center' }}>

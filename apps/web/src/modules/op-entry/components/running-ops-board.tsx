@@ -7,8 +7,8 @@ import { Square } from 'lucide-react';
 import { useState } from 'react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { fmtJcDate } from '@/modules/job-cards/lib/fmt-jc-date';
 import { useStopOp } from '../api';
 import { RunningOpStatusBadge } from './status-badge';
 import { StopOpModal } from './stop-op-modal';
@@ -163,7 +163,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                     </td>
                     <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
                     <td className="mono" style={{ fontSize: 11 }}>
-                      {fmtJcDate(r.startDate)} {r.startTime.slice(0, 5)}
+                      {fmtDateAndTime(r.startDate, r.startTime)}
                     </td>
                     <td>
                       {canOpEntry ? (
@@ -243,7 +243,7 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                     </td>
                     <td style={{ fontSize: 12 }}>{r.operatorName ?? '—'}</td>
                     <td className="mono text3" style={{ fontSize: 11 }}>
-                      {r.endedAt ? r.endedAt.slice(0, 16).replace('T', ' ') : '—'}
+                      {fmtDateTime(r.endedAt)}
                     </td>
                     <td>
                       <RunningOpStatusBadge status={r.status} />

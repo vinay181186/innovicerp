@@ -41,6 +41,7 @@ import { z } from 'zod';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
@@ -93,19 +94,20 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
 };
 
 const PLAN_STATUS_COLOR: Record<PlanStatus, string> = {
-  in_planning: 'var(--amber)',
+  // Same colour per state as <StatusBadge kind="plan"> (wave 2).
+  in_planning: 'var(--text3)',
   planned: 'var(--blue)',
   jc_created: 'var(--cyan)',
-  pr_created: 'var(--purple)',
-  in_production: 'var(--cyan)',
+  pr_created: 'var(--cyan)',
+  in_production: 'var(--amber)',
   complete: 'var(--green)',
   cancelled: 'var(--text3)',
 };
 
 const DERIVED_STATUS_COLOR: Record<PlanDerivedStatus, string> = {
-  route_card_pending: 'var(--amber)',
+  route_card_pending: 'var(--text3)',
   gen_production_order: 'var(--blue)',
-  in_production: 'var(--cyan)',
+  in_production: 'var(--amber)',
   production_complete: 'var(--green)',
 };
 
@@ -468,7 +470,7 @@ function OrderList({
                     <td>
                       <span className="badge b-grey">{soTypeLabel(so.soType)}</span>
                     </td>
-                    <td className="mono">{so.dueDate ?? '—'}</td>
+                    <td className="mono">{fmtDate(so.dueDate)}</td>
                     <td className="mono">{so.totalLines}</td>
                     <td className="mono fw-700">{so.totalQty}</td>
                     <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
@@ -683,7 +685,7 @@ function OrderDetail({
           <span className="badge b-grey">{soTypeLabel(so.soType)}</span>
         </HeaderField>
         <HeaderField label="Due Date">
-          <span className="mono">{so.dueDate ?? '—'}</span>
+          <span className="mono">{fmtDate(so.dueDate)}</span>
         </HeaderField>
         <HeaderField label="Client PO No.">
           <span className="mono">{so.clientPoNo ?? '—'}</span>
@@ -860,7 +862,7 @@ function OrderDetail({
                       >
                         {line.remaining}
                       </td>
-                      <td className="mono">{line.dueDate ?? '—'}</td>
+                      <td className="mono">{fmtDate(line.dueDate)}</td>
                       <td style={wrapCell}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>
                           {status.label}
@@ -1305,7 +1307,7 @@ function SearchResults({
                     </td>
                     <td style={wrapCell}>{line.itemName ?? '—'}</td>
                     <td className="mono fw-700">{line.orderQty}</td>
-                    <td className="mono">{line.dueDate ?? '—'}</td>
+                    <td className="mono">{fmtDate(line.dueDate)}</td>
                     <td style={wrapCell}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>
                         {status.label}
@@ -1434,8 +1436,8 @@ function PlanChip({
   // Schedule / raw material / remark ride along as a tooltip so the chip stays
   // one line; the Plans page shows them in full.
   const tip = [
-    plan.plannedStartDate ? `Start: ${plan.plannedStartDate}` : null,
-    plan.plannedEndDate ? `End: ${plan.plannedEndDate}` : null,
+    plan.plannedStartDate ? `Start: ${fmtDate(plan.plannedStartDate)}` : null,
+    plan.plannedEndDate ? `End: ${fmtDate(plan.plannedEndDate)}` : null,
     plan.rawMaterialGradeText ? `Grade: ${plan.rawMaterialGradeText}` : null,
     plan.rawMaterialSizeText ? `Size: ${plan.rawMaterialSizeText}` : null,
     plan.remarks ? `Remark: ${plan.remarks}` : null,

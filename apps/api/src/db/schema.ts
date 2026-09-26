@@ -4046,6 +4046,9 @@ export const jwInvoices = pgTable(
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     totalAmount: numeric('total_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    // 'sgst_cgst' | 'igst' (same codes as purchase_orders.tax_type), migration
+    // 0148. NULL on rows raised before it: those print a single GST row.
+    taxType: text('tax_type'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

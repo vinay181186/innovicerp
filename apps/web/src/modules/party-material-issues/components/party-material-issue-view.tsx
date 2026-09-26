@@ -13,7 +13,7 @@ import { Loader2, Plus, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobCardsList } from '@/modules/job-cards/api';
@@ -159,7 +159,7 @@ export function PartyMaterialIssueView({
                       </span>
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
-                      {it.issueDate}
+                      {fmtDate(it.issueDate)}
                     </td>
                     <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
                       {it.jwCodeText ?? '—'}

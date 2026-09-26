@@ -17,6 +17,7 @@
 
 import type { PartyGrnListItem } from '@innovic/shared';
 import { XCircle } from 'lucide-react';
+import { fmtDate } from '@/lib/date';
 
 /** One cell of the card's metric strip — big number over a small caps label,
  *  identical to the SO/WO, JWSO, Dispatch, DC and PR cards. */
@@ -136,7 +137,7 @@ export function PartyGrnCard({
               minWidth: 0,
             }}
           >
-            <span className="text2">{g.grnDate}</span>
+            <span className="text2">{fmtDate(g.grnDate)}</span>
             <span>·</span>
             <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{g.jwCodeText ?? '—'}</span>
             <span>·</span>

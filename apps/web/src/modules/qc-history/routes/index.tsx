@@ -8,8 +8,8 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { fmtDate } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '../api';
 import { exportCompletedQc, exportPendingQc } from '../lib/export';
@@ -367,7 +367,7 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
         {o.qcPending}
       </td>
       <td className="text3" style={{ fontSize: 10 }}>
-        {o.pendSince ? fmtDate(o.pendSince) : '—'}
+        {fmtDate(o.pendSince)}
         {o.overdue ? <span style={{ color: 'var(--red)', fontWeight: 700 }}> ⚠</span> : null}
       </td>
       <td>

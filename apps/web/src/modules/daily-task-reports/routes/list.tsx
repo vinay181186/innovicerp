@@ -6,6 +6,7 @@ import { SHIFT_LABELS } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDailyReportList } from '../api';
 import { EditReportModal, NewReportModal, ViewReportModal } from '../components/report-modals';
@@ -98,7 +99,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
               ) : (
                 data.reports.map((r) => (
                   <tr key={r.id}>
-                    <td style={{ fontWeight: 700 }}>{r.reportDate}</td>
+                    <td style={{ fontWeight: 700 }}>{fmtDate(r.reportDate)}</td>
                     <td style={{ fontWeight: 600 }}>{r.userName ?? '—'}</td>
                     <td>{SHIFT_LABELS[r.shift]}</td>
                     <td className="td-ctr mono fw-700">{r.taskCount}</td>

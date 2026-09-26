@@ -18,6 +18,7 @@ import type {
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Fragment } from 'react';
+import { fmtDate } from '@/lib/date';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
@@ -176,7 +177,7 @@ export function JcStatTiles({
             {jc.sourceLink?.code ?? '—'}
           </div>
           <div style={{ ...noteStyle, marginTop: 2 }}>
-            Ln <b>{jc.sourceLink?.lineNo ?? '1'}</b> · Due {jc.dueDate ?? '—'}
+            Ln <b>{jc.sourceLink?.lineNo ?? '1'}</b> · Due {fmtDate(jc.dueDate)}
           </div>
           {jc.clientPoLineNo ? (
             <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>

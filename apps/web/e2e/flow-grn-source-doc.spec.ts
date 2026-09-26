@@ -205,7 +205,7 @@ async function createPoFromPr(
   await page.locator('#pof-delivery-days').fill('14');
   // Line 1 is the PR line — the server refuses a PO with no PR behind it.
   await pickFromCombo(page, 'pof-pr-0', prCode, new RegExp(prCode));
-  await expect(page.getByLabel('Item code, line 1', { exact: true })).toHaveValue(lines[0]!.code, {
+  await expect(page.getByLabel('Item Code, line 1', { exact: true })).toHaveValue(lines[0]!.code, {
     timeout: 60_000,
   });
   await page.locator('#pof-remarks').fill(remark);
@@ -214,8 +214,8 @@ async function createPoFromPr(
   for (let i = 1; i < lines.length; i += 1) await addLine.click();
   for (const [i, line] of lines.entries()) {
     const n = i + 1;
-    await page.getByLabel('Item code, line ' + n, { exact: true }).fill(line.code);
-    await page.getByLabel('Item name, line ' + n, { exact: true }).fill(line.name);
+    await page.getByLabel('Item Code, line ' + n, { exact: true }).fill(line.code);
+    await page.getByLabel('Item Name, line ' + n, { exact: true }).fill(line.name);
     await page.getByLabel('Qty, line ' + n, { exact: true }).fill(String(line.qty));
     await page.getByLabel('Rate, line ' + n, { exact: true }).fill(String(line.rate));
   }
@@ -286,7 +286,15 @@ async function readGrnDetail(page: Page, grnId: string) {
   await page.waitForTimeout(1500);
   const code = (await page.locator('.panel-hdr .td-code').first().innerText()).trim();
   const po = await readPair(page, 'PO');
-  const dcNo = await readPair(page, 'DC No.');
+  // Our DC shows as "DC No." (DC-linked GRN); the vendor's own challan as
+  // "Vendor Challan No."; neither pair renders when both are empty.
+  const pairCount = async (l: string): Promise<number> =>
+    page.locator('.form-grp').filter({ has: page.getByText(l, { exact: true }) }).count();
+  const dcNo = (await pairCount('DC No.')) > 0
+    ? await readPair(page, 'DC No.')
+    : (await pairCount('Vendor Challan No.')) > 0
+      ? await readPair(page, 'Vendor Challan No.')
+      : '—';
   const vendor = await readPair(page, 'Vendor');
   const openDc = await page.getByRole('link', { name: 'Open DC' }).count();
   const table = page
@@ -325,7 +333,7 @@ async function openNewGrn(page: Page, tab: 'po' | 'dc'): Promise<void> {
   await page.goto('/goods-receipt-notes/new', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('button', { name: /Against PO/ })).toBeVisible({ timeout: 60_000 });
   if (tab === 'dc') {
-    await page.getByRole('button', { name: /Against JWPO \/ DC/ }).click();
+    await page.getByRole('button', { name: /Against JW PO \/ DC/ }).click();
     await expect(page.locator('#jwpoId')).toBeVisible({ timeout: 30_000 });
   } else {
     await expect(page.locator('#purchaseOrderId')).toBeVisible({ timeout: 30_000 });
@@ -414,8 +422,8 @@ test('A3 - Receive Now 11 is refused inline; 4 + 5 creates the GRN', async ({ pa
   await expect(line1).toHaveValue('10', { timeout: 30_000 });
 
   await line1.fill('11');
-  await expect(page.getByText('Cannot exceed balance of 10.', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /Create GRN/ }).click();
+  await expect(page.getByText('Cannot receive more than Pending (10).', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /Save GRN/ }).click();
   await page.waitForTimeout(3000);
   // Two nets stop the submit: the input's native max=10 (browser constraint
   // validation, no JS handler runs) and, if that were bypassed, the form's own
@@ -423,7 +431,7 @@ test('A3 - Receive Now 11 is refused inline; 4 + 5 creates the GRN', async ({ pa
   const native = await line1.evaluate((el) => (el as HTMLInputElement).validity.rangeOverflow);
   const summary = await page.getByText('Fix the highlighted quantities.').count();
   await expect(page).toHaveURL(/goods-receipt-notes\/new/);
-  await expect(page.getByText('Cannot exceed balance of 10.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Cannot receive more than Pending (10).', { exact: true })).toBeVisible();
   log(
     'A3: 11 -> "Cannot exceed balance of 10." shown; Create refused (still on /new; native max block=' +
       native +
@@ -435,7 +443,7 @@ test('A3 - Receive Now 11 is refused inline; 4 + 5 creates the GRN', async ({ pa
   await line1.fill('4');
   await expect(page.getByLabel('Receive now, line 2', { exact: true })).toHaveValue('5');
   await page.locator('#remarks').fill('E2E_ GRN against PO - partial (4 + 5)');
-  await page.getByRole('button', { name: /Create GRN/ }).click();
+  await page.getByRole('button', { name: /Save GRN/ }).click();
   await expect(page).toHaveURL(/goods-receipt-notes\/[0-9a-f-]{36}$/, { timeout: 120_000 });
   const grnId = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
   const d = await readGrnDetail(page, grnId);
@@ -686,7 +694,7 @@ test('B3 - receive 6 of 10 through the DC tab -> lands on the auto-GRN with Open
   await expect(line1).toHaveValue('10', { timeout: 30_000 });
   await line1.fill('6');
   await page.locator('#dcRemarks').fill('E2E_ GRN against DC - partial (6 of 10)');
-  await page.getByRole('button', { name: /Create GRN/ }).click();
+  await page.getByRole('button', { name: /Save GRN/ }).click();
   await expect(page).toHaveURL(/goods-receipt-notes\/[0-9a-f-]{36}$/, { timeout: 120_000 });
   const grnId = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
   const d = await readGrnDetail(page, grnId);
@@ -807,7 +815,7 @@ test('B6 - receive the remaining 4: DC picker shows balance 4, then DC = receive
     expect([sent, soFar, balance]).toEqual([10, 6, 4]);
     expect(await page.getByLabel(/Receive now, line/).count()).toBe(1);
     await page.locator('#dcRemarks').fill('E2E_ GRN against DC - balance (4 of 10)');
-    await page.getByRole('button', { name: /Create GRN/ }).click();
+    await page.getByRole('button', { name: /Save GRN/ }).click();
     await expect(page).toHaveURL(/goods-receipt-notes\/[0-9a-f-]{36}$/, { timeout: 120_000 });
     const grnId = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
     const d = await readGrnDetail(page, grnId);
@@ -836,7 +844,7 @@ test('B7 - Incoming QC lists both new GRNs as pending inspection (read-only)', a
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/Pending Inspection/)).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(2000);
-  const pendingTable = page.locator('table').filter({ has: page.getByText('Pending QC', { exact: true }) }).first();
+  const pendingTable = page.locator('table').filter({ has: page.getByText('QC Pending', { exact: true }) }).first();
   const rowsText = (await pendingTable.locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' '));
   const mine = rowsText.filter((t) => t.includes(s.aGrnCode!) || t.includes(s.bGrnCode!) || t.includes(s.bGrn2Code ?? '§'));
   log('B7: pending rows for my GRNs (' + mine.length + '):\n   ' + mine.join('\n   '));

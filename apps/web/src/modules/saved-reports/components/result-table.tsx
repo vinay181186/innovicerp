@@ -6,6 +6,7 @@ import type { AdHocColumn, RunAdHocResponse } from '@innovic/shared';
 import { Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 import {
   Table,
   TableBody,
@@ -99,9 +100,7 @@ export function ResultTable({
               <CardTitle className="text-base">Results</CardTitle>
               <CardDescription>
                 {data
-                  ? `${data.rowCount} rows · refreshed ${new Date(
-                      data.generatedAt,
-                    ).toLocaleTimeString()}`
+                  ? `${data.rowCount} rows · refreshed ${fmtDateTime(data.generatedAt)}`
                   : 'No results yet.'}
               </CardDescription>
             </div>
@@ -190,6 +189,9 @@ function renderCell(col: AdHocColumn, raw: unknown): JSX.Element {
   }
   if (col.type === 'number') {
     return <span>{Number(raw).toLocaleString()}</span>;
+  }
+  if ((col.type === 'date' || col.type === 'datetime') && typeof raw === 'string') {
+    return <span className="text-sm">{col.type === 'date' ? fmtDate(raw) : fmtDateTime(raw)}</span>;
   }
   return <span className="text-sm">{String(raw)}</span>;
 }

@@ -32,6 +32,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionOrdersList } from '../api';
@@ -157,9 +158,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         header: 'Production Order Date',
         accessorKey: 'createdAt',
         meta: { tdClass: 'mono' },
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>{row.original.createdAt.slice(0, 10)}</span>
-        ),
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{fmtDate(row.original.createdAt)}</span>,
       },
       {
         header: 'Plan',
@@ -229,7 +228,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         header: 'Customer Dispatch Date',
         accessorKey: 'targetDate',
         meta: { tdClass: 'mono' },
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.targetDate}</span>,
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{fmtDate(row.original.targetDate)}</span>,
       },
       {
         header: 'JC No.',
@@ -277,7 +276,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         meta: { tdClass: 'mono' },
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.closedAt ? row.original.closedAt.slice(0, 10) : '—'}
+            {fmtDate(row.original.closedAt)}
           </span>
         ),
       },
@@ -380,7 +379,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
               key: 'open',
               label: 'Open',
               count: openCount,
-              color: 'var(--amber)',
+              color: 'var(--blue)',
               active: search.status === 'open',
               onClick: toggleStatus('open'),
               title: 'Open Production Orders — Job Card in progress or waiting to be closed',

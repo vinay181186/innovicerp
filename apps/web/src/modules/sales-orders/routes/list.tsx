@@ -42,6 +42,7 @@ import { SoSheetTable } from '../components/so-sheet-table';
 import { SoStatusBadge } from '../components/so-status-badge';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
+import { fmtDate } from '@/lib/date';
 import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 
 // ISSUE-020 — legacy puts its cell classes on the <td> itself (e.g. L11867
@@ -563,7 +564,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                     className="mono"
                     style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
                   >
-                    <span className="text2">{so.soDate}</span>
+                    <span className="text2">{fmtDate(so.soDate)}</span>
                     <span>·</span>
                     <span>
                       PO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{so.clientPoNo ?? '—'}</span>
@@ -583,7 +584,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                     <span className="text2">{so.createdByName ?? '—'}</span>
                     <span>·</span>
                     <span style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>
-                      {so.earliestDueDate ? `Due ${so.earliestDueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                      {so.earliestDueDate ? `Due ${fmtDate(so.earliestDueDate)}${overdue ? ' ⚠' : ''}` : 'No due date'}
                     </span>
                     <span>·</span>
                     <span title={so.remarks ?? ''}>{so.remarks || '—'}</span>
@@ -641,7 +642,7 @@ function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; c
           <ItemBadge size="row" code={line.itemCode ?? line.itemCodeText} name={line.partName} revision={line.revision} imagePath={line.itemImagePath} />
         </div>
         <Fact label="EQUIP QTY" value={String(line.orderQty)} big />
-        <Fact label="DUE DATE" value={line.dueDate ?? '—'} />
+        <Fact label="DUE DATE" value={fmtDate(line.dueDate)} />
         <div>
           <div style={{ fontSize: 10, color: 'var(--text3)' }}>BOM STATUS</div>
           <div style={{ fontWeight: 700, color: bomStatus === 'BOM Pending' ? 'var(--amber)' : bomStatus === 'BOM Planned' ? 'var(--green)' : 'var(--cyan)' }}>
@@ -776,7 +777,7 @@ function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boo
                   </td>
                   <td className="td-ctr mono fw-700" style={{ color: l.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{l.dispatchedQty}</td>
                   <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance <= 0 ? '✅ Dispatched' : balance}</td>
-                  <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
+                  <td className="text2" style={{ fontSize: 11 }}>{fmtDate(l.dueDate)}</td>
                   <td><SoStatusBadge status={l.status} /></td>
                   {canEdit ? (
                     <td>

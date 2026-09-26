@@ -16,6 +16,7 @@ import {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -578,7 +579,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
         }}
       >
         <CtxField label="NC Date">
-          <b>{detail.ncDate}</b>
+          <b>{fmtDate(detail.ncDate)}</b>
         </CtxField>
         <CtxField label="JC No.">
           <b className="cyan">{jcCode ?? '—'}</b>
@@ -687,7 +688,7 @@ function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
         <InlinePair label="Disposition:">
           <NcDispositionBadge disposition={detail.disposition} />
         </InlinePair>
-        <InlinePair label="Disposition Date:">{detail.dispositionDate ?? '—'}</InlinePair>
+        <InlinePair label="Disposition Date:">{fmtDate(detail.dispositionDate)}</InlinePair>
         <InlinePair label="Disposed By:">{detail.dispositionByText ?? ''}</InlinePair>
         {/* Legacy in-route rework only — a new rework raises a child JC
             (linked below) and never sets rework_op_seq. */}

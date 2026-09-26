@@ -535,7 +535,11 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
     try {
       if (props.mode === 'edit') {
-        const payload: UpdatePurchaseOrderInput = { header, lines: outLines };
+        // None on edit must CLEAR the stored tax type, so send null (not omit).
+        const payload: UpdatePurchaseOrderInput = {
+          header: { ...header, taxType: header.taxType ?? null },
+          lines: outLines,
+        };
         await updatePo.mutateAsync(payload);
         const editedId = props.detail.id;
         exit.leave(
@@ -867,10 +871,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               Tax Type
             </label>
             <select id="pof-taxtype" className="pof-in" {...register('header.taxType')}>
-              <option value="">— None —</option>
+              <option value="">None</option>
               <option value="sgst_cgst">SGST + CGST</option>
               <option value="igst">IGST</option>
-              <option value="none">None</option>
             </select>
           </div>
           <div className={`pof-tax-f ${isSplit ? '' : 'pof-dim'}`}>

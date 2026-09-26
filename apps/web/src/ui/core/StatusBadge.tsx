@@ -63,18 +63,24 @@ export type StatusKind =
 /**
  * A tone, or '' for a DELIBERATELY UNFILLED badge. The legacy stylesheet
  * defined `.b-yellow` / `.b-running` only inside the print window, so on
- * screen those three JC-op states rendered as a bare `.badge`. Reproduced.
+ * screen those three JC-op states rendered as a bare `.badge`. Wave 2 (owner)
+ * gave in_progress (amber) and running (green) real tones; at_vendor stays bare.
  */
 type StatusTone = BadgeTone | '';
 
 const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   so: { draft: 'amber', open: 'blue', closed: 'green', dispatched: 'cyan', cancelled: 'grey' },
-  jc: { open: 'grey', qc_pending: 'amber', complete: 'cyan', closed: 'green', no_ops: 'red' },
+  // Wave 2 (owner): one colour per state across Plan / Production Order / JC /
+  // Op badges — open/pending neutral or blue, in progress amber, finished green,
+  // stopped red or grey. Hence JC complete green, op waiting grey.
+  jc: { open: 'grey', qc_pending: 'amber', complete: 'green', closed: 'green', no_ops: 'red' },
   jcop: {
-    waiting: 'red',
+    waiting: 'grey',
     available: 'blue',
-    in_progress: '',
-    running: '',
+    // Wave 2 (owner): open machine session = Running (green); some qty done
+    // with no open session = Partly Completed (amber).
+    in_progress: 'amber',
+    running: 'green',
     qc_pending: 'amber',
     complete: 'green',
     pr_raised: 'amber',
@@ -94,7 +100,8 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     cancelled: 'grey',
   },
   // ADR-182 — `short_closed` is red: the order was stopped, not finished.
-  prodorder: { open: 'amber', partially_closed: 'blue', closed: 'green', short_closed: 'red' },
+  // Wave 2: open blue (not started), partly closed amber (under way).
+  prodorder: { open: 'blue', partially_closed: 'amber', closed: 'green', short_closed: 'red' },
   grnqc: { pending: 'amber', in_progress: 'blue', completed: 'green' },
   dc: { issued: 'amber', received: 'green', cancelled: 'grey' },
   nc: {
@@ -148,9 +155,9 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     cancelled: 'grey',
   },
   planderived: {
-    route_card_pending: 'amber',
+    route_card_pending: 'grey',
     gen_production_order: 'blue',
-    in_production: 'cyan',
+    in_production: 'amber',
     production_complete: 'green',
   },
   // A shop-floor machine, not a document. Carried verbatim from the private
@@ -229,6 +236,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
 const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
   jc: { qc_pending: 'QC Pending', complete: 'Completed', no_ops: 'No Operations' },
   jcop: {
+    in_progress: 'Partly Completed',
     qc_pending: 'QC Pending',
     complete: 'Completed',
     pr_raised: 'PR Raised',

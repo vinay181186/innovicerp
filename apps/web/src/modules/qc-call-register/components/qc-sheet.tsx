@@ -22,8 +22,8 @@ import { opSrNo } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import type { CSSProperties, ReactNode } from 'react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { fmtDate } from '@/lib/print/doc-print';
 
 export type QcStage = 'incoming' | 'inprocess' | 'final';
 export type QcView = 'pending' | 'completed';
@@ -285,7 +285,7 @@ function CalledAttendedCell(props: {
   const { called, attended, respDays } = props;
   const resp = respDays == null ? null : respDays <= 0 ? 'Same day' : `${respDays} days`;
   // Two dates share one line, so each is "16 Sep" (the mockup's form); the
-  // full DD-MM-YYYY pair is on hover.
+  // full DD-MMM-YYYY pair is on hover.
   const full = `${called ? fmtDate(called) : '—'} → ${attended ? fmtDate(attended) : '—'}`;
   return (
     <td style={{ ...TD, ...NOWRAP }}>
@@ -342,6 +342,9 @@ function VerdictCell(props: {
       <span
         style={{
           ...CAPS,
+          // The verdict shows its Title Case label as written, not in caps.
+          textTransform: 'none',
+          letterSpacing: 0,
           display: 'inline-block',
           padding: '3px 10px',
           borderRadius: 4,
@@ -473,9 +476,7 @@ export function PendingSheetRow(props: {
       <ContextCell line1={props.context} line2={props.contextLine2} />
       <NumCell value={props.qty} />
       <td style={{ ...TD, ...NOWRAP }}>
-        <div style={{ ...MONO, fontSize: 12 }}>
-          {props.calledDate ? fmtDate(props.calledDate) : '—'}
-        </div>
+        <div style={{ ...MONO, fontSize: 12 }}>{fmtDate(props.calledDate)}</div>
         {wait ? (
           <div
             style={{

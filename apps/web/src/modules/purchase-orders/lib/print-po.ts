@@ -29,11 +29,10 @@ import {
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
 
-// A purchase-order line carries no unit of its own -- `purchase_order_lines`
-// has no uom column -- so the sheet prints the one the whole system assumes.
-// It was hard-coded in this file before the PO moved onto the shared sheet;
-// naming it here keeps it one value instead of two literals that can drift.
-const PO_UOM = 'NOS';
+// A purchase-order line has no uom column of its own; the detail read joins
+// the item master's unit (`uom`). NOS -- the unit the whole system assumes --
+// prints only when that is blank (a hand-typed line with no item).
+const PO_UOM_FALLBACK = 'NOS';
 
 // A SERVICE purchase order is a purchase order with `poType: 'service'` -- the
 // same table, the same screen, the same lines. It is NOT the `service_pos`
@@ -77,6 +76,11 @@ export function printPurchaseOrder(args: {
   // rupee cell for a buyer fully entitled to see the price.
   const priceHidden = po.priceVisible === false;
   const money = (n: number): string => (priceHidden ? '—' : inrFormat(n));
+
+  const uomOf = (u: string | null | undefined): string => u?.trim() || PO_UOM_FALLBACK;
+  const lineUoms = [...new Set(lines.map((l) => uomOf(l.uom)))];
+  // One unit under the quantity total when every line agrees; blank when units differ.
+  const totalUom = lineUoms.length === 1 ? (lineUoms[0] ?? PO_UOM_FALLBACK) : '';
 
   const subtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
@@ -229,7 +233,7 @@ export function printPurchaseOrder(args: {
       // the whole column drops off the sheet.
       pol: l.clientPoLineNo,
       itemName: l.itemName,
-      uom: PO_UOM,
+      uom: uomOf(l.uom),
       qty: String(l.qty),
       rate: money(Number(l.rate ?? 0)),
       amount: money(l.qty * Number(l.rate ?? 0)),
@@ -238,7 +242,7 @@ export function printPurchaseOrder(args: {
       description: l.lineRemarks,
     })),
     totalQty: String(totalQty),
-    totalUom: PO_UOM,
+    totalUom,
     // Viewers who may not see prices get the qty-only PO — the Rate and Amount
     // cells print an em dash and no money block or amount-in-words follows.
     ...(priceHidden

@@ -28,10 +28,9 @@ import {
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
 
-// `jw_invoices.qty` is a whole-number piece count and the register shows it
-// without a unit, so the sheet prints the one the whole system assumes — the
-// same value and the same reason as the purchase order's PO_UOM.
-const JW_INVOICE_UOM = 'NOS';
+// The unit comes off the JWSO line being billed (`uom` on the register row).
+// NOS — the unit the whole system assumes — only when that is blank.
+const FALLBACK_UOM = 'NOS';
 
 // The one statement this document must never print without.
 //
@@ -86,12 +85,26 @@ export function printJwInvoice(args: {
   const gstAmount = invoice.gstAmount ?? (taxable * gstPct) / 100;
   const grand = invoice.totalAmount ?? taxable + gstAmount;
 
-  // ONE tax row, not the purchase order's IGST-or-SGST+CGST pair. `jw_invoices`
-  // stores a single `gst_percent` / `gst_amount` taken from the JWSO header and
-  // carries no `taxType`, so there is nothing to split an intra-state supply on.
-  // Inventing a 9%+9% split from an 18% figure would be a claim the data does
-  // not make.
-  const taxRows = gstPct > 0 ? [{ label: `GST @ ${gstPct}%`, value: money(gstAmount) }] : [];
+  // Split by the invoice's tax type (migration 0148): same-state prints SGST +
+  // CGST at half the rate each, inter-state prints IGST. An invoice raised
+  // before the column existed has no tax type, and keeps the single GST row it
+  // always printed — a split the data does not state is not invented for it.
+  // The total GST is the same number in every case.
+  // Split once so the two halves always add back to the stored GST (odd paisa goes to SGST).
+  const cgstAmount = Math.round(gstAmount * 50) / 100;
+  const sgstAmount = Math.round((gstAmount - cgstAmount) * 100) / 100;
+  const taxRows =
+    gstPct <= 0
+      ? []
+      : invoice.taxType === 'igst'
+        ? [{ label: `IGST @ ${gstPct}%`, value: money(gstAmount) }]
+        : invoice.taxType === 'sgst_cgst'
+          ? [
+              { label: `SGST @ ${gstPct / 2}%`, value: money(sgstAmount) },
+              { label: `CGST @ ${gstPct / 2}%`, value: money(cgstAmount) },
+            ]
+          : [{ label: `GST @ ${gstPct}%`, value: money(gstAmount) }];
+  const uom = invoice.uom?.trim() || FALLBACK_UOM;
 
   const clientName = client?.name ?? invoice.clientName ?? '';
   // Full postal address for the party box — line 1 plus city / state / pincode,
@@ -188,7 +201,7 @@ export function printJwInvoice(args: {
         // than a value invented to fill the column.
         itemCode: itemCodeWithRev(invoice.itemCode, invoice.itemRevision, ''),
         itemName: invoice.partName ?? '',
-        uom: JW_INVOICE_UOM,
+        uom,
         qty: String(invoice.qty),
         rate: money(rate),
         amount: money(taxable),
@@ -198,7 +211,7 @@ export function printJwInvoice(args: {
       },
     ],
     totalQty: String(invoice.qty),
-    totalUom: JW_INVOICE_UOM,
+    totalUom: uom,
     // Viewers who may not see prices get the qty-only invoice — the Rate and
     // Amount cells print an em dash and no money block or amount-in-words
     // follows it.

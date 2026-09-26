@@ -302,14 +302,14 @@ async function raiseJcViaRouteCard(page: Page, s: State): Promise<void> {
   // 2. Plan on the SO line (qty defaults to the uncovered remaining = 1)
   if (!s.pln) {
     await gotoApp(page, '/planning', 3000);
-    await page.getByPlaceholder(/Search order no/i).fill(s.soCode!);
+    await page.getByPlaceholder(/Search SO \/ JWSO No\./i).fill(s.soCode!);
     await page.waitForTimeout(1500);
     const soRow = page.locator('table tbody tr').filter({ hasText: s.soCode! }).first();
     await expect(soRow).toBeVisible({ timeout: 30_000 });
     await soRow.click();
     await page.waitForTimeout(2000);
     await page.getByRole('button', { name: /\+ ?Plan\b/ }).first().click();
-    const createBtn = page.getByRole('button', { name: /^Create Plan$/ });
+    const createBtn = page.getByRole('button', { name: /^Save Plan$/ });
     await expect(createBtn).toBeVisible({ timeout: 15_000 });
     const qty = page.locator('#create-plan-qty');
     if (await qty.isVisible().catch(() => false)) await qty.fill('1');
@@ -388,7 +388,7 @@ test('S1 item form: fields, create item, upload picture (1200×900 → ≤800 px
   await check(s, 'S1-03', 'Create item (code + name only)', s.itemCode, async () => {
     await page.locator('#code').fill(s.itemCode);
     await page.locator('#name').fill('E2E_ Image test lever');
-    await page.getByRole('button', { name: /^Save$/ }).click();
+    await page.getByRole('button', { name: /^Save Item$/ }).click();
     await expect(page).toHaveURL(/\/items\/[0-9a-f-]{36}$/, { timeout: 30_000 });
     s.itemId = page.url().match(/\/items\/([0-9a-f-]{36})/)![1]!;
     saveState(s);
@@ -476,7 +476,7 @@ test('S1 item form: fields, create item, upload picture (1200×900 → ≤800 px
   });
 
   await check(s, 'S1-08', 'Save item with image; reload edit page → preview persists', s.itemCode, async () => {
-    await page.getByRole('button', { name: /^Save$/ }).click();
+    await page.getByRole('button', { name: /^Save Changes$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/items/${s.itemId}$`), { timeout: 30_000 });
     await gotoApp(page, `/items/${s.itemId}/edit`);
     await expect(page.locator(`${BOX_IMG} img`).first()).toBeVisible({ timeout: 30_000 });
@@ -597,7 +597,7 @@ test('S4 SO line: Drawing No. typed, kept on re-pick, on detail, cleared on edit
   saveState(s);
 
   // Client: any existing one — first option for "a".
-  const clientInput = page.getByPlaceholder(/Type client code or name/i).first();
+  const clientInput = page.getByPlaceholder(/Type customer code or name/i).first();
   await clientInput.click();
   await clientInput.fill('a');
   await page.waitForTimeout(1500);
@@ -677,7 +677,7 @@ test('S4 SO line: Drawing No. typed, kept on re-pick, on detail, cleared on edit
     await expect(edrg).toHaveValue(s.drawingNo, { timeout: 30_000 });
     await edrg.fill('');
     await expect(edrg).toHaveValue('');
-    await page.getByRole('button', { name: /Save SO/i }).click();
+    await page.getByRole('button', { name: /Save Changes/i }).click();
     await expect(page).toHaveURL(new RegExp(`sales-orders/${s.soId}$`), { timeout: 30_000 });
     await gotoApp(page, `/sales-orders/${s.soId}`, 3000);
     const row = page.locator('table tbody tr').filter({ hasText: s.itemCode }).first();
@@ -929,7 +929,7 @@ test('S8 cleanup: UI Delete of the SO (if no JC hangs off it) and the item', asy
         finding(s, `Left in the test DB: ${s.soCode} (client PO ref E2E_IMG-${s.ts}) — the e2e login has no Delete on Sales Orders. Delete it from its detail page with an approver login.`);
       } else await check(s, 'S8-01', 'Delete SO from its detail page (Delete → Confirm)', s.soCode!, async () => {
         await del.click();
-        await page.getByRole('button', { name: /Confirm/ }).click();
+        await page.getByRole('button', { name: /Move to Trash/ }).click();
         await expect(page).toHaveURL(/\/sales-orders(\?|$)/, { timeout: 30_000 });
         return 'soft-deleted via the SO page';
       }, { qty: '1', headerStatus: 'deleted' });
@@ -942,7 +942,7 @@ test('S8 cleanup: UI Delete of the SO (if no JC hangs off it) and the item', asy
       const del = page.getByRole('button', { name: /^Delete$/ }).first();
       if (!(await del.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false))) throw new Error('no Delete button on the item page for this login');
       await del.click();
-      await page.getByRole('button', { name: /Confirm/ }).click();
+      await page.getByRole('button', { name: /Move to Trash/ }).click();
       await page.waitForTimeout(3000);
       const err = page.locator('.form-error, [role="alert"]').first();
       if (await err.isVisible().catch(() => false)) throw new Error(`app refused: ${(await err.innerText()).slice(0, 160)}`);

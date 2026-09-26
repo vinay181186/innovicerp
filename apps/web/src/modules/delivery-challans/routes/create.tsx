@@ -41,7 +41,7 @@ import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { type ExitConfirm, useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
@@ -334,7 +334,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                   <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
                     {p.code}
                   </td>
-                  <td className="mono">{p.poDate}</td>
+                  <td className="mono">{fmtDate(p.poDate)}</td>
                   <td>{p.vendorName ?? p.vendorCodeText ?? '—'}</td>
                   <td style={{ color: 'var(--purple)' }}>
                     {p.poType === 'service' ? 'Service' : 'Job Work'}

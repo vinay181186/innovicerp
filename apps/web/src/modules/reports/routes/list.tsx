@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { apiDownload } from '@/lib/api';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useReportList, useReportRun } from '../api';
 
@@ -275,6 +276,8 @@ function formatCell(col: ReportColumn, raw: unknown): string {
     if (!Number.isFinite(n)) return String(raw);
     return n % 1 === 0 ? String(n) : n.toFixed(2);
   }
+  if (typeof raw === 'string' && col.type === 'date') return fmtDate(raw);
+  if (typeof raw === 'string' && col.type === 'datetime') return fmtDateTime(raw);
   return String(raw);
 }
 

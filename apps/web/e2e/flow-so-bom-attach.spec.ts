@@ -26,7 +26,7 @@ test('@sobom equipment SO attaches the parent item’s BOM, or says none exists'
 
   // Switch to the equipment type so the Equipment Details block appears.
   await page.locator('select[name="header.type"]').selectOption('equipment');
-  await expect(page.getByText(/EQUIPMENT DETAILS/i)).toBeVisible();
+  await expect(page.getByText('Equipment', { exact: true })).toBeVisible();
 
   // The renamed label.
   await expect(page.getByText('Equipment / Parent Item')).toBeVisible();

@@ -20,6 +20,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -197,7 +198,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         >
           <div>
             <div className="section-hdr" style={{ marginBottom: 0 }}>
-              📥 Goods Receipt Notes
+              Goods Receipt Notes
             </div>
             {/* Count comes from the list response's `total` — the whole book,
                 not just the page on screen. */}
@@ -431,7 +432,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                     }}
                   >
                     <span className="text2" style={{ whiteSpace: 'nowrap' }}>
-                      {grn.grnDate}
+                      {fmtDate(grn.grnDate)}
                     </span>
                     <span>·</span>
                     {/* On an NC-return GRN poCodeText holds the NC code (no PO
@@ -646,7 +647,7 @@ function GrnExpandedPanel({ grnId }: { grnId: string }): React.JSX.Element {
                   <QcStatusBadge status={l.qcStatus} />
                 </td>
                 <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                  {l.qcDate ?? '—'}
+                  {fmtDate(l.qcDate)}
                 </td>
               </tr>
             ))

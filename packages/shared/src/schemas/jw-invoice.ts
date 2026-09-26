@@ -6,6 +6,13 @@
 // job_work_order_lines.invoiced_qty. Numbering: IN-JWINV-#####.
 
 import { z } from 'zod';
+import { servicePoTaxTypeSchema } from './service-po';
+
+/** How the GST on a JW invoice splits on paper: 'sgst_cgst' (same state — half
+ *  SGST, half CGST) or 'igst' (inter-state). The same two codes the purchase
+ *  order and the service PO store, so it reuses that enum rather than naming
+ *  the fact twice. Totals do not depend on it: the total GST % is unchanged. */
+export const jwInvoiceTaxTypeSchema = servicePoTaxTypeSchema;
 
 export const jwInvoiceSchema = z.object({
   id: z.string().uuid(),
@@ -23,6 +30,9 @@ export const jwInvoiceSchema = z.object({
   gstPercent: z.number().nonnegative().nullable(),
   gstAmount: z.number().nonnegative().nullable(),
   totalAmount: z.number().nonnegative().nullable(),
+  /** Migration 0148. Null on invoices raised before it — those print a single
+   *  "GST @ n%" row, as they always did. */
+  taxType: jwInvoiceTaxTypeSchema.nullable().default(null),
   remarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -43,6 +53,9 @@ export const jwInvoiceListItemSchema = jwInvoiceSchema.extend({
    *  line, when there is one. */
   clientPoLineNo: z.string().nullable().default(null),
   partName: z.string().nullable(),
+  /** Unit of the JWSO line being billed (job_work_order_lines.uom). Null only
+   *  when the line cannot be read; the print then falls back to NOS. */
+  uom: z.string().nullable().default(null),
 });
 export type JwInvoiceListItem = z.infer<typeof jwInvoiceListItemSchema>;
 
@@ -53,6 +66,8 @@ export const createJwInvoiceInputSchema = z.object({
   qty: z.number().int().positive(),
   // Optional override; defaults to the JW line's rate when omitted.
   rate: z.number().nonnegative().optional(),
+  /** Defaults to 'sgst_cgst' (same-state supply) when omitted. */
+  taxType: jwInvoiceTaxTypeSchema.optional(),
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreateJwInvoiceInput = z.infer<typeof createJwInvoiceInputSchema>;

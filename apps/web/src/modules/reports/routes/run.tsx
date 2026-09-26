@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { apiDownload } from '@/lib/api';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useReportList, useReportRun } from '../api';
 import { downloadCsv, rowsToCsv } from '../lib/csv';
@@ -330,6 +331,8 @@ function formatCell(col: ReportColumn, raw: unknown): string {
     if (!Number.isFinite(num)) return String(raw);
     return num % 1 === 0 ? String(num) : num.toFixed(2);
   }
+  if (typeof raw === 'string' && col.type === 'date') return fmtDate(raw);
+  if (typeof raw === 'string' && col.type === 'datetime') return fmtDateTime(raw);
   // A status column carries the stored code (qc_pending); show its label.
   // The colour rule below still reads the raw value.
   if (typeof raw === 'string' && /status$/i.test(col.key)) {

@@ -14,6 +14,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { fmtDate } from '@/lib/date';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -197,7 +198,7 @@ function NcRegisterListPage(): React.JSX.Element {
           >
             {canReportNc ? (
               <Link to="/nc-register/new" className="btn btn-primary">
-                ❌ Report NC
+                ⚠️ Report NC
               </Link>
             ) : null}
           </div>
@@ -527,7 +528,7 @@ function NcRegisterListPage(): React.JSX.Element {
                       <span>·</span>
                       <span className="text2">{NC_REASON_CATEGORY_LABELS[nc.reasonCategory]}</span>
                       <span>·</span>
-                      <span className="text2">{nc.ncDate}</span>
+                      <span className="text2">{fmtDate(nc.ncDate)}</span>
                       {nc.linkedCapaCode ? (
                         <>
                           <span>·</span>

@@ -27,6 +27,7 @@ import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -346,8 +347,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             <Fact label="JC No." title={jcNo} value={<span className="mono">{jcNo}</span>} />
             <Fact
               label="PR Date"
-              title={detail.prDate}
-              value={<span className="mono">{detail.prDate}</span>}
+              title={fmtDate(detail.prDate)}
+              value={<span className="mono">{fmtDate(detail.prDate)}</span>}
             />
           </div>
         </div>
@@ -446,7 +447,7 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
           </div>
           {bal.closedAt ? (
             <div className="text3" style={{ marginTop: 2 }}>
-              Closed on <span className="mono">{bal.closedAt.slice(0, 10)}</span>. The {bal.ordered}{' '}
+              Closed on <span className="mono">{fmtDate(bal.closedAt)}</span>. The {bal.ordered}{' '}
               already on purchase orders still stands.
             </div>
           ) : null}
@@ -494,18 +495,21 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
             />
           </>
         )}
-        <Fact label="Due Date" value={<span className="mono">{detail.requiredDate ?? '—'}</span>} />
+        <Fact
+          label="Due Date"
+          value={<span className="mono">{fmtDate(detail.requiredDate)}</span>}
+        />
         <Fact label="Operation" value={detail.operation ?? '—'} />
         <Fact label="PR Type" value={detail.prType ? PR_TYPE_LABELS[detail.prType] : '—'} />
         <Fact label="PO No." value={<span className="mono">{detail.poCode ?? '—'}</span>} />
         <Fact label="PR Status" value={PR_STATUS_LABELS[detail.status]} />
         <Fact
           label="Approved At"
-          value={<span className="mono">{detail.approvedAt ?? '—'}</span>}
+          value={<span className="mono">{fmtDateTime(detail.approvedAt)}</span>}
         />
         <Fact
           label="PO Created At"
-          value={<span className="mono">{detail.poCreatedAt ?? '—'}</span>}
+          value={<span className="mono">{fmtDateTime(detail.poCreatedAt)}</span>}
         />
       </div>
       <div className="divider" />

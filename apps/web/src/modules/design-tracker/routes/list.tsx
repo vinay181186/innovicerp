@@ -11,7 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -374,13 +374,13 @@ function Row({
       </td>
       <td style={{ fontSize: 12 }}>{row.designer || '—'}</td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {row.startDate}
+        {fmtDate(row.startDate)}
       </td>
       <td
         className="text2"
         style={{ fontSize: 11, color: isOverdue ? 'var(--red)' : undefined }}
       >
-        {row.targetDate}
+        {fmtDate(row.targetDate)}
       </td>
       <td>
         <span
@@ -875,7 +875,7 @@ function LogTimeModal({
               <tbody>
                 {previous.map((t) => (
                   <tr key={t.id}>
-                    <td style={{ fontSize: 11 }}>{t.logDate}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDate(t.logDate)}</td>
                     <td className="mono fw-700" style={{ color: 'var(--green)' }}>
                       {t.hours}h
                     </td>

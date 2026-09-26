@@ -10,6 +10,7 @@
 import type { UnplannedOrderRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { SearchInput } from '@/ui/forms';
@@ -100,7 +101,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         width: '8%',
         className: 'mono',
         nowrap: true,
-        render: (r) => r.dueDate ?? '—',
+        render: (r) => fmtDate(r.dueDate),
       },
       {
         header: 'Customer',

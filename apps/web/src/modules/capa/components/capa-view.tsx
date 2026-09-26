@@ -21,7 +21,7 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { todayLocal } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { StatStrip } from '@/components/shared/stat-strip';
@@ -235,7 +235,7 @@ export function CapaView(props: {
                             {c.type}
                           </span>
                         </td>
-                        <td style={{ fontSize: 11 }}>{c.capaDate}</td>
+                        <td style={{ fontSize: 11 }}>{fmtDate(c.capaDate)}</td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--red)' }}>
                           {c.ncRefs.join(', ')}
                         </td>
@@ -271,7 +271,7 @@ export function CapaView(props: {
                             fontWeight: c.overdue ? 700 : 400,
                           }}
                         >
-                          {c.targetDate ?? '—'}
+                          {fmtDate(c.targetDate)}
                           {c.overdue ? ' ⚠' : ''}
                         </td>
                         <td>

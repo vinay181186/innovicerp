@@ -11,6 +11,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
@@ -353,7 +354,7 @@ function EntryTab(): React.JSX.Element {
                   fontFamily: 'var(--mono)',
                 }}
               >
-                {date}
+                {fmtDate(date)}
               </span>
               <span
                 style={{
@@ -488,7 +489,7 @@ function DailyTab(): React.JSX.Element {
           ←
         </button>
         <div style={{ fontSize: 14, fontWeight: 700, minWidth: 160, textAlign: 'center' }}>
-          {viewDate} ({dayName(viewDate)})
+          {fmtDate(viewDate)} ({dayName(viewDate)})
         </div>
         <button
           type="button"
@@ -682,7 +683,7 @@ function WeeklyTab(): React.JSX.Element {
           ←
         </button>
         <div style={{ fontSize: 14, fontWeight: 700, minWidth: 200, textAlign: 'center' }}>
-          {weekDates[0]} — {weekDates[6]}
+          {fmtDate(weekDates[0])} — {fmtDate(weekDates[6])}
         </div>
         <button
           type="button"
@@ -703,7 +704,7 @@ function WeeklyTab(): React.JSX.Element {
                   <th key={dt} style={{ fontSize: 10 }}>
                     {dayName(dt)}
                     <br />
-                    {dt.slice(5)}
+                    {fmtDate(dt)}
                   </th>
                 ))}
                 <th>Total</th>
@@ -989,7 +990,7 @@ function AlertsTab(): React.JSX.Element {
               <tbody>
                 {unlogged.slice(0, 30).map((u, idx) => (
                   <tr key={idx}>
-                    <td className="mono">{u.date}</td>
+                    <td className="mono">{fmtDate(u.date)}</td>
                     <td>{dayName(u.date)}</td>
                     <td className="fw-700">{u.engineer}</td>
                   </tr>
@@ -1026,7 +1027,7 @@ function AlertsTab(): React.JSX.Element {
               <tbody>
                 {lowHours.map((u, idx) => (
                   <tr key={idx}>
-                    <td className="mono">{u.date}</td>
+                    <td className="mono">{fmtDate(u.date)}</td>
                     <td>{dayName(u.date)}</td>
                     <td className="fw-700">{u.engineer}</td>
                     <td className="mono fw-700" style={{ color: 'var(--amber)' }}>
