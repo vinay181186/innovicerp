@@ -72,6 +72,7 @@ export async function listOpLog(
           logType: opLog.logType,
           logDate: opLog.logDate,
           jcNo: jobCards.code,
+          jobCardId: jobCards.id,
           itemCode: items.code,
           // WHAT was being made. The register printed a JC number and an item
           // code and nothing else, and a JC number says WHICH JOB, not WHICH
@@ -143,6 +144,7 @@ export async function listOpLog(
       logType: r.logType,
       logDate: r.logDate,
       jcNo: r.jcNo,
+      jobCardId: r.jobCardId,
       itemCode: r.itemCode ?? null,
       itemName: r.itemName ?? null,
       itemRevision: r.itemRevision ?? null,

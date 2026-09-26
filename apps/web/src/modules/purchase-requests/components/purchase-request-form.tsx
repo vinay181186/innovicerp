@@ -23,7 +23,7 @@ import {
   type UpdatePurchaseRequestInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { type Path, type PathValue, useForm } from 'react-hook-form';
 import {
   type CascadeField,
@@ -68,9 +68,26 @@ type HeaderProps = {
   onBack?: () => void;
 };
 
+/** What "Save & New" carries onto the next blank form: PR Date, PR Type and
+ *  Vendor (with its label, so the picker shows it). */
+export interface PrKeepValues {
+  prDate: string;
+  prType: FormValues['prType'];
+  vendorId?: string | undefined;
+  vendorLabel: string;
+}
+
 type CreateMode = HeaderProps & {
   mode: 'create';
   onSubmit: (values: CreatePurchaseRequestInput) => Promise<void> | void;
+  /** Given → a ghost "Save & New" button sits beside Save. It saves the same
+   *  payload, then the page reopens a blank form seeded from `keep`. */
+  onSaveAndNew?: (values: CreatePurchaseRequestInput, keep: PrKeepValues) => Promise<void> | void;
+  /** Seeds for a new PR — from Save & New (date / type / vendor) or from a
+   *  "Raise PR" link (`?itemId=&qty=`: item + qty). Every one stays editable. */
+  initialValues?: Partial<FormValues> | undefined;
+  /** "CODE — Name" of a seeded vendor, so the picker shows it. */
+  initialVendorLabel?: string | undefined;
   submitLabel?: string;
   submitError?: string | null;
   onCancel?: () => void;
@@ -89,7 +106,9 @@ export type PurchaseRequestFormProps = CreateMode | EditMode;
 
 export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
-  const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : PR_FORM_DEFAULTS;
+  const defaults: FormValues = isEdit
+    ? detailToFormValues(props.detail)
+    : { ...PR_FORM_DEFAULTS, ...(props.initialValues ?? {}) };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, handleSubmit, formState, watch } = form;
@@ -98,7 +117,14 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   // Free text already stored on this PR. Its presence is what lets the vendor
   // picker be left empty — see the rule in <PrVendorField>.
   const carriedVendorText = isEdit ? (props.detail.vendorCodeText?.trim() ?? '') : '';
-  const vendorInitialLabel = isEdit ? joinVendorLabel(props.detail) : '';
+  const vendorInitialLabel = isEdit
+    ? joinVendorLabel(props.detail)
+    : (props.initialVendorLabel ?? '');
+  // The vendor's label as last picked — Save & New hands it to the next form.
+  const vendorLabelRef = useRef(vendorInitialLabel);
+  // Which header button submitted: Save (false) or Save & New (true).
+  const andNewRef = useRef(false);
+  const onSaveAndNew = props.mode === 'create' ? props.onSaveAndNew : undefined;
 
   // Item master drives the code autosuggest + name auto-fill. PR still accepts
   // off-master free text, so a non-matching code is left as-is.
@@ -177,10 +203,22 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
       // ended up coded "001" / "002" / "009" instead of the series.
       // prType is create-only — `updatePurchaseRequestInputSchema` omits it, so
       // it is never sent on an edit.
-      await props.onSubmit({
+      const createPayload = {
         prType: values.prType,
         ...payload,
-      } as CreatePurchaseRequestInput);
+      } as CreatePurchaseRequestInput;
+      const andNew = andNewRef.current;
+      andNewRef.current = false;
+      if (andNew && onSaveAndNew) {
+        await onSaveAndNew(createPayload, {
+          prDate: values.prDate,
+          prType: values.prType,
+          vendorId: values.vendorId,
+          vendorLabel: values.vendorId ? vendorLabelRef.current : '',
+        });
+      } else {
+        await props.onSubmit(createPayload);
+      }
     }
   };
 
@@ -214,6 +252,22 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             {props.onCancel ? (
               <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
                 Cancel
+              </button>
+            ) : null}
+            {onSaveAndNew ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={submitting}
+                title="Save this PR, then open a blank one with the same PR Date, PR Type and Vendor"
+                onClick={() => {
+                  andNewRef.current = true;
+                  void handleSubmit(onValid, () => {
+                    andNewRef.current = false;
+                  })();
+                }}
+              >
+                Save &amp; New
               </button>
             ) : null}
             <button
@@ -369,6 +423,9 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
               form={form}
               carriedVendorText={carriedVendorText}
               initialLabel={vendorInitialLabel}
+              onPickLabel={(label) => {
+                vendorLabelRef.current = label;
+              }}
             />
           </div>
 

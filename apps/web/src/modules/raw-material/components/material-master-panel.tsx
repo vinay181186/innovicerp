@@ -5,8 +5,8 @@
 // and the four write callbacks down here. One file instead of two 250-line
 // copies that would drift apart on the first fix.
 //
-// Styling follows the `styling` skill: tbl-wrap + innovic-table (no-wrap cells +
-// side scroll for free), ONE StatStrip row for the counts (which double as the
+// Styling follows the `styling` skill: <ListHeader> band, the ruled sheet
+// (.innovic-table.tbl-grid — codes on one line, descriptions wrap), ONE StatStrip row for the counts (which double as the
 // Active/Inactive filter), clickable rows, and a scrolling list — masters do not
 // paginate.
 
@@ -16,6 +16,7 @@ import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ConfirmDialog } from '@/ui/feedback';
+import { ListFooter, ListHeader } from '@/ui/layout';
 
 /** The subset of MaterialGrade / MaterialSize this table renders. Both shared
  *  types are structurally assignable to it. */
@@ -57,6 +58,8 @@ export interface MaterialMasterPanelProps {
   onDownloadTemplate: () => void;
   /** Parses + posts the whole sheet in ONE request; resolves to the status line. */
   onImportFile: (file: File) => Promise<string>;
+  /** The page's Grade | Size tab strip, drawn inside the one header band. */
+  tabs?: React.ReactNode;
 }
 
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: MaterialMasterRow };
@@ -81,6 +84,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
     deleting,
     onDownloadTemplate,
     onImportFile,
+    tabs,
   } = props;
 
   // Tier-driven, per department (rawmat_create sits in Production). Add/Import =
@@ -127,40 +131,32 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          marginBottom: 12,
-          gap: 8,
-        }}
+      {/* THE list header (2026-09-26 list standard): title · count … search ·
+          + Add, with the Grade | Size tabs and the count strip in the band. */}
+      <ListHeader
+        title="Raw Material Master"
+        icon="▬"
+        count={total}
+        noun={noun.toLowerCase()}
+        filterNote={status === 'all' ? undefined : status}
+        search={searchInput}
+        onSearch={onSearchInput}
+        searchPlaceholder={searchPlaceholder}
+        updating={isFetching && !isLoading}
+        primary={
+          canAdd ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModal({ kind: 'new' })}
+            >
+              <Plus size={14} /> Add {noun}
+            </button>
+          ) : null
+        }
       >
-        <input
-          className="innovic-input"
-          placeholder={searchPlaceholder}
-          value={searchInput}
-          onChange={(e) => onSearchInput(e.target.value)}
-          style={{ width: 260, fontSize: 12 }}
-        />
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
-        {canAdd ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setModal({ kind: 'new' })}
-          >
-            <Plus size={14} /> Add {noun}
-          </button>
-        ) : null}
-      </div>
-
-      {/* Counts + the Active/Inactive filter in ONE strip (styling skill Rule 3). */}
-      <div style={{ marginBottom: 12 }}>
+        {tabs}
+        {/* Counts + the Active/Inactive filter in ONE strip (styling skill Rule 3). */}
         <StatStrip
           items={[
             {
@@ -189,7 +185,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
             },
           ]}
         />
-      </div>
+      </ListHeader>
 
       {importMsg ? (
         <div className="panel" style={{ marginBottom: 12 }}>
@@ -209,7 +205,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Code</th>
@@ -249,25 +245,13 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                     onClick={canEdit ? () => setModal({ kind: 'edit', row }) : undefined}
                     style={canEdit ? { cursor: 'pointer' } : undefined}
                   >
-                    <td className="td-code" style={{ color: 'var(--cyan)' }}>
+                    <td className="td-code" style={{ color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
                       {row.code}
                     </td>
                     <td className="fw-700">{row.name}</td>
-                    {/* Long free text — clip with an ellipsis, full value on hover. */}
-                    <td className="text2" style={{ fontSize: 12 }}>
-                      <span
-                        style={{
-                          maxWidth: 340,
-                          display: 'inline-block',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          verticalAlign: 'bottom',
-                        }}
-                        title={row.description ?? ''}
-                      >
-                        {row.description || '—'}
-                      </span>
+                    {/* Long free text WRAPS inside its column (sheet rule). */}
+                    <td className="text2" style={{ fontSize: 12, textAlign: 'left' }}>
+                      {row.description || '—'}
                     </td>
                     <td>
                       <span className={`badge ${row.isActive ? 'b-green' : 'b-grey'}`}>
@@ -309,60 +293,48 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
 
       {/* Masters scroll, they do not paginate — one fetch, no Prev/Next. The
           count line says which of the two happened so a capped list can never
-          look complete. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 6,
-          gap: 12,
-          fontSize: 11,
-          color: 'var(--text3)',
-        }}
-      >
-        <span />
-        <span>
-          {total > rows.length
-            ? `Showing first ${rows.length} of ${total} — refine with search`
-            : `Showing all ${total} ${noun.toLowerCase()}${total === 1 ? '' : 's'}`}
-        </span>
-      </div>
-
-      {/* Excel template + import sit below the table (mirror of the Operator
-          Master). Import creates rows, so it follows the create (entry) right. */}
-      {canAdd ? (
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            onClick={onDownloadTemplate}
-          >
-            ⬇ Download Excel Template
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            disabled={importing}
-            onClick={() => fileRef.current?.click()}
-          >
-            {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬆'} Import from
-            Excel
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleFile(f);
-            }}
-          />
-        </div>
-      ) : null}
+          look complete. Excel template + import sit under it; import creates
+          rows, so it follows the create (entry) right. */}
+      <ListFooter
+        total={total}
+        shown={visible.length}
+        noun={noun.toLowerCase()}
+        limit={total > rows.length ? rows.length : undefined}
+        actions={
+          canAdd ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 11 }}
+                onClick={onDownloadTemplate}
+              >
+                ⬇ Download Excel Template
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 11 }}
+                disabled={importing}
+                onClick={() => fileRef.current?.click()}
+              >
+                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬆'} Import from
+                Excel
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleFile(f);
+                }}
+              />
+            </>
+          ) : undefined
+        }
+      />
 
       {trashRow ? (
         <ConfirmDialog

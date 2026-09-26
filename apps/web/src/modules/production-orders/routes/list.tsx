@@ -1,5 +1,5 @@
 // Production Orders master (ADR-170). SO Master List is THE style reference:
-// frozen header band (title + count + search + New), ONE StatStrip row whose
+// <ListHeader> band (title + count + search + New), ONE StatStrip row whose
 // tiles filter (Open, All, Closed, Short Closed), a react-table grid with
 // SortableHead, clickable rows, document codes in strong mono.
 //
@@ -35,6 +35,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useProductionOrdersList } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
 
@@ -67,25 +68,6 @@ export const productionOrdersListRoute = createRoute({
   component: ProductionOrdersListPage,
 });
 
-/** Long free text: clip with an ellipsis, keep the whole value on hover. */
-function Clip({ text, max = 220 }: { text: string | null; max?: number }): React.JSX.Element {
-  return (
-    <span
-      style={{
-        maxWidth: max,
-        display: 'inline-block',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        verticalAlign: 'bottom',
-      }}
-      title={text ?? ''}
-    >
-      {text ?? '—'}
-    </span>
-  );
-}
-
 function ProductionOrdersListPage(): React.JSX.Element {
   const search = productionOrdersListRoute.useSearch();
   const navigate = productionOrdersListRoute.useNavigate();
@@ -95,7 +77,11 @@ function ProductionOrdersListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -217,7 +203,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         header: 'Item Name',
         accessorKey: 'itemNameText',
         meta: { tdClass: 'text2' },
-        cell: ({ row }) => <Clip text={row.original.itemNameText} />,
+        cell: ({ row }) => row.original.itemNameText ?? '—',
       },
       {
         header: 'Order Qty',
@@ -310,66 +296,25 @@ function ProductionOrdersListPage(): React.JSX.Element {
   return (
     <div>
       {/* Frozen header band — title + count + search + New PO + the count strip
-          stay pinned; the table scrolls under them. Same shape as the PR list. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
+          stay pinned; the table scrolls under them. */}
+      <ListHeader
+        title="Production Orders"
+        icon="🏭"
+        count={total}
+        noun="order"
+        filterNote={search.status ? PRODUCTION_ORDER_STATUS_LABEL[search.status] : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search Production Order No., plan, POL, item, JC, SO…"
+        updating={isFetching && !isLoading}
+        primary={
+          perms.entry ? (
+            <Link to="/production-orders/new" className="btn btn-primary">
+              <Plus size={14} /> New Production Order
+            </Link>
+          ) : null
+        }
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 10,
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              Production Orders
-            </div>
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} order{total === 1 ? '' : 's'}
-              {search.status ? (
-                <>
-                  {' '}
-                  · <span className="text2">
-                    {PRODUCTION_ORDER_STATUS_LABEL[search.status]}
-                  </span>{' '}
-                  only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="Search Production Order No., plan, POL, item, JC, SO…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 260, fontSize: 12 }}
-            />
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {perms.entry ? (
-              <Link to="/production-orders/new" className="btn btn-primary">
-                <Plus size={14} /> New Production Order
-              </Link>
-            ) : null}
-          </div>
-        </div>
-
         <StatStrip
           items={[
             {
@@ -410,11 +355,11 @@ function ProductionOrdersListPage(): React.JSX.Element {
             },
           ]}
         />
-      </div>
+      </ListHeader>
 
       <div className="panel">
         <div className="tbl-wrap tbl-frozen">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <SortableHead table={table} />
             <tbody>
               {isLoading ? (
@@ -457,7 +402,17 @@ function ProductionOrdersListPage(): React.JSX.Element {
                     style={{ cursor: 'pointer' }}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
+                      <td
+                        key={cell.id}
+                        className={cell.column.columnDef.meta?.tdClass}
+                        // Sheet rule: codes, dates and qty stay on one line;
+                        // only the item name may wrap.
+                        style={
+                          cell.column.id === 'itemNameText'
+                            ? { textAlign: 'left' }
+                            : { whiteSpace: 'nowrap' }
+                        }
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -469,11 +424,9 @@ function ProductionOrdersListPage(): React.JSX.Element {
         </div>
       </div>
 
-      {total > LIST_LIMIT ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-          Showing first {LIST_LIMIT} of {total} — refine with search
-        </div>
-      ) : null}
+      {isLoading || isError ? null : (
+        <ListFooter total={total} noun="production order" limit={LIST_LIMIT} />
+      )}
     </div>
   );
 }

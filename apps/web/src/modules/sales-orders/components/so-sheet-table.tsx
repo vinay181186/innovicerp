@@ -71,7 +71,7 @@ export function SoSheetTable({
           sideways. Every column is centred by the standard; only Customer is
           left-aligned (a name reads from its left edge, and the POL under
           it must start at the same x). */}
-      <div className="tbl-wrap" style={{ overflowX: 'hidden' }}>
+      <div className="tbl-wrap">
         <table className="innovic-table tbl-grid">
           <colgroup>
             <col style={{ width: '4%' }} />

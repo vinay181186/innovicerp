@@ -5,7 +5,8 @@
 // and Delete stay as row actions.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -23,6 +24,7 @@ function SavedReportsListPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useSavedReportsList();
   const { data: catalog } = useSourceCatalog();
   const deleteMutation = useDeleteSavedReport();
+  const [term, setTerm] = useState('');
 
   // Source label ("Sales Orders"), never the raw source key.
   const sourceLabel = useMemo(
@@ -30,7 +32,18 @@ function SavedReportsListPage(): React.JSX.Element {
     [catalog],
   );
 
-  const rows = useMemo(() => data?.reports ?? [], [data?.reports]);
+  // Client-side search over the whole list (one fetch): name, description,
+  // data source, owner.
+  const rows = useMemo(
+    () =>
+      (data?.reports ?? []).filter((r) =>
+        matchesSearchTerm(
+          [r.name, r.description, sourceLabel.get(r.sourceKey) ?? r.sourceKey, r.ownerEmail],
+          term,
+        ),
+      ),
+    [data?.reports, sourceLabel, term],
+  );
 
   const columns = useMemo<DataTableColumn<(typeof rows)[number]>[]>(
     () => [
@@ -90,8 +103,12 @@ function SavedReportsListPage(): React.JSX.Element {
     <div>
       <ListHeader
         title="Saved Reports"
-        count={rows.length}
-        noun="report"
+        icon="✨"
+        count={data ? rows.length : undefined}
+        noun="saved report"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search report name, description, source, owner…"
         primary={
           <Link to="/saved-reports/new" className="btn btn-primary">
             <Icon name="plus" size={14} /> New Report
@@ -113,7 +130,7 @@ function SavedReportsListPage(): React.JSX.Element {
             rows={rows}
             rowKey={(r) => r.id}
             loading={isLoading}
-            emptyText="No saved reports yet."
+            emptyText={term.trim() ? 'No Saved Reports match.' : 'No Saved Reports yet.'}
             onRowClick={(r) => void navigate({ to: '/saved-reports/$id', params: { id: r.id } })}
             rowActionsWidth="10%"
             rowActions={(r) => (

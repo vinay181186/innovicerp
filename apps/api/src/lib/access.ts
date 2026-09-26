@@ -126,6 +126,19 @@ export async function requireAnyFormAccess(
   await requireFormAccess(user, formKey, action);
 }
 
+/** The non-throwing twin of requireFormAccess, for READ paths that must list
+ *  only what the caller could act on (the approvals inbox, ADR-190). Same
+ *  rule: admins pass, everyone else by the effective matrix. */
+export async function hasFormAccess(
+  user: AuthContext,
+  formKey: AccessFormKey,
+  action: AccessAction,
+): Promise<boolean> {
+  if (user.role === 'admin') return true;
+  const eff = await getMyAccess(user);
+  return effectiveFormPerms(eff, formKey)[action];
+}
+
 export async function canSeeFormPrice(user: AuthContext, formKey: AccessFormKey): Promise<boolean> {
   if (user.role === 'admin') return true;
   const eff = await getMyAccess(user);

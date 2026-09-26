@@ -243,7 +243,9 @@ export function DataTable<T>({
 
   const wrapStyle: CSSProperties = {};
   if (maxHeight !== undefined) wrapStyle.maxHeight = maxHeight;
-  if (!autoWidth && !pinFirstCol) wrapStyle.overflowX = 'hidden';
+  // No `overflowX: hidden` any more: the sheet sizes columns to content
+  // (auto layout, 2026-09-26), so a table wider than the screen must scroll
+  // inside .tbl-wrap rather than clip its right-hand columns.
 
   const showColgroup = !autoWidth && cols.some((c) => c.width !== undefined);
   const keyOf = rowKey ?? defaultRowKey;

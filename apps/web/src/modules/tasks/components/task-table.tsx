@@ -172,7 +172,7 @@ export function TaskTable({
   return (
     <div className="panel" style={{ marginBottom: 0 }}>
       <div className="tbl-wrap tbl-frozen">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>Task No.</th>

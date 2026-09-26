@@ -61,7 +61,9 @@ export function SoQcStatusView(): React.JSX.Element {
         <div className="panel">
           <div className="empty-state">
             <div className="empty-icon">🔬</div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Select a Sales Order to view QC status</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>
+              Select a Sales Order to view QC status
+            </div>
           </div>
         </div>
       ) : detail.isLoading ? (
@@ -116,20 +118,20 @@ export function SoQcStatusView(): React.JSX.Element {
 
           <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th style={{ width: 40 }}>Ln</th>
                     {/* POL — the CUSTOMER's own line number off their purchase
                         order, beside (never instead of) our SO line number. */}
-                    <th style={{ width: 50, color: 'var(--purple)' }}>POL</th>
-                    <th style={{ width: 100 }}>Item Code</th>
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
+                    <th>Item Code</th>
                     <th>Item Name</th>
-                    <th style={{ width: 40 }}>Order Qty</th>
+                    <th className="th-num">Order Qty</th>
                     <th style={{ minWidth: 240 }}>QC Stages (in JC)</th>
-                    <th style={{ width: 80 }}>Incoming QC</th>
-                    <th style={{ width: 60 }}>Docs</th>
-                    <th style={{ width: 90 }}>Overall</th>
+                    <th>Incoming QC</th>
+                    <th>Docs</th>
+                    <th>Overall</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -179,7 +181,10 @@ function StageOpRow({ op }: { op: SoQcStageOp }): React.JSX.Element {
         {stageIcon(op.status)}
       </span>
       <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{op.operation}</span>
-      <span className="mono fw-700" style={{ fontSize: 11, color: countColor, whiteSpace: 'nowrap' }}>
+      <span
+        className="mono fw-700"
+        style={{ fontSize: 11, color: countColor, whiteSpace: 'nowrap' }}
+      >
         {op.accepted}/{op.orderQty}
       </span>
       {op.rejected > 0 ? (
@@ -240,11 +245,11 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
           {l.clientPoLineNo ?? '—'}
         </td>
-        <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
+        <td className="td-code mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
           {itemCodeWithRev(l.itemCode, l.itemRevision)}
         </td>
         <td>{l.partName ?? '—'}</td>
-        <td className="mono fw-700">{l.orderQty}</td>
+        <td className="mono fw-700 td-num">{l.orderQty}</td>
 
         {!l.hasAnyQc ? (
           <>
@@ -303,7 +308,9 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
       {hasDetail && open ? (
         <tr>
           <td colSpan={TABLE_COLS} style={{ padding: 0 }}>
-            <div style={{ background: 'var(--bg)', borderTop: '2px solid var(--cyan)', padding: 16 }}>
+            <div
+              style={{ background: 'var(--bg)', borderTop: '2px solid var(--cyan)', padding: 16 }}
+            >
               {l.grnDetail.length > 0 ? <GrnDetailTable l={l} /> : null}
               {l.tpiDetail.length > 0 ? <TpiDetailTable l={l} /> : null}
               {l.docDetail.length > 0 ? <DocDetailTable l={l} /> : null}
@@ -315,7 +322,13 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
   );
 }
 
-function DetailHeading({ color, children }: { color: string; children: React.ReactNode }): React.JSX.Element {
+function DetailHeading({
+  color,
+  children,
+}: {
+  color: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
   return (
     <div
       style={{
@@ -517,7 +530,9 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
     total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
 
   return (
-    <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border2)' }}>
+    <tr
+      style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border2)' }}
+    >
       <td colSpan={5} style={{ fontSize: 11, color: 'var(--text2)' }}>
         Total ({lines.length} lines)
       </td>

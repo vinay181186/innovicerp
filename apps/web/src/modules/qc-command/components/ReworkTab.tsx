@@ -7,7 +7,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 
 function attemptColor(attempts: number): string {
   if (attempts === 1) return 'var(--amber)';
-  if (attempts === 2) return 'var(--orange)';
+  if (attempts === 2) return 'var(--orange2)';
   return 'var(--red)';
 }
 
@@ -33,7 +33,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
           </div>
         ) : (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>JC / Op</th>
@@ -43,7 +43,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                   <th>Item Code</th>
                   <th>SO No.</th>
                   <th className="td-ctr">Attempts</th>
-                  <th className="td-ctr">Rejected</th>
+                  <th className="th-num">Rejected</th>
                   <th>First Entry</th>
                   <th>Last Entry</th>
                   <th className="td-ctr">Days Elapsed</th>
@@ -111,7 +111,7 @@ export function ReworkTab({ rework }: { rework: QcReworkRow[] }): React.JSX.Elem
                         {g.attempts}
                       </span>
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
                       {g.totalRejected}
                     </td>
                     <td style={{ fontSize: 11 }}>{fmtDate(g.firstEntry)}</td>

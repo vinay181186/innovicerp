@@ -31,6 +31,8 @@ export const openPoAgeingReport: RegisteredReport = {
       { key: 'received_qty', label: 'Received', type: 'number' },
       { key: 'pending_qty', label: 'Pending', type: 'number' },
     ],
+    // ADR-190 — po_code opens the document; po_id is not a column.
+    rowLink: { column: 'po_code', route: '/purchase-orders/$id', idKey: 'po_id' },
   },
   async run({ tx, companyId, filters }) {
     const statusFilter = filters['status'];
@@ -42,6 +44,7 @@ export const openPoAgeingReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
+        po.id AS po_id,
         po.code AS po_code,
         po.po_date,
         (CURRENT_DATE - po.po_date)::int AS days_open,
@@ -63,6 +66,7 @@ export const openPoAgeingReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      po_id: String(r['po_id'] ?? ''),
       po_code: String(r['po_code'] ?? ''),
       po_date:
         r['po_date'] instanceof Date

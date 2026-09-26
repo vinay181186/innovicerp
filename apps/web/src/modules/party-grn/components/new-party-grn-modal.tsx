@@ -20,10 +20,17 @@ import { usePartyMaterialsList } from '../../party-materials/api';
 import { useCreatePartyGrn, useNextPartyGrnCode } from '../api';
 import { LineRow, MATERIAL_DATALIST_ID, makeEmptyLine, type UiLine } from './party-grn-line-row';
 
-export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+export function NewPartyGrnModal({
+  onClose,
+  initialJwId,
+}: {
+  onClose: () => void;
+  /** `?jw=` deep link — the modal opens with this JWSO already picked. */
+  initialJwId?: string | undefined;
+}): React.JSX.Element {
   const [date, setDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
-  const [jwId, setJwId] = useState<string | null>(null);
+  const [jwId, setJwId] = useState<string | null>(initialJwId ?? null);
   const [dcNo, setDcNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<UiLine[]>([makeEmptyLine()]);
@@ -48,6 +55,13 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
   // master list no longer carries per-line rows).
   const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
   const jwLinesForSelected = jwDetailQ.data?.lines ?? [];
+  // The picked JWSO's client / PO, from the open-JWSO page when it is on it and
+  // from the JWSO detail otherwise — a `?jw=` deep link may name a JWSO that
+  // is not in the first page of the picker's list.
+  const jwDetail = jwDetailQ.data && jwDetailQ.data.id === jwId ? jwDetailQ.data : null;
+  const jwClientId = selectedJw?.clientId ?? jwDetail?.clientId ?? null;
+  const jwCustomerName = selectedJw?.customerName ?? jwDetail?.customerName ?? '';
+  const jwClientPoNo = selectedJw?.clientPoNo ?? jwDetail?.clientPoNo ?? '';
 
   // ADR-102: only the selected JWSO's client's materials. Party material is
   // customer-owned — showing every client's codes invited receiving one
@@ -57,11 +71,11 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
   const { data: pmData } = usePartyMaterialsList(
     {
       search: undefined,
-      clientId: selectedJw?.clientId ?? undefined,
+      clientId: jwClientId ?? undefined,
       limit: 200,
       offset: 0,
     },
-    { enabled: Boolean(selectedJw?.clientId) },
+    { enabled: Boolean(jwClientId) },
   );
   const pmAll = pmData?.items ?? [];
 
@@ -77,6 +91,35 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
 
   const removeLine = (idx: number): void => {
     setLines((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // "Add this client's materials": one line per party material of the picked
+  // JWSO's client that is not on a line already, Received left blank for the
+  // storekeeper to fill. A still-blank first line is replaced rather than left
+  // behind. When exactly one JWSO line is for the material's part, that line
+  // is pre-picked (still editable); otherwise it is left to choose.
+  const addClientMaterials = (): void => {
+    setLines((prev) => {
+      const isBlank = (l: UiLine): boolean =>
+        !l.partyMaterialId && !l.materialSearch.trim() && !l.receivedQty.trim() && !l.jwLineNoText;
+      const kept = prev.filter((l) => !isBlank(l));
+      const have = new Set(kept.map((l) => l.partyMaterialId).filter(Boolean));
+      const added = pmAll
+        .filter((p) => !have.has(p.id))
+        .map((p): UiLine => {
+          const forPart =
+            p.itemId != null ? jwLinesForSelected.filter((j) => j.itemId === p.itemId) : [];
+          const only = forPart.length === 1 ? forPart[0] : undefined;
+          return {
+            ...makeEmptyLine(),
+            partyMaterialId: p.id,
+            materialSearch: p.code,
+            jwLineNoText: only ? String(only.lineNo) : '',
+          };
+        });
+      const next = [...kept, ...added];
+      return next.length > 0 ? next : prev;
+    });
   };
 
   const onSave = (): void => {
@@ -242,6 +285,9 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
                 code: j.code,
                 name: j.customerName ?? '',
               }))}
+              valueLabel={
+                jwDetail ? `${jwDetail.code} — ${jwDetail.customerName ?? ''}` : undefined
+              }
             />
           </div>
           <div className="form-grp">
@@ -253,7 +299,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
               type="text"
               className="innovic-input"
               readOnly
-              value={selectedJw?.customerName ?? ''}
+              value={jwCustomerName}
             />
           </div>
           <div className="form-grp">
@@ -265,7 +311,7 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
               type="text"
               className="innovic-input"
               readOnly
-              value={selectedJw?.clientPoNo ?? ''}
+              value={jwClientPoNo}
             />
           </div>
           <div className="form-grp">
@@ -319,9 +365,21 @@ export function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JS
               Line Items
             </span>
           </div>
-          <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
-            + Add Line
-          </button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {jwId && pmAll.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={addClientMaterials}
+                title="Add one line for every party material of this JWSO's customer (Received left blank)"
+              >
+                + Add this client&apos;s materials
+              </button>
+            ) : null}
+            <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
+              + Add Line
+            </button>
+          </div>
         </div>
 
         {/* `overflow: visible`, not hidden — the old box clipped the columns

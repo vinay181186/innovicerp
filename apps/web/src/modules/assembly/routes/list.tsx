@@ -19,9 +19,11 @@ import type { AssemblyListItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate, todayIst } from '@/lib/date';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useAssembliesList } from '../api';
 
 export const assemblyListRoute = createRoute({
@@ -69,7 +71,7 @@ const TILES: Array<{ key: FilterKey; label: string; color: string }> = [
 ];
 
 function AssemblyListPage(): React.JSX.Element {
-  const { data, isLoading, isError, error } = useAssembliesList();
+  const { data, isLoading, isFetching, isError, error } = useAssembliesList();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState<string>('');
 
@@ -88,26 +90,57 @@ function AssemblyListPage(): React.JSX.Element {
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    const q = search.trim().toLowerCase();
+    const q = normalizeSearchTerm(search);
     return data.items.filter((it) => {
       if (filter !== 'all' && it.status !== filter) return false;
-      if (q) {
-        // Legacy matches on soNo + customer + partName + BOM NAME (L28768).
-        // bomName was not in the payload before, so a search for the BOM by
-        // name silently matched nothing.
-        const hay =
-          `${it.soCode} ${it.customerName ?? ''} ${it.bomCode ?? ''} ${it.bomName ?? ''} ${it.partName ?? ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+      // Every column the row shows (plus legacy's partName, L28768): SO no.,
+      // customer, BOM no. + name, due date and the status text. Shared matcher —
+      // case-insensitive, partial. Not the qty numbers: a bare "5" would match
+      // nearly every row.
+      return matchesSearchTerm(
+        [
+          it.soCode,
+          it.customerName,
+          it.bomCode,
+          it.bomName,
+          it.partName,
+          fmtDate(it.dueDate),
+          statusBadgeLabel(it),
+        ],
+        q,
+      );
     });
   }, [data, filter, search]);
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">Assembly Tracker</div>
-      </div>
+      {/* The ONE list header (ui/layout ListHeader): title · count · search,
+          with the status tiles as one StatStrip in the band. The tiles ARE
+          the status filter (no separate dropdown); clicking one toggles it. */}
+      <ListHeader
+        title="Assembly Tracker"
+        icon="🔧"
+        count={data ? filtered.length : undefined}
+        noun="assembly order"
+        filterNote={filter !== 'all' ? TILES.find((t) => t.key === filter)?.label : undefined}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search SO no., customer, BOM no. / name, part, due date, status…"
+        updating={isFetching && !isLoading}
+      >
+        {data ? (
+          <StatStrip
+            items={TILES.map((t) => ({
+              key: t.key,
+              label: t.label,
+              count: counts[t.key],
+              color: t.color,
+              active: filter === t.key,
+              onClick: () => setFilter(filter === t.key ? 'all' : t.key),
+            }))}
+          />
+        ) : null}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -127,10 +160,6 @@ function AssemblyListPage(): React.JSX.Element {
         </div>
       ) : data ? (
         <>
-          <KpiTiles counts={counts} filter={filter} setFilter={setFilter} />
-
-          <Toolbar search={search} setSearch={setSearch} />
-
           {filtered.length === 0 ? (
             <div className="panel">
               <div className="panel-body">
@@ -144,16 +173,16 @@ function AssemblyListPage(): React.JSX.Element {
           ) : (
             <div className="panel">
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
                       <th>SO No.</th>
                       <th>Customer</th>
                       <th>BOM No.</th>
                       <th>Due Date</th>
-                      <th>Required</th>
-                      <th>Assembled</th>
-                      <th>Dispatched</th>
+                      <th className="th-num">Required</th>
+                      <th className="th-num">Assembled</th>
+                      <th className="th-num">Dispatched</th>
                       <th>Assembly Status</th>
                     </tr>
                   </thead>
@@ -169,7 +198,7 @@ function AssemblyListPage(): React.JSX.Element {
                           }
                           style={{ cursor: 'pointer' }}
                         >
-                          <td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
                             <Link
                               to="/assemblies/$soId"
                               params={{ soId: row.soId }}
@@ -197,15 +226,20 @@ function AssemblyListPage(): React.JSX.Element {
                           </td>
                           <td
                             style={{
-                              color: overdue ? 'var(--red)' : undefined,
+                              whiteSpace: 'nowrap',
+                              color: overdue ? 'var(--red2)' : undefined,
                               fontWeight: overdue ? 600 : undefined,
                             }}
                           >
                             {fmtDate(row.dueDate)}
                           </td>
-                          <td>{row.orderQty}</td>
-                          <td style={{ color: 'var(--green2)' }}>{row.assembledQty}</td>
-                          <td style={{ color: 'var(--green2)' }}>{row.dispatchedQty}</td>
+                          <td className="td-num">{row.orderQty}</td>
+                          <td className="td-num" style={{ color: 'var(--green2)' }}>
+                            {row.assembledQty}
+                          </td>
+                          <td className="td-num" style={{ color: 'var(--green2)' }}>
+                            {row.dispatchedQty}
+                          </td>
                           <td>
                             <span className={`badge ${STATUS_BADGE_CLASS[row.status]}`}>
                               {statusBadgeLabel(row)}
@@ -219,63 +253,9 @@ function AssemblyListPage(): React.JSX.Element {
               </div>
             </div>
           )}
+          <ListFooter total={data.items.length} shown={filtered.length} noun="assembly order" />
         </>
       ) : null}
-    </div>
-  );
-}
-
-function KpiTiles({
-  counts,
-  filter,
-  setFilter,
-}: {
-  counts: Record<FilterKey, number>;
-  filter: FilterKey;
-  setFilter: (k: FilterKey) => void;
-}): React.JSX.Element {
-  // One StatStrip; the tiles ARE the status filter (the old dropdown is gone).
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <StatStrip
-        items={TILES.map((t) => ({
-          key: t.key,
-          label: t.label,
-          count: counts[t.key],
-          color: t.color,
-          active: filter === t.key,
-          onClick: () => setFilter(filter === t.key ? 'all' : t.key),
-        }))}
-      />
-    </div>
-  );
-}
-
-function Toolbar({
-  search,
-  setSearch,
-}: {
-  search: string;
-  setSearch: (v: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 10,
-        marginBottom: 16,
-        flexWrap: 'wrap',
-        alignItems: 'center',
-      }}
-    >
-      <input
-        type="text"
-        className="innovic-input"
-        placeholder="🔍 Search SO, customer, item…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ minWidth: 240 }}
-      />
     </div>
   );
 }

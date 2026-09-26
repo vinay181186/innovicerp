@@ -34,6 +34,8 @@ export const dailyOpLogReport: RegisteredReport = {
       { key: 'reject_qty', label: 'Rejected', type: 'number' },
       { key: 'shift', label: 'Shift', type: 'text' },
     ],
+    // ADR-190 — jc_code opens the document; jc_id is not a column.
+    rowLink: { column: 'jc_code', route: '/job-cards/$id', idKey: 'jc_id' },
   },
   async run({ tx, companyId, filters }) {
     const fromFrag = filters['fromDate']
@@ -43,6 +45,7 @@ export const dailyOpLogReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
+        jc.id AS jc_id,
         ol.log_date,
         ol.log_no,
         ol.log_type,
@@ -70,6 +73,7 @@ export const dailyOpLogReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      jc_id: String(r['jc_id'] ?? ''),
       log_date:
         r['log_date'] instanceof Date
           ? r['log_date'].toISOString().slice(0, 10)

@@ -22,11 +22,14 @@ export function SizeTab({
   term,
   searchInput,
   onSearchInput,
+  tabs,
 }: {
   /** The debounced search term from the URL (the route owns the debounce). */
   term: string | undefined;
   searchInput: string;
   onSearchInput: (v: string) => void;
+  /** The page's Grade | Size strip — drawn inside the panel's header band. */
+  tabs?: React.ReactNode;
 }): React.JSX.Element {
   const query: ListMaterialSizesQuery = useMemo(
     () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
@@ -49,7 +52,8 @@ export function SizeTab({
       error={list.error}
       searchInput={searchInput}
       onSearchInput={onSearchInput}
-      searchPlaceholder="🔍 Search size, code, description…"
+      tabs={tabs}
+      searchPlaceholder="Search size, code, description…"
       namePlaceholder="e.g. Ø30 × 1000"
       saving={create.isPending || update.isPending}
       onSave={async (input, id) => {

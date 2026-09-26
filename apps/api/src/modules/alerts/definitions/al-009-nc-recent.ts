@@ -2,6 +2,7 @@
 // Filter: nc_date >= today - 3 days. Includes NCs in any status (it's a
 // "what happened recently?" tripwire, not a backlog).
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -23,7 +24,7 @@ export const al009NcRecent: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT nc.code AS nc_code, nc.nc_date, jc.code AS jc_code,
+      SELECT nc.id AS nav_id, nc.code AS nc_code, nc.nc_date, jc.code AS jc_code,
              COALESCE(nc.item_code_text, '') AS item,
              nc.rejected_qty, nc.status
       FROM public.nc_register nc
@@ -34,6 +35,7 @@ export const al009NcRecent: RegisteredAlert = {
       ORDER BY nc.nc_date DESC, nc.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('nc', String(r['nav_id'])),
       nc_code: (r['nc_code'] as string) ?? '',
       nc_date:
         r['nc_date'] instanceof Date

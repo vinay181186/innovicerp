@@ -13,8 +13,10 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Bell, BellOff, BellRing, Loader2, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { StatStrip } from '@/components/shared/stat-strip';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ListHeader } from '@/ui/layout';
 import { useAlerts, alertsKeys, useMySubscriptions, useToggleSubscription } from '../api';
 import { DEPT_COLOR, DEPT_LABEL } from '../lib/dept';
 import { useQueryClient } from '@tanstack/react-query';
@@ -32,6 +34,7 @@ function AlertsDashboardPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [showZero, setShowZero] = useState(false);
+  const [term, setTerm] = useState('');
 
   const subscribedCodes = useMemo(() => {
     const set = new Set<string>();
@@ -42,8 +45,10 @@ function AlertsDashboardPage() {
   const visible = useMemo(() => {
     if (!data) return [];
     const sorted = [...data.alerts].sort((a, b) => a.code.localeCompare(b.code));
-    return showZero ? sorted : sorted.filter((a) => a.count > 0);
-  }, [data, showZero]);
+    const shown = showZero ? sorted : sorted.filter((a) => a.count > 0);
+    // Client-side search over the three text columns (department, code, name).
+    return shown.filter((a) => matchesSearchTerm([DEPT_LABEL[a.dept], a.code, a.name], term));
+  }, [data, showZero, term]);
 
   const total = useMemo(() => (data ? data.alerts.reduce((s, a) => s + a.count, 0) : 0), [data]);
 
@@ -58,56 +63,74 @@ function AlertsDashboardPage() {
 
   return (
     <div>
-      {/* Header row — legacy L22357-22362. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
+      <ListHeader
+        title="Alerts"
+        icon="🔔"
+        count={data ? visible.length : undefined}
+        noun="alert"
+        filterNote={showZero ? undefined : 'with records'}
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search department, alert code, alert name…"
+        updating={isFetching && !isLoading}
+        tools={
+          <>
+            <label
+              style={{
+                fontSize: 11,
+                color: 'var(--text3)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showZero}
+                onChange={(e) => setShowZero(e.target.checked)}
+                style={{ accentColor: 'var(--cyan)' }}
+              />{' '}
+              Show zero records
+            </label>
+            <Link to="/alerts/config" className="btn btn-ghost btn-sm">
+              Configure
+            </Link>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                void qc.invalidateQueries({ queryKey: alertsKeys.list() });
+                void refetch();
+              }}
+              disabled={isFetching}
+            >
+              <RefreshCw size={13} className={isFetching ? 'animate-spin' : undefined} /> Refresh
+            </button>
+          </>
+        }
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Alerts Dashboard
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <label
-            style={{
-              fontSize: 11,
-              color: 'var(--text3)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={showZero}
-              onChange={(e) => setShowZero(e.target.checked)}
-              style={{ accentColor: 'var(--cyan)' }}
-            />{' '}
-            Show zero records
-          </label>
-          {/* No legacy counterpart — kept: legacy reached Alert Configuration
-              from its sidebar, which the port renders as a route link. */}
-          <Link to="/alerts/config" className="btn btn-ghost" style={{ fontSize: 12 }}>
-            Configure
-          </Link>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ fontSize: 12 }}
-            onClick={() => {
-              void qc.invalidateQueries({ queryKey: alertsKeys.list() });
-              void refetch();
-            }}
-            disabled={isFetching}
-          >
-            <RefreshCw size={13} className={isFetching ? 'animate-spin' : undefined} /> Refresh
-          </button>
-        </div>
-      </div>
+        {/* Dept summary — legacy L22349-22354 + the TOTAL card L22364-22366,
+            as one strip. */}
+        {data ? (
+          <StatStrip
+            items={[
+              ...(Object.keys(byDept) as Array<keyof typeof DEPT_COLOR>).map((dept) => ({
+                key: dept,
+                label: DEPT_LABEL[dept],
+                count: byDept[dept] ?? 0,
+                color: (byDept[dept] ?? 0) > 0 ? 'var(--amber2)' : 'var(--green2)',
+              })),
+              {
+                key: 'total',
+                label: 'Total',
+                count: total,
+                color: total > 0 ? 'var(--red2)' : 'var(--green2)',
+              },
+            ]}
+          />
+        ) : null}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -126,37 +149,14 @@ function AlertsDashboardPage() {
         </div>
       ) : (
         <>
-          {/* Dept counts + Total — one StatStrip (styling Rule 3), not separate cards. */}
-          <div style={{ marginBottom: 16 }}>
-            <StatStrip
-              items={[
-                ...(Object.keys(byDept) as Array<keyof typeof DEPT_COLOR>).map((dept) => {
-                  const deptCount = byDept[dept] ?? 0;
-                  return {
-                    key: dept,
-                    label: DEPT_LABEL[dept],
-                    count: deptCount,
-                    color: deptCount > 0 ? 'var(--amber)' : 'var(--green)',
-                  };
-                }),
-                {
-                  key: 'total',
-                  label: 'Total',
-                  count: total,
-                  color: total > 0 ? 'var(--red)' : 'var(--green)',
-                },
-              ]}
-            />
-          </div>
-
           <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th>Department</th>
                     <th>Alert Name</th>
-                    <th>Records</th>
+                    <th className="th-num">Records</th>
                     <th>Email</th>
                   </tr>
                 </thead>
@@ -164,7 +164,7 @@ function AlertsDashboardPage() {
                   {visible.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="empty-state">
-                        ✅ Nothing pending
+                        {term.trim() ? 'No alerts match.' : '✅ Nothing pending'}
                       </td>
                     </tr>
                   ) : (
@@ -206,22 +206,22 @@ function AlertsDashboardPage() {
                           >
                             {a.name}
                           </td>
-                          <td className="td-ctr">
+                          <td className="td-num">
                             <span
                               className="mono fw-700"
                               style={{
                                 fontSize: 16,
                                 color: interactive
                                   ? isUrgent
-                                    ? 'var(--red)'
-                                    : 'var(--amber)'
-                                  : 'var(--green)',
+                                    ? 'var(--red2)'
+                                    : 'var(--amber2)'
+                                  : 'var(--green2)',
                               }}
                             >
                               {a.count}
                             </span>
                           </td>
-                          <td className="td-ctr">
+                          <td>
                             <button
                               type="button"
                               disabled={subBusy || subscriptions.isLoading}

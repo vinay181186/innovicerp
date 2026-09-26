@@ -30,6 +30,7 @@ import type { Client } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -147,6 +148,10 @@ function ClientDetailPage(): React.JSX.Element {
       >
         <ClientFacts client={client} />
       </DetailHeader>
+
+      {/* Sales Orders, dispatches and outstanding invoices for this customer
+          (ADR-190). Hides when empty. */}
+      <RelatedDocsPanel module="clients" id={client.id} />
 
       {confirmDelete ? (
         <ConfirmDialog

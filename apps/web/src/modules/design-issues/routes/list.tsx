@@ -4,14 +4,22 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useDesignIssuesAll } from '../api';
 
 type FilterKey = 'all' | 'open' | 'resolved' | 'critical';
+
+const FILTER_LABEL: Record<FilterKey, string> = {
+  all: 'All',
+  open: 'Open',
+  resolved: 'Resolved',
+  critical: 'Critical',
+};
 
 export const designIssuesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -26,7 +34,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
   const [filter, setFilter] = useState<FilterKey>('all');
   const navigate = useNavigate();
 
-  const { data, isLoading, isError, error } = useDesignIssuesAll({
+  const { data, isLoading, isFetching, isError, error } = useDesignIssuesAll({
     search: search.trim() || undefined,
     filter,
     limit: 200,
@@ -46,14 +54,25 @@ function DesignIssuesAllPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* One strip; the tiles ARE the filter (no status dropdown). */}
-      <div style={{ marginBottom: 16 }}>
+      <ListHeader
+        title="All Design Issues"
+        icon="⚠"
+        count={data?.total}
+        noun="issue"
+        filterNote={filter === 'all' ? undefined : FILTER_LABEL[filter]}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search issue, part, assigned to, project…"
+        updating={isFetching && !isLoading}
+      >
+        {/* The counts ARE the filter — ONE strip, no status dropdown (R5). */}
         <StatStrip
           items={[
             {
               key: 'all',
               label: 'Total',
               count: summary.total,
+              color: 'var(--blue)',
               active: filter === 'all',
               onClick: () => setFilter('all'),
             },
@@ -83,32 +102,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
             },
           ]}
         />
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          All Design Issues
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 220, fontSize: 12 }}
-          />
-        </div>
-      </div>
+      </ListHeader>
 
       <div className="panel">
         {isLoading ? (
@@ -125,7 +119,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Issue</th>
@@ -135,7 +129,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   <th>Assigned To</th>
                   <th>Raised Date</th>
                   <th>Age</th>
-                  <th />
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -149,8 +143,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   </tr>
                 ) : null}
                 {data.items.map((i) => {
-                  const stale =
-                    i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
+                  const stale = i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
                   return (
                     <tr
                       key={i.id}
@@ -162,7 +155,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                         })
                       }
                     >
-                      <td className="fw-700">
+                      <td className="fw-700" style={{ textAlign: 'left' }}>
                         <Link
                           to="/design-projects/$id"
                           params={{ id: i.designProjectId }}
@@ -181,7 +174,9 @@ function DesignIssuesAllPage(): React.JSX.Element {
                         <Badge value={i.status} kind="status" />
                       </td>
                       <td style={{ fontSize: 11, fontWeight: 600 }}>{i.assignedToText ?? ''}</td>
-                      <td style={{ fontSize: 11 }}>{fmtDate(i.raisedDate)}</td>
+                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {fmtDate(i.raisedDate)}
+                      </td>
                       <td
                         className="mono fw-700"
                         style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}
@@ -209,6 +204,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
           </div>
         ) : null}
       </div>
+      {data ? <ListFooter total={data.total} noun="issue" limit={200} /> : null}
     </div>
   );
 }

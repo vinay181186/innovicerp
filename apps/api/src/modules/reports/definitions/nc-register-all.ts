@@ -52,6 +52,8 @@ export const ncRegisterAllReport: RegisteredReport = {
       { key: 'status', label: 'NC Status', type: 'text' },
       { key: 'closed_date', label: 'Closed Date', type: 'date' },
     ],
+    // ADR-190 — nc_no opens the document; nc_id is not a column.
+    rowLink: { column: 'nc_no', route: '/nc-register/$id', idKey: 'nc_id' },
   },
   async run({ tx, companyId, filters }) {
     const fromFrag = filters['fromDate']
@@ -61,12 +63,11 @@ export const ncRegisterAllReport: RegisteredReport = {
     const status = filters['status'];
     const validStatus = ['pending', 'disposed', 'rework_done', 'closed'];
     const statusFrag =
-      status && validStatus.includes(status)
-        ? sql`AND nc.status = ${status}::nc_status`
-        : sql``;
+      status && validStatus.includes(status) ? sql`AND nc.status = ${status}::nc_status` : sql``;
 
     const result = await tx.execute(sql`
       SELECT
+        nc.id AS nc_id,
         nc.code                              AS nc_no,
         nc.nc_date                           AS nc_date,
         jc.code                              AS jc_code,
@@ -91,6 +92,7 @@ export const ncRegisterAllReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      nc_id: String(r['nc_id'] ?? ''),
       nc_no: String(r['nc_no'] ?? ''),
       nc_date: toDateString(r['nc_date']),
       jc_code: (r['jc_code'] as string | null) ?? null,

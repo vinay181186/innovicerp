@@ -35,6 +35,7 @@ import type { Machine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useJobQueue } from '@/modules/job-queue/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -73,6 +74,9 @@ function MachineDetailPage(): React.JSX.Element {
   // moment the machine finishes loading. Same placement as every sibling detail
   // page. `effectiveFormPerms` is a plain function and stays where it is used.
   const { data: eff } = useMyAccess();
+  // "Queue (n) →" — this machine's pending ops, from the same one-fetch view
+  // the Job Queue screen reads (cached, so opening the queue after is free).
+  const queue = useJobQueue({});
 
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading machine…" />;
@@ -116,6 +120,10 @@ function MachineDetailPage(): React.JSX.Element {
     return <PageState state="noaccess" as="page" />;
   }
 
+  const queuePending = queue.data
+    ? (queue.data.machines.find((m) => m.machineId === machine.id)?.pendingCount ?? 0)
+    : null;
+
   const deleteError = softDelete.isError
     ? softDelete.error instanceof Error
       ? softDelete.error.message
@@ -133,6 +141,32 @@ function MachineDetailPage(): React.JSX.Element {
         badges={<StatusBadge kind="machine" status={machine.status} />}
         actions={
           <>
+            {/* Where this machine's work lives — the one queue screen, its
+                load, and Op Entry already on this machine. */}
+            <Link
+              to="/job-queue"
+              search={{ machine: machine.code }}
+              className="btn btn-ghost btn-sm"
+              title="Pending operations on this machine, in queue order"
+            >
+              Queue ({queuePending ?? '…'}) →
+            </Link>
+            <Link
+              to="/machine-loading"
+              search={{ m: machine.id }}
+              className="btn btn-ghost btn-sm"
+              title="Load, hours pending and days to clear for this machine"
+            >
+              Loading →
+            </Link>
+            <Link
+              to="/op-entry"
+              search={{ view: 'machine', machineId: machine.id }}
+              className="btn btn-ghost btn-sm"
+              title="Op Entry — By Machine, with this machine picked"
+            >
+              Op Entry →
+            </Link>
             {canEdit ? (
               <Link
                 to="/machines/$id/edit"

@@ -1,5 +1,9 @@
 // Machine Loading (Production Wave 3). Ports legacy renderLoading (HTML L5021):
-// machine cards + Operation View / Job Queue View toggle + Capacity Summary.
+// machine cards + the open-operations table + Capacity Summary.
+//
+// The old "Job Queue View" toggle is gone (2026-09-26): it drew a second copy
+// of the Job Queue screen. There is now ONE queue screen — the "Job Queue →"
+// button opens /job-queue?machine=<code> for the picked machine (or all).
 // Legacy chrome (.panel / .innovic-table / .badge); cards use inline tokens
 // (.mach-card not ported to theme).
 
@@ -7,19 +11,22 @@ import type { MachineLoadCard, MachineLoadOp, MachineLoadStatus } from '@innovic
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
+import { ListHeader } from '@/ui/layout';
 import { useMyCompany } from '../../settings/api';
 import { useMachineLoading } from '../api';
 import { printMachineQueue } from '../lib/print-machine-queue';
 
 const searchSchema = z.object({
   m: z.string().uuid().optional(),
+  // Kept only so an old bookmarked ?view=queue link still parses; the queue
+  // itself now lives on /job-queue (see the file header).
   view: z.enum(['ops', 'queue']).optional(),
 });
 
@@ -71,7 +78,6 @@ function MachineLoadingPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useMachineLoading();
   const { data: company } = useMyCompany();
 
-  const view = search.view ?? 'ops';
   const selMachineId = search.m ?? null;
 
   const machines = data?.machines ?? [];
@@ -87,19 +93,27 @@ function MachineLoadingPage(): React.JSX.Element {
   // available > 0 OR In Progress). The service now returns the wider Job-Queue
   // set (all non-complete ops) so the Job Queue View can surface waiting /
   // qc_pending / running (ISSUE-068); this keeps the ops table unchanged.
+  // Client-side search over the columns the ops table shows — JC no., POL,
+  // item code / name, SO no., operation. One fetch, so every row is here.
+  const [searchInput, setSearchInput] = useState('');
+  const term = searchInput.trim().toLowerCase();
   const filteredOps = useMemo(
     () =>
       allOps.filter(
         (o) =>
           (selMachineId ? o.machineId === selMachineId : true) &&
-          (o.available > 0 || o.computedStatus === 'in_progress'),
+          (o.available > 0 || o.computedStatus === 'in_progress') &&
+          (term === '' ||
+            [
+              o.jobCardCode,
+              o.clientPoLineNo,
+              itemCodeWithRev(o.itemCode, o.itemRevision, ''),
+              o.itemName,
+              o.soCode,
+              o.operation,
+            ].some((v) => v != null && String(v).toLowerCase().includes(term))),
       ),
-    [allOps, selMachineId],
-  );
-
-  const queueMachines = useMemo(
-    () => (selMachineId ? machines.filter((m) => m.machineId === selMachineId) : machines),
-    [machines, selMachineId],
+    [allOps, selMachineId, term],
   );
 
   // Legacy's selMach IS the machine code (its PK); ours is a uuid, so the panel
@@ -110,12 +124,9 @@ function MachineLoadingPage(): React.JSX.Element {
 
   function selectMachine(id: string): void {
     void navigate({
-      search: (prev) => ({ ...prev, m: id, view: 'queue' }),
+      search: (prev) => ({ ...prev, m: id, view: undefined }),
       replace: true,
     });
-  }
-  function setView(v: 'ops' | 'queue'): void {
-    void navigate({ search: (prev) => ({ ...prev, view: v }), replace: true });
   }
   function clearFilter(): void {
     void navigate({ search: (prev) => ({ ...prev, m: undefined }), replace: true });
@@ -123,74 +134,48 @@ function MachineLoadingPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Machine Loading
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          <div
-            style={{
-              display: 'flex',
-              background: 'var(--bg3)',
-              border: '1px solid var(--border2)',
-              borderRadius: 'var(--radius)',
-              overflow: 'hidden',
-            }}
-          >
+      <ListHeader
+        title="Machine Loading"
+        icon="▣"
+        count={isLoading ? undefined : filteredOps.length}
+        noun="open operation"
+        filterNote={selMachineCode ?? undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search JC no., POL, item, SO no., operation…"
+        updating={isFetching && !isLoading}
+        tools={
+          <>
+            {selMachineId ? (
+              <button type="button" className="btn btn-ghost" onClick={clearFilter}>
+                All Machines ×
+              </button>
+            ) : null}
+            {/* ONE queue screen: the Job Queue, filtered to the picked machine. */}
+            <Link
+              to="/job-queue"
+              search={selMachineCode ? { machine: selMachineCode } : {}}
+              className="btn btn-ghost"
+              title={
+                selMachineCode
+                  ? `Open the Job Queue for ${selMachineCode}`
+                  : 'Open the Job Queue for every machine'
+              }
+            >
+              Job Queue →
+            </Link>
             <button
               type="button"
-              className="btn btn-sm"
-              onClick={() => setView('ops')}
-              style={{
-                borderRadius: 0,
-                background: view === 'ops' ? 'var(--blue2)' : 'transparent',
-                color: view === 'ops' ? '#fff' : 'var(--text2)',
-              }}
+              className="btn btn-ghost"
+              onClick={() => onPrintQueue(selMachineId)}
+              disabled={machines.length === 0}
+              title={selMachineId ? 'Print this machine queue' : 'Print all machine queues'}
             >
-              Operation View
+              <Printer size={13} /> Print Queue
             </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => setView('queue')}
-              style={{
-                borderRadius: 0,
-                background: view === 'queue' ? 'var(--blue2)' : 'transparent',
-                color: view === 'queue' ? '#fff' : 'var(--text2)',
-              }}
-            >
-              Job Queue View
-            </button>
-          </div>
-          {selMachineId ? (
-            <button type="button" className="btn btn-ghost" onClick={clearFilter}>
-              All Machines ×
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => onPrintQueue(selMachineId)}
-            disabled={machines.length === 0}
-            title={selMachineId ? 'Print this machine queue' : 'Print all machine queues'}
-          >
-            <Printer size={13} /> Print Queue
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -231,11 +216,11 @@ function MachineLoadingPage(): React.JSX.Element {
             ) : null}
           </div>
 
-          {view === 'ops' ? (
-            <OperationView ops={filteredOps} selMachineCode={selMachineCode} />
-          ) : (
-            <JobQueueView machines={queueMachines} ops={allOps} onPrint={onPrintQueue} />
-          )}
+          <OperationView
+            ops={filteredOps}
+            selMachineCode={selMachineCode}
+            searching={term !== ''}
+          />
 
           <CapacitySummary machines={machines} />
         </>
@@ -321,31 +306,7 @@ function Num({ val, lbl, color }: { val: number; lbl: string; color?: string }):
   );
 }
 
-// `queue` = legacy's qRows treatment (L5102-5103): the next-up job (available>0)
-// gets a tinted row and an amber index. The ops view (L5061-5075) has neither.
-function OpRow({
-  op,
-  idx,
-  queue = false,
-}: {
-  op: MachineLoadOp;
-  idx: number;
-  queue?: boolean;
-}): React.JSX.Element {
-  const isNext = op.available > 0;
-  if (queue) {
-    return (
-      <tr style={isNext ? { background: 'rgba(255,176,32,0.04)' } : undefined}>
-        <td
-          className="td-ctr mono fw-700"
-          style={{ color: isNext ? 'var(--amber)' : 'var(--text3)', fontSize: 13 }}
-        >
-          {idx + 1}
-        </td>
-        <OpRowCells op={op} />
-      </tr>
-    );
-  }
+function OpRow({ op, idx }: { op: MachineLoadOp; idx: number }): React.JSX.Element {
   return (
     <tr>
       <td className="td-ctr mono text3">{idx + 1}</td>
@@ -375,23 +336,26 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
       <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
         {op.clientPoLineNo ?? '—'}
       </td>
-      <td style={{ fontSize: 11 }}>
+      {/* Code on one line; the item NAME wraps (sheet rule). */}
+      <td style={{ fontSize: 11, textAlign: 'left' }}>
         <span className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
           {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
         </span>
         {op.itemName ? ` — ${op.itemName}` : ''}
       </td>
-      <td className="td-ctr mono text3" style={{ fontSize: 11 }}>
+      <td className="td-ctr mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
         {op.soCode ?? '—'}
       </td>
-      <td className="td-ctr mono">{opSrNo(op.opSeq)}</td>
+      <td className="td-ctr mono" style={{ whiteSpace: 'nowrap' }}>
+        {opSrNo(op.opSeq)}
+      </td>
       <td>{op.operation}</td>
       <td>
         <span className={`badge ${op.priority === 'high' ? 'b-amber' : 'b-grey'}`}>
           {op.priority === 'high' ? 'High' : 'Normal'}
         </span>
       </td>
-      <td className="text2 td-ctr" style={{ fontSize: 11 }}>
+      <td className="text2 td-ctr" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
         {fmtDate(op.dueDate)}
       </td>
       <td className="mono td-num">{op.orderQty}</td>
@@ -426,9 +390,11 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
 function OperationView({
   ops,
   selMachineCode,
+  searching,
 }: {
   ops: MachineLoadOp[];
   selMachineCode: string | null;
+  searching: boolean;
 }): React.JSX.Element {
   return (
     <div className="panel">
@@ -443,7 +409,7 @@ function OperationView({
         </span>
       </div>
       <div className="tbl-wrap">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>Sr No</th>
@@ -471,7 +437,7 @@ function OperationView({
             {ops.length === 0 ? (
               <tr>
                 <td colSpan={14} className="empty-state">
-                  No pending operations.
+                  {searching ? 'No pending operations match.' : 'No pending operations.'}
                 </td>
               </tr>
             ) : (
@@ -484,128 +450,6 @@ function OperationView({
   );
 }
 
-function JobQueueView({
-  machines,
-  ops,
-  onPrint,
-}: {
-  machines: MachineLoadCard[];
-  ops: MachineLoadOp[];
-  onPrint: (machineId: string) => void;
-}): React.JSX.Element {
-  if (machines.length === 0) {
-    return (
-      <div className="panel">
-        <div className="empty-state" style={{ padding: 32 }}>
-          No machines configured.
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div>
-      {machines.map((m) => {
-        const machOps = ops.filter((o) => o.machineId === m.machineId);
-        const pct = Math.min(150, Math.round(m.loadPct * 100));
-        // Legacy renders an empty machine with a reduced header and a hardcoded
-        // badge('Clear') — not m.loadStatus (L5083-5091).
-        if (machOps.length === 0) {
-          return (
-            <div className="panel" key={m.machineId} style={{ marginBottom: 12 }}>
-              <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
-                <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 14 }}>
-                  {m.machineCode}
-                </span>
-                <span className="text3 mono" style={{ fontSize: 11 }}>
-                  {m.name}
-                </span>
-                <span className="badge b-green">Clear</span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => onPrint(m.machineId)}
-                  title={`Print ${m.machineCode} queue`}
-                >
-                  <Printer size={12} /> Print
-                </button>
-              </div>
-              <div className="empty-state" style={{ padding: 20 }}>
-                ✓ No jobs in queue
-              </div>
-            </div>
-          );
-        }
-        return (
-          <div className="panel" key={m.machineId} style={{ marginBottom: 14 }}>
-            <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
-                <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
-                  {m.machineCode}
-                </span>
-                <span className="text2" style={{ fontSize: 12 }}>
-                  {m.name} — {m.machineType ?? '—'}
-                </span>
-                <div style={{ flex: 1, maxWidth: 120 }}>
-                  <ProgBar pct={pct} />
-                </div>
-                <span className="mono text3" style={{ fontSize: 11 }}>
-                  {pct}% · {m.pendingHrs}h · {m.daysToClear}d
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span className={`badge ${loadBadgeClass(m.loadStatus)}`}>{m.loadStatus}</span>
-                <span className="mono" style={{ color: 'var(--amber2)', fontSize: 11 }}>
-                  {machOps.length} jobs
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => onPrint(m.machineId)}
-                  title={`Print ${m.machineCode} queue`}
-                >
-                  <Printer size={12} /> Print
-                </button>
-              </div>
-            </div>
-            <div className="tbl-wrap">
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th>Sr No</th>
-                    <th>JC No.</th>
-                    {/* POL — the CUSTOMER's own PO line number, before the item. */}
-                    <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item Code</th>
-                    <th>SO No.</th>
-                    <th>Op</th>
-                    <th>Operation</th>
-                    <th>Priority</th>
-                    <th>Due Date</th>
-                    <th className="th-num">JC Qty</th>
-                    <th className="th-num">Completed</th>
-                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                      Available
-                    </th>
-                    <th className="th-num" style={{ color: 'var(--red2)' }}>
-                      Pending Hrs
-                    </th>
-                    <th>Op Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {machOps.map((op, i) => (
-                    <OpRow key={op.jcOpId} op={op} idx={i} queue />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.JSX.Element {
   return (
     // Legacy `<div class="panel mt-16">` (L5189); .mt-16 (L268) is not in our theme.
@@ -614,7 +458,7 @@ function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.J
         <span className="panel-title">Capacity Summary</span>
       </div>
       <div className="tbl-wrap">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               <th>Machine</th>
@@ -639,7 +483,9 @@ function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.J
             ) : (
               machines.map((m) => (
                 <tr key={m.machineId}>
-                  <td className="td-code">{m.machineCode}</td>
+                  <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
+                    {m.machineCode}
+                  </td>
                   <td>{m.name}</td>
                   <td className="text2">{m.machineType ?? '—'}</td>
                   <td className="mono td-num">{m.openOps}</td>

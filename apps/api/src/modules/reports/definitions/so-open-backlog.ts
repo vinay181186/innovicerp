@@ -43,6 +43,8 @@ export const soOpenBacklogReport: RegisteredReport = {
       { key: 'line_value', label: 'Line Value', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
     ],
+    // ADR-190 — so_code opens the document; so_id is not a column.
+    rowLink: { column: 'so_code', route: '/sales-orders/$id', idKey: 'so_id' },
   },
   async run({ tx, companyId, filters }) {
     const fromDate = filters['fromDueDate'];
@@ -57,6 +59,7 @@ export const soOpenBacklogReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
+        so.id AS so_id,
         so.code                                  AS so_code,
         so.so_date                               AS so_date,
         COALESCE(cl.name, so.customer_name, '—') AS client_name,
@@ -111,6 +114,7 @@ export const soOpenBacklogReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      so_id: String(r['so_id'] ?? ''),
       so_code: String(r['so_code'] ?? ''),
       so_date:
         r['so_date'] instanceof Date

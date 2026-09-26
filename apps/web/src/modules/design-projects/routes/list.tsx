@@ -6,14 +6,22 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import { useCreateDesignProject, useDesignProjectsList, useNextDesignProjectCode } from '../api';
 
 type FilterKey = 'all' | 'active' | 'released' | 'hold';
+
+const FILTER_LABEL: Record<FilterKey, string> = {
+  all: 'All',
+  active: 'Active',
+  released: 'Released',
+  hold: 'On Hold',
+};
 
 export const designProjectsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -30,7 +38,7 @@ function DesignProjectsListPage(): React.JSX.Element {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [showAdd, setShowAdd] = useState(false);
 
-  const { data, isLoading, isError, error } = useDesignProjectsList({
+  const { data, isLoading, isFetching, isError, error } = useDesignProjectsList({
     search: search.trim() || undefined,
     filter,
     limit: 100,
@@ -58,8 +66,26 @@ function DesignProjectsListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* One strip; the status tiles ARE the filter (no status dropdown). */}
-      <div style={{ marginBottom: 16 }}>
+      <ListHeader
+        title="Design Projects"
+        icon="📋"
+        count={data?.total}
+        noun="project"
+        filterNote={filter === 'all' ? undefined : FILTER_LABEL[filter]}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Search project no., name, SO no., customer…"
+        updating={isFetching && !isLoading}
+        primary={
+          perms.entry ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
+              + New Project
+            </button>
+          ) : null
+        }
+      >
+        {/* ONE strip: the first four counts ARE the filter (no status dropdown);
+            tasks and open issues are read-only totals. */}
         <StatStrip
           items={[
             {
@@ -98,46 +124,17 @@ function DesignProjectsListPage(): React.JSX.Element {
               key: 'tasks',
               label: 'Tasks Completed',
               count: `${summary.doneTasks}/${summary.totalTasks}`,
+              color: 'var(--purple)',
             },
             {
               key: 'issues',
               label: 'Open Issues',
               count: summary.openIssues,
-              color: summary.openIssues > 0 ? 'var(--red2)' : undefined,
+              color: summary.openIssues > 0 ? 'var(--red2)' : 'var(--green2)',
             },
           ]}
         />
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Design Projects
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ minWidth: 160, fontSize: 12 }}
-          />
-          {perms.entry ? (
-            <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
-              + New Project
-            </button>
-          ) : null}
-        </div>
-      </div>
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -177,6 +174,7 @@ function DesignProjectsListPage(): React.JSX.Element {
                 : 'No Design Projects yet.'}
             </div>
           ) : null}
+          <ListFooter total={data.total} noun="project" limit={100} />
         </>
       ) : null}
 

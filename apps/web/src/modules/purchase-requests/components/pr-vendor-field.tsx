@@ -28,12 +28,16 @@ export interface PrVendorFieldProps {
   /** Vendor code/name joined onto the detail, so an edit form shows the current
    *  vendor before the search page containing it has loaded. */
   initialLabel: string;
+  /** Reports the picked vendor's "CODE — Name" (create page's Save & New keeps
+   *  the vendor, and needs its label to show it on the fresh form). */
+  onPickLabel?: ((label: string) => void) | undefined;
 }
 
 export function PrVendorField({
   form,
   carriedVendorText,
   initialLabel,
+  onPickLabel,
 }: PrVendorFieldProps): React.JSX.Element {
   const { register, setValue, watch, formState } = form;
 
@@ -44,7 +48,10 @@ export function PrVendorField({
     <VendorPicker
       id="vendorId"
       value={selectedId}
-      onChange={(id) => setValue('vendorId', id ?? undefined, { shouldValidate: true })}
+      onChange={(id, label) => {
+        setValue('vendorId', id ?? undefined, { shouldValidate: true });
+        onPickLabel?.(id ? label : '');
+      }}
       initialLabel={initialLabel}
       carriedText={carriedVendorText}
       error={errorMessage}

@@ -20,7 +20,7 @@ import { useDeleteJwDocument, useJwDocuments } from '@/modules/jwso-documents/ap
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ConfirmDialog } from '@/ui/feedback';
-import { ActionMenu, DetailHeader } from '@/ui/layout';
+import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
 
@@ -71,11 +71,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 
   // Hide-page: VIEW removed for JWSO Master → no-access panel, not the detail.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view JWSOs. Ask an admin.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   // mutateAsync: ConfirmDialog keeps its buttons disabled while this runs and
@@ -89,6 +85,41 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // Access matrix (jw_create) replaces the old admin/manager role flags.
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
+
+  // Next steps — each opens the downstream create screen with this JWSO
+  // already picked (`?jw=<jwsoId>`). Gates mirror the target screens: Party
+  // GRN is party_create entry; JW DC and JW Invoice are admin/manager there.
+  const canReceive = effectiveFormPerms(eff, 'party_create').entry;
+  const canJwWrite = me?.role === 'admin' || me?.role === 'manager';
+  const goReceive = (): void =>
+    void navigate({ to: '/party-grn', search: { tab: 'receive', jw: detail.id } });
+  // `jw` is read by the JW DC screen (owned by another module). The assertion
+  // keeps this compiling whether or not that route's search type lists `jw`
+  // yet; the param still travels in the URL either way.
+  const goJwDc = (): void =>
+    void navigate({
+      to: '/jw-dc',
+      search: { tab: 'outward', jw: detail.id } as { tab: 'outward' },
+    });
+  const goJwInvoice = (): void =>
+    void navigate({ to: '/invoices', search: { tab: 'jw', jw: detail.id } });
+  // The most likely next step is the one real button; the other two sit in the
+  // Actions menu. Material still short → receive it; every line dispatched →
+  // bill it; otherwise the job is in work → JW DC.
+  const materialShort =
+    Number(detail.clientMaterialQty ?? 0) > 0
+      ? detail.partyReceivedQty < Number(detail.clientMaterialQty ?? 0)
+      : detail.partyReceivedQty === 0;
+  const allDispatched =
+    detail.lines.length > 0 && detail.lines.every((l) => l.returnedQty >= l.orderQty);
+  const nextSteps = [
+    { key: 'receive', label: 'Receive Material', allowed: canReceive, go: goReceive },
+    { key: 'jwdc', label: 'JW DC', allowed: canJwWrite, go: goJwDc },
+    { key: 'invoice', label: 'JW Invoice', allowed: canJwWrite, go: goJwInvoice },
+  ];
+  const primaryKey = materialShort ? 'receive' : allDispatched ? 'invoice' : 'jwdc';
+  const primaryStep =
+    nextSteps.find((n) => n.key === primaryKey && n.allowed) ?? nextSteps.find((n) => n.allowed);
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Client material is header-level (migration 0053).
@@ -131,8 +162,16 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
+            {primaryStep ? (
+              <button type="button" className="btn btn-primary btn-sm" onClick={primaryStep.go}>
+                {primaryStep.label}
+              </button>
+            ) : null}
             <ActionMenu
               items={[
+                ...nextSteps
+                  .filter((n) => n.key !== primaryStep?.key)
+                  .map((n) => ({ label: n.label, hidden: !n.allowed, onClick: n.go })),
                 {
                   label: 'Delete',
                   danger: true,

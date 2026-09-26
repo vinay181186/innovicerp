@@ -9,6 +9,7 @@ import {
   RouteCardForm,
   type RouteCardFormHeaderDraft,
   type RouteCardFormOpDraft,
+  detailOpsToDrafts,
   opsToInput,
   rawMaterialToInput,
 } from '../components/route-card-form';
@@ -34,26 +35,7 @@ function RouteCardEditPage(): React.JSX.Element {
   const exit = useExitConfirm({ onExit: goBack });
 
   const initialOps = useMemo<RouteCardFormOpDraft[]>(
-    () =>
-      (detail?.ops ?? []).map((op) => ({
-        // Group is display-only; the form reads it back off the machine master
-        // once the machines list has loaded.
-        machineGroupId: null,
-        machineId: op.machineId ?? '',
-        machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
-        operation: op.operation,
-        opType: op.opType,
-        // Legacy: `${op.cycleTime||''}` — a stored 0 renders blank, same as a
-        // freshly added row. Keeps create/edit identical (ISSUE-099).
-        cycleTimeMin: Number(op.cycleTimeMin) ? String(Number(op.cycleTimeMin)) : '',
-        program: op.program ?? '',
-        toolNo: op.toolNo ?? '',
-        toolDetails: op.toolDetails ?? '',
-        qcRequired: op.qcRequired,
-        ospVendorId: op.ospVendorId ?? '',
-        ospVendorCodeText: op.ospVendorCode ?? op.ospVendorCodeText ?? '',
-        ospLeadDays: op.ospLeadDays != null ? String(op.ospLeadDays) : '',
-      })),
+    () => detailOpsToDrafts(detail?.ops ?? []),
     [detail],
   );
 

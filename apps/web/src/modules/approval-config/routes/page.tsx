@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { PageHeader } from '@/ui/layout';
 import { useUsersList } from '@/modules/users/api';
 import { useApprovalConfig, useApprovalHistory, useSaveApprovalConfig } from '../api';
 import { roleLabel } from '@/lib/role-label';
@@ -137,39 +138,35 @@ function ApprovalConfigPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Approval Rules
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {submitOk ? (
-            <span className="text2" style={{ fontSize: 11, color: 'var(--green2)' }}>
-              ✅ Saved
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={!dirty || save.isPending}
-            onClick={() => void onSave()}
-          >
-            {save.isPending ? (
-              <>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save Changes'
-            )}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        sticky
+        title="Approval Rules"
+        icon="⚖"
+        dirty={Boolean(dirty)}
+        actions={
+          <>
+            {submitOk ? (
+              <span className="text2" style={{ fontSize: 11, color: 'var(--green2)' }}>
+                ✅ Saved
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!dirty || save.isPending}
+              onClick={() => void onSave()}
+            >
+              {save.isPending ? (
+                <>
+                  <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </button>
+          </>
+        }
+      />
 
       {submitError ? (
         <div
@@ -190,7 +187,12 @@ function ApprovalConfigPage(): React.JSX.Element {
       {/* PO Approval block */}
       <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
         <div
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 12,
+          }}
         >
           <div>
             <span style={{ fontSize: 14, fontWeight: 700 }}>Purchase Order Approval</span>
@@ -224,7 +226,9 @@ function ApprovalConfigPage(): React.JSX.Element {
                 value={draft.poManagerLimit}
                 min={0}
                 step={10000}
-                onChange={(e) => setDraft({ ...draft, poManagerLimit: Number(e.target.value) || 0 })}
+                onChange={(e) =>
+                  setDraft({ ...draft, poManagerLimit: Number(e.target.value) || 0 })
+                }
                 style={{
                   width: '100%',
                   fontSize: 16,
@@ -307,7 +311,6 @@ function ApprovalConfigPage(): React.JSX.Element {
             })}
           </div>
         </div>
-
       </div>
 
       {/* PR approval (ADR-189). Read by the server: while on, only an
@@ -358,34 +361,44 @@ function ApprovalConfigPage(): React.JSX.Element {
             No approval activity yet.
           </div>
         ) : (
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Action Date &amp; Time</th>
-                <th>Action</th>
-                <th>Document Type</th>
-                <th>Details</th>
-                <th>User</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(history?.items ?? []).map((h) => {
-                const color =
-                  h.action === 'APPROVE' ? 'var(--green)' : h.action === 'REJECT' ? 'var(--red)' : 'var(--cyan)';
-                return (
-                  <tr key={h.id}>
-                    <td style={{ fontSize: 11 }}>{fmtDateTime(h.ts)}</td>
-                    <td style={{ fontWeight: 700, color, fontSize: 11 }}>{actionLabel(h.action)}</td>
-                    <td style={{ fontSize: 11, color: 'var(--cyan)' }}>
-                      {docTypeLabel(h.entity)}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>{h.detail}</td>
-                    <td style={{ fontSize: 11 }}>{h.userName ?? '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="tbl-wrap">
+            <table className="innovic-table tbl-grid">
+              <thead>
+                <tr>
+                  <th>Action Date &amp; Time</th>
+                  <th>Action</th>
+                  <th>Document Type</th>
+                  <th>Details</th>
+                  <th>User</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(history?.items ?? []).map((h) => {
+                  const color =
+                    h.action === 'APPROVE'
+                      ? 'var(--green)'
+                      : h.action === 'REJECT'
+                        ? 'var(--red)'
+                        : 'var(--cyan)';
+                  return (
+                    <tr key={h.id}>
+                      <td style={{ fontSize: 11 }}>{fmtDateTime(h.ts)}</td>
+                      <td style={{ fontWeight: 700, color, fontSize: 11 }}>
+                        {actionLabel(h.action)}
+                      </td>
+                      <td style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                        {docTypeLabel(h.entity)}
+                      </td>
+                      <td className="text2" style={{ fontSize: 11 }}>
+                        {h.detail}
+                      </td>
+                      <td style={{ fontSize: 11 }}>{h.userName ?? '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

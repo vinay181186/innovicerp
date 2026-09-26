@@ -23,8 +23,10 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2, Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useUserAccessList } from '../api';
 import { ConfigureAccessModal } from '../components/configure-modal';
 import { roleLabel } from '@/lib/role-label';
@@ -53,6 +55,7 @@ function AccessControlListPage(): React.JSX.Element {
   const isAdmin = me?.role === 'admin';
   const { data, isLoading, isError, error } = useUserAccessList();
   const [editing, setEditing] = useState<UserAccessListItem | null>(null);
+  const [term, setTerm] = useState('');
 
   // Arriving from "create user" with ?configure=<id>: open that row's box as
   // soon as the list resolves, so the two screens read as one action. The
@@ -82,40 +85,37 @@ function AccessControlListPage(): React.JSX.Element {
     );
   }
 
+  // Client-side search over the whole list (it loads in one fetch): the
+  // columns on screen — user name / email, department, tier summary.
+  const rows = (data?.items ?? []).filter((u) =>
+    matchesSearchTerm(
+      [u.userName, u.userEmail, deptLabel(u.mainDept)?.label, u.tierSummary, roleLabel(u.role)],
+      term,
+    ),
+  );
+
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Access Control
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Set each user's departments, levels and PO limit.
-          </div>
-        </div>
-      </div>
+      <ListHeader
+        title="Access Control"
+        icon="🔒"
+        count={data ? rows.length : undefined}
+        noun="user"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search user, email, department, tiers…"
+      />
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>User</th>
-                <th style={{ width: 150 }}>Home Dept</th>
+                <th>Home Dept</th>
                 <th>Tiers by Department</th>
-                <th className="td-ctr" style={{ width: 100 }}>
-                  Departments
-                </th>
-                <th className="td-ctr" style={{ width: 90 }}>
-                  Extras
-                </th>
+                <th>Departments</th>
+                <th>Extras</th>
                 <th style={{ width: 130 }}>Actions</th>
               </tr>
             </thead>
@@ -135,14 +135,18 @@ function AccessControlListPage(): React.JSX.Element {
                       : 'Could not load access settings. Try again.'}
                   </td>
                 </tr>
-              ) : (data?.items ?? []).length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="empty-state">
-                    No users. Create users in User Management first.
+                    {term.trim()
+                      ? 'No users match.'
+                      : 'No users yet. Create users in User Management first.'}
                   </td>
                 </tr>
               ) : (
-                (data?.items ?? []).map((u, i) => <UserAccessRow key={u.userId} u={u} index={i} onConfigure={() => setEditing(u)} />)
+                rows.map((u, i) => (
+                  <UserAccessRow key={u.userId} u={u} index={i} onConfigure={() => setEditing(u)} />
+                ))
               )}
             </tbody>
           </table>
@@ -186,12 +190,16 @@ function UserAccessRow({
         {dept ? (
           <span style={{ color: dept.color, fontWeight: 700, fontSize: 12 }}>{dept.label}</span>
         ) : (
-          <span className="text3" style={{ fontSize: 11 }}>—</span>
+          <span className="text3" style={{ fontSize: 11 }}>
+            —
+          </span>
         )}
       </td>
       <td style={{ fontSize: 11 }}>
         {u.fullAccess ? (
-          <span style={{ color: 'var(--green2)', fontWeight: 700 }}>L6 Super Admin — everything</span>
+          <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
+            L6 Super Admin — everything
+          </span>
         ) : u.auditor ? (
           <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
             L7 Auditor — reads everything, writes nothing
@@ -213,10 +221,10 @@ function UserAccessRow({
           </span>
         )}
       </td>
-      <td className="td-ctr">
+      <td style={{ whiteSpace: 'nowrap' }}>
         {u.fullAccess || u.auditor ? <>✅ All</> : `${u.deptCount}/${u.totalDepts}`}
       </td>
-      <td className="td-ctr">
+      <td>
         {u.fullAccess ? <>✅ All</> : `${u.formCount}/${u.totalForms}`}
         {/* The drawing-download tick is a whole-account switch, not one of the
             form extras counted above, so it would otherwise be invisible from

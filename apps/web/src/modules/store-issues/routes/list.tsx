@@ -13,7 +13,10 @@ import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
 import { fmtDate, todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useItemBalance } from '@/modules/store-transactions/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { SearchableSelect } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useItemsList } from '../../items/api';
 import { useCreateStoreIssue, useNextStoreIssueCode, useStoreIssuesList } from '../api';
 
@@ -112,27 +115,21 @@ function StoreIssuesListPage(): React.JSX.Element {
         <ToolIssueRegisterView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
       ) : (
         <>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              marginBottom: 14,
+          {/* THE list header (ui/layout ListHeader): title · count · search ·
+              + New Issue. */}
+          <ListHeader
+            title="Item Issue Register"
+            icon="📋"
+            count={data?.total}
+            noun="issue"
+            search={search}
+            onSearch={(v) => {
+              setSearch(v);
+              setPage(1);
             }}
-          >
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="🔍 Search issue, item, JC…"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                style={{ minWidth: 220, fontSize: 13 }}
-              />
-              {perms.entry ? (
+            searchPlaceholder="Search issue, item, JC…"
+            primary={
+              perms.entry ? (
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -140,9 +137,9 @@ function StoreIssuesListPage(): React.JSX.Element {
                 >
                   <Plus size={14} /> New Issue
                 </button>
-              ) : null}
-            </div>
-          </div>
+              ) : null
+            }
+          />
 
           <div className="panel">
             {isLoading ? (
@@ -159,7 +156,7 @@ function StoreIssuesListPage(): React.JSX.Element {
               </div>
             ) : data ? (
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
                       <th>Issue No.</th>
@@ -177,15 +174,15 @@ function StoreIssuesListPage(): React.JSX.Element {
                   <tbody>
                     {data.items.map((iss) => (
                       <tr key={iss.id}>
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <span className="td-code" style={{ color: 'var(--cyan)' }}>
                             {iss.code}
                           </span>
                         </td>
-                        <td className="text2" style={{ fontSize: 11 }}>
+                        <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                           {fmtDate(iss.issueDate)}
                         </td>
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
                             {iss.itemCode ?? iss.itemCodeText ?? '—'}
                           </span>
@@ -195,23 +192,16 @@ function StoreIssuesListPage(): React.JSX.Element {
                           {iss.qty}
                         </td>
                         <td>{iss.issuedTo || '—'}</td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                        <td
+                          className="mono"
+                          style={{ fontSize: 11, color: 'var(--purple)', whiteSpace: 'nowrap' }}
+                        >
                           {iss.refNo ? `${iss.refType ?? ''} ${iss.refNo}` : '—'}
                         </td>
                         <td className="text3" style={{ fontSize: 11 }}>
                           {iss.purpose || '—'}
                         </td>
-                        <td
-                          className="text3"
-                          style={{
-                            fontSize: 11,
-                            maxWidth: 100,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          title={iss.remarks ?? ''}
-                        >
+                        <td className="text3" style={{ fontSize: 11 }} title={iss.remarks ?? ''}>
                           {iss.remarks || '—'}
                         </td>
                         <td>{iss.issuedByName || '—'}</td>
@@ -231,42 +221,13 @@ function StoreIssuesListPage(): React.JSX.Element {
           </div>
 
           {data ? (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginTop: 8,
-                fontSize: 12,
-                color: 'var(--text3)',
-              }}
-            >
-              <span>
-                {data.total === 0
-                  ? 'No issues'
-                  : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-              </span>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Prev
-                </button>
-                <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-                  {page} / {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+            <ListFooter
+              total={data.total}
+              noun="issue"
+              page={page}
+              pageSize={PAGE_SIZE}
+              onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+            />
           ) : null}
 
           {showModal && perms.entry ? <NewIssueModal onClose={() => setShowModal(false)} /> : null}
@@ -287,21 +248,28 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
   const [remarks, setRemarks] = useState('');
   const [itemSearch, setItemSearch] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // "Save & New": the code of the issue just saved, shown as a note
+  // while the next one is keyed in. Bumping `pickerKey` remounts the item
+  // picker so its typed text clears with the value.
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [pickerKey, setPickerKey] = useState(0);
 
   const createMut = useCreateStoreIssue();
   const { data: next } = useNextStoreIssueCode();
-  const { data: itemsData } = useItemsList({
+  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
     search: itemSearch.trim() || undefined,
     limit: 50,
     offset: 0,
   });
-
-  const selectedItem = useMemo(
-    () => itemsData?.items.find((i) => i.id === itemId) ?? null,
-    [itemsData, itemId],
+  const itemOptions = useMemo(
+    () => (itemsData?.items ?? []).map((it) => ({ id: it.id, code: it.code, name: it.name })),
+    [itemsData],
   );
+  // Physical stock of the picked item — the same per-item balance the Item
+  // Master detail page shows as "Physical".
+  const balanceQ = useItemBalance(itemId ?? undefined);
 
-  const onSave = (): void => {
+  const save = (andAnother: boolean): void => {
     setErr(null);
     if (!date) {
       setErr('Issue Date is required.');
@@ -331,7 +299,20 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
     if (purpose.trim()) input.purpose = purpose.trim();
     if (remarks.trim()) input.remarks = remarks.trim();
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (created) => {
+        if (!andAnother) {
+          onClose();
+          return;
+        }
+        // Keep Issue Date, Issued To and the Reference; clear the rest.
+        setLastSaved(created.code);
+        setItemId(null);
+        setItemSearch('');
+        setQty('');
+        setPurpose('');
+        setRemarks('');
+        setPickerKey((k) => k + 1);
+      },
       onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save issue. Try again.'),
     });
   };
@@ -376,50 +357,28 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
 
             <div className="form-grp form-full">
-              <label className="form-label">
+              <label className="form-label" htmlFor="si-item">
                 Item <span className="req">★</span>
               </label>
-              <input
-                type="text"
-                className="innovic-input"
+              {/* Keyboard-friendly type-to-search picker (↑/↓ + Enter), over
+                  the same item search this modal always used. */}
+              <SearchableSelect
+                key={pickerKey}
+                id="si-item"
+                value={itemId}
+                onChange={setItemId}
+                options={itemOptions}
+                onSearch={setItemSearch}
+                loading={itemsFetching}
                 placeholder="🔍 Type item code or name…"
-                value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : itemSearch}
-                onChange={(e) => {
-                  setItemId(null);
-                  setItemSearch(e.target.value);
-                }}
+                emptyText="No matching item"
               />
-              {!itemId && itemSearch && itemsData ? (
-                <div
-                  style={{
-                    border: '1px solid var(--border)',
-                    borderRadius: 4,
-                    background: 'var(--bg2)',
-                    marginTop: 4,
-                    maxHeight: 180,
-                    overflowY: 'auto',
-                  }}
-                >
-                  {itemsData.items.slice(0, 20).map((it) => (
-                    <div
-                      key={it.id}
-                      onClick={() => {
-                        setItemId(it.id);
-                        setItemSearch('');
-                      }}
-                      style={{
-                        padding: '6px 10px',
-                        cursor: 'pointer',
-                        fontSize: 12,
-                        borderBottom: '1px solid var(--border)',
-                      }}
-                    >
-                      <span className="mono" style={{ color: 'var(--text)', fontWeight: 700 }}>
-                        {it.code}
-                      </span>{' '}
-                      — {it.name}
-                    </div>
-                  ))}
+              {itemId ? (
+                <div className="text3" style={{ fontSize: 12, marginTop: 4 }}>
+                  In stock:{' '}
+                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {balanceQ.isLoading ? '…' : (balanceQ.data?.onHand ?? 0)}
+                  </span>
                 </div>
               ) : null}
             </div>
@@ -501,12 +460,17 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
             </div>
           </div>
 
+          {lastSaved && !err ? (
+            <div className="text2" style={{ marginTop: 12, fontSize: 12 }}>
+              ✓ Saved <span className="td-code">{lastSaved}</span> — enter the next issue.
+            </div>
+          ) : null}
           {err ? (
             <div
               style={{
                 marginTop: 12,
                 padding: 8,
-                background: 'rgba(239,68,68,0.08)',
+                background: 'var(--red3)',
                 color: 'var(--red2)',
                 borderRadius: 4,
                 fontSize: 12,
@@ -519,13 +483,22 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
 
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
+            {lastSaved ? 'Close' : 'Cancel'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={createMut.isPending}
+            onClick={() => save(true)}
+            title="Save, then start the next issue with the same Issued To and Reference"
+          >
+            Save &amp; New
           </button>
           <button
             type="button"
             className="btn btn-primary"
             disabled={createMut.isPending}
-            onClick={onSave}
+            onClick={() => save(false)}
           >
             {createMut.isPending ? (
               <>

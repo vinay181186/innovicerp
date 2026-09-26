@@ -4,7 +4,7 @@
 
 import { NC_REASON_CATEGORY_LABELS, type QcCommandPareto } from '@innovic/shared';
 
-const RANK_COLORS = ['var(--red)', 'var(--amber)', 'var(--orange)', 'var(--text3)'];
+const RANK_COLORS = ['var(--red2)', 'var(--amber2)', 'var(--orange2)', 'var(--text3)'];
 function rankColor(i: number): string {
   return RANK_COLORS[i] ?? 'var(--text3)';
 }
@@ -36,14 +36,14 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
           </div>
         ) : (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Sr No</th>
                   <th>Reason</th>
-                  <th className="td-ctr">NC Count</th>
-                  <th className="td-ctr">Rejected</th>
-                  <th className="td-ctr">% of Total</th>
+                  <th className="th-num">NC Count</th>
+                  <th className="th-num">Rejected</th>
+                  <th className="th-num">% of Total</th>
                   <th>Top Items</th>
                   <th style={{ width: 200 }}>Distribution</th>
                 </tr>
@@ -51,13 +51,13 @@ export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.El
               <tbody>
                 {pareto.rows.map((r, i) => (
                   <tr key={r.reason}>
-                    <td className="td-ctr mono fw-700">{i + 1}</td>
+                    <td className="mono fw-700">{i + 1}</td>
                     <td style={{ fontSize: 12, fontWeight: 600 }}>{reasonLabel(r.reason)}</td>
-                    <td className="td-ctr mono">{r.count}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
+                    <td className="td-num mono">{r.count}</td>
+                    <td className="td-num mono fw-700" style={{ color: 'var(--red2)' }}>
                       {r.rejectedQty}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: rankColor(i) }}>
+                    <td className="td-num mono fw-700" style={{ color: rankColor(i) }}>
                       {r.pct}%
                     </td>
                     <td className="text3" style={{ fontSize: 11 }}>

@@ -3,6 +3,7 @@
 // Legacy uses `requiredDate`; our schema renames to `due_date` per
 // Phase 5 (ADR-015).
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -23,7 +24,7 @@ export const al014PoOverdue: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT po.code AS po_code, po.po_date,
+      SELECT po.id AS nav_id, po.code AS po_code, po.po_date,
              COALESCE(v.code, po.vendor_code_text, '') AS vendor,
              po.due_date, po.status
       FROM public.purchase_orders po
@@ -36,6 +37,7 @@ export const al014PoOverdue: RegisteredAlert = {
       ORDER BY po.due_date, po.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('purchase-order', String(r['nav_id'])),
       po_code: (r['po_code'] as string) ?? '',
       po_date:
         r['po_date'] instanceof Date

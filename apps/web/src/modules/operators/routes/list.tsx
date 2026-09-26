@@ -81,7 +81,11 @@ function OperatorsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -166,12 +170,12 @@ function OperatorsListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const currentPage = search.page;
 
-  // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
-  // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below):
-  // 5+12+24+14+25+10 = 90, + 10 = 100, so the table never scrolls sideways.
-  // Centred by the standard; only Name is left-aligned (a name reads from its
-  // left edge), and Skills / Machines ellipsizes with the full value on hover
-  // rather than wrapping the row taller.
+  // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
+  // only Sr No keeps a width; codes, qty and badges sit on one line and size
+  // their own column, and the name columns wrap into whatever is left, so
+  // nothing spills over a gridline and the Action column (1% = shrink to its
+  // buttons) is never pushed off the screen. Centred by the standard; names
+  // read from their left edge, numbers sit right.
   const columns = useMemo<DataTableColumn<Operator>[]>(
     () => [
       {
@@ -183,7 +187,6 @@ function OperatorsListPage(): React.JSX.Element {
       },
       {
         header: 'Code',
-        width: '12%',
         nowrap: true,
         // A real link, so the code can be ctrl/middle-clicked into a new tab.
         // stopPropagation sits on the link (not the cell) so clicking the rest
@@ -203,29 +206,24 @@ function OperatorsListPage(): React.JSX.Element {
       },
       {
         header: 'Name',
-        width: '24%',
         align: 'left',
         className: 'fw-700',
-        ellipsis: true,
         key: 'name',
       },
       {
         header: 'Department',
-        width: '14%',
         className: 'text2',
         render: (op) => op.department ?? '—',
       },
       {
         header: 'Skills / Machines',
-        width: '25%',
+        align: 'left',
         className: 'text2',
-        ellipsis: true,
         render: (op) => op.skills ?? '—',
         title: (op) => op.skills ?? '',
       },
       {
         header: 'Active',
-        width: '10%',
         nowrap: true,
         // kind="active" — the same chip the operator DETAIL page draws, so the
         // two cannot disagree, and the same one the Client Master reference
@@ -251,6 +249,7 @@ function OperatorsListPage(): React.JSX.Element {
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
         title="Operator Master"
+        icon="👷"
         // Count comes from the list response's `total` — the only aggregate
         // GET /operators returns.
         count={total}
@@ -258,6 +257,7 @@ function OperatorsListPage(): React.JSX.Element {
         filterNote={search.status}
         search={searchInput}
         onSearch={setSearchInput}
+        searchPlaceholder="Search code, name, department, skills…"
         updating={isFetching && !isLoading}
         tools={
           <Select
@@ -306,7 +306,7 @@ function OperatorsListPage(): React.JSX.Element {
             loading={isLoading}
             empty={search.search || search.status ? 'No Operators match.' : 'No Operators yet.'}
             onRowClick={(op) => void navigate({ to: '/operators/$id', params: { id: op.id } })}
-            rowActionsWidth="10%"
+            rowActionsWidth="1%"
             rowActions={(op) => (
               <RowActions
                 // Row click opens the operator (ERPNext list), so no View.

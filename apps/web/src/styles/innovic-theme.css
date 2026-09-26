@@ -592,7 +592,14 @@
    page with no horizontal scroll. Opt-in per table: everything on
    `.innovic-table` above still holds where a rule below does not override it. */
 .innovic-table.tbl-grid {
-  table-layout: fixed;
+  /* AUTO, not fixed (2026-09-26, "overflowing text" on the Job Card list):
+     with a fixed layout the %-widths are hard, so a one-line cell (JC No. +
+     badges, a DD-MMM-YYYY date in a 7% column) wider than its share spilled
+     over the next column. Auto sizes each column to at least its one-line
+     content; long prose (names, remarks) still wraps, and a sheet wider than
+     the screen scrolls inside its .tbl-wrap. Column widths are now minimum
+     hints. `.tbl-fixed` restores the old behaviour where a sheet needs it. */
+  table-layout: auto;
   border-top: 2px solid var(--blue2);
   border-bottom: 2px solid var(--blue2);
 }
@@ -609,9 +616,9 @@
   box-shadow: none;
   /* Table-alignment standard: names and values share one centre line. */
   text-align: center;
-  /* A long column name WRAPS on the sheet rather than forcing the column
-     wider -- the whole point of the fixed layout. `.tbl-auto` (side-scrolling
-     wide registers) opts back out below. */
+  /* A long column name WRAPS rather than forcing the column wider; with the
+     auto layout (2026-09-26) the column's width comes from its values.
+     `.tbl-auto` keeps headers on one line for side-scrolling registers. */
   white-space: normal;
   line-height: 1.25;
 }
@@ -630,7 +637,19 @@
   border-bottom: 1px solid var(--border2);
   text-align: center;
   white-space: normal;
-  overflow-wrap: anywhere;
+  /* break-word, NOT anywhere: with the auto layout, `anywhere` counts toward
+     a column's minimum width, so the browser squeezed columns to one letter
+     and split codes mid-string instead of letting .tbl-wrap scroll.
+     break-word only breaks a word that cannot fit its own line. */
+  overflow-wrap: break-word;
+}
+/* Codes, document numbers, dates and numbers never wrap — a JC No. or a
+   DD-MMM-YYYY date split at its hyphens is unreadable. Mono cells are those. */
+.innovic-table.tbl-grid td.td-code,
+.innovic-table.tbl-grid td.mono,
+.innovic-table.tbl-grid td.td-num,
+.innovic-table.tbl-grid td .td-code {
+  white-space: nowrap;
 }
 .innovic-table.tbl-grid td:last-child {
   border-right: none;
@@ -803,6 +822,9 @@ table.tbl-ctr td .innovic-select {
    sideways, so headers and cells stop wrapping. */
 .innovic-table.tbl-grid.tbl-auto {
   table-layout: auto;
+}
+.innovic-table.tbl-grid.tbl-fixed {
+  table-layout: fixed;
 }
 .innovic-table.tbl-grid.tbl-auto th {
   white-space: nowrap;

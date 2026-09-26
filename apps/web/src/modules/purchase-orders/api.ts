@@ -26,6 +26,7 @@ function toQueryString(q: ListPurchaseOrdersQuery): string {
   if (q.vendorId) params.set('vendorId', q.vendorId);
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
+  if (q.jobWorkOrderId) params.set('jobWorkOrderId', q.jobWorkOrderId);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

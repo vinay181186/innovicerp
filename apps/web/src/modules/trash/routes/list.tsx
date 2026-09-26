@@ -9,7 +9,7 @@
 // count only the matching documents.
 
 import { createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, Lock, RotateCcw } from 'lucide-react';
+import { Loader2, Lock, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -18,6 +18,7 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ConfirmDialog } from '@/ui/feedback';
 import { SearchInput } from '@/ui/forms';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   useRestoreFromTrash,
   useTrash,
@@ -143,28 +144,22 @@ function TrashListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 10,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Trash
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <ListHeader
+        title="Trash"
+        icon="🗑"
+        count={data ? total : undefined}
+        noun="deleted document"
+        filterNote={search.type ? typeLabel(search.type as TrashEntityType) : undefined}
+        // Own box: the shared SearchInput with its 300ms debounce, as before.
+        searchSlot={
           <SearchInput
             value={searchInput}
             debounceMs={300}
             placeholder="Search document type, document, deleted by…"
             onChange={setSearchInput}
           />
+        }
+        tools={
           <select
             className="innovic-select"
             value={search.type ?? ''}
@@ -186,8 +181,8 @@ function TrashListPage(): React.JSX.Element {
               );
             })}
           </select>
-        </div>
-      </div>
+        }
+      />
 
       {!isLoading && !isError && items.length === 0 ? (
         <div className="panel">
@@ -198,7 +193,7 @@ function TrashListPage(): React.JSX.Element {
       ) : (
         <div className="panel">
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Deleted At</th>
@@ -254,53 +249,18 @@ function TrashListPage(): React.JSX.Element {
         </div>
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? ''
-            : `Showing ${(search.page - 1) * PAGE_SIZE + 1}–${Math.min(search.page * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={search.page <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, search.page - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {search.page} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={search.page >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, search.page + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      <ListFooter
+        total={total}
+        noun="deleted document"
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        onPage={(p) =>
+          void navigate({
+            search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),
+            replace: true,
+          })
+        }
+      />
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
         Only admins can open Trash. Restore puts a document back where it was; nothing is

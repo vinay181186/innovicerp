@@ -135,6 +135,7 @@ export function PrCard({
   rejecting,
   onApprove,
   onReject,
+  select,
 }: {
   pr: PurchaseRequestListItem;
   /** L4 Approver and above — signing a PR off is NOT an edit right. */
@@ -145,6 +146,15 @@ export function PrCard({
   rejecting: boolean;
   onApprove: (pr: PurchaseRequestListItem) => void;
   onReject: (pr: PurchaseRequestListItem) => void;
+  /** "Create PO from selected" tick box — given only for a PR that can still
+   *  be ordered. `disabledReason` greys it out (another vendor is ticked). */
+  select?:
+    | {
+        checked: boolean;
+        disabledReason?: string | undefined;
+        onToggle: () => void;
+      }
+    | undefined;
 }): React.JSX.Element {
   const navigate = useNavigate();
   // Money hidden for L1 Viewers: estCost comes back null → drop the field.
@@ -181,6 +191,18 @@ export function PrCard({
             cursor: 'pointer',
           }}
         >
+          {select ? (
+            <input
+              type="checkbox"
+              checked={select.checked}
+              disabled={select.disabledReason !== undefined}
+              title={select.disabledReason ?? 'Tick to add this PR to one PO'}
+              aria-label={`Select ${pr.code} for a PO`}
+              onClick={(e) => e.stopPropagation()}
+              onChange={select.onToggle}
+              style={{ cursor: select.disabledReason ? 'not-allowed' : 'pointer' }}
+            />
+          ) : null}
           <Link
             to="/purchase-requests/$id"
             params={{ id: pr.id }}

@@ -10,12 +10,14 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
+import { useJobWorkOrder } from '../../job-work-orders/api';
 import { usePurchaseOrdersList } from '../../purchase-orders/api';
 import {
   useCreateJwDcInward,
@@ -37,6 +39,9 @@ const searchSchema = z.object({
   // pre-fills the active view's search box. Read ONCE (lazy useState) by the
   // Outward / Inward views below; typing afterwards stays local.
   search: z.string().optional(),
+  // `?jw=<jwsoId>` (JWSO detail → "JW DC"): opens New Outward DC straight
+  // away, naming that JWSO. A malformed id is ignored.
+  jw: z.string().uuid().optional().catch(undefined),
 });
 
 export const jwDcListRoute = createRoute({
@@ -72,7 +77,11 @@ function JwDcPage(): React.JSX.Element {
         </TabButton>
       </div>
 
-      {tab === 'outward' ? <OutwardView /> : <InwardView />}
+      {tab === 'outward' ? (
+        <OutwardView key={search.jw ?? ''} forJwId={search.jw} />
+      ) : (
+        <InwardView />
+      )}
     </div>
   );
 }
@@ -96,7 +105,7 @@ function TabButton({
       style={{
         fontWeight: 700,
         background: active ? color : 'var(--bg4)',
-        color: active ? '#fff' : 'var(--text2)',
+        color: active ? 'var(--bg2)' : 'var(--text2)',
         border: `1px solid ${active ? color : 'var(--border)'}`,
       }}
     >
@@ -107,14 +116,16 @@ function TabButton({
 
 // ─── Outward view ─────────────────────────────────────────────────────────
 
-function OutwardView(): React.JSX.Element {
+function OutwardView({ forJwId }: { forJwId?: string | undefined }): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const routeSearch = jwDcListRoute.useSearch();
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => routeSearch.search ?? '');
   const [page, setPage] = useState(1);
-  const [showModal, setShowModal] = useState(false);
+  // A `?jw=` landing opens New Outward DC at once (write access only — the
+  // modal is gated the same way the + button is).
+  const [showModal, setShowModal] = useState(() => Boolean(forJwId));
 
   const { data, isLoading, isError, error } = useJwDcOutwardList({
     search: search.trim() || undefined,
@@ -126,27 +137,27 @@ function OutwardView(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">Outward Register</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search DC, PO, vendor…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            style={{ width: 260, fontSize: 12 }}
-          />
-          {canWrite ? (
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + New Outward DC. */}
+      <ListHeader
+        title="Outward Register"
+        icon="📤"
+        count={data?.total}
+        noun="outward DC"
+        search={search}
+        onSearch={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        searchPlaceholder="Search DC, PO, vendor…"
+        primary={
+          canWrite ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={14} /> New Outward DC
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -163,7 +174,7 @@ function OutwardView(): React.JSX.Element {
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>DC No.</th>
@@ -201,45 +212,18 @@ function OutwardView(): React.JSX.Element {
       </div>
 
       {data ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--text3)',
-          }}
-        >
-          <span>
-            {data.total === 0
-              ? 'No DCs'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <ListFooter
+          total={data.total}
+          noun="outward DC"
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+        />
       ) : null}
 
-      {showModal ? <NewOutwardModal onClose={() => setShowModal(false)} /> : null}
+      {showModal && canWrite ? (
+        <NewOutwardModal forJwId={forJwId} onClose={() => setShowModal(false)} />
+      ) : null}
     </div>
   );
 }
@@ -260,7 +244,7 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
       style={{ cursor: 'pointer' }}
       onClick={() => void navigate({ to: '/jw-dc/$id', params: { id: dc.id } })}
     >
-      <td className="mono fw-700">
+      <td className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
         <Link
           onClick={(e) => e.stopPropagation()}
           to="/jw-dc/$id"
@@ -270,11 +254,11 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
           {dc.code}
         </Link>
       </td>
-      <td style={{ fontSize: 11 }}>{fmtDate(dc.dcDate)}</td>
-      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{fmtDate(dc.dcDate)}</td>
+      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
         {dc.jwpoCodeText ?? '—'}
       </td>
-      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
         {dc.soCode ?? '—'}
       </td>
       <td style={{ fontWeight: 600 }}>{dc.vendorNameText ?? dc.vendorCodeText ?? '—'}</td>
@@ -319,27 +303,28 @@ function InwardView(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">Inward Register</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          {canWrite ? (
+      {/* THE list header (ui/layout ListHeader): title · count · search ·
+          + New Inward Entry. */}
+      <ListHeader
+        title="Inward Register"
+        icon="📥"
+        count={data?.total}
+        noun="inward entry"
+        nounPlural="inward entries"
+        search={search}
+        onSearch={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        searchPlaceholder="Search inward no, DC, vendor, vendor challan…"
+        primary={
+          canWrite ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={14} /> New Inward Entry
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -356,7 +341,7 @@ function InwardView(): React.JSX.Element {
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Inward No.</th>
@@ -383,11 +368,19 @@ function InwardView(): React.JSX.Element {
                 ) : (
                   data.items.map((inv) => (
                     <tr key={inv.id}>
-                      <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
+                      <td
+                        className="mono fw-700"
+                        style={{ color: 'var(--green2)', whiteSpace: 'nowrap' }}
+                      >
                         {inv.code}
                       </td>
-                      <td style={{ fontSize: 11 }}>{fmtDate(inv.inwardDate)}</td>
-                      <td className="mono" style={{ color: 'var(--purple)', fontSize: 11 }}>
+                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {fmtDate(inv.inwardDate)}
+                      </td>
+                      <td
+                        className="mono"
+                        style={{ color: 'var(--purple)', fontSize: 11, whiteSpace: 'nowrap' }}
+                      >
                         {inv.dcCodeText ?? '—'}
                       </td>
                       <td style={{ fontWeight: 600 }}>{inv.vendorNameText ?? '—'}</td>
@@ -409,42 +402,14 @@ function InwardView(): React.JSX.Element {
       </div>
 
       {data ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--text3)',
-          }}
-        >
-          <span>
-            {data.total === 0
-              ? 'No inward entries'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <ListFooter
+          total={data.total}
+          noun="inward entry"
+          nounPlural="inward entries"
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+        />
       ) : null}
 
       {showModal ? <NewInwardModal onClose={() => setShowModal(false)} /> : null}
@@ -470,7 +435,18 @@ interface OutwardLineUi {
   checked: boolean;
 }
 
-function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+function NewOutwardModal({
+  onClose,
+  forJwId,
+}: {
+  onClose: () => void;
+  /** `?jw=` deep link from a JWSO. An outward DC is keyed by the job-work PO,
+   *  not the JWSO, so the PO list is asked for the POs whose lines trace to
+   *  that JWSO (`jobWorkOrderId`, ADR-190 addendum): exactly one is pre-picked,
+   *  several narrow the PO picker to them, none leaves the full picker. */
+  forJwId?: string | undefined;
+}): React.JSX.Element {
+  const { data: forJw } = useJobWorkOrder(forJwId);
   const [date, setDate] = useState(todayLocal());
   const [poId, setPoId] = useState<string | null>(null);
   const [vehicleNo, setVehicleNo] = useState('');
@@ -494,10 +470,26 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
     limit: 200,
     offset: 0,
   });
-  const poData = useMemo(
-    () => ({ items: [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])] }),
-    [poDataJw, poDataSvc],
+  // `?jw=` — the job-work / service POs carrying this JWSO's work.
+  const { data: poDataForJw } = usePurchaseOrdersList(
+    { jobWorkOrderId: forJwId, limit: 200, offset: 0 },
+    { enabled: Boolean(forJwId) },
   );
+  const forJwPos = forJwId ? (poDataForJw?.items ?? null) : null;
+  const poData = useMemo(
+    () =>
+      forJwPos && forJwPos.length > 0
+        ? { items: forJwPos }
+        : { items: [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])] },
+    [forJwPos, poDataJw, poDataSvc],
+  );
+  // Exactly one PO carries the JWSO → pick it (once; the user may change it).
+  const [prePicked, setPrePicked] = useState(false);
+  useEffect(() => {
+    if (prePicked || !forJwPos) return;
+    setPrePicked(true);
+    if (forJwPos.length === 1 && forJwPos[0]) setPoId(forJwPos[0].id);
+  }, [forJwPos, prePicked]);
   const selectedPo = useMemo(() => poData.items.find((p) => p.id === poId) ?? null, [poData, poId]);
 
   const { data: poLines } = useJwDcPoLines(poId ?? undefined);
@@ -568,6 +560,27 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
       saving={createMut.isPending}
       saveLabel="Save Outward DC"
     >
+      {forJw ? (
+        <div
+          className="text2"
+          style={{
+            marginBottom: 12,
+            padding: '8px 12px',
+            background: 'var(--purple3)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            fontSize: 12,
+          }}
+        >
+          For JWSO <span className="td-code">{forJw.code}</span>
+          {forJw.customerName ? <> · {forJw.customerName}</> : null}
+          {forJwPos && forJwPos.length === 1
+            ? ' — the PO carrying this JWSO’s work is picked below.'
+            : forJwPos && forJwPos.length > 1
+              ? ` — ${forJwPos.length} POs carry this JWSO’s work; pick one below.`
+              : ' — pick the job-work PO that carries this JWSO’s work.'}
+        </div>
+      ) : null}
       <div className="form-grid" style={{ marginBottom: 14 }}>
         <div className="form-grp">
           <label className="form-label">Outward DC No.</label>

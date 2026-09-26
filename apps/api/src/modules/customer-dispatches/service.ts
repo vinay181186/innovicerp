@@ -39,6 +39,7 @@ import {
   unconsumeForDispatch,
 } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
+import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 
 const requireCompany = (user: AuthContext): string => {
@@ -587,11 +588,17 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
       )
       .groupBy(customerDispatchLines.customerDispatchId);
     const agg = new Map(aggRows.map((a) => [a.id, { cnt: Number(a.cnt), qty: Number(a.qty) }]));
+    const billed = await loadBilledQtyByDispatch(tx, companyId);
 
     return {
       dispatches: headers.map((h) => {
         const a = agg.get(h.id) ?? { cnt: 0, qty: 0 };
-        return rowToHeader(h, a.cnt, a.qty);
+        const billedQty = billed.get(h.id) ?? 0;
+        return {
+          ...rowToHeader(h, a.cnt, a.qty),
+          billedQty,
+          billedStatus: billedStatusOf(billedQty, a.qty),
+        };
       }),
     };
   });
@@ -772,7 +779,13 @@ async function getDispatchInternal(
     qty: l.qty,
   }));
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
-  return { ...rowToHeader(h, lines.length, totalQty), lines };
+  const billedQty = (await loadBilledQtyByDispatch(tx, companyId, h.salesOrderId)).get(h.id) ?? 0;
+  return {
+    ...rowToHeader(h, lines.length, totalQty),
+    billedQty,
+    billedStatus: billedStatusOf(billedQty, totalQty),
+    lines,
+  };
 }
 
 export async function getDispatch(id: string, user: AuthContext): Promise<CustomerDispatchDetail> {

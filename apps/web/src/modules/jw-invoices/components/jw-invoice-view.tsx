@@ -12,6 +12,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoicesList } from '../api';
 import { PrintJwInvoiceButton } from './print-jw-invoice-button';
@@ -31,14 +32,18 @@ function money(n: number): string {
 // already carries it; typing afterwards is local and never touches the URL.
 export function JwInvoiceView({
   initialSearch,
+  initialJwId,
 }: {
   initialSearch?: string | undefined;
+  /** `?jw=<jwsoId>` from the JWSO detail "JW Invoice" button — opens the
+   *  New JW Invoice form with that JWSO already picked. */
+  initialJwId?: string | undefined;
 }): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal] = useState(() => Boolean(initialJwId));
 
   useEffect(() => {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
@@ -59,7 +64,7 @@ export function JwInvoiceView({
     [term],
   );
 
-  const { data, isLoading, isError, error } = useJwInvoicesList(query);
+  const { data, isLoading, isFetching, isError, error } = useJwInvoicesList(query);
   const items = data?.items ?? [];
 
   // Money hidden for L1 Viewers: the API nulls the amounts, so the Rate /
@@ -70,27 +75,23 @@ export function JwInvoiceView({
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-end gap-3">
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search invoice, date, JWSO, customer, part…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 260, fontSize: 12 }}
-          />
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowModal(true)}
-            >
+      <ListHeader
+        title="JW Invoices (Labour)"
+        icon="🔧"
+        count={data?.total ?? items.length}
+        noun="JW invoice"
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search invoice no., date, JWSO, customer, part…"
+        updating={isFetching && !isLoading}
+        primary={
+          canWrite ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={14} /> New Invoice
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -107,7 +108,7 @@ export function JwInvoiceView({
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid tbl-auto">
               <thead>
                 <tr>
                   <th>Invoice No.</th>
@@ -116,14 +117,16 @@ export function JwInvoiceView({
                   <th>Customer</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
-                  <th>Invoice Qty</th>
+                  <th className="th-num">Invoice Qty</th>
                   {priceHidden ? null : (
                     <>
-                      <th>Rate</th>
-                      <th>Taxable</th>
-                      <th>GST%</th>
-                      <th>GST Amt</th>
-                      <th style={{ color: 'var(--green2)' }}>Total</th>
+                      <th className="th-num">Rate</th>
+                      <th className="th-num">Taxable</th>
+                      <th className="th-num">GST%</th>
+                      <th className="th-num">GST Amt</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
+                        Total
+                      </th>
                     </>
                   )}
                   {/* Print. No new permission gate: anyone who can see the row
@@ -152,10 +155,7 @@ export function JwInvoiceView({
                     <td className="text2" style={{ fontSize: 11 }}>
                       {fmtDate(r.invoiceDate)}
                     </td>
-                    <td
-                      className="mono fw-700"
-                      style={{ fontSize: 11, color: 'var(--purple)' }}
-                    >
+                    <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
                       {r.jwCodeText ?? '—'}
                     </td>
                     <td className="fw-700">{r.clientName ?? '—'}</td>
@@ -168,25 +168,17 @@ export function JwInvoiceView({
                     <td className="text2" style={{ fontSize: 12 }}>
                       {r.partName ?? '—'}
                     </td>
-                    <td className="mono">
-                      {r.qty}
-                    </td>
+                    <td className="mono td-num">{r.qty}</td>
                     {priceHidden ? null : (
                       <>
-                        <td className="mono">
-                          {money(r.rate ?? 0)}
-                        </td>
-                        <td className="mono">
-                          {money(r.taxableAmount ?? 0)}
-                        </td>
-                        <td className="mono text3" style={{ fontSize: 11 }}>
+                        <td className="mono td-num">{money(r.rate ?? 0)}</td>
+                        <td className="mono td-num">{money(r.taxableAmount ?? 0)}</td>
+                        <td className="mono text3 td-num" style={{ fontSize: 11 }}>
                           {r.gstPercent}%
                         </td>
-                        <td className="mono">
-                          {money(r.gstAmount ?? 0)}
-                        </td>
+                        <td className="mono td-num">{money(r.gstAmount ?? 0)}</td>
                         <td
-                          className="mono fw-700"
+                          className="mono fw-700 td-num"
                           style={{ fontSize: 14, color: 'var(--green2)' }}
                         >
                           {money(r.totalAmount ?? 0)}
@@ -203,18 +195,28 @@ export function JwInvoiceView({
           </div>
         ) : null}
       </div>
+      <ListFooter total={data?.total ?? items.length} noun="JW invoice" limit={LIST_LIMIT} />
 
-      {showModal ? <NewJwInvoiceModal onClose={() => setShowModal(false)} /> : null}
+      {showModal && canWrite ? (
+        <NewJwInvoiceModal initialJwId={initialJwId} onClose={() => setShowModal(false)} />
+      ) : null}
     </div>
   );
 }
 
 // ─── New JW Invoice modal ──────────────────────────────────────────────────
 
-function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+function NewJwInvoiceModal({
+  onClose,
+  initialJwId,
+}: {
+  onClose: () => void;
+  /** JWSO pre-picked from `?jw=` (JWSO detail → "JW Invoice"). */
+  initialJwId?: string | undefined;
+}): React.JSX.Element {
   const [date, setDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
-  const [jwId, setJwId] = useState<string | null>(null);
+  const [jwId, setJwId] = useState<string | null>(() => initialJwId ?? null);
   const [lineId, setLineId] = useState<string | null>(null);
   const [qty, setQty] = useState('1');
   const [rate, setRate] = useState('');
@@ -330,6 +332,13 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
                 }}
                 onSearch={setJwSearch}
                 loading={jwQuery.isFetching}
+                // The pre-picked JWSO may sit outside the first 50 the picker
+                // lists, so its label comes from the loaded detail.
+                valueLabel={
+                  jwId && jwDetailQ.data?.id === jwId
+                    ? `${jwDetailQ.data.code} — ${jwDetailQ.data.customerName ?? ''}`
+                    : undefined
+                }
                 placeholder="🔍 Select JWSO — type number or customer…"
                 options={jwHeaders.map((j) => ({
                   id: j.jwId,

@@ -43,7 +43,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useItemsList } from '@/modules/items/api';
-import { useVendorsList } from '@/modules/vendors/api';
+import { useVendor, useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
@@ -76,6 +76,17 @@ function parseWholeDays(raw: string): number | null {
  *  buyer picks on the PO. */
 const VENDOR_TBD_PLACEHOLDERS: ReadonlySet<string> = new Set(['TBD', '(VENDOR TBD)']);
 
+/** Create-mode opening lines: one per incoming PR (PR list "Create PO from
+ *  selected" → `?prIds=`, or the single `?prId=` from a PR card / page), each
+ *  holding only its sourcePrId — PoFormLine then loads the PR and fills item,
+ *  qty (the PR's open balance), rate and due date, the same way line 1 always
+ *  has. No PR → one blank line. */
+function initialLinesFor(prIds: string[] | undefined, prId: string | undefined): PoFormLineValue[] {
+  const ids = prIds && prIds.length > 0 ? [...new Set(prIds)] : prId ? [prId] : [];
+  if (ids.length === 0) return [{ ...NEW_PO_LINE }];
+  return ids.map((id) => ({ ...NEW_PO_LINE, sourcePrId: id }));
+}
+
 /** A tax % box the chosen Tax Type does not use: dimmed, still editable. */
 const DIM: React.CSSProperties = { opacity: 0.45 };
 
@@ -84,6 +95,11 @@ export type PoFormProps =
       mode: 'create';
       /** Arrived from a PR page — line 1 opens with that PR already picked. */
       initialPrId?: string | undefined;
+      /** "Create PO from selected" on the PR list — one line per PR, each
+       *  seeded exactly like `initialPrId` seeds line 1. Wins over initialPrId. */
+      initialPrIds?: string[] | undefined;
+      /** "New PO" on a Vendor page — the Vendor box opens with that vendor. */
+      initialVendorId?: string | undefined;
     }
   | { mode: 'edit'; detail: PurchaseOrderDetail };
 
@@ -118,12 +134,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               sgstPct: 0,
               cgstPct: 0,
               igstPct: 0,
+              ...(props.initialVendorId ? { vendorId: props.initialVendorId } : {}),
             },
-            lines: [
-              props.initialPrId
-                ? { ...NEW_PO_LINE, sourcePrId: props.initialPrId }
-                : { ...NEW_PO_LINE },
-            ],
+            lines: initialLinesFor(props.initialPrIds, props.initialPrId),
           },
   });
   const { register, control, handleSubmit, formState, setValue, watch, getValues } = form;
@@ -248,6 +261,21 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     setValue('header.vendorCodeText', undefined);
     setVendorSeedLabel(`${hit.code} — ${hit.name}`);
   }, [vendorSeedQ.data, seedVendorCode, getValues, setValue]);
+
+  // ── "New PO" from a Vendor page (`?vendorId=`): the id is already in the
+  //    header's default values; this only fetches the vendor so the Vendor box
+  //    can SHOW "CODE — Name" instead of a bare id. One-shot, and only while
+  //    the header still holds that same vendor — a vendor the buyer has since
+  //    picked is never relabelled.
+  const initialVendorId = props.mode === 'create' ? props.initialVendorId : undefined;
+  const { data: seedVendor } = useVendor(initialVendorId);
+  const vendorLabelSeeded = useRef(false);
+  useEffect(() => {
+    if (vendorLabelSeeded.current || !seedVendor) return;
+    vendorLabelSeeded.current = true;
+    if (getValues('header.vendorId') !== seedVendor.id) return;
+    setVendorSeedLabel(`${seedVendor.code} — ${seedVendor.name}`);
+  }, [seedVendor, getValues]);
 
   // ── Live money. Subtotal is the sum of the LINES, not the source PR.
   const lines = watch('lines') ?? [];

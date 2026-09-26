@@ -22,12 +22,13 @@
 
 import type { PartyGrnListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader } from '@/ui/layout';
 import { usePartyGrnList } from '../api';
 import { CancelPartyGrnModal } from '../components/cancel-party-grn-modal';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
@@ -39,9 +40,12 @@ const PAGE_SIZE = 50;
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
 // the local state below — tab clicks and typing stay local, never navigate.
+// `?jw=<jwsoId>` (from the JWSO screens): opens the Receive tab's New Party
+// GRN modal with that JWSO already picked. A malformed id is ignored.
 const searchSchema = z.object({
   tab: z.enum(['receive', 'issue']).optional(),
   search: z.string().optional(),
+  jw: z.string().uuid().optional().catch(undefined),
 });
 
 export const partyGrnListRoute = createRoute({
@@ -70,7 +74,10 @@ function PartyGrnListPage(): React.JSX.Element {
     (routeSearch.tab ?? 'receive') === 'receive' ? (routeSearch.search ?? '') : '',
   );
   const [page, setPage] = useState(1);
-  const [showModal, setShowModal] = useState(false);
+  // A `?jw=` landing opens the New Party GRN modal straight away (Receive tab).
+  const [showModal, setShowModal] = useState(
+    () => Boolean(routeSearch.jw) && (routeSearch.tab ?? 'receive') === 'receive',
+  );
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
   // Receive | Issue tabs — Issue is the former standalone Party Material Issue screen.
   const [tab, setTab] = useState<'receive' | 'issue'>(() => routeSearch.tab ?? 'receive');
@@ -137,67 +144,35 @@ function PartyGrnListPage(): React.JSX.Element {
         <PartyMaterialIssueView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
       ) : (
         <>
-          {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
-          `#content` is the scroll container, so top:0 pins this to its padding
-          box; the background must be opaque var(--bg) or cards show through as
-          they pass under. Not bled to the edges — that would give the app a
-          horizontal scrollbar. */}
-          <div
-            style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 20,
-              background: 'var(--bg)',
-              paddingBottom: 8,
-              marginBottom: 10,
-              borderBottom: '1px solid var(--border)',
+          {/* THE list header (ui/layout ListHeader): title · count · search ·
+              + New Party GRN, with the read-only totals pinned inside the
+              same band. */}
+          <ListHeader
+            title="Party GRN"
+            icon="📥"
+            count={data?.total}
+            noun="GRN"
+            search={search}
+            onSearch={(v) => {
+              setSearch(v);
+              setPage(1);
             }}
+            searchPlaceholder="Search JWSO, customer, material…"
+            primary={
+              canCreate ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setShowModal(true)}
+                >
+                  <Plus size={14} /> New Party GRN
+                </button>
+              ) : null
+            }
           >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                marginBottom: 10,
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div className="section-hdr" style={{ marginBottom: 0 }}>
-                  Party GRN
-                </div>
-                <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-                  {data?.total ?? 0} GRN{(data?.total ?? 0) === 1 ? '' : 's'}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <input
-                  type="text"
-                  className="innovic-input"
-                  placeholder="🔍 Search JWSO, customer, material…"
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPage(1);
-                  }}
-                  style={{ width: 260, fontSize: 12 }}
-                />
-                {canCreate ? (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => setShowModal(true)}
-                  >
-                    <Plus size={14} /> New Party GRN
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Read-only count, not a filter — no onClick, so the cell renders as
-            a <div>. It follows the search box, like the GRN count beside the
-            title (which is why a separate "Total GRNs" tile is not repeated). */}
+            {/* Read-only count, not a filter — no onClick, so the cell renders
+                as a <div>. The GRN count sits beside the title, so a separate
+                "Total GRNs" tile is not repeated. */}
             <StatStrip
               items={[
                 {
@@ -209,7 +184,7 @@ function PartyGrnListPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
+          </ListHeader>
 
           {isLoading ? (
             <div className="panel empty-state" style={{ padding: 24 }}>
@@ -237,46 +212,18 @@ function PartyGrnListPage(): React.JSX.Element {
           )}
 
           {data ? (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginTop: 8,
-                fontSize: 12,
-                color: 'var(--text3)',
-              }}
-            >
-              <span>
-                {data.total === 0
-                  ? 'No GRNs'
-                  : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  <ChevronLeft size={14} /> Prev
-                </button>
-                <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-                  Page {page} / {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  Next <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
+            <ListFooter
+              total={data.total}
+              noun="GRN"
+              page={page}
+              pageSize={PAGE_SIZE}
+              onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+            />
           ) : null}
 
-          {showModal ? <NewPartyGrnModal onClose={() => setShowModal(false)} /> : null}
+          {showModal && canCreate ? (
+            <NewPartyGrnModal initialJwId={routeSearch.jw} onClose={() => setShowModal(false)} />
+          ) : null}
           {cancelRow ? (
             <CancelPartyGrnModal row={cancelRow} onClose={() => setCancelRow(null)} />
           ) : null}

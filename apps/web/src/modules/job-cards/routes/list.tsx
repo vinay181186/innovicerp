@@ -3,9 +3,9 @@
 // PHASE 4 — migrated onto apps/web/src/ui/ following the GROUP 1 reference
 // implementation, modules/clients/routes/list.tsx:
 //
-//   <ListHeader>            title · count · ⟳ Updating… · the two create buttons
+//   <ListHeader>            title · count … search · status · machine · operator
+//                           · dates · ☰/▦ · + New JWSO JC · + Plan & Create (primary)
 //     <StatStrip>           the KPI strip (loaded/filtered counts, read-only)
-//     <FilterBar>           search · status · machine · operator · dates · ☰/▦
 //   </ListHeader>           — all of it inside the ONE sticky band, as before
 //   <Panel><DataTable>      LIST VIEW — the ruled sheet
 //   … or the card list      CARD VIEW — unchanged anatomy, primitives inside
@@ -75,9 +75,8 @@ import {
   StatStrip,
   type DataTableColumn,
 } from '@/ui/data';
-import { Input } from '@/ui/forms';
+import { Input, Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions, ViewToggle } from '@/ui/layout';
-import { FilterBar } from '@/ui/navigation';
 import { useDeleteJobCard, useJobCardsList } from '../api';
 import { ExcelJcButton } from '../components/excel-jc-button';
 import { JC_STATUS_LABEL } from '../components/jc-status-badge';
@@ -168,7 +167,11 @@ function JobCardsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   // List View (the sheet) vs Card View (the SO-style cards). List is the
@@ -194,9 +197,9 @@ function JobCardsListPage(): React.JSX.Element {
     // normalizeSearchTerm (shared) — trims and collapses inner spacing so
     // "  IN-JC  26 " and "IN-JC 26" are one query, one cache entry, one URL.
     //
-    // The debounce stays HERE, not on <FilterBar searchDebounceMs>: what is
-    // being delayed is the URL write, and the box must show the keystroke at
-    // once. FilterBar reports every keystroke into `searchInput`; this effect
+    // The debounce stays HERE, not on the search box: what is being delayed
+    // is the URL write, and the box must show the keystroke at once. The
+    // ListHeader box reports every keystroke into `searchInput`; this effect
     // is what waits 300ms before the route changes.
     const trimmed = normalizeSearchTerm(searchInput);
     const next = trimmed === '' ? undefined : trimmed;
@@ -346,11 +349,13 @@ function JobCardsListPage(): React.JSX.Element {
     />
   );
 
-  // The sheet's columns. Widths are `%` and must sum to 100 WITH the Action
-  // column (rowActionsWidth below): 4+10+8+4+12+8+6+7+8+6+7+5 = 85, + 15 = 100,
-  // so the table never scrolls sideways. Centred by the standard; only the
-  // item code · name is left-aligned, so the code starts at the same x in
-  // every row.
+  // The sheet's columns. The sheet lays out AUTO (2026-09-26, the owner's
+  // "overflowing text" on this list), so there are no % widths any more except
+  // the two fixed-content columns (Sr No, Thumbnail): every short value — JC
+  // No., SO No., qty, status, dates, days left — sits on ONE line and sizes its
+  // own column, and only the item NAME wraps, taking whatever width is left.
+  // Centred by the standard; only the item code · name is left-aligned, so the
+  // code starts at the same x in every row.
   const columns = useMemo<DataTableColumn<JobCardListItem>[]>(
     () => [
       {
@@ -361,7 +366,6 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'JC No.',
-        width: '10%',
         nowrap: true,
         render: (jc) => (
           <Link
@@ -417,26 +421,33 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Item Code',
-        width: '12%',
         align: 'left',
         // CODE/REV + name, text only — the picture is the column to the left.
         // The revision is the customer's drawing revision off the SO line
-        // (null → the bare code, never a trailing slash).
-        render: (jc) => (
-          <ItemBadge
-            size="row"
-            showImage={false}
-            code={jc.itemCode}
-            name={jc.itemName}
-            revision={jc.itemRevision}
-            imagePath={jc.itemImagePath}
-            style={{ display: 'flex', width: '100%' }}
-          />
-        ),
+        // (null → the bare code, never a trailing slash). Drawn here rather
+        // than with <ItemBadge size="row">, whose name line is one clipped
+        // line: on this list the code stays on one line and the NAME wraps,
+        // so a long part name never pushes the sheet wider than the screen.
+        render: (jc) => {
+          const codeText = itemCodeWithRev(jc.itemCode, jc.itemRevision);
+          return (
+            <div style={{ textAlign: 'left', minWidth: 140 }}>
+              <div
+                className="mono fw-700"
+                style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}
+                title={codeText}
+              >
+                {codeText}
+              </div>
+              <div className="text2" style={{ fontSize: 'var(--fs-xs)', lineHeight: 1.25 }}>
+                {jc.itemName?.trim() || '—'}
+              </div>
+            </div>
+          );
+        },
       },
       {
         header: 'SO No.',
-        width: '8%',
         nowrap: true,
         render: (jc) => {
           const s = jc.sourceLink;
@@ -462,7 +473,6 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Order Qty',
-        width: '6%',
         align: 'right',
         nowrap: true,
         render: (jc) => (
@@ -476,7 +486,6 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Progress',
-        width: '7%',
         // Completed pieces at the LAST operation over the order qty — the
         // same figure the card view's Completed box shows.
         render: (jc) => {
@@ -489,7 +498,10 @@ function JobCardsListPage(): React.JSX.Element {
                 color="var(--green)"
                 label={`${done} of ${jc.orderQty} Completed`}
               />
-              <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
+              <div
+                className="mono text3"
+                style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
+              >
                 {done} / {jc.orderQty} · {pct}%
               </div>
             </>
@@ -498,27 +510,24 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'JC Status',
-        width: '8%',
         nowrap: true,
         render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} />,
       },
       {
         header: 'JC Date',
-        width: '6%',
         className: 'mono',
         nowrap: true,
         render: (jc) => fmtDate(jc.jcDate),
       },
       {
         header: 'Due Date',
-        width: '7%',
         className: 'mono',
         nowrap: true,
         render: (jc) => (
           <>
             {fmtDate(jc.dueDate)}
             {/* The plan's Customer Dispatch Date under the due date — a second
-                line, not a column, so the tuned widths above still add up. */}
+                line, not a column, so the sheet stays one column narrower. */}
             {jc.customerDispatchDate ? (
               <div
                 className="text3"
@@ -533,7 +542,6 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Days Left',
-        width: '5%',
         align: 'right',
         nowrap: true,
         render: (jc) => {
@@ -568,13 +576,66 @@ function JobCardsListPage(): React.JSX.Element {
         count={total}
         noun="job card"
         filterNote={search.status ? JC_STATUS_LABEL[search.status] : undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search JC no., item code / name, customer, SO no.…"
         updating={isFetching && !isLoading}
-        primary={
-          canWrite ? (
-            <>
-              <Link to="/planning" className="btn btn-primary">
-                + Plan &amp; Create Job Card
-              </Link>
+        tools={
+          <>
+            <Select
+              aria-label="JC Status"
+              fieldWidth="md"
+              value={search.status ?? ''}
+              options={[
+                { value: '', label: 'All statuses' },
+                ...JC_COMPUTED_STATUSES.map((s) => ({ value: s, label: JC_STATUS_LABEL[s] })),
+              ]}
+              onChange={(e) =>
+                setNav({
+                  status: e.target.value === '' ? undefined : (e.target.value as JcComputedStatus),
+                })
+              }
+            />
+            <Select
+              aria-label="Machine"
+              fieldWidth="md"
+              value={search.machineId ?? ''}
+              options={[
+                { value: '', label: 'All machines' },
+                ...machines.map((m) => ({ value: m.id, label: `${m.code} — ${m.name}` })),
+              ]}
+              onChange={(e) =>
+                setNav({ machineId: e.target.value === '' ? undefined : e.target.value })
+              }
+            />
+            <Select
+              aria-label="Operator"
+              fieldWidth="md"
+              value={search.operatorId ?? ''}
+              options={[
+                { value: '', label: 'All operators' },
+                ...operators.map((o) => ({ value: o.id, label: `${o.code} — ${o.name}` })),
+              ]}
+              onChange={(e) =>
+                setNav({ operatorId: e.target.value === '' ? undefined : e.target.value })
+              }
+            />
+            <Input
+              type="date"
+              value={search.fromDate ?? ''}
+              onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
+              title="JC Date from"
+              aria-label="JC Date from"
+            />
+            <Input
+              type="date"
+              value={search.toDate ?? ''}
+              onChange={(e) => setNav({ toDate: e.target.value || undefined })}
+              title="JC Date to"
+              aria-label="JC Date to"
+            />
+            <ViewToggle value={view} onChange={changeView} />
+            {canWrite ? (
               <Link
                 to="/job-cards/new"
                 className="btn btn-ghost"
@@ -582,7 +643,14 @@ function JobCardsListPage(): React.JSX.Element {
               >
                 + New JWSO Job Card
               </Link>
-            </>
+            ) : null}
+          </>
+        }
+        primary={
+          canWrite ? (
+            <Link to="/planning" className="btn btn-primary">
+              + Plan &amp; Create Job Card
+            </Link>
           ) : null
         }
       >
@@ -612,65 +680,6 @@ function JobCardsListPage(): React.JSX.Element {
             { key: 'overdue', label: 'Overdue', count: kpis.overdue, color: 'var(--red2)' },
           ]}
         />
-
-        <FilterBar
-          search={searchInput}
-          onSearch={setSearchInput}
-          placeholder="Search JC no., item code / name, customer, SO no.…"
-          filters={[
-            {
-              key: 'status',
-              value: search.status ?? '',
-              onChange: (v) => setNav({ status: v === '' ? undefined : (v as JcComputedStatus) }),
-              options: [
-                { value: '', label: 'All statuses' },
-                ...JC_COMPUTED_STATUSES.map((s) => ({
-                  value: s,
-                  label: JC_STATUS_LABEL[s],
-                })),
-              ],
-            },
-            {
-              key: 'machine',
-              value: search.machineId ?? '',
-              onChange: (v) => setNav({ machineId: v === '' ? undefined : v }),
-              options: [
-                { value: '', label: 'All machines' },
-                ...machines.map((m) => ({ value: m.id, label: `${m.code} — ${m.name}` })),
-              ],
-            },
-            {
-              key: 'operator',
-              value: search.operatorId ?? '',
-              onChange: (v) => setNav({ operatorId: v === '' ? undefined : v }),
-              options: [
-                { value: '', label: 'All operators' },
-                ...operators.map((o) => ({ value: o.id, label: `${o.code} — ${o.name}` })),
-              ],
-            },
-          ]}
-        >
-          {/* Dates and the view switch are not dropdowns, so they ride in
-              FilterBar's own slot for extra controls rather than becoming
-              fake selects. */}
-          <Input
-            type="date"
-            value={search.fromDate ?? ''}
-            onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
-            title="JC Date from"
-            aria-label="JC Date from"
-          />
-          <Input
-            type="date"
-            value={search.toDate ?? ''}
-            onChange={(e) => setNav({ toDate: e.target.value || undefined })}
-            title="JC Date to"
-            aria-label="JC Date to"
-          />
-          <div style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'center' }}>
-            <ViewToggle value={view} onChange={changeView} />
-          </div>
-        </FilterBar>
       </ListHeader>
 
       {isError ? (
@@ -687,7 +696,8 @@ function JobCardsListPage(): React.JSX.Element {
             loading={isLoading}
             emptyText={emptyText}
             onRowClick={(jc) => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
-            rowActionsWidth="15%"
+            frozen
+            rowActionsWidth="1%"
             rowActions={(jc) => rowActions(jc, false)}
           />
         </Panel>

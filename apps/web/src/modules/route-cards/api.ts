@@ -9,6 +9,7 @@ import type {
   UpdateRouteCardInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 
 export const routeCardsKeys = {
@@ -47,6 +48,20 @@ export function useRouteCard(id: string | undefined) {
     queryFn: () => apiFetch<RouteCardDetail>(`/route-cards/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/** One card's detail on demand (from an event handler, not a render) — served
+ *  from the same cache entry useRouteCard reads, fetched when missing/stale. */
+export function useFetchRouteCard(): (id: string) => Promise<RouteCardDetail> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<RouteCardDetail>({
+        queryKey: routeCardsKeys.detail(id),
+        queryFn: () => apiFetch<RouteCardDetail>(`/route-cards/${id}`),
+      }),
+    [qc],
+  );
 }
 
 export function useNextRouteCardCode(

@@ -10090,3 +10090,103 @@ inspectors could race on one GRN line; bought-material rejects left no record.
   NC.
 - A partly received PO that is short-closed keeps its outsourced-op links; the op's un-received
   remainder is ordered on a new PO, which the multi-PO op links already allow.
+
+---
+
+## ADR-190: ERPNext gap round 2 — Next items, server side (numbered 189 on its branch; renumbered — the purchasing-truth ADR took 189)
+
+**Date:** 2026-09-26
+**Status:** Accepted (server side only; the web is wired afterwards)
+
+### Context
+
+Round 2 of the ERPNext gap audit left ten "Next" items that each need data the browser must not
+compute or guess (CLAUDE.md §6 rule 1). This ADR lists what the API now provides. No migration:
+every item reads columns that already exist.
+
+### Decision
+
+1. **QC reject names its NC.** `POST /op-entry/qc-log` now fills the response's existing `ncs`
+   array (ADR-183: `[{ id, code, status: 'pending' }]`, empty when nothing was rejected) — the
+   same field the production-entry path already fills. No second field (`nc`) was added: one fact,
+   one name (§18).
+2. **Approvals inbox.** `GET /approvals/inbox` → `{ counts: { pr, po, logEntry }, pr[], po[],
+logEntry[] }`, rows `ApprovalInboxRow { id, code, vendorName, itemCode, itemName, qty, amount,
+createdByName, createdAt, navPage }`. Each list applies its approve endpoint's own rules, so a
+   listed row is one the caller can approve: PR — Approve on Purchase Requests, PR Status Open, not
+   self-raised; PO — write role, Approve on Purchase Orders, on `po_approvers` (admins always),
+   Draft, not self-raised, PO value within the caller's ceiling (`loadApprovalContext`, now
+   exported); log entry — pending ADR-130 time changes, manager/admin only. `amount` is null when
+   the caller's access hides prices. New non-throwing twins `hasFormAccess` (lib/access) and
+   `isWriteRole` (lib/auth) carry the same rules as their `require*` versions.
+3. **Alert drill-down rows carry `navPage`** (e.g. `/purchase-orders/<id>`), built by the new
+   shared `docNavPage(kind, id)` — the same paths the Task Board's `relatedNavPage` stores, with
+   kinds from the Related Documents `routeKind` vocabulary. It is not a column; the email digest
+   skips it.
+4. **Report row links.** A report definition may declare `rowLink: { column, route, idKey }`
+   (echoed on the run response); the row carries the id under `idKey`, which is not a column, so
+   the table and the Excel export are unchanged. Declared on: SO open backlog (`so_code` →
+   `/sales-orders/$id`), Open PO ageing (`po_code`), GRN QC log (`grn_code`), JC ageing and Daily
+   op log (`jc_code` → `/job-cards/$id`), NC register (`nc_no`).
+5. **SO totals.** `GET /sales-orders/:id` returns `totals: { subtotal, gstPercent, gstAmount,
+grandTotal }` — Σ Order Qty × Rate over every line, GST at the SO's GST %, rounded to paise
+   (the same sums the SO form shows while typing). Null when prices are hidden.
+6. **Dispatch billing.** Each customer-dispatch row (list, detail, create/cancel write-back) adds
+   `billedQty` and `billedStatus: 'none' | 'partial' | 'full'`. There is **no invoice → dispatch
+   link** — an invoice line points at the SO line — so the figure is DERIVED per SO line,
+   oldest dispatch first (dispatch date, entry time, line no), each dispatch line capped at its own
+   qty; cancelled dispatches take nothing. Named `billedQty` because the SO line already calls the
+   same fact that; `invoiceStatus` would collide with the invoice's payment status (§18).
+7. **Related documents for masters.** The existing per-module `GET /<module>/:id/related`
+   mechanism (DocumentTraceability) gains `GET /clients/:id/related` (Sales Orders, Customer
+   Dispatches — reference text, there is no dispatch detail page — and Invoices Outstanding, with
+   the amount due only for users who may see money), `GET /vendors/:id/related` (Purchase Orders,
+   Delivery Challans Out, GRNs) and `GET /items/:id/related` (Open PRs, Purchase Orders, GRNs).
+   Each section lists the newest 50 rows (`MASTER_RELATED_ROW_CAP`); its `count` is the full total.
+8. **Tasks close themselves.** `autoCloseLinkedTasks` (tasks module, re-exported from its
+   service) completes every open task whose `linked_ref_type` (case-insensitive — both `grn` and
+   `GRN` exist) and `linked_ref_id` match, inside the caller's transaction, stamping
+   `completed_by` = the user who did the action and the remark / history note
+   "Closed automatically: <document> <done>". Hooked on: QC call fully inspected (`qc_call`, the
+   jc_op id, when `qc_pending` reaches 0), GRN fully inspected (`grn`, when no line has qty left
+   to inspect), NC disposed (`nc`), PO approved (`purchase_order`). It bypasses the per-task
+   permission matrix on purpose — the inspector is rarely the assignee — and says so in the trail.
+9. **QC Call Register pending rows** add `assignedTo` — QC Command's active assignment
+   (`qc_assignments.inspector_name`), the same field name QC Command's queue uses.
+10. **BOM → SO lines.** `GET /bom-masters/:id/linked-so-lines` → `{ lines: BomLinkedSoLine[] }`
+    (salesOrderId, soCode, soDate, soStatus, salesOrderLineId, lineNo, clientPoLineNo, itemCode,
+    itemRevision, itemName, orderQty, lineStatus, dueDate) over
+    `sales_order_lines.source_bom_master_id` — the line grain of the BOM's Related Documents list.
+
+### Consequences
+
+- All shared changes are additive (new schemas, optional / defaulted fields); the web compiles
+  unchanged.
+- Tests that pin exact alert records, report rows or SO detail objects will now see the extra
+  keys (`navPage`, the report id key, `totals`) — not run here (the api suite hits PROD).
+- The web still needs: Approvals inbox page, NC link after a QC reject, alert / report row
+  links, SO totals footer from `totals`, Billed columns on Customer Dispatch, Related panels on
+  Customer / Vendor / Item, Assigned To on the QC Call Register, and the BOM's linked-SO-lines
+  table.
+
+## ADR-190 Addendum: PO-approved task auto-close removed; PO list by JWSO; Op Log JC id
+
+**Date:** 2026-09-26
+
+- **No auto-close on PO approval.** Every task linked to a PO is raised by hand from the PO
+  screens with the suggested title "Follow up on PO …" — a delivery chase, not an approval
+  request — and nothing on the task (no kind, no system-set title) tells an approval task apart.
+  Approving a PO therefore no longer closes any task. The QC call and NC hooks stay.
+- **`GET /purchase-orders?jobWorkOrderId=`** returns only job-work / service POs with a line
+  that traces to that JWSO: PO line → JC op (`source_jc_op_id`, or its source PR's
+  `source_jc_op_id`) → job card → `source_jw_line_id` → JWSO line. Used by the JW DC `?jw=`
+  landing to pre-pick the PO.
+- **Op Log rows carry `jobCardId`** beside `jcNo`, so Log No. / JC No. open the job card
+  directly.
+- **No auto-close on GRN inspection either.** A GRN-linked task comes from the GRN list
+  ("Inspect …") or the GRN detail ("Follow up on GRN …"); both write the same link and the title
+  is editable, so an inspection task cannot be told from a follow-up. Finishing Incoming QC no
+  longer closes any task. The QC call hook stays: a `qc_call` link points at one JC op with QC
+  pending (picked from the open-QC-call list), so the only work it can mean is that inspection.
+- **NC disposition closes the NC's task only when the whole NC is disposed.** A partial
+  disposition splits the remainder onto a new pending NC; the task stays open.

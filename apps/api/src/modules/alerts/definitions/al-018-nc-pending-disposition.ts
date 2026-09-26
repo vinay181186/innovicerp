@@ -1,6 +1,7 @@
 // AL-018 — NC Disposition Pending (qc). Legacy line 22291-22292.
 // Filter: nc_register.status = 'pending'.
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -22,7 +23,7 @@ export const al018NcPendingDisposition: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT nc.code AS nc_code, nc.nc_date, jc.code AS jc_code,
+      SELECT nc.id AS nav_id, nc.code AS nc_code, nc.nc_date, jc.code AS jc_code,
              COALESCE(nc.item_code_text, '') AS item,
              nc.rejected_qty, nc.reason_category
       FROM public.nc_register nc
@@ -33,6 +34,7 @@ export const al018NcPendingDisposition: RegisteredAlert = {
       ORDER BY nc.nc_date, nc.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('nc', String(r['nav_id'])),
       nc_code: (r['nc_code'] as string) ?? '',
       nc_date:
         r['nc_date'] instanceof Date

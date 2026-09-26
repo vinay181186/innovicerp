@@ -34,6 +34,7 @@ import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoQcStatusView } from '@/modules/so-qc-status/components/so-qc-status-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ConfirmDialog } from '@/ui/feedback';
+import { ActionMenu, ListHeader } from '@/ui/layout';
 import {
   qcDocViewUrl,
   saveQcDoc,
@@ -104,70 +105,50 @@ function QcDocumentsPage(): React.JSX.Element {
   if (eff && !effectiveFormPerms(eff, 'qcdocs_upload').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        ⛔ You do not have permission to view QC Documents. Ask an admin.
+        You do not have permission to view QC Documents. Ask an admin.
       </div>
     );
   }
 
+  // Matrix | File Register | SO Status — the view switch sits in every view's
+  // ListHeader tools, so each view owns its own count, search and actions.
+  const setView = (v: 'matrix' | 'register' | 'status'): void =>
+    void navigate({ search: (p) => ({ ...p, view: v }), replace: true });
+  const toggle = (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {(
+        [
+          ['matrix', 'Matrix'],
+          ['register', 'File Register'],
+          ['status', 'SO Status'],
+        ] as const
+      ).map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          className={view === v ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+          aria-pressed={view === v}
+          onClick={() => setView(v)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (view === 'matrix') return <MatrixView toggle={toggle} />;
+  if (view === 'register') return <RegisterView toggle={toggle} />;
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          QC Documents
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            type="button"
-            className={view === 'matrix' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-            onClick={() =>
-              void navigate({ search: (p) => ({ ...p, view: 'matrix' }), replace: true })
-            }
-          >
-            Matrix
-          </button>
-          <button
-            type="button"
-            className={view === 'register' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-            onClick={() =>
-              void navigate({ search: (p) => ({ ...p, view: 'register' }), replace: true })
-            }
-          >
-            File Register
-          </button>
-          <button
-            type="button"
-            className={view === 'status' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-            onClick={() =>
-              void navigate({ search: (p) => ({ ...p, view: 'status' }), replace: true })
-            }
-          >
-            SO Status
-          </button>
-        </div>
-      </div>
-
-      {view === 'matrix' ? (
-        <MatrixView />
-      ) : view === 'status' ? (
-        <SoQcStatusView />
-      ) : (
-        <RegisterView />
-      )}
+      <ListHeader title="QC Documents" icon="🗃" tools={toggle} />
+      <SoQcStatusView />
     </div>
   );
 }
 
 // ─── Matrix view (legacy renderQCDocuments L23039) ──────────────────────────
 
-function MatrixView(): React.JSX.Element {
+function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
   const maySave = useMaySaveFiles();
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
@@ -187,17 +168,19 @@ function MatrixView(): React.JSX.Element {
 
   const [detailJcId, setDetailJcId] = useState<string | null>(null);
 
-  if (soQuery.isLoading) {
+  if (soQuery.isLoading || sos.length === 0) {
     return (
-      <div className="empty-state" style={{ padding: 60 }}>
-        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
-      </div>
-    );
-  }
-  if (sos.length === 0) {
-    return (
-      <div className="empty-state" style={{ padding: 60 }}>
-        No SOs yet.
+      <div>
+        <ListHeader title="QC Documents" icon="🗃" tools={toggle} />
+        <div className="empty-state" style={{ padding: 60 }}>
+          {soQuery.isLoading ? (
+            <>
+              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
+            </>
+          ) : (
+            'No SOs yet.'
+          )}
+        </div>
       </div>
     );
   }
@@ -244,66 +227,65 @@ function MatrixView(): React.JSX.Element {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 10 }}>
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{
-            background: 'rgba(34,197,94,0.1)',
-            color: 'var(--green2)',
-            border: '1px solid rgba(34,197,94,0.3)',
-          }}
-          disabled={!matrix}
-          onClick={() => matrix && exportMatrixExcel(matrix)}
-        >
-          ⬇ Export
-        </button>
-        {/* Absent, not greyed, for anyone without the download tick — and the
-            server would refuse the links anyway. Export beside it is a
-            spreadsheet this page builds itself, not a stored file, so it is
-            untouched. */}
-        {maySave ? (
-          <button
-            type="button"
-            className="btn btn-sm"
-            style={{
-              background: 'rgba(34,197,94,0.1)',
-              color: 'var(--green2)',
-              border: '1px solid rgba(34,197,94,0.3)',
-            }}
-            disabled={
-              !matrix || !matrix.rows.some((r) => r.cells.some((c) => c.hasDoc && c.storagePath))
-            }
-            onClick={() => matrix && void downloadAllReports(matrix)}
-          >
-            ⬇ Download All Reports
-          </button>
-        ) : null}
-      </div>
-
-      {/* SO selector (legacy L23042-23047) */}
-      <div style={{ marginBottom: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
-        <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>Select SO:</label>
-        <div style={{ minWidth: 320 }}>
-          <SearchableSelect
-            id="qc-docs-so"
-            value={selectedSo ?? null}
-            valueLabel={
-              matrix?.so
-                ? `${matrix.so.code}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}`
-                : undefined
-            }
-            onChange={(id) =>
-              void navigate({ search: (p) => ({ ...p, so: id ?? undefined }), replace: true })
-            }
-            onSearch={setSoSearch}
-            loading={soQuery.isFetching}
-            placeholder="Search SO No. or customer…"
-            options={sos.map((s) => ({ id: s.id, code: s.code, name: s.customerName ?? '' }))}
-          />
-        </div>
-        {isFetching && !isLoading ? <Loader2 className="inline h-3 w-3 animate-spin" /> : null}
-      </div>
+      <ListHeader
+        title="QC Documents"
+        icon="🗃"
+        count={matrix ? filteredRows.length : undefined}
+        noun="line"
+        updating={isFetching && !isLoading}
+        searchSlot={
+          /* SO selector (legacy L23042-23047) — the matrix is one SO at a time. */
+          <div style={{ minWidth: 320 }}>
+            <SearchableSelect
+              id="qc-docs-so"
+              value={selectedSo ?? null}
+              valueLabel={
+                matrix?.so
+                  ? `${matrix.so.code}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}`
+                  : undefined
+              }
+              onChange={(id) =>
+                void navigate({ search: (p) => ({ ...p, so: id ?? undefined }), replace: true })
+              }
+              onSearch={setSoSearch}
+              loading={soQuery.isFetching}
+              placeholder="Search SO No. or customer…"
+              options={sos.map((s) => ({ id: s.id, code: s.code, name: s.customerName ?? '' }))}
+            />
+          </div>
+        }
+        tools={
+          <>
+            {toggle}
+            {/* One Export control. "All reports" is absent, not greyed, for
+                anyone without the download tick — the server would refuse the
+                links anyway. The Excel matrix is a spreadsheet this page builds
+                itself, not a stored file, so it is always offered. */}
+            <ActionMenu
+              label="⬇ Export"
+              items={[
+                {
+                  label: 'Excel (This Matrix)',
+                  disabled: !matrix,
+                  onClick: () => {
+                    if (matrix) exportMatrixExcel(matrix);
+                  },
+                },
+                {
+                  label: 'Download All Reports',
+                  hidden: !maySave,
+                  disabled:
+                    !matrix ||
+                    !matrix.rows.some((r) => r.cells.some((c) => c.hasDoc && c.storagePath)),
+                  onClick: () => {
+                    if (matrix) void downloadAllReports(matrix);
+                  },
+                },
+              ]}
+            />
+          </>
+        }
+      />
 
       {/* SO summary bar (legacy L23112) */}
       {matrix ? (
@@ -367,7 +349,7 @@ function MatrixView(): React.JSX.Element {
 
       <div className="panel">
         <div className="tbl-wrap" style={{ border: '1px solid var(--border)', borderRadius: 8 }}>
-          <table className="innovic-table" style={{ width: '100%' }}>
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Ln</th>
@@ -1204,7 +1186,7 @@ async function downloadDocs(
 
 // ─── Flat file register (original QC Documents list) ────────────────────────
 
-function RegisterView(): React.JSX.Element {
+function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
   // `me` is still needed for the company id the upload modal writes against.
@@ -1222,6 +1204,9 @@ function RegisterView(): React.JSX.Element {
   const canDelete = perms.edit && perms.approve;
   const del = useDeleteQcDocument();
   const [uploadOpen, setUploadOpen] = useState(false);
+  // The box mirrors the URL's ?search= (the server searches); typing writes
+  // the normalised term back, while the box keeps exactly what was typed.
+  const [term, setTerm] = useState(search.search ?? '');
 
   const query: ListQcDocumentsQuery = useMemo(
     () => ({
@@ -1245,63 +1230,63 @@ function RegisterView(): React.JSX.Element {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" />
-          </span>
-        ) : null}
-        {perms.entry ? (
-          <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>
-            📎 Upload Document
-          </button>
-        ) : null}
-      </div>
-
-      <div className="panel" style={{ marginBottom: 12, padding: '10px 14px' }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select
-            className="innovic-select"
-            style={{ width: 180, fontSize: 12 }}
-            value={search.category ?? ''}
-            onChange={(e) =>
-              void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  category: (e.target.value || undefined) as QcDocCategory | undefined,
-                }),
-                replace: true,
-              })
-            }
-          >
-            <option value="">All Categories</option>
-            {QC_DOC_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {CATEGORY_LABEL[c]}
-              </option>
-            ))}
-          </select>
-          <input
-            className="innovic-input"
-            style={{ width: 240, fontSize: 12 }}
-            placeholder="🔍 Search this register…"
-            defaultValue={search.search ?? ''}
-            onChange={(e) => {
-              // normalizeSearchTerm (shared) — trims and collapses inner spacing so
-              // "  MTC  01 " and "MTC 01" are one query, one cache entry, one URL.
-              const v = normalizeSearchTerm(e.target.value);
-              void navigate({
-                search: (prev) => ({ ...prev, search: v || undefined }),
-                replace: true,
-              });
-            }}
-          />
-        </div>
-      </div>
+      <ListHeader
+        title="QC Documents"
+        icon="🗃"
+        count={data ? items.length : undefined}
+        noun="document"
+        filterNote={search.category ? CATEGORY_LABEL[search.category] : undefined}
+        search={term}
+        onSearch={(v) => {
+          setTerm(v);
+          // normalizeSearchTerm (shared) — trims and collapses inner spacing so
+          // "  MTC  01 " and "MTC 01" are one query, one cache entry, one URL.
+          const n = normalizeSearchTerm(v);
+          void navigate({
+            search: (prev) => ({ ...prev, search: n || undefined }),
+            replace: true,
+          });
+        }}
+        searchPlaceholder="Search this register…"
+        updating={isFetching && !isLoading}
+        tools={
+          <>
+            {toggle}
+            <select
+              className="innovic-select"
+              style={{ width: 180 }}
+              value={search.category ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    category: (e.target.value || undefined) as QcDocCategory | undefined,
+                  }),
+                  replace: true,
+                })
+              }
+            >
+              <option value="">All Categories</option>
+              {QC_DOC_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {CATEGORY_LABEL[c]}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+        primary={
+          perms.entry ? (
+            <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>
+              📎 Upload Document
+            </button>
+          ) : null
+        }
+      />
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Document Type</th>

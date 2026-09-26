@@ -41,6 +41,21 @@ export const reportFilterFieldSchema = z.object({
 });
 export type ReportFilterField = z.infer<typeof reportFilterFieldSchema>;
 
+/** Makes one column a link to the document the row is about (ADR-190). The
+ *  row carries that document's id under `idKey` — a key that is NOT a column,
+ *  so the table and the Excel export never show it — and the web opens
+ *  `route` with `$id` replaced by that id. Declared only where the id comes
+ *  free with the query. */
+export const reportRowLinkSchema = z.object({
+  /** The column whose cell becomes the link, e.g. `so_code`. */
+  column: z.string(),
+  /** The page, TanStack-style, e.g. `/sales-orders/$id`. */
+  route: z.string(),
+  /** The row key holding the id, e.g. `so_id`. */
+  idKey: z.string(),
+});
+export type ReportRowLink = z.infer<typeof reportRowLinkSchema>;
+
 export const reportDefinitionSchema = z.object({
   /** Stable slug used in the URL path (`/reports/:slug`) and as a React key. */
   slug: z.string(),
@@ -52,6 +67,7 @@ export const reportDefinitionSchema = z.object({
   filters: z.array(reportFilterFieldSchema),
   /** Output columns in display order. */
   columns: z.array(reportColumnSchema),
+  rowLink: reportRowLinkSchema.optional(),
 });
 export type ReportDefinition = z.infer<typeof reportDefinitionSchema>;
 
@@ -76,6 +92,8 @@ export const runReportResponseSchema = z.object({
   generatedAt: z.string(),
   /** Echoes the filter values that produced this result, for header display. */
   filters: z.record(z.string()),
+  /** The definition's rowLink, echoed so the run page needs no second read. */
+  rowLink: reportRowLinkSchema.optional(),
 });
 export type RunReportResponse = z.infer<typeof runReportResponseSchema>;
 

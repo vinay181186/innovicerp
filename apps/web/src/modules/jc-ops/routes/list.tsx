@@ -14,11 +14,14 @@ import { useState } from 'react';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useDebounce } from '@/lib/use-debounce';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 // Reuse the existing PR create hook — do not build a parallel one.
 import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Select } from '@/ui/forms';
+import { ListHeader } from '@/ui/layout';
 import { OP_STATUS } from '../../job-cards/lib/jc-op-labels';
 import { useMachinesList } from '../../machines/api';
 import { jcOpsBoardKeys, useChangeJcOpMachine, useJcOpsBoard, useOutsourceOpBalance } from '../api';
@@ -37,21 +40,29 @@ function JcOpsPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
   const canCreatePr = effectiveFormPerms(eff, 'pr_create').entry;
+  // ▶ Start / ✚ Log deep links into Op Entry — the same gate the Job Queue
+  // uses for the same two links.
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const [jcCode, setJcCode] = useState('');
+  // Server-side `?search=` (GET /jc-ops matches JC no., operation, item code
+  // and POL). The box shows every keystroke; the query waits 300ms.
+  const [searchInput, setSearchInput] = useState('');
+  const searchTerm = useDebounce(searchInput.trim(), 300);
   const [editRow, setEditRow] = useState<JcOpsBoardRow | null>(null);
   const [prRow, setPrRow] = useState<JcOpsBoardRow | null>(null);
   const [outsourceRow, setOutsourceRow] = useState<JcOpsBoardRow | null>(null);
 
-  const { data, isLoading, isError, error } = useJcOpsBoard({
+  const { data, isLoading, isFetching, isError, error } = useJcOpsBoard({
     jcCode: jcCode || undefined,
+    search: searchTerm || undefined,
     limit: 1000,
     offset: 0,
   });
 
   // Legacy L11400 "+ Add Operation" opened a modal to pick a JC, then added an
   // op to it. Ops are edited on the Job Card edit page, so we link there.
-  // When a JC is selected in the filter we deep-link to that card; otherwise we
-  // send the user to the Job Cards list to pick one first.
+  // The button stays DISABLED until a JC is picked in the filter — an op
+  // always belongs to one job card, so there is nothing to add it to before.
   const selectedJc = (data?.jcOptions ?? []).find((j) => j.jcCode === jcCode);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -68,23 +79,30 @@ function JcOpsPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">JC Operations</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select
-            className="innovic-select"
+      <ListHeader
+        title="JC Operations"
+        icon="⨯"
+        count={data?.items.length}
+        noun="operation"
+        filterNote={jcCode || undefined}
+        search={searchInput}
+        onSearch={setSearchInput}
+        searchPlaceholder="Search JC no., operation, item code, POL…"
+        updating={isFetching && !isLoading}
+        tools={
+          <Select
+            aria-label="Job Card"
+            fieldWidth="md"
             value={jcCode}
             onChange={(e) => setJcCode(e.target.value)}
-            style={{ width: 200, fontSize: 12 }}
-          >
-            <option value="">All Job Cards</option>
-            {(data?.jcOptions ?? []).map((j) => (
-              <option key={j.jcId} value={j.jcCode}>
-                {j.jcCode}
-              </option>
-            ))}
-          </select>
-          {canWrite ? (
+            options={[
+              { value: '', label: 'All Job Cards' },
+              ...(data?.jcOptions ?? []).map((j) => ({ value: j.jcCode, label: j.jcCode })),
+            ]}
+          />
+        }
+        primary={
+          canWrite ? (
             selectedJc ? (
               <Link
                 to="/job-cards/$id/edit"
@@ -94,13 +112,18 @@ function JcOpsPage(): React.JSX.Element {
                 + Add Operation
               </Link>
             ) : (
-              <Link to="/job-cards" className="btn btn-primary">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled
+                title="Pick a Job Card in the JC filter first"
+              >
                 + Add Operation
-              </Link>
+              </button>
             )
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="panel">
         {isLoading ? (
@@ -121,7 +144,7 @@ function JcOpsPage(): React.JSX.Element {
           </div>
         ) : data ? (
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>JC No.</th>
@@ -158,6 +181,7 @@ function JcOpsPage(): React.JSX.Element {
                     o={o}
                     canWrite={canWrite}
                     canCreatePr={canCreatePr}
+                    canOpEntry={canOpEntry}
                     onEdit={() => setEditRow(o)}
                     onCreatePr={() => setPrRow(o)}
                     onOutsource={() => setOutsourceRow(o)}
@@ -194,6 +218,7 @@ function Row({
   o,
   canWrite,
   canCreatePr,
+  canOpEntry,
   onEdit,
   onCreatePr,
   onOutsource,
@@ -201,6 +226,7 @@ function Row({
   o: JcOpsBoardRow;
   canWrite: boolean;
   canCreatePr: boolean;
+  canOpEntry: boolean;
   onEdit: () => void;
   onCreatePr: () => void;
   onOutsource: () => void;
@@ -208,6 +234,40 @@ function Row({
   const isOutsource = o.opType === 'outsource';
   const outsourceStatus = o.outsourceStatus || 'pending';
   const bg = isOutsource ? 'rgba(255,176,32,0.04)' : undefined;
+  // ▶ Start / ✚ Log — the Job Queue's rule (job-queue/routes/list.tsx): an
+  // in-house op with pieces waiting and no session running is the next thing
+  // to do. Pieces already made → ✚ Log (the Complete half); none yet → ▶
+  // Start. This board is not split per machine, so "started" is the op total.
+  const isNext =
+    !isOutsource && o.available > 0 && o.status !== 'running' && o.status !== 'complete';
+  const startLink =
+    canOpEntry && isNext ? (
+      o.completed > 0 ? (
+        <Link
+          to="/op-entry"
+          search={{ jc: o.jcCode, op: o.jcOpId, mode: 'complete' }}
+          className="btn btn-sm"
+          style={{
+            background: 'var(--green3)',
+            border: '1px solid var(--green2)',
+            color: 'var(--green2)',
+            fontSize: 11,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          ✚ Log Op
+        </Link>
+      ) : (
+        <Link
+          to="/op-entry"
+          search={{ jc: o.jcCode, op: o.jcOpId, mode: 'start' }}
+          className="btn btn-sm"
+          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+        >
+          ▶ Start
+        </Link>
+      )
+    ) : null;
   return (
     <tr style={{ background: bg }}>
       <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
@@ -240,8 +300,9 @@ function Row({
           item next to the code. `jcItemName` has always been on this row
           (packages/shared/src/schemas/jc-ops.ts) and was simply never drawn —
           the board asked an operator to pick an op by job number alone. The
-          code keeps its own line; a long part name clips and carries the full
-          text on hover, so one wordy item cannot stretch the board sideways. */}
+          code stays on one line; a long part name WRAPS under it
+          (sheet rule, 2026-09-26), so one wordy item cannot stretch the board
+          sideways. */}
       <td style={{ fontSize: 11 }}>
         {/* The code carries weight; the NAME under it stays muted. The cell used
             to be text2 throughout, which left the board reading fainter than the
@@ -251,17 +312,7 @@ function Row({
           {itemCodeWithRev(o.jcItemCode, o.itemRevision, '')}
         </span>
         {o.jcItemName ? (
-          <div
-            className="text3"
-            style={{
-              fontSize: 11,
-              maxWidth: 160,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={o.jcItemName}
-          >
+          <div className="text3" style={{ fontSize: 11 }} title={o.jcItemName}>
             {o.jcItemName}
           </div>
         ) : null}
@@ -439,6 +490,7 @@ function Row({
           // ADR-081 "Outsource balance" action when there's remaining qty to
           // send out (op_type='process', available > 0, not yet complete).
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            {startLink}
             {/* ADR-125 — a half-done op CAN now change machine: since 0095 each
                 op_log row carries the machine that made its qty, so the switch
                 only routes the REMAINING pieces and rewrites no history. Only

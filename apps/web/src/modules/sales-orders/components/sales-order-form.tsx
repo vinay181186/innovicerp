@@ -527,10 +527,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   const lineCount = (watchedLines ?? []).length;
   const totalPcs = (watchedLines ?? []).reduce((s, l) => s + (Number(l.orderQty) || 0), 0);
-  const subtotal = (watchedLines ?? []).reduce(
-    (s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0),
-    0,
-  );
+  // A cancelled line adds nothing — the same rule as the server's SO totals.
+  const subtotal = (watchedLines ?? [])
+    .filter((l) => l.status !== 'cancelled')
+    .reduce((s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0), 0);
   const gstAmt = subtotal * (gstPercent / 100);
   const grand = subtotal + gstAmt;
 

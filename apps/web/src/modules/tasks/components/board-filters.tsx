@@ -1,6 +1,7 @@
 // Task Board chrome above the table (ADR-176): the tab strip (Inbox / Outbox /
-// My To-Do / All Tasks) and the filter strip (search 2fr + Priority +
-// Person + Due Date; All Tasks adds Assigned By + Department). Presentational —
+// My To-Do / All Tasks) and the filter selects (Priority + Person + Due Date;
+// All Tasks adds Assigned By + Department; search is the board ListHeader's,
+// status is the board's KPI tiles). Presentational —
 // the board route owns every value and hands the setters down.
 
 import type { TaskDueFilter, TaskPriority, TaskUserOption, TaskView } from '@innovic/shared';
@@ -14,7 +15,7 @@ const DUE_OPTIONS: { value: TaskDueFilter | ''; label: string }[] = [
   { value: 'overdue', label: 'Overdue' },
 ];
 
-const selectStyle: React.CSSProperties = { fontSize: 12, minWidth: 0 };
+const selectStyle: React.CSSProperties = { fontSize: 12, width: 'auto' };
 
 export function TaskTabs({
   tabs,
@@ -96,7 +97,6 @@ export function TaskFilters({
   users,
   departments,
   values,
-  onSearch,
   onPriority,
   onPerson,
   onAssignedBy,
@@ -107,7 +107,6 @@ export function TaskFilters({
   users: TaskUserOption[];
   departments: string[];
   values: BoardFilterValues;
-  onSearch: (v: string) => void;
   onPriority: (v: TaskPriority | '') => void;
   onPerson: (v: string) => void;
   onAssignedBy: (v: string) => void;
@@ -119,24 +118,10 @@ export function TaskFilters({
       {u.name}
     </option>
   ));
+  // The filter selects only — they sit in the board's ListHeader tools, after
+  // the header's own search box (which owns the search term).
   return (
-    <div
-      className="panel"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(200px, 2fr) repeat(auto-fit, minmax(140px, 1fr))',
-        gap: 8,
-        padding: 10,
-        marginBottom: 10,
-      }}
-    >
-      <input
-        className="innovic-input"
-        placeholder="Search Task No., title, related document…"
-        value={values.searchInput}
-        onChange={(e) => onSearch(e.target.value)}
-        style={{ fontSize: 12 }}
-      />
+    <>
       <select
         className="innovic-select"
         value={values.priority}
@@ -199,6 +184,6 @@ export function TaskFilters({
           </option>
         ))}
       </select>
-    </div>
+    </>
   );
 }

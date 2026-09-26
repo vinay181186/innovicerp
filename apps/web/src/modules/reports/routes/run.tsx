@@ -1,5 +1,5 @@
-import type { ReportColumn, ReportFilterField, ReportRow } from '@innovic/shared';
-import { createRoute, useNavigate } from '@tanstack/react-router';
+import type { ReportColumn, ReportFilterField, ReportRow, ReportRowLink } from '@innovic/shared';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -94,6 +94,9 @@ function ReportRunPage() {
   }
 
   const rows = data?.rows ?? [];
+  // ADR-190: a report may name one column that opens its document; the id sits
+  // under `idKey` on the row and is never shown as a column itself.
+  const rowLink = data?.rowLink ?? definition.rowLink;
   const total = rows.length;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, pages);
@@ -130,7 +133,10 @@ function ReportRunPage() {
       }
     >
       <ResultsTable
-        columns={definition.columns}
+        columns={
+          rowLink ? definition.columns.filter((c) => c.key !== rowLink.idKey) : definition.columns
+        }
+        rowLink={rowLink}
         rows={rows}
         page={safePage}
         hasData={Boolean(data)}
@@ -194,6 +200,7 @@ function FilterInput(props: {
  *  see `isSummable` for which columns get one. */
 function ResultsTable(props: {
   columns: ReportColumn[];
+  rowLink: ReportRowLink | undefined;
   rows: ReportRow[];
   page: number;
   hasData: boolean;
@@ -201,7 +208,7 @@ function ResultsTable(props: {
   isError: boolean;
   errorMessage: string | undefined;
 }) {
-  const { columns, rows, page, hasData, isLoading, isError, errorMessage } = props;
+  const { columns, rowLink, rows, page, hasData, isLoading, isError, errorMessage } = props;
 
   const numeric = useMemo(
     () => new Set(columns.filter((c) => isNumericColumn(c, rows)).map((c) => c.key)),
@@ -225,7 +232,7 @@ function ResultsTable(props: {
   return (
     <div className="panel">
       <div className="tbl-wrap">
-        <table className="innovic-table">
+        <table className="innovic-table tbl-grid">
           <thead>
             <tr>
               {columns.map((col) => (
@@ -260,6 +267,8 @@ function ResultsTable(props: {
                   {columns.map((col, ci) => {
                     const raw = row[col.key];
                     const badge = typeof raw === 'string' ? statusBadge(raw) : undefined;
+                    const linkId =
+                      rowLink && rowLink.column === col.key ? row[rowLink.idKey] : undefined;
                     return (
                       <td
                         key={col.key}
@@ -268,6 +277,13 @@ function ResultsTable(props: {
                       >
                         {badge ? (
                           <span className={`badge ${badge}`}>{formatCell(col, raw)}</span>
+                        ) : rowLink && linkId != null && linkId !== '' ? (
+                          <Link
+                            to={rowLink.route.replace('$id', String(linkId))}
+                            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                          >
+                            {formatCell(col, raw)}
+                          </Link>
                         ) : (
                           formatCell(col, raw)
                         )}

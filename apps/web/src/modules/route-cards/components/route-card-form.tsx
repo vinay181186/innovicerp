@@ -14,6 +14,7 @@ import type {
   CreateRouteCardOpInput,
   Machine,
   RouteCard,
+  RouteCardDetail,
   RouteCardPlanType,
   Vendor,
 } from '@innovic/shared';
@@ -34,10 +35,10 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
-import { useNextRouteCardCode, useRouteCardsList } from '../api';
+import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../api';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
 
@@ -97,6 +98,49 @@ interface RouteCardFormProps {
   onCancel: () => void;
   /** Header Back — a plain navigation, so the router's exit guard asks first. */
   onBack?: () => void;
+}
+
+/** A saved card's operations as editable form rows — used by the edit page to
+ *  open a card, and by "Copy ops from Route Card…" on create. One mapping, so
+ *  a copied row and an edited row can never disagree. */
+export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpDraft[] {
+  return ops.map((op) => ({
+    // Group is display-only; the form reads it back off the machine master
+    // once the machines list has loaded.
+    machineGroupId: null,
+    machineId: op.machineId ?? '',
+    machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
+    operation: op.operation,
+    opType: op.opType,
+    // Legacy: `${op.cycleTime||''}` — a stored 0 renders blank, same as a
+    // freshly added row. Keeps create/edit identical (ISSUE-099).
+    cycleTimeMin: Number(op.cycleTimeMin) ? String(Number(op.cycleTimeMin)) : '',
+    program: op.program ?? '',
+    toolNo: op.toolNo ?? '',
+    toolDetails: op.toolDetails ?? '',
+    qcRequired: op.qcRequired,
+    ospVendorId: op.ospVendorId ?? '',
+    ospVendorCodeText: op.ospVendorCode ?? op.ospVendorCodeText ?? '',
+    ospLeadDays: op.ospLeadDays != null ? String(op.ospLeadDays) : '',
+  }));
+}
+
+/** A row counts as typed when ANY field the user fills is filled — not just
+ *  the operation name — so a copy never silently drops a picked machine, a
+ *  cycle time, a vendor, a program or a tool. */
+function isOpRowTyped(o: RouteCardFormOpDraft): boolean {
+  return [
+    o.operation,
+    o.machineId,
+    o.machineCodeText,
+    o.cycleTimeMin,
+    o.program,
+    o.toolNo,
+    o.toolDetails,
+    o.ospVendorId,
+    o.ospVendorCodeText,
+    o.ospLeadDays,
+  ].some((v) => v.trim() !== '');
 }
 
 export function emptyProcessOp(): RouteCardFormOpDraft {
@@ -223,6 +267,55 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     { enabled: mode === 'create' && Boolean(header.itemId) },
   );
   const existingCards = mode === 'create' && header.itemId ? (existingForItem?.items ?? []) : [];
+
+  // "Copy ops from Route Card…" (round-2 "Next" item, 2026-09-26). On create,
+  // pick any existing card and its operations are copied into this form as
+  // ordinary editable rows — a similar part's routing, not re-typed by hand.
+  // The copy is a one-time fill: nothing links the two cards afterwards.
+  const [copySearch, setCopySearch] = useState('');
+  const [copyFromId, setCopyFromId] = useState<string | null>(null);
+  const [copiedFrom, setCopiedFrom] = useState<{ id: string; label: string } | null>(null);
+  const { data: copyList, isFetching: copyListFetching } = useRouteCardsList(
+    { ...(copySearch.trim() ? { search: copySearch.trim() } : {}), limit: 20, offset: 0 },
+    { enabled: mode === 'create' },
+  );
+  const fetchRouteCard = useFetchRouteCard();
+  // The picker's choice waiting on "replace what you typed?" — set only when
+  // the form already holds typed rows.
+  const [pendingCopy, setPendingCopy] = useState<RouteCardDetail | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  // The latest pick, so a slow fetch for an earlier pick is dropped.
+  const copyPickRef = useRef<string | null>(null);
+  // Read inside the async handler after the fetch, so it sees the rows as
+  // they are THEN, not as they were when the pick was made.
+  const opsRef = useRef(ops);
+  opsRef.current = ops;
+  const applyCopy = (detail: RouteCardDetail): void => {
+    setOps(detailOpsToDrafts(detail.ops));
+    setCopiedFrom({ id: detail.id, label: `${detail.code} Rev ${detail.currentRevision}` });
+    setCopyFromId(detail.id);
+  };
+  const onPickCopySource = async (id: string | null): Promise<void> => {
+    copyPickRef.current = id;
+    setCopyError(null);
+    setCopyFromId(id);
+    if (!id || id === copiedFrom?.id) return;
+    let detail: RouteCardDetail;
+    try {
+      detail = await fetchRouteCard(id);
+    } catch (e) {
+      if (copyPickRef.current !== id) return;
+      setCopyError(e instanceof Error ? e.message : 'Could not load that route card.');
+      setCopyFromId(copiedFrom?.id ?? null);
+      return;
+    }
+    if (copyPickRef.current !== id) return;
+    if (opsRef.current.some(isOpRowTyped)) {
+      setPendingCopy(detail);
+      return;
+    }
+    applyCopy(detail);
+  };
   const showDupBanner = existingCards.length > 0 && !dupDismissed;
 
   // Raw material prefilled from the item's latest PLAN, on create only.
@@ -668,6 +761,35 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         bodyClassName="tbl-wrap"
         actions={
           <>
+            {mode === 'create' ? (
+              <div style={{ minWidth: 240 }} title="Copy another card's operations into this form">
+                <SearchableSelect
+                  id="rc-copy-from"
+                  value={copyFromId}
+                  onChange={(id) => void onPickCopySource(id)}
+                  onSearch={setCopySearch}
+                  loading={copyListFetching}
+                  options={(copyList?.items ?? []).map((rc) => ({
+                    id: rc.id,
+                    code: rc.code,
+                    name: [rc.itemCode, rc.itemName].filter(Boolean).join(' — ') || '—',
+                  }))}
+                  placeholder="Copy ops from Route Card…"
+                  emptyText="No route cards"
+                  selectedLabel={(o) => o.code ?? o.name}
+                />
+              </div>
+            ) : null}
+            {copyError ? (
+              <span className="text2" role="alert" style={{ fontSize: 11, color: 'var(--red2)' }}>
+                {copyError}
+              </span>
+            ) : null}
+            {copiedFrom && mode === 'create' ? (
+              <span className="text2" style={{ fontSize: 11 }}>
+                Copied from <span className="mono fw-700">{copiedFrom.label}</span> — edit freely
+              </span>
+            ) : null}
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
               <Plus size={13} /> Add Op
             </button>
@@ -767,6 +889,24 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             placeholder="Optional — auto-filled if blank"
           />
         </Panel>
+      ) : null}
+
+      {pendingCopy ? (
+        <ConfirmDialog
+          title={`Copy operations from ${pendingCopy.code}?`}
+          message={`Replace the ${ops.length} operation(s) on this form with the ${pendingCopy.ops.length} from ${pendingCopy.code} Rev ${pendingCopy.currentRevision}?`}
+          confirmLabel="Replace operations"
+          tone="primary"
+          onConfirm={() => {
+            applyCopy(pendingCopy);
+            setPendingCopy(null);
+          }}
+          onCancel={() => {
+            setPendingCopy(null);
+            copyPickRef.current = copiedFrom?.id ?? null;
+            setCopyFromId(copiedFrom?.id ?? null);
+          }}
+        />
       ) : null}
     </form>
   );

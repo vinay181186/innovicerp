@@ -27,7 +27,9 @@ import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machi
 import { StatStrip } from '@/components/shared/stat-strip';
 import { addDaysLocal, fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useMachineLoading } from '@/modules/machine-loading/api';
 import { useProductionDashboard } from '../api';
 
@@ -68,27 +70,14 @@ function ProductionDashboardPage(): React.JSX.Element {
   const openJobCards = data?.openJobCards ?? [];
   const readyToProcess = data?.readyToProcess ?? [];
   const supplyChain = data?.supplyChain;
+  // ▶ Start / ✚ Log on the Ready rows open Op Entry — the same gate the Job
+  // Queue uses for the same two links.
+  const { data: eff } = useMyAccess();
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Production Dashboard
-        </div>
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
-      </div>
+      <ListHeader title="Production Dashboard" icon="📊" updating={isFetching && !isLoading} />
 
       {isLoading ? (
         <div className="panel">
@@ -189,7 +178,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                 </span>
               </div>
               <div className="tbl-wrap">
-                <table className="innovic-table">
+                <table className="innovic-table tbl-grid">
                   <thead>
                     <tr>
                       <th>JC No.</th>
@@ -208,11 +197,12 @@ function ProductionDashboardPage(): React.JSX.Element {
                       <th style={{ color: 'var(--amber2)' }}>Available</th>
                       <th>Pending (hrs)</th>
                       <th>Op Status</th>
+                      {canOpEntry ? <th>Action</th> : null}
                     </tr>
                   </thead>
                   <tbody>
                     {readyToProcess.map((op) => (
-                      <ReadyRow key={op.jcOpId} op={op} />
+                      <ReadyRow key={op.jcOpId} op={op} canOpEntry={canOpEntry} />
                     ))}
                   </tbody>
                 </table>
@@ -561,7 +551,19 @@ function ScTile({
   );
 }
 
-function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element {
+function ReadyRow({
+  op,
+  canOpEntry,
+}: {
+  op: ProductionDashboardReadyOp;
+  canOpEntry: boolean;
+}): React.JSX.Element {
+  // ▶ Start / ✚ Log — the Job Queue's rule and deep links
+  // (job-queue/routes/list.tsx): pieces already made → ✚ Log (the Complete
+  // half), none yet → ▶ Start. Only for a machine op with no session running;
+  // an OSP op (no machine) is booked from its DC, not from Op Entry.
+  const hasMachine = Boolean(op.machineCode || op.machines.length);
+  const showLink = hasMachine && op.available > 0 && op.computedStatus !== 'running';
   return (
     <tr>
       {/* DESTINATION CHANGED (user request, 2026-09-11): this code used to open
@@ -585,21 +587,15 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
       </td>
-      {/* Part names run long, so the name truncates on one line and carries the
-          full text in its tooltip. Nothing to show renders empty, not a dash. */}
-      <td
-        style={{
-          fontSize: 11,
-          maxWidth: 180,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-        title={op.itemName ?? ''}
-      >
+      {/* Part names run long, so the name WRAPS inside its column (sheet
+          rule) rather than stretching the table. Nothing to show renders
+          empty, not a dash. */}
+      <td style={{ fontSize: 11, textAlign: 'left' }} title={op.itemName ?? ''}>
         {op.itemName ?? ''}
       </td>
-      <td className="td-ctr mono">{opSrNo(op.opSeq)}</td>
+      <td className="td-ctr mono" style={{ whiteSpace: 'nowrap' }}>
+        {opSrNo(op.opSeq)}
+      </td>
       <td>{op.operation}</td>
       {/* ADR-164 — PLANNED (jc_ops machine, where the remaining qty runs) and
           ACTUAL (the machine(s) that made the Completed qty, else the plan) each
@@ -637,6 +633,37 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
       <td>
         <OpStatusBadge status={op.computedStatus} />
       </td>
+      {canOpEntry ? (
+        <td style={{ whiteSpace: 'nowrap' }}>
+          {showLink ? (
+            op.completedQty > 0 ? (
+              <Link
+                to="/op-entry"
+                search={{ jc: op.jobCardCode, op: op.jcOpId, mode: 'complete' }}
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--green3)',
+                  border: '1px solid var(--green2)',
+                  color: 'var(--green2)',
+                  fontSize: 11,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                ✚ Log Op
+              </Link>
+            ) : (
+              <Link
+                to="/op-entry"
+                search={{ jc: op.jobCardCode, op: op.jcOpId, mode: 'start' }}
+                className="btn btn-sm"
+                style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+              >
+                ▶ Start
+              </Link>
+            )
+          ) : null}
+        </td>
+      ) : null}
     </tr>
   );
 }

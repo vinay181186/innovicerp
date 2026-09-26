@@ -20,7 +20,9 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { ListHeader } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate, todayIst, todayLocal } from '@/lib/date';
@@ -103,32 +105,57 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useTpi();
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const pending = data?.pending ?? [];
-  const completed = data?.completed ?? [];
+  // Client-side search over the rows already loaded — every text column the
+  // two lists show (JC, SO, POL, item code / name, operation, inspector,
+  // organisation, certificate).
+  const [term, setTerm] = useState('');
+  const pending = (data?.pending ?? []).filter((o) =>
+    matchesSearchTerm(
+      [o.jcCode, o.soCode, o.clientPoLineNo, o.itemCode, o.itemRevision, o.itemName, o.operation],
+      term,
+    ),
+  );
+  const completed = (data?.completed ?? []).filter((l) =>
+    matchesSearchTerm(
+      [
+        l.jcCode,
+        l.soCode,
+        l.clientPoLineNo,
+        l.itemCode,
+        l.itemRevision,
+        l.itemName,
+        l.operation,
+        l.inspector,
+        l.organization,
+        l.certNo,
+      ],
+      term,
+    ),
+  );
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        {props.title ? (
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            {props.title}
-          </div>
-        ) : (
-          <div />
-        )}
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" />
-          </span>
-        ) : null}
-      </div>
+      <ListHeader
+        title={props.title ?? 'TPI'}
+        icon="🔍"
+        count={data ? pending.length : undefined}
+        noun="pending TPI call"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search JC, SO, POL, item, operation, inspector, certificate…"
+        updating={isFetching && !isLoading}
+        tools={
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            title="Export the completed TPI records on screen to Excel"
+            disabled={completed.length === 0}
+            onClick={() => void exportTpiRecords(completed)}
+          >
+            ⬇ Export
+          </button>
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -191,20 +218,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               }}
             >
               <span style={{ fontWeight: 700, fontSize: 13 }}>
-                <span style={{ color: 'var(--green2)' }}>✅</span> Completed TPI ({completed.length})
+                <span style={{ color: 'var(--green2)' }}>✅</span> Completed TPI ({completed.length}
+                )
               </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11 }}
-                disabled={completed.length === 0}
-                onClick={() => void exportTpiRecords(completed)}
-              >
-                ⬇ Export
-              </button>
             </div>
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     <th>JC No.</th>
@@ -219,8 +238,8 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                         it rather than being crammed into the same cell. */}
                     <th>Item Name</th>
                     <th>Operation</th>
-                    <th>Accepted</th>
-                    <th>Rejected</th>
+                    <th className="th-num">Accepted</th>
+                    <th className="th-num">Rejected</th>
                     <th>Call Date</th>
                     <th>TPI Date</th>
                     <th>Days to Attend</th>
@@ -278,12 +297,12 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
                           {l.itemName ? l.itemName : null}
                         </td>
                         <td style={{ fontSize: 11 }}>{l.operation}</td>
-                        <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
+                        <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
                           {l.accepted}
                         </td>
                         <td
-                          className="mono fw-700"
-                          style={{ color: l.rejected > 0 ? 'var(--red)' : 'var(--text3)' }}
+                          className="td-num mono fw-700"
+                          style={{ color: l.rejected > 0 ? 'var(--red2)' : 'var(--text3)' }}
                         >
                           {l.rejected}
                         </td>
@@ -506,7 +525,9 @@ function PendingTpi(props: {
             • Order: {o.orderQty} pcs
           </div>
           {o.callDate ? (
-            <div style={{ fontSize: 11, color: 'var(--amber2)' }}>Called: {fmtDate(o.callDate)}</div>
+            <div style={{ fontSize: 11, color: 'var(--amber2)' }}>
+              Called: {fmtDate(o.callDate)}
+            </div>
           ) : null}
         </div>
         <div style={{ textAlign: 'center' }}>

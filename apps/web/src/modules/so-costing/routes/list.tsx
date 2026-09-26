@@ -14,11 +14,12 @@
 import type { ListSoCostingResponse } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { inrFormat } from '@/lib/print/doc-print';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 
 export const soCostingListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -29,7 +30,7 @@ export const soCostingListRoute = createRoute({
 const money = (v: number | null): string => (v != null && v > 0 ? `₹${inrFormat(v)}` : '—');
 
 function SoCostingListPage(): React.JSX.Element {
-  const { data, isLoading, isError, error } = useQuery<ListSoCostingResponse>({
+  const { data, isLoading, isFetching, isError, error } = useQuery<ListSoCostingResponse>({
     queryKey: ['so-costing'],
     queryFn: () => apiFetch<ListSoCostingResponse>('/so-costing'),
     staleTime: 30_000,
@@ -37,12 +38,16 @@ function SoCostingListPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
-  const rows = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    return (data?.rows ?? []).filter((r) =>
-      s ? `${r.soNo} ${r.customer ?? ''}`.toLowerCase().includes(s) : true,
-    );
-  }, [data?.rows, search]);
+  // The list is fetched whole (no LIMIT), so the search matches in the browser
+  // across the text columns the row shows — SO no., customer, cost centre code
+  // + name. Shared matcher: case-insensitive, partial.
+  const rows = useMemo(
+    () =>
+      (data?.rows ?? []).filter((r) =>
+        matchesSearchTerm([r.soNo, r.customer, r.costCenter, r.costCenterName], search),
+      ),
+    [data?.rows, search],
+  );
 
   // Money hidden for L1 Viewers: the API nulls every cost, so the 5 value
   // columns are dropped (Cost Center stays).
@@ -50,34 +55,45 @@ function SoCostingListPage(): React.JSX.Element {
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
 
+  const header = (
+    <ListHeader
+      title="SO Costing"
+      icon="💰"
+      count={data ? rows.length : undefined}
+      noun="SO"
+      search={search}
+      onSearch={setSearch}
+      searchPlaceholder="Search SO no., customer, cost centre…"
+      updating={isFetching && !isLoading}
+    />
+  );
+
   if (isLoading) {
     return (
-      <div className="empty-state" style={{ padding: 40 }}>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
+      <div>
+        {header}
+        <PageState state="loading" />
       </div>
     );
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
-        {error instanceof Error ? error.message : 'Could not load SO costing. Try again.'}
+      <div>
+        {header}
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load SO costing. Try again.'}
+        />
       </div>
     );
   }
 
   return (
     <div>
-      <div className="section-hdr">SO Costing</div>
-      <input
-        className="innovic-input"
-        placeholder="🔍 Search SO, customer…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ fontSize: 12, padding: '6px 10px', minWidth: 220, margin: '10px 0' }}
-      />
+      {header}
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>SO No.</th>
@@ -94,7 +110,7 @@ function SoCostingListPage(): React.JSX.Element {
                   <>
                     <th
                       className="th-num"
-                      style={{ color: 'var(--blue)' }}
+                      style={{ color: 'var(--blue2)' }}
                       title="With-material POs"
                     >
                       Material
@@ -134,7 +150,7 @@ function SoCostingListPage(): React.JSX.Element {
                     style={{ cursor: 'pointer' }}
                     onClick={() => void navigate({ to: '/so-costing/$id', params: { id: r.soId } })}
                   >
-                    <td className="mono fw-700">
+                    <td className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
                       <Link
                         to="/so-costing/$id"
                         params={{ id: r.soId }}
@@ -152,14 +168,14 @@ function SoCostingListPage(): React.JSX.Element {
                         {money(r.soValue)}
                       </td>
                     )}
-                    <td style={{ fontSize: 11, color: 'var(--teal)' }}>
+                    <td style={{ fontSize: 11, color: 'var(--teal2)' }}>
                       {r.costCenter
                         ? `${r.costCenter}${r.costCenterName ? ` — ${r.costCenterName}` : ''}`
                         : '—'}
                     </td>
                     {priceHidden ? null : (
                       <>
-                        <td className="mono td-num" style={{ color: 'var(--blue)' }}>
+                        <td className="mono td-num" style={{ color: 'var(--blue2)' }}>
                           {money(r.materialCost)}
                         </td>
                         <td className="mono td-num" style={{ color: 'var(--amber2)' }}>
@@ -180,6 +196,7 @@ function SoCostingListPage(): React.JSX.Element {
           </table>
         </div>
       </div>
+      <ListFooter total={data.rows.length} shown={rows.length} noun="SO" />
     </div>
   );
 }

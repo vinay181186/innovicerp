@@ -28,8 +28,13 @@ import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps } from '../api';
 import { MachineCard } from './machine-card';
 import { OpEntryModal, type OpEntryModalTarget } from './op-entry-modal';
 
-export function MachineOpEntryView(): React.JSX.Element {
-  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
+export function MachineOpEntryView({
+  initialMachineId = null,
+}: {
+  /** Machine to open on (the Machine detail page's "Op Entry" link). */
+  initialMachineId?: string | null;
+} = {}): React.JSX.Element {
+  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(initialMachineId);
   // THE one open popup for this whole view — both the running-machine card and
   // every pending row set this same piece of state. Deliberately one, not one
   // modal per row: a modal per row is a form per row again, which is the bug

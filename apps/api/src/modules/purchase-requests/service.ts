@@ -599,6 +599,7 @@ export async function listPurchaseRequests(
         pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy",
         pr.deleted_at AS "deletedAt",
         COALESCE(v.name, vt.name) AS "vendorName",
+        COALESCE(v.code, vt.code) AS "vendorCode",
         i.code AS "itemCode",
         -- The customer's drawing revision, read live off the SO line this PR was
         -- raised against, through the SAME sol join the SO code below already
@@ -762,6 +763,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),
     vendorName: (r['vendorName'] as string | null) ?? null,
+    vendorCode: (r['vendorCode'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
     itemRevision: (r['itemRevision'] as string | null) ?? null,
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,

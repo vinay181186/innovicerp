@@ -37,6 +37,9 @@ const searchSchema = z.object({
   // By Job Card / By Machine switch — 'machine' is the former standalone
   // /op-entry/machines screen. Absent = 'jc' (the default JC-wise entry).
   view: z.enum(['machine']).optional(),
+  // By Machine only: open with this machine already picked (the Machine
+  // detail page's "Op Entry" link). Read once, as the view's starting pick.
+  machineId: z.string().uuid().optional(),
 });
 
 export const opEntryRoute = createRoute({
@@ -262,7 +265,7 @@ function OpEntryPage() {
       </div>
 
       {view === 'machine' ? (
-        <MachineOpEntryView />
+        <MachineOpEntryView initialMachineId={search.machineId ?? null} />
       ) : (
         <>
           <div className="panel" style={{ marginBottom: 16 }}>

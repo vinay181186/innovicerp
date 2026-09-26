@@ -9,9 +9,10 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { StatStrip } from '@/ui/data';
+import { ListHeader } from '@/ui/layout';
 import { usePickUpQc, useQcCommand } from '../api';
 import { AssignModal } from '../components/AssignModal';
 import { FpyTab } from '../components/FpyTab';
@@ -41,9 +42,9 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 function fpyColor(pct: number): string {
-  if (pct >= 95) return 'var(--green)';
-  if (pct >= 85) return 'var(--amber)';
-  return 'var(--red)';
+  if (pct >= 95) return 'var(--green2)';
+  if (pct >= 85) return 'var(--amber2)';
+  return 'var(--red2)';
 }
 
 function QcCommandPage(): React.JSX.Element {
@@ -74,7 +75,17 @@ function QcCommandPage(): React.JSX.Element {
 
   function handlePickUp(jcOpId: string): void {
     setBusyId(jcOpId);
-    pickUp.mutate({ jcOpId }, { onSettled: () => setBusyId(null) });
+    // Picked up = it is yours to inspect now, so go straight to the QC Call
+    // Register with ?op= — its deep link opens the Inspect popup on this call.
+    pickUp.mutate(
+      { jcOpId },
+      {
+        onSettled: () => setBusyId(null),
+        onSuccess: () => {
+          void navigate({ to: '/qc-call-register', search: { op: jcOpId } });
+        },
+      },
+    );
   }
 
   const stats = cmd.data?.stats;
@@ -94,73 +105,61 @@ function QcCommandPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
+      <ListHeader
+        title="QC Center"
+        icon="🔬"
+        count={cmd.data ? cmd.data.queue.length : undefined}
+        noun="call in queue"
+        nounPlural="calls in queue"
+        updating={cmd.isFetching && !loading}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          QC Center
-        </div>
-        {cmd.isFetching ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" />
-          </span>
+        {/* Stats strip (legacy: Pending / Overdue / Oldest / Rework / FPY) */}
+        {!loading ? (
+          <StatStrip
+            items={[
+              {
+                key: 'pending',
+                label: 'QC Pending',
+                count: stats?.pendingOps ?? 0,
+                color: 'var(--amber2)',
+              },
+              {
+                key: 'overdue',
+                label: 'Overdue',
+                count: stats?.overdue ?? 0,
+                color: 'var(--red2)',
+              },
+              {
+                key: 'oldest',
+                label: 'Oldest (Days Waiting)',
+                count: daysText(stats?.oldestAgeDays ?? 0),
+                color: 'var(--amber2)',
+              },
+              {
+                key: 'rework',
+                label: 'Rework Items',
+                count: stats?.reworkItems ?? 0,
+                color: 'var(--purple2)',
+              },
+              {
+                key: 'fpy',
+                label: 'First-Pass Yield',
+                count: `${stats?.fpyPct ?? 0}%`,
+                color: fpyColor(stats?.fpyPct ?? 0),
+              },
+            ]}
+          />
         ) : null}
-      </div>
+      </ListHeader>
 
       {loading ? (
         <div className="panel">
           <div className="empty-state">
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading command center…
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC Center…
           </div>
         </div>
       ) : (
         <>
-          {/* Stats — one StatStrip like the other QC screens (legacy: Pending /
-              Overdue / Oldest / Rework / FPY). Read-only totals. */}
-          <div style={{ marginBottom: 16 }}>
-            <StatStrip
-              items={[
-                {
-                  key: 'pending',
-                  label: 'QC Pending',
-                  count: stats?.pendingOps ?? 0,
-                  color: 'var(--amber2)',
-                },
-                {
-                  key: 'overdue',
-                  label: 'Overdue',
-                  count: stats?.overdue ?? 0,
-                  color: 'var(--red)',
-                },
-                {
-                  key: 'oldest',
-                  label: 'Oldest (Days Waiting)',
-                  count: daysText(stats?.oldestAgeDays ?? 0),
-                  color: 'var(--amber)',
-                },
-                {
-                  key: 'rework',
-                  label: 'Rework Items',
-                  count: stats?.reworkItems ?? 0,
-                  color: 'var(--purple)',
-                },
-                {
-                  key: 'fpy',
-                  label: 'First-Pass Yield',
-                  count: `${stats?.fpyPct ?? 0}%`,
-                  color: fpyColor(stats?.fpyPct ?? 0),
-                },
-              ]}
-            />
-          </div>
-
           {/* Tabs */}
           <div
             style={{

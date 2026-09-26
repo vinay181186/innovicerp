@@ -19,6 +19,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ListHeader } from '@/ui/layout';
 import { useAlert } from '../api';
 
 export const alertsDrillRoute = createRoute({
@@ -38,21 +39,17 @@ function AlertDrillPage() {
       {/* Header — legacy's modal title bar (L22418). The Back link has no legacy
           counterpart (the modal had a close button); kept as the port's only
           in-page route back to the dashboard. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          {data ? `${data.alert.name} (${data.alert.count} records)` : 'Alert'}
-        </div>
-        <Link to="/alerts" className="btn btn-ghost" style={{ fontSize: 12 }}>
-          ← Back to Alerts
-        </Link>
-      </div>
+      <ListHeader
+        title={data ? data.alert.name : 'Alert'}
+        icon="🔔"
+        count={data ? data.alert.count : undefined}
+        noun="record"
+        tools={
+          <Link to="/alerts" className="btn btn-ghost btn-sm">
+            ← Back to Alerts
+          </Link>
+        }
+      />
 
       {isLoading ? (
         <div className="panel">
@@ -75,13 +72,15 @@ function AlertDrillPage() {
         <>
           <div className="panel">
             <div className="tbl-wrap">
-              <table className="innovic-table">
+              <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
                     {/* Legacy's drill headers are bare `<th>` in every branch —
                         no alignment, even over its centred qty cells. */}
                     {data.columns.map((c) => (
-                      <th key={c.key}>{c.label}</th>
+                      <th key={c.key} className={c.type === 'number' ? 'th-num' : undefined}>
+                        {c.label}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -111,8 +110,10 @@ function AlertDrillPage() {
                           // Legacy styles drill cells per code branch. Keyed off
                           // `type` here — the payload's only per-column signal:
                           //   first col  → `mono fw-700` + cyan (L22385 etc.)
-                          //   number     → `td-ctr mono` (legacy's qty cells)
-                          //   date       → font-size 11 (L22385)
+                          //   number     → `td-num mono` (right-aligned qty)
+                          // ADR-190: the row carries `navPage` (not a column) —
+                          // the record code opens its document.
+                          const nav = row['navPage'];
                           return (
                             <td
                               key={c.key}
@@ -120,18 +121,21 @@ function AlertDrillPage() {
                                 ci === 0
                                   ? 'mono fw-700'
                                   : c.type === 'number'
-                                    ? 'td-ctr mono'
+                                    ? 'td-num mono'
                                     : undefined
                               }
-                              style={
-                                ci === 0
-                                  ? { color: 'var(--cyan)' }
-                                  : c.type === 'date'
-                                    ? { fontSize: 11 }
-                                    : undefined
-                              }
+                              style={ci === 0 ? { color: 'var(--cyan)' } : undefined}
                             >
-                              {display}
+                              {ci === 0 && typeof nav === 'string' && nav ? (
+                                <Link
+                                  to={nav}
+                                  style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                                >
+                                  {display}
+                                </Link>
+                              ) : (
+                                display
+                              )}
                             </td>
                           );
                         })}

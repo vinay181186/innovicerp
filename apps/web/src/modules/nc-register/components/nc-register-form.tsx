@@ -1,5 +1,8 @@
 // NC create + light-edit form (UI-003-06).
 // Create: full fields. Edit: only date / reason / reportedBy (status='pending').
+// Create-page pattern: the form draws its own sticky PageHeader (Back · title ·
+// Cancel · blue Save), so Save never scrolls away; Ctrl+S saves; an amber
+// "Not saved" pill shows once a field is edited. No Save button at the bottom.
 
 import {
   type CreateNcRegisterInput,
@@ -21,6 +24,7 @@ import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { useItemsList } from '@/modules/items/api';
 import { useJobCard, useJobCardsList } from '@/modules/job-cards/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
+import { PageHeader, useSaveShortcut } from '@/ui/layout';
 
 interface FormValues {
   code: string;
@@ -51,7 +55,16 @@ const DEFAULTS: FormValues = {
   reasonCategory: 'other',
 };
 
-type CreateMode = {
+/** The sticky page header the form draws above its fields. */
+type HeaderProps = {
+  title: string;
+  subtitle?: React.ReactNode;
+  /** "Back to NC Register" — names where Back returns to. */
+  backLabel: string;
+  onBack: () => void;
+};
+
+type CreateMode = HeaderProps & {
   mode: 'create';
   /** Seed values, laid OVER the blank defaults. Used when the form is opened
    *  from a QC operation card, which already knows the job card, the item, the
@@ -63,7 +76,7 @@ type CreateMode = {
   onCancel?: () => void;
 };
 
-type EditMode = {
+type EditMode = HeaderProps & {
   mode: 'edit';
   detail: NcRegister;
   onSubmit: (values: UpdateNcRegisterInput) => Promise<void> | void;
@@ -236,275 +249,293 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     }
   };
 
+  const submit = handleSubmit(onValid);
+  useSaveShortcut(() => void submit(), !formState.isSubmitting);
+
   return (
-    <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid">
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            NC No.
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            autoComplete="off"
-            readOnly
-            placeholder="Auto"
-            {...register('code')}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="ncDate">
-            NC Date<span className="req">★</span>
-          </label>
-          <input
-            id="ncDate"
-            type="date"
-            className="innovic-input"
-            {...register('ncDate', { required: 'NC Date is required.' })}
-          />
-        </div>
-
-        {!isEdit ? (
+    <form onSubmit={submit}>
+      <PageHeader
+        sticky
+        title={props.title}
+        subtitle={props.subtitle}
+        backLabel={props.backLabel}
+        onBack={props.onBack}
+        dirty={formState.isDirty}
+        actions={
           <>
+            {props.onCancel ? (
+              <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+                Cancel
+              </button>
+            ) : null}
+            <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+              {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+              {props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save NC')}
+            </button>
+          </>
+        }
+      />
+      {props.submitError ? (
+        <div
+          style={{
+            color: 'var(--red2)',
+            background: 'var(--red3)',
+            border: '1px solid var(--red)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {props.submitError}
+        </div>
+      ) : null}
+      <div className="panel">
+        <div className="panel-body">
+          <div className="form-grid">
             <div className="form-grp">
-              <label className="form-label" htmlFor="jobCardId">
-                JC No.<span className="req">★</span>
-              </label>
-              <SearchableSelect
-                id="jobCardId"
-                value={selectedJcId || null}
-                valueLabel={selectedJcId ? resolveJc(selectedJcId)?.code : undefined}
-                onChange={(id) => {
-                  setPickedJc(jcs.find((j) => j.id === id) ?? null);
-                  setValue('jobCardId', id ?? '', { shouldDirty: true, shouldValidate: true });
-                }}
-                onSearch={setJcSearch}
-                loading={jcFetching}
-                placeholder="Search JC No. or item…"
-                options={jcOptions}
-              />
-              <input
-                type="hidden"
-                {...register('jobCardId', { required: 'JC No. is required.' })}
-              />
-              {errors.jobCardId?.message ? (
-                <div className="form-error">{errors.jobCardId.message}</div>
-              ) : null}
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="itemCodeText">
-                Item Code<span className="req">★</span>
+              <label className="form-label" htmlFor="code">
+                NC No.
               </label>
               <input
-                id="itemCodeText"
+                id="code"
                 className="innovic-input"
-                list="dlNcItems"
                 autoComplete="off"
-                placeholder="Fills from JC, or type code…"
-                value={watch('itemCodeText') ?? ''}
-                onChange={(e) => onItemCodeChange(e.target.value)}
+                readOnly
+                placeholder="Auto"
+                {...register('code')}
               />
-              {/* itemId is the submitted value; hidden so RHF can validate it. */}
-              <input
-                type="hidden"
-                {...register('itemId', { required: 'Item Code is required.' })}
-              />
-              {watch('itemId') ? (
-                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                  ✓ {watch('itemNameText') ?? ''}
-                </div>
-              ) : watch('itemCodeText')?.trim() ? (
-                <div style={{ color: 'var(--red2)', fontSize: 11, marginTop: 2 }}>
-                  ⚠ Item not found.
-                </div>
-              ) : null}
-              {errors.itemId?.message ? (
-                <div className="form-error">{errors.itemId.message}</div>
-              ) : null}
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="nc-so">
-                SO No.
+              <label className="form-label" htmlFor="ncDate">
+                NC Date<span className="req">★</span>
               </label>
-              <SearchableSelect
-                id="nc-so"
-                value={soOptions.find((o) => o.code === watch('soCodeText'))?.id ?? null}
-                valueLabel={watch('soCodeText') || undefined}
-                onChange={(id) => {
-                  const so = soOptions.find((o) => o.id === id);
-                  setValue('soCodeText', so?.code ?? '', { shouldDirty: true });
-                }}
-                onSearch={setSoSearch}
-                loading={soQuery.isFetching}
-                placeholder="Search SO No. or customer…"
-                options={soOptions}
+              <input
+                id="ncDate"
+                type="date"
+                className="innovic-input"
+                {...register('ncDate', { required: 'NC Date is required.' })}
               />
             </div>
 
+            {!isEdit ? (
+              <>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="jobCardId">
+                    JC No.<span className="req">★</span>
+                  </label>
+                  <SearchableSelect
+                    id="jobCardId"
+                    value={selectedJcId || null}
+                    valueLabel={selectedJcId ? resolveJc(selectedJcId)?.code : undefined}
+                    onChange={(id) => {
+                      setPickedJc(jcs.find((j) => j.id === id) ?? null);
+                      setValue('jobCardId', id ?? '', { shouldDirty: true, shouldValidate: true });
+                    }}
+                    onSearch={setJcSearch}
+                    loading={jcFetching}
+                    placeholder="Search JC No. or item…"
+                    options={jcOptions}
+                  />
+                  <input
+                    type="hidden"
+                    {...register('jobCardId', { required: 'JC No. is required.' })}
+                  />
+                  {errors.jobCardId?.message ? (
+                    <div className="form-error">{errors.jobCardId.message}</div>
+                  ) : null}
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="itemCodeText">
+                    Item Code<span className="req">★</span>
+                  </label>
+                  <input
+                    id="itemCodeText"
+                    className="innovic-input"
+                    list="dlNcItems"
+                    autoComplete="off"
+                    placeholder="Fills from JC, or type code…"
+                    value={watch('itemCodeText') ?? ''}
+                    onChange={(e) => onItemCodeChange(e.target.value)}
+                  />
+                  {/* itemId is the submitted value; hidden so RHF can validate it. */}
+                  <input
+                    type="hidden"
+                    {...register('itemId', { required: 'Item Code is required.' })}
+                  />
+                  {watch('itemId') ? (
+                    <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                      ✓ {watch('itemNameText') ?? ''}
+                    </div>
+                  ) : watch('itemCodeText')?.trim() ? (
+                    <div style={{ color: 'var(--red2)', fontSize: 11, marginTop: 2 }}>
+                      ⚠ Item not found.
+                    </div>
+                  ) : null}
+                  {errors.itemId?.message ? (
+                    <div className="form-error">{errors.itemId.message}</div>
+                  ) : null}
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="nc-so">
+                    SO No.
+                  </label>
+                  <SearchableSelect
+                    id="nc-so"
+                    value={soOptions.find((o) => o.code === watch('soCodeText'))?.id ?? null}
+                    valueLabel={watch('soCodeText') || undefined}
+                    onChange={(id) => {
+                      const so = soOptions.find((o) => o.id === id);
+                      setValue('soCodeText', so?.code ?? '', { shouldDirty: true });
+                    }}
+                    onSearch={setSoSearch}
+                    loading={soQuery.isFetching}
+                    placeholder="Search SO No. or customer…"
+                    options={soOptions}
+                  />
+                </div>
+
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="jcOpId">
+                    Operation
+                  </label>
+                  {opsForJc.length > 0 ? (
+                    <select
+                      id="jcOpId"
+                      className="innovic-select"
+                      value={watch('jcOpId') ?? ''}
+                      onChange={(e) => {
+                        const opId = e.target.value;
+                        const op = opsForJc.find((o) => o.id === opId);
+                        setValue('jcOpId', opId || undefined, { shouldDirty: true });
+                        setValue('opSeq', op ? op.opSeq : undefined, { shouldDirty: true });
+                        setValue('operationText', op ? op.operation : undefined, {
+                          shouldDirty: true,
+                        });
+                      }}
+                    >
+                      <option value="">
+                        {selectedJcId ? '-- Select Op --' : '-- Select JC first --'}
+                      </option>
+                      {opsForJc.map((op) => (
+                        <option key={op.id} value={op.id}>
+                          Op {opSrNo(op.opSeq)}: {op.operation}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="operationText"
+                      className="innovic-input"
+                      autoComplete="off"
+                      placeholder={selectedJcId ? 'No ops on this JC — type one' : 'Operation'}
+                      {...register('operationText')}
+                    />
+                  )}
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="operatorText">
+                    Operator
+                  </label>
+                  <input
+                    id="operatorText"
+                    className="innovic-input"
+                    autoComplete="off"
+                    placeholder="Operator who ran the op"
+                    {...register('operatorText')}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="machineCodeText">
+                    Machine
+                  </label>
+                  <input
+                    id="machineCodeText"
+                    className="innovic-input"
+                    autoComplete="off"
+                    placeholder="Machine"
+                    {...register('machineCodeText')}
+                  />
+                </div>
+
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="rejectedQty">
+                    Rejected<span className="req">★</span>
+                  </label>
+                  <input
+                    id="rejectedQty"
+                    type="number"
+                    min={1}
+                    step="0.01"
+                    placeholder="Qty"
+                    className="innovic-input fw-700 red"
+                    {...register('rejectedQty', {
+                      valueAsNumber: true,
+                      min: { value: 0.01, message: 'Rejected must be more than 0.' },
+                    })}
+                  />
+                  {errors.rejectedQty?.message ? (
+                    <div className="form-error">{errors.rejectedQty.message}</div>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+
             <div className="form-grp">
-              <label className="form-label" htmlFor="jcOpId">
-                Operation
+              <label className="form-label" htmlFor="reasonCategory">
+                Reason Category
               </label>
-              {opsForJc.length > 0 ? (
-                <select
-                  id="jcOpId"
-                  className="innovic-select"
-                  value={watch('jcOpId') ?? ''}
-                  onChange={(e) => {
-                    const opId = e.target.value;
-                    const op = opsForJc.find((o) => o.id === opId);
-                    setValue('jcOpId', opId || undefined, { shouldDirty: true });
-                    setValue('opSeq', op ? op.opSeq : undefined, { shouldDirty: true });
-                    setValue('operationText', op ? op.operation : undefined, {
-                      shouldDirty: true,
-                    });
-                  }}
-                >
-                  <option value="">
-                    {selectedJcId ? '-- Select Op --' : '-- Select JC first --'}
+              <select
+                id="reasonCategory"
+                className="innovic-select"
+                {...register('reasonCategory')}
+              >
+                {NC_REASON_CATEGORIES.map((r) => (
+                  <option key={r} value={r}>
+                    {NC_REASON_CATEGORY_LABELS[r]}
                   </option>
-                  {opsForJc.map((op) => (
-                    <option key={op.id} value={op.id}>
-                      Op {opSrNo(op.opSeq)}: {op.operation}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  id="operationText"
-                  className="innovic-input"
-                  autoComplete="off"
-                  placeholder={selectedJcId ? 'No ops on this JC — type one' : 'Operation'}
-                  {...register('operationText')}
-                />
-              )}
+                ))}
+              </select>
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="operatorText">
-                Operator
+              <label className="form-label" htmlFor="reportedByText">
+                Reported By
               </label>
               <input
-                id="operatorText"
+                id="reportedByText"
                 className="innovic-input"
                 autoComplete="off"
-                placeholder="Operator who ran the op"
-                {...register('operatorText')}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="machineCodeText">
-                Machine
-              </label>
-              <input
-                id="machineCodeText"
-                className="innovic-input"
-                autoComplete="off"
-                placeholder="Machine"
-                {...register('machineCodeText')}
+                placeholder="Name"
+                {...register('reportedByText')}
               />
             </div>
 
-            <div className="form-grp">
-              <label className="form-label" htmlFor="rejectedQty">
-                Rejected<span className="req">★</span>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="reason">
+                Defect Description<span className="req">★</span>
               </label>
-              <input
-                id="rejectedQty"
-                type="number"
-                min={1}
-                step="0.01"
-                placeholder="Qty"
-                className="innovic-input fw-700 red"
-                {...register('rejectedQty', {
-                  valueAsNumber: true,
-                  min: { value: 0.01, message: 'Rejected must be more than 0.' },
+              <textarea
+                id="reason"
+                className="innovic-textarea"
+                rows={3}
+                placeholder="Describe the defect or problem in detail..."
+                {...register('reason', {
+                  validate: (v) => (v?.trim().length ?? 0) > 0 || 'Defect Description is required.',
                 })}
               />
-              {errors.rejectedQty?.message ? (
-                <div className="form-error">{errors.rejectedQty.message}</div>
+              {errors.reason?.message ? (
+                <div className="form-error">{errors.reason.message}</div>
               ) : null}
             </div>
-          </>
-        ) : null}
+          </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="reasonCategory">
-            Reason Category
-          </label>
-          <select id="reasonCategory" className="innovic-select" {...register('reasonCategory')}>
-            {NC_REASON_CATEGORIES.map((r) => (
-              <option key={r} value={r}>
-                {NC_REASON_CATEGORY_LABELS[r]}
+          <datalist id="dlNcItems">
+            {items.map((it) => (
+              <option key={it.id} value={it.code}>
+                {it.name}
               </option>
             ))}
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="reportedByText">
-            Reported By
-          </label>
-          <input
-            id="reportedByText"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Name"
-            {...register('reportedByText')}
-          />
-        </div>
-
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="reason">
-            Defect Description<span className="req">★</span>
-          </label>
-          <textarea
-            id="reason"
-            className="innovic-textarea"
-            rows={3}
-            placeholder="Describe the defect or problem in detail..."
-            {...register('reason', {
-              validate: (v) => (v?.trim().length ?? 0) > 0 || 'Defect Description is required.',
-            })}
-          />
-          {errors.reason?.message ? (
-            <div className="form-error">{errors.reason.message}</div>
-          ) : null}
-        </div>
-      </div>
-
-      <datalist id="dlNcItems">
-        {items.map((it) => (
-          <option key={it.id} value={it.code}>
-            {it.name}
-          </option>
-        ))}
-      </datalist>
-
-      <div style={{ marginTop: 16 }}>
-        {props.submitError ? (
-          <div
-            style={{
-              color: 'var(--red2)',
-              background: 'var(--red3)',
-              border: '1px solid var(--red)',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
-          >
-            {props.submitError}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          {props.onCancel ? (
-            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-              Cancel
-            </button>
-          ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save NC')}
-          </button>
+          </datalist>
         </div>
       </div>
     </form>

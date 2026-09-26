@@ -102,50 +102,26 @@ function NcRegisterEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <Link
-        to="/nc-register/$id"
-        params={{ id: detail.id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to {detail.code}
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
-            >
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit NC
-            </div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Only NC Date, Reason Category, Defect Description and Reported By can be changed.
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <NcRegisterForm
-            mode="edit"
-            detail={detail}
-            submitError={submitError}
-            submitLabel="Save Changes"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: UpdateNcRegisterInput) => {
-              setSubmitError(null);
-              try {
-                await update.mutateAsync(values);
-                exit.leave(goBack);
-              } catch (e) {
-                setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');
-              }
-            }}
-          />
-        </div>
-      </div>
+      <NcRegisterForm
+        mode="edit"
+        title={`Edit NC — ${detail.code}`}
+        subtitle="Only NC Date, Reason Category, Defect Description and Reported By can be changed."
+        backLabel={`Back to ${detail.code}`}
+        onBack={() => exit.leave(goBack)}
+        detail={detail}
+        submitError={submitError}
+        submitLabel="Save Changes"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: UpdateNcRegisterInput) => {
+          setSubmitError(null);
+          try {
+            await update.mutateAsync(values);
+            exit.leave(goBack);
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

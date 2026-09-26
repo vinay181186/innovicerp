@@ -83,7 +83,11 @@ function VendorsListPage(): React.JSX.Element {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
-    setSearchInput(search.search ?? '');
+    // Adopt a URL term the box did not produce (Back, a pasted link); keep the
+    // raw draft (a typed trailing space) when it already normalises to it.
+    setSearchInput((prev) =>
+      normalizeSearchTerm(prev) === (search.search ?? '') ? prev : (search.search ?? ''),
+    );
   }, [search.search]);
 
   useEffect(() => {
@@ -288,10 +292,12 @@ function VendorsListPage(): React.JSX.Element {
           StatStrip stay put while the rows scroll underneath. */}
       <ListHeader
         title="Vendor Master"
+        icon="🚚"
         count={total}
         noun="vendor"
         search={searchInput}
         onSearch={setSearchInput}
+        searchPlaceholder="Search code, vendor, contact, phone, email, GST, address…"
         updating={isFetching && !isLoading}
         primary={
           canAdd ? (

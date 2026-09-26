@@ -16,6 +16,7 @@ import { fmtDate, todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ConfirmDialog } from '@/ui/feedback';
+import { ListHeader } from '@/ui/layout';
 import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
 import { useCreateDesignWorkLog, useDeleteDesignWorkLog, useDesignWorkLogList } from '../api';
 
@@ -86,20 +87,21 @@ function DesignWorkLogPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr">Design Work Log</div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
-        {tabs.map((t) => (
-          <button
-            key={t.k}
-            type="button"
-            className={`btn btn-sm ${tab === t.k ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ fontWeight: 700 }}
-            onClick={() => setTab(t.k)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <ListHeader title="Design Work Log" icon="⏱">
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {tabs.map((t) => (
+            <button
+              key={t.k}
+              type="button"
+              className={`btn btn-sm ${tab === t.k ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ fontWeight: 700 }}
+              onClick={() => setTab(t.k)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </ListHeader>
 
       {tab === 'entry' ? <EntryTab /> : null}
       {tab === 'daily' ? <DailyTab /> : null}
@@ -696,7 +698,7 @@ function WeeklyTab(): React.JSX.Element {
 
       <div className="panel">
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Design Engineer</th>
@@ -960,7 +962,7 @@ function AlertsTab(): React.JSX.Element {
             Unlogged Working Days
           </div>
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Log Date</th>
@@ -971,7 +973,9 @@ function AlertsTab(): React.JSX.Element {
               <tbody>
                 {unlogged.slice(0, 30).map((u, idx) => (
                   <tr key={idx}>
-                    <td className="mono">{fmtDate(u.date)}</td>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(u.date)}
+                    </td>
                     <td>{dayName(u.date)}</td>
                     <td className="fw-700">{u.engineer}</td>
                   </tr>
@@ -996,7 +1000,7 @@ function AlertsTab(): React.JSX.Element {
             Low Hours (&lt;4h)
           </div>
           <div className="tbl-wrap">
-            <table className="innovic-table">
+            <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
                   <th>Log Date</th>
@@ -1008,7 +1012,9 @@ function AlertsTab(): React.JSX.Element {
               <tbody>
                 {lowHours.map((u, idx) => (
                   <tr key={idx}>
-                    <td className="mono">{fmtDate(u.date)}</td>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(u.date)}
+                    </td>
                     <td>{dayName(u.date)}</td>
                     <td className="fw-700">{u.engineer}</td>
                     <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
@@ -1034,7 +1040,7 @@ function AlertsTab(): React.JSX.Element {
           Utilization (Last 10 Working Days)
         </div>
         <div className="tbl-wrap">
-          <table className="innovic-table">
+          <table className="innovic-table tbl-grid">
             <thead>
               <tr>
                 <th>Design Engineer</th>

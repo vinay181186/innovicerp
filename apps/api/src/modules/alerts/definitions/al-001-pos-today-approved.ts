@@ -1,6 +1,7 @@
 // AL-001 — Today's approved POs (purchase). Legacy line 22257-22258.
 // Filter: po_date = today AND status = 'open' (legacy 'Open' lowercased).
 
+import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredAlert } from '../registry';
 
@@ -20,7 +21,7 @@ export const al001PosTodayApproved: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT po.code AS po_code, po.po_date, COALESCE(v.code, po.vendor_code_text, '') AS vendor, po.status
+      SELECT po.id AS nav_id, po.code AS po_code, po.po_date, COALESCE(v.code, po.vendor_code_text, '') AS vendor, po.status
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id
       WHERE po.company_id = ${companyId}::uuid
@@ -30,6 +31,7 @@ export const al001PosTodayApproved: RegisteredAlert = {
       ORDER BY po.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      navPage: docNavPage('purchase-order', String(r['nav_id'])),
       po_code: (r['po_code'] as string) ?? '',
       po_date:
         r['po_date'] instanceof Date
