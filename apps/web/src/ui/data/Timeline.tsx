@@ -22,7 +22,7 @@ import { fmtDate, fmtDateAndTime, fmtDateTime } from '@/lib/date';
  *  an ISO timestamp — each shown as DD-MMM-YYYY (plus HH:mm when it has one). */
 function showEventDate(v: string | null | undefined): string {
   if (!v) return '—';
-  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})/.exec(v);
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?::\d{2})?$/.exec(v);
   if (m) return fmtDateAndTime(m[1], m[2]);
   return v.includes('T') ? fmtDateTime(v) : fmtDate(v);
 }

@@ -298,7 +298,7 @@ export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.
               }}
             />
             <span className="text2" style={{ fontSize: 11, marginRight: 8 }}>
-              {e.ts ?? '—'}
+              {fmtDate(e.ts)}
             </span>
             <span style={{ fontSize: 12 }}>
               {e.label}
