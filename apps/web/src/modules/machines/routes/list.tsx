@@ -238,7 +238,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         render: (m) => m.machineType ?? '—',
       },
       {
-        header: 'Group',
+        header: 'Machine Group',
         width: '10%',
         className: 'text2',
         // A machine with no group is normal — every row created before the
@@ -246,7 +246,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         render: (m) => (m.machineGroupId ? groupLookup.get(m.machineGroupId)?.code : null) ?? '—',
       },
       {
-        header: 'Cap/Shift',
+        header: 'Capacity / Shift',
         width: '9%',
         className: 'mono',
         nowrap: true,
@@ -257,7 +257,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
         ? []
         : [
             {
-              header: '₹/hr',
+              header: 'Rate (₹/hr)',
               width: '9%',
               headColor: 'var(--green)',
               className: 'mono green',

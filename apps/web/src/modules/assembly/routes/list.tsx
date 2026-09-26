@@ -46,11 +46,11 @@ const STATUS_BADGE_CLASS: Record<StatusKey, string> = {
 function statusBadgeLabel(row: AssemblyListItem): string {
   switch (row.status) {
     case 'ready':
-      return 'ALL READY ✓';
+      return 'Ready';
     case 'assembling':
       return `Assembling ${row.assembledQty}/${row.orderQty}`;
     case 'done':
-      return `Done ✓ ${row.assembledQty}/${row.orderQty}`;
+      return `Completed ${row.assembledQty}/${row.orderQty}`;
     case 'waiting':
       return row.totalCount > 0 ? `Waiting — ${row.readyCount}/${row.totalCount}` : 'Waiting';
   }
@@ -62,7 +62,7 @@ const TILES: Array<{ key: FilterKey; label: string; color: string }> = [
   { key: 'waiting', label: 'Waiting', color: 'var(--amber)' },
   { key: 'ready', label: 'Ready', color: 'var(--green)' },
   { key: 'assembling', label: 'Assembling', color: 'var(--cyan)' },
-  { key: 'done', label: 'Done', color: 'var(--teal, #14b8a6)' },
+  { key: 'done', label: 'Completed', color: 'var(--teal, #14b8a6)' },
 ];
 
 function AssemblyListPage(): React.JSX.Element {
@@ -116,7 +116,7 @@ function AssemblyListPage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load assemblies'}
+              {error instanceof Error ? error.message : 'Could not load assemblies. Try again.'}
             </div>
           </div>
         </div>
@@ -124,12 +124,7 @@ function AssemblyListPage(): React.JSX.Element {
         <>
           <KpiTiles counts={counts} filter={filter} setFilter={setFilter} />
 
-          <Toolbar
-            search={search}
-            setSearch={setSearch}
-            filter={filter}
-            setFilter={setFilter}
-          />
+          <Toolbar search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} />
 
           {filtered.length === 0 ? (
             <div className="panel">
@@ -187,20 +182,19 @@ function AssemblyListPage(): React.JSX.Element {
                                   !== null would print "Rev undefined". */}
                               {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
                             </span>
-                            {row.bomName ? (
-                              <div style={{ fontSize: 11 }}>{row.bomName}</div>
-                            ) : null}
+                            {row.bomName ? <div style={{ fontSize: 11 }}>{row.bomName}</div> : null}
                           </td>
-                          <td style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 600 : undefined }}>
+                          <td
+                            style={{
+                              color: overdue ? 'var(--red)' : undefined,
+                              fontWeight: overdue ? 600 : undefined,
+                            }}
+                          >
                             {row.dueDate ?? '—'}
                           </td>
                           <td>{row.orderQty}</td>
-                          <td style={{ color: 'var(--green2)' }}>
-                            {row.assembledQty}
-                          </td>
-                          <td style={{ color: 'var(--cyan)' }}>
-                            {row.dispatchedQty}
-                          </td>
+                          <td style={{ color: 'var(--green2)' }}>{row.assembledQty}</td>
+                          <td style={{ color: 'var(--cyan)' }}>{row.dispatchedQty}</td>
                           <td>
                             <span className={`badge ${STATUS_BADGE_CLASS[row.status]}`}>
                               {statusBadgeLabel(row)}
@@ -302,7 +296,7 @@ function Toolbar({
         <option value="waiting">Waiting</option>
         <option value="ready">Ready</option>
         <option value="assembling">Assembling</option>
-        <option value="done">Done</option>
+        <option value="done">Completed</option>
       </select>
     </div>
   );

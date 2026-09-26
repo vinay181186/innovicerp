@@ -423,7 +423,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       if (finalizeAfter) await finalize.mutateAsync(plan.id);
       onSaved();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
+      setErr(e instanceof Error ? e.message : 'Could not save Plan. Try again.');
     }
   };
 
@@ -510,13 +510,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       >
         {update.isPending || finalize.isPending ? (
           <>
-            <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} /> …
+            <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} />{' '}
+            Saving…
           </>
         ) : (
-          // Legacy editPlan: showModalLg(title, body, onSave, 'Save Plan') →
-          // btn-success rendering `&#10003; Save Plan` (L28044). Its single save
-          // always sets status='Planned', i.e. it is this button, not Save Draft.
-          '✓ Save Plan'
+          // Legacy editPlan's single save always sets status='Planned', i.e. it
+          // is this button, not Save Draft.
+          'Save Plan'
         )}
       </button>
     </>

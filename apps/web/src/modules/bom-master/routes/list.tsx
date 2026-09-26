@@ -277,7 +277,7 @@ function BomMastersListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load BOMs.'}
+          message={error instanceof Error ? error.message : 'Could not load BOMs. Try again.'}
         />
       ) : (
         <Panel bodyPadding="none">

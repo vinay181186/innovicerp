@@ -71,7 +71,9 @@ export function MachineGroupTab(): React.JSX.Element {
   const inactiveCount = rows.length - activeCount;
   const visible = useMemo(
     () =>
-      status === 'all' ? rows : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
+      status === 'all'
+        ? rows
+        : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
     [rows, status],
   );
 
@@ -99,7 +101,11 @@ export function MachineGroupTab(): React.JSX.Element {
           </span>
         ) : null}
         {canAdd ? (
-          <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setModal({ kind: 'new' })}
+          >
             <Plus size={14} /> Add Machine Group
           </button>
         ) : null}
@@ -139,7 +145,10 @@ export function MachineGroupTab(): React.JSX.Element {
 
       {softDelete.isError ? (
         <div className="panel" style={{ marginBottom: 12 }}>
-          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red)' }}>
+          <div
+            className="panel-body"
+            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red)' }}
+          >
             {softDelete.error instanceof Error
               ? softDelete.error.message
               : 'Failed to delete machine group.'}
@@ -234,7 +243,7 @@ export function MachineGroupTab(): React.JSX.Element {
                               }
                             }}
                           >
-                            Del
+                            Delete
                           </button>
                         ) : null}
                       </div>
@@ -387,7 +396,9 @@ function MachineGroupModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
-          <span className="panel-title">{row ? '✏ Edit Machine Group' : '＋ Add Machine Group'}</span>
+          <span className="panel-title">
+            {row ? '✏ Edit Machine Group' : '＋ Add Machine Group'}
+          </span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
           </button>

@@ -41,7 +41,7 @@ export const productionDashboardRoute = createRoute({
 // both as an unstyled `.badge` on screen. Empty class reproduces that exactly;
 // neither class exists in our theme either. Mirrors machine-loading's map.
 const OP_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
-  complete: { label: 'Complete', cls: 'b-green' },
+  complete: { label: 'Completed', cls: 'b-green' },
   in_progress: { label: 'In Progress', cls: '' },
   running: { label: 'Running', cls: '' },
   available: { label: 'Available', cls: 'b-blue' },
@@ -365,10 +365,10 @@ function MachineCard({
           <thead>
             <tr>
               <th>JC No.</th>
-              <th>Item</th>
+              <th>Item Code</th>
               <th>Operation</th>
               <th>Op Status</th>
-              <th style={{ color: 'var(--amber)' }}>Pending</th>
+              <th style={{ color: 'var(--amber)' }}>Available</th>
               <th>Due Date</th>
             </tr>
           </thead>

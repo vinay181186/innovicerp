@@ -95,7 +95,7 @@ function PlanEditPage(): React.JSX.Element {
         // replace-all never runs against them.
         hideOps={plan.opsSource === 'route_card'}
         isSubmitting={update.isPending}
-        submitLabel="Save changes"
+        submitLabel="Save Changes"
         submitError={update.error instanceof Error ? update.error.message : null}
         onSubmit={(v) => {
           const ci = toCreateInput(v);

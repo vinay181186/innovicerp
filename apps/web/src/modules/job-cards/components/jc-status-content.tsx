@@ -522,7 +522,7 @@ function JcStatusEditForm({
       void queryClient.invalidateQueries({ queryKey: opEntryKeys.all });
       exit.leave(goBack);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');
     }
   };
 
@@ -852,7 +852,13 @@ function JcStatusEditForm({
           disabled={submitting}
           onClick={() => void onSave()}
         >
-          {submitting ? <Loader2 size={13} className="animate-spin" /> : null} ✓ Save Job Card
+          {submitting ? (
+            <>
+              <Loader2 size={13} className="animate-spin" /> Saving…
+            </>
+          ) : (
+            'Save Changes'
+          )}
         </button>
       </div>
     </div>

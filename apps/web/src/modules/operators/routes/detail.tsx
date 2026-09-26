@@ -147,10 +147,10 @@ function OperatorDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete operator ${operator.code}?`}
-          message={`${operator.name} will be removed from the Operator Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move Operator ${operator.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}

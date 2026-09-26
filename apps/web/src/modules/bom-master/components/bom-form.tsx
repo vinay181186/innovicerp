@@ -213,11 +213,11 @@ type ExcelRowErrorKind =
 const ERROR_KIND_LABEL: Record<ExcelRowErrorKind, string> = {
   blank_code: 'Item Code is blank',
   not_found: 'item code not in Item Master',
-  lookup_failed: 'could not be checked — server did not answer',
+  lookup_failed: 'could not be checked — try again',
   parent_as_child: 'the parent item cannot be its own part',
   duplicate: 'the same item appears more than once',
-  bad_qty: 'qty must be a number greater than 0',
-  bad_type: 'bom_type must be manufacture | purchase | outsource',
+  bad_qty: 'Qty / Set must be a number greater than 0',
+  bad_type: 'BOM Type must be Manufacture, Purchase or Outsource',
 };
 
 interface ExcelRowError {
@@ -605,7 +605,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode: '(blank)',
             kind: 'blank_code',
-            reason: 'item_code is required',
+            reason: 'Item Code is required.',
           });
           return;
         }
@@ -617,7 +617,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               rowIndex: idx,
               itemCode,
               kind: 'lookup_failed',
-              reason: 'could not be checked — the server did not answer. Try the import again.',
+              reason: 'could not be checked. Try the import again.',
             });
             return;
           }
@@ -629,7 +629,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'not_found',
-            reason: 'item_code not found in master',
+            reason: 'Item Code not found in Item Master.',
           });
           return;
         }
@@ -671,7 +671,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'bad_qty',
-            reason: 'qty_per_set must be > 0',
+            reason: 'Qty / Set must be greater than 0.',
           });
           return;
         }
@@ -680,7 +680,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'bad_type',
-            reason: 'bom_type must be manufacture | purchase | outsource',
+            reason: 'BOM Type must be Manufacture, Purchase or Outsource.',
           });
           return;
         }
@@ -706,7 +706,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       );
     } catch (err) {
       setImportFatal(true);
-      setImportSummary(err instanceof Error ? err.message : 'Failed to parse Excel file');
+      setImportSummary(
+        err instanceof Error ? err.message : 'Could not read the Excel file. Try again.',
+      );
     } finally {
       // Clear the input so re-uploading the same file fires onChange again.
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -828,7 +830,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       itemIds.set(l.childItemId, i);
       const qty = Number(l.qtyPerSet);
       if (!Number.isFinite(qty) || qty <= 0) {
-        return `Line ${i + 1}: qty must be > 0`;
+        return `Line ${i + 1}: Qty / Set must be greater than 0.`;
       }
     }
     return null;

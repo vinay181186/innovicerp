@@ -42,7 +42,7 @@ function PlanNewPage(): React.JSX.Element {
       <PlanForm
         initialValues={emptyValues()}
         isSubmitting={create.isPending}
-        submitLabel="Create plan"
+        submitLabel="Save Plan"
         submitError={create.error instanceof Error ? create.error.message : null}
         onSubmit={(v) => {
           create.mutate(toCreateInput(v), {

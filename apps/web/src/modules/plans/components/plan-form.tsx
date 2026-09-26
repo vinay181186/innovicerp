@@ -527,7 +527,7 @@ export function PlanForm({
               onChange={(e) => update('orderQty', Number(e.target.value))}
             />
           </Field>
-          <Field label="Plan qty *">
+          <Field label="Plan Qty *">
             <input
               type="number"
               min={1}
@@ -796,11 +796,11 @@ export function PlanForm({
                   <th>Op</th>
                   <th>Operation</th>
                   <th>Op Type</th>
-                  <th>Machine</th>
+                  <th>Planned Machine</th>
                   <th>Cycle Time (h)</th>
-                  <th>QC?</th>
-                  <th>OSP vendor</th>
-                  <th>OSP cost</th>
+                  <th>QC Required</th>
+                  <th>OSP Vendor</th>
+                  <th>OSP Cost</th>
                   <th></th>
                 </tr>
               </thead>

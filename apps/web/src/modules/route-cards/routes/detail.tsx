@@ -47,14 +47,16 @@ function RouteCardDetailPage(): React.JSX.Element {
 
   const onDelete = async (): Promise<void> => {
     if (!detail) return;
-    if (!window.confirm(`Delete route card "${detail.code}"? This soft-deletes the record.`))
+    if (!window.confirm(`Move Route Card ${detail.code} to Trash? You can restore it from Trash.`))
       return;
     setDelError(null);
     try {
       await del.mutateAsync(detail.id);
       void navigate({ to: '/route-cards' });
     } catch (e) {
-      setDelError(e instanceof Error ? e.message : 'Delete failed.');
+      setDelError(
+        e instanceof Error ? e.message : 'Could not move Route Card to Trash. Try again.',
+      );
     }
   };
 

@@ -67,7 +67,7 @@ function BomMasterEditPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: updated.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to save BOM revision.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save BOM. Try again.');
     }
   };
 

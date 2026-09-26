@@ -67,7 +67,10 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
       },
       {
         onSuccess: (closed) => onClosed?.(closed),
-        onError: (e) => setError(e instanceof Error ? e.message : 'Close failed.'),
+        onError: (e) =>
+          setError(
+            e instanceof Error ? e.message : 'Could not close the Production Order. Try again.',
+          ),
       },
     );
   };
@@ -103,7 +106,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           </b>
         </span>
         <span>
-          Remaining{' '}
+          Pending{' '}
           <b className="mono" style={{ color: 'var(--text)' }}>
             {po.remainingQty}
           </b>
@@ -147,9 +150,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
             className="innovic-input"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
-            placeholder={
-              finish ? 'e.g. 3 pieces scrapped at final inspection' : 'Optional note…'
-            }
+            placeholder={finish ? 'e.g. 3 pieces scrapped at final inspection' : 'Optional note…'}
           />
         </div>
       </div>
@@ -176,7 +177,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           style={{ marginTop: 2 }}
         />
         <span>
-          <b style={{ color: 'var(--amber)' }}>Close short (finish)</b>
+          <b style={{ color: 'var(--amber)' }}>Finish Short</b>
           <span className="text3">
             {' '}
             — finish this Production Order now even though {po.remainingQty} of {po.orderQty} are
@@ -226,12 +227,8 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
               : `Credit ${qtyValid ? qtyNum : 0} of ${po.availableToClose} to stock`
           }
         >
-          {closeMut.isPending ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Lock size={14} />
-          )}{' '}
-          {finish ? 'Close short (finish)' : 'Close'}
+          {closeMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}{' '}
+          {finish ? 'Finish Short' : 'Close'}
         </button>
       </div>
     </div>

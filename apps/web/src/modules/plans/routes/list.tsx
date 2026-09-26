@@ -54,7 +54,7 @@ const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
   jc_created: { cls: 'b-cyan', label: 'JC Created' },
   pr_created: { cls: 'b-cyan', label: 'PR Created' },
   in_production: { cls: 'b-amber', label: 'In Production' },
-  complete: { cls: 'b-green', label: 'Complete' },
+  complete: { cls: 'b-green', label: 'Completed' },
   cancelled: { cls: 'b-grey', label: 'Cancelled' },
 };
 
@@ -68,7 +68,7 @@ const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
   route_card_pending: 'RC Pending',
   gen_production_order: 'RC Created',
   in_production: 'In Production',
-  production_complete: 'Complete',
+  production_complete: 'Completed',
 };
 const TYPE_LABEL: Record<PlanType, string> = {
   manufacture: 'Manufacture',
@@ -165,7 +165,7 @@ function PlansListPage(): React.JSX.Element {
           <input
             className="innovic-input"
             style={{ width: 200 }}
-            placeholder="Search plan, item, SO, PO, JC…"
+            placeholder="Search plan, item, SO, Production Order, JC…"
             value={search ?? ''}
             onChange={(e) =>
               void navigate({
@@ -281,7 +281,7 @@ function PlansListPage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load plans'}
+              {error instanceof Error ? error.message : 'Could not load plans. Try again.'}
             </div>
           </div>
         </div>
@@ -337,18 +337,18 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
             </colgroup>
             <thead>
               <tr>
-                <th>PLAN NO.</th>
+                <th>Plan No.</th>
                 {/* POL — the CUSTOMER's own PO line number, not our SO line
-                    number (that stays in the SO column as "L#"). */}
+                    number (that stays in the SO column as "Ln"). */}
                 <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>ITEM</th>
-                <th>SO NO.</th>
-                <th className="td-ctr">ORDER QTY</th>
-                <th className="td-ctr">PLAN QTY</th>
-                <th>PRODUCTION ORDER NO</th>
-                <th>JC NO.</th>
-                <th>PLAN STATUS</th>
-                <th>ACTION</th>
+                <th>Item Code</th>
+                <th>SO No.</th>
+                <th className="td-ctr">Order Qty</th>
+                <th className="td-ctr">Plan Qty</th>
+                <th>Production Order No.</th>
+                <th>JC No.</th>
+                <th>Plan Status</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -406,7 +406,7 @@ function Table({ data }: { data: ListPlansResponse }): React.JSX.Element {
                     <td>
                       <span className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                         {row.soCodeText ?? '—'}
-                        {row.lineNo ? ` · L#${row.lineNo}` : ''}
+                        {row.lineNo ? ` · Ln ${row.lineNo}` : ''}
                       </span>
                     </td>
                     <td className="td-ctr mono fw-700">{row.orderQty}</td>

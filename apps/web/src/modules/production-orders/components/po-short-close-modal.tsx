@@ -50,7 +50,11 @@ export function PoShortCloseModal({
       {
         onSuccess: () => onClose(),
         onError: (e) =>
-          setErr(e instanceof Error ? e.message : 'Failed to short close this Production Order'),
+          setErr(
+            e instanceof Error
+              ? e.message
+              : 'Could not short close this Production Order. Try again.',
+          ),
       },
     );
   };

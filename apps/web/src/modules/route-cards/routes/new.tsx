@@ -56,7 +56,7 @@ function RouteCardNewPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: created.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create route card.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');
     }
   };
 

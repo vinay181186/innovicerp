@@ -235,7 +235,7 @@ function RouteCardsListPage(): React.JSX.Element {
         primary={
           perms.entry ? (
             <Link to="/route-cards/new" className="btn btn-primary">
-              <Icon name="plus" size={14} /> Add Route Card
+              <Icon name="plus" size={14} /> New Route Card
             </Link>
           ) : null
         }
@@ -253,7 +253,9 @@ function RouteCardsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load route cards.'}
+          message={
+            error instanceof Error ? error.message : 'Could not load Route Cards. Try again.'
+          }
         />
       ) : (
         <Panel bodyPadding="none">
@@ -299,10 +301,10 @@ function RouteCardsListPage(): React.JSX.Element {
                 // flight, which the old per-row mutation could not do.
                 deleteDisabled={del.isPending}
                 deleteConfirm={{
-                  title: `Delete route card for ${rc.itemCode ?? rc.code}?`,
-                  message: `${rc.code} and its ${rc.opCount} operation(s) are removed. Plans raised from it keep the ops they already copied.`,
-                  confirmLabel: 'Delete',
-                  pendingLabel: 'Deleting…',
+                  title: `Move Route Card ${rc.code} to Trash?`,
+                  message: `You can restore it from Trash. Plans raised from it keep the ops they already copied.`,
+                  confirmLabel: 'Move to Trash',
+                  pendingLabel: 'Moving to Trash…',
                 }}
               />
             )}

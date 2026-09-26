@@ -75,7 +75,7 @@ interface Props {
  *  entry was booked dated a day into the future because "11" was typed instead
  *  of "10"; work cannot have happened on a day that has not happened yet. */
 const FUTURE_DATE_MESSAGE =
-  'Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.';
+  'Log Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.';
 
 export function OpEntryForm({
   op,
@@ -346,14 +346,14 @@ export function OpEntryForm({
    *  means "something is missing, the message is already on screen, stop". */
   function requireMandatory(opts: { qtyRequired: boolean; personLabel: string }): Shift | null {
     const missing: string[] = [];
-    if (!logDate) missing.push('Date');
+    if (!logDate) missing.push('Log Date');
     if (!entryTime) missing.push('Time');
     if (!shift) missing.push('Shift');
     if (!operatorId && !operatorName.trim()) missing.push(opts.personLabel);
     // An EMPTY quantity box is the blocker, never the number in it: 0 is a
     // perfectly good answer on a stop ("this session made nothing") and must
     // still be typed out loud rather than assumed.
-    if (opts.qtyRequired && qty.trim() === '') missing.push('Qty');
+    if (opts.qtyRequired && qty.trim() === '') missing.push('Completed');
     if (missing.length > 0 || !shift) {
       setErrorMessage(
         `Fill in the mandatory ★ fields before continuing — missing: ${missing.join(', ')}.`,
@@ -385,9 +385,9 @@ export function OpEntryForm({
     : isQcOp && noQcPending
       ? 'No QC pending on this operation — already inspected.'
       : !isQcOp && isQcPending
-        ? 'Waiting on QC clearance — go to QC dashboard.'
+        ? 'Waiting for QC — open QC Call Register.'
         : !isQcOp && noAvailable
-          ? 'No qty available — start the previous op first.'
+          ? 'No qty available — complete the previous Op first.'
           : null;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
@@ -403,20 +403,20 @@ export function OpEntryForm({
     // that is allowed to go unanswered.
     const rejNum = Number(rejectQty || '0');
     if (!Number.isInteger(qtyNum) || qtyNum < 0 || !Number.isInteger(rejNum) || rejNum < 0) {
-      setErrorMessage('Completed and rejected qty must be 0 or a positive whole number.');
+      setErrorMessage('Completed and Rejected must be 0 or a whole number.');
       return;
     }
     // ADR-183: "0 good, 9 rejected" is a real entry (a scrapped batch) and
     // raises an NC on the server. Only an entry with nothing in it is refused.
     if (qtyNum + rejNum <= 0) {
-      setErrorMessage('Enter a quantity — completed, rejected, or both.');
+      setErrorMessage('Enter a quantity — Completed, Rejected, or both.');
       return;
     }
     // Rejected pieces consume the op's available qty too, so the cap is on
     // the two together. The server re-checks under a row lock.
     if (qtyNum + rejNum > op.available) {
       setErrorMessage(
-        `Completed + rejected (${qtyNum + rejNum}) is more than the ${op.available} available.`,
+        `Completed + Rejected (${qtyNum + rejNum}) cannot be more than Available (${op.available}).`,
       );
       return;
     }
@@ -446,7 +446,7 @@ export function OpEntryForm({
       setRejectQty('');
       setRemarks('');
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Submit failed');
+      setErrorMessage(err instanceof Error ? err.message : 'Could not save the entry. Try again.');
     }
   }
 
@@ -458,20 +458,22 @@ export function OpEntryForm({
     // The inspection's own date, time, shift and inspector are mandatory. The
     // accepted/reject pair is NOT covered by the gate: QC's rule is "at least
     // one of the two is above zero", checked just below.
-    const chosenShift = requireMandatory({ qtyRequired: false, personLabel: 'Inspector' });
+    const chosenShift = requireMandatory({ qtyRequired: false, personLabel: 'Inspected By' });
     if (!chosenShift) return;
     const qtyNum = Number(qty || '0');
     const rejNum = Number(rejectQty || '0');
     if (!Number.isInteger(qtyNum) || qtyNum < 0 || !Number.isInteger(rejNum) || rejNum < 0) {
-      setErrorMessage('Accepted and reject qty must be non-negative integers.');
+      setErrorMessage('Accepted and Rejected must be 0 or a whole number.');
       return;
     }
     if (qtyNum + rejNum <= 0) {
-      setErrorMessage('Enter accepted qty and/or reject qty.');
+      setErrorMessage('Enter a quantity — Accepted, Rejected, or both.');
       return;
     }
     if (qtyNum + rejNum > op.qcPending) {
-      setErrorMessage(`Total qty ${qtyNum + rejNum} exceeds QC pending ${op.qcPending}.`);
+      setErrorMessage(
+        `Accepted + Rejected (${qtyNum + rejNum}) cannot be more than QC Pending (${op.qcPending}).`,
+      );
       return;
     }
     const input: SubmitQcLogInput = {
@@ -495,7 +497,9 @@ export function OpEntryForm({
       setQcReportPath(null);
       setQcReportName(null);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'QC submit failed');
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Could not save the inspection. Try again.',
+      );
     }
   }
 
@@ -533,7 +537,9 @@ export function OpEntryForm({
       await start.mutateAsync(input);
       onSubmitted?.();
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Start failed');
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Could not start the operation. Try again.',
+      );
     }
   }
 
@@ -555,18 +561,18 @@ export function OpEntryForm({
     // already caught by the gate above.
     const qtyNum = Number(qty);
     if (!Number.isInteger(qtyNum) || qtyNum < 0) {
-      setErrorMessage('Qty must be 0 or a positive whole number.');
+      setErrorMessage('Completed must be 0 or a whole number.');
       return;
     }
     const rejNum = Number(rejectQty || '0');
     if (!Number.isInteger(rejNum) || rejNum < 0) {
-      setErrorMessage('Reject qty must be 0 or a positive whole number.');
+      setErrorMessage('Rejected must be 0 or a whole number.');
       return;
     }
     // Same cap as Log: rejected pieces consume available too (ADR-183).
     if (qtyNum + rejNum > op.available) {
       setErrorMessage(
-        `Completed + rejected (${qtyNum + rejNum}) is more than the ${op.available} available.`,
+        `Completed + Rejected (${qtyNum + rejNum}) cannot be more than Available (${op.available}).`,
       );
       return;
     }
@@ -587,7 +593,9 @@ export function OpEntryForm({
       setRemarks('');
       onSubmitted?.();
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Stop failed');
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Could not stop the operation. Try again.',
+      );
     }
   }
 
@@ -795,7 +803,7 @@ export function OpEntryForm({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
               <div className="form-grp" style={{ width: 140 }}>
                 <label className="form-label" htmlFor="opf-date">
-                  Date<span className="req">★</span>
+                  Log Date<span className="req">★</span>
                 </label>
                 <input
                   id="opf-date"
@@ -877,7 +885,7 @@ export function OpEntryForm({
               </div>
               <div className="form-grp" style={{ flex: '1 1 180px', minWidth: 160 }}>
                 <label className="form-label" htmlFor="opf-op">
-                  Inspector<span className="req">★</span>
+                  Inspected By<span className="req">★</span>
                 </label>
                 <input
                   id="opf-op"
@@ -980,7 +988,7 @@ export function OpEntryForm({
                   ) : (
                     <ShieldCheck size={14} />
                   )}
-                  Submit QC inspection
+                  Submit Inspection
                 </button>
               ) : null}
             </div>
@@ -1073,7 +1081,7 @@ export function OpEntryForm({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
             <div className="form-grp" style={{ width: 140 }}>
               <label className="form-label" htmlFor="opf-date">
-                Date<span className="req">★</span>
+                Log Date<span className="req">★</span>
               </label>
               <input
                 id="opf-date"
@@ -1498,7 +1506,7 @@ export function OpEntryForm({
                     title="Books the quantity above AND frees the machine for the next job"
                   >
                     <Square size={14} />
-                    Stop ({stop.isPending ? 'stopping…' : 'running'})
+                    {stop.isPending ? 'Stopping…' : 'Stop Operation'}
                   </button>
                 ) : (
                   <button
@@ -1529,8 +1537,8 @@ export function OpEntryForm({
                     className="btn btn-success"
                     disabled={blockedReason !== null || submit.isPending}
                   >
-                    {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit
-                    completion
+                    {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓
+                    Complete
                   </button>
                   {activeRunningId ? (
                     <button
@@ -1541,7 +1549,7 @@ export function OpEntryForm({
                       title="Books the quantity above AND frees the machine for the next job"
                     >
                       <Square size={14} />
-                      Stop ({stop.isPending ? 'stopping…' : 'running'})
+                      {stop.isPending ? 'Stopping…' : 'Stop Operation'}
                     </button>
                   ) : (
                     <button
@@ -1550,7 +1558,7 @@ export function OpEntryForm({
                       onClick={() => void handleStart()}
                       disabled={blockedReason !== null || start.isPending}
                     >
-                      <Play size={14} />▶ Start session
+                      <Play size={14} />▶ Start Operation
                     </button>
                   )}
                 </>

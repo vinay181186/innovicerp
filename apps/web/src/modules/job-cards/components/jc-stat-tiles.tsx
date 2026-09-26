@@ -241,7 +241,7 @@ export function JcStatTiles({
                 fontWeight: rmAvailable.availableQty > 0 ? 400 : 700,
               }}
               title={
-                `Client material issued to this job card: ${rmAvailable.issuedQty}. ` +
+                `Customer material issued to this job card: ${rmAvailable.issuedQty}. ` +
                 `Already produced on the first operation: ${rmAvailable.consumedQty}. ` +
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`

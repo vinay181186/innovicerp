@@ -19,6 +19,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OP_STATUS } from '../../job-cards/lib/jc-op-labels';
 import { useMachinesList } from '../../machines/api';
 import { jcOpsBoardKeys, useChangeJcOpMachine, useJcOpsBoard, useOutsourceOpBalance } from '../api';
 
@@ -111,7 +112,7 @@ function JcOpsPage(): React.JSX.Element {
         ) : isError ? (
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load'}
+              {error instanceof Error ? error.message : 'Could not load operations. Try again.'}
             </div>
           </div>
         ) : data && data.items.length === 0 ? (
@@ -144,7 +145,7 @@ function JcOpsPage(): React.JSX.Element {
                     Pending
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--red)' }}>
-                    Pend Hrs
+                    Pending Hrs
                   </th>
                   <th>Op Status</th>
                   <th>Actions</th>
@@ -185,7 +186,7 @@ const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
   pr_raised: 'PR Raised',
   po_created: 'PO Created',
-  sent: 'Sent',
+  sent: 'At Vendor',
   received: 'Received',
 };
 
@@ -510,7 +511,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
         border: `1px solid ${c}30`,
       }}
     >
-      {status.replace(/_/g, ' ')}
+      {OP_STATUS[status]?.label ?? status.replace(/_/g, ' ')}
     </span>
   );
 }
@@ -543,7 +544,8 @@ function ChangeMachineModal({
       { id: row.jcOpId, input },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed'),
+        onError: (e) =>
+          setErr(e instanceof Error ? e.message : 'Could not change the machine. Try again.'),
       },
     );
   };
@@ -687,7 +689,7 @@ function ChangeMachineModal({
                 <Loader2 size={14} className="inline animate-spin" /> Saving…
               </>
             ) : (
-              'Save'
+              'Save Changes'
             )}
           </button>
         </div>
@@ -755,7 +757,7 @@ function CreatePrModal({
         void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
         onClose();
       },
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create PR'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not raise PR. Try again.'),
     });
   };
 
@@ -979,7 +981,10 @@ function OutsourceBalanceModal({
       { id: row.jcOpId, input },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to outsource balance'),
+        onError: (e) =>
+          setErr(
+            e instanceof Error ? e.message : 'Could not outsource the pending qty. Try again.',
+          ),
       },
     );
   };

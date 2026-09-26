@@ -74,7 +74,7 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
   jc_created: 'JC Created',
   pr_created: 'PR Created',
   in_production: 'In Production',
-  complete: 'Complete',
+  complete: 'Completed',
   cancelled: 'Cancelled',
 };
 
@@ -260,12 +260,10 @@ export function BomPlanningModal({
         {submitting ? (
           <>
             <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} />{' '}
-            …
+            Saving…
           </>
         ) : (
-          // showModalLg with an explicit saveLabel → btn-success, and L28044
-          // renders `&#10003; ${_saveLabel}` so the ✓ prefixes the label too.
-          `✓ Create ${unplannedCount} Plans`
+          `Save ${unplannedCount} Plans`
         )}
       </button>
     </>
@@ -288,10 +286,20 @@ export function BomPlanningModal({
             fontSize: 12,
           }}
         >
-          {error instanceof Error ? error.message : 'Failed to load BOM'}
+          {error instanceof Error ? error.message : 'Could not load BOM. Try again.'}
         </div>
       )}
-      {data && <BomBody mode={mode} data={data} rowState={rowState} setRowState={setRowState} planAssembly={planAssembly} setPlanAssembly={setPlanAssembly} submitErr={submitErr} />}
+      {data && (
+        <BomBody
+          mode={mode}
+          data={data}
+          rowState={rowState}
+          setRowState={setRowState}
+          planAssembly={planAssembly}
+          setPlanAssembly={setPlanAssembly}
+          submitErr={submitErr}
+        />
+      )}
     </Modal>
   );
 }
@@ -430,8 +438,7 @@ function BomBody({
       >
         {/* Equipment (L8899): "📦 BOM Explosion — N sets × BOM-NO".
             Assembly  (L7172): "📦 BOM Explosion — N units" — no BOM no. */}
-        📦 BOM Explosion — {data.orderQty}{' '}
-        {mode === 'equipment' ? `sets × ${data.bomNo}` : 'units'}
+        📦 BOM Explosion — {data.orderQty} {mode === 'equipment' ? `sets × ${data.bomNo}` : 'units'}
       </div>
 
       <div
@@ -455,7 +462,7 @@ function BomBody({
               <th style={{ color: 'var(--red)' }}>Pending</th>
               <th>BOM Type</th>
               <th>Plan Status</th>
-              <th>Plan?</th>
+              <th>Select</th>
               <th>Qty to Plan</th>
             </tr>
           </thead>
@@ -521,10 +528,7 @@ function BomBody({
                         {c.existingPlan.jcCode ? (
                           <>
                             {' '}
-                            <span
-                              className="mono"
-                              style={{ fontSize: 10, color: 'var(--cyan)' }}
-                            >
+                            <span className="mono" style={{ fontSize: 10, color: 'var(--cyan)' }}>
                               {c.existingPlan.jcCode}
                             </span>
                           </>
@@ -534,10 +538,7 @@ function BomBody({
                         {mode === 'assembly' && c.existingPlan.dpPrCode ? (
                           <>
                             {' '}
-                            <span
-                              className="mono"
-                              style={{ fontSize: 10, color: 'var(--purple)' }}
-                            >
+                            <span className="mono" style={{ fontSize: 10, color: 'var(--purple)' }}>
                               {c.existingPlan.dpPrCode}
                             </span>
                           </>

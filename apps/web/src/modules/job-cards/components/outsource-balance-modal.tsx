@@ -91,7 +91,10 @@ export function OutsourceBalanceModal({
           if (jcId) void qc.invalidateQueries({ queryKey: jobCardsKeys.detail(jcId) });
           onDone(qty);
         },
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to outsource balance'),
+        onError: (e) =>
+          setErr(
+            e instanceof Error ? e.message : 'Could not outsource the pending qty. Try again.',
+          ),
       },
     );
   };

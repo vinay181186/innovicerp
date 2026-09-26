@@ -97,7 +97,9 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
   const inactiveCount = rows.length - activeCount;
   const visible = useMemo(
     () =>
-      status === 'all' ? rows : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
+      status === 'all'
+        ? rows
+        : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
     [rows, status],
   );
 
@@ -144,7 +146,11 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           </span>
         ) : null}
         {canAdd ? (
-          <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setModal({ kind: 'new' })}
+          >
             <Plus size={14} /> Add {noun}
           </button>
         ) : null}
@@ -266,10 +272,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                     <td>
                       {/* Stop once on the wrapper so an action never also fires
                           the row's own open-for-edit click. */}
-                      <div
-                        style={{ display: 'flex', gap: 4 }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
                         {canEdit ? (
                           <button
                             type="button"
@@ -290,7 +293,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                               }
                             }}
                           >
-                            Del
+                            Delete
                           </button>
                         ) : null}
                       </div>
@@ -317,9 +320,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           color: 'var(--text3)',
         }}
       >
-        <span>
-          {canEdit ? `💡 Click a row to edit that ${noun.toLowerCase()}.` : ''}
-        </span>
+        <span>{canEdit ? `💡 Click a row to edit that ${noun.toLowerCase()}.` : ''}</span>
         <span>
           {total > rows.length
             ? `Showing first ${rows.length} of ${total} — refine with search`
@@ -346,7 +347,8 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
             disabled={importing}
             onClick={() => fileRef.current?.click()}
           >
-            {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬆'} Import from Excel
+            {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬆'} Import from
+            Excel
           </button>
           <input
             ref={fileRef}
@@ -467,9 +469,7 @@ function MaterialRowModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
-          <span className="panel-title">
-            {row ? `✏ Edit ${noun}` : `＋ Add ${noun}`}
-          </span>
+          <span className="panel-title">{row ? `✏ Edit ${noun}` : `＋ Add ${noun}`}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
           </button>

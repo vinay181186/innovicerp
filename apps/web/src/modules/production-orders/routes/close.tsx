@@ -304,7 +304,9 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 fontSize: 12,
               }}
             >
-              {detail.error instanceof Error ? detail.error.message : 'Failed to load the PO.'}
+              {detail.error instanceof Error
+                ? detail.error.message
+                : 'Could not load the Production Order. Try again.'}
             </div>
           ) : null}
 

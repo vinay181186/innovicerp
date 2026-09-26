@@ -38,7 +38,7 @@ function BomMasterNewPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: created.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to create BOM.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save BOM. Try again.');
     }
   };
 

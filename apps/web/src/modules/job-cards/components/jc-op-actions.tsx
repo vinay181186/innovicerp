@@ -403,13 +403,13 @@ export function JcOpFooter({
           </button>
         ) : showQcText ? (
           op.computedStatus === 'complete' ? (
-            <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ QC Done</span>
+            <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ QC Completed</span>
           ) : (
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>Waiting</span>
           )
         ) : null
       ) : showDone ? (
-        <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Done</span>
+        <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Completed</span>
       ) : showLog ? (
         /* T33: Log only while a session is actually running on this op. Start
            and Log are the two ends of one chain, so exactly one of them shows —

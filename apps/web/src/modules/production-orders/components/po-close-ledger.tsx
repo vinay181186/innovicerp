@@ -50,7 +50,8 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
           setOpenId(null);
           setReason('');
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Reversal failed.'),
+        onError: (e) =>
+          setError(e instanceof Error ? e.message : 'Could not reverse this close. Try again.'),
       },
     );
   };
@@ -113,11 +114,11 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Txn Date</th>
-              <th>Txn Qty</th>
+              <th>Close Date</th>
+              <th>Close Qty</th>
               <th>Closed By</th>
               <th>Note</th>
-              <th>Reversal?</th>
+              <th>Reversed</th>
               {canReverse ? <th></th> : null}
             </tr>
           </thead>
@@ -150,7 +151,7 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
                         {reversedOriginal ? ` of ${reversedOriginal.qty}` : ''}
                       </span>
                     ) : alreadyReversed ? (
-                      <span className="badge b-grey">reversed</span>
+                      <span className="badge b-grey">Reversed</span>
                     ) : (
                       '—'
                     )}

@@ -59,7 +59,7 @@ function StuckDashboardPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr">⚠ Stuck Activity Dashboard</div>
+      <div className="section-hdr">⚠ Stuck Dashboard</div>
 
       <div
         style={{

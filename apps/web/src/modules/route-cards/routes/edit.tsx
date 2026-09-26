@@ -75,7 +75,7 @@ function RouteCardEditPage(): React.JSX.Element {
       });
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: updated.id } }));
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Failed to save route card revision.');
+      setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');
     }
   };
 

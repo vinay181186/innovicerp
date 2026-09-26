@@ -699,8 +699,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               {ops.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="empty-state">
-                    No operations yet — click <strong>+ Add Op</strong> / <strong>+ QC Step</strong>{' '}
-                    / <strong>+ OSP Step</strong>.
+                    No operations yet — click <strong>+ Add Op</strong> /{' '}
+                    <strong>+ Add QC Op</strong> / <strong>+ Add OSP Op</strong>.
                   </td>
                 </tr>
               ) : (
@@ -754,7 +754,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           className="btn btn-primary"
           disabled={Boolean(validationError) || submitting}
         >
-          {submitting ? 'Saving…' : '✓ Save Route Card'}
+          {submitting ? 'Saving…' : 'Save Route Card'}
         </button>
       </div>
     </form>

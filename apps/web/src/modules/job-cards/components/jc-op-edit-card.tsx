@@ -357,9 +357,9 @@ export function JcOpEditCard({
                 gap: 6,
               }}
             >
-              <QtyChip label="ORDER QTY" value={orderQty} color="var(--text)" />
+              <QtyChip label="Order Qty" value={orderQty} color="var(--text)" />
               <QtyChip
-                label="COMPLETED"
+                label="Completed"
                 value={!en ? '—' : doneQty}
                 color={en ? 'var(--green)' : 'var(--text3)'}
                 sub={
@@ -380,18 +380,18 @@ export function JcOpEditCard({
                 }
               />
               <QtyChip
-                label="PENDING"
+                label="Pending"
                 value={!en ? '—' : pendingQty}
                 color={en && pendingQty > 0 ? 'var(--amber)' : 'var(--text3)'}
                 highlight={Boolean(en) && pendingQty > 0}
               />
               <QtyChip
-                label="AT VENDOR"
+                label="At Vendor"
                 value={en && isOut ? en.atVendorQty : '—'}
                 color={en && isOut && en.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)'}
               />
               <QtyChip
-                label="IN QC"
+                label="In QC"
                 value={en && isOut ? en.inQcQty : '—'}
                 color={en && isOut && en.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)'}
               />

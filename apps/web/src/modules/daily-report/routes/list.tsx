@@ -96,7 +96,7 @@ function DailyReportPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📊 Daily Production Report</div>
+        <div className="section-hdr m-0">📊 Daily Report</div>
         <button
           type="button"
           className="btn btn-ghost btn-sm"

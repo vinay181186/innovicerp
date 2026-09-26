@@ -371,7 +371,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               <Fact label="Lost qty" mono>
                 {data.lostQty ?? '—'}
               </Fact>
-              <Fact label="Closed on" mono>
+              <Fact label="Close Date" mono>
                 {data.closedAt ? data.closedAt.slice(0, 10) : '—'}
               </Fact>
             </div>

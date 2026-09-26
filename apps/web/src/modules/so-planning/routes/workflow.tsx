@@ -87,7 +87,7 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
   jc_created: 'JC Created',
   pr_created: 'PR Created',
   in_production: 'In Production',
-  complete: 'Complete',
+  complete: 'Completed',
   cancelled: 'Cancelled',
 };
 
@@ -110,7 +110,7 @@ const DERIVED_STATUS_COLOR: Record<PlanDerivedStatus, string> = {
 
 const ORDER_STATUS_LABEL: Record<PlanningSoListItem['planningStatus'], string> = {
   fully_planned: 'Fully Planned',
-  partial: 'Partial',
+  partial: 'Partly Planned',
   unplanned: 'Unplanned',
 };
 
@@ -183,7 +183,7 @@ function lineStatusOf(line: PlanningLine): {
           ? 'In Planning'
           : 'Fully Planned'
       : line.plans.length > 0 || hasDirectJc
-        ? `Partial (${line.remaining} left)`
+        ? `Partly Planned (${line.remaining} pending)`
         : 'Unplanned';
   const color =
     line.remaining <= 0
@@ -326,7 +326,7 @@ function PlanningWorkflowPage(): JSX.Element {
             <input
               className="innovic-input"
               style={{ width: 300 }}
-              placeholder="Search order no, customer, item, part name…"
+              placeholder="Search SO / JWSO No., customer, item code or name…"
               value={soSearch}
               onChange={(e) => setSoSearch(e.target.value)}
             />
@@ -388,7 +388,7 @@ function OrderList({
       { header: 'Due Date', accessorKey: 'dueDate' },
       { header: 'Lines', accessorKey: 'totalLines' },
       { header: 'Order Qty', accessorKey: 'totalQty' },
-      { header: 'Planned Qty', accessorKey: 'totalPlannedQty' },
+      { header: 'Plan Qty', accessorKey: 'totalPlannedQty' },
       { header: '% Planned', accessorKey: 'planningPct' },
       { header: 'Plan Status', accessorKey: 'planningStatus' },
     ],
@@ -540,12 +540,12 @@ const LINE_COLS: { key: string; label: string; width: number; title?: string }[]
   },
   {
     key: 'balance',
-    label: 'Balance to Plan',
+    label: 'Pending to Plan',
     width: 5,
     title: 'Order qty − dispatched − reserved to this line: what still has to be made or bought',
   },
   { key: 'planned', label: 'Planned', width: 4 },
-  { key: 'inProd', label: 'In Prod', width: 4 },
+  { key: 'inProd', label: 'In Production', width: 4 },
   { key: 'remaining', label: 'Pending', width: 5 },
   { key: 'due', label: 'Due Date', width: 5 },
   { key: 'status', label: 'Plan Status', width: 6 },
@@ -626,7 +626,9 @@ function OrderDetail({
       <>
         <div style={{ marginBottom: 14 }}>{backBtn}</div>
         <div className="empty-state" style={{ color: 'var(--red)' }}>
-          {detail.error instanceof Error ? detail.error.message : 'Failed to load order'}
+          {detail.error instanceof Error
+            ? detail.error.message
+            : 'Could not load order. Try again.'}
         </div>
       </>
     );
@@ -738,7 +740,7 @@ function OrderDetail({
           <div className="empty-state">This order has no lines.</div>
         ) : (
           // `tbl-wrap` so the ADR-180 stock columns (Physical / Reserved /
-          // Available / Balance to Plan) scroll sideways on a narrow screen
+          // Available / Pending to Plan) scroll sideways on a narrow screen
           // instead of crushing every number into two lines. On a normal wide
           // screen the sheet still fills the panel exactly as before.
           <div className="tbl-wrap">
@@ -888,7 +890,7 @@ function OrderDetail({
                               executePlan.isError && executePlan.variables === p.id
                                 ? executePlan.error instanceof Error
                                   ? executePlan.error.message
-                                  : 'Execute failed'
+                                  : 'Could not create the Job Card / PR. Try again.'
                                 : null
                             }
                             onViewJc={() => {
@@ -1505,12 +1507,14 @@ function PlanChip({
           >
             {isExecuting ? (
               <>
-                <Loader2 size={11} className="inline-block animate-spin" /> Executing…
+                <Loader2 size={11} className="inline-block animate-spin" /> Creating…
               </>
             ) : executeError ? (
               '⚠ Retry'
+            ) : isDP || isFO ? (
+              '⚡ Raise PR'
             ) : (
-              '⚡ Execute'
+              '⚡ Create JC'
             )}
           </button>
           <button

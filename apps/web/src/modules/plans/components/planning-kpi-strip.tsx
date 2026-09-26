@@ -25,7 +25,7 @@ const STATUS_TILES: StatusTile[] = [
   { status: 'jc_created', label: 'JC Created', color: 'var(--cyan)', kpiKey: 'jcCreated' },
   { status: 'pr_created', label: 'PR Created (Buy)', color: 'var(--purple)', kpiKey: 'prCreated' },
   { status: 'in_production', label: 'In Production', color: 'var(--cyan)', kpiKey: 'inProduction' },
-  { status: 'complete', label: 'Complete', color: 'var(--green)', kpiKey: 'complete' },
+  { status: 'complete', label: 'Completed', color: 'var(--green)', kpiKey: 'complete' },
 ];
 
 export function PlanningKpiStrip({

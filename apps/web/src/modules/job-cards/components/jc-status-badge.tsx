@@ -11,14 +11,14 @@ const CLASSES: Record<JcComputedStatus, string> = {
   no_ops: 'b-red',
 };
 
-const LABELS: Record<JcComputedStatus, string> = {
-  open: 'open',
-  qc_pending: 'qc pending',
-  complete: 'complete',
-  closed: 'closed',
-  no_ops: 'no ops',
+export const JC_STATUS_LABEL: Record<JcComputedStatus, string> = {
+  open: 'Open',
+  qc_pending: 'QC Pending',
+  complete: 'Completed',
+  closed: 'Closed',
+  no_ops: 'No Operations',
 };
 
 export function JcStatusBadge(props: { status: JcComputedStatus }) {
-  return <span className={`badge ${CLASSES[props.status]}`}>{LABELS[props.status]}</span>;
+  return <span className={`badge ${CLASSES[props.status]}`}>{JC_STATUS_LABEL[props.status]}</span>;
 }

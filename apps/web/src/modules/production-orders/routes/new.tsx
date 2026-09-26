@@ -172,7 +172,9 @@ function ProductionOrderNewPage(): React.JSX.Element {
       const created = await create.mutateAsync(input);
       exit.leave(() => void navigate({ to: '/production-orders/$id', params: { id: created.id } }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create the Production Order.');
+      setSubmitError(
+        err instanceof Error ? err.message : 'Could not save Production Order. Try again.',
+      );
     }
   };
 
@@ -507,7 +509,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
                                 : undefined
                 }
               >
-                {create.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Create JC
+                {create.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Save
+                Production Order &amp; Create JC
               </button>
             </div>
           </form>

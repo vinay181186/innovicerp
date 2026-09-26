@@ -42,7 +42,7 @@ function loadBadgeClass(status: MachineLoadStatus): string {
 // unstyled `.badge` pill on screen. Empty class here reproduces that exactly;
 // neither class exists in our theme either.
 const OP_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
-  complete: { label: 'Complete', cls: 'b-green' },
+  complete: { label: 'Completed', cls: 'b-green' },
   in_progress: { label: 'In Progress', cls: '' },
   running: { label: 'Running', cls: '' },
   available: { label: 'Available', cls: 'b-blue' },
@@ -470,7 +470,7 @@ function OperationView({
               <th>Order Qty</th>
               <th>Completed</th>
               <th style={{ color: 'var(--amber)' }}>Available</th>
-              <th style={{ color: 'var(--red)' }}>Pend Hrs</th>
+              <th style={{ color: 'var(--red)' }}>Pending Hrs</th>
               <th>Op Status</th>
             </tr>
           </thead>
@@ -591,7 +591,7 @@ function JobQueueView({
                     <th>Order Qty</th>
                     <th>Completed</th>
                     <th style={{ color: 'var(--amber)' }}>Available</th>
-                    <th style={{ color: 'var(--red)' }}>Pend Hrs</th>
+                    <th style={{ color: 'var(--red)' }}>Pending Hrs</th>
                     <th>Op Status</th>
                   </tr>
                 </thead>

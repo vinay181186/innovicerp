@@ -29,7 +29,7 @@ interface Props {
 const TYPE_LABEL: Record<OpLog['logType'], string> = {
   start: 'Start',
   complete: 'Complete',
-  qc: 'QC',
+  qc: 'QC Inspection',
 };
 
 // Card type-badge palette — tokens only (no hard-coded hex).
@@ -81,7 +81,9 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
     // entry can, so it is bounded the same way. The server refuses it too
     // (assertNotFutureDate in op-entry/service.ts) -- this is the early word.
     if (draftDate > todayIst()) {
-      setNotice('Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.');
+      setNotice(
+        'Date cannot be in the future — an operation cannot be worked on a day that has not happened yet.',
+      );
       return;
     }
     retime.mutate(
@@ -211,7 +213,9 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span className="mono" style={{ fontSize: 12 }} title="Qty done / rejected">
                     {l.qty}
-                    {l.rejectQty ? <span style={{ color: 'var(--red)' }}> · rej {l.rejectQty}</span> : null}
+                    {l.rejectQty ? (
+                      <span style={{ color: 'var(--red)' }}> · rej {l.rejectQty}</span>
+                    ) : null}
                   </span>
                   {/* Row action — edit / approve / reject. Logic preserved from
                       the table version. */}
@@ -271,7 +275,13 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   machine. A QC entry carries neither and keeps the bare dash. */}
               <div
                 className="text3"
-                style={{ fontSize: 11, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}
+                style={{
+                  fontSize: 11,
+                  display: 'flex',
+                  gap: 6,
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                }}
               >
                 {(() => {
                   const actual = l.machineCode ?? l.machineCodeText ?? null;

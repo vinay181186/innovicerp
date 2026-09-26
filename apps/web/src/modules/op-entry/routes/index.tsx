@@ -222,11 +222,18 @@ function OpEntryPage() {
 
   return (
     <div>
-      <div className="section-hdr">Operation Entry</div>
+      <div className="section-hdr">Op Entry</div>
 
       {/* By Job Card | By Machine switch (By Machine is the former standalone
           Machine Op Entry screen). */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 14,
+        }}
+      >
         {(['jc', 'machine'] as const).map((v) => (
           <button
             key={v}
@@ -258,226 +265,232 @@ function OpEntryPage() {
         <MachineOpEntryView />
       ) : (
         <>
-      <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="panel-body">
-          <form
-            onSubmit={handleJcSubmit}
-            style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}
-          >
-            <div className="form-grp" style={{ marginBottom: 0, minWidth: 300 }}>
-              <label className="form-label" htmlFor="jc-input">
-                JC No.
-              </label>
-              <SearchableSelect
-                id="jc-input"
-                value={jcId}
-                onChange={handlePickJc}
-                onSearch={(term) => {
-                  setJcSearch(term);
-                  if (term) setJcInput(term);
-                }}
-                loading={jcList.isFetching}
-                options={jcOptions}
-                placeholder="🔍 Job card no, item, or SO…"
-                emptyText="No job cards"
-                valueLabel={search.jc ?? undefined}
-                selectedLabel={(o) => o.code ?? o.name}
-              />
+          <div className="panel" style={{ marginBottom: 16 }}>
+            <div className="panel-body">
+              <form
+                onSubmit={handleJcSubmit}
+                style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}
+              >
+                <div className="form-grp" style={{ marginBottom: 0, minWidth: 300 }}>
+                  <label className="form-label" htmlFor="jc-input">
+                    JC No.
+                  </label>
+                  <SearchableSelect
+                    id="jc-input"
+                    value={jcId}
+                    onChange={handlePickJc}
+                    onSearch={(term) => {
+                      setJcSearch(term);
+                      if (term) setJcInput(term);
+                    }}
+                    loading={jcList.isFetching}
+                    options={jcOptions}
+                    placeholder="🔍 Job card no, item, or SO…"
+                    emptyText="No job cards"
+                    valueLabel={search.jc ?? undefined}
+                    selectedLabel={(o) => o.code ?? o.name}
+                  />
+                </div>
+              </form>
             </div>
-          </form>
-        </div>
-      </div>
+          </div>
 
-      {search.jc ? (
-        <div>
-          {/* Wraps because this line now carries the part as well as the
+          {search.jc ? (
+            <div>
+              {/* Wraps because this line now carries the part as well as the
               number: on a narrow screen the SO chip drops underneath instead
               of being pushed off the edge. At normal widths it is still one
               line. */}
-          <div
-            style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}
-          >
-            {/* The job card number is this screen's subject and was dead text:
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 12,
+                  marginBottom: 10,
+                  flexWrap: 'wrap',
+                }}
+              >
+                {/* The job card number is this screen's subject and was dead text:
                 an operator reading an entry screen had no way back to the card
                 it belongs to. `jobCardId` is NOT NULL on this shape (jc_ops
                 inner-joins job_cards), so the only reason to fall back to plain
                 text is that the ops have not arrived yet — there is no such
                 thing as an op without a card. Same target and same underlined
                 treatment as the code on the Job Cards list. */}
-            {jcHead ? (
-              <Link
-                to="/job-cards/$id"
-                params={{ id: jcHead.jobCardId }}
-                className="mono fw-700"
-                style={{ color: 'var(--cyan)', fontSize: 15 }}
-                title="Open this job card"
-              >
-                {search.jc}
-              </Link>
-            ) : (
-              <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
-                {search.jc}
-              </span>
-            )}
-            {/* WHAT is being made, beside WHICH job — the number alone left the
+                {jcHead ? (
+                  <Link
+                    to="/job-cards/$id"
+                    params={{ id: jcHead.jobCardId }}
+                    className="mono fw-700"
+                    style={{ color: 'var(--cyan)', fontSize: 15 }}
+                    title="Open this job card"
+                  >
+                    {search.jc}
+                  </Link>
+                ) : (
+                  <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
+                    {search.jc}
+                  </span>
+                )}
+                {/* WHAT is being made, beside WHICH job — the number alone left the
                 operator to look the part up on another screen before booking
                 against it. Built as chips like the `SO:` one below rather than
                 as a new treatment, and each is dropped entirely when its value
                 is null, so a card whose item did not come back reads exactly as
                 this line always has. */}
-            {/* POL — the line number printed on the CUSTOMER's own purchase
+                {/* POL — the line number printed on the CUSTOMER's own purchase
                 order, ahead of the item code. Dropped entirely when the card
                 has no sales order behind it, like the chips around it. */}
-            {jcHead?.clientPoLineNo ? (
-              <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>
-                <span className="text3">POL: </span>
-                <span className="fw-700" style={{ color: 'var(--purple)' }}>
-                  {jcHead.clientPoLineNo}
-                </span>
-              </span>
-            ) : null}
-            {jcHead?.itemCode ? (
-              /* `CODE/REV` through the one helper — the customer's drawing
+                {jcHead?.clientPoLineNo ? (
+                  <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>
+                    <span className="text3">POL: </span>
+                    <span className="fw-700" style={{ color: 'var(--purple)' }}>
+                      {jcHead.clientPoLineNo}
+                    </span>
+                  </span>
+                ) : null}
+                {jcHead?.itemCode ? (
+                  /* `CODE/REV` through the one helper — the customer's drawing
                  revision from the SO line this card was raised against. A
                  JW-sourced or standalone card has none and keeps the bare
                  code, with no trailing slash. */
-              /* The CODE is the darkest thing on this line, not the faintest.
+                  /* The CODE is the darkest thing on this line, not the faintest.
                  It was --text3, the weakest token in the system, while the part
                  name beside it was full-strength bold -- so the one value people
                  actually read was the hardest to. The "Item:" label stays quiet
                  and the code itself carries the weight. */
-              <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>
-                <span className="text3">Item: </span>
-                <span className="fw-700" style={{ color: 'var(--text)' }}>
-                  {itemCodeWithRev(jcHead.itemCode, jcHead.itemRevision)}
-                </span>
-              </span>
-            ) : null}
-            {jcHead?.itemName ? (
-              /* A part name is free text, so it truncates rather than pushing
+                  <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>
+                    <span className="text3">Item: </span>
+                    <span className="fw-700" style={{ color: 'var(--text)' }}>
+                      {itemCodeWithRev(jcHead.itemCode, jcHead.itemRevision)}
+                    </span>
+                  </span>
+                ) : null}
+                {jcHead?.itemName ? (
+                  /* A part name is free text, so it truncates rather than pushing
                  the SO chip off the line; the full name stays on hover. Same
                  weight and size the Job Cards list gives an item name next to
                  a card code. */
-              <span
-                className="fw-700"
-                style={{
-                  fontSize: 13,
-                  maxWidth: 320,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-                title={jcHead.itemName}
-              >
-                {jcHead.itemName}
-              </span>
-            ) : null}
-            {jcHead?.soCode ? (
-              /* T27: surface the source SO/JW order on Op Entry too. */
-              <span className="text3" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
-                SO: {jcHead.soCode}
-              </span>
-            ) : null}
-            {ops.isFetching && !ops.isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-          </div>
+                  <span
+                    className="fw-700"
+                    style={{
+                      fontSize: 13,
+                      maxWidth: 320,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={jcHead.itemName}
+                  >
+                    {jcHead.itemName}
+                  </span>
+                ) : null}
+                {jcHead?.soCode ? (
+                  /* T27: surface the source SO/JW order on Op Entry too. */
+                  <span className="text3" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
+                    SO: {jcHead.soCode}
+                  </span>
+                ) : null}
+                {ops.isFetching && !ops.isLoading ? (
+                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                    <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+                  </span>
+                ) : null}
+              </div>
 
-          {/* Row 1 — the Operations table, now FULL WIDTH. The Log Entry form
+              {/* Row 1 — the Operations table, now FULL WIDTH. The Log Entry form
               used to take the right-hand half of this row permanently; it is
               now the popup at the bottom of this file, opened from a row's own
               button, so the table gets the whole width back and no field is on
               screen without the job it belongs to written above it.
               Row 2 = the Machine-wise output / Recent log tabs, unchanged,
               underneath. Applies to production AND QC inspection ops. */}
-          <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="panel-hdr">
-              <span className="panel-title">
-                Operations — press ▶ Start / ✚ Log on the row you are booking against
-              </span>
-            </div>
-            {ops.isError ? (
-              <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
-                {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
+              <div className="panel" style={{ marginBottom: 16 }}>
+                <div className="panel-hdr">
+                  <span className="panel-title">
+                    Operations — press ▶ Start / ✚ Log on the row you are booking against
+                  </span>
+                </div>
+                {ops.isError ? (
+                  <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
+                    {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
+                  </div>
+                ) : ops.isLoading ? (
+                  <div className="empty-state">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
+                  </div>
+                ) : (
+                  <JcOpsTable
+                    ops={ops.data ?? []}
+                    selectedOpId={search.op ?? null}
+                    onSelect={handleSelectOp}
+                    onOpenEntry={handleOpenEntry}
+                  />
+                )}
               </div>
-            ) : ops.isLoading ? (
-              <div className="empty-state">
-                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
-              </div>
-            ) : (
-              <JcOpsTable
-                ops={ops.data ?? []}
-                selectedOpId={search.op ?? null}
-                onSelect={handleSelectOp}
-                onOpenEntry={handleOpenEntry}
-              />
-            )}
-          </div>
 
-          {selectedOp ? (
+              {selectedOp ? (
+                <div className="panel">
+                  <div
+                    className="panel-hdr"
+                    style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+                  >
+                    {(
+                      [
+                        { key: 'machine', label: 'Machine-wise output' },
+                        { key: 'log', label: 'Recent log' },
+                      ] as const
+                    ).map((t) => {
+                      const active = rightTab === t.key;
+                      return (
+                        <button
+                          key={t.key}
+                          type="button"
+                          // Active tab = solid filled pill (btn-primary), inactive
+                          // = outline (btn-ghost) — clear highlight on click.
+                          className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setRightTab(t.key)}
+                          style={{ fontWeight: 700 }}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {rightTab === 'machine' ? (
+                    <MachineOutputPanel
+                      rows={machineOutput.data ?? []}
+                      isLoading={machineOutput.isLoading}
+                    />
+                  ) : (
+                    <OpLogHistory
+                      logs={opLog.data ?? []}
+                      isLoading={opLog.isLoading}
+                      {...(selectedOp ? { jcOpId: selectedOp.id } : {})}
+                    />
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : (
             <div className="panel">
-              <div
-                className="panel-hdr"
-                style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
-              >
-                {(
-                  [
-                    { key: 'machine', label: 'Machine-wise output' },
-                    { key: 'log', label: 'Recent log' },
-                  ] as const
-                ).map((t) => {
-                  const active = rightTab === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      type="button"
-                      // Active tab = solid filled pill (btn-primary), inactive
-                      // = outline (btn-ghost) — clear highlight on click.
-                      className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                      onClick={() => setRightTab(t.key)}
-                      style={{ fontWeight: 700 }}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {rightTab === 'machine' ? (
-                <MachineOutputPanel
-                  rows={machineOutput.data ?? []}
-                  isLoading={machineOutput.isLoading}
-                />
-              ) : (
-                <OpLogHistory
-                  logs={opLog.data ?? []}
-                  isLoading={opLog.isLoading}
-                  {...(selectedOp ? { jcOpId: selectedOp.id } : {})}
-                />
-              )}
+              <div className="empty-state">Enter a job card number to load its ops.</div>
             </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="panel">
-          <div className="empty-state">Enter a job card number to load its ops.</div>
-        </div>
-      )}
+          )}
 
-      {/* Rendered ONCE for the whole tab, never once per row — one target
+          {/* Rendered ONCE for the whole tab, never once per row — one target
           means one form, and it always belongs to the row that opened it.
           The popup closes itself on a successful save (it hands OpEntryForm
           its onSubmitted), so clearing the target here covers the ✕ and the
           overlay click. Switching between the Start and Complete halves inside
           the box updates the target so the choice sticks while it is open. */}
-      {entryTarget ? (
-        <OpEntryModal
-          target={entryTarget}
-          onClose={() => setEntryTarget(null)}
-          onModeChange={(m) => setEntryTarget((t) => (t ? { ...t, mode: m } : t))}
-        />
-      ) : null}
+          {entryTarget ? (
+            <OpEntryModal
+              target={entryTarget}
+              onClose={() => setEntryTarget(null)}
+              onModeChange={(m) => setEntryTarget((t) => (t ? { ...t, mode: m } : t))}
+            />
+          ) : null}
         </>
       )}
     </div>

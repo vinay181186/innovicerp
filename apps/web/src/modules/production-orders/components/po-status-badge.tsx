@@ -24,10 +24,10 @@ const CLASSES: Record<ProductionOrderStatus, string> = {
 };
 
 const LABELS: Record<ProductionOrderStatus, string> = {
-  open: 'open',
-  partially_closed: 'partially closed',
-  closed: 'closed',
-  short_closed: PRODUCTION_ORDER_STATUS_LABEL.short_closed.toLowerCase(),
+  open: 'Open',
+  partially_closed: 'Partly Closed',
+  closed: 'Closed',
+  short_closed: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
 };
 
 export function PoStatusBadge({ status }: { status: ProductionOrderStatus }): React.JSX.Element {

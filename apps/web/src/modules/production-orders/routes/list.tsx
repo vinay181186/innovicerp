@@ -1,6 +1,6 @@
 // Production Orders master (ADR-170). SO Master List is THE style reference:
 // frozen header band (title + count + search + New), ONE StatStrip row whose
-// tiles filter (Pending = open, All, Closed, Short Closed), a react-table grid with
+// tiles filter (Open, All, Closed, Short Closed), a react-table grid with
 // SortableHead, clickable rows, document codes in strong mono.
 //
 // Search is server-side (`?search=` matches PO code, plan code, POL, item code
@@ -154,7 +154,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'PRO create date',
+        header: 'Production Order Date',
         accessorKey: 'createdAt',
         meta: { tdClass: 'mono' },
         cell: ({ row }) => (
@@ -272,7 +272,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         cell: ({ row }) => <PoStatusBadge status={row.original.status} />,
       },
       {
-        header: 'Closed on',
+        header: 'Close Date',
         accessorKey: 'closedAt',
         meta: { tdClass: 'mono' },
         cell: ({ row }) => (
@@ -368,7 +368,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
             ) : null}
             {perms.entry ? (
               <Link to="/production-orders/new" className="btn btn-primary">
-                <Plus size={14} /> Create Production Order
+                <Plus size={14} /> New Production Order
               </Link>
             ) : null}
           </div>
@@ -378,7 +378,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
           items={[
             {
               key: 'open',
-              label: 'Pending',
+              label: 'Open',
               count: openCount,
               color: 'var(--amber)',
               active: search.status === 'open',
@@ -436,7 +436,9 @@ function ProductionOrdersListPage(): React.JSX.Element {
                     className="empty-state"
                     style={{ color: 'var(--red)' }}
                   >
-                    {error instanceof Error ? error.message : 'Failed to load production orders'}
+                    {error instanceof Error
+                      ? error.message
+                      : 'Could not load Production Orders. Try again.'}
                   </td>
                 </tr>
               ) : table.getRowModel().rows.length === 0 ? (

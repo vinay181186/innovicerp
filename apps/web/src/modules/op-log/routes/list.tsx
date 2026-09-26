@@ -34,6 +34,12 @@ export const opLogListRoute = createRoute({
   component: OpLogListPage,
 });
 
+const LOG_TYPE_LABEL: Record<'start' | 'complete' | 'qc', string> = {
+  start: 'Start',
+  complete: 'Complete',
+  qc: 'QC Inspection',
+};
+
 function logTypeBadge(t: 'start' | 'complete' | 'qc'): string {
   if (t === 'start') return 'b-amber';
   if (t === 'qc') return 'b-purple';
@@ -132,7 +138,7 @@ function OpLogListPage(): React.JSX.Element {
           <option value="">All types</option>
           <option value="start">Start</option>
           <option value="complete">Complete</option>
-          <option value="qc">QC</option>
+          <option value="qc">QC Inspection</option>
         </select>
         <select
           className="innovic-select"
@@ -206,8 +212,8 @@ function OpLogListPage(): React.JSX.Element {
                 <th className="td-ctr">Op</th>
                 <th>Log Type</th>
                 <th>Shift</th>
-                <th>Planned</th>
-                <th>Actual</th>
+                <th>Planned Machine</th>
+                <th>Actual Machine</th>
                 <th>Operation</th>
                 <th className="td-ctr" style={{ color: 'var(--green)' }}>
                   Completed
@@ -283,7 +289,9 @@ function OpLogListPage(): React.JSX.Element {
                     <td className="text2">{fmtDate(r.logDate)}</td>
                     <td className="td-ctr mono">{opSrNo(r.opSeq)}</td>
                     <td>
-                      <span className={`badge ${logTypeBadge(r.logType)}`}>{r.logType}</span>
+                      <span className={`badge ${logTypeBadge(r.logType)}`}>
+                        {LOG_TYPE_LABEL[r.logType]}
+                      </span>
                       {r.isTpi ? (
                         <span className="badge b-purple" style={{ marginLeft: 4, fontSize: 9 }}>
                           TPI

@@ -86,7 +86,7 @@ function JobQueuePage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">⬛ Job Queue View</div>
+        <div className="section-hdr m-0">⬛ Job Queue</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {isAdmin ? (
             <button
@@ -229,7 +229,7 @@ function JobQueuePage(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr>
-                      <th style={{ width: 44 }}>Order</th>
+                      <th style={{ width: 44 }}>Move</th>
                       <th style={{ width: 30 }}>Sr No</th>
                       <th>JC No.</th>
                       {/* POL — the line number printed on the CUSTOMER's own
@@ -433,7 +433,7 @@ function JobQueuePage(): React.JSX.Element {
 // in its print-only <style> block (L10559) — so on legacy's screen they render as
 // a bare .badge. We reproduce that with no b-* class rather than invent a tint.
 const OP_STATUS: Record<string, { label: string; cls: string }> = {
-  complete: { label: 'Complete', cls: 'b-green' },
+  complete: { label: 'Completed', cls: 'b-green' },
   in_progress: { label: 'In Progress', cls: '' },
   available: { label: 'Available', cls: 'b-blue' },
   waiting: { label: 'Waiting', cls: 'b-red' },
@@ -442,8 +442,8 @@ const OP_STATUS: Record<string, { label: string; cls: string }> = {
   ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
   pr_raised: { label: 'PR Raised', cls: 'b-amber' },
   po_created: { label: 'PO Created', cls: 'b-blue' },
-  at_vendor: { label: 'Processing', cls: '' },
-  received: { label: 'Incoming QC', cls: 'b-cyan' },
+  at_vendor: { label: 'At Vendor', cls: '' },
+  received: { label: 'Received – QC Pending', cls: 'b-cyan' },
   outsource: { label: 'Outsource', cls: 'b-amber' },
 };
 

@@ -27,7 +27,7 @@ const STATUS_LABEL: Record<PlanStatus, string> = {
   jc_created: 'JC Created',
   pr_created: 'PR Created',
   in_production: 'In Production',
-  complete: 'Complete',
+  complete: 'Completed',
   cancelled: 'Cancelled',
 };
 
@@ -36,6 +36,12 @@ const TYPE_LABEL: Record<PlanType, string> = {
   direct_purchase: '🛒 Direct Purchase',
   full_outsource: '📦 Full Outsource',
   assembly: '🔧 Assembly',
+};
+
+const OP_TYPE_LABEL: Record<string, string> = {
+  process: 'Process',
+  outsource: 'Outsource',
+  qc: 'QC',
 };
 
 function PlanDetailPage(): React.JSX.Element {
@@ -88,13 +94,19 @@ function PlanDetailPage(): React.JSX.Element {
   const onFinalize = (): void => {
     setActionError(null);
     finalize.mutate(plan.id, {
-      onError: (e) => setActionError(e instanceof Error ? e.message : 'Finalize failed'),
+      onError: (e) =>
+        setActionError(
+          e instanceof Error ? e.message : 'Could not mark the plan Planned. Try again.',
+        ),
     });
   };
   const onExecute = (): void => {
     setActionError(null);
     execute.mutate(plan.id, {
-      onError: (e) => setActionError(e instanceof Error ? e.message : 'Execute failed'),
+      onError: (e) =>
+        setActionError(
+          e instanceof Error ? e.message : 'Could not create the Job Card / PR. Try again.',
+        ),
     });
   };
   const onDelete = (): void => {
@@ -102,7 +114,8 @@ function PlanDetailPage(): React.JSX.Element {
       onSuccess: () => {
         void navigate({ to: '/plans', replace: true });
       },
-      onError: (e) => setActionError(e instanceof Error ? e.message : 'Delete failed'),
+      onError: (e) =>
+        setActionError(e instanceof Error ? e.message : 'Could not delete Plan. Try again.'),
     });
   };
 
@@ -163,7 +176,7 @@ function PlanDetailPage(): React.JSX.Element {
                 ) : (
                   <CheckCircle size={13} />
                 )}{' '}
-                Finalize
+                Mark Planned
               </button>
             ) : null}
             {perms.edit && canExecute ? (
@@ -174,8 +187,8 @@ function PlanDetailPage(): React.JSX.Element {
                 disabled={execute.isPending}
                 title={
                   plan.planType === 'manufacture' || plan.planType === 'assembly'
-                    ? 'Create JC + copy ops'
-                    : 'Create PR(s)'
+                    ? 'Create the Job Card and copy the operations'
+                    : 'Raise the PR(s)'
                 }
               >
                 {execute.isPending ? (
@@ -183,7 +196,9 @@ function PlanDetailPage(): React.JSX.Element {
                 ) : (
                   <Play size={13} />
                 )}{' '}
-                Execute
+                {plan.planType === 'manufacture' || plan.planType === 'assembly'
+                  ? 'Create Job Card'
+                  : 'Raise PR'}
               </button>
             ) : null}
             {perms.edit && isEditable ? (
@@ -249,17 +264,17 @@ function PlanDetailPage(): React.JSX.Element {
           ) : null}
 
           <Grid>
-            <KV label="Plan date" value={plan.planDate} />
+            <KV label="Plan Date" value={plan.planDate} />
             <KV label="Order Qty" value={plan.orderQty} />
-            <KV label="Plan qty" value={plan.planQty} />
-            <KV label="Planned start" value={plan.plannedStartDate ?? '—'} />
-            <KV label="Planned end" value={plan.plannedEndDate ?? '—'} />
+            <KV label="Plan Qty" value={plan.planQty} />
+            <KV label="Planned Start Date" value={plan.plannedStartDate ?? '—'} />
+            <KV label="Planned End Date" value={plan.plannedEndDate ?? '—'} />
             <KV label="Customer Dispatch Date" value={plan.customerDispatchDate ?? '—'} />
             {/* Raw material — read-only here; both are optional, so a plan with
                 neither still shows the pair as dashes rather than hiding them
                 (a missing grade is a planning gap worth seeing). */}
-            <KV label="RM grade" value={plan.rawMaterialGradeText ?? '—'} />
-            <KV label="RM size" value={plan.rawMaterialSizeText ?? '—'} />
+            <KV label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
+            <KV label="RM Size" value={plan.rawMaterialSizeText ?? '—'} />
             {/* `CODE/REV` — the customer's drawing revision from the SO line this
                 plan was raised against; a JW-sourced or ad-hoc plan has none and
                 keeps the bare code, with no trailing slash. */}
@@ -302,14 +317,14 @@ function PlanDetailPage(): React.JSX.Element {
                 Full outsource
               </div>
               <Grid>
-                <KV label="JW vendor" value={plan.foVendorCodeText ?? '—'} />
+                <KV label="JW Vendor" value={plan.foVendorCodeText ?? '—'} />
                 <KV label="Process" value={plan.foProcess ?? '—'} />
                 {priceHidden ? null : <KV label="Rate" value={plan.foRate ?? '—'} />}
-                <KV label="Material src" value={plan.foMaterialSrc ?? '—'} />
-                <KV label="Delivery" value={plan.foDeliveryDate ?? '—'} />
+                <KV label="Material Source" value={plan.foMaterialSrc ?? '—'} />
+                <KV label="Delivery Date" value={plan.foDeliveryDate ?? '—'} />
                 <KV label="Cost Centre" value={plan.foCostCenter ?? '—'} />
                 <KV label="JW PR" value={plan.foPrId ? '✓ Created' : '—'} />
-                <KV label="Mat PR" value={plan.foMatPrId ? '✓ Created' : '—'} />
+                <KV label="Material PR" value={plan.foMatPrId ? '✓ Created' : '—'} />
                 {plan.foRemarks ? <KV label="Remarks" value={plan.foRemarks} /> : null}
               </Grid>
             </>
@@ -317,7 +332,7 @@ function PlanDetailPage(): React.JSX.Element {
 
           {(plan.planType === 'manufacture' || plan.planType === 'assembly') && plan.jcId ? (
             <Grid>
-              <KV label="Linked JC" value="✓ Created" />
+              <KV label="Job Card" value="✓ Created" />
             </Grid>
           ) : null}
 
@@ -374,11 +389,11 @@ function PlanDetailPage(): React.JSX.Element {
                   <th>Op</th>
                   <th>Operation</th>
                   <th>Op Type</th>
-                  <th>Machine</th>
+                  <th>Planned Machine</th>
                   <th>Cycle Time (h)</th>
-                  <th>QC?</th>
-                  <th>OSP vendor</th>
-                  {priceHidden ? null : <th>OSP cost</th>}
+                  <th>QC Required</th>
+                  <th>OSP Vendor</th>
+                  {priceHidden ? null : <th>OSP Cost</th>}
                 </tr>
               </thead>
               <tbody>
@@ -387,7 +402,7 @@ function PlanDetailPage(): React.JSX.Element {
                     {/* 10, 20, 30 on screen — display rule, see opSrNo */}
                     <td>{opSrNo(op.opSeq)}</td>
                     <td>{op.operation}</td>
-                    <td>{op.opType}</td>
+                    <td>{OP_TYPE_LABEL[op.opType] ?? op.opType}</td>
                     <td>{op.machineCodeText ?? '—'}</td>
                     <td>{op.cycleTimeMin}</td>
                     <td>{op.qcRequired ? '✓' : ''}</td>

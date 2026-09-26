@@ -592,7 +592,7 @@ export function JcOpCard({
               value={rmAvailable.availableQty}
               color={rmAvailable.availableQty > 0 ? 'var(--cyan)' : 'var(--red)'}
               title={
-                `Client material issued to this job card: ${rmAvailable.issuedQty}. ` +
+                `Customer material issued to this job card: ${rmAvailable.issuedQty}. ` +
                 `Already produced on this operation: ${rmAvailable.consumedQty}. ` +
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`
@@ -682,7 +682,7 @@ export function JcOpCard({
           ) : (
             <>
               <InfoCell
-                label="Machine"
+                label={actual.differs ? 'Planned Machine → Actual Machine' : 'Planned Machine'}
                 title={
                   actual.differs
                     ? actual.split.length

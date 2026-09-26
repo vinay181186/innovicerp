@@ -58,7 +58,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
       });
       onRaised(res.prCode);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to raise PR');
+      setErr(e instanceof Error ? e.message : 'Could not raise PR. Try again.');
     }
   };
 

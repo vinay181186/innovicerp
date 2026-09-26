@@ -160,10 +160,10 @@ function MachineDetailPage(): React.JSX.Element {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title={`Delete machine ${machine.code}?`}
-          message={`${machine.name} will be removed from the Machine Master.`}
-          confirmLabel="Delete"
-          pendingLabel="Deleting…"
+          title={`Move Machine ${machine.code} to Trash?`}
+          message="You can restore it from Trash."
+          confirmLabel="Move to Trash"
+          pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
           errorText={deleteError}

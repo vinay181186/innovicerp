@@ -136,7 +136,9 @@ export function NeedsPlanningTable(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load unplanned orders'}
+          message={
+            error instanceof Error ? error.message : 'Could not load unplanned orders. Try again.'
+          }
         />
       ) : (
         <DataTable

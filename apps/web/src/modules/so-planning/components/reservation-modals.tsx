@@ -211,7 +211,7 @@ export function AllocateStockModal({
       });
       onDone(result);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to allocate');
+      setErr(e instanceof Error ? e.message : 'Could not reserve stock. Try again.');
     }
   };
 
@@ -376,7 +376,7 @@ export function ReleaseStockModal({
       });
       onDone(result);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to release');
+      setErr(e instanceof Error ? e.message : 'Could not release the reserved stock. Try again.');
     }
   };
 

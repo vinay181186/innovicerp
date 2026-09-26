@@ -78,6 +78,7 @@ import { ListFooter, ListHeader, PageState, RowActions, ViewToggle } from '@/ui/
 import { FilterBar } from '@/ui/navigation';
 import { useDeleteJobCard, useJobCardsList } from '../api';
 import { ExcelJcButton } from '../components/excel-jc-button';
+import { JC_STATUS_LABEL } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
 // One fetch, cap 200 (mirrors the SO/WO list).
@@ -326,10 +327,10 @@ function JobCardsListPage(): React.JSX.Element {
       onDelete={canDeleteJc ? (): Promise<void> => del.mutateAsync(jc.id) : undefined}
       deleteDisabled={del.isPending}
       deleteConfirm={{
-        title: `Delete job card ${jc.code}?`,
-        message: `${jc.code} — ${itemCodeWithRev(jc.itemCode, jc.itemRevision)} stops appearing in Job Cards, on the shop floor and in Op Entry.`,
-        confirmLabel: 'Delete',
-        pendingLabel: 'Deleting…',
+        title: `Move Job Card ${jc.code} to Trash?`,
+        message: `${itemCodeWithRev(jc.itemCode, jc.itemRevision)} stops appearing in Job Cards, on the shop floor and in Op Entry. You can restore it from Trash.`,
+        confirmLabel: 'Move to Trash',
+        pendingLabel: 'Moving to Trash…',
       }}
     />
   );
@@ -541,7 +542,7 @@ function JobCardsListPage(): React.JSX.Element {
         icon="▭"
         count={total}
         noun="job card"
-        filterNote={search.status ? search.status.replaceAll('_', ' ') : undefined}
+        filterNote={search.status ? JC_STATUS_LABEL[search.status] : undefined}
         updating={isFetching && !isLoading}
         primary={
           canWrite ? (
@@ -578,7 +579,7 @@ function JobCardsListPage(): React.JSX.Element {
               label: 'On Hold',
               count: kpis.onHold,
               color: 'var(--text3)',
-              title: 'No hold state exists in job-card data — see report',
+              title: 'Job cards have no On Hold state yet, so this always shows 0',
             },
             {
               key: 'completed',
@@ -606,7 +607,7 @@ function JobCardsListPage(): React.JSX.Element {
                 { value: '', label: 'All statuses' },
                 ...JC_COMPUTED_STATUSES.map((s) => ({
                   value: s,
-                  label: s.replaceAll('_', ' '),
+                  label: JC_STATUS_LABEL[s],
                 })),
               ],
             },
@@ -656,7 +657,7 @@ function JobCardsListPage(): React.JSX.Element {
       {isError ? (
         <PageState
           state="error"
-          message={error instanceof Error ? error.message : 'Failed to load job cards'}
+          message={error instanceof Error ? error.message : 'Could not load Job Cards. Try again.'}
         />
       ) : view === 'list' ? (
         // ── LIST VIEW (the ruled sheet) ──────────────────────────────────────

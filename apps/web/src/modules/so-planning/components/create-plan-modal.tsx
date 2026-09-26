@@ -142,7 +142,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         lineNo: line.lineNo,
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to reserve');
+      setErr(e instanceof Error ? e.message : 'Could not reserve stock. Try again.');
     }
   };
 
@@ -152,7 +152,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       return;
     }
     if (planQty > remaining) {
-      setErr(`Cannot exceed remaining: ${remaining} pcs`);
+      setErr(`Plan Qty cannot be more than Pending to Plan (${remaining}).`);
       return;
     }
     if (!plannedStartDate || !plannedEndDate) {
@@ -194,7 +194,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       const created = await createPlan.mutateAsync(input);
       onCreated(created.id);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to create plan');
+      setErr(e instanceof Error ? e.message : 'Could not save Plan. Try again.');
     }
   };
 
@@ -228,10 +228,10 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         {createPlan.isPending ? (
           <>
             <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} />{' '}
-            Creating…
+            Saving…
           </>
         ) : (
-          'Create Plan'
+          'Save Plan'
         )}
       </button>
     </>
@@ -327,7 +327,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               border: '1px solid var(--green)',
             }}
           >
-            <div style={{ fontSize: 10, color: 'var(--text3)' }}>REMAINING</div>
+            <div style={{ fontSize: 10, color: 'var(--text3)' }}>PENDING TO PLAN</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green)' }}>
               {remaining}
             </div>
@@ -439,7 +439,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           </div>
           {stock > 0 ? (
             <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
-              💡 {suggested} pcs to make — {remaining} remaining − {stock} already in stock
+              💡 {suggested} pcs to make — {remaining} pending to plan − {stock} already in stock
               {suggested === 0 ? ' (fully covered by stock)' : ''}.
             </div>
           ) : null}
@@ -478,7 +478,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
               <label className="form-label" htmlFor="create-plan-start">
-                Planned Start / Required Date
+                Planned Start Date
               </label>
               <input
                 id="create-plan-start"

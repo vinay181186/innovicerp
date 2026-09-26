@@ -31,6 +31,12 @@ const BOM_TYPE_DISPLAY: Record<string, { label: string; color: string }> = {
   outsource: { label: '🏭 Outsrc', color: 'var(--amber)' },
 };
 
+const BOM_TYPE_WORD: Record<string, string> = {
+  manufacture: 'Manufacture',
+  purchase: 'Purchase',
+  outsource: 'Outsource',
+};
+
 function BomMasterDetailPage(): React.JSX.Element {
   const { id } = bomMasterDetailRoute.useParams();
   const navigate = useNavigate();
@@ -50,13 +56,14 @@ function BomMasterDetailPage(): React.JSX.Element {
       );
       return;
     }
-    if (!window.confirm(`Delete BOM "${detail.bomNo}"? This soft-deletes the record.`)) return;
+    if (!window.confirm(`Move BOM ${detail.bomNo} to Trash? You can restore it from Trash.`))
+      return;
     setDelError(null);
     try {
       await del.mutateAsync(detail.id);
       void navigate({ to: '/bom-masters' });
     } catch (e) {
-      setDelError(e instanceof Error ? e.message : 'Delete failed.');
+      setDelError(e instanceof Error ? e.message : 'Could not move BOM to Trash. Try again.');
     }
   };
 
@@ -373,7 +380,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                       </td>
                       <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
                       <td className="td-ctr mono fw-700">{Number(it.qtyPerSet)}</td>
-                      <td style={{ fontSize: 11 }}>{it.bomType}</td>
+                      <td style={{ fontSize: 11 }}>{BOM_TYPE_WORD[it.bomType] ?? it.bomType}</td>
                     </tr>
                   ))}
                 </tbody>

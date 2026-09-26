@@ -452,7 +452,7 @@ export function JcViewSummary({
               OSP GRN), so the link is the operator's cue for where "finished"
               actually lands. Old cards carry null and show a dash. The
               customer's PO line (POL) sits beside it, as before. */}
-          <Kv label="Prod. Order">
+          <Kv label="Production Order">
             {jc.productionOrderId && jc.productionOrderCode ? (
               <Link
                 to="/production-orders/$id"
@@ -539,7 +539,7 @@ export function JcViewSummary({
               title="Pieces through the LAST operation — finished goods are counted only after the last op"
             />
             <KpiTile
-              label="WIP"
+              label="In Process"
               value={wip ?? '—'}
               tone="blue"
               title="Pieces released by the first operation and not yet through the last one (first-op done − completed)"
@@ -572,7 +572,7 @@ export function JcViewSummary({
                 fontWeight: rmAvailable.availableQty > 0 ? 400 : 700,
               }}
               title={
-                `Client material issued to this job card: ${rmAvailable.issuedQty}. ` +
+                `Customer material issued to this job card: ${rmAvailable.issuedQty}. ` +
                 `Already produced on the first operation: ${rmAvailable.consumedQty}. ` +
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`

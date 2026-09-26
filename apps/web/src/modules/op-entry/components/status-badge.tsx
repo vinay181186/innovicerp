@@ -37,11 +37,11 @@ const LABELS: Record<ComputedJcOpStatus, string> = {
   in_progress: 'In Progress',
   running: 'Running',
   qc_pending: 'QC Pending',
-  complete: 'Complete',
+  complete: 'Completed',
   pr_raised: 'PR Raised',
   po_created: 'PO Created',
-  at_vendor: 'Processing',
-  received: 'Incoming QC',
+  at_vendor: 'At Vendor',
+  received: 'Received – QC Pending',
   ready_for_pr: 'Ready for PR',
   outsource: 'Outsource',
 };
@@ -51,7 +51,7 @@ export function JcOpStatusBadge({ status }: { status: ComputedJcOpStatus }) {
 }
 
 export function RunningOpStatusBadge({ status }: { status: RunningOpStatus }) {
-  const text = status === 'running' ? 'Running' : status === 'done' ? 'Done' : 'Stopped';
+  const text = status === 'running' ? 'Running' : status === 'done' ? 'Completed' : 'Stopped';
   return (
     <span
       className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${RUNNING_TONE[status]}`}

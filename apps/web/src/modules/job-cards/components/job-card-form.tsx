@@ -548,7 +548,7 @@ export function JobCardForm({
       setDrawingFilePath(path);
       setDrawingName(file.name);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Drawing upload failed');
+      setError(e instanceof Error ? e.message : 'Could not upload the drawing. Try again.');
     } finally {
       setUploading(false);
     }
@@ -566,7 +566,7 @@ export function JobCardForm({
         ),
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Document upload failed');
+      setError(e instanceof Error ? e.message : 'Could not upload the document. Try again.');
     } finally {
       setUploading(false);
     }
@@ -616,7 +616,7 @@ export function JobCardForm({
       else await create.mutateAsync(result.payload);
       exit.leave(goBack);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');
     }
   };
 
@@ -1127,17 +1127,21 @@ export function JobCardForm({
         <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
           Cancel
         </button>
-        {/* Footer derived from the CALL SITE: addJC L6073 and editJC L6124 both
-            pass saveLabel 'Save Job Card' to showModalLg, whose L28042-44 footer
-            is Cancel (.btn-ghost) + .btn-success rendering `&#10003; ${label}`
-            — the ✓ prefixes even an explicitly-passed label. */}
         <button
           type="button"
           className="btn btn-success"
           disabled={submitting}
           onClick={() => void onSubmit()}
         >
-          {submitting ? <Loader2 size={13} className="animate-spin" /> : null} ✓ Save Job Card
+          {submitting ? (
+            <>
+              <Loader2 size={13} className="animate-spin" /> Saving…
+            </>
+          ) : isEdit ? (
+            'Save Changes'
+          ) : (
+            'Save Job Card'
+          )}
         </button>
       </div>
     </div>
